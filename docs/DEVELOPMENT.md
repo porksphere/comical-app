@@ -57,13 +57,14 @@ interactive "use another port?" prompt. Ctrl-C tears everything down and sweeps 
 Override the port with `PORT=8090 bun run dev`. First time only: `bun install`.
 
 It also presets `EXPO_PUBLIC_COMICAL_SERVER` to the sibling `comical-web` dev server
-(`http://<your-lan-ip>:3100`, detected automatically, no `/api` prefix — that only exists
-behind the prod reverse proxy) so the app talks to a real local backend without any manual
+(`http://<your-lan-ip>:3100`, detected automatically, no `/api` prefix — that belongs to the
+reverse-proxied topology comical-web is designed for, which nothing runs yet) so the app talks
+to a real local backend without any manual
 export — start that server first with `cd ../comical-web && bun run dev`. The LAN IP (not
 `localhost`) is used deliberately so a phone on the same network can load the printed
 `http://<lan-ip>:8081` URL and reach the API too. Override the backend port with
 `COMICAL_SERVER_PORT=...`, or set `EXPO_PUBLIC_COMICAL_SERVER` yourself to point elsewhere
-(e.g. the deployed prod API, which does need `/api`).
+(e.g. a reverse-proxied deployment, which would need `/api`).
 
 ## Testing
 
@@ -189,7 +190,7 @@ double-zipped.)
 | **release** (public) | `ios-release` | `v*` tag (`release.yml`) | clean Release, **no profiler** | `com.porksphere.comical` |
 | **main** (perf testing) | `ios-main` | push to `main` (`build-ios.yml`) | **profiling** (Release + on-device Hermes profiler) | `com.porksphere.comical` |
 | **PR** (branch testing) | `ios-pr` | each open PR (`build-ios.yml`) | **profiling** | `com.porksphere.comical` |
-| **dev-client** (iterate over Metro) | `ios-devclient` | manual (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical.dev` |
+| **dev-client** (iterate over Metro) | `ios-devclient` | manual (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical` |
 
 The first three share the **production bundle id**, so only one is installed at a time — switch
 lanes by picking a source/version in SideStore (a `main`/`pr`/`release` build replaces whichever is
@@ -268,7 +269,7 @@ not ordering, because `versionName` doesn't move between builds within a release
 Separate from the Release builds above: the **`Build iOS dev-client`** workflow
 (`build-ios-devclient.yml`, manual `workflow_dispatch`) builds a Debug + `expo-dev-client` shell —
 via the reusable workflow's `configuration: Debug` + `dev_client: true` inputs — and publishes it to
-a rolling **`ios-devclient`** SideStore source. It carries the coexisting `com.porksphere.comical.dev`
+a rolling **`ios-devclient`** SideStore source. It carries the shared `com.porksphere.comical`
 bundle id (the env-gated `with-devclient-variant` plugin, active only when `COMICAL_DEVCLIENT=1`), so
 it installs *alongside* the release app.
 

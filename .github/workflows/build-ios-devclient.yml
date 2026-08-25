@@ -1,7 +1,7 @@
 name: Build iOS dev-client (Windows iterative dev)
 
 # Manual-only. Builds the iOS **development-client** shell — a Debug build with
-# expo-dev-client and the coexisting `com.porksphere.comical.dev` bundle id — and
+# expo-dev-client, carrying the SAME `com.porksphere.comical` bundle id as every other build — and
 # publishes it to its own rolling `ios-devclient` SideStore/AltStore source.
 #
 # Install it once via that source; from then on you iterate entirely from a
@@ -69,9 +69,10 @@ jobs:
 
           # SideStore/AltStore source manifest. Add this URL as a source:
           #   $BASE/apps.json
-          # Distinct bundle id (com.porksphere.comical.dev) so it coexists with the
-          # release app. Emits both the modern versions[] array and the legacy
-          # top-level fields so either client parses it.
+          # Same bundle id as the release/PR builds, so this installs into their slot and shares
+          # their data container — iterate over Metro against your real library, not an empty one.
+          # It therefore REPLACES whatever Comical is installed. Emits both the modern versions[]
+          # array and the legacy top-level fields so either client parses it.
           jq -n \
             --arg version "$VERSION" \
             --arg date "$DATE" \
@@ -84,7 +85,7 @@ jobs:
               identifier: "com.porksphere.comical.dev.source",
               apps: [{
                 name: "Comical (dev)",
-                bundleIdentifier: "com.porksphere.comical.dev",
+                bundleIdentifier: "com.porksphere.comical",
                 developerName: "porksphere",
                 localizedDescription: "Comical development-client build for on-device iteration from a Windows PC. Unsigned; re-signed on-device by SideStore/AltStore.",
                 iconURL: $icon,
@@ -112,7 +113,7 @@ jobs:
             "$RUNNER_TEMP/icon.png" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Comical iOS dev-client (Windows iterative dev)" \
-            --notes "Development-client shell (Debug + expo-dev-client, bundle id \`com.porksphere.comical.dev\` so it coexists with the release app).
+            --notes "Development-client shell (Debug + expo-dev-client). Carries the same \`com.porksphere.comical\` bundle id as the release and PR builds, so it shares their data and REPLACES whatever Comical is installed.
 
           **Install via source (recommended):** add this URL in SideStore/AltStore → Sources → +
           \`${BASE}/apps.json\`

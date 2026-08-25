@@ -41,7 +41,7 @@ in `server.ts`**: construct a Node blob store + the worker with the *same* `Down
   surface.** Purely a `host-server`/`server.ts` concern (shipped via comical-web) + a small client
   read-path in comical-app.
 - Repos touched: **comical** (`host-server`), **comical-app** (`source.ts` client read + progress),
-  **comical-web** (redeploy — it already runs `host-server`).
+  **comical-web** (its server already constructs `host-server`, so wherever it runs this comes with it).
 
 ## Work breakdown
 
@@ -69,9 +69,10 @@ in `server.ts`**: construct a Node blob store + the worker with the *same* `Down
 3. **Blob-serve route** (attached to `router` in `server.ts`)
    `GET /dl-blob/:bridgeId/:seriesId/:chapterId/:index` → stream the stored file with its image
    content-type. **PUBLIC route (NOT under `/downloads/*`)** — `/downloads/*` is `Bearer`-guarded and
-   `<img src>` can't send a header. Follows the existing **`/img-proxy` public-route precedent**. (The
-   real deploy is token-less at the server — auth is at the Cloudflare Access edge — which is also why
-   guarded `page-image` `<img>`s work today; public is still the safe choice.)
+   `<img src>` can't send a header. Follows the existing **`/img-proxy` public-route precedent**.
+   (The intended topology puts auth at an edge proxy rather than at the server, leaving it
+   token-less — but nothing is deployed, so there is no live behaviour to appeal to here. Public is
+   the safe choice on its own merits: it is the only thing that works for an `<img>` tag.)
 
 4. **Tests** — `host-server` integration pattern (`Bun.serve({ port: 0 })`): enqueue → worker downloads
    → blob-serve returns bytes → delete → GC removes the file. Plus an absence test (no worker/blob store
@@ -89,8 +90,8 @@ in `server.ts`**: construct a Node blob store + the worker with the *same* `Down
    with no push).
 
 ### comical-web
-7. **Redeploy** (already runs `host-server`; the worker/blob store/route come with it once `server.ts`
-   constructs them). Enable via the existing `downloads: true` server option.
+7. **Deploy / restart** wherever it runs (its server already constructs `host-server`, so the
+   worker/blob store/route come with it). Enable via the existing `downloads: true` server option.
 
 ## Design decision: who downloads when a server serves BOTH web and native clients
 
@@ -120,7 +121,8 @@ single-owner deploy, "enable the worker; native keeps owning its own bytes" also
 
 1. **host-server**: Node blob store → worker (drain + GC) → public blob-serve route → tests. Commit.
 2. **comical-app** `source.ts`: web read path → progress polling. Commit.
-3. **comical-web**: redeploy; verify web enqueue → server downloads → web reads from server.
+3. **comical-web**: run it (locally is enough — nothing is deployed); verify web enqueue → server
+   downloads → web reads from server.
 
 ## Relationship to the bigger "unified engine via HostCapabilities" idea
 
