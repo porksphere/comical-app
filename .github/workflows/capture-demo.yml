@@ -176,12 +176,14 @@ jobs:
           path: ${{ runner.temp }}/demo.gif
           retention-days: 14
 
-      # Always, including on failure: the raw take is the only way to tune the trim, the encode or
-      # the smoothness budget without spending another runner on it.
+      # Always, including on failure: the raw take is the only way to tune the cut or the encode
+      # without spending another runner on it. Two files land here — demo.mp4 as the simulator
+      # wrote it (full panel size, QuickTime brand, wildly variable framerate; ffmpeg reads it,
+      # VLC will not) and demo-playable.mp4, a constant-framerate half-size copy for watching.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: demo-raw-capture
-          path: ${{ runner.temp }}/capture/demo.mp4
+          path: ${{ runner.temp }}/capture/*.mp4
           retention-days: 7
           if-no-files-found: warn

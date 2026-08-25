@@ -38,13 +38,12 @@ WORK="${WORK:-$(mktemp -d)}"
 mkdir -p "$WORK"
 RAW="$WORK/demo.mp4"
 
-# Output tuning, all measured against a real capture rather than guessed. A phone frame is ~2.2x
-# taller than wide, so 220 lands at 220x478. Size is driven by frame count x area x palette, and
-# the frame count is whatever survives mpdecimate below — so WIDTH and MAX_COLORS are the two
-# knobs that actually move it: 240px/128 colors gave 3.9MB on the reference take, 220/96 gave 3.0.
+# Output tuning, measured against a real capture rather than guessed. A phone frame is ~2.2x
+# taller than wide, so 220 lands at 220x478.
 #
-# FPS does NOT affect size. `setpts=N/FPS/TB` re-times every surviving frame to that rate, so
-# lowering it stretches playback instead of dropping anything. Treat it as playback speed.
+# Size is frame count x area x palette. The frame count is the kept duration (see STILL_GAP/HOLD
+# below) times FPS, so all three of these move it: on the reference take 220px/96 colours/15fps
+# came to 82 frames and 1.6MB, while 240px/128 colours came to 3.9MB.
 WIDTH="${WIDTH:-220}"
 FPS="${FPS:-15}"
 MAX_COLORS="${MAX_COLORS:-96}"
@@ -60,19 +59,15 @@ SCENE_THRESHOLD="${SCENE_THRESHOLD:-0.05}"
 # Used only if scene detection finds nothing at all (a take with no movement is already a failure,
 # but the script should say something useful rather than divide by it).
 TRIM_START="${TRIM_START:-2.0}"
-# A gap longer than this between two recorded frames is a visible hitch. ~1/12s: at the 15fps the
-# GIF is rendered at, anything beyond this drops a frame the viewer sees.
-MAX_GAP_MS="${MAX_GAP_MS:-85}"
-# ...but only up to here. Both recorders write variable-framerate video and emit NO frames while
-# the screen is still, so every deliberate hold in the flow shows up as a multi-second "gap". The
-# first version of this check read one of those (8.3s, the reader holding a page while the chrome
-# faded) as dropped frames and failed a perfectly good take. A gap this long isn't a dropped frame
-# in any case: nothing renders 15+ consecutive frames late, and the dead air is stripped from the
-# GIF below regardless. What can still ruin the GIF is a hitch INSIDE a movement, and those are
-# tens to hundreds of milliseconds.
-STILL_MS="${STILL_MS:-1000}"
+# What counts as the screen holding rather than animating. Frames closer together than this are
+# part of a movement; anything sparser is a hold (and the multi-second head of every take, while
+# Maestro's driver starts up, is just a very long one).
+STILL_GAP="${STILL_GAP:-0.4}"
+# How much of each hold survives into the GIF. Without a cap the reference take ran 97s of
+# stillness against 5.7s of movement; at zero the result reads as one frantic sequence with no
+# beats between the steps.
+HOLD="${HOLD:-0.35}"
 
-FFMPEG="${FFMPEG:-ffmpeg}"
 need() { command -v "$1" >/dev/null 2>&1 || { echo "!! $1 not found on PATH" >&2; exit 1; }; }
 need maestro
 need ffmpeg
@@ -153,87 +148,35 @@ maestro "${MAESTRO_DEVICE[@]}" test "$E2E_DIR/demo/demo.yaml"
 stop_recorder
 echo "==> Raw capture: $RAW"
 
-echo "==> Finding the moving part of the take"
-# `select` + `metadata=print` over a normal file input, deliberately not the `-f lavfi -i
-# "movie=…"` form: that one selects the right frames but rebases their timestamps to zero, so
-# every detection reports 0s and the trim silently does nothing.
-SCENES=$("$FFMPEG" -v error -i "$RAW" -vf "select='gt(scene,$SCENE_THRESHOLD)',metadata=print:file=-" \
-  -f null - 2>/dev/null | grep -o 'pts_time:[0-9.]*' | cut -d: -f2 || true)
-if [ -n "$SCENES" ]; then
-  FIRST_MOVE=$(printf '%s\n' "$SCENES" | head -1)
-  LAST_MOVE=$(printf '%s\n' "$SCENES" | tail -1)
-  START=$(awk -v f="$FIRST_MOVE" -v l="$LEAD_IN" 'BEGIN { s = f - l; print (s > 0 ? s : 0) }')
-  DURATION=$(awk -v s="$START" -v l="$LAST_MOVE" -v t="$TAIL_OUT" 'BEGIN { print l + t - s }')
-  echo "    movement from ${FIRST_MOVE}s to ${LAST_MOVE}s -> clip ${START}s +${DURATION}s"
-else
-  echo "!! No scene changes detected — the app may never have moved. Falling back to a fixed trim." >&2
-  START="$TRIM_START"
-  DURATION=""
-  # The gap check below is bounded by these; without them its awk would compare against an empty
-  # string, read it as 0, and silently discard every frame.
-  FIRST_MOVE="$TRIM_START"
-  LAST_MOVE=999999
-fi
+echo "==> Planning the cut"
+# One showinfo pass gives every frame's timestamp; demo-ranges.py turns those into the slices worth
+# keeping and prints the filtergraph that produces them. See that file for why the cut is expressed
+# as time ranges rather than as mpdecimate + a re-timestamp — the short version is that re-timing
+# discards duration, so animations play at a speed set by how many frames happened to be captured.
+"$FFMPEG" -v info -i "$RAW" -vf showinfo -f null - 2>&1 \
+  | grep -o 'pts_time:[0-9.]*' | cut -d: -f2 > "$WORK/frames.txt"
 
-echo "==> Checking for dropped frames"
-# Both recorders write variable-framerate mp4, so a frame the device never rendered shows up as a
-# long gap between presentation timestamps rather than as a missing entry. Only the part that ends
-# up in the GIF is measured — a hitch in the dead air before the first tap is not a defect.
-# Frame timestamps come from ffmpeg's own showinfo rather than ffprobe: the frame field ffprobe
-# exposes for this was renamed across major versions (`pkt_pts_time` is gone in 7.x), and the
-# runner installs whatever brew ships today. showinfo's format has been stable throughout.
-GAP_REPORT=$("$FFMPEG" -v info -i "$RAW" -vf showinfo -f null - 2>&1 \
-  | grep -o 'pts_time:[0-9.]*' | cut -d: -f2 \
-  | awk -v trim="$FIRST_MOVE" -v last="$LAST_MOVE" -v still="$STILL_MS" '
-      $1 == "" { next }
-      {
-        t = $1 + 0
-        if (t < trim || t > last) next
-        if (prev != "") {
-          g = (t - prev) * 1000
-          # Ignore anything at or past the stillness bound — that is the screen holding, not a drop.
-          if (g < still && g > max) { max = g; at = prev }
-        }
-        prev = t
-      }
-      END { printf "%.1f %.2f", max + 0, at + 0 }')
-MAX_GAP=${GAP_REPORT% *}
-GAP_AT=${GAP_REPORT#* }
-echo "    worst in-motion gap: ${MAX_GAP}ms (at ${GAP_AT}s), budget ${MAX_GAP_MS}ms, stillness above ${STILL_MS}ms ignored"
-if awk -v m="$MAX_GAP" -v b="$MAX_GAP_MS" 'BEGIN { exit !(m > b) }'; then
-  # Reported, not fatal, and that is a deliberate retreat from what this check used to do.
-  # On variable-framerate video a still screen and a stalled screen are the SAME signal: no
-  # frames. Two runs failed on that ambiguity — one on a 8.3s reader hold, one on the 380ms
-  # boundary between a hold and the movement after it. Bounding and windowing the measurement
-  # narrows it but cannot remove it, because the information isn't in the file.
-  #
-  # It also matters much less than it looks: the encode below re-times every surviving frame to a
-  # constant rate, so a hitch in the source can't produce a hitch in the GIF — at worst the motion
-  # is described by fewer frames. So: print the number, keep the raw capture, let a human judge.
-  echo "!! Worst in-motion gap is over budget. Could be a real hitch, could be a short hold." >&2
-  echo "!! Look at the GIF; the raw capture is at $RAW" >&2
+TAIL_FILTERS="scale=$WIDTH:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=$MAX_COLORS:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5"
+if ! GRAPH=$(python3 "$E2E_DIR/scripts/demo-ranges.py" \
+      "$STILL_GAP" "$HOLD" "$LEAD_IN" "$TAIL_OUT" "$FPS" "$TAIL_FILTERS" < "$WORK/frames.txt"); then
+  echo "!! Could not plan a cut from this recording. Raw file kept at $RAW" >&2
+  exit 2
 fi
 
 echo "==> Encoding GIF"
 mkdir -p "$(dirname "$OUT")"
-# `mpdecimate` drops frames identical to their predecessor and `setpts` re-times what survives to a
-# constant rate, which is what turns a slow CI take into a watchable GIF: every stretch where the
-# simulator sat still between two Maestro commands (2-5s each on that hardware) collapses to
-# nothing instead of becoming 30-70 duplicated frames. Without it a 28-second movement window
-# encodes to a 28-second GIF that is mostly frozen.
-#
-# Then two passes over one input: palettegen builds a 256-colour palette from the actual frames
-# (stats_mode=diff weights the moving parts, which is where banding shows), paletteuse applies it.
-# An `if`, not `[ -n ... ] && ...`: under `set -e` the && form exits the script when DURATION is
-# empty, because the test failing makes the whole line's status non-zero.
-DURATION_ARG=()
-if [ -n "$DURATION" ]; then
-  DURATION_ARG=(-t "$DURATION")
-fi
-"$FFMPEG" -v error -y -ss "$START" "${DURATION_ARG[@]}" -i "$RAW" \
-  -vf "mpdecimate=hi=64*12:lo=64*5:frac=0.33,setpts=N/$FPS/TB,fps=$FPS,scale=$WIDTH:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=$MAX_COLORS:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5" \
-  -loop 0 "$OUT"
+"$FFMPEG" -v error -y -i "$RAW" -filter_complex "$GRAPH" -loop 0 "$OUT"
+
+# A normalised copy of the take, purely so a human can watch it. The raw file is awkward on
+# purpose-built players and worse on general ones: simctl writes a QuickTime-branded mp4 at the
+# simulator's full panel size (1206x2622 on the reference take, past the height a lot of hardware
+# decoders accept) with multi-second gaps between frames — one reference take held its first frame
+# for 50 seconds. VLC will not play it. Constant framerate, half size, standard brand fixes that.
+"$FFMPEG" -v error -y -i "$RAW" -vf "fps=15,scale=-2:1280" \
+  -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$WORK/demo-playable.mp4" 2>/dev/null \
+  || echo "   (skipped the playable copy — no libx264 in this ffmpeg)" >&2
 
 SIZE=$(du -h "$OUT" | cut -f1)
-echo "==> Wrote $OUT ($SIZE)"
+FRAMES=$("$FFMPEG" -v info -i "$OUT" -vf showinfo -f null - 2>&1 | grep -c 'pts_time:')
+echo "==> Wrote $OUT ($SIZE, $FRAMES frames)"
 echo "    raw capture kept at $RAW"

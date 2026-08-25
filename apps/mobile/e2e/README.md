@@ -280,20 +280,31 @@ why `demo.yaml` opens on the zoom instead of a tap on the already-selected Brows
 beat that doesn't move is one the scan can't see. `launch.yaml` runs before the recorder starts so
 the app is already on Browse, and the recorded flow re-enters with `stopApp: false`.
 
-`record-demo.sh` reports the worst in-motion gap but does **not** fail on it, and that limit is
-worth knowing before trying to tighten it: on variable-framerate video a still screen and a
-stalled screen are the same signal — no frames. Two runs failed on that ambiguity (an 8.3s reader
-hold, then the 380ms boundary between a hold and the movement after it) before it became a
-warning. It also matters less than it looks, because the encode re-times every surviving frame to
-a constant rate: a hitch in the source can't become a hitch in the GIF, only fewer frames
-describing the same motion.
+Both recorders write **variable-framerate** video: no frames at all while the screen is still, and
+the device's real rate during an animation. On a reference take that was 284 frames across 103
+seconds — 97.4s of stillness against 5.7s of movement, at a median 17ms spacing, meaning the
+simulator was rendering a smooth ~60fps the whole time. The capture is not the fragile part.
 
-The encode strips dead air (`mpdecimate`) and re-times what's left, which is what keeps a slow CI
-take watchable — commands cost 2-5s each on that simulator, and without it a 28-second movement
-window encodes to 28 seconds of mostly-frozen GIF. Size is frame count x area x palette: `WIDTH`
-and `MAX_COLORS` are the knobs that move it (240px/128 colors measured 3.9MB, 220/96 measured
-3.0MB). `FPS` is **not** one of them — `setpts=N/FPS/TB` re-times every surviving frame, so
-lowering it stretches playback rather than dropping anything.
+Turning that into a GIF is. The tempting compression is `mpdecimate` plus `setpts=N/FPS/TB` — drop
+duplicate frames, re-time the rest to a constant rate — and it is wrong in a way that looks like an
+app bug rather than an encoding one: **re-timestamping discards duration**, so playback speed ends
+up set by how many frames happened to be captured. A 300ms zoom caught in 8 frames stretches to
+533ms; a 2s scroll caught in 3 frames finishes instantly. The first GIF built that way played parts
+of itself at 4x slow motion and parts at 10x speed.
+
+`scripts/demo-ranges.py` does it properly: it reads the frame timestamps, treats anything sparser
+than `STILL_GAP` as a hold, and emits an ffmpeg `trim`/`concat` graph that keeps the movements at
+their original spacing while capping each hold at `HOLD` seconds. A plain `fps` filter then
+resamples to the target rate. Real timing survives, the dead air doesn't, and the beats between
+steps remain. On the reference take: 82 frames, 5.5s, 1.6MB.
+
+Size is frame count x area x palette, so `WIDTH`, `MAX_COLORS` and `FPS` all move it (220px/96
+colours/15fps measured 1.6MB; 240px/128 colours measured 3.9MB).
+
+The run also uploads a `demo-playable.mp4` next to the raw one. The raw file is the simulator's own
+output — full panel size (1206x2622 on the reference take, past the height many hardware decoders
+accept), QuickTime brand, and gaps as long as 50 seconds between frames. ffmpeg reads it; VLC does
+not. The playable copy is a constant-framerate half-size version for watching.
 
 ### Why the workflow is iOS-only
 
