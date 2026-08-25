@@ -81,10 +81,29 @@ export const TITLES = [
   LONG_TITLE,
 ];
 
-const SUBS = [
-  'Ch. 176 · 2h ago', 'Ch. 88 · 1d ago', 'Ch. 42 · 3d ago', 'Ch. 210 · 5h ago',
-  'Ch. 12 · 1w ago', 'Ch. 305 · 12h ago',
+const AGES = [
+  '2h ago', '5h ago', '9h ago', '14h ago', '1d ago', '2d ago',
+  '3d ago', '5d ago', '1w ago', '2w ago', '3w ago', '1mo ago',
 ];
+
+/** Only ONE mock bridge captions its cards. Sources genuinely differ on whether they expose a
+ *  latest-chapter line, and a catalog where every card carries one never exercises the card
+ *  without it — nor shows what a mixed shelf looks like, which is what a real multi-source browse
+ *  actually is. See `SUBTITLE_BRIDGE`. */
+function subFor(seed: string): string {
+  const h = hash(seed);
+  // Spread over a wide range rather than cycling a fixed list: a shelf where every third card
+  // repeats "Ch. 176 · 2h ago" reads as one series duplicated, not as a library.
+  //
+  // The xor-shift is load-bearing. `hash` is FNV-1a, which is near-linear across seeds that differ
+  // only in a trailing index, so a bare `h % 320` walked the shelf in an exact arithmetic
+  // sequence — 256, 237, 218, 199 — visibly counting down by 19. Folding the high bits in first
+  // breaks that; the age index reads a different slice of the word so the two don't correlate.
+  return `Ch. ${3 + ((h ^ (h >>> 15)) % 320)} · ${AGES[(h >>> 7) % AGES.length]}`;
+}
+
+/** Matches `slugify('Panelfox')` in `MOCK_BRIDGE_NAMES`. */
+const SUBTITLE_BRIDGE = 'panelfox';
 
 export const cover = (seed: string | number) =>
   `https://picsum.photos/seed/comical-${seed}/300/450`;
@@ -217,7 +236,11 @@ function entry(
     title: TITLES[(h + i) % TITLES.length],
     cover: coverForBridge(seed, opts.bridgeId),
   };
-  if (opts.sub) e.sub = SUBS[(h + i) % SUBS.length];
+  // No bridge means a single-source context (the plain home page), where the caption is all there
+  // is to distinguish cards; with a bridge, only the designated one captions.
+  if (opts.sub && (opts.bridgeId === undefined || opts.bridgeId === SUBTITLE_BRIDGE)) {
+    e.sub = subFor(seed);
+  }
   if (opts.badges && i % 3 === 0)
     e.badges = [{ text: 'NEW', position: 'top-left', tone: 'info' }];
   if (opts.badges && i % 4 === 1)
@@ -241,7 +264,10 @@ function items(
  * `bridgeId` is only meaningful for `VARIED_ASPECT_BRIDGE` (see `coverForBridge`).
  */
 export function mockHomeSections(page = 'home', bridgeId?: string): RailSection[] {
-  const p = page === 'home' ? '' : `${page}-`;
+  // Salted with the bridge as well as the page. Without it every bridge generated the identical
+  // seeds, so a browse screen stacking three bridges' shelves showed the same four series three
+  // times over and made the mock catalog look far thinner than it is.
+  const p = `${bridgeId ? `${bridgeId}-` : ''}${page === 'home' ? '' : `${page}-`}`;
   const featured = items(`${p}hero`, 6, { sub: true, bridgeId });
   // On home, force the lead featured card to carry the very long title (and a
   // stable id whose detail page also gets the "ton of tags" treatment) so the
