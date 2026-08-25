@@ -37,7 +37,7 @@ appId: com.porksphere.comical
 # commands are optional so that a tap landing while the page is already opening -- the one race this
 # introduces -- doesn't fail the flow; the assert after the loop is what actually gates it.
 - repeat:
-    maxRuns: 3
+    times: 3
     while:
       notVisible:
         id: "series.action.read"
