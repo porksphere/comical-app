@@ -181,7 +181,36 @@ export const TopLevelGutter = Spacing.three;
  * 0 (full device width). Callers add their own edge gutter on top of this (`TopLevelGutter` for the
  * card surfaces). */
 export const topLevelCenterInset = (width: number): number =>
-  Platform.OS === 'web' ? Math.max(0, (width - MaxTopLevelWidth) / 2) : 0;
+  Platform.OS === 'web' ? Math.max(0, (width - navInsetFor(width) - MaxTopLevelWidth) / 2) : 0;
+
+/**
+ * The side navigation, on viewports wide enough for it.
+ *
+ * Three layouts, not two: a bottom bar on phones, the compact top-right icon row in between, and a
+ * labelled sidebar once there's width to spare. The sidebar REPLACES the top row rather than joining
+ * it — two nav surfaces at once reads as a mistake.
+ *
+ * `SidebarBreakpoint` is `MaxTopLevelWidth - 160`, not a round number picked by eye: below it the
+ * sidebar would eat into content that hasn't yet reached its max width, so the grid loses a column
+ * to gain a nav rail. Above it the content column is already capped and the sidebar takes space the
+ * page was leaving as margin anyway.
+ */
+export const SidebarWidth = 240;
+export const SidebarBreakpoint = MaxTopLevelWidth - 160;
+
+/**
+ * How far the left nav insets content at this width — 0 when the sidebar isn't showing.
+ *
+ * Deliberately a pure function of width rather than a store: the sidebar's presence is derived from
+ * the viewport and nothing else, so every consumer can compute it from the `useWindowDimensions()`
+ * they already have. That's what keeps `topLevelCenterInset` above correct with no change at any of
+ * its call sites — the slot is padded by this, and the centring maths subtracts the same value, so
+ * the two agree by construction instead of by convention.
+ *
+ * NOT web-gated, unlike `topLevelCenterInset`: a landscape iPad is exactly the case the sidebar is
+ * for, and the padding has to apply there even though native content isn't width-capped.
+ */
+export const navInsetFor = (width: number): number => (width >= SidebarBreakpoint ? SidebarWidth : 0);
 /** Standard height of a tappable row — the filter bar's own controls
  *  (`CONTROL_HEIGHT` in filter-types.ts) and every selectable list row inside
  *  an overlay (genre/tag checkboxes, bridge/page picker rows, …), so a row

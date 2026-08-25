@@ -13,9 +13,10 @@ import {
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppSidebar, SidebarItem } from '@/components/app-sidebar';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
-import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { DesktopTopBarHeight, MaxTopLevelWidth, navInsetFor, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
@@ -258,6 +259,10 @@ export default function AppTabs() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the point IS the post-hydration render: React's own remedy for an SSR mismatch, and the cascade is the fix rather than a cost.
   useEffect(() => setHydrated(true), []);
   const isMobile = !hydrated || width < MOBILE_BREAKPOINT;
+  // The third layout. `navInsetFor` is the single source of truth for whether the sidebar is
+  // showing — the same function the content-centring maths consults, so the rail and the page can't
+  // disagree about how much room it takes.
+  const sidebar = !isMobile && navInsetFor(width) > 0;
 
   // Fade the mobile bottom bar away while scrolling down (web only - see hook);
   // bringing it back on upward scroll, at the top, or when a tab is touched (`reveal`).
@@ -292,12 +297,18 @@ export default function AppTabs() {
     () =>
       TABS.map((tab) => (
         <TabTrigger key={tab.name} name={tab.name} asChild>
-          <TabButton mobile={isMobile} Icon={tab.Icon} onInteract={reveal} routeName={tab.name} noRecede={tab.noRecede}>
+          <TabButton
+            mobile={isMobile}
+            sidebar={sidebar}
+            Icon={tab.Icon}
+            onInteract={reveal}
+            routeName={tab.name}
+            noRecede={tab.noRecede}>
             {tab.label}
           </TabButton>
         </TabTrigger>
       )),
-    [isMobile, reveal],
+    [isMobile, sidebar, reveal],
   );
 
   // See the wrapper below — both rest at identity/transparent unless the series page is open.
@@ -313,12 +324,28 @@ export default function AppTabs() {
       <Tabs style={styles.tabs}>
         {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
             appearing in one frame — see `tab-slot-fade`. */}
-        <TabSlot style={styles.slot} renderFn={renderFadingTabScreen} />
+        {/* Padded, not overlaid: the sidebar is a real column, so content centres in what's left.
+            `TabSlot` stays a DIRECT child of `Tabs` — wrapping it in a row View alongside the rail
+            would read better, but the navigator discovers its slot by child type the same way it
+            discovers TabList (see TAB_REGISTRATION), and nesting it yields a blank screen. */}
+        <TabSlot
+          style={[styles.slot, sidebar && { paddingLeft: navInsetFor(width) }]}
+          renderFn={renderFadingTabScreen}
+        />
+
+        {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
+        {sidebar && (
+          <View style={styles.sidebarWrap}>
+            <AppSidebar top={insets.top}>{triggers}</AppSidebar>
+          </View>
+        )}
 
         {/* Desktop: icon-only nav pinned to the top-right, aligned with the Browse selector bar row
             (top = its paddingTop, height = the subtitle line-height so the icons centre against the
             selectors). */}
-        {!isMobile && <View style={[styles.topNav, { top: insets.top, right: navRight }]}>{triggers}</View>}
+        {!isMobile && !sidebar && (
+          <View style={[styles.topNav, { top: insets.top, right: navRight }]}>{triggers}</View>
+        )}
 
         {isMobile && (
           <Animated.View
@@ -374,6 +401,7 @@ function TabButton({
   children,
   isFocused,
   mobile,
+  sidebar,
   Icon,
   onInteract,
   routeName,
@@ -382,6 +410,7 @@ function TabButton({
   ...props
 }: TabTriggerSlotProps & {
   mobile?: boolean;
+  sidebar?: boolean;
   Icon: LucideIcon;
   onInteract?: () => void;
   routeName: string;
@@ -424,6 +453,24 @@ function TabButton({
           {routeName === 'settings' && <SettingsTabBadge />}
         </View>
       </Pressable>
+    );
+  }
+
+  // Wide: the same trigger, drawn as a labelled row. The badges are passed through rather than
+  // rebuilt so Activity/Settings keep the one implementation.
+  if (sidebar) {
+    return (
+      <SidebarItem
+        {...props}
+        testID={`tab.${routeName}`}
+        Icon={Icon}
+        label={typeof children === 'string' ? children : routeName}
+        active={isFocused}
+        badge={
+          routeName === 'activity' ? <ActivityTabBadge /> : routeName === 'settings' ? <SettingsTabBadge /> : undefined
+        }
+        onPress={handlePress}
+      />
     );
   }
 
@@ -473,6 +520,14 @@ const styles = StyleSheet.create({
     display: 'none',
   },
   // --- Desktop top-right icon nav ---
+  // Absolute so TabSlot can stay a direct child of Tabs (see the note at the slot); the slot's own
+  // paddingLeft is what actually reserves the space, so this never covers content.
+  sidebarWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+  },
   topNav: {
     position: 'absolute',
     // right is set inline so it tracks the constrained content edge.
