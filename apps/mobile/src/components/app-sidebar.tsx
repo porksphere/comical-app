@@ -12,6 +12,8 @@
 import { type LucideIcon } from 'lucide-react-native';
 import { Platform, Pressable, StyleSheet, Text, View, type PressableProps } from 'react-native';
 
+import { ChevronDownIcon, ChevronRightIcon } from '@/components/icons/ui-icons';
+
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { Fonts, SidebarWidth, Spacing } from '@/constants/theme';
@@ -125,4 +127,120 @@ const styles = StyleSheet.create({
     fontSize: 15,
     flexShrink: 1,
   },
+  section: { marginTop: Spacing.three },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    height: 28,
+    paddingHorizontal: Spacing.two,
+    borderRadius: Spacing.two,
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
+  },
+  sectionLabel: {
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  sectionBody: { gap: 1, marginTop: Spacing.half },
+  subItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    height: 34,
+    // Indented to the top-level rows' LABEL, not their icon, so the hierarchy is legible at a glance.
+    paddingLeft: Spacing.three + 22 + Spacing.three - 18,
+    paddingRight: Spacing.three,
+    borderRadius: Spacing.two,
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
+  },
+  subDot: { width: 18, height: 18 },
+  subLabel: {
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    flexShrink: 1,
+  },
 });
+
+/**
+ * A collapsible group — a heading that toggles its children.
+ *
+ * Collapsing is what makes an UNBOUNDED list safe in a fixed-height rail: a source can advertise
+ * as many pages as it likes, and the five top-level destinations must never be pushed below the
+ * fold by one. The open/closed choice is a device-local preference (`persisted$`), so a collapsed
+ * group stays collapsed across launches rather than re-expanding to bury the nav again.
+ */
+export function SidebarSection({
+  label,
+  open,
+  onToggle,
+  children,
+}: {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const theme = useTheme();
+  const { hovered, handlers } = useHover();
+  const Chevron = open ? ChevronDownIcon : ChevronRightIcon;
+
+  return (
+    <View style={styles.section}>
+      <Pressable
+        {...handlers}
+        testID={`sidebar.section.${label.toLowerCase()}`}
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        style={[styles.sectionHeader, hovered && { backgroundColor: theme.backgroundSelected }]}>
+        <Chevron color={theme.textSecondary} size={14} />
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{label}</Text>
+      </Pressable>
+      {/* Unmounted, not hidden, when closed: the children are query-backed rows, and keeping a
+          collapsed group mounted would keep re-rendering a list nobody can see. */}
+      {open && <View style={styles.sectionBody}>{children}</View>}
+    </View>
+  );
+}
+
+/** A child row inside a section — indented, lighter, and without the icon slot the top-level
+ *  destinations use, so the two levels never read as peers. */
+export function SidebarSubItem({
+  label,
+  active,
+  thumbnail,
+  testID,
+  onPress,
+}: {
+  label: string;
+  active?: boolean;
+  thumbnail?: React.ReactNode;
+  testID: string;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  const { hovered, handlers } = useHover();
+  const color = active ? theme.text : theme.textSecondary;
+
+  return (
+    <Pressable
+      {...handlers}
+      testID={testID}
+      onPress={onPress}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+      style={({ pressed }) => [
+        styles.subItem,
+        (active || hovered) && { backgroundColor: theme.backgroundSelected },
+        pressed && styles.pressed,
+      ]}>
+      {thumbnail ?? <View style={styles.subDot} />}
+      <Text numberOfLines={1} style={[styles.subLabel, { color, fontWeight: active ? '600' : '400' }]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
