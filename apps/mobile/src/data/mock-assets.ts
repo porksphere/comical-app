@@ -14,7 +14,7 @@
  * means bumping this to the commit that carries it. That commit stays fetchable even if its branch
  * is squash-merged and deleted, because GitHub keeps `refs/pull/N/head` forever.
  */
-const REF = 'd0801365f22dd7ede023cd2a5c643024b1b18199';
+const REF = '9374f25cfaa6ff16402398fd1a4842aeb7a42dd4';
 const ASSETS = `https://cdn.jsdelivr.net/gh/porksphere/comical-app@${REF}/apps/mobile/assets/mock`;
 
 const set = (dir: string, count: number, ext: string): string[] =>
