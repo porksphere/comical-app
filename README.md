@@ -6,8 +6,10 @@
 
 <p align="center">A cross-platform comic reader for iOS, Android, and the web.</p>
 
-Comical ships with no sources. You add a registry, install the bridges you want, and read from
-those.
+<p align="center">
+  Comical ships with no sources. You add a registry, install the bridges you want,<br />
+  and read from those.
+</p>
 
 ## Install
 
@@ -15,7 +17,7 @@ those.
 
 Install through **[SideStore](https://sidestore.io)** or **[AltStore](https://altstore.io)**.
 
-Add the release channel as a source — **Sources → +** — to get updates:
+Add the release channel as a source (**Sources → +**) to get updates:
 
 ```
 https://github.com/porksphere/comical-app/releases/download/ios-release/apps.json
@@ -26,49 +28,26 @@ Or install `comical-unsigned.ipa` from the
 
 ### Android
 
-**[⬇ comical-android.apk](https://github.com/porksphere/comical-app/releases/download/android-release/comical-android.apk)**
+Install
+**[comical-android.apk](https://github.com/porksphere/comical-app/releases/download/android-release/comical-android.apk)**
+directly.
 
 ### Web
 
-The app and the backend run as two services:
-
-```yaml
-services:
-  comical-host:
-    image: ghcr.io/porksphere/comical-host:latest
-    container_name: comical-host
-    environment:
-      - COMICAL_ORIGIN=*
-      # - COMICAL_TOKEN=change-me   # optional bearer auth
-    volumes:
-      - ./comical-host:/data
-    ports:
-      - 3100:3100
-    restart: unless-stopped
-
-  comical-app-web:
-    image: ghcr.io/porksphere/comical-app-web:latest
-    container_name: comical-app-web
-    environment:
-      - COMICAL_SERVER=http://localhost:3100
-    ports:
-      - 3300:80
-    depends_on:
-      - comical-host
-    restart: unless-stopped
-```
-
-- **`COMICAL_SERVER`** is the URL the *browser* hits, not the compose service name — past a local
-  trial, set it to the backend's public address. It can also be overridden in **Settings**.
-- **`/data`** persists your library, settings, and installed bridges.
+The frontend and backend can be run as two Docker containers. See
+**[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)** for the compose file and configuration.
 
 A mock preview is deployed to
 **[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**.
 
+### Windows & macOS
+
+In development.
+
 ## How it works
 
-Sources are **bridges** — per-source adapters that Comical downloads and verifies from the
-registries you add. Public ones are listed under the
+A **bridge** is an adapter that sources series from one site or service. Comical downloads and
+verifies bridges from the registries you add; public ones are listed under the
 **[`comical-registry` topic](https://github.com/topics/comical-registry)** on GitHub.
 
 On iOS and Android, bridges run on-device and no server is involved. On the web they run in the
