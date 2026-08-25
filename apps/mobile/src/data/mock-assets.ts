@@ -31,5 +31,7 @@ export const MOCK_COVERS_VARIED: string[] = set('covers-varied', 5, 'png');
 /** Bridge list icons. */
 export const MOCK_THUMBS: string[] = set('thumbs', 6, 'png');
 
-/** Little Nemo in Slumberland, Winsor McCay, 1907. Public domain. */
+/** Pepper&Carrot by David Revoy, CC BY 4.0. The licence requires attribution — it is carried in
+ *  `assets/mock/README.md`, which is also where the note on why this isn't public-domain 1907
+ *  newspaper art lives. */
 export const MOCK_PAGES: string[] = set('pages', 6, 'jpg');

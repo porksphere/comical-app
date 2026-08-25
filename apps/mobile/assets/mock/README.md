@@ -25,24 +25,33 @@ The cost is that mock mode is online-only.
 24 PNGs from `scripts/generate-mock-covers.py`. Flat fields with one rounded motif, everything
 derived from a seed. Rerun the script to change the design; the output is committed.
 
-## `pages/` — Little Nemo in Slumberland, Winsor McCay, 1907
+## `pages/` — Pepper&Carrot, David Revoy
 
-Public domain. Published 1905–1914 in the *New York Herald*, so PD in the US under the pre-1929
-rule; McCay died in 1934, so life+70 expired worldwide in 2005 as well. Sourced from Wikimedia
-Commons, every file reporting `Public domain` in its licence field.
+**CC BY 4.0.** Attribution is a licence condition here, not a courtesy:
 
-No attribution is legally required. The provenance is recorded anyway because it is the thing
-nobody can reconstruct from the files themselves, and because "where did this art come from" is a
-question worth being able to answer instantly.
+> *Pepper&Carrot* by David Revoy — https://www.peppercarrot.com — licensed under
+> [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Downscaled and recompressed for use
+> as fixtures; not otherwise altered.
 
 | file | source |
 |------|--------|
-| `00.jpg` | [Little Nemo 1907-02-03](https://commons.wikimedia.org/wiki/File:Little_Nemo_1907-02-03.jpg) |
-| `01.jpg` | [Little Nemo 1907-03-10](https://commons.wikimedia.org/wiki/File:Little_Nemo_1907-03-10.jpg) |
-| `02.jpg` | [Little Nemo 1907-03-31](https://commons.wikimedia.org/wiki/File:Little_Nemo_1907-03-31.jpg) |
-| `03.jpg` | [Little Nemo 1907-04-07](https://commons.wikimedia.org/wiki/File:Little_Nemo_1907-04-07.jpg) |
-| `04.jpg` | [Little Nemo 1907-04-28](https://commons.wikimedia.org/wiki/File:Little_Nemo_1907-04-28.jpg) |
-| `05.jpg` | [Little Nemo 1907-05-05](https://commons.wikimedia.org/wiki/File:Little_Nemo_1907-05-05.jpg) |
+| `00.jpg` | [Episode 2, *Rainbow Potions*, page 1](https://www.peppercarrot.com/en/webcomic/ep02_Rainbow-potions.html) |
+| `01.jpg` | Episode 2, page 2 |
+| `02.jpg` | Episode 2, page 3 |
+| `03.jpg` | Episode 2, page 4 |
+| `04.jpg` | Episode 2, page 5 |
+| `05.jpg` | [Episode 1, *Potion of Flight*, page 1](https://www.peppercarrot.com/en/webcomic/ep01_Potion-of-Flight.html) |
 
-Downscaled to 800px wide, JPEG q64. The originals are ~1750x2300 and ~1MB each; at 800px the
-lettering is still legible on a phone, which is the only bar that matters here.
+Episode 2's closing page is deliberately not among these — it is the patron credits panel, not comic
+art. Downscaled to 800px wide, JPEG q64, from the site's own low-res exports.
+
+### Why not Little Nemo
+
+The first version of this set used *Little Nemo in Slumberland* (1907), which is public domain and
+was chosen for exactly that reason. It was replaced because the licence was never the only question:
+Impy, a recurring character, is a dark-skinned "jungle imp" drawn as the racial caricature that
+period newspaper strips traded in, and he turns up across the run rather than in a few avoidable
+strips — three of the six pages shipped here, and three of four replacement candidates pulled at
+random. Public domain says nothing about whether art belongs on a project's front page. Anything
+sourced from that era needs looking at panel by panel, and a modern CC-licensed comic skips the
+problem entirely.
