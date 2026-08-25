@@ -56,7 +56,7 @@ export type MetaCell = { label: string; value: string };
 
 export type Chapter = {
   id: string;
-  /** Display name, e.g. "Chapter 176 — The Spirit Zone". */
+  /** Display name, e.g. "Chapter 176 — The Coast Road". */
   name: string;
   /** Epoch ms the chapter was published (mirrors the contract's `publishedAt`). */
   date: number;

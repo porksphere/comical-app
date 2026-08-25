@@ -83,3 +83,7 @@ npm-debug.*
 
 # Local env
 .env*.local
+
+# Python bytecode (scripts/ has a few utility scripts)
+__pycache__/
+*.pyc

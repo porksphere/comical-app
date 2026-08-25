@@ -45,6 +45,7 @@ import type {
   AvailableTracker,
   SettingValue,
 } from './api';
+import { MOCK_COVERS, MOCK_COVERS_VARIED, MOCK_PAGES, MOCK_THUMBS } from './mock-assets';
 
 export type {
   BadgePosition,
@@ -68,48 +69,98 @@ export type {
  * full-title peek (the title truncates with "…" and reveals on hover/hold).
  * Length is in the spirit of real bridge titles (e.g. light-novel adaptations).
  */
+/** Deliberately absurd length, to exercise truncation and wrapping. Invented, like everything else
+ *  here — see the note on META below. */
 export const LONG_TITLE =
-  'I Got a Cheat Skill in Another World and Became Unrivaled in the Real World, Too: The Saga of the Reincarnated Cartographer';
+  'I Was Reincarnated as the Villain\'s Cartographer and Now Everyone Wants My Maps: A Chronicle of the Seventh Continent';
 
 export const TITLES = [
   'The Silent Sea', 'Crimson Harbor', 'Paper Moons', 'A Study in Ash',
   'Northern Lights', 'The Glass Garden', 'Echoes of Tomorrow', 'Saltwater Hymns',
   'The Last Cartographer', 'Velvet Machine', 'Whisper of Pines', 'Iron & Ink',
-  'Spirit Zone', 'Ashen Crown', 'Moonlit Vagrant', 'The Ninth Tower',
+  'The Coast Road', 'Ashen Crown', 'Moonlit Vagrant', 'The Ninth Tower',
   LONG_TITLE,
 ];
 
-const SUBS = [
-  'Ch. 176 · 2h ago', 'Ch. 88 · 1d ago', 'Ch. 42 · 3d ago', 'Ch. 210 · 5h ago',
-  'Ch. 12 · 1w ago', 'Ch. 305 · 12h ago',
+const AGES = [
+  '2h ago', '5h ago', '9h ago', '14h ago', '1d ago', '2d ago',
+  '3d ago', '5d ago', '1w ago', '2w ago', '3w ago', '1mo ago',
 ];
 
-export const cover = (seed: string | number) =>
-  `https://picsum.photos/seed/comical-${seed}/300/450`;
+/** Only ONE mock bridge captions its cards. Sources genuinely differ on whether they expose a
+ *  latest-chapter line, and a catalog where every card carries one never exercises the card
+ *  without it — nor shows what a mixed shelf looks like, which is what a real multi-source browse
+ *  actually is. See `SUBTITLE_BRIDGE`. */
+function subFor(seed: string): string {
+  const h = hash(seed);
+  // Spread over a wide range rather than cycling a fixed list: a shelf where every third card
+  // repeats "Ch. 176 · 2h ago" reads as one series duplicated, not as a library. The age reads a
+  // different slice of the word so the two don't correlate.
+  return `Ch. ${3 + (h % 320)} · ${AGES[(h >>> 7) % AGES.length]}`;
+}
 
-/** A handful of cover box shapes (width×height), deterministically picked per
- *  series — used only for `VARIED_ASPECT_BRIDGE`'s series so ONE mock bridge
- *  stands in for a real bridge whose thumbnails aren't all cropped to a
- *  uniform shape (every other mock bridge stays a fixed 300×450 / 2:3, same
- *  as `cover` above). Exercises `SeriesCard`/`PageThumb`'s aspect-ratio-lands
- *  shrink animation, which a uniform-2:3 catalog never triggers. */
-const VARIED_COVER_SHAPES: [width: number, height: number][] = [
-  [300, 450], // 2:3 — matches the default placeholder, no visible shrink
-  [300, 400],
-  [300, 350],
-  [300, 300], // square
-  [300, 220], // landscape-ish — the most visible shrink
-];
+/** Matches `slugify('Panelfox')` in `MOCK_BRIDGE_NAMES`. */
+const SUBTITLE_BRIDGE = 'panelfox';
 
-/** Slug of the one mock bridge whose covers vary shape (see
- *  `VARIED_COVER_SHAPES`); every other mock bridge reports the uniform
- *  `cover()` shape. Matches `slugify('Nightshelf')` in `MOCK_BRIDGE_NAMES`. */
+export const cover = (seed: string | number) => MOCK_COVERS[hash(String(seed)) % MOCK_COVERS.length]!;
+
+/** Slug of the one mock bridge whose covers AREN'T a uniform 2:3, so ONE mock bridge stands in for
+ *  a real one whose thumbnails aren't all cropped to the same shape. That exercises
+ *  `SeriesCard`/`PageThumb`'s aspect-ratio-lands shrink animation, which a uniform catalog never
+ *  triggers. The shapes themselves now live in `scripts/generate-mock-covers.py`, which draws
+ *  `assets/mock/covers-varied/` at those sizes. Matches `slugify('Nightshelf')` in
+ *  `MOCK_BRIDGE_NAMES`. */
 const VARIED_ASPECT_BRIDGE = 'nightshelf';
 
 function coverForBridge(seed: string, bridgeId?: string): string {
   if (bridgeId !== VARIED_ASPECT_BRIDGE) return cover(seed);
-  const [w, h] = VARIED_COVER_SHAPES[hash(seed) % VARIED_COVER_SHAPES.length]!;
-  return `https://picsum.photos/seed/comical-${seed}/${w}/${h}`;
+  return MOCK_COVERS_VARIED[hash(seed) % MOCK_COVERS_VARIED.length]!;
+}
+
+/** How many motifs `scripts/generate-mock-covers.py` draws. It assigns them by POSITION, so cover
+ *  `k` draws motif `k % COVER_MOTIFS` and this side can tell what a cover looks like from its index
+ *  alone, with no lookup table to keep in step. */
+const COVER_MOTIFS = 6;
+
+/** Covers walked motif-first: one from each motif in turn. `walk` below gives distinct INDICES,
+ *  which turns out not to be the same thing as distinct DRAWINGS -- three of the first four cards on
+ *  Browse came back as the same circle in the same greys, all different covers. Cycling the motifs
+ *  makes neighbours differ by construction. Both the motif order and each motif's own covers are
+ *  shuffled per rail, so two shelves starting on the same motif still diverge. */
+function walkCovers(set: string[], salt: string, i: number): string {
+  const motifs: number[][] = [];
+  for (let k = 0; k < set.length; k++) (motifs[k % COVER_MOTIFS] ??= []).push(k);
+  const groups = motifs.filter((g) => g.length > 0);
+  let h = hash(salt);
+  const next = () => (h = (Math.imul(h, 1664525) + 1013904223) >>> 0);
+  const shuffle = <T,>(a: T[]): T[] => {
+    for (let k = a.length - 1; k > 0; k--) {
+      const j = next() % (k + 1);
+      [a[k], a[j]] = [a[j]!, a[k]!];
+    }
+    return a;
+  };
+  shuffle(groups);
+  for (const g of groups) shuffle(g);
+  const group = groups[i % groups.length]!;
+  return set[group[Math.floor(i / groups.length) % group.length]!]!;
+}
+
+/** Walk a fixture set in a per-rail shuffled order: card `i` takes the i-th entry of a permutation
+ *  seeded by the rail. Two properties matter, and stepping the set by an offset and a stride only
+ *  got the first. No shelf repeats an entry (that reads as one series listed twice rather than as a
+ *  catalog); and no two shelves draw the same run — offset x stride was 120 combinations, which
+ *  over a browse screen's 30 rails collided six times, including on the two featured shelves
+ *  sitting one above the other. Permutations are too numerous to collide by accident. */
+function walk<T>(set: T[], salt: string, i: number): T {
+  const perm = [...set];
+  let h = hash(salt);
+  for (let k = perm.length - 1; k > 0; k--) {
+    h = (Math.imul(h, 1664525) + 1013904223) >>> 0; // LCG step, so each swap reads a fresh word
+    const j = h % (k + 1);
+    [perm[k], perm[j]] = [perm[j]!, perm[k]!];
+  }
+  return perm[i % perm.length]!;
 }
 
 /** Deterministic pseudo-random so a given id always yields the same entry. */
@@ -119,6 +170,16 @@ function hash(s: string): number {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
+  // Avalanche, and it is load-bearing. Raw FNV-1a correlates hard across the seeds this module
+  // actually generates — `${bridge}-hero-${i}` and friends, differing in a prefix or a trailing
+  // index — so a plain `% n` at a call site returned a near-arithmetic sequence: the three
+  // bridges on Browse drew titles [11,13,11,13] each, the same four series three times over.
+  // Mixing here rather than folding at each use, so every call site can just take a modulo.
+  h ^= h >>> 16;
+  h = Math.imul(h, 2246822507);
+  h ^= h >>> 13;
+  h = Math.imul(h, 3266489909);
+  h ^= h >>> 16;
   return Math.abs(h);
 }
 
@@ -161,8 +222,7 @@ export function coverDelayMs(id: string): number {
 }
 
 /** Reader-resolution page image (taller than the 300×450 cover thumb). */
-export const readerPage = (seed: string | number) =>
-  `https://picsum.photos/seed/comical-${seed}/1080/1620`;
+export const readerPage = (seed: string | number) => MOCK_PAGES[hash(String(seed)) % MOCK_PAGES.length]!;
 
 /**
  * Flat page list for a DIRECT series. Uses the same `${seed}-p${i}` seeds as
@@ -215,7 +275,11 @@ function entry(
     title: TITLES[(h + i) % TITLES.length],
     cover: coverForBridge(seed, opts.bridgeId),
   };
-  if (opts.sub) e.sub = SUBS[(h + i) % SUBS.length];
+  // No bridge means a single-source context (the plain home page), where the caption is all there
+  // is to distinguish cards; with a bridge, only the designated one captions.
+  if (opts.sub && (opts.bridgeId === undefined || opts.bridgeId === SUBTITLE_BRIDGE)) {
+    e.sub = subFor(seed);
+  }
   if (opts.badges && i % 3 === 0)
     e.badges = [{ text: 'NEW', position: 'top-left', tone: 'info' }];
   if (opts.badges && i % 4 === 1)
@@ -229,7 +293,18 @@ function items(
   n: number,
   opts?: { badges?: boolean; unread?: boolean; sub?: boolean; bridgeId?: string },
 ): SeriesEntry[] {
-  return Array.from({ length: n }, (_, i) => entry(`${prefix}-${i}`, i, opts));
+  // Titles rotate through the list from a per-rail offset instead of being drawn per card. Drawn
+  // independently, a 16-title pool repeats within a 14-card rail often enough to be on screen most
+  // of the time, and two cards sharing a title reads as the same series listed twice rather than as
+  // a catalog. A rotation makes every card on a shelf distinct while different rails still start
+  // in different places.
+  const covers = opts?.bridgeId === VARIED_ASPECT_BRIDGE ? MOCK_COVERS_VARIED : MOCK_COVERS;
+  return Array.from({ length: n }, (_, i) => ({
+    ...entry(`${prefix}-${i}`, i, opts),
+    title: walk(TITLES, prefix, i),
+    // Salted separately from the title so a given title isn't always paired with the same drawing.
+    cover: walkCovers(covers, `${prefix}:cover`, i),
+  }));
 }
 
 /**
@@ -239,7 +314,10 @@ function items(
  * `bridgeId` is only meaningful for `VARIED_ASPECT_BRIDGE` (see `coverForBridge`).
  */
 export function mockHomeSections(page = 'home', bridgeId?: string): RailSection[] {
-  const p = page === 'home' ? '' : `${page}-`;
+  // Salted with the bridge as well as the page. Without it every bridge generated the identical
+  // seeds, so a browse screen stacking three bridges' shelves showed the same four series three
+  // times over and made the mock catalog look far thinner than it is.
+  const p = `${bridgeId ? `${bridgeId}-` : ''}${page === 'home' ? '' : `${page}-`}`;
   const featured = items(`${p}hero`, 6, { sub: true, bridgeId });
   // On home, force the lead featured card to carry the very long title (and a
   // stable id whose detail page also gets the "ton of tags" treatment) so the
@@ -258,7 +336,17 @@ export function mockHomeSections(page = 'home', bridgeId?: string): RailSection[
 
 /** Flat grid of results (search / "See all" / non-home page). */
 export function mockGrid(prefix = 'grid', n = 30, bridgeId?: string): SeriesEntry[] {
-  return items(prefix, n, { badges: true, unread: true, sub: true, bridgeId });
+  // Salted with the bridge HERE rather than at each call site. Every caller already passes a
+  // bridge and none of them put it in the prefix, so each bridge's featured rail was seeded
+  // `featured-p1` — the cross-bridge Home stacked several bridges' shelves and every one of them
+  // listed the same series in the same order. `mockHomeSections` salts its own prefix before
+  // calling `items` directly, so it doesn't come through here and isn't double-salted.
+  return items(`${bridgeId ? `${bridgeId}-` : ''}${prefix}`, n, {
+    badges: true,
+    unread: true,
+    sub: true,
+    bridgeId,
+  });
 }
 
 const GENRES = ['Fantasy', 'Action', 'Adventure', 'Drama'];
@@ -275,19 +363,25 @@ const MANY_TAGS = [
   'Reincarnation', 'Time Travel', 'Game', 'Virtual Reality', 'Survival',
   'Revenge', 'Anti-Hero', 'Cultivation', 'Demon Lord', 'Dungeon', 'Monsters',
 ];
+// Invented, and it needs to stay invented. This is the metadata a screenshot of the app shows, and
+// an earlier version carried the real credits and synopsis of a published series, which is someone
+// else's work being used to advertise this one. The SHAPES are what the layout is testing — two
+// comma-separated authors so the cell wraps, a single artist so it doesn't — so keep those and
+// change the words if this ever needs to look different.
 const META: MetaCell[] = [
   { label: 'STATUS', value: 'Ongoing' },
   { label: 'TYPE', value: 'Manhwa' },
-  { label: 'AUTHOR', value: 'Chi-U Kim, kiraz' },
-  { label: 'ARTIST', value: 'Themis' },
+  { label: 'AUTHOR', value: 'Halden Reyes, coldpress' },
+  { label: 'ARTIST', value: 'Junia Marlow' },
 ];
+// Long enough to exercise the clamp-and-expand control on the series page.
 const DESCRIPTION =
-  'After Sirone was abandoned in a stable, he was found by a family of hunters and ' +
-  'raised in a loving home. Despite the hardships of the peasant life, he learned how ' +
-  'to read from a young age and became obsessed with books, especially ones on the ' +
-  'history of magic. One day, he has an unlikely encounter with a mage and learns how ' +
-  'to enter the "spirit zone", the first step to learning how to use magic. Although ' +
-  'they say only nobles can be mages, will Sirone be able to defy the odds?';
+  'Tamsin has walked the coast road for nine winters, trading errands for meals and sleeping ' +
+  'wherever the tide allows. She keeps a ledger of every town that turned her away, and a ' +
+  'second one, unwritten, of the few that did not. When a lighthouse keeper offers her a season ' +
+  'of steady work she takes it gladly, and only later learns the light has not been lit in ' +
+  'years and that something past the rocks has been waiting for it. Staying means answering for ' +
+  'the ledger she has kept; leaving means the whole coast goes dark behind her.';
 
 const DAY = 86_400_000;
 
@@ -572,7 +666,7 @@ export async function mockGetBridges(): Promise<Bridge[]> {
     // Mock entries carry "Ch. 176 · 2h ago" subs (see `entry`'s `sub` option), so the mock bridges
     // declare the flag — the grids reserve the sub line for them, exactly like a real sub-ful bridge.
     cardSubtitles: true,
-    thumbnail: `https://picsum.photos/seed/bridge-${slugify(name)}/100/100`,
+    thumbnail: MOCK_THUMBS[hash(slugify(name)) % MOCK_THUMBS.length]!,
   }));
   bridges.push({
     id: RAIL_STRESS_BRIDGE_ID,
@@ -580,7 +674,7 @@ export async function mockGetBridges(): Promise<Bridge[]> {
     nsfw: false,
     capabilities: ['lists', 'search', 'filters', 'sort'],
     cardSubtitles: true,
-    thumbnail: `https://picsum.photos/seed/bridge-rail-stress/100/100`,
+    thumbnail: MOCK_THUMBS[hash('bridge-rail-stress') % MOCK_THUMBS.length]!,
   });
   return bridges;
 }

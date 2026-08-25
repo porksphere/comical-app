@@ -6,14 +6,15 @@
 # trigger UI... without asserting completion") — confirmed here, before writing any flow, that
 # waiting for full completion is the wrong default:
 #   - data/downloads/engine.ts has NO EXPO_PUBLIC_COMICAL_DEMO_FAST (or any) timing override — every
-#     page is a real fetch to picsum.photos (data/downloads/fetch-page.ts), unlike mock.ts's
-#     SERIES_OPEN_DELAY_MS-style constants which ARE demo-fast-gated.
+#     page is a real network fetch of the served mock art (data/downloads/fetch-page.ts, and
+#     data/mock-assets.ts for where those URLs point), unlike mock.ts's SERIES_OPEN_DELAY_MS-style
+#     constants which ARE demo-fast-gated.
 #   - series-downloads.tsx's forced-select screen auto-preselects every UNREAD chapter
 #     (`ms.selectOnly(unreadKeys)`), not just one. Since this same first Browse card is opened by
 #     several earlier flows (browse-to-reader, swipe-dismiss*, reader-navigation), at most its FIRST
 #     chapter is ever marked read — every other chapter (a mock series' chapter count regularly runs
 #     into the dozens, per series-chapters.yaml's own pagination/expand coverage) is still unread and
-#     gets preselected. Downloading dozens of chapters x several real picsum.photos page fetches each
+#     gets preselected. Downloading dozens of chapters x several real page fetches each
 #     is an unbounded, network-bound wait — not something to gate a CI job on.
 # So this flow taps "Download N chapters" (however many N is) and then waits only for the series
 # screen's own action button to visibly leave its initial "nothing downloaded" label — proof the

@@ -1,0 +1,205 @@
+name: Capture demo screenshots
+
+# Photographs the app for the README and uploads the screenshots as an artifact — Actions →
+# Capture demo screenshots → Run workflow, or `gh workflow run capture-demo.yml --ref <branch>`.
+# Download the artifact, drop the PNGs in docs/media/, commit. Deliberately not committed by the
+# workflow itself: a promo image is a thing you look at before you ship it.
+#
+# THIS USED TO RECORD A GIF, and the reason it doesn't is worth keeping. The series page's entry
+# transition does not render cleanly on a CI simulator: the recorder caught it partway through,
+# emitted no frames for 4.5 seconds, then jumped to a settled layout. That is a stall in what the
+# device drew, so no encoding setting recovers it — and cutting the stall out (which the encoder
+# did, correctly) turns a slow transition into an inexplicable jump. Stills don't care: each one
+# waits for the screen to settle and photographs a state. If motion is ever wanted, record it from
+# real hardware rather than rebuilding this — the transition renders properly there.
+#
+# WHY iOS, NOT ANDROID. The capture has to be smooth, and that rules out the Android emulator on a
+# GitHub runner: ubuntu runners have KVM (so the CPU side is fine) but no GPU, so the emulator
+# renders through SwiftShader — software GL. A Reanimated zoom transition plus full-bleed image
+# decoding under a software rasterizer drops frames, and `adb screenrecord` captures the
+# framebuffer, so the drops are baked into the file. Nothing downstream recovers a frame that was
+# never rendered. macOS runners are Apple Silicon with a real GPU: the simulator is Metal-backed
+# and `simctl io recordVideo` encodes in hardware, which is why this lane exists and the Android
+# one doesn't. Android is not offered here at all.
+#
+# The remaining smoothness levers live in the script and the flow: a warm-up pass so the recorded
+# run pays no first-load costs, host-side pauses so the device is idle between beats, and a
+# dropped-frame check that fails the job rather than shipping a stuttering GIF.
+
+on:
+  workflow_dispatch:
+    inputs:
+      width:
+        description: Width to downscale each screenshot to, in px.
+        type: string
+        default: '440'
+      from_run:
+        description: >-
+          Reuse the Simulator .app built by an earlier run of this workflow instead of building
+          one. The app only changes when the app changes, so re-shooting after a flow tweak does
+          not need the ~26-minute rebuild. Leave empty to build fresh.
+        type: string
+        default: ''
+
+# Reading another run's artifacts needs this; the default token is otherwise write-only to its own.
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: capture-demo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      from_run: ${{ steps.pick.outputs.from_run }}
+    steps:
+      - id: pick
+        run: echo "from_run=${{ inputs.from_run }}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.from_run == ''
+    uses: ./.github/workflows/build-ios-reusable.yml
+    with:
+      simulator: true
+      demo_mode: true
+      # demo_fast zeroes mock.ts's simulated latency. Worth being explicit about, because the
+      # first instinct is to leave it off "so the capture shows real behaviour": that latency is a
+      # synthetic number the mock invents, not anything a real backend does, so filming it puts
+      # made-up spinners in the GIF and makes every step on an already-slow CI simulator slower.
+      demo_fast: true
+      capture_mode: true
+      channel: ios-capture
+      mock_ref: ${{ github.sha }}
+    secrets: inherit
+
+  record:
+    needs: [resolve, build]
+    # `always()` so a skipped build (artifact reuse) doesn't skip this too, then an explicit check
+    # that the build either succeeded or was deliberately skipped — a FAILED build must not fall
+    # through to recording against a stale app.
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      # The artifact name is the reusable workflow's fixed output for `simulator: true`, hard-coded
+      # rather than read from needs.build — that output doesn't exist when the build is skipped.
+      - uses: actions/download-artifact@v4
+        with:
+          name: comical-ios-simulator-app
+          path: ${{ runner.temp }}/app
+          run-id: ${{ needs.resolve.outputs.from_run || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pillow shapes the screenshots (scripts/shape-screenshots.py). Via setup-python rather than
+      # the system interpreter because a Homebrew Python refuses `pip install` into itself (PEP 668).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pillow
+
+      - name: Install Maestro
+        # Pinned. The installer takes whatever is newest when left alone, which means a Maestro
+        # release can break these flows with nothing in this repo having changed — an unknown
+        # property in a flow file already cost a run that way. 2.8.0 is the version every lane was
+        # already getting, so this changes nothing today; it just stops tomorrow deciding for us.
+        env:
+          MAESTRO_VERSION: '2.8.0'
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Boot a simulator and install the app
+        # MAESTRO_DRIVER_STARTUP_TIMEOUT: same 240s as e2e.yml's test-ios — a freshly created,
+        # never-booted simulator takes ~2min to build/install the XCTest runner, over Maestro's
+        # 120s default. See that workflow for the full note.
+        env:
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
+        run: |
+          set -euo pipefail
+          ditto -x -k "$RUNNER_TEMP/app/comical-simulator.zip" "$RUNNER_TEMP/app"
+          APP=$(find "$RUNNER_TEMP/app" -maxdepth 1 -name "*.app" | head -1)
+
+          # Pick the device type out of the chosen runtime's own supportedDeviceTypes, exactly as
+          # e2e.yml does — a devicetype picked independently can be incompatible with the runtime
+          # and fail `simctl create` with "Incompatible device".
+          RUNTIME_JSON=$(xcrun simctl list runtimes -j | jq -c '[.runtimes[] | select(.name | test("iOS")) | select(.isAvailable)] | sort_by(.version) | last')
+          RUNTIME=$(echo "$RUNTIME_JSON" | jq -r '.identifier')
+
+          # Prefer the newest plain-or-Pro iPhone, sorted by the number in its name. The e2e lane's
+          # `tail -1` is fine for a test (any iPhone proves the selectors resolve) but picked an
+          # iPhone 11 on this image — supportedDeviceTypes is not ordered by recency. The capture
+          # is a promo image, so the hardware it's filmed on is visible in every frame.
+          #
+          # The secondary sort on `.name` is what makes the pick reproducible: "iPhone 17" and
+          # "iPhone 17 Pro" tie on the number, and those two have different screen sizes, so
+          # without it a recapture could silently change the GIF's aspect ratio.
+          DEVICE_TYPE=$(echo "$RUNTIME_JSON" | jq -r '
+            [.supportedDeviceTypes[] | select(.name | test("^iPhone [0-9]+( Pro)?$"))]
+            | sort_by((.name | capture("iPhone (?<n>[0-9]+)").n | tonumber), .name)
+            | last // empty | .identifier')
+          # Any runtime whose device names don't fit that shape falls back to the e2e lane's pick,
+          # which is still guaranteed to be a device type this runtime supports.
+          if [ -z "$DEVICE_TYPE" ]; then
+            DEVICE_TYPE=$(echo "$RUNTIME_JSON" | jq -r '.supportedDeviceTypes[] | select(.name | test("iPhone")) | .identifier' | tail -1)
+          fi
+          echo "Using runtime=$RUNTIME device_type=$DEVICE_TYPE"
+          UDID=$(xcrun simctl create comical-capture "$DEVICE_TYPE" "$RUNTIME")
+
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Screenshot
+        env:
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
+          MAESTRO_CLI_NO_ANALYTICS: '1'
+        run: |
+          set -euo pipefail
+          # Dark appearance: the app's theme preference defaults to 'system' (hooks/use-theme.ts),
+          # so setting it on the simulator is enough — no build flag, and no navigating to a
+          # settings screen that would then be in shot.
+          xcrun simctl ui "$UDID" appearance dark
+          # The status bar is IN these shots (it used to be cropped off), so pinning it is what
+          # keeps a re-shot set from looking like a different app — without it the clock and battery
+          # differ every run. 9:41 is Apple's own convention for device shots.
+          xcrun simctl status_bar "$UDID" override \
+            --time "9:41" --batteryState charged --batteryLevel 100 \
+            --cellularBars 4 --wifiBars 3 --dataNetwork wifi
+
+          maestro --device "$UDID" test \
+            --debug-output "$RUNNER_TEMP/maestro-debug" --flatten-debug-output \
+            apps/mobile/e2e/demo/screens.yaml
+
+          mkdir -p "$RUNNER_TEMP/screens"
+          # Maestro writes `takeScreenshot` output into its debug directory; the names are the ones
+          # the flow asked for.
+          find "$RUNNER_TEMP/maestro-debug" -name '0*.png' -exec cp {} "$RUNNER_TEMP/screens/" \;
+          ls -la "$RUNNER_TEMP/screens"
+          [ -n "$(ls -A "$RUNNER_TEMP/screens")" ] || { echo "!! no screenshots were produced" >&2; exit 1; }
+
+          # Round the corners and downscale — see the script for why, and for why the status bar
+          # stays in frame.
+          python3 scripts/shape-screenshots.py "${{ inputs.width || '440' }}" "$RUNNER_TEMP/screens"/*.png
+          du -h "$RUNNER_TEMP/screens"/*.png
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-screens
+          path: ${{ runner.temp }}/screens/*.png
+          retention-days: 14
+
+      # On failure the Maestro debug output carries the step screenshot and view hierarchy for
+      # whatever selector didn't resolve, which is the whole diagnosis.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: maestro-debug
+          path: ${{ runner.temp }}/maestro-debug
+          retention-days: 7
+

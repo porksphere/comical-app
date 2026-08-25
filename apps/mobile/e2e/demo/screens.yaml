@@ -1,0 +1,77 @@
+# The README's screenshots: Browse, a series page, the reader.
+#
+# WHY STILLS RATHER THAN A RECORDING. A video of this journey was tried first and abandoned, for a
+# reason worth recording so it isn't retried blind: the series page's entry transition does not
+# render cleanly on a CI simulator. On the reference take the recorder caught it partway through,
+# then emitted NO frames for 4.5 seconds, then jumped to a settled layout — a stall in the
+# rendering, not in the recording, so no encoding setting recovers it. A capture is only as good as
+# what the device drew. Stills sidestep the whole question: each one waits for the screen to settle
+# and photographs a state, and states render fine.
+#
+# `scripts/record-demo.sh` and the rest of `demo/` are kept for capturing motion on real hardware
+# locally, where the transition does render properly.
+#
+# Selectors are shared with ../mobile/browse-to-reader.yaml — see its header for how each is
+# derived. `series.action.read` is the primary action on the series page, above the fold.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- assertVisible:
+    id: "tab.browse"
+# Settle before the shutter: mock covers resolve asynchronously, and a screenshot taken a beat too
+# early catches half a grid of placeholders.
+- waitForAnimationToEnd:
+    timeout: 8000
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '1200'
+- takeScreenshot: 01-browse
+
+# Tap-and-wait, retried. One run tapped the right card, had Maestro confirm the hierarchy changed,
+# and was still on Home 26 seconds later: on a loaded CI simulator a tap on a card inside a
+# horizontal rail is occasionally swallowed, and the series page's entry transition is slow enough
+# that a single 25s wait is not much margin. Re-tapping costs nothing in the usual case, because
+# `while` is evaluated first and the loop never runs a second time once the page is up. The inner
+# commands are optional so that a tap landing while the page is already opening -- the one race this
+# introduces -- doesn't fail the flow; the assert after the loop is what actually gates it.
+- repeat:
+    times: 3
+    while:
+      notVisible:
+        id: "series.action.read"
+    commands:
+      - tapOn:
+          id: "series-card\\..*"
+          optional: true
+      - extendedWaitUntil:
+          visible:
+            id: "series.action.read"
+          timeout: 30000
+          optional: true
+- assertVisible:
+    id: "series.action.read"
+- waitForAnimationToEnd:
+    timeout: 8000
+# Longer than it looks like it needs: this is the transition that stalls for seconds on a CI
+# simulator, and the screenshot has to land after it finishes rather than during.
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '3000'
+- takeScreenshot: 02-series
+
+- tapOn:
+    id: "series.action.read"
+- assertVisible:
+    id: "reader.control.next"
+- waitForAnimationToEnd:
+    timeout: 8000
+# The reader's chrome auto-hides 3s after entry (app/series/index.tsx CHROME_HIDE_MS). Waiting past
+# that photographs the page full-bleed, which is what the reader actually looks like in use.
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '4000'
+- takeScreenshot: 03-reader

@@ -235,3 +235,51 @@ Dot-namespaced `area.element[.qualifier]`; list items suffix a stable domain id:
 `series.chapter.<key>`, `reader.toolbar.back`, `settings.category.general`. Maestro treats `id:`
 as a regex, so `series-card\\..*` matches the first card. Grep `src/` for `testID`/`testId(` to
 find more.
+
+## `demo/` — the README screenshots, not a test
+
+`demo/screens.yaml` walks Browse → a series → the reader and photographs each one; the PNGs become
+the README's screenshots. It sits in its own folder on purpose: the suite configs discover flows by
+folder (`maestro test … e2e/mobile`), so a file dropped in `mobile/` would run in CI under
+`continueOnFailure: false` and gate the real flows behind a promo shoot. `check-flow-coverage.mjs`
+only scans `e2e/{mobile,web}` for the same reason.
+
+```bash
+gh workflow run capture-demo.yml --ref <branch>
+```
+
+The PNGs come back as the `demo-screens` artifact; drop them in `docs/media/` and commit. Quantise
+them to 256 colours first — it costs nothing visible at the 240px they render at and takes the set
+from ~890KB to ~355KB. Pass `from_run` to reuse an earlier run's Simulator `.app` and skip the
+~26-minute rebuild, which is worth it whenever only the flow changed.
+
+The build under test must carry `EXPO_PUBLIC_COMICAL_DEMO_MODE=1` (deterministic mock data, so
+consecutive shoots show the same series) **and** `EXPO_PUBLIC_COMICAL_CAPTURE_MODE=1`, which
+suppresses the demo-preview pill that would otherwise sit in frame. The workflow passes both, sets the simulator to dark appearance, then crops the status bar off,
+downscales and uploads the PNGs. The crop is a fraction of height rather than a pixel count,
+because the simulator is whichever iPhone the runtime offers and the raw height moves with it.
+The 9:41 status-bar pin is kept even though the bar is cropped — it costs nothing and means a
+capture taken without the crop still matches its predecessors. Every step waits for the screen to settle before the shutter —
+mock covers resolve asynchronously, and a shot taken a beat early catches a grid of placeholders.
+
+### Why stills, and not a recording
+
+A recorded walkthrough was built first and abandoned. The blocker was not the recording: **the
+series page's entry transition does not render cleanly on a CI simulator.** The recorder caught it
+partway through, emitted no frames at all for 4.5 seconds, then jumped to a settled layout. That is
+a stall in what the device drew, so no encoding setting recovers it, and cutting the stall out
+turns a slow transition into an inexplicable jump.
+
+A misleading measurement nearly hid that: the in-motion frame cadence came out at 17ms median
+(~60fps), which reads as "the capture is smooth". It was computed only over gaps under 0.4s, so it
+excluded exactly the stalls that were the problem.
+
+Stills don't care — each one waits for a screen to settle and photographs a state, and states
+render fine. If motion is ever wanted, record it from real hardware rather than rebuilding the CI
+recorder; the transition renders properly there.
+
+### Why the workflow is iOS-only
+
+The Android emulator on a GitHub runner renders through SwiftShader — software GL, because ubuntu
+runners have KVM but no GPU — which is slow enough to affect even settling a screen before a
+screenshot. macOS runners are Apple Silicon with a real GPU and a Metal-backed simulator.

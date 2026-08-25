@@ -33,7 +33,7 @@
 #
 # So this copy only asserts the trigger round-trip (open forced-select, tap the download pill, land
 # back on the series screen) — the actual enqueue-and-progress assertion is mobile-only, where the
-# embedded engine really does complete real fetches against picsum.photos (see
+# embedded engine really does complete real fetches of the served mock art (see
 # ../mobile/downloads.yaml's header).
 #
 # Reuses two ALREADY-documented aria-label swaps from browse-to-reader.yaml's web copy: the tab bar

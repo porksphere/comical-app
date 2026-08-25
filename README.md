@@ -11,6 +11,12 @@
   and read from those.
 </p>
 
+<p align="center">
+  <img src="docs/media/01-browse.png" alt="Browsing featured series" width="240" />
+  <img src="docs/media/02-series.png" alt="A series page" width="240" />
+  <img src="docs/media/03-reader.png" alt="The reader" width="240" />
+</p>
+
 ## Install
 
 ### iOS

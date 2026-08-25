@@ -38,6 +38,7 @@ jobs:
       demo_mode: true
       demo_fast: true
       channel: android-e2e
+      mock_ref: ${{ github.sha }}
     secrets: inherit
 
   test-android:
@@ -64,6 +65,12 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Install Maestro
+        # Pinned. The installer takes whatever is newest when left alone, which means a Maestro
+        # release can break these flows with nothing in this repo having changed — an unknown
+        # property in a flow file already cost a run that way. 2.8.0 is the version every lane was
+        # already getting, so this changes nothing today; it just stops tomorrow deciding for us.
+        env:
+          MAESTRO_VERSION: '2.8.0'
         run: |
           curl -Ls "https://get.maestro.mobile.dev" | bash
           # reactivecircus/android-emulator-runner's `script:` block runs each line as its own
@@ -99,6 +106,7 @@ jobs:
       demo_mode: true
       demo_fast: true
       channel: ios-e2e
+      mock_ref: ${{ github.sha }}
     secrets: inherit
 
   test-ios:
@@ -113,6 +121,12 @@ jobs:
           path: ${{ runner.temp }}/app
 
       - name: Install Maestro
+        # Pinned. The installer takes whatever is newest when left alone, which means a Maestro
+        # release can break these flows with nothing in this repo having changed — an unknown
+        # property in a flow file already cost a run that way. 2.8.0 is the version every lane was
+        # already getting, so this changes nothing today; it just stops tomorrow deciding for us.
+        env:
+          MAESTRO_VERSION: '2.8.0'
         run: |
           curl -Ls "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
@@ -201,6 +215,12 @@ jobs:
           echo "web server never came up"; exit 1
 
       - name: Install Maestro
+        # Pinned. The installer takes whatever is newest when left alone, which means a Maestro
+        # release can break these flows with nothing in this repo having changed — an unknown
+        # property in a flow file already cost a run that way. 2.8.0 is the version every lane was
+        # already getting, so this changes nothing today; it just stops tomorrow deciding for us.
+        env:
+          MAESTRO_VERSION: '2.8.0'
         run: |
           curl -Ls "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"

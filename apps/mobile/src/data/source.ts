@@ -1065,6 +1065,12 @@ const MOCK_TOGGLE_KEY = 'comical:devUseMockData';
 /** Set only by the GH Pages preview workflow — see deploy-web.yml. */
 export const IS_DEMO_MODE = process.env.EXPO_PUBLIC_COMICAL_DEMO_MODE === '1';
 
+/** Set only by capture-demo.yml, which films the app for the README (see `apps/mobile/e2e/demo/`).
+ *  Always paired with demo mode — it suppresses the chrome that exists to caveat a demo build, so
+ *  on its own it would claim a real build is being filmed while hiding nothing worth hiding. */
+export const IS_CAPTURE_MODE =
+  IS_DEMO_MODE && process.env.EXPO_PUBLIC_COMICAL_CAPTURE_MODE === '1';
+
 // Persisted dev-only toggle (Legend State; see `lib/observable.ts`). Holds the raw stored value; the
 // `__DEV__` mask is applied at read, so a non-dev build always reports false and never activates mock
 // via the toggle. The old store wrote '1'/'0', which parse back as truthy/falsy, so the key carries over.
