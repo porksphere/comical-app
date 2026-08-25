@@ -11,6 +11,14 @@
   and read from those.
 </p>
 
+<!-- Demo GIF slot. Capture it with `gh workflow run capture-demo.yml` (or
+     `bash apps/mobile/e2e/scripts/record-demo.sh ios` locally), drop the result at
+     docs/media/demo.gif, and uncomment:
+<p align="center">
+  <img src="docs/media/demo.gif" alt="Browsing a series and opening the reader" width="300" />
+</p>
+-->
+
 ## Install
 
 ### iOS

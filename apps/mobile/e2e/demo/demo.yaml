@@ -1,0 +1,88 @@
+# The README's demo capture: Browse -> a series (zoom transition) -> a chapter -> the reader.
+#
+# This is promo footage, not a test, which is why it lives in its own folder. The suite's configs
+# discover flows by folder (`maestro test ... apps/mobile/e2e/mobile`), so a file dropped in
+# ../mobile would run in CI under `continueOnFailure: false` and gate the real flows behind a
+# recording. Run it via ../scripts/record-demo.sh, which records the screen around it; the
+# workflow that does the same on a runner is .github/workflows/capture-demo.yml.
+#
+# Every selector is shared with ../mobile/browse-to-reader.yaml and ../mobile/reader-navigation.yaml
+# (see their headers for how each id is derived), so a restyle that keeps its testIDs keeps this
+# capture working.
+#
+# PACING. The pauses below are `evalScript` spins, which run in Maestro's own JS engine on the
+# HOST, not on the device. That is the whole point: the device sits idle holding a still frame
+# while the recorder keeps rolling, so a pause costs the capture nothing. A pause implemented
+# on-device would compete for frames with the animation being filmed. Maestro has no sleep command
+# by design ("no more manual sleep() calls") because a test should wait on a condition; a capture
+# genuinely needs wall-clock time, so the viewer can register a screen before the next tap.
+appId: com.porksphere.comical
+---
+- launchApp
+
+# Let the first screen paint and settle before anything moves.
+- assertVisible:
+    id: "tab.browse"
+- evalScript: ${var e = Date.now() + 1200; while (Date.now() < e);}
+
+- tapOn:
+    id: "tab.browse"
+- waitForAnimationToEnd:
+    timeout: 5000
+- evalScript: ${var e = Date.now() + 900; while (Date.now() < e);}
+
+# The zoom: the series page grows out of the card that opened it (see AGENTS.md "Zoom
+# transitions"). The most distinctive motion in the app, and the reason this capture is a video
+# rather than a screenshot.
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.cover"
+- waitForAnimationToEnd:
+    timeout: 5000
+- evalScript: ${var e = Date.now() + 1400; while (Date.now() < e);}
+
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- evalScript: ${var e = Date.now() + 800; while (Date.now() < e);}
+
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+- assertVisible:
+    id: "reader.toolbar.back"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Hold on page 1 long enough for the reader chrome to auto-hide (3s, reader.tsx CHROME_HIDE_MS),
+# so the page turns below are filmed against a clean full-bleed page rather than the toolbar.
+- evalScript: ${var e = Date.now() + 3600; while (Date.now() < e);}
+
+- tapOn:
+    id: "reader.control.next"
+- evalScript: ${var e = Date.now() + 1100; while (Date.now() < e);}
+- tapOn:
+    id: "reader.control.next"
+- evalScript: ${var e = Date.now() + 1100; while (Date.now() < e);}
+
+# A dragged turn rather than a tap, so the capture shows the pager actually tracking a finger.
+- swipe:
+    start: "85%, 55%"
+    end: "20%, 55%"
+    duration: 400
+- evalScript: ${var e = Date.now() + 1400; while (Date.now() < e);}
+
+# Out via the OS back gesture, not reader.toolbar.back: the chrome has auto-hidden by now, so the
+# toolbar is faded and untappable (the same trap reader-navigation.yaml documents). This collapses
+# the series page back into its card, which is the other half of the zoom.
+- back
+- waitForAnimationToEnd:
+    timeout: 5000
+- evalScript: ${var e = Date.now() + 900; while (Date.now() < e);}
+- back
+- waitForAnimationToEnd:
+    timeout: 5000
+- evalScript: ${var e = Date.now() + 1200; while (Date.now() < e);}

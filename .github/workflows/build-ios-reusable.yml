@@ -87,6 +87,15 @@ on:
         type: boolean
         default: false
         required: false
+      capture_mode:
+        # Bakes EXPO_PUBLIC_COMICAL_CAPTURE_MODE=1: suppresses the demo-preview pill, which would
+        # otherwise sit in every frame of the README recording. Only capture-demo.yml sets this,
+        # always alongside demo_mode — src/data/source.ts gates the flag on demo mode for the same
+        # reason (a capture build IS a demo build; on its own the flag would only hide the caveat).
+        description: Bake EXPO_PUBLIC_COMICAL_CAPTURE_MODE=1 into the JS bundle (hides demo chrome for the README capture).
+        type: boolean
+        default: false
+        required: false
       channel:
         # Bakes EXPO_PUBLIC_COMICAL_BUILD_CHANNEL into the JS bundle — read by src/lib/sentry.ts
         # as the `buildChannel` tag on every Sentry event, so a crash report is attributable to
@@ -142,6 +151,7 @@ jobs:
       # See the `demo_mode` input above — empty for every normal (non-e2e) build.
       EXPO_PUBLIC_COMICAL_DEMO_MODE: ${{ inputs.demo_mode && '1' || '' }}
       EXPO_PUBLIC_COMICAL_DEMO_FAST: ${{ inputs.demo_fast && '1' || '' }}
+      EXPO_PUBLIC_COMICAL_CAPTURE_MODE: ${{ inputs.capture_mode && '1' || '' }}
       # See the `channel` input above — every caller must pass one.
       EXPO_PUBLIC_COMICAL_BUILD_CHANNEL: ${{ inputs.channel }}
     steps:

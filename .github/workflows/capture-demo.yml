@@ -1,0 +1,109 @@
+name: Capture demo GIF
+
+# Films the app for the README and uploads the GIF as an artifact — Actions → Capture demo GIF →
+# Run workflow, or `gh workflow run capture-demo.yml --ref <branch>`. Download the artifact, drop
+# it at docs/media/demo.gif, commit. Deliberately not committed by the workflow itself: a promo
+# image is a thing you look at before you ship it.
+#
+# WHY iOS, NOT ANDROID. The capture has to be smooth, and that rules out the Android emulator on a
+# GitHub runner: ubuntu runners have KVM (so the CPU side is fine) but no GPU, so the emulator
+# renders through SwiftShader — software GL. A Reanimated zoom transition plus full-bleed image
+# decoding under a software rasterizer drops frames, and `adb screenrecord` captures the
+# framebuffer, so the drops are baked into the file. Nothing downstream recovers a frame that was
+# never rendered. macOS runners are Apple Silicon with a real GPU: the simulator is Metal-backed
+# and `simctl io recordVideo` encodes in hardware, which is why this lane exists and the Android
+# one doesn't. record-demo.sh still supports Android for a local run against real hardware, where
+# the GPU question doesn't arise.
+#
+# The remaining smoothness levers live in the script and the flow: a warm-up pass so the recorded
+# run pays no first-load costs, host-side pauses so the device is idle between beats, and a
+# dropped-frame check that fails the job rather than shipping a stuttering GIF.
+
+on:
+  workflow_dispatch:
+    inputs:
+      width:
+        description: GIF width in px (height follows the phone aspect, ~2.1x).
+        type: string
+        default: '420'
+      fps:
+        description: GIF framerate.
+        type: string
+        default: '15'
+      max_gap_ms:
+        description: Fail if any two recorded frames are further apart than this (visible hitch).
+        type: string
+        default: '85'
+
+concurrency:
+  group: capture-demo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-ios-reusable.yml
+    with:
+      simulator: true
+      demo_mode: true
+      # demo_fast is deliberately left off: it zeroes mock.ts's simulated latency, which is right
+      # for a test suite and wrong here — the capture should show the app behaving the way it does
+      # against a real backend, spinners and all, not teleporting between screens.
+      capture_mode: true
+      channel: ios-capture
+    secrets: inherit
+
+  record:
+    needs: build
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/app
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Boot a simulator and install the app
+        # MAESTRO_DRIVER_STARTUP_TIMEOUT: same 240s as e2e.yml's test-ios — a freshly created,
+        # never-booted simulator takes ~2min to build/install the XCTest runner, over Maestro's
+        # 120s default. See that workflow for the full note.
+        env:
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
+        run: |
+          set -euo pipefail
+          ditto -x -k "$RUNNER_TEMP/app/comical-simulator.zip" "$RUNNER_TEMP/app"
+          APP=$(find "$RUNNER_TEMP/app" -maxdepth 1 -name "*.app" | head -1)
+
+          # Pick the device type out of the chosen runtime's own supportedDeviceTypes, exactly as
+          # e2e.yml does — a devicetype picked independently can be incompatible with the runtime
+          # and fail `simctl create` with "Incompatible device".
+          RUNTIME_JSON=$(xcrun simctl list runtimes -j | jq -c '[.runtimes[] | select(.name | test("iOS")) | select(.isAvailable)] | sort_by(.version) | last')
+          RUNTIME=$(echo "$RUNTIME_JSON" | jq -r '.identifier')
+          DEVICE_TYPE=$(echo "$RUNTIME_JSON" | jq -r '.supportedDeviceTypes[] | select(.name | test("iPhone")) | .identifier' | tail -1)
+          echo "Using runtime=$RUNTIME device_type=$DEVICE_TYPE"
+          UDID=$(xcrun simctl create comical-capture "$DEVICE_TYPE" "$RUNTIME")
+
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Record
+        env:
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
+          OUT: ${{ runner.temp }}/demo.gif
+          WIDTH: ${{ inputs.width }}
+          FPS: ${{ inputs.fps }}
+          MAX_GAP_MS: ${{ inputs.max_gap_ms }}
+        run: bash apps/mobile/e2e/scripts/record-demo.sh ios
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-gif
+          path: ${{ runner.temp }}/demo.gif
+          retention-days: 14

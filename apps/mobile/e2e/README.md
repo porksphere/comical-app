@@ -235,3 +235,53 @@ Dot-namespaced `area.element[.qualifier]`; list items suffix a stable domain id:
 `series.chapter.<key>`, `reader.toolbar.back`, `settings.category.general`. Maestro treats `id:`
 as a regex, so `series-card\\..*` matches the first card. Grep `src/` for `testID`/`testId(` to
 find more.
+
+## `demo/` — the README capture, not a test
+
+`demo/demo.yaml` drives the same Browse → series → reader journey the flows above cover, but its
+output is the animated GIF in the repo's README rather than a pass/fail. It sits in its own folder
+on purpose: the suite configs discover flows by folder (`maestro test … e2e/mobile`), so a file
+dropped in `mobile/` would run in CI under `continueOnFailure: false` and gate the real flows
+behind a recording. `check-flow-coverage.mjs` only scans `e2e/{mobile,web}` for the same reason —
+a promo capture shouldn't count as coverage of the screens it happens to pass through.
+
+Two ways to run it:
+
+```bash
+bash apps/mobile/e2e/scripts/record-demo.sh ios       # or: android
+gh workflow run capture-demo.yml --ref <branch>       # builds + records on a runner, uploads the GIF
+```
+
+The build under test must carry `EXPO_PUBLIC_COMICAL_DEMO_MODE=1` (deterministic mock data, so
+consecutive captures show the same series) **and** `EXPO_PUBLIC_COMICAL_CAPTURE_MODE=1`, which
+suppresses the demo-preview pill that would otherwise sit in every frame. `capture-demo.yml`
+passes both; locally, set them when you build.
+
+### Keeping the capture smooth
+
+Frames the device never rendered are baked into the recording, and no amount of post-processing
+puts them back. Three things keep them from happening, and they're worth understanding before
+changing any of them:
+
+- **`warmup.yaml` runs first and isn't recorded.** It walks the identical route so the bundle,
+  fonts, and every cover image are already in cache. A cold first pass drops frames in exactly the
+  transitions the capture exists to show.
+- **The pauses in `demo.yaml` are `evalScript` spins, which run on the host, not the device.** The
+  device sits idle holding a still frame while the recorder rolls. A pause implemented on-device
+  would compete with the animation being filmed.
+- **The GIF is 15fps.** The device has to sustain 15–20fps through the animations, not 60. That's
+  what makes this viable on a runner at all.
+
+`record-demo.sh` then measures the result instead of trusting it: both recorders write
+variable-framerate mp4, so a dropped frame shows up as a long gap between presentation
+timestamps. Any gap over `MAX_GAP_MS` (85ms default, ~1.3 frames at 15fps) fails the run and keeps
+the raw file for inspection.
+
+### Why the workflow is iOS-only
+
+The Android emulator on a GitHub runner renders through SwiftShader — software GL, because ubuntu
+runners have KVM but no GPU. A Reanimated zoom transition plus full-bleed image decoding under a
+software rasterizer drops frames, and `adb screenrecord` captures the framebuffer, so the drops
+land in the file. macOS runners are Apple Silicon with a real GPU: the simulator is Metal-backed
+and `simctl io recordVideo` encodes in hardware. `record-demo.sh` still takes `android` for a
+local run against real hardware, where the question doesn't arise.
