@@ -96,6 +96,14 @@ on:
         type: boolean
         default: false
         required: false
+      mock_ref:
+        # Git ref the mock art is fetched from (src/data/mock-assets.ts). Defaults to `main` in the
+        # app; CI passes the commit under test so a branch's own art shows up in its own
+        # screenshots and e2e runs rather than main's.
+        description: Git ref to serve the mock catalog art from (empty = the app's `main` default).
+        type: string
+        default: ''
+        required: false
       channel:
         # Bakes EXPO_PUBLIC_COMICAL_BUILD_CHANNEL into the JS bundle — read by src/lib/sentry.ts
         # as the `buildChannel` tag on every Sentry event, so a crash report is attributable to
@@ -154,6 +162,7 @@ jobs:
       EXPO_PUBLIC_COMICAL_CAPTURE_MODE: ${{ inputs.capture_mode && '1' || '' }}
       # See the `channel` input above — every caller must pass one.
       EXPO_PUBLIC_COMICAL_BUILD_CHANNEL: ${{ inputs.channel }}
+      EXPO_PUBLIC_COMICAL_MOCK_REF: ${{ inputs.mock_ref }}
     steps:
       - uses: actions/checkout@v4
         with:

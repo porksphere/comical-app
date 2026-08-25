@@ -8,10 +8,11 @@ skyscrapers and laptops — a different picture on every load, and a third-party
 whether a grid rendered at all. Serving our own committed bytes keeps the network dependency but
 makes the content deterministic, which was the half that mattered.
 
-They are served, not bundled: `mock-assets.ts` builds jsDelivr URLs pointing at this directory at
-a pinned commit, so nothing here reaches an app bundle. **Adding or redrawing art means bumping
-that pin** (`REF` in `mock-assets.ts`) in the same commit that carries the new files; until then
-the app renders the previous set.
+They are served, not bundled: `mock-assets.ts` builds jsDelivr URLs pointing at this directory, so
+nothing here reaches an app bundle. The ref follows `main`, and CI passes the commit under test, so
+adding or redrawing art needs no other edit — a branch's own art shows up in its own screenshots
+and e2e runs, and everything else picks it up on merge. Local dev is the one place that sees
+`main`'s set rather than the branch's.
 
 Bundling was tried first and reverted. A bundled page resolves to a resource path in a release
 build, and the download engine's `PageFetcher` (`src/data/downloads/fetch-page.ts`) resolves a

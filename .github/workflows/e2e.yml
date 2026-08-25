@@ -38,6 +38,7 @@ jobs:
       demo_mode: true
       demo_fast: true
       channel: android-e2e
+      mock_ref: ${{ github.sha }}
     secrets: inherit
 
   test-android:
@@ -105,6 +106,7 @@ jobs:
       demo_mode: true
       demo_fast: true
       channel: ios-e2e
+      mock_ref: ${{ github.sha }}
     secrets: inherit
 
   test-ios:

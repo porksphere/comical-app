@@ -8,13 +8,17 @@
  * unrunnable; a URL is the shape every real source already hands it. Keeping ~1.7MB of fixtures
  * out of builds that can't reach them is the bonus, not the reason.
  *
- * `REF` is a commit rather than a branch so that a branch which redraws the art renders its OWN
- * set: `@main` would 404 for every file until the branch merged, and a 404 is not just a missing
- * screenshot — the `downloads.yaml` flows assert a real page fetch completes. Redrawing the art
- * means bumping this to the commit that carries it. That commit stays fetchable even if its branch
- * is squash-merged and deleted, because GitHub keeps `refs/pull/N/head` forever.
+ * `REF` follows `main` by default, and CI overrides it with the commit under test. That split is
+ * what removes the manual step this used to carry: pinning a commit here meant every change to
+ * `assets/mock/` also had to bump this line, and forgetting left the app serving the previous art
+ * with nothing failing — a screenshot run shot the wrong covers exactly that way. `main` needs no
+ * bump; the override is what keeps a branch's OWN art in its own screenshots and e2e runs, which a
+ * bare `main` could not do.
+ *
+ * Consequence worth knowing: a branch that adds art shows `main`'s set anywhere the override isn't
+ * set (local dev), until it merges.
  */
-const REF = '9374f25cfaa6ff16402398fd1a4842aeb7a42dd4';
+const REF = process.env.EXPO_PUBLIC_COMICAL_MOCK_REF || 'main';
 const ASSETS = `https://cdn.jsdelivr.net/gh/porksphere/comical-app@${REF}/apps/mobile/assets/mock`;
 
 const set = (dir: string, count: number, ext: string): string[] =>

@@ -11,6 +11,14 @@ name: ↳ Build Android APK (called by build-android.yml, release.yml)
 on:
   workflow_call:
     inputs:
+      mock_ref:
+        # Git ref the mock art is fetched from (src/data/mock-assets.ts). Defaults to `main` in the
+        # app; CI passes the commit under test so a branch's own art shows up in its own
+        # screenshots and e2e runs rather than main's.
+        description: Git ref to serve the mock catalog art from (empty = the app's `main` default).
+        type: string
+        default: ''
+        required: false
       demo_mode:
         # Bakes EXPO_PUBLIC_COMICAL_DEMO_MODE=1 into the JS bundle: fully client-side mock data
         # (src/data/mock.ts), no host-server or bridge required at runtime. Only e2e.yml sets
@@ -225,6 +233,7 @@ jobs:
           # EXPO_PUBLIC_* inlining happens when the "bundle React Native code" Gradle task shells
           # out to node/Metro during assembleRelease — same mechanism deploy-web.yml relies on.
           EXPO_PUBLIC_COMICAL_DEMO_MODE: ${{ inputs.demo_mode && '1' || '' }}
+          EXPO_PUBLIC_COMICAL_MOCK_REF: ${{ inputs.mock_ref }}
           EXPO_PUBLIC_COMICAL_DEMO_FAST: ${{ inputs.demo_fast && '1' || '' }}
           # See the `channel` input above — every caller must pass one.
           EXPO_PUBLIC_COMICAL_BUILD_CHANNEL: ${{ inputs.channel }}

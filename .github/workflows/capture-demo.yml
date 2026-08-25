@@ -73,6 +73,7 @@ jobs:
       demo_fast: true
       capture_mode: true
       channel: ios-capture
+      mock_ref: ${{ github.sha }}
     secrets: inherit
 
   record:
