@@ -280,10 +280,20 @@ why `demo.yaml` opens on the zoom instead of a tap on the already-selected Brows
 beat that doesn't move is one the scan can't see. `launch.yaml` runs before the recorder starts so
 the app is already on Browse, and the recorded flow re-enters with `stopApp: false`.
 
-`record-demo.sh` then measures the result instead of trusting it: both recorders write
-variable-framerate mp4, so a dropped frame shows up as a long gap between presentation
-timestamps. Any gap over `MAX_GAP_MS` (85ms default, ~1.3 frames at 15fps) fails the run and keeps
-the raw file for inspection.
+`record-demo.sh` reports the worst in-motion gap but does **not** fail on it, and that limit is
+worth knowing before trying to tighten it: on variable-framerate video a still screen and a
+stalled screen are the same signal — no frames. Two runs failed on that ambiguity (an 8.3s reader
+hold, then the 380ms boundary between a hold and the movement after it) before it became a
+warning. It also matters less than it looks, because the encode re-times every surviving frame to
+a constant rate: a hitch in the source can't become a hitch in the GIF, only fewer frames
+describing the same motion.
+
+The encode strips dead air (`mpdecimate`) and re-times what's left, which is what keeps a slow CI
+take watchable — commands cost 2-5s each on that simulator, and without it a 28-second movement
+window encodes to 28 seconds of mostly-frozen GIF. Size is frame count x area x palette: `WIDTH`
+and `MAX_COLORS` are the knobs that move it (240px/128 colors measured 3.9MB, 220/96 measured
+3.0MB). `FPS` is **not** one of them — `setpts=N/FPS/TB` re-times every surviving frame, so
+lowering it stretches playback rather than dropping anything.
 
 ### Why the workflow is iOS-only
 

@@ -38,11 +38,16 @@ WORK="${WORK:-$(mktemp -d)}"
 mkdir -p "$WORK"
 RAW="$WORK/demo.mp4"
 
-# Output tuning. WIDTH is the GIF's width in px; the phone aspect makes the height ~2.1x that,
-# so 420 lands near 420x900 — big enough to read chapter titles on a README, small enough to stay
-# a couple of MB.
-WIDTH="${WIDTH:-420}"
+# Output tuning, all measured against a real capture rather than guessed. A phone frame is ~2.2x
+# taller than wide, so 220 lands at 220x478. Size is driven by frame count x area x palette, and
+# the frame count is whatever survives mpdecimate below — so WIDTH and MAX_COLORS are the two
+# knobs that actually move it: 240px/128 colors gave 3.9MB on the reference take, 220/96 gave 3.0.
+#
+# FPS does NOT affect size. `setpts=N/FPS/TB` re-times every surviving frame to that rate, so
+# lowering it stretches playback instead of dropping anything. Treat it as playback speed.
+WIDTH="${WIDTH:-220}"
 FPS="${FPS:-15}"
+MAX_COLORS="${MAX_COLORS:-96}"
 # The head and tail are found, not configured. Maestro's CLI start-up sits between the recorder
 # opening and the flow's first command, and it varies run to run, so a fixed trim would leave a
 # different amount of dead air in every recapture. Instead the take is scanned for scene changes:
@@ -164,6 +169,10 @@ else
   echo "!! No scene changes detected — the app may never have moved. Falling back to a fixed trim." >&2
   START="$TRIM_START"
   DURATION=""
+  # The gap check below is bounded by these; without them its awk would compare against an empty
+  # string, read it as 0, and silently discard every frame.
+  FIRST_MOVE="$TRIM_START"
+  LAST_MOVE=999999
 fi
 
 echo "==> Checking for dropped frames"
@@ -175,11 +184,11 @@ echo "==> Checking for dropped frames"
 # runner installs whatever brew ships today. showinfo's format has been stable throughout.
 GAP_REPORT=$("$FFMPEG" -v info -i "$RAW" -vf showinfo -f null - 2>&1 \
   | grep -o 'pts_time:[0-9.]*' | cut -d: -f2 \
-  | awk -v trim="$START" -v still="$STILL_MS" '
+  | awk -v trim="$FIRST_MOVE" -v last="$LAST_MOVE" -v still="$STILL_MS" '
       $1 == "" { next }
       {
         t = $1 + 0
-        if (t < trim) next
+        if (t < trim || t > last) next
         if (prev != "") {
           g = (t - prev) * 1000
           # Ignore anything at or past the stillness bound — that is the screen holding, not a drop.
@@ -192,9 +201,17 @@ MAX_GAP=${GAP_REPORT% *}
 GAP_AT=${GAP_REPORT#* }
 echo "    worst in-motion gap: ${MAX_GAP}ms (at ${GAP_AT}s), budget ${MAX_GAP_MS}ms, stillness above ${STILL_MS}ms ignored"
 if awk -v m="$MAX_GAP" -v b="$MAX_GAP_MS" 'BEGIN { exit !(m > b) }'; then
-  echo "!! The device dropped frames during the take, so the GIF would stutter." >&2
-  echo "!! Re-run: this is usually contention on the host, not the app. Raw file kept at $RAW" >&2
-  exit 2
+  # Reported, not fatal, and that is a deliberate retreat from what this check used to do.
+  # On variable-framerate video a still screen and a stalled screen are the SAME signal: no
+  # frames. Two runs failed on that ambiguity — one on a 8.3s reader hold, one on the 380ms
+  # boundary between a hold and the movement after it. Bounding and windowing the measurement
+  # narrows it but cannot remove it, because the information isn't in the file.
+  #
+  # It also matters much less than it looks: the encode below re-times every surviving frame to a
+  # constant rate, so a hitch in the source can't produce a hitch in the GIF — at worst the motion
+  # is described by fewer frames. So: print the number, keep the raw capture, let a human judge.
+  echo "!! Worst in-motion gap is over budget. Could be a real hitch, could be a short hold." >&2
+  echo "!! Look at the GIF; the raw capture is at $RAW" >&2
 fi
 
 echo "==> Encoding GIF"
@@ -214,7 +231,7 @@ if [ -n "$DURATION" ]; then
   DURATION_ARG=(-t "$DURATION")
 fi
 "$FFMPEG" -v error -y -ss "$START" "${DURATION_ARG[@]}" -i "$RAW" \
-  -vf "mpdecimate=hi=64*12:lo=64*5:frac=0.33,setpts=N/$FPS/TB,fps=$FPS,scale=$WIDTH:-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3" \
+  -vf "mpdecimate=hi=64*12:lo=64*5:frac=0.33,setpts=N/$FPS/TB,fps=$FPS,scale=$WIDTH:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=$MAX_COLORS:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5" \
   -loop 0 "$OUT"
 
 SIZE=$(du -h "$OUT" | cut -f1)

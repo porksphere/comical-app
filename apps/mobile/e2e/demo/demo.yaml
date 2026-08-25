@@ -46,19 +46,12 @@ appId: com.porksphere.comical
     env:
       MS: '1400'
 
-- scrollUntilVisible:
-    element:
-      id: "series\\.chapter\\..*"
-    direction: DOWN
-    timeout: 20000
-- runFlow:
-    file: pause.yaml
-    env:
-      MS: '800'
-
+# Straight into the reader via the primary action, which sits above the fold on the series page.
+# The first cut scrolled down to the chapter list and tapped a row instead, and that beat ate more
+# than half the GIF: `scrollUntilVisible` plus a row tap costs ~15s on the CI simulator, nearly all
+# of it a near-motionless chapter list. The zoom and the page turns are what the capture is for.
 - tapOn:
-    id: "series\\.chapter\\..*"
-    index: 0
+    id: "series.action.read"
 # NOT reader.toolbar.back: the toolbar is gated behind `chromeVisible`, which fades it to opacity 0
 # three seconds after entry (app/series/index.tsx CHROME_HIDE_MS). A single Maestro step on a CI
 # simulator can take longer than that, so the anchor has to be something the paged reader renders
