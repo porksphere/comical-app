@@ -248,6 +248,11 @@ only scans `e2e/{mobile,web}` for the same reason.
 gh workflow run capture-demo.yml --ref <branch>
 ```
 
+The PNGs come back as the `demo-screens` artifact; drop them in `docs/media/` and commit. Quantise
+them to 256 colours first — it costs nothing visible at the 240px they render at and takes the set
+from ~890KB to ~355KB. Pass `from_run` to reuse an earlier run's Simulator `.app` and skip the
+~26-minute rebuild, which is worth it whenever only the flow changed.
+
 The build under test must carry `EXPO_PUBLIC_COMICAL_DEMO_MODE=1` (deterministic mock data, so
 consecutive shoots show the same series) **and** `EXPO_PUBLIC_COMICAL_CAPTURE_MODE=1`, which
 suppresses the demo-preview pill that would otherwise sit in frame. The workflow passes both, sets

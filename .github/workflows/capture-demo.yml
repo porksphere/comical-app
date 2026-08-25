@@ -27,12 +27,6 @@ name: Capture demo screenshots
 # dropped-frame check that fails the job rather than shipping a stuttering GIF.
 
 on:
-  # TEMPORARY, remove before merging: a workflow_dispatch workflow is only dispatchable once it
-  # exists on the default branch, so a brand-new one can't be triggered from the branch that adds
-  # it. This push trigger is how the first run gets exercised; every run is a full iOS Simulator
-  # build, so it should not survive the merge.
-  push:
-    branches: [claude/readme-cleanup-i4qlvg]
   workflow_dispatch:
     inputs:
       width:
@@ -41,16 +35,11 @@ on:
         default: '440'
       from_run:
         description: >-
-          Reuse the Simulator .app built by an earlier run of this workflow instead of building one.
-          The app only changes when the app changes; tuning the flow or the encode does not need a
-          26-minute rebuild. Leave empty to build fresh.
+          Reuse the Simulator .app built by an earlier run of this workflow instead of building
+          one. The app only changes when the app changes, so re-shooting after a flow tweak does
+          not need the ~26-minute rebuild. Leave empty to build fresh.
         type: string
         default: ''
-
-# Push runs can't pass inputs, so this is where a push picks up the same artifact reuse. Temporary,
-# like the push trigger above: empty it (or delete it with the trigger) before merging.
-env:
-  PUSH_FROM_RUN: ''
 
 # Reading another run's artifacts needs this; the default token is otherwise write-only to its own.
 permissions:
@@ -68,7 +57,7 @@ jobs:
       from_run: ${{ steps.pick.outputs.from_run }}
     steps:
       - id: pick
-        run: echo "from_run=${{ inputs.from_run || env.PUSH_FROM_RUN }}" >> "$GITHUB_OUTPUT"
+        run: echo "from_run=${{ inputs.from_run }}" >> "$GITHUB_OUTPUT"
 
   build:
     needs: resolve
