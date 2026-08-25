@@ -307,7 +307,17 @@ export function mockHomeSections(page = 'home', bridgeId?: string): RailSection[
 
 /** Flat grid of results (search / "See all" / non-home page). */
 export function mockGrid(prefix = 'grid', n = 30, bridgeId?: string): SeriesEntry[] {
-  return items(prefix, n, { badges: true, unread: true, sub: true, bridgeId });
+  // Salted with the bridge HERE rather than at each call site. Every caller already passes a
+  // bridge and none of them put it in the prefix, so each bridge's featured rail was seeded
+  // `featured-p1` — the cross-bridge Home stacked several bridges' shelves and every one of them
+  // listed the same series in the same order. `mockHomeSections` salts its own prefix before
+  // calling `items` directly, so it doesn't come through here and isn't double-salted.
+  return items(`${bridgeId ? `${bridgeId}-` : ''}${prefix}`, n, {
+    badges: true,
+    unread: true,
+    sub: true,
+    bridgeId,
+  });
 }
 
 const GENRES = ['Fantasy', 'Action', 'Adventure', 'Drama'];
