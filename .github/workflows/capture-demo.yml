@@ -50,7 +50,7 @@ on:
 # Push runs can't pass inputs, so this is where a push picks up the same artifact reuse. Temporary,
 # like the push trigger above: empty it (or delete it with the trigger) before merging.
 env:
-  PUSH_FROM_RUN: '32809124666'
+  PUSH_FROM_RUN: ''
 
 # Reading another run's artifacts needs this; the default token is otherwise write-only to its own.
 permissions:
