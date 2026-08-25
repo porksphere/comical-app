@@ -83,7 +83,10 @@ need "$FFMPEG"
 # decoders accept), QuickTime-branded, with multi-second gaps between frames (one take held its
 # first frame for 50 seconds). VLC will not open it.
 playable_copy() {
-  "$FFMPEG" -v error -y -i "$RAW" -vf "fps=15,scale=-2:1280" \
+  # 30fps, not 15: this copy gets watched, and the app animates at ~60fps, so sampling at 15
+  # turns a 300ms spring into four frames and makes a smooth capture look broken. It still
+  # contains the whole take, dead air and all — it is the raw recording, not the demo.
+  "$FFMPEG" -v error -y -i "$RAW" -vf "fps=30,scale=-2:1280" \
     -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$WORK/demo-playable.mp4" 2>/dev/null \
     && echo "==> Watchable copy: $WORK/demo-playable.mp4" \
     || echo "!! Could not write the watchable copy (no libx264?)" >&2
@@ -111,6 +114,11 @@ elif [ "$PLATFORM" = "ios" ]; then
   # A pinned status bar keeps consecutive captures identical: without this the clock and the
   # battery differ between takes, which is the kind of detail that makes a re-recorded GIF look
   # like a different app.
+  # Dark appearance. The app's theme preference defaults to 'system' (hooks/use-theme.ts), so
+  # setting it on the simulator is enough — no build flag, no in-app navigation to a settings
+  # screen that would then be in frame.
+  xcrun simctl ui "$UDID" appearance dark >/dev/null 2>&1 || true
+
   xcrun simctl status_bar "$UDID" override \
     --time "9:41" --batteryState charged --batteryLevel 100 \
     --cellularBars 4 --wifiBars 3 --dataNetwork wifi >/dev/null 2>&1 || true
@@ -129,6 +137,9 @@ else
   need adb
   ADB="${ADB:-adb}"
   echo "==> Android device: $("$ADB" get-serialno)"
+
+  # Dark appearance — the Android counterpart of `simctl ui appearance dark` above.
+  "$ADB" shell "cmd uimode night yes" >/dev/null 2>&1 || true
 
   # SystemUI demo mode: same reasoning as the simctl status_bar override above.
   "$ADB" shell settings put global sysui_demo_allowed 1 >/dev/null 2>&1 || true
