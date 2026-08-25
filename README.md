@@ -46,9 +46,12 @@ In development.
 
 ## How it works
 
-A **bridge** is an adapter that sources series from one site or service. Comical downloads and
-verifies bridges from the registries you add; public ones are listed under the
-**[`comical-registry` topic](https://github.com/topics/comical-registry)** on GitHub.
+**Registry → bridge → series.**
+
+- A **registry** is a list of bridges you add in Settings. Public ones are listed under the
+  **[`comical-registry` topic](https://github.com/topics/comical-registry)** on GitHub.
+- A **bridge** is an adapter for one site or service, downloaded and verified from a registry.
+- **Series** are what a bridge sources, and what you browse and read.
 
 On iOS and Android, bridges run on-device and no server is involved. On the web they run in the
 backend you host.
