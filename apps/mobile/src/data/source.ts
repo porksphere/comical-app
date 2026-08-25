@@ -1097,7 +1097,14 @@ export function setMockToggle(enabled: boolean): void {
 
 /** Dev-only hook: [enabled, setEnabled] for the Settings screen's mock-data toggle. */
 export function useMockDataToggle(): [boolean, (enabled: boolean) => void] {
-  return [__DEV__ && Boolean(use$(mockToggle$)), setMockToggle];
+  // `use$` is called UNCONDITIONALLY and the `__DEV__` mask applied to its result. Inlining it as
+  // `__DEV__ && Boolean(use$(...))` puts a hook inside a `&&` short-circuit: legal-looking, but the
+  // React Compiler can memoize that expression and skip re-evaluating it, which silently drops the
+  // hook on some renders. That shifts every later hook in the calling component by three
+  // (`use$` = useContext + useMemo + useSyncExternalStore) and crashes React's dispatcher with
+  // "Cannot read properties of undefined (reading 'length')" out of `areHookInputsEqual`.
+  const on = use$(mockToggle$);
+  return [__DEV__ && Boolean(on), setMockToggle];
 }
 
 /** True whenever mock data should be used: the GH Pages demo build, or the dev toggle. */
