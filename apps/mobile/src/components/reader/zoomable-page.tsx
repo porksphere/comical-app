@@ -6,6 +6,7 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, type SharedValue }
 import { ReaderPage } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
+import { useCommitTrace } from '@/lib/gesture-trace';
 
 // A single paged-reader page (NATIVE only — web has its own gesture pager in
 // paged-reader.web.tsx and never renders this).
@@ -87,6 +88,10 @@ export function ZoomablePage({
   scrollGesture,
 }: Props) {
   const [pageFailed, setPageFailed] = useState(false);
+  // One line per mounted cell that commits — the count is the point. A page turn hands every
+  // mounted cell a new `active`, so a turn that commits five cells is the pager doing what it is
+  // designed to do; a turn that commits five cells SEVERAL times over is not.
+  useCommitTrace('cell', { p: page });
 
   // fit-width content that's taller than the viewport: a one-finger vertical
   // drag scrolls it (see `contentPan` below). `contentHeight` is only known

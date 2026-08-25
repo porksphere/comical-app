@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { makeMutable, runOnJS, type SharedValue } from 'react-native-reanimated';
 
 import { persisted$ } from '@/lib/observable';
@@ -153,6 +153,27 @@ export function traceJS(tag: string, event: string, data?: Record<string, number
   const now = clockMs();
   if (uiEpoch.value < 0) uiEpoch.set(now);
   push(format(now - uiEpoch.value, tag, event, data));
+}
+
+/**
+ * A line every time this component COMMITS, on the same timeline as the gesture events and the
+ * frame recorder — which is what makes a stutter attributable.
+ *
+ * `frame LONG` says the UI thread missed a deadline; it cannot say why. On iOS that thread is also
+ * where React mounts and lays out views, so a burst of commits and a dropped frame at the same
+ * millisecond is a different diagnosis from a dropped frame with nothing around it (an image
+ * decode, a spring, the scroller itself). A paged swipe is exactly where that distinction is worth
+ * having: one page turn wakes viewability, which wakes the pager, the pane and the screen above it,
+ * and how far up that chain a turn actually reaches is the question.
+ *
+ * Deliberately an effect and deliberately without a dependency array: a render React discards costs
+ * nothing and should not be counted, and every commit should. `traceJS` is an early return when the
+ * trace is off, so what remains then is one empty effect per commit.
+ */
+export function useCommitTrace(tag: string, data?: Record<string, number | boolean>): void {
+  useEffect(() => {
+    traceJS('render', tag, data);
+  });
 }
 
 /**

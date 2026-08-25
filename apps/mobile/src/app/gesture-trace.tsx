@@ -119,8 +119,9 @@ export default function GestureTraceScreen() {
           when they ended. While it is off, those recognizers are configured exactly as they ship,
           so a recording can&apos;t be blamed for what it measures. It also records the reader&apos;s
           page pipeline on the same timeline — what each page asked for, how many requests it was
-          queued behind, and whether an answer ever came. Nothing is sent anywhere; use Share to
-          send it yourself.
+          queued behind, and whether an answer ever came — and, for a page turn, which parts of the
+          reader re-rendered while the pages were still moving, against the frames that were dropped
+          doing it. Nothing is sent anywhere; use Share to send it yourself.
         </ThemedText>
 
         <SettingsSection>

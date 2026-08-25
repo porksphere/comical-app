@@ -10,7 +10,9 @@ name: Checks
 #   `testids` needs nothing but the source tree. The rule is purely syntactic, so no submodule and no
 #   build step — it stays fast and can't go red for an unrelated reason. It also carries
 #   `check:flow-coverage`, an advisory-only e2e-flow nudge (never fails the job — see
-#   apps/mobile/scripts/check-flow-coverage.mjs), since that's the same kind of cheap syntactic pass.
+#   apps/mobile/scripts/check-flow-coverage.mjs), since that's the same kind of cheap syntactic pass,
+#   and `check:compiler`, which is the same shape again: it parses each file with the React Compiler
+#   and warns about components it silently declined to optimize.
 #
 #   `types-and-lint` needs the `comical` submodule, because `@comical/*` resolves through
 #   `tsconfig.json` paths onto `external/comical`. Checking it out is not enough — its own deps have
@@ -75,6 +77,13 @@ jobs:
         # layer of defense on top of the script's own `process.exit(0)`, so a future bug in the script
         # can't accidentally turn this advisory nudge into a hard gate.
         run: bun run check:flow-coverage || true
+
+      - name: Check React Compiler coverage (advisory)
+        working-directory: apps/mobile
+        # Also never fails the job -- see scripts/check-compiler-bails.mjs's header. It warns about
+        # components the compiler silently skipped (usually a react-hooks suppression somewhere
+        # inside them), which is a perf regression with no other symptom.
+        run: bun run check:compiler || true
 
   types-and-lint:
     name: Types and lint

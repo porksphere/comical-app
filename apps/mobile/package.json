@@ -73,6 +73,7 @@
     "lint:ci": "eslint --max-warnings=0 \"src/**/*.{ts,tsx}\"",
     "lint:testids": "eslint --format json \"src/**/*.{ts,tsx}\" | node scripts/assert-testids.mjs",
     "check:flow-coverage": "node scripts/check-flow-coverage.mjs",
+    "check:compiler": "node scripts/check-compiler-bails.mjs",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

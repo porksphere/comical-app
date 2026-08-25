@@ -99,6 +99,37 @@ Shake → **Show Perf Monitor** overlays live JS-thread and UI-thread FPS. If UI
 FPS stays high, the bottleneck is native/render (→ Instruments); if JS FPS tanks, it's your
 JavaScript (→ React Native DevTools). That one glance tells you which profiler to reach for.
 
+## The on-device trace — for a stutter you can't reproduce with a laptop attached
+
+Settings → Diagnostics → **Gesture trace** → **Record**, do the swipe that misbehaves, come back and
+read or Share it. It needs no debugger, so it works on the release build in your pocket, and everything in it
+sits on ONE clock: gesture lifecycles (`lib/gesture-trace`), dropped frames measured on the UI thread
+(`lib/frame-trace` → `frame LONG dt=…`), and every component COMMIT that opted in
+(`useCommitTrace` → `render <tag>`). Off, it costs nothing: the recorders early-return and the
+touch-level gesture observers aren't even attached.
+
+That combination is what attributes a stutter, which neither profiler above can do alone: the Hermes
+profiler samples the JS thread and cannot see main-thread view work, and Instruments sees the frame
+drop without knowing which React commit caused it.
+
+**The paged reader is wired for it end to end.** One swipe reads as:
+
+```
+ 1240  turn view p=12          ← viewability, mid-animation: the JS work of the turn starts here
+ 1246  render pager
+ 1247  render cell p=13        ← one line per mounted cell that committed
+ …
+ 1259  render pane
+ 1262  render screen d=0       ← the whole series screen, inside the swipe
+ 1271  frame LONG dt=33
+ 1388  turn settle p=12        ← the pages stopped moving here
+```
+
+Everything between `turn view` and `turn settle` landed under the animation. A `frame LONG` in that
+window with a burst of `render` lines beside it is a React commit eating the frame; a `frame LONG`
+with nothing around it is not (look at image decode, or the scroller itself). How far up the chain
+the turn reaches — `pager` only, or `pane` and `screen` too — is the other half of the answer.
+
 ## Iterative dev & profiling from Windows (the dev-client loop)
 
 You don't need a Mac in the loop. An Expo app splits in two: the **native binary** (built on macOS

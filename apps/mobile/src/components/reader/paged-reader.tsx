@@ -28,7 +28,7 @@ import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommittedEitherWay } from '@/lib/gesture-release';
-import { trace, traceJS } from '@/lib/gesture-trace';
+import { trace, traceJS, useCommitTrace } from '@/lib/gesture-trace';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
@@ -181,9 +181,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const listRef = useRef<LegendListRef>(null);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const n = pages.length;
+  // Where a page turn's JS work lands, on the frame recorder's timeline — see useCommitTrace. The
+  // pager commits once per turn (the active key moves); what the recording answers is whether the
+  // pane and the screen above it commit with it, and whether a long frame sits under the burst.
+  useCommitTrace('pager');
 
-  const toPhysical = (logical: number) => (rtl ? n - 1 - logical : logical);
-  const toLogical = (physical: number) => (rtl ? n - 1 - physical : physical);
+  // Memoized by hand, though the compiler would do it: the imperative handle below has to name one
+  // of them as a dependency, and a plain render-scope function there is a lint suppression — which
+  // costs this component its compilation entirely (see that handle's deps).
+  const toPhysical = useCallback((logical: number) => (rtl ? n - 1 - logical : logical), [rtl, n]);
+  const toLogical = useCallback((physical: number) => (rtl ? n - 1 - physical : physical), [rtl, n]);
 
   const data = useMemo(() => (rtl ? [...pages].reverse() : pages), [pages, rtl]);
   // Display numbers by the same index as `data`, for the scrub backdrop to read from a worklet — a
@@ -239,8 +246,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         void listRef.current?.scrollToIndex({ index: toPhysical(clamped), animated: false });
       },
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [n, rtl],
+    // EXHAUSTIVE, and it has to stay that way. A `react-hooks` suppression anywhere inside a
+    // component makes the React Compiler skip that component whole — no memoization, and no
+    // diagnostics saying so. This one silently cost the pager its compilation, which is what put
+    // every mounted cell's re-render on the frame budget of the swipe that caused it.
+    [n, toPhysical],
   );
 
   // ── UI-thread state, read by the scrub reaction and the edge pan further down ──
@@ -295,6 +305,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // question directly, and at rest exactly one page is over the threshold.
   const settledRef = useRef(initialIndex);
   const onMomentumEnd = () => {
+    // The end of the turn, on the trace's timeline: everything between the `turn view` below and
+    // this line happened while the pages were still moving.
+    traceJS('turn', 'settle', { p: settledRef.current });
     onPageChange(toLogical(Math.max(0, Math.min(n - 1, settledRef.current))));
   };
 
@@ -323,6 +336,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         if (!first) return;
         settledRef.current = first.index;
         if (scrubbingRef.current) return;
+        // MID-TURN, not at rest: viewability crosses at 60% while the pages are still moving, so
+        // this is the instant the JS work of a page turn begins. Every `render` line after it and
+        // before `turn settle` is work landing under the animation. Below the scrub gate on
+        // purpose — a drag across a chapter would otherwise flood the log with the very lines that
+        // are suppressed there, and the scrub has marks of its own.
+        traceJS('turn', 'view', { p: first.index });
         setActiveKey(first.key);
         reportVisibleRef.current(first.index);
       },

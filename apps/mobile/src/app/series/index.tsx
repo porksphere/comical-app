@@ -60,6 +60,7 @@ import {
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
+import { useMountEffect } from '@/hooks/use-mount-effect';
 import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
@@ -71,7 +72,7 @@ import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
 import { backSwipePan, backSwipeShape, backSwipeStayedHorizontal, resetBackSwipeShape, trackBackSwipeShape, BACK_ACTIVATE_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
-import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } from '@/lib/gesture-trace';
+import { trace, traceGate, traceJS, traceThrottled, useCommitTrace, useGestureTraceEnabled } from '@/lib/gesture-trace';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
@@ -506,6 +507,26 @@ type ReaderSequenceRun = {
   index: number;
 };
 
+/**
+ * The sequence's target, SEEDED ONCE: the mount index points the pager, and every index after it
+ * lives in the pager itself, so re-deriving this as the album moves would drag the reader back to
+ * where it opened.
+ *
+ * A module-level hook rather than four lines in the instance, and that is the whole reason it
+ * exists: the suppression below would otherwise sit INSIDE `SeriesReaderInstance`, and a
+ * `react-hooks` suppression anywhere in a component makes the React Compiler skip that component
+ * whole — 2400 lines of it, re-rendered on every page turn (the pager reports the visible page up
+ * here). Kept here, it costs its own five lines and nothing else.
+ */
+function useSeededSequenceTarget(sequence: ReaderSequenceRun | undefined): ReadTarget | null {
+  const inSequence = !!sequence;
+  return useMemo(
+    () => (sequence ? { start: sequence.index } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seeded once: only the PRESENCE of a sequence may rebuild this, never its moving index.
+    [inSequence],
+  );
+}
+
 /** One chapter's worth of pages inside the native pager's stitched flat list — what makes a
  *  boundary swipe an ordinary page turn instead of a bounce-and-remount. */
 type Segment = { id: string; name?: string; pages: string[] };
@@ -566,6 +587,10 @@ function SeriesReaderInstance({
   /** Present = this instance reads a cross-series sequence instead of a chapter. */
   sequence?: ReaderSequenceRun;
 }) {
+  // The TOP of the page-turn chain: the pager reports the page it is carrying past, the pane
+  // relays it, and it lands here as state. A recording that shows this line under every turn is
+  // showing the whole screen re-rendering inside the swipe animation — see useCommitTrace.
+  useCommitTrace('screen', { d: depth });
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
@@ -696,13 +721,7 @@ function SeriesReaderInstance({
   // would otherwise arm the chapter-pages query, the preferred-group effect, chapter adjacency and
   // the pane's remount key, all of which are chapter machinery a sequence doesn't have. Per-entry
   // chapter identity lives on the VISIBLE entry (see visibleSequenceEntry below), not the target.
-  const inSequence = !!sequence;
-  const sequenceTarget = useMemo<ReadTarget | null>(
-    () => (sequence ? { start: sequence.index } : null),
-    // The mount index seeds the pager once; later index changes ride the pager itself.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seeded once, see above
-    [inSequence],
-  );
+  const sequenceTarget = useSeededSequenceTarget(sequence);
   const target = sequenceTarget ?? override ?? derivedTarget;
   const targetChapterId = target?.chapterId;
 
@@ -786,11 +805,16 @@ function SeriesReaderInstance({
   // crossings never come through here; they relabel in place (see relabelFromPager).
   const [jumpNonce, setJumpNonce] = useState(0);
   const goAdjacentChapter = useCallback(
-    (delta: 1 | -1, landing: 'first' | 'last' = delta === 1 ? 'first' : 'last') => {
+    // The default is resolved in the BODY, not in the parameter list. A default computed from
+    // another parameter (`delta === 1 ? 'first' : 'last'`) is an expression the React Compiler
+    // cannot lower, and it gives up on the whole component when it meets one — 2400 lines of
+    // memoization for a piece of punctuation.
+    (delta: 1 | -1, landing?: 'first' | 'last') => {
       const chapterTo = delta === 1 ? nextChapter : prevChapter;
       if (!chapterTo) return;
+      const at = landing ?? (delta === 1 ? 'first' : 'last');
       setJumpNonce((n) => n + 1);
-      setOverride({ chapterId: chapterTo.id, chapterName: chapterTo.name, start: landing === 'last' ? 'last' : 0 });
+      setOverride({ chapterId: chapterTo.id, chapterName: chapterTo.name, start: at === 'last' ? 'last' : 0 });
     },
     [nextChapter, prevChapter],
   );
@@ -1755,7 +1779,8 @@ function SeriesReaderInstance({
   useEffect(() => {
     if (destBound) startZoom();
   }, [destBound, startZoom]);
-  useEffect(() => {
+  // Mount-only entrance — `zoomSource` never changes for an instance (see useMountEffect).
+  useMountEffect(() => {
     // No source rect at all (deep link, web): nothing to align to, so don't wait for anything.
     // Reader-first skips the wait too, and for a subtler reason: the details card is translated
     // off-screen at progress 0, so its hero cover would measure a rect that isn't on screen. The
@@ -1767,9 +1792,7 @@ function SeriesReaderInstance({
     }
     const t = setTimeout(startZoom, ZOOM_BOUND_WAIT_MS);
     return () => clearTimeout(t);
-    // Mount-only entrance — `zoomSource` never changes for an instance.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  });
 
   /** Silent on failure: no registration, an unmounted card or a timed-out probe all leave the shift
    *  alone, which is the captured rect — never a worse answer than not asking. The run counter drops
@@ -1862,7 +1885,11 @@ function SeriesReaderInstance({
   // Every callback below carries an explicit `'worklet'` — REQUIRED, because the chain is rooted at
   // `backSwipePan(...)` rather than `Gesture.Pan()` and Reanimated's plugin only auto-workletizes
   // the latter. See lib/back-swipe for what a demoted gesture costs.
-  const makeBackSwipePan = useCallback((tag: string) => {
+  //
+  // `traced` is passed down rather than read inside — see backSwipePan. It changes the gesture's
+  // shape, so the memos below have to rebuild on it, and a dependency they don't USE is a lint
+  // suppression this component cannot afford (see `edgePan`).
+  const makeBackSwipePan = useCallback((tag: string, traced: boolean) => {
     // The trace's throttle window, kept with the gesture rather than the component so the two
     // platform copies (and any future one) can't share a window and hide each other's samples.
     const updateGate = traceGate();
@@ -1929,7 +1956,7 @@ function SeriesReaderInstance({
     // The shared activation criteria (lib/back-swipe). Everything after it is this surface's own:
     // a back-swipe here drives the gallery collapse, not a slide. Whether the details are the side
     // on screen is `.enabled()` on each copy below — a native gate, like the offsets themselves.
-    return backSwipePan(tag)
+    return backSwipePan(tag, traced)
       // Activation = this gesture owns the screen; the list must stop scrolling under it.
       .onStart((e) => {
         'worklet';
@@ -2047,8 +2074,7 @@ function SeriesReaderInstance({
   // detailsBackSwipe below for the measurement). Dead weight that bills on every settle is worse
   // than dead weight.
   const edgePan = useMemo(
-    () => (IS_WEB ? makeBackSwipePan(`series.edge@${depth}`).enabled(detailsActive) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => (IS_WEB ? makeBackSwipePan(`series.edge@${depth}`, traceOn).enabled(detailsActive) : null),
     [makeBackSwipePan, detailsActive, traceOn, depth],
   );
   // THE back-swipe on native (see edgePan above for why it's the only one).
@@ -2070,14 +2096,14 @@ function SeriesReaderInstance({
   // It doesn't need the gate anyway. This pan lives inside the details card, and that card drops
   // `pointerEvents` while the reader owns the screen — so it is already receiving no touches, by a
   // native mechanism rather than a config flag. The worklets re-check `detailsActiveSV` on top of
-  // that. `traceOn` stays a dep because it changes the gesture's SHAPE (see backSwipePan) and only
-  // ever flips from a Settings screen, where a re-serialization costs nothing.
+  // that. `traceOn` stays a dep — and is now PASSED, not merely listed — because it changes the
+  // gesture's SHAPE (see backSwipePan) and only ever flips from a Settings screen, where a
+  // re-serialization costs nothing.
   const detailsBackSwipe = useMemo(
     // Tagged with DEPTH. Every instance used to log as plain `series.list`, which is fine until
     // three of them are stacked — and the bugs that most need a trace are exactly the ones where
     // the question is which instance reacted.
-    () => (IS_WEB ? null : makeBackSwipePan(`series.list@${depth}`)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => (IS_WEB ? null : makeBackSwipePan(`series.list@${depth}`, traceOn)),
     [makeBackSwipePan, traceOn, depth],
   );
   const detailsScrollGesture = useMemo(
@@ -3247,11 +3273,10 @@ function SearchLayer({
   // Set the moment the back-swipe activates: the results list stops scrolling for as long as this
   // layer is being dragged out. See the note in the pan's onStart.
   const [swipeLocked, setSwipeLocked] = useState(false);
-  useEffect(() => {
+  // Mount-only entrance — edgeX is stable (see useMountEffect).
+  useMountEffect(() => {
     edgeX.set(withSpring(0, IOS_CARD_SPRING));
-    // Mount-only entrance — edgeX is stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  });
   // No swipe-away here (the search has no reader to fling), so coverage is purely the slide.
   useAnimatedReaction(
     () => 1 - Math.min(1, Math.max(0, edgeX.value / width)),
@@ -3311,7 +3336,8 @@ function SearchLayer({
   // one-way `edgeCommitting` come across from there too — the first so a drag that never activated
   // can't settle or unlock anything, the second so nothing can undo a commit and drag the layer
   // back on screen after it has already been sliced off the stack.
-  const makeBackSwipePan = useCallback((tag: string) => {
+  // `traced` threaded in, exactly as on the instance — see its copy.
+  const makeBackSwipePan = useCallback((tag: string, traced: boolean) => {
     const updateGate = traceGate();
     const ranHere = makeMutable(false);
     // Where the finger was at ACTIVATION — see the instance's copy for why. RNGH measures
@@ -3328,7 +3354,7 @@ function SearchLayer({
     };
     // See the instance's copy — a stroke that already qualified stays qualified.
     const qualified = backSwipeShape();
-    return backSwipePan(tag)
+    return backSwipePan(tag, traced)
       .onStart((e) => {
         'worklet';
         trace(tag, 'START', { tx: e.translationX, ty: e.translationY });
@@ -3383,11 +3409,12 @@ function SearchLayer({
   // Web only, exactly as on the series instance — this layer had the same two-copy arrangement, an
   // ancestor detector and a descendant one both reaching for the same touch with the same criteria
   // and cancelling each other at the activation frame. The results list carries the native copy.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const edgePan = useMemo(() => makeBackSwipePan('search.edge').enabled(IS_WEB), [makeBackSwipePan, traceOn]);
+  const edgePan = useMemo(
+    () => makeBackSwipePan('search.edge', traceOn).enabled(IS_WEB),
+    [makeBackSwipePan, traceOn],
+  );
   const scrollGesture = useMemo(
-    () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan('search.list'))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan('search.list', traceOn))),
     [makeBackSwipePan, traceOn],
   );
   const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
@@ -3655,6 +3682,8 @@ const ReaderPane = forwardRef<
   const queryClient = useQueryClient();
   const [settings] = useReaderSettings();
 
+  // The middle of the page-turn chain — see the instance's copy.
+  useCommitTrace('pane');
   const startIndex = Math.max(0, Math.min(pages.length - 1, start === 'last' ? pages.length - 1 : start));
   const [currentPage, setCurrentPage] = useState(startIndex);
   const currentRef = useRef(startIndex);

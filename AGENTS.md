@@ -146,6 +146,22 @@ specific to that site — not a category name. `reportUnusedDisableDirectives` i
 directive that stops suppressing anything fails the lint rather than rotting in place. If a
 suppression doesn't fit one of the three cases above, it's a code change, not a comment.
 
+**And put it in a function of its own.** A suppressed `react-hooks` rule is not local to its line:
+the compiler declines to optimize the whole function containing it, silently, and the component goes
+on working with none of its memoization — every derived value recomputed and every child element
+rebuilt on every render, however unrelated the state that caused it. That is how the series reader
+came to re-render 2400 lines and its entire page subtree inside every swipe animation, from four
+suppressions nobody could see the cost of. So the effect that needs the suppression moves out to a
+named hook and takes the suppression with it (`apps/mobile/src/hooks/use-mount-effect.ts` is the
+pattern; `useSeededSequenceTarget` in `series/index.tsx` is a one-off kept beside its caller). The
+suppression is unchanged and the component still compiles.
+
+The compiler also skips constructs it can't lower — a default parameter computed from another
+parameter, a value block inside a `try`, a ref read during render — with the same silence.
+`bun run check:compiler` (advisory, and in CI) prints every function of 25+ lines that it skipped,
+and why. Run it after touching a big component; a new line in that list is a perf regression with no
+other symptom.
+
 # Zoom transitions
 
 The series page grows out of the card that opened it and collapses back into it (`apps/mobile/src/lib/series-zoom.ts`).

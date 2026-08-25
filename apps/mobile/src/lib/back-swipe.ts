@@ -161,13 +161,19 @@ const BACK_FAIL_PX = Math.round(BACK_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
  * they weren't satisfied. The observers are attached ONLY while the trace is recording: touch
  * callbacks flip RNGH's `needsPointerData`, and a probe that reconfigures the recognizer it is
  * measuring can't be trusted to be measuring the shipped one.
+ *
+ * `traced` is that flag, as a PARAMETER with the live reading as its default. A caller that
+ * memoizes the gesture has to rebuild it when the flag flips — the shape changes — and passing the
+ * value in is what makes that dependency a real one. Read internally, it was a dependency the
+ * memo listed but never used, which is a lint suppression, which costs the whole calling component
+ * its React Compiler pass (see the callers in app/series).
  */
-export function backSwipePan(tag?: string): PanGesture {
+export function backSwipePan(tag?: string, traced: boolean = isGestureTraceEnabled()): PanGesture {
   const pan = Gesture.Pan()
     .activeOffsetX(BACK_ACTIVATE_PX)
     .failOffsetX(-BACK_FAIL_PX)
     .failOffsetY([-BACK_FAIL_PX, BACK_FAIL_PX]);
-  if (!tag || !isGestureTraceEnabled()) return pan;
+  if (!tag || !traced) return pan;
   // Per-copy, like every other piece of per-copy state on these pans: the recipe is built more
   // than once and the copies must not share a touch origin or a throttle window.
   const downX = makeMutable(0);
