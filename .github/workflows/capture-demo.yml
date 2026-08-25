@@ -158,8 +158,9 @@ jobs:
           # so setting it on the simulator is enough — no build flag, and no navigating to a
           # settings screen that would then be in shot.
           xcrun simctl ui "$UDID" appearance dark
-          # A pinned status bar keeps consecutive captures identical; without it the clock and
-          # battery differ between runs, which is what makes a re-shot set look like a different app.
+          # The status bar is IN these shots (it used to be cropped off), so pinning it is what
+          # keeps a re-shot set from looking like a different app — without it the clock and battery
+          # differ every run. 9:41 is Apple's own convention for device shots.
           xcrun simctl status_bar "$UDID" override \
             --time "9:41" --batteryState charged --batteryLevel 100 \
             --cellularBars 4 --wifiBars 3 --dataNetwork wifi
@@ -175,7 +176,8 @@ jobs:
           ls -la "$RUNNER_TEMP/screens"
           [ -n "$(ls -A "$RUNNER_TEMP/screens")" ] || { echo "!! no screenshots were produced" >&2; exit 1; }
 
-          # Crop the status bar, round the corners, downscale — see the script for why each.
+          # Round the corners and downscale — see the script for why, and for why the status bar
+          # stays in frame.
           python3 scripts/shape-screenshots.py "${{ inputs.width || '440' }}" "$RUNNER_TEMP/screens"/*.png
           du -h "$RUNNER_TEMP/screens"/*.png
 
