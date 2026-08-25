@@ -102,6 +102,12 @@ jobs:
       - run: pip install --quiet pillow
 
       - name: Install Maestro
+        # Pinned. The installer takes whatever is newest when left alone, which means a Maestro
+        # release can break these flows with nothing in this repo having changed — an unknown
+        # property in a flow file already cost a run that way. 2.8.0 is the version every lane was
+        # already getting, so this changes nothing today; it just stops tomorrow deciding for us.
+        env:
+          MAESTRO_VERSION: '2.8.0'
         run: |
           curl -Ls "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"

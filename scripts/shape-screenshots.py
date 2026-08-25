@@ -19,9 +19,10 @@ import sys
 from PIL import Image, ImageDraw
 
 # Corner radius as a fraction of WIDTH rather than a pixel count: the workflow shoots on whichever
-# iPhone the installed runtime offers, so the raw size changes when that does. 15.4% is the iPhone
-# 16 Pro's own ratio (62pt over 402pt), and modern iPhones sit close enough to it (~14–15.5%) that
-# the fraction survives a device change better than a fixed radius would.
+# iPhone the installed runtime offers — an iPhone 17 Pro on the current image, 402pt wide — so the
+# raw size changes when that does. 15.4% is ~62pt at that width, which is the radius Apple has used
+# across this size class; modern iPhones sit close enough to it (~14–15.5%) that the fraction
+# survives a device change better than a fixed pixel radius would.
 #
 # The status bar is deliberately still in frame. It was cropped off once, back when these were meant
 # to read as bare app screens; keeping it makes the top edge a real device edge, which is what makes
