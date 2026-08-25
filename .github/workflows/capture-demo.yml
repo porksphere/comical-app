@@ -40,13 +40,40 @@ on:
         description: Fail if any two recorded frames are further apart than this (visible hitch).
         type: string
         default: '85'
+      from_run:
+        description: >-
+          Reuse the Simulator .app built by an earlier run of this workflow instead of building one.
+          The app only changes when the app changes; tuning the flow or the encode does not need a
+          26-minute rebuild. Leave empty to build fresh.
+        type: string
+        default: ''
+
+# Push runs can't pass inputs, so this is where a push picks up the same artifact reuse. Temporary,
+# like the push trigger above: empty it (or delete it with the trigger) before merging.
+env:
+  PUSH_FROM_RUN: '32809124666'
+
+# Reading another run's artifacts needs this; the default token is otherwise write-only to its own.
+permissions:
+  contents: read
+  actions: read
 
 concurrency:
   group: capture-demo-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      from_run: ${{ steps.pick.outputs.from_run }}
+    steps:
+      - id: pick
+        run: echo "from_run=${{ inputs.from_run || env.PUSH_FROM_RUN }}" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: resolve
+    if: needs.resolve.outputs.from_run == ''
     uses: ./.github/workflows/build-ios-reusable.yml
     with:
       simulator: true
@@ -61,15 +88,23 @@ jobs:
     secrets: inherit
 
   record:
-    needs: build
+    needs: [resolve, build]
+    # `always()` so a skipped build (artifact reuse) doesn't skip this too, then an explicit check
+    # that the build either succeeded or was deliberately skipped — a FAILED build must not fall
+    # through to recording against a stale app.
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
+      # The artifact name is the reusable workflow's fixed output for `simulator: true`, hard-coded
+      # rather than read from needs.build — that output doesn't exist when the build is skipped.
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.build.outputs.artifact }}
+          name: comical-ios-simulator-app
           path: ${{ runner.temp }}/app
+          run-id: ${{ needs.resolve.outputs.from_run || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install ffmpeg
         # Not in the macOS runner image (the ubuntu one has it, macOS doesn't). record-demo.sh
@@ -128,6 +163,8 @@ jobs:
           MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
           MAESTRO_CLI_NO_ANALYTICS: '1'
           OUT: ${{ runner.temp }}/demo.gif
+          # Fixed, so the raw capture can be uploaded below even when the run fails.
+          WORK: ${{ runner.temp }}/capture
           WIDTH: ${{ inputs.width }}
           FPS: ${{ inputs.fps }}
           MAX_GAP_MS: ${{ inputs.max_gap_ms }}
@@ -138,3 +175,13 @@ jobs:
           name: demo-gif
           path: ${{ runner.temp }}/demo.gif
           retention-days: 14
+
+      # Always, including on failure: the raw take is the only way to tune the trim, the encode or
+      # the smoothness budget without spending another runner on it.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-raw-capture
+          path: ${{ runner.temp }}/capture/demo.mp4
+          retention-days: 7
+          if-no-files-found: warn

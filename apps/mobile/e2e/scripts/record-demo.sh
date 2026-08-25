@@ -35,6 +35,7 @@ REPO_ROOT="$(cd "$E2E_DIR/../../.." && pwd)"
 
 OUT="${OUT:-$REPO_ROOT/docs/media/demo.gif}"
 WORK="${WORK:-$(mktemp -d)}"
+mkdir -p "$WORK"
 RAW="$WORK/demo.mp4"
 
 # Output tuning. WIDTH is the GIF's width in px; the phone aspect makes the height ~2.1x that,
@@ -57,6 +58,14 @@ TRIM_START="${TRIM_START:-2.0}"
 # A gap longer than this between two recorded frames is a visible hitch. ~1/12s: at the 15fps the
 # GIF is rendered at, anything beyond this drops a frame the viewer sees.
 MAX_GAP_MS="${MAX_GAP_MS:-85}"
+# ...but only up to here. Both recorders write variable-framerate video and emit NO frames while
+# the screen is still, so every deliberate hold in the flow shows up as a multi-second "gap". The
+# first version of this check read one of those (8.3s, the reader holding a page while the chrome
+# faded) as dropped frames and failed a perfectly good take. A gap this long isn't a dropped frame
+# in any case: nothing renders 15+ consecutive frames late, and the dead air is stripped from the
+# GIF below regardless. What can still ruin the GIF is a hitch INSIDE a movement, and those are
+# tens to hundreds of milliseconds.
+STILL_MS="${STILL_MS:-1000}"
 
 FFMPEG="${FFMPEG:-ffmpeg}"
 need() { command -v "$1" >/dev/null 2>&1 || { echo "!! $1 not found on PATH" >&2; exit 1; }; }
@@ -166,13 +175,22 @@ echo "==> Checking for dropped frames"
 # runner installs whatever brew ships today. showinfo's format has been stable throughout.
 GAP_REPORT=$("$FFMPEG" -v info -i "$RAW" -vf showinfo -f null - 2>&1 \
   | grep -o 'pts_time:[0-9.]*' | cut -d: -f2 \
-  | awk -v trim="$START" '
+  | awk -v trim="$START" -v still="$STILL_MS" '
       $1 == "" { next }
-      { t = $1 + 0; if (t < trim) next; if (prev != "") { g = (t - prev) * 1000; if (g > max) { max = g; at = prev } } prev = t }
-      END { printf "%.1f %.2f", max, at }')
+      {
+        t = $1 + 0
+        if (t < trim) next
+        if (prev != "") {
+          g = (t - prev) * 1000
+          # Ignore anything at or past the stillness bound — that is the screen holding, not a drop.
+          if (g < still && g > max) { max = g; at = prev }
+        }
+        prev = t
+      }
+      END { printf "%.1f %.2f", max + 0, at + 0 }')
 MAX_GAP=${GAP_REPORT% *}
 GAP_AT=${GAP_REPORT#* }
-echo "    worst inter-frame gap: ${MAX_GAP}ms (at ${GAP_AT}s), budget ${MAX_GAP_MS}ms"
+echo "    worst in-motion gap: ${MAX_GAP}ms (at ${GAP_AT}s), budget ${MAX_GAP_MS}ms, stillness above ${STILL_MS}ms ignored"
 if awk -v m="$MAX_GAP" -v b="$MAX_GAP_MS" 'BEGIN { exit !(m > b) }'; then
   echo "!! The device dropped frames during the take, so the GIF would stutter." >&2
   echo "!! Re-run: this is usually contention on the host, not the app. Raw file kept at $RAW" >&2
@@ -181,7 +199,13 @@ fi
 
 echo "==> Encoding GIF"
 mkdir -p "$(dirname "$OUT")"
-# Two passes over one input: palettegen builds a 256-colour palette from the actual frames
+# `mpdecimate` drops frames identical to their predecessor and `setpts` re-times what survives to a
+# constant rate, which is what turns a slow CI take into a watchable GIF: every stretch where the
+# simulator sat still between two Maestro commands (2-5s each on that hardware) collapses to
+# nothing instead of becoming 30-70 duplicated frames. Without it a 28-second movement window
+# encodes to a 28-second GIF that is mostly frozen.
+#
+# Then two passes over one input: palettegen builds a 256-colour palette from the actual frames
 # (stats_mode=diff weights the moving parts, which is where banding shows), paletteuse applies it.
 # An `if`, not `[ -n ... ] && ...`: under `set -e` the && form exits the script when DURATION is
 # empty, because the test failing makes the whole line's status non-zero.
@@ -190,7 +214,7 @@ if [ -n "$DURATION" ]; then
   DURATION_ARG=(-t "$DURATION")
 fi
 "$FFMPEG" -v error -y -ss "$START" "${DURATION_ARG[@]}" -i "$RAW" \
-  -vf "fps=$FPS,scale=$WIDTH:-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3" \
+  -vf "mpdecimate=hi=64*12:lo=64*5:frac=0.33,setpts=N/$FPS/TB,fps=$FPS,scale=$WIDTH:-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3" \
   -loop 0 "$OUT"
 
 SIZE=$(du -h "$OUT" | cut -f1)
