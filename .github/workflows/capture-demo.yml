@@ -94,10 +94,12 @@ jobs:
           run-id: ${{ needs.resolve.outputs.from_run || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install ffmpeg
-        # Not in the macOS runner image (the ubuntu one has it, macOS doesn't). Used only to
-        # downscale the screenshots.
-        run: brew install ffmpeg
+      # Pillow shapes the screenshots (scripts/shape-screenshots.py). Via setup-python rather than
+      # the system interpreter because a Homebrew Python refuses `pip install` into itself (PEP 668).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pillow
 
       - name: Install Maestro
         run: |
@@ -173,17 +175,8 @@ jobs:
           ls -la "$RUNNER_TEMP/screens"
           [ -n "$(ls -A "$RUNNER_TEMP/screens")" ] || { echo "!! no screenshots were produced" >&2; exit 1; }
 
-          # Crop the status bar off, then downscale. The clock, wifi and battery say nothing about
-          # the app and date the screenshot; without them each shot starts at the app's own header.
-          # Expressed as a FRACTION of height, not a pixel count: the simulator is whichever iPhone
-          # the runtime offers, so the raw height changes when that does. 5.5% clears the bar on a
-          # modern iPhone with room to spare, and stops short of the app's first row.
-          for f in "$RUNNER_TEMP/screens"/*.png; do
-            ffmpeg -v error -y -i "$f" \
-              -vf "crop=iw:ih*0.945:0:ih*0.055,scale=${{ inputs.width || '440' }}:-1:flags=lanczos" \
-              "$f.out.png"
-            mv "$f.out.png" "$f"
-          done
+          # Crop the status bar, round the corners, downscale — see the script for why each.
+          python3 scripts/shape-screenshots.py "${{ inputs.width || '440' }}" "$RUNNER_TEMP/screens"/*.png
           du -h "$RUNNER_TEMP/screens"/*.png
 
       - uses: actions/upload-artifact@v4
