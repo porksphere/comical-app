@@ -1,0 +1,22 @@
+# A wall-clock pause of `MS` milliseconds, for demo.yaml's pacing. Not for use in a test — a test
+# should wait on a condition, which is why Maestro ships no sleep command ("no more manual sleep()
+# calls"). A capture genuinely needs wall-clock time, so the viewer can register a screen before
+# the next tap moves it.
+#
+# The loop body is an `evalScript`, which runs in Maestro's JS engine on the HOST. The device is
+# never touched for the duration, so it sits idle holding a still frame while the recorder rolls —
+# a pause implemented on-device would compete for frames with the animation being filmed.
+#
+# Written as `repeat` + `while` because that is the documented way to loop on a JS condition; a
+# multi-statement `evalScript` (`${var e = ...; while (...) {}}`) is not a form the docs show, and
+# every example there is a single expression.
+#
+# Maestro requires every flow file to declare its own appId, subflows included — see ../README.md.
+appId: com.porksphere.comical
+---
+- evalScript: ${output.pauseUntil = Date.now() + Number(MS)}
+- repeat:
+    while:
+      true: ${Date.now() < output.pauseUntil}
+    commands:
+      - evalScript: ${output.pauseTick = Date.now()}

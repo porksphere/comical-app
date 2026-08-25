@@ -20,6 +20,12 @@ name: Capture demo GIF
 # dropped-frame check that fails the job rather than shipping a stuttering GIF.
 
 on:
+  # TEMPORARY, remove before merging: a workflow_dispatch workflow is only dispatchable once it
+  # exists on the default branch, so a brand-new one can't be triggered from the branch that adds
+  # it. This push trigger is how the first run gets exercised; every run is a full iOS Simulator
+  # build, so it should not survive the merge.
+  push:
+    branches: [claude/readme-cleanup-i4qlvg]
   workflow_dispatch:
     inputs:
       width:
@@ -62,6 +68,11 @@ jobs:
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: ${{ runner.temp }}/app
+
+      - name: Install ffmpeg
+        # Not in the macOS runner image (the ubuntu one has it, macOS doesn't). record-demo.sh
+        # needs ffmpeg to encode the GIF and ffprobe to measure dropped frames.
+        run: brew install ffmpeg
 
       - name: Install Maestro
         run: |

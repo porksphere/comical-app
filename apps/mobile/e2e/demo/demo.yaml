@@ -10,12 +10,9 @@
 # (see their headers for how each id is derived), so a restyle that keeps its testIDs keeps this
 # capture working.
 #
-# PACING. The pauses below are `evalScript` spins, which run in Maestro's own JS engine on the
-# HOST, not on the device. That is the whole point: the device sits idle holding a still frame
-# while the recorder keeps rolling, so a pause costs the capture nothing. A pause implemented
-# on-device would compete for frames with the animation being filmed. Maestro has no sleep command
-# by design ("no more manual sleep() calls") because a test should wait on a condition; a capture
-# genuinely needs wall-clock time, so the viewer can register a screen before the next tap.
+# PACING. The pauses are `pause.yaml`, which burns wall-clock time in Maestro's JS engine on the
+# HOST rather than on the device — see that file for why that distinction matters to a recording,
+# and why it's written as a loop rather than a sleep.
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -23,13 +20,19 @@ appId: com.porksphere.comical
 # Let the first screen paint and settle before anything moves.
 - assertVisible:
     id: "tab.browse"
-- evalScript: ${var e = Date.now() + 1200; while (Date.now() < e);}
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '1200'
 
 - tapOn:
     id: "tab.browse"
 - waitForAnimationToEnd:
     timeout: 5000
-- evalScript: ${var e = Date.now() + 900; while (Date.now() < e);}
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '900'
 
 # The zoom: the series page grows out of the card that opened it (see AGENTS.md "Zoom
 # transitions"). The most distinctive motion in the app, and the reason this capture is a video
@@ -40,14 +43,20 @@ appId: com.porksphere.comical
     id: "series.cover"
 - waitForAnimationToEnd:
     timeout: 5000
-- evalScript: ${var e = Date.now() + 1400; while (Date.now() < e);}
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '1400'
 
 - scrollUntilVisible:
     element:
       id: "series\\.chapter\\..*"
     direction: DOWN
     timeout: 20000
-- evalScript: ${var e = Date.now() + 800; while (Date.now() < e);}
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '800'
 
 - tapOn:
     id: "series\\.chapter\\..*"
@@ -59,21 +68,33 @@ appId: com.porksphere.comical
 
 # Hold on page 1 long enough for the reader chrome to auto-hide (3s, reader.tsx CHROME_HIDE_MS),
 # so the page turns below are filmed against a clean full-bleed page rather than the toolbar.
-- evalScript: ${var e = Date.now() + 3600; while (Date.now() < e);}
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '3600'
 
 - tapOn:
     id: "reader.control.next"
-- evalScript: ${var e = Date.now() + 1100; while (Date.now() < e);}
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '1100'
 - tapOn:
     id: "reader.control.next"
-- evalScript: ${var e = Date.now() + 1100; while (Date.now() < e);}
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '1100'
 
 # A dragged turn rather than a tap, so the capture shows the pager actually tracking a finger.
 - swipe:
     start: "85%, 55%"
     end: "20%, 55%"
     duration: 400
-- evalScript: ${var e = Date.now() + 1400; while (Date.now() < e);}
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '1400'
 
 # Out via the OS back gesture, not reader.toolbar.back: the chrome has auto-hidden by now, so the
 # toolbar is faded and untappable (the same trap reader-navigation.yaml documents). This collapses
@@ -81,8 +102,14 @@ appId: com.porksphere.comical
 - back
 - waitForAnimationToEnd:
     timeout: 5000
-- evalScript: ${var e = Date.now() + 900; while (Date.now() < e);}
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '900'
 - back
 - waitForAnimationToEnd:
     timeout: 5000
-- evalScript: ${var e = Date.now() + 1200; while (Date.now() < e);}
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '1200'
