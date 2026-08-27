@@ -29,8 +29,7 @@ Add the release channel as a source (**Sources → +**) to get updates:
 https://github.com/porksphere/comical-app/releases/download/ios-release/apps.json
 ```
 
-Or install `comical-unsigned.ipa` from the
-[latest release](https://github.com/porksphere/comical-app/releases/latest) directly.
+Or install **[comical-unsigned.ipa](https://github.com/porksphere/comical-app/releases/latest)** directly.
 
 ### Android
 
