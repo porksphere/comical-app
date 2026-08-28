@@ -162,12 +162,14 @@ and dropping to the screen-relative `page` target instead (which is what this di
 the flying copy to full screen width. Which destination is in play is LATCHED while the page is at
 rest (`zoomBoundOnScreen`), never read live off the scroll — swapping mid-collapse is a visible
 jump. A copy that is not landing on the real cover also fades in later and slower, since there is no
-identical picture underneath to hide the cross-fade, and it SLIDES IN from behind the mask's own top
-edge rather than materialising mid-screen — the direction the cover actually went, measured against
-the mask rather than the real scroll depth. Late, deliberately: the mask has closed by then, so the
-copy emerges from an edge near where it is going instead of sweeping the whole page. That entry
-rides the copy alone; putting it on the destination instead would drag the page with it, which is
-the artifact above pointing the other way.
+identical picture underneath to hide the cross-fade, and it SLIDES IN rather than materialising
+mid-screen. That entry is its OWN PATH RUN BACKWARDS — the copy's centre already travels a straight
+line to the card, so it starts further back along that same line and arrives in one motion, one
+direction. Anything aimed differently (it pushed down from the top edge at first) reads as two
+animations laid over each other. Late, deliberately: the push is the least that clears the mask, so
+by 0.44 the mask has closed enough that the run in is short. It rides the copy alone; putting it on
+the destination instead would drag the page with it, which is the artifact above pointing the other
+way.
 
 **A list that reorders is asked where its item is; it is not measured.** `useZoomSurfaceLocator`
 answers out of the virtualization state (`getState().positionAtIndex` / `.scroll`), which knows every
