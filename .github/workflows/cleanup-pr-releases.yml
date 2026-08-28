@@ -1,7 +1,6 @@
 name: Clean up per-PR releases
 
-# Deletes the `android-pr-<N>` / `ios-pr-<N>` / `ios-devclient-pr-<N>` install channels once their
-# PR is done.
+# Deletes the `android-pr-<N>` / `ios-pr-<N>` install channels once their PR is done.
 #
 # Both build workflows already carry a `cleanup-pr` job on `pull_request: closed`, and both were
 # silently not running it: every merged PR since the channels were introduced left its release
@@ -40,7 +39,7 @@ jobs:
           PR: ${{ github.event.number }}
         run: |
           set -euo pipefail
-          for tag in "android-pr-${PR}" "ios-pr-${PR}" "ios-devclient-pr-${PR}"; do
+          for tag in "android-pr-${PR}" "ios-pr-${PR}"; do
             gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag \
               && echo "deleted $tag" || echo "no $tag to delete"
           done
@@ -56,7 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName \
-            -q '.[].tagName | select(test("^(android-pr|ios-pr|ios-devclient-pr)-[0-9]+$"))' > tags.txt || true
+            -q '.[].tagName | select(test("^(android|ios)-pr-[0-9]+$"))' > tags.txt || true
 
           [ -s tags.txt ] || { echo "No per-PR releases."; exit 0; }
 
@@ -73,18 +72,13 @@ jobs:
             esac
           done < tags.txt
 
-      # Deleting an `ios-pr-<N>` / `ios-devclient-pr-<N>` release orphans its entry in that
-      # channel's aggregate AltStore source, which would keep offering an IPA that 404s. The script
-      # rebuilds a source from whichever of its per-PR releases still exist, so running it
-      # unconditionally for both channels converges whether or not this run deleted anything.
+      # Deleting an `ios-pr-<N>` release orphans its entry in the aggregate `ios-pr` AltStore
+      # source, which would keep offering an IPA that 404s. The script rebuilds that source from
+      # whichever ios-pr-* releases still exist, so running it unconditionally converges whether or
+      # not this run deleted anything.
       - uses: actions/checkout@v4
 
       - name: Rebuild the ios-pr source
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/refresh-ios-pr-source.sh pr
-
-      - name: Rebuild the ios-devclient-pr source
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/refresh-ios-pr-source.sh devclient-pr
+        run: bash .github/scripts/refresh-ios-pr-source.sh

@@ -178,7 +178,9 @@ jobs:
       #                 module on it), so the two see different headers.
       # Three live flavors now (device-Release, sim-Release, device-Debug-devclient) against the
       # repo's shared 10 GB cache budget. ccache entries compress well under it, and GitHub's LRU
-      # drops the oldest per-commit entries first, which are the ones nothing restores from.
+      # drops the oldest per-commit entries first, which are the ones nothing restores from. Each
+      # flavor also needs its writer to run at least weekly: GitHub evicts an entry after seven days
+      # without access, and a flavor whose only writer is occasional is a flavor with no cache.
       BUILD_FLAVOR: ${{ inputs.simulator && 'sim' || 'device' }}-${{ inputs.configuration }}${{ inputs.dev_client && '-devclient' || '' }}
     steps:
       - uses: actions/checkout@v4
@@ -233,7 +235,8 @@ jobs:
       # Keyed on BUILD_FLAVOR (see the job env above for what's in it and why). Every flavor
       # needs something on the default branch that writes its entry, or branches restore nothing:
       # e2e.yml's push-to-main keeps `sim` warm, build-ios.yml's keeps `device-Release`, and
-      # build-ios-devclient.yml's nightly schedule keeps `device-Debug-devclient`.
+      # build-ios-devclient.yml's twice-weekly schedule keeps `device-Debug-devclient` — that one
+      # exists ONLY for this, since nothing else in the repo builds Debug (see its header).
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:

@@ -1,37 +1,31 @@
-name: Build iOS dev-client (per-PR + Windows iterative dev)
+name: Build iOS dev-client (Windows iterative dev)
 
 # Builds the iOS **development-client** shell — a Debug build with expo-dev-client, carrying the
 # SAME `com.porksphere.comical` bundle id as every other build (see
-# apps/mobile/plugins/with-devclient-variant.js for why it doesn't coexist). It embeds no JS: you
-# point it at a Metro server and iterate from there.
+# apps/mobile/plugins/with-devclient-variant.js for why it doesn't coexist) — and publishes it to
+# its own rolling `ios-devclient` SideStore/AltStore source.
 #
-# THREE TRIGGERS, three destinations:
-#
-#   pull_request       every open PR gets its own `ios-devclient-pr-<N>` release, aggregated into
-#                      the single `ios-devclient-pr` SideStore/AltStore source. Install a PR's
-#                      shell to iterate over Metro against ITS native code — which is the only
-#                      thing a dev-client build can differ in, since the JS comes from your
-#                      machine. Also the compile check: this is the repo's only Debug build, and
-#                      Debug-only breakage (a #if DEBUG path, a dev-only pod) is invisible to
-#                      every other lane.
-#   schedule           nightly, on main. Publishes the rolling `ios-devclient` source AND — the
-#                      real reason it exists — writes this flavor's ccache entry, which is what
-#                      makes the PR builds above finish in minutes instead of half an hour. See
-#                      BUILD_FLAVOR in build-ios-reusable.yml: a Debug build shares no object code
-#                      with the Release lanes, so nothing else can warm it, and before this the
-#                      workflow was manual-only and therefore compiled cold every single run.
-#                      Nightly rather than per-push because ccache is content-addressed and almost
-#                      everything it holds is node_modules/pods, which move with bun.lock and not
-#                      with a day of app commits — a day-old entry hits about as well as an
-#                      hour-old one, at a tenth of the macOS minutes.
-#   workflow_dispatch  same as the nightly, on whatever ref you pick. Still the way to refresh the
-#                      rolling channel immediately after a native change lands.
-#
-# Install the rolling one once via its source; from then on you iterate entirely from a Windows PC:
-# run `bun run dev:device` (Metro over your LAN) and connect the installed dev build to it from the
+# Install it once via that source; from then on you iterate entirely from a Windows PC: run
+# `bun run dev:device` (Metro over your LAN) and connect the installed dev build to it from the
 # phone's launcher. JS/TS edits hot-reload on device; only NATIVE changes (new native module /
-# config plugin / SDK bump) need a fresh build. See docs/PROFILING.md → "Iterative Expo dev from
-# Windows".
+# config plugin / SDK bump) need a fresh run of this workflow. See docs/PROFILING.md → "Iterative
+# Expo dev from Windows".
+#
+# ON DEMAND, not per PR. The shell embeds no JS at all, so a pull request's changes are invisible to
+# it unless they are native — which almost none are. Building one per PR was most of a macOS runner
+# hour spent producing a shell identical to the last one.
+#
+# THE HEARTBEAT IS NOT COSMETIC. This is the repo's only Debug build, and a Debug compile shares
+# essentially no object code with the Release lanes, so nothing else can warm its ccache entry (see
+# BUILD_FLAVOR in build-ios-reusable.yml). Only the DEFAULT BRANCH writes caches, and GitHub evicts
+# an entry after seven days without access. On-demand alone therefore has no cache to take advantage
+# of: every dispatch that follows a quiet week compiles from cold, which is ~30 minutes, and a quiet
+# week is exactly when you reach for this. The schedule exists to keep that entry alive and current,
+# so a dispatch lands in minutes. Twice weekly rather than nightly — comfortably inside the eviction
+# window at a quarter of the runner cost, and ccache is content-addressed with almost everything in
+# it coming from node_modules/pods, which move with `bun.lock` rather than with a few days of app
+# commits. It refreshes the rolling channel while it is there, so the source is never far behind
+# main either.
 #
 # Kept separate from build-ios.yml on purpose: the ios-main / per-PR ios-pr builds are profiling
 # Release and the tagged ios-release build is clean Release — this is the only thing that builds
@@ -40,53 +34,27 @@ name: Build iOS dev-client (per-PR + Windows iterative dev)
 on:
   # Manual. Pick the branch/tag to build from in the "Run workflow" dialog (or
   # `gh workflow run build-ios-devclient.yml --ref <branch>`); the whole workflow — including the
-  # reusable build's checkout — runs on that ref.
+  # reusable build's checkout — runs on that ref. Dispatch from `main` when you want the run to
+  # WRITE the ccache as well as read it; the save steps are gated on the default branch.
   workflow_dispatch: {}
 
-  # Nightly on main. Off-peak-ish and deliberately not on the hour, to avoid GitHub's scheduled-run
-  # backlog at :00. `github.ref` on a schedule event is the default branch, which is what gates the
-  # reusable workflow's cache SAVE steps — that gating is the whole point of this trigger.
+  # The cache heartbeat — see the header. Mondays and Thursdays, off the hour to avoid GitHub's
+  # scheduled-run backlog at :00. `github.ref` on a schedule event is the default branch, which is
+  # what gates the reusable workflow's cache SAVE steps.
   schedule:
-    - cron: '41 6 * * *'
+    - cron: '41 6 * * 1,4'
 
-  # Same paths filter as build-ios.yml: this is an equally expensive macOS build, and a docs-only
-  # commit changes nothing it compiles.
-  #
-  # NO `closed` here, deliberately — teardown of the per-PR release lives in
-  # cleanup-pr-releases.yml, which has no paths filter. See that file's header for the second,
-  # sharper reason.
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - 'apps/**'
-      - 'packages/**'
-      # On-device runtime submodule pointer — a bump changes the built app.
-      - 'external/comical'
-      - 'package.json'
-      - 'bun.lock'
-      - '.github/workflows/build-ios-devclient.yml'
-      - '.github/workflows/build-ios-reusable.yml'
-      # Negations are evaluated after the positives above, so a commit touching ONLY markdown, the
-      # docs dir, or eas.json won't fire a build; a mixed commit still does. (eas.json isn't used
-      # by CI — it does bare `expo prebuild`.)
-      - '!**/*.md'
-      - '!apps/mobile/docs/**'
-      - '!apps/mobile/eas.json'
-
-# Per-ref, not global. The group used to be the bare string `ios-devclient`, which was right while
-# this was manual-only and wrong the moment PRs started building: every PR would have cancelled
-# every other PR's build, and the nightly's cache write with them.
+# Per-ref rather than the bare string `ios-devclient`: a dispatch on a branch and the scheduled run
+# on main are different work with different destinations for the cache, and cancelling one because
+# the other started would throw away whichever got there first.
 concurrency:
   group: ios-devclient-${{ github.ref }}
   cancel-in-progress: true
 
-# contents: write — publish the IPA to a GitHub Release (public, unauthenticated direct-download
-#   URLs that SideStore/AltStore can fetch).
-# pull-requests: read — refresh-ios-pr-source.sh calls `gh pr view` to check each
-#   ios-devclient-pr-<N>'s state so it only lists OPEN PRs (self-heals merged squatters).
+# Publish the IPA + source manifest to a GitHub Release (public, unauthenticated direct-download
+# URLs that SideStore/AltStore can fetch).
 permissions:
   contents: write
-  pull-requests: read
 
 jobs:
   build:
@@ -94,17 +62,11 @@ jobs:
     with:
       configuration: Debug
       dev_client: true
-      # Distinct Sentry buildChannel per destination, so a crash from a PR's shell isn't filed
-      # against the rolling one.
-      channel: ${{ github.event_name == 'pull_request' && 'ios-devclient-pr' || 'ios-devclient' }}
+      channel: ios-devclient
     secrets: inherit
 
-  # The rolling `ios-devclient` channel: the nightly and any manual dispatch. NOT PRs — they'd
-  # clobber the one source you installed from, which is the source you want left alone while you
-  # are testing someone's branch.
   publish:
     needs: build
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -183,100 +145,5 @@ jobs:
           \`${BASE}/apps.json\`
 
           Then run \`bun run dev:device\` on your PC and connect from the app's launcher.
-          Rebuilt nightly from main; re-run this workflow to refresh it immediately after a native
-          change lands. Pure JS/TS iterates over Metro with no rebuild at all."
-
-  # Per-PR dev-client host. Each open PR gets an `ios-devclient-pr-<N>` prerelease holding just the
-  # IPA + a `meta.json` fragment — NOT its own source. refresh-pr-source below aggregates every
-  # open PR into the single stable `ios-devclient-pr` source, so you add ONE source once instead of
-  # one per branch. Deliberately a different source from `ios-pr`: those two builds share a bundle
-  # id, and listing them together would offer two indistinguishable "PR #123" entries (see the
-  # script's header). cleanup-pr-releases.yml deletes this release on close. Fork PRs get a
-  # read-only token and skip publishing (still built/verified).
-  publish-pr:
-    needs: build
-    # Same-repo PRs only: fork PRs get a read-only token and can't create Releases.
-    if: >-
-      github.event_name == 'pull_request'
-      && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download unsigned dev-client IPA
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.build.outputs.artifact }}
-          path: ${{ runner.temp }}/ipa
-
-      - name: Publish IPA + meta to the ios-devclient-pr-<N> Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.build.outputs.version }}
-          PR: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          TAG="ios-devclient-pr-${PR}"
-          mv "$RUNNER_TEMP/ipa/comical-unsigned.ipa" "$RUNNER_TEMP/ipa/comical-devclient.ipa"
-          IPA="$RUNNER_TEMP/ipa/comical-devclient.ipa"
-          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
-          SIZE=$(stat -c%s "$IPA")
-          DATE=$(date -u +%Y-%m-%d)
-
-          # meta.json fragment consumed by refresh-ios-pr-source.sh. `sort` is this run's number —
-          # deliberately NOT $VERSION, which counts commits in the release series and so ties
-          # between two PRs of equal depth; the run number is globally monotonic, which is what
-          # ordering PRs newest-first in the aggregate source needs. jq JSON-escapes the PR title
-          # safely (titles may contain quotes/$/backticks).
-          jq -n \
-            --arg version "$VERSION" \
-            --arg date "$DATE" \
-            --arg desc "$(printf 'PR #%s (dev): %s' "$PR" "$PR_TITLE")" \
-            --arg dl "${BASE}/comical-devclient.ipa" \
-            --argjson size "$SIZE" \
-            --argjson sort "$GITHUB_RUN_NUMBER" \
-            '{version: $version, date: $date, localizedDescription: $desc,
-              downloadURL: $dl, size: $size, channel: "devclient-pr", sort: $sort}' \
-            > "$RUNNER_TEMP/meta.json"
-
-          # Recreate the per-PR tag/release (pointed at the PR head) so the IPA URL stays stable
-          # across pushes to the PR.
-          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create "$TAG" \
-            "$IPA" \
-            "$RUNNER_TEMP/meta.json" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$HEAD_SHA" \
-            --prerelease \
-            --title "Comical iOS dev-client — PR #${PR}" \
-            --notes "Unsigned dev-client shell (Debug + expo-dev-client) for PR #${PR}. It embeds no
-          JS — run \`bun run dev:device\` and connect from the launcher, so you iterate over Metro
-          against this PR's native code.
-
-          Install via the shared PR dev-client source (every open PR) — add it once in
-          SideStore/AltStore → Sources → +
-          \`https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-devclient-pr/apps.json\`
-          then pick this PR's version. Or grab the IPA directly:
-          \`${BASE}/comical-devclient.ipa\`
-
-          ⚠️ Same bundle id as the release app — installing this replaces Comical on your device."
-
-  # Regenerate the single stable `ios-devclient-pr` source (every open PR, newest build first)
-  # after a PR publish. Enumerates the ios-devclient-pr-* releases and their meta.json fragments —
-  # stateless, so a close and an open converge (the close-time refresh runs from
-  # cleanup-pr-releases.yml). Concurrency-locked (no cancel) so overlapping runs from different PRs
-  # serialize instead of clobbering the source.
-  refresh-pr-source:
-    needs: publish-pr
-    runs-on: ubuntu-latest
-    concurrency:
-      group: ios-devclient-pr-source
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-      - name: Rebuild ios-devclient-pr source
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/refresh-ios-pr-source.sh devclient-pr
+          Rebuilt twice weekly from main; re-run this workflow to refresh it immediately after a
+          native change lands. Pure JS/TS iterates over Metro with no rebuild at all."
