@@ -247,35 +247,19 @@ const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // it appears over whatever chapter rows are on screen, and at [0.7, 1] — full strength a quarter of
 // the way through a fling — that read as the cover popping in rather than arriving.
 //
-// Tracks the entry above rather than leading it: the copy is clipped by the mask until about 0.44,
-// so anything this does before then is invisible anyway, and it reaches full strength at 0.15 —
-// just before the page's own content finishes fading out at 0.13, so there is no frame with neither
-// picture on it. What it actually buys is softening the moment the copy clears the mask edge, which
-// is otherwise a hard rectangle appearing from under a line.
-const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.15, 0.5];
-// When the `cover-offscreen` copy makes its entrance, as a slice of the travel. It is the only
-// destination whose copy has nowhere real to start: `cover` starts on the actual cover, `page`
-// starts as the page's own image, and this one is a picture of something that has scrolled off the
-// top — so centred and un-animated it simply materialised mid-screen, arriving from nothing.
+// So it waits for the WINDOW TO COME DOWN TO THE COVER'S OWN SIZE. The copy is only ever about a
+// cover card wide — it is `hero.size / s`, so it shrinks from the on-page cover to the grid card
+// across the collapse — while the window starts at the whole screen. Early on that leaves a small
+// picture adrift in a frame twice its width, which is what reads as a cover materialising out of
+// nowhere rather than the page becoming one. The fill is what the timing tracks: the copy spans
+// about 53% of the window at 0.5, 62% at 0.32, 79% at 0.13 and all of it at 0. Fading in over the
+// last stretch means it arrives as it comes to fill the window, and there is never a frame with a
+// cover floating in the middle of one.
 //
-// It arrives ALONG ITS OWN PATH, which is the whole trick and took two goes to get right. The
-// copy's centre already travels a straight line from the screen centre to the card (`end` is
-// centred, so its window position is just `centre + (tx, ty) * (1 - q)`), and the entry is that
-// same line extended BACKWARDS: the position the copy would have at `q + k`. Nothing else moves it,
-// so there is one motion in one direction from first frame to last. Pushing it up from the top edge
-// instead — which is what this did first — was a second, differently-aimed movement laid over the
-// diagonal collapse, and it read as exactly that: two animations rather than one.
-//
-// `k` is chosen per frame as the least that puts the copy clear of the MASK, so it is genuinely
-// clipped rather than merely transparent, and so the distance shrinks as the mask closes. Which
-// edge it clears through falls out of the geometry — a card low on the left is reached by going
-// down-and-left, so the copy waits up and to the right.
-//
-// LATE, and the numbers matter. Held out of sight for the first half of the collapse, it emerges
-// around 0.44 — by which point the mask is a fraction of the screen, so the run in from the edge is
-// short — and is home by 0.10. Starting it earlier is not "more of the same": it is a longer sweep
-// through a bigger window, which is what read as the copy being flung in.
-const ZOOM_THUMB_ENTRY_CLOSE = [0.1, 0.45];
+// 0.13 is also a floor, and the two agree: it is where the page's own content finishes fading out
+// (ZOOM_CONTENT_FADE_CLOSE), so finishing any later leaves frames with neither picture on them and
+// the window showing straight through to the grid.
+const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.13, 0.32];
 // The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
 // carried away, it is the surface being uncovered, so matching the page's curve held it opaque
 // through the first third of the collapse and kept the grid hidden long after the page had
@@ -2591,7 +2575,7 @@ function SeriesReaderInstance({
         height: base.height,
         opacity: 0,
         borderRadius: hero ? hero.radius : 0,
-        transform: [{ translateX: 0 }, { translateY: 0 }],
+        transform: [{ translateY: 0 }],
       };
     }
     const q = Math.max(0, zoom.value);
@@ -2621,45 +2605,6 @@ function SeriesReaderInstance({
         height: base.height + (fh - base.height) * q,
       };
     }
-    // The entry (see ZOOM_THUMB_ENTRY_CLOSE): the copy's own path, run backwards.
-    //
-    // `v` is the whole of that path — the window displacement from the copy's resting place at
-    // q = 1 (the screen centre, since `end` is centred for this destination and `thumb` with it) to
-    // the card at q = 0. So the copy's window centre is `centre + v * (1 - q)`, and `centre + v *
-    // (1 - q - k)` is that same line k further back. `dragX/Y` are in none of this on purpose: they
-    // displace the mask and the page by the same amount, so they cancel out of anything measured
-    // between the two.
-    //
-    // `k` is the smallest push that separates the copy from the mask, per axis, taking whichever
-    // axis clears first — two boxes stop overlapping as soon as EITHER axis does. An axis the path
-    // doesn't move along can never separate on its own, hence the Infinity. The cap is a screen's
-    // worth of travel, for a path so short that clearing the mask would otherwise need a huge
-    // multiple of it; at that point the copy simply starts partly visible, which is better than
-    // starting a screen and a half away.
-    let entryX = 0;
-    let entryY = 0;
-    if (geom && hero && geom.kind === 'cover-offscreen') {
-      // Neither the drag nor the detach appears here: both displace the copy and the mask by the
-      // identical amount, so they cancel out of a separation measured between the two.
-      const u = 1 - q;
-      const vx = geom.tx + heroShiftX.value;
-      const vy = geom.ty + heroShiftY.value;
-      const hw = (rect.width * s) / 2;
-      const hh = (rect.height * s) / 2;
-      const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, width, height);
-      const maskRight = box.left + box.width;
-      const maskBottom = box.top + box.height;
-      const kx = vx > 0 ? u - (box.left - width / 2 - hw) / vx : vx < 0 ? u - (maskRight - width / 2 + hw) / vx : Infinity;
-      const ky = vy > 0 ? u - (box.top - height / 2 - hh) / vy : vy < 0 ? u - (maskBottom - height / 2 + hh) / vy : Infinity;
-      const len = Math.hypot(vx, vy);
-      const cap = len > 0.5 ? Math.hypot(width, height) / len : 0;
-      const k =
-        Math.max(0, Math.min(kx, ky, cap)) * interpolate(q, ZOOM_THUMB_ENTRY_CLOSE, [0, 1], Extrapolation.CLAMP);
-      // Back into page coordinates, where the copy's transform lives — the page's own scale is
-      // applied over the top of it.
-      entryX = (-vx * k) / Math.max(s, 0.01);
-      entryY = (-vy * k) / Math.max(s, 0.01);
-    }
     return {
       left: rect.x,
       top: rect.y,
@@ -2667,24 +2612,18 @@ function SeriesReaderInstance({
       height: rect.height,
       opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP),
       borderRadius: (hero ? hero.radius : 0) / Math.max(s, 0.01),
-      // Two translates, and only one of them is ever non-zero.
+      // The SCROLL CORRECTION, which only `cover` ever has (`zoomBoundShift` returns 0 for the
+      // others). The copy is laid out on the destination bound, so this is INSIDE the page, in the
+      // same coordinates the bound was measured in, where "the cover moved up by `shift`" is
+      // exactly `-shift`. Its counterpart in zoomPageStyle carries the same shift the other way,
+      // which is what keeps the copy landing on the card at q = 0 and on the real cover at q = 1.
       //
-      // `cover` takes the SCROLL CORRECTION: the copy is laid out on the destination bound, so this
-      // is INSIDE the page, in the same coordinates the bound was measured in, where "the cover
-      // moved up by `shift`" is exactly `-shift`. Its counterpart in zoomPageStyle carries the same
-      // shift the other way, which is what keeps the copy landing on the card at q = 0 and on the
-      // real cover at q = 1.
-      //
-      // `cover-offscreen` takes the ENTRY instead (see ZOOM_THUMB_ENTRY_CLOSE) — a slide down into
-      // place from behind the mask's top edge. Deliberately on the COPY alone and not on `end`:
-      // moving the destination would move the page with it, which is the drag-the-page-up artifact
-      // this destination exists to avoid, just pointing the other way. Nothing has to compensate for
-      // it in zoomPageStyle for the same reason, and it decays to 0 before the landing, so the copy
-      // still arrives exactly on the card.
-      transform: [
-        { translateX: entryX },
-        { translateY: -zoomBoundShift(geom, detailsScrollOffset.value) + entryY },
-      ],
+      // Nothing else moves the copy. `cover-offscreen` used to slide in along its own path from
+      // behind the mask edge, on the theory that a picture with nowhere real to start should arrive
+      // rather than appear; at any timing that was still legible it read as a second animation
+      // riding the collapse. Waiting until the window is cover-card sized (see
+      // ZOOM_THUMB_FADE_CLOSE_OFFCOVER) settles it without moving anything.
+      transform: [{ translateY: -zoomBoundShift(geom, detailsScrollOffset.value) }],
     };
   }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, copyMorphs, width, height]);
   // What the flying copy DRAWS. A series open flies the series cover (the route's `cover` param is

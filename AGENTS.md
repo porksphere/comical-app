@@ -161,15 +161,16 @@ wrong: the size is what the collapse's scale is derived from, so keeping it keep
 and dropping to the screen-relative `page` target instead (which is what this did first) balloons
 the flying copy to full screen width. Which destination is in play is LATCHED while the page is at
 rest (`zoomBoundOnScreen`), never read live off the scroll — swapping mid-collapse is a visible
-jump. A copy that is not landing on the real cover also fades in later and slower, since there is no
-identical picture underneath to hide the cross-fade, and it SLIDES IN rather than materialising
-mid-screen. That entry is its OWN PATH RUN BACKWARDS — the copy's centre already travels a straight
-line to the card, so it starts further back along that same line and arrives in one motion, one
-direction. Anything aimed differently (it pushed down from the top edge at first) reads as two
-animations laid over each other. Late, deliberately: the push is the least that clears the mask, so
-by 0.44 the mask has closed enough that the run in is short. It rides the copy alone; putting it on
-the destination instead would drag the page with it, which is the artifact above pointing the other
-way.
+jump.
+
+A copy that is not landing on the real cover has no identical picture underneath to hide the
+cross-fade, so **it waits for the window to come down to the cover's own size** rather than fading
+on the same curve. The copy is only ever about a cover card wide, while the window starts at the
+whole screen, so fading in early leaves a picture adrift in a frame twice its width — which is what
+reads as a cover appearing out of nowhere. Timed off that fill instead, it arrives as it comes to
+fill the window. Moving it is not the answer and was tried twice: sliding it in from the mask edge,
+along its own path run backwards, is a second animation riding the collapse at any timing still
+legible enough to see. Nothing but the fade changes.
 
 **A list that reorders is asked where its item is; it is not measured.** `useZoomSurfaceLocator`
 answers out of the virtualization state (`getState().positionAtIndex` / `.scroll`), which knows every
