@@ -245,25 +245,33 @@ const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // destination, where the details have scrolled past their own cover. On `cover` this cross-fade is
 // undetectable: the copy is drawn over an identical picture, so it can be as quick as it likes. Here
 // it appears over whatever chapter rows are on screen, and at [0.7, 1] — full strength a quarter of
-// the way through a fling — that read as the cover popping in rather than arriving. Later and
-// longer: nothing at all for the first sliver of the collapse, then a cross-fade over 0.4 of the
-// travel instead of 0.3. Still fully opaque well before the page's own content finishes fading out
-// at 0.13, so there is no frame with neither picture on it.
-const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.5, 0.9];
+// the way through a fling — that read as the cover popping in rather than arriving.
+//
+// Tracks the entry above rather than leading it: the copy is clipped by the mask until about 0.44,
+// so anything this does before then is invisible anyway, and it reaches full strength at 0.15 —
+// just before the page's own content finishes fading out at 0.13, so there is no frame with neither
+// picture on it. What it actually buys is softening the moment the copy clears the mask edge, which
+// is otherwise a hard rectangle appearing from under a line.
+const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.15, 0.5];
 // Where the `cover-offscreen` copy comes FROM, as a slice of the travel. It is the only destination
 // whose copy has nowhere real to start: `cover` starts on the actual cover, `page` starts as the
 // page's own image, and this one is a picture of something that has scrolled off the top — so
 // centred and un-animated it simply materialised mid-screen, arriving from nothing.
 //
-// So it flies in from where the cover actually went: off the top edge. The offset is JUST off
-// screen — the copy's own bottom edge parked on the page's top — and deliberately not the real
-// scroll distance, which can be thousands of points and would spend the whole collapse crossing the
-// edge at a speed nothing can read. Where it came from is a direction, not a measurement.
+// So it comes in from where the cover actually went, and it enters from behind the MASK's own top
+// edge rather than the screen's. That is what makes the motion calm. Parked against the edge it is
+// clipped, so it is genuinely not on screen rather than merely transparent; and because the mask
+// closes as the collapse runs, the later this happens the shorter the distance it has to cover.
+// Measuring the offset against the mask every frame is what couples those two — a fixed distance in
+// page coordinates does not stay off screen (the page transform carries the copy down as `q` falls)
+// and does not shrink as the window does.
 //
-// It lands (offset 0) at 0.4, a little after the fade above finishes at 0.5, so the picture is
-// fully opaque for the last of its approach and the rest of the collapse is the clean shrink into
-// the card. It starts at 0.95 rather than 1 so the first frames of a drag move the page alone.
-const ZOOM_THUMB_ENTRY_CLOSE = [0.4, 0.95];
+// LATE, and that is the whole point of the numbers. Held out of sight for the first half of the
+// collapse, it emerges around 0.44 — by which time the mask is a fraction of the screen, so it
+// slides out from under an edge close to where it is going instead of crossing the whole page — and
+// is home by 0.10. Starting it earlier is not "more of the same": it is a longer sweep through a
+// bigger window, which is exactly what read as the copy being flung in.
+const ZOOM_THUMB_ENTRY_CLOSE = [0.1, 0.45];
 // The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
 // carried away, it is the surface being uncovered, so matching the page's curve held it opaque
 // through the first third of the collapse and kept the grid hidden long after the page had
@@ -2485,6 +2493,14 @@ function SeriesReaderInstance({
     // the real source view, which simply keeps its own radius under the tracked scale.)
     const s = geom ? geom.s + (1 - geom.s) * q : 1;
     let rect = base;
+    // How far the `cover-offscreen` copy is still tucked behind the mask's top edge, in PAGE
+    // coordinates (which is where the copy's own transform lives). zoomPageStyle maps a page point
+    // to the window as `centre + (p - centre) * s + T`; solve that for the point currently sitting
+    // on the mask's top edge and the answer is where the copy's bottom has to be to be out of
+    // sight. `dragY` is in neither term on purpose — it displaces the mask and the page by the same
+    // amount, so it cancels out of anything measured between them.
+    const maskTopY = (hero ? hero.y : 0) + heroShiftY.value;
+    const edgeInPage = height / 2 + (maskTopY * (1 - q) - height / 2 - (geom ? geom.ty + heroShiftY.value : 0) * (1 - q)) / Math.max(s, 0.01);
     const ia = zoomThumbAspect.value;
     if (copyMorphs && ia > 0) {
       // The image's fit-page rect (contain, centred) — in PAGE coordinates, which for a
@@ -2501,6 +2517,11 @@ function SeriesReaderInstance({
         height: base.height + (fh - base.height) * q,
       };
     }
+    const entry =
+      geom?.kind === 'cover-offscreen'
+        ? Math.max(0, rect.y + rect.height - edgeInPage) *
+          interpolate(q, ZOOM_THUMB_ENTRY_CLOSE, [0, 1], Extrapolation.CLAMP)
+        : 0;
     return {
       left: rect.x,
       top: rect.y,
@@ -2517,20 +2538,12 @@ function SeriesReaderInstance({
       // real cover at q = 1.
       //
       // `cover-offscreen` takes the ENTRY instead (see ZOOM_THUMB_ENTRY_CLOSE) — a slide down into
-      // place from off the top edge. Deliberately on the COPY alone and not on `end`: moving the
-      // destination would move the page with it, which is the drag-the-page-up artifact this
-      // destination exists to avoid, just pointing the other way. Nothing has to compensate for it
-      // in zoomPageStyle for the same reason, and it decays to 0 well before the landing, so the
-      // copy still arrives exactly on the card.
-      transform: [
-        {
-          translateY:
-            -zoomBoundShift(geom, detailsScrollOffset.value) -
-            (geom?.kind === 'cover-offscreen'
-              ? (rect.y + rect.height) * interpolate(q, ZOOM_THUMB_ENTRY_CLOSE, [0, 1], Extrapolation.CLAMP)
-              : 0),
-        },
-      ],
+      // place from behind the mask's top edge. Deliberately on the COPY alone and not on `end`:
+      // moving the destination would move the page with it, which is the drag-the-page-up artifact
+      // this destination exists to avoid, just pointing the other way. Nothing has to compensate for
+      // it in zoomPageStyle for the same reason, and it decays to 0 before the landing, so the copy
+      // still arrives exactly on the card.
+      transform: [{ translateY: -zoomBoundShift(geom, detailsScrollOffset.value) - entry }],
     };
   }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, copyMorphs, width, height]);
   // What the flying copy DRAWS. A series open flies the series cover (the route's `cover` param is
