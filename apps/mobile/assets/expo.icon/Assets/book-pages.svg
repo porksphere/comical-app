@@ -17,8 +17,8 @@
       <stop offset="0.72" stop-color="#C8C8C8"/>
       <stop offset="1" stop-color="#707070"/>
     </radialGradient>
-    <pattern id="pageTone" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(8)">
-      <circle cx="2.5" cy="2.5" r="2.2" fill="#B8B8B8"/>
+    <pattern id="pageTone" width="24" height="24" patternUnits="userSpaceOnUse" patternTransform="rotate(8)">
+      <circle cx="12" cy="12" r="7" fill="#B8B8B8"/>
     </pattern>
   </defs>
   <path d="M512 241.2 C425 186 288 178 192 202 C166 208.5 162 224 162 246 V728 C162 758 183 773 224 766 C300 742 430 746 512 804.4 V241.2 Z" fill="url(#leftPage)"/>
