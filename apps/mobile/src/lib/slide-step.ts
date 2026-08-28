@@ -90,15 +90,14 @@ export function slideStep(
 }
 
 /**
- * Upward scroll (in one gesture) that locks a bar back in. Deliberately ONE number for every bar
- * rather than "however far this particular bar travels": the top bar's span is its content height
- * (60) and the tab bar's is its measured height (~82), so per-bar thresholds meant the top bar stuck
- * while the tab bar, given the identical flick, slid straight back out — the two disagreeing about
- * the same gesture, which is what it looked like.
+ * Upward scroll (in one gesture) that brings back a bar with NO PARTIAL POSITION — the web bottom
+ * nav, which fades rather than slides (`app-tabs`). A bar that slides has somewhere better to look:
+ * where it actually is, which is `settleTarget`. A fade is only ever in or out, so "which end is it
+ * nearer" has no answer and the gesture has to supply one.
  *
- * Set just UNDER the shortest bar's span so no bar can sit fully extended yet uncommitted (releasing
- * there would yank back a bar that already looks all the way out, for no reason a user can see). The
- * taller tab bar locks in with a little travel left and finishes it in the settle.
+ * Set just UNDER the shortest sliding bar's span (60) so the two answers can't contradict each other
+ * on the same flick by much: earning this much upward scroll from fully hidden also carries a
+ * sliding bar past its own midpoint.
  */
 export const COMMIT_DISTANCE = 56;
 
@@ -180,58 +179,48 @@ export function dismissTarget(y: number, span: number): number {
 }
 
 /**
- * Whether a dismissal decided when the finger lifted should be acted on NOW, or held until the
- * scrolling actually stops.
+ * Where a sliding bar settles once the scrolling has actually STOPPED: whichever end it is nearer.
+ * Past its own midpoint it finishes hiding, short of it it comes back — `dismissTarget` still has
+ * the last word on whether there is room to rest hidden at all.
  *
- * `dismissTarget` reads the offset at the instant it's asked, and at `release` that instant is the
- * start of a fling, not the end of one. A flick from the top lifts the finger after ~40px while
- * momentum carries the list hundreds more: asked then, the answer is "bounce back", so both bars
- * snapped fully in, momentum tracked them straight back out, and `rest` finally dismissed them —
- * out, in, out, gone. Two visible jiggles before the chrome went away.
+ * This replaced an EARNED rule: upward scroll accumulated within the gesture, `COMMIT_DISTANCE` of
+ * it required to lock a bar back in, any downward scroll spending the credit. That was deliberately
+ * asymmetric (cheap to dismiss, deliberate to recall) and it made the bars feel stuck: drag one
+ * half open, let go, and it closed again — the position you left it at counted for nothing, so the
+ * gesture appeared to be ignored. Position is the thing the user can see, so position is what
+ * decides.
  *
- * So a dismissal only commits early when it's committing to HIDDEN, which momentum can't invalidate
- * (the content is already past the threshold and only moving further). A "bounce back" waits for
- * `rest`, by which point the offset is the one the user actually landed on. Nothing is frozen in the
- * meantime — the bars keep tracking the content 1:1 through the fling, which is what makes the wait
- * invisible rather than a pause.
+ * The cost, stated plainly: two bars of different spans have different midpoints (the top bar's 60
+ * vs the tab bar's ~82), so between 30 and 41 px hidden they disagree about the same release. That
+ * band needs the content already past `dismissThreshold` AND the bars parked inside 11px of each
+ * other's midpoints; the earned rule's own disagreements were wider, and shared thresholds are why.
+ * A single absolute px threshold would trade this for a worse one — it would sit at a different
+ * FRACTION of each bar, so one bar would routinely settle open while the other settled shut.
  *
- * The earned REVEAL still fires at release, untouched: that one is about the gesture, not the
- * offset, so waiting would just make asking for the chrome back feel slow.
+ * Only ever asked at `rest`, never at `release`. `release` is the start of a fling, not the end of
+ * one: a flick lifts the finger after ~40px while momentum carries the list hundreds more, so the
+ * position there is not the one the user landed on. Nothing is frozen while it waits — the bars
+ * keep tracking the content 1:1 through the fling, which is what makes the wait invisible rather
+ * than a pause.
  */
-export function dismissesNow(hideTo: number, atRest: boolean): boolean {
+export function settleTarget(hidden: number, y: number, span: number): number {
   'worklet';
-  return hideTo > 0 || atRest;
+  return hidden * 2 > span ? dismissTarget(y, span) : 0;
 }
 
 /**
- * `slideStep` plus the bookkeeping for the commit-on-release rule the bars actually ship: both
- * directions track the finger 1:1, and letting go finishes the job in whichever direction the
- * gesture earned.
+ * How far a settle has to move the CONTENT for the bar to stay locked to it.
  *
- * `up` is that earning: upward px accumulated within the current gesture, capped at (and so read as
- * committed at) `COMMIT_DISTANCE`. Any downward scroll spends it back to zero — which is what makes
- * a dismissal cheap, in line with how the bars are used: you flick down to get the chrome out of the
- * way constantly, and ask for it back deliberately. At the top it saturates, since a bar pinned
- * fully shown has nothing left to earn.
+ * A bar hides by accumulating downward-scroll pixels 1:1, so a settle that closes the last 30px of
+ * a bar is, in the content's terms, 30px of scrolling the user didn't do. Animating the bar alone
+ * leaves the rows underneath frozen while chrome slides over them, which reads as two surfaces that
+ * have come unstuck from each other. Scrolling the content by the same delta over the same curve is
+ * what makes the settle look like the end of the gesture instead of a separate animation.
  *
- * The caller settles on it when the gesture ends: `up >= COMMIT_DISTANCE` ⇒ all the way shown, else
- * all the way hidden (`dismissTarget`). Carried in/out rather than owned here so this stays a pure
- * function usable from both threads — the top bar keeps it in a shared value, the tab bar in a ref.
+ * Positive = scroll down (the bar is finishing its hide). Can't go negative past the top: a bar can
+ * never be hidden further than the content has scrolled (`hideCeiling`), so `y - hidden >= 0`.
  */
-export function settleStep(
-  hidden: number,
-  up: number,
-  y: number,
-  prevY: number,
-  maxScrollY: number,
-  span: number,
-  topGuard = 0,
-): { hidden: number; up: number } {
+export function settleScrollDelta(hidden: number, target: number): number {
   'worklet';
-  const next = slideStep(hidden, y, prevY, maxScrollY, span, topGuard);
-  if (y <= topGuard) return { hidden: next, up: COMMIT_DISTANCE };
-  // A step with no gesture intent moves neither the bar nor the credit.
-  if (stepRejected(y, prevY, maxScrollY)) return { hidden: next, up };
-  const dy = y - prevY;
-  return { hidden: next, up: dy > 0 ? 0 : Math.min(COMMIT_DISTANCE, up - dy) };
+  return target - hidden;
 }

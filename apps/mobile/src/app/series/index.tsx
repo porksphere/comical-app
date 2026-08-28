@@ -526,6 +526,26 @@ function computeZoomGeom(hero: ZoomOrigin, dest: ZoomDest, width: number, height
   };
 }
 
+type ZoomGeom = ReturnType<typeof computeZoomGeom>;
+
+/**
+ * Which of a page's live geometries a frame belongs to. Read by every animated style that has to
+ * know, so the three of them can't answer it differently — and so the latch (`zoomBoundOnScreen`)
+ * has one reader rather than one per style.
+ *
+ * `cover` and `cover-offscreen` exist together or not at all, so the `page` fallback covers exactly
+ * the cases where neither does: the expanded reader, a deep link, web.
+ */
+function pickZoomGeom(
+  onCover: boolean,
+  cover: ZoomGeom | null,
+  offCover: ZoomGeom | null,
+  page: ZoomGeom | null,
+): ZoomGeom | null {
+  'worklet';
+  return (onCover ? cover : offCover) ?? page;
+}
+
 /** `resolveZoomCrossAxisDragTranslation` — the off-axis, which follows loosely and never leads. */
 function zoomCrossAxisDrag(translation: number, dimension: number): number {
   'worklet';
@@ -2355,7 +2375,7 @@ function SeriesReaderInstance({
     }
     // Which destination this collapse is aimed at, latched at its first frame — see
     // `zoomBoundOnScreen`. All three are the same shape, so nothing below needs a second path.
-    const geom = (zoomBoundOnScreen.value ? zoomGeomCover : zoomGeomOffCover) ?? zoomGeomPage;
+    const geom = pickZoomGeom(zoomBoundOnScreen.value, zoomGeomCover, zoomGeomOffCover, zoomGeomPage);
     if (!geom || !hero) {
       // No source rect (deep link, web): no mask, no alignment — just the small centred zoom.
       // Same three transform entries as every other branch: reanimated wants one stable style
@@ -2426,7 +2446,7 @@ function SeriesReaderInstance({
   const zoomThumbStyle = useAnimatedStyle(() => {
     // Which destination this collapse is aimed at, latched at its first frame — see
     // `zoomBoundOnScreen`. All three are the same shape, so nothing below needs a second path.
-    const geom = (zoomBoundOnScreen.value ? zoomGeomCover : zoomGeomOffCover) ?? zoomGeomPage;
+    const geom = pickZoomGeom(zoomBoundOnScreen.value, zoomGeomCover, zoomGeomOffCover, zoomGeomPage);
     const base = geom?.thumb ?? { x: 0, y: 0, width: 0, height: 0 };
     if (!zoomArmed.value) {
       // Same style SHAPE as the branch below — reanimated wants one per view, and both can run for

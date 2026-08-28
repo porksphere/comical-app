@@ -4,17 +4,22 @@
  * bridge/page bar and the Search screen's filter bar so their motion can't drift — and reusable by
  * any other scrolling screen that wants a collapsing header.
  *
- * Nothing half-done survives letting go: both directions track the finger 1:1, and then the bar
- * finishes the job on its own — all the way back in if the gesture earned `COMMIT_DISTANCE` of
- * upward scroll, all the way out otherwise (so dismissing it takes a flick, not a full swipe). The
- * rule is `settleStep`; the "gesture ended" signal is `scroll-release`; the settle animation is
- * `settle` below.
+ * Nothing half-done survives the scrolling stopping: both directions track the finger 1:1, and then
+ * the bar finishes the job on its own — to whichever end it is NEARER. The rule is `settleTarget`;
+ * the "scrolling ended" signal is `scroll-release`; the settle animation is `settle` below.
+ *
+ * The settle SCROLLS THE LIST WITH IT, by exactly the distance the remaining travel is worth
+ * (`settleScrollDelta`), on the same curve. A bar hides by accumulating scroll 1:1, so finishing
+ * its last 30px is 30px of scrolling the user didn't do; animating the bar alone leaves the rows
+ * frozen while chrome slides over them, which reads as the two coming unstuck. This is what
+ * `scrollRef` is for.
  *
  * Wiring: spread `sharedValues` onto the (Animated)LegendList's `sharedValues` prop so it feeds the
- * live scroll offset, and pass `onScroll` to the list so `maxScrollY` stays in sync (it distinguishes
- * a real upward scroll from the bottom's elastic bounce-back). Apply `barStyle` to the bar's
- * Animated.View. Pass `resetKey` (a string that changes when the logical scope changes) + the
- * `listRef` to snap the bar back to visible and the list to the top on a scope change.
+ * live scroll offset, pass `onScroll` to the list so `maxScrollY` stays in sync (it distinguishes
+ * a real upward scroll from the bottom's elastic bounce-back), and hand `scrollRef` to the list's
+ * `refScrollView` so the settle can drive it. Apply `barStyle` to the bar's Animated.View. Pass
+ * `resetKey` (a string that changes when the logical scope changes) + the `listRef` to snap the bar
+ * back to visible and the list to the top on a scope change.
  *
  * `scrollY`/`maxScrollY`/`offset` are exposed for screens that drive additional scroll-linked effects
  * off the same values (e.g. Browse's tab-bar auto-hide, a border/shadow that fades with scroll,
@@ -30,29 +35,34 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent, ViewStyle } from 'react-native';
+import type Animated from 'react-native-reanimated';
 import {
   cancelAnimation,
   runOnJS,
+  scrollTo,
   useAnimatedReaction,
+  useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  type AnimatedRef,
   type SharedValue,
 } from 'react-native-reanimated';
 
 import {
+  beginSelfDrivenScroll,
+  endSelfDrivenScroll,
   notifyScrollActivity,
   subscribeScrollPhase,
   type ScrollPhase,
 } from '@/lib/scroll-release';
 import {
-  COMMIT_DISTANCE,
-  dismissesNow,
-  dismissTarget,
   MAX_SCROLL_UNMEASURED,
   SETTLE_MS,
   settleEase,
-  settleStep,
+  settleScrollDelta,
+  settleTarget,
+  slideStep,
   TOP_GUARD,
 } from '@/lib/slide-step';
 import { setTopBarHidden } from '@/lib/top-bar-visibility';
@@ -81,6 +91,10 @@ export type SlidingBar = {
   contentStyle: ReturnType<typeof useAnimatedStyle<ViewStyle>>;
   /** Spread onto the AnimatedLegendList's `sharedValues` prop. */
   sharedValues: { scrollOffset: SharedValue<number> };
+  /** Hand to the list's `refScrollView` — the underlying ScrollView, so the settle can scroll it on
+   *  the UI thread in lockstep with the bar (see the header). A list that doesn't wire it still
+   *  gets the settle; the content just sits still through it, which is the old behaviour. */
+  scrollRef: AnimatedRef<Animated.ScrollView>;
   /** Wire to the list's plain `onScroll` — keeps `maxScrollY` in sync. */
   onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
 };
@@ -94,12 +108,18 @@ export function useSlidingBar(
   const offset = useSharedValue(0);
   // Whether `scrollY` has reported a real position since the last mount/reset. See the reaction.
   const primed = useSharedValue(false);
-  // Upward scroll earned in the current gesture; `COMMIT_DISTANCE` of it locks the bar back in when
-  // the user lets go. See `settleStep` for the rule and `settle` below for the animation.
-  const revealUp = useSharedValue(COMMIT_DISTANCE);
   // A settle animation currently owns `offset`; scroll reports stand back until it lands (or a new
   // gesture cancels it).
   const settling = useSharedValue(false);
+  /** The underlying ScrollView, for the settle's lockstep scroll. Its own ref rather than the
+   *  `listRef` the reset uses: `scrollToOffset` is a JS call with its own easing, and this has to
+   *  move on the UI thread, one write per frame of the bar's own curve. */
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  /** Where the bar and the content both stood when the settle started, so each frame can ask how far
+   *  the bar has come and move the content to match. `per` is px of scroll per px of bar: 1 normally,
+   *  and less only where the content ran out before the bar did (see the settle). Null when no
+   *  settle is driving the scroller — which is also how the reaction below knows to stay out. */
+  const settleFrom = useSharedValue<{ hidden: number; y: number; per: number } | null>(null);
 
   useAnimatedReaction(
     () => scrollY.value,
@@ -125,25 +145,31 @@ export function useSlidingBar(
       // Scroll reports don't fight it; `begin` cancels it the moment a finger goes down, and on web
       // — where there's no drag event to cancel on — it's over in SETTLE_MS.
       if (settling.value) return;
-      // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation, and the
-      // commit-on-release layer over it) is the shared `settleStep` — the tab bar's hook runs the
-      // same function, so the two bars' motion can't drift. It works in hidden-px (positive); this
-      // bar's offset is a translateY, hence the sign. `TOP_GUARD` is passed explicitly: it used to
-      // be omitted here (⇒ 0) while the tab bar's hook used 8, so the two bars pinned back open at
-      // different offsets.
-      const next = settleStep(
-        -offset.value,
-        revealUp.value,
-        y,
-        prevY,
-        maxScrollY.value,
-        barHeight,
-        TOP_GUARD,
-      );
-      revealUp.set(next.up);
-      offset.set(-next.hidden);
+      // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation) is the shared
+      // `slideStep` — the tab bar's hook runs the same function, so the two bars' motion can't
+      // drift. It works in hidden-px (positive); this bar's offset is a translateY, hence the sign.
+      // `TOP_GUARD` is passed explicitly: it used to be omitted here (⇒ 0) while the tab bar's hook
+      // used 8, so the two bars pinned back open at different offsets.
+      offset.set(-slideStep(-offset.value, y, prevY, maxScrollY.value, barHeight, TOP_GUARD));
     },
     [barHeight],
+  );
+
+  // The settle's other half: every frame the bar moves under its own animation, the content moves
+  // with it. Reads `offset` rather than a separate progress value so the two can't drift by a frame
+  // — there is one animation, and this is its second output.
+  //
+  // The scroll it produces comes back through `onScroll` and so through `notifyScrollActivity`,
+  // where on web it would infer a new gesture and cancel the very settle that caused it; that is
+  // what `beginSelfDrivenScroll` is holding shut. `scrollY` moves too, but the reaction above is
+  // already standing back for the duration (`settling`), so nothing double-counts it.
+  useAnimatedReaction(
+    () => (settleFrom.value === null ? null : -offset.value),
+    (hidden) => {
+      const from = settleFrom.value;
+      if (hidden === null || from === null) return;
+      scrollTo(scrollRef, 0, from.y + (hidden - from.hidden) * from.per, false);
+    },
   );
 
   // Committing: the bar slides the rest of the way out on its own once the gesture is over. Kept as
@@ -151,60 +177,71 @@ export function useSlidingBar(
   // broadcast it subscribes to is a plain JS module — shared-value writes hop to the UI thread on
   // their own, and a settle happens once per gesture, not per frame.
   const focused = useRef(true);
+  /** Ends the window that keeps the settle's own scroll frames from reading as a gesture. On the JS
+   *  thread because that is where `scroll-release`'s bookkeeping lives; once per settle, not per
+   *  frame. Also clears the baseline, which is what stops the reaction above driving the scroller. */
+  const releaseScroll = useCallback(() => {
+    if (settleFrom.value === null) return;
+    settleFrom.set(null);
+    endSelfDrivenScroll();
+  }, [settleFrom]);
+
   const settle = useCallback(
     (phase: ScrollPhase) => {
       // The broadcast is global (one scroller at a time), but a blurred screen's bar keeps its
       // subscription — it must not animate off the back of another screen's scrolling.
       if (!focused.current) return;
       if (phase === 'begin') {
-        // A new gesture takes the bar over wherever the settle had got to.
+        // A new gesture takes the bar over wherever the settle had got to — including the scroller,
+        // which the finger now owns.
         cancelAnimation(offset);
         settling.set(false);
+        releaseScroll();
         return;
       }
-      // A settle already in flight owns the bar — a `rest` arriving behind the `release` that
-      // started it must not restart the same animation.
+      // Only at REST. `release` is the start of a fling, not the end of one, so the position there
+      // is not the one the user landed on — see `settleTarget`. Through the fling the bar keeps
+      // tracking 1:1, so nothing is frozen while this waits.
+      if (phase !== 'rest') return;
+      // A settle already in flight owns the bar — a second `rest` behind it must not restart the
+      // same animation.
       if (settling.value) return;
-      const settleTo = (hidden: number) => {
-        if (-offset.value === hidden) return;
-        settling.set(true);
-        offset.set(
-          // `easing` is not optional in practice: omitting it takes Reanimated's default
-          // `Easing.inOut(Easing.quad)`, whose near-motionless first frames read as the bar
-          // hesitating after you let go. See `settleEase`.
-          withTiming(-hidden, { duration: SETTLE_MS, easing: settleEase }, (finished) => {
-            'worklet';
-            if (finished) settling.set(false);
-          }),
-        );
-      };
-      // Where a hide settles TO: all the way out, or — if the list hasn't scrolled far enough for
-      // the bar to leave entirely — all the way back in rather than parking half-way. See
-      // `dismissTarget`.
-      const hideTo = dismissTarget(scrollY.value, barHeight);
-      const earned = revealUp.value >= COMMIT_DISTANCE;
-      // An earned reveal, and a dismissal that commits to HIDDEN, finish the moment the finger lifts
-      // — the bar shouldn't still be moving after a fling has started. A dismissal that would bounce
-      // the bar back waits for `rest` instead, so a flick from the top isn't answered on the offset
-      // the fling STARTED at. See `dismissesNow`.
-      if (earned || revealUp.value === 0) {
-        if (!earned && !dismissesNow(hideTo, phase === 'rest')) return;
-        revealUp.set(earned ? COMMIT_DISTANCE : 0);
-        settleTo(earned ? 0 : hideTo);
-        return;
+      const hidden = -offset.value;
+      // Whichever end the bar is nearer, with `dismissTarget` still refusing to rest hidden when
+      // the content hasn't scrolled far enough for the bar to have anywhere to go.
+      const target = settleTarget(hidden, scrollY.value, barHeight);
+      if (hidden === target) return;
+      settling.set(true);
+      // The content comes too, by exactly what the remaining travel is worth. Capped at the content
+      // end, because a settle can't invent scroll that isn't there — and capped by SCALING the whole
+      // move rather than by clamping each frame, or the first frame would jump the list back to
+      // wherever the shortened move had to start. Nothing caps the other direction: `hideCeiling`
+      // won't let a bar be hidden further than the content has scrolled, so a reveal's `y - hidden`
+      // is already >= 0. Past the end the bar still finishes; only its lockstep with the rows gives.
+      const raw = settleScrollDelta(hidden, target);
+      const room = maxScrollY.value === MAX_SCROLL_UNMEASURED ? Infinity : Math.max(0, maxScrollY.value - scrollY.value);
+      const delta = raw > 0 ? Math.min(raw, room) : raw;
+      if (delta !== 0) {
+        beginSelfDrivenScroll();
+        settleFrom.set({ hidden, y: scrollY.value, per: delta / raw });
       }
-      // In between: the gesture asked for the bar but hasn't earned it yet. Wait for `rest` rather
-      // than deciding here, so an upward fling's momentum gets to finish earning it. Once it's over,
-      // the credit is spent — the next gesture earns the reveal from scratch rather than adding to a
-      // half-finished one.
-      if (phase === 'rest') {
-        revealUp.set(0);
-        settleTo(hideTo);
-      }
+      offset.set(
+        // `easing` is not optional in practice: omitting it takes Reanimated's default
+        // `Easing.inOut(Easing.quad)`, whose near-motionless first frames read as the bar
+        // hesitating after you let go. See `settleEase`.
+        withTiming(-target, { duration: SETTLE_MS, easing: settleEase }, (finished) => {
+          'worklet';
+          if (finished) settling.set(false);
+          runOnJS(releaseScroll)();
+        }),
+      );
     },
-    [barHeight, offset, revealUp, scrollY, settling],
+    [barHeight, maxScrollY, offset, releaseScroll, scrollY, settleFrom, settling],
   );
   useEffect(() => subscribeScrollPhase(settle), [settle]);
+  // A screen that leaves mid-settle must not strand the window shut — nothing would reopen it, and
+  // every later scroll frame would then be ignored as self-driven.
+  useEffect(() => releaseScroll, [releaseScroll]);
 
   const barStyle = useAnimatedStyle(() => ({ transform: [{ translateY: offset.value }] }));
 
@@ -263,7 +300,7 @@ export function useSlidingBar(
     primed.set(false);
     cancelAnimation(offset);
     settling.set(false);
-    revealUp.set(COMMIT_DISTANCE);
+    releaseScroll();
     offset.set(0);
     // Back to "not measured yet", not to 0 — a measured 0 now means "the content fits, everything
     // is a stretch", which would freeze the bar until the new scope's first scroll report landed.
@@ -291,5 +328,5 @@ export function useSlidingBar(
 
   const sharedValues = useMemo(() => ({ scrollOffset: scrollY }), [scrollY]);
 
-  return { scrollY, maxScrollY, offset, barStyle, contentStyle, sharedValues, onScroll };
+  return { scrollY, maxScrollY, offset, barStyle, contentStyle, sharedValues, scrollRef, onScroll };
 }

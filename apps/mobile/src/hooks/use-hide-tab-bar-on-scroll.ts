@@ -5,13 +5,11 @@ import { useAnimatedReaction, useSharedValue, type SharedValue } from 'react-nat
 
 import { notifyScrollActivity, subscribeScrollPhase, type ScrollPhase } from '@/lib/scroll-release';
 import {
-  COMMIT_DISTANCE,
-  dismissesNow,
-  dismissTarget,
   MAX_SCROLL_UNMEASURED,
   SETTLE_MS,
   settleEase,
-  settleStep,
+  settleTarget,
+  slideStep,
   TOP_GUARD,
 } from '@/lib/slide-step';
 import {
@@ -27,11 +25,11 @@ import {
 
 /**
  * Native only: slides the bottom bar away as the screen scrolls down and back in as it scrolls up,
- * committing to shown-or-hidden when the gesture ends, snapping fully shown at the top or when the
- * screen (re)gains focus.
+ * committing to whichever end it is nearer once the scrolling stops, snapping fully shown at the top
+ * or when the screen (re)gains focus.
  *
  * The SAME machinery as the top bar (`useSlidingBar`), deliberately: the scroll offset arrives as a
- * shared value, `settleStep` runs inside a `useAnimatedReaction` worklet, and the result is written
+ * shared value, `slideStep` runs inside a `useAnimatedReaction` worklet, and the result is written
  * straight to `tabBarProgress` — UI thread end to end, with the JS thread out of the per-frame path
  * entirely. It used to read a JS `onScroll` (or, on Browse, a `runOnJS` hop off the top bar's own
  * reaction — a UI→JS→UI round trip per frame), do the arithmetic in JS, and push the result back
@@ -44,8 +42,12 @@ import {
  * elastic bottom bounce). A screen that ALREADY has both — Browse, from its top bar — passes them in
  * as `source` instead, and both bars then read one value rather than two that can disagree.
  *
- * Only the commit-on-release layer stays on the JS thread, because the "gesture ended" signal is a
- * native scroll event (`scroll-release`). That's once per gesture, not once per frame.
+ * Only the settle layer stays on the JS thread, because the "scrolling ended" signal is a native
+ * scroll event (`scroll-release`). That's once per gesture, not once per frame.
+ *
+ * It does NOT drive the scroller the way the top bar's settle does. It doesn't have to: the two read
+ * the same offset, so the top bar's lockstep scroll moves this bar too, through the ordinary 1:1
+ * path. Two bars both scrolling the one list would be two answers to the same question.
  */
 export function useHideTabBarOnScroll(source?: {
   scrollY: SharedValue<number>;
@@ -61,9 +63,6 @@ export function useHideTabBarOnScroll(source?: {
   // How far the bar is currently hidden, in px. The worklet's accumulator — `tabBarProgress` is this
   // divided by the span, and is what the bar's transform reads.
   const distance = useSharedValue(0);
-  // Upward scroll earned in the current gesture; `COMMIT_DISTANCE` of it locks the bar back in when
-  // the user lets go. See `settleStep`.
-  const up = useSharedValue(COMMIT_DISTANCE);
   // Whether `scrollY` has reported a real position since the last mount/focus. See the reaction.
   const primed = useSharedValue(false);
   // A settle owns the bar until it lands (or a new gesture cancels it); reports stand back.
@@ -92,16 +91,14 @@ export function useHideTabBarOnScroll(source?: {
         return;
       }
       if (settling.value) return;
-      // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation, and the
-      // commit-on-release layer over it) is the shared `settleStep` — the top bar's reaction runs the
-      // same function on the same thread now, so the two bars' motion can't drift. The span is
-      // re-read every frame: the bar re-measures on inset/layout changes, and the px accumulator just
-      // re-clamps to whatever it currently is.
+      // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation) is the shared
+      // `slideStep` — the top bar's reaction runs the same function on the same thread now, so the
+      // two bars' motion can't drift. The span is re-read every frame: the bar re-measures on
+      // inset/layout changes, and the px accumulator just re-clamps to whatever it currently is.
       const span = tabBarHideOffset.value;
-      const next = settleStep(distance.value, up.value, y, prevY, maxScrollY.value, span, TOP_GUARD);
-      up.set(next.up);
-      distance.set(next.hidden);
-      tabBarProgress.value = next.hidden / span;
+      const next = slideStep(distance.value, y, prevY, maxScrollY.value, span, TOP_GUARD);
+      distance.set(next);
+      tabBarProgress.value = next / span;
     },
   );
 
@@ -136,7 +133,6 @@ export function useHideTabBarOnScroll(source?: {
       focusedJs.current = true;
       cancelSettle();
       distance.set(0);
-      up.set(COMMIT_DISTANCE);
       primed.set(false);
       setTabBarProgress(0);
       return () => {
@@ -144,7 +140,7 @@ export function useHideTabBarOnScroll(source?: {
         focusedJs.current = false;
         cancelSettle();
       };
-    }, [cancelSettle, distance, focused, primed, up]),
+    }, [cancelSettle, distance, focused, primed]),
   );
 
   // The moments this bar commits on. The phase broadcast is global (one scroller at a time), but a
@@ -157,33 +153,15 @@ export function useHideTabBarOnScroll(source?: {
         cancelSettle();
         return;
       }
-      // A settle already in flight owns the bar — a `rest` arriving behind the `release` that
-      // started it must not restart the same animation.
+      // Only at REST, and for the same reason as the top bar: `release` is the start of a fling, so
+      // the position there is not the one the user landed on. See `settleTarget`.
+      if (phase !== 'rest') return;
+      // A settle already in flight owns the bar — a second `rest` behind it must not restart the
+      // same animation.
       if (settling.value) return;
-      // All the way out, or all the way back in if the content hasn't scrolled far enough for this
-      // bar to leave — never parked half-way. See `dismissTarget`.
-      const hideTo = dismissTarget(scrollY.value, getTabBarHideOffset());
-      const earned = up.value >= COMMIT_DISTANCE;
-      // An earned reveal, and a dismissal that commits to HIDDEN, finish the moment the finger lifts
-      // — the bar shouldn't still be moving after a fling has started. A dismissal that would bounce
-      // the bar back waits for `rest` instead, so a flick from the top isn't answered on the offset
-      // the fling STARTED at. See `dismissesNow`.
-      if (earned || up.value === 0) {
-        if (!earned && !dismissesNow(hideTo, phase === 'rest')) return;
-        up.set(earned ? COMMIT_DISTANCE : 0);
-        settleTo(earned ? 0 : hideTo);
-        return;
-      }
-      // In between: the gesture asked for the bar but hasn't earned it yet. Wait for `rest` rather
-      // than deciding here, so an upward fling's momentum gets to finish earning it. Once it's over,
-      // the credit is spent — the next gesture earns the reveal from scratch rather than adding to a
-      // half-finished one.
-      if (phase === 'rest') {
-        up.set(0);
-        settleTo(hideTo);
-      }
+      settleTo(settleTarget(distance.value, scrollY.value, getTabBarHideOffset()));
     },
-    [cancelSettle, scrollY, settleTo, settling, up],
+    [cancelSettle, distance, scrollY, settleTo, settling],
   );
   useEffect(() => subscribeScrollPhase(settle), [settle]);
 

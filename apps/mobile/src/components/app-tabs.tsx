@@ -83,12 +83,16 @@ const FADE_TRANSITION = {
  * bar interaction). Returns `false`/no-op when `enabled` is false (desktop, or any native platform
  * - the bar is always shown there), so the desktop top-nav is never affected.
  *
- * Same commit-on-release rule as the sliding bars, off the same `COMMIT_DISTANCE` of upward scroll
- * (`settleStep` / `scroll-release`) — reduced to two states because this bar fades rather than
- * slides, so there's no partial position to track. The hide waits for the gesture to end all the
- * same, which keeps the bar from flickering off at the first stray pixel, and lands the fade AFTER
- * the browser's own bottom chrome has collapsed and dropped our bar to the new viewport bottom,
- * rather than fighting that reposition mid-gesture.
+ * The ONE bar that still commits on an EARNED gesture rather than on where it is. The sliding bars
+ * moved to "whichever end it is nearer" (`settleTarget`), and this one cannot follow them there: it
+ * has no partial position, so there is no midpoint to be on one side of. `COMMIT_DISTANCE` supplies
+ * the answer position can't, and it is set just under the shortest sliding bar's span so the two
+ * rules can't contradict each other by much on the same flick. It still shares everything it can —
+ * the `dismissThreshold` it refuses to hide inside, `scroll-release`'s timing, `SETTLE_MS`.
+ *
+ * The hide waits for the gesture to end all the same, which keeps the bar from flickering off at
+ * the first stray pixel, and lands the fade AFTER the browser's own bottom chrome has collapsed and
+ * dropped our bar to the new viewport bottom, rather than fighting that reposition mid-gesture.
  *
  * A capture-phase scroll listener is used because react-native-web scrolls an
  * inner `<div>` (the active screen's FlatList), not the window — capture catches
@@ -99,11 +103,11 @@ const FADE_TRANSITION = {
 function useAutoHideBottomBar(enabled: boolean) {
   const [hidden, setHidden] = useState(false);
   const hiddenRef = useRef(false);
-  // Upward px earned in the current gesture, exactly as the sliding bars count it: any downward
-  // scroll spends it back to zero, and it's spent again once the gesture is over, so every reveal
-  // earns the distance rather than adding up across separate flicks.
+  // Upward px earned in the current gesture: any downward scroll spends it back to zero, and it's
+  // spent again once the gesture is over, so every reveal earns the distance rather than adding up
+  // across separate flicks. See the header for why this bar alone still counts it.
   const up = useRef(COMMIT_DISTANCE);
-  // Last reported scroll offset, for the same dismissal threshold the sliding bars commit on — a
+  // Last reported scroll offset, for the same dismissal threshold the sliding bars settle on — a
   // fade has no partial state, so here it reduces to refusing to hide at all until the content has
   // carried the bar past it. Shared (`dismissThreshold`) rather than the bar's own measured height,
   // which is what had this fade disagreeing with the two native slides about the same scroll.

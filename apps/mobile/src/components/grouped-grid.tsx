@@ -1,7 +1,7 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import Animated, { type SharedValue } from 'react-native-reanimated';
+import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { RecyclerList } from '@/components/recycler-list';
 import {
@@ -57,6 +57,7 @@ export function GroupedGrid<T>({
   rowHeight,
   scopeKey,
   listRef,
+  scrollRef,
   header,
   paddingTop,
   paddingBottom,
@@ -72,6 +73,8 @@ export function GroupedGrid<T>({
   rowHeight: number;
   scopeKey: string;
   listRef?: RefObject<LegendListRef | null>;
+  /** Passed through to `RecyclerList` — see the doc there (the sliding bar's lockstep scroll). */
+  scrollRef?: AnimatedRef<Animated.ScrollView>;
   header?: ReactElement | null;
   paddingTop: number;
   paddingBottom: number;
@@ -125,6 +128,7 @@ export function GroupedGrid<T>({
         data={rows}
         scopeKey={scopeKey}
         listRef={listRef}
+        scrollRef={scrollRef}
         keyExtractor={(row) => row.key}
         // Distinct pools per row type, so a heading never recycles into an items row (and vice versa).
         getItemType={(row) => row.type}

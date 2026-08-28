@@ -327,8 +327,15 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   // back open as they scroll up — the offset is the bar's own slide, which `filterBar` turns into a
   // wipe over chips that hold still. Same shared helper the Browse bar uses (so the motion can't
   // drift); a new search (`scopeKey` change) snaps it back open and the list to the top.
-  const { scrollY, offset: filtersOffsetY, barStyle: filtersStyle, sharedValues, onScroll: onListScroll } =
-    useSlidingBar(filtersBarH, { resetKey: scopeKey, listRef });
+  const {
+    scrollY,
+    offset: filtersOffsetY,
+    barStyle: filtersStyle,
+    contentStyle: filtersFadeStyle,
+    sharedValues,
+    scrollRef,
+    onScroll: onListScroll,
+  } = useSlidingBar(filtersBarH, { resetKey: scopeKey, listRef });
   // The top bar YIELDS ITS RULE while any of the filter bar is showing. Both bars are the same flat
   // colour and the filter bar sits flush beneath, carrying the edge for the pair — the same trade
   // StickySectionHeader makes with the Browse bar, and BarSurface's `borderBottomColor` is
@@ -393,7 +400,10 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   );
 
   // The chips' counter-translate. Exactly cancels the shutter's own transform, so the filters hold
-  // still in WINDOW coordinates while the bar closes over them — see `filterBar`.
+  // still in WINDOW coordinates while the bar closes over them — see `filterBar`. Their FADE is the
+  // hook's own `contentStyle`, the same one Browse's bar fades its selectors with: a chip cut in
+  // half by the closing edge is a hard edge through a word, and fading it out over the same travel
+  // turns that into the chips receding as the bar takes their room back.
   const filtersHoldStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -filtersOffsetY.value }] }));
 
   const filterBar = hasFilterBar ? (
@@ -421,7 +431,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     <BarSurface
       safeAreaTop={false}
       style={[styles.filtersClip, { top: topBarTotal, height: filtersBarH }, filtersStyle]}>
-      <Animated.View style={[styles.filtersRow, { height: filtersBarH }, filtersHoldStyle]}>
+      <Animated.View style={[styles.filtersRow, { height: filtersBarH }, filtersHoldStyle, filtersFadeStyle]}>
         <View style={styles.filtersInner}>
           <FilterBar defs={orderedDefs} values={resolvedValues} onValueChange={setFilterValue} />
         </View>
@@ -489,6 +499,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
                 paddingTop={topBarTotal + filtersBarH + BarContentGap}
                 paddingBottom={insets.bottom + Spacing.five}
                 sharedValues={sharedValues}
+                scrollRef={scrollRef}
                 onScroll={onListScroll}
                 onScrollEndDrag={pull.onScrollEndDrag}
                 wrapperStyle={pull.listStyle}
@@ -509,6 +520,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
                 bridgeId={bridgeId}
                 direct={directBridge}
                 sharedValues={sharedValues}
+                scrollRef={scrollRef}
                 onScroll={onListScroll}
                 onEndReached={loadMore}
                 onScrollEndDrag={pull.onScrollEndDrag}
