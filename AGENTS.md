@@ -204,6 +204,15 @@ reaches 0, so the page cannot land anywhere but the card. For the same reason th
 left frozen at release rather than sprung back: `home` retires them on that one clock. Every path
 that drives `zoom` sets `homeAt` first — there is no default that is right for all of them.
 
+**Both the drag and the homing ride the MASK ALONE** (`zoomDetach`), never the page's target. The
+page is the mask's child and cancels the mask's own origin out of its transform, so an offset on the
+mask carries the window, the page, the flying copy and the cover together and leaves every relation
+between them untouched. Putting `home` on the page's target instead moves the page out from under
+its own window: the two then shrink about different anchors, the cover drifts toward an edge, and it
+is visibly clipped by the frame that is supposed to hold it. `zoomMaskBox` is deliberately ignorant
+of both — one box, read by all three animated styles, so they cannot disagree about where the window
+is.
+
 # Press-in warms the destination
 
 Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is

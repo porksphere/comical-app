@@ -605,32 +605,50 @@ function zoomHoming(homeAt: number, q: number): number {
 }
 
 /**
- * The mask's box, UNDRAGGED — read by all three of the zoom's animated styles so they cannot
- * disagree about where the window is. The drag is added by the mask alone (see `zoomMaskStyle`);
- * the page compensates for this origin, and the flying copy measures its entry against it.
+ * The mask's box on its way to the card — read by all three of the zoom's animated styles so they
+ * cannot disagree about where the window is. The page compensates for this origin, and the flying
+ * copy measures its entry against it.
  *
- * `home` interpolates the origin between the two coordinate systems above. Note that at q = 1 both
- * agree on 0 — a full-screen window is at the origin whichever way you got there — so a page at
- * rest cannot tell them apart, and nothing jumps when a drag takes it over.
+ * Deliberately knows nothing about the drag or the homing. Everything inside the window is placed
+ * RELATIVE to this box, so the pair can be moved anywhere as one (see `zoomDetach`) without any of
+ * those relationships changing — which is the property that keeps the cover framed.
  */
 function zoomMaskBox(
   hero: ZoomOrigin,
   shiftX: number,
   shiftY: number,
   q: number,
-  home: number,
   width: number,
   height: number,
 ): { left: number; top: number; width: number; height: number } {
   'worklet';
-  const w = hero.width + (width - hero.width) * q;
-  const h = hero.height + (height - hero.height) * q;
   return {
-    left: (hero.x + shiftX) * (1 - q) * home + ((width - w) / 2) * (1 - home),
-    top: (hero.y + shiftY) * (1 - q) * home + ((height - h) / 2) * (1 - home),
-    width: w,
-    height: h,
+    left: (hero.x + shiftX) * (1 - q),
+    top: (hero.y + shiftY) * (1 - q),
+    width: hero.width + (width - hero.width) * q,
+    height: hero.height + (height - hero.height) * q,
   };
+}
+
+/**
+ * How far to carry the whole assembly off its converging path, so that a page under a finger sits
+ * where the swipe put it rather than where the card is.
+ *
+ * Applied to the MASK ALONE, and that is the entire trick. The page is the mask's child and
+ * compensates for the mask's own origin, so moving the mask moves everything inside it by the same
+ * amount: the window, the page, the flying copy and the cover all travel together and nothing about
+ * their relative geometry changes. The first attempt at this instead scaled the page's TARGET by
+ * `home`, which does move the page — and moves it out from under its own window, so the cover
+ * drifted toward an edge as the two shrank at different anchors and got clipped.
+ *
+ * The offset is whatever puts the window back in the middle of the screen, so at `home` 0 the
+ * assembly shrinks about the screen centre wherever the card happens to live. At q = 1 it is zero
+ * on its own — a full-screen window is already centred — so a page at rest cannot tell the two
+ * coordinate systems apart and nothing jumps when a drag takes it over.
+ */
+function zoomDetach(start: number, size: number, home: number, span: number): number {
+  'worklet';
+  return (span / 2 - start - size / 2) * (1 - home);
 }
 
 /** `resolveZoomCrossAxisDragTranslation` — the off-axis, which follows loosely and never leads. */
@@ -2444,19 +2462,21 @@ function SeriesReaderInstance({
     // spring is heavily overdamped and never passes 1.
     const q = Math.max(0, zoom.value);
     const home = zoomHoming(homeAt.value, q);
-    const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, home, width, height);
+    const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, width, height);
     return {
       // The drag moves the MASK, not the page inside it. Both have to travel together or the page
       // slides out from under its own window — a rectangle of page hanging in the wrong place,
-      // which is exactly what a dragged mask-less collapse looked like.
+      // which is exactly what a dragged mask-less collapse looked like. Which is also why the
+      // DETACH rides here and only here: everything in the window is placed relative to this
+      // origin, so moving it carries the page, the cover and the flying copy along untouched.
       //
-      // It fades with `home` rather than springing back on release, and that is what makes the
-      // landing exact: at q = 0 the homing is 1, so the drag contributes nothing whatever the finger
+      // Both fade out with `home` rather than springing back on release, and that is what makes the
+      // landing exact: at q = 0 the homing is 1, so neither contributes anything whatever the finger
       // was doing, and the window is the card's box. The drag's own value is simply left where the
       // release froze it — nothing has to animate it away, so nothing can still be animating it when
       // the page leaves.
-      left: box.left + dragX.value * (1 - home),
-      top: box.top + dragY.value * (1 - home),
+      left: box.left + zoomDetach(box.left, box.width, home, width) + dragX.value * (1 - home),
+      top: box.top + zoomDetach(box.top, box.height, home, height) + dragY.value * (1 - home),
       width: box.width,
       height: box.height,
       borderRadius: hero.radius * (1 - q),
@@ -2497,8 +2517,7 @@ function SeriesReaderInstance({
         ],
       };
     }
-    const home = zoomHoming(homeAt.value, q);
-    const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, home, width, height);
+    const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, width, height);
     // Scale: normally the base content scale modulated by the drag's shrink. Once the finger has
     // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
     // released at, down to the collapsed scale, biased by the release velocity.
@@ -2514,17 +2533,17 @@ function SeriesReaderInstance({
     // mask and content displaced by exactly the same amount, so the window keeps framing the same
     // part of the page however far it is dragged.
     //
-    // The TARGET carries `home`, so at 0 it is nothing at all: the page sits centred in a centred
-    // window and the pair simply travels with the thumb. The scroll correction goes with it for the
-    // same reason (and the copy's counterpart matches), since it exists only to land the copy on a
-    // cover the homing has not started aiming at yet.
+    // The homing is NOT in here. It is the mask's alone (`zoomDetach`), because the page is the
+    // mask's child and compensating for the mask's origin is what keeps the two locked together —
+    // put `home` on this target instead and the page slides out from under its own window, which
+    // clips whatever it is meant to be framing.
     return {
       transform: [
         // heroShift is added to the page's own target as well as the mask's origin. The mask offset
         // cancels out of the page's absolute position, so shifting only the mask moves the window
         // without moving what's behind it.
-        { translateX: (geom.tx + heroShiftX.value) * (1 - q) * home - box.left },
-        { translateY: (geom.ty + geom.s * shift + heroShiftY.value) * (1 - q) * home - box.top },
+        { translateX: (geom.tx + heroShiftX.value) * (1 - q) - box.left },
+        { translateY: (geom.ty + geom.s * shift + heroShiftY.value) * (1 - q) - box.top },
         { scale },
       ],
     };
@@ -2576,7 +2595,6 @@ function SeriesReaderInstance({
       };
     }
     const q = Math.max(0, zoom.value);
-    const home = zoomHoming(homeAt.value, q);
     const closing = geom?.kind === 'cover-offscreen' ? ZOOM_THUMB_FADE_CLOSE_OFFCOVER : ZOOM_THUMB_FADE_CLOSE;
     const range = zoomClosing.value ? closing : ZOOM_THUMB_FADE_OPEN;
     // The copy has to READ as the thumbnail it came off, corner included — 10pt on a grid card, 6
@@ -2621,17 +2639,14 @@ function SeriesReaderInstance({
     let entryX = 0;
     let entryY = 0;
     if (geom && hero && geom.kind === 'cover-offscreen') {
-      // The path is only travelled to the extent the page is homing — under a finger it isn't
-      // travelled at all, the pair just moves with the thumb. So the parameter is `(1 - q) * home`,
-      // the same factor the page's own target carries. The drag itself needs no term here: it
-      // displaces the copy and the mask by the identical amount, so it cancels out of a separation
-      // measured between them.
-      const u = (1 - q) * home;
+      // Neither the drag nor the detach appears here: both displace the copy and the mask by the
+      // identical amount, so they cancel out of a separation measured between the two.
+      const u = 1 - q;
       const vx = geom.tx + heroShiftX.value;
       const vy = geom.ty + heroShiftY.value;
       const hw = (rect.width * s) / 2;
       const hh = (rect.height * s) / 2;
-      const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, home, width, height);
+      const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, width, height);
       const maskRight = box.left + box.width;
       const maskBottom = box.top + box.height;
       const kx = vx > 0 ? u - (box.left - width / 2 - hw) / vx : vx < 0 ? u - (maskRight - width / 2 + hw) / vx : Infinity;
@@ -2668,9 +2683,7 @@ function SeriesReaderInstance({
       // still arrives exactly on the card.
       transform: [
         { translateX: entryX },
-        // The scroll correction is scaled by `home` to stay the exact counterpart of the page's,
-        // which carries the same factor — the two are one correction split across two views.
-        { translateY: -zoomBoundShift(geom, detailsScrollOffset.value) * home + entryY },
+        { translateY: -zoomBoundShift(geom, detailsScrollOffset.value) + entryY },
       ],
     };
   }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, copyMorphs, width, height]);
