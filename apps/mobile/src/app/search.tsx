@@ -4,7 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
-import { useAnimatedStyle } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
@@ -381,25 +381,41 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     </View>
   );
 
+  // The chips' counter-translate. Exactly cancels the shutter's own transform, so the filters hold
+  // still in WINDOW coordinates while the bar closes over them — see `filterBar`.
+  const filtersHoldStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -filtersOffsetY.value }] }));
+
   const filterBar = hasFilterBar ? (
-    // The CLIP MASK. The filter bar slides up (`filtersStyle`) to hide, and this fixed-height,
-    // overflow:hidden window sits exactly in the gap below the top bar — so the bar is progressively
-    // CUT OFF at the top bar's bottom edge instead of travelling underneath it.
+    // THE SHUTTER. The bar is the thing that moves; the filters inside it do not.
     //
-    // The clip edge IS the top bar's bottom edge, so the chips read as sliding in behind it.
+    // It used to be the other way round — a fixed window with the bar sliding up inside it — and the
+    // chips travelled with it, so hiding the filters carried them off the top of the screen. Now the
+    // BAR's own box slides up behind the top bar and its `overflow: hidden` takes the chips with it
+    // from the BOTTOM edge: the filters stay exactly where they are and the bar closes over them,
+    // wiped away under its own bottom hairline. Same `filtersStyle`, same distance, same settle —
+    // only what the motion is applied to changed.
     //
-    // It used to be load-bearing for a second reason: the top bar was frosted, a blur samples
-    // whatever is physically beneath it and can't tell "chrome" from "content", so an unclipped
-    // filter bar sliding under it would smear through the frost. An opaque bar simply covers it, so
-    // that reason is gone — this now only shapes the tuck (and keeps the sliding bar's window a
-    // fixed height).
-    <View pointerEvents="box-none" style={[styles.filtersClip, { top: topBarTotal, height: filtersBarH }]}>
-      <BarSurface safeAreaTop={false} style={[styles.filtersBar, { height: filtersBarH }, filtersStyle]}>
+    // Three things fall out of moving the box rather than its contents, and all three are why it is
+    // built this way rather than by animating the window's HEIGHT:
+    //  · The hairline rides the closing edge for free. It is BarSurface's own bottom border, so it
+    //    is always exactly where the bar currently ends. An animated-height window would have left
+    //    its border clipped off and the chips cut at nothing.
+    //  · Fully closed, the box has slid a full `filtersBarH` up, which puts that hairline at the top
+    //    bar's own bottom edge — BEHIND it (zIndex 20 vs 10), so it can't double up with it.
+    //  · It stays a transform. Height is a layout property: animating it would run Yoga over the
+    //    chip row every frame, and this animation plays while a grid is being scrolled.
+    //
+    // The overshoot above `topBarTotal` never shows — the top bar is opaque and sits over it. The
+    // chips are hit-tested against this box too, so the wiped-away half stops taking taps.
+    <BarSurface
+      safeAreaTop={false}
+      style={[styles.filtersClip, { top: topBarTotal, height: filtersBarH }, filtersStyle]}>
+      <Animated.View style={[styles.filtersRow, { height: filtersBarH }, filtersHoldStyle]}>
         <View style={styles.filtersInner}>
           <FilterBar defs={orderedDefs} values={resolvedValues} onValueChange={setFilterValue} />
         </View>
-      </BarSurface>
-    </View>
+      </Animated.View>
+    </BarSurface>
   ) : null;
 
   return (
@@ -545,9 +561,9 @@ const styles = StyleSheet.create({
   list: {
     flex: 1,
   },
-  // Fixed window between the top bar and the results. `overflow: hidden` is the mask: the filter bar
-  // inside is cut off at this box's top edge (= the top bar's bottom edge) as it slides up, rather
-  // than travelling on underneath it. See `filterBar`.
+  // The bar itself, and the mask. It sits in the gap below the top bar and slides up from there;
+  // `overflow: hidden` is what makes that slide a wipe rather than a move, cutting the (held still)
+  // chips off at whatever height the bar currently has. See `filterBar`.
   filtersClip: {
     position: 'absolute',
     left: 0,
@@ -555,7 +571,9 @@ const styles = StyleSheet.create({
     zIndex: 10,
     overflow: 'hidden',
   },
-  filtersBar: {
+  // Absolute rather than in flow, so the row keeps its full height no matter how far the bar above
+  // has closed — it is being clipped, not squeezed.
+  filtersRow: {
     position: 'absolute',
     top: 0,
     left: 0,
