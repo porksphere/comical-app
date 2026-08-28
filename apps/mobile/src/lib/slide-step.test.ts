@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  COMMIT_DISTANCE,
+  dismissesNow,
   dismissTarget,
   dismissThreshold,
   DISMISS_DISTANCE,
   hideCeiling,
   MAX_SCROLL_UNMEASURED,
   settleScrollDelta,
+  settleStep,
   settleTarget,
   slideStep,
 } from './slide-step';
@@ -94,6 +97,80 @@ describe('slideStep', () => {
   });
 });
 
+describe('settleStep', () => {
+  test('slides 1:1 in both directions, exactly like slideStep', () => {
+    expect(settleStep(0, 0, 30, 0, UNMEASURED, SPAN).hidden).toBe(30);
+    expect(settleStep(30, 0, 70, 30, UNMEASURED, SPAN).hidden).toBe(70);
+    expect(settleStep(70, 0, 40, 70, UNMEASURED, SPAN).hidden).toBe(40);
+  });
+
+  test('upward scroll earns reveal credit, capped at the commit distance', () => {
+    expect(settleStep(SPAN, 0, 180, 200, UNMEASURED, SPAN).up).toBe(20);
+    expect(settleStep(80, 20, 150, 180, UNMEASURED, SPAN).up).toBe(50);
+    // Capped: once it's committed, more of the same gesture changes nothing.
+    expect(settleStep(50, 50, 0, 150, UNMEASURED, SPAN, -1).up).toBe(COMMIT_DISTANCE);
+  });
+
+  test('any downward scroll spends the credit back to nothing', () => {
+    expect(settleStep(0, COMMIT_DISTANCE, 1, 0, UNMEASURED, SPAN).up).toBe(0);
+    expect(settleStep(0, COMMIT_DISTANCE - 1, 40, 0, UNMEASURED, SPAN).up).toBe(0);
+  });
+
+  test('at the top the credit saturates — a pinned bar has nothing left to earn', () => {
+    expect(settleStep(SPAN, 0, 4, 400, UNMEASURED, SPAN, 8)).toEqual({ hidden: 0, up: COMMIT_DISTANCE });
+    // Even coming DOWN into the top guard, where the raw step would have spent it.
+    expect(settleStep(0, 10, 6, 2, UNMEASURED, SPAN, 8)).toEqual({ hidden: 0, up: COMMIT_DISTANCE });
+  });
+
+  test('a guard-rejected step moves neither the bar nor the credit', () => {
+    // Elastic bottom bounce, in both directions.
+    expect(settleStep(SPAN, 10, 520, 560, 500, SPAN)).toEqual({ hidden: SPAN, up: 10 });
+    expect(settleStep(0, 10, 560, 520, 500, SPAN)).toEqual({ hidden: 0, up: 10 });
+    // The same stretch on a screen with nothing to scroll (a measured maxScrollY of 0) — the credit
+    // must not build up either, or letting go would snap a bar back in off a gesture that scrolled
+    // nothing.
+    expect(settleStep(0, 10, 60, 90, 0, SPAN)).toEqual({ hidden: 0, up: 10 });
+    // A reposition-sized jump, likewise.
+    expect(settleStep(0, 10, 780, 0, UNMEASURED, SPAN)).toEqual({ hidden: 0, up: 10 });
+    expect(settleStep(0, 10, 0, 780, UNMEASURED, SPAN, -1)).toEqual({ hidden: 0, up: 10 });
+  });
+
+  test('carries the hide ceiling through, so a reveal near the top is gradual not a pop', () => {
+    // 5px up from y=25 with the bar fully hidden: the ceiling has it at 25, so it moves to 20 —
+    // where the hard top-guard snap used to jump it the whole way to 0.
+    expect(settleStep(SPAN, 0, 20, 25, UNMEASURED, SPAN, 8).hidden).toBe(20);
+    expect(settleStep(20, 5, 12, 20, UNMEASURED, SPAN, 8).hidden).toBe(12);
+  });
+
+  // What the caller does with the credit: `up >= COMMIT_DISTANCE` ⇒ settle fully shown, else fully
+  // hidden. Both bars use the SAME threshold despite different spans, so they agree about a flick.
+  test('a flick shorter than the commit distance leaves the reveal unearned', () => {
+    let s = { hidden: SPAN, up: 0 };
+    for (let y = 400; y > 400 - (COMMIT_DISTANCE - 8); y -= 8) {
+      s = settleStep(s.hidden, s.up, y - 8, y, UNMEASURED, SPAN);
+    }
+    expect(s.hidden).toBeLessThan(SPAN); // it did move, 1:1, the whole way
+    expect(s.up).toBeLessThan(COMMIT_DISTANCE); // ...but never earned the lock-in
+  });
+});
+
+describe('dismissesNow', () => {
+  // The jiggle this exists to kill: a flick from the top lifts the finger ~40px in while momentum
+  // carries the list hundreds more. Asked at `release`, `dismissTarget` says "bounce back" off that
+  // 40 — so the bars snapped in, momentum tracked them out again, and `rest` finally dismissed them.
+  test('holds a bounce-back until the scrolling has stopped', () => {
+    expect(dismissesNow(0, false)).toBe(false);
+    expect(dismissesNow(0, true)).toBe(true);
+  });
+
+  // Momentum can only carry the content FURTHER from the top, so a hide decided at release can't be
+  // invalidated by what follows — and waiting would leave the chrome moving after the fling started.
+  test('commits a hide the moment the finger lifts', () => {
+    expect(dismissesNow(SPAN, false)).toBe(true);
+    expect(dismissesNow(SPAN, true)).toBe(true);
+  });
+});
+
 describe('settleTarget', () => {
   const DEEP = 400; // far enough down that `dismissTarget` allows a resting hide
 
@@ -101,44 +178,38 @@ describe('settleTarget', () => {
     expect(settleTarget(SPAN, DEEP, SPAN)).toBe(SPAN);
     expect(settleTarget(SPAN / 2 + 1, DEEP, SPAN)).toBe(SPAN);
     expect(settleTarget(SPAN / 2, DEEP, SPAN)).toBe(0);
-    expect(settleTarget(SPAN / 2 - 1, DEEP, SPAN)).toBe(0);
     expect(settleTarget(0, DEEP, SPAN)).toBe(0);
   });
 
-  // The behaviour this rule exists for: drag a bar back past halfway, let go, and it stays open.
-  // The earned rule this replaced closed it again — a gesture that had scrolled down at all had
-  // spent its credit, so where it actually left the bar counted for nothing.
-  test('a bar scrolled back past its midpoint comes open rather than finishing its hide', () => {
+  // The behaviour the Search filter bar opts in for: scroll it back past halfway and let go, and it
+  // stays open. The earned rule closes it again — the gesture scrolled down at some point, which
+  // spent the credit, so where it actually left the bar counts for nothing.
+  test('a bar scrolled back past its midpoint comes open where the earned rule would shut it', () => {
+    // 55px of upward scroll: past this bar's midpoint, one short of the earned rule's threshold.
     let hidden = SPAN;
+    let up = 0;
     let y = DEEP;
-    for (let i = 0; i < 8; i++, y -= 7) hidden = slideStep(hidden, y - 7, y, UNMEASURED, SPAN);
-    expect(hidden).toBe(SPAN - 56); // 44 of 100 — past halfway open
+    for (let i = 0; i < 11; i++, y -= 5) {
+      const next = settleStep(hidden, up, y - 5, y, UNMEASURED, SPAN);
+      hidden = next.hidden;
+      up = next.up;
+    }
+    expect(hidden).toBe(SPAN - 55); // 45 of 100 — past halfway open
     expect(settleTarget(hidden, y, SPAN)).toBe(0);
+    // ...where the earned rule, one px short of its credit, would put it all the way back out.
+    expect(up).toBe(COMMIT_DISTANCE - 1);
+    expect(dismissTarget(y, SPAN)).toBe(SPAN);
   });
 
   test('never rests hidden where the content has not scrolled far enough to hide it', () => {
-    // Past its own midpoint, but only 20px down the list: `dismissTarget` still has the last word.
     expect(settleTarget(SPAN, 20, SPAN)).toBe(0);
     expect(settleTarget(SPAN, dismissThreshold(SPAN) - 1, SPAN)).toBe(0);
     expect(settleTarget(SPAN, dismissThreshold(SPAN), SPAN)).toBe(SPAN);
   });
-
-  // The band the two bars disagree in — see the note on `settleTarget`. Pinned here so a future
-  // span change shows what it costs rather than quietly widening it.
-  test('bars of different spans part company only between their midpoints', () => {
-    const TOP_BAR = 60;
-    const TAB_BAR = 82;
-    for (const hidden of [0, 10, 29, 42, 55, 60]) {
-      const top = settleTarget(Math.min(hidden, TOP_BAR), 400, TOP_BAR) > 0;
-      const tab = settleTarget(Math.min(hidden, TAB_BAR), 400, TAB_BAR) > 0;
-      if (hidden > TOP_BAR / 2 && hidden <= TAB_BAR / 2) expect(top).not.toBe(tab);
-      else expect(top).toBe(tab);
-    }
-  });
 });
 
 describe('settleScrollDelta', () => {
-  // The settle scrolls the content by exactly the travel it still owes — a bar hides by
+  // The settle scrolls the content by exactly the travel the bar still owes — a bar hides by
   // accumulating scroll 1:1, so finishing its last 30px IS 30px of scrolling (see useSlidingBar).
   test('finishing a hide scrolls down by the remaining travel', () => {
     expect(settleScrollDelta(SPAN - 30, SPAN)).toBe(30);

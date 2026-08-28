@@ -637,7 +637,6 @@ export default function BrowseScreen() {
     barStyle: headerStyle,
     contentStyle: headerContentStyle,
     sharedValues,
-    scrollRef,
     onScroll: onListScroll,
   } = useSlidingBar(barHeight, { resetKey: gridScope, listRef });
   // The tab bar slides off the SAME shared values the top bar does — one offset, one content-end
@@ -887,7 +886,6 @@ export default function BrowseScreen() {
           stickyBarOffset={barOffset}
           stickyPinned={stickyPinned}
           sharedValues={sharedValues}
-          scrollRef={scrollRef}
           onScroll={onListScroll}
           // Drives terminalQuery.fetchNextPage — `loadMore` self-guards to the terminal-home mode.
           onEndReached={loadMore}
@@ -911,7 +909,6 @@ export default function BrowseScreen() {
           direct={directBridge}
           crossfading={switching}
           sharedValues={sharedValues}
-          scrollRef={scrollRef}
           onScroll={onListScroll}
           // `loadMore` self-guards to results/favorites modes, so it's wired unconditionally.
           onEndReached={loadMore}

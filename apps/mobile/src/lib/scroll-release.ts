@@ -4,9 +4,10 @@
  *
  * Both bars (the Browse/Search top bar via `useSlidingBar`, the tab bar via `useHideTabBarOnScroll`
  * + the web fade in `app-tabs`) follow the same rule: they track the scroll 1:1 in both directions,
- * but only *commit* to a state once the scrolling has stopped — to whichever end the bar is nearer.
- * That needs a "the scrolling ended" event, which a scroll offset alone can't give you — hence this
- * module. (The rule itself is `settleTarget` in `slide-step.ts`; this is only the timing signal.)
+ * but only *commit* to a state when the user lets go — all the way back in if the gesture earned
+ * `COMMIT_DISTANCE` of upward scroll, all the way out otherwise. That needs a "the gesture ended"
+ * event, which a scroll offset alone can't give you — hence this module. (The pixel bookkeeping
+ * itself is `settleStep` in `slide-step.ts`; this is only the timing signal.)
  *
  * There's one scroller in play at a time (the focused screen's list), so this is a single shared
  * broadcast rather than per-screen state, matching `tab-bar-visibility`.
@@ -16,11 +17,11 @@
  *              exist (see `inferBegin`): a gesture started. Cancels any settle in flight, so
  *              grabbing a bar mid-animation hands it straight back to 1:1 tracking from wherever it
  *              had got to.
- * - `release`— `onScrollEndDrag`: the finger came up. Momentum may still be coming, so the sliding
- *              bars deliberately decide nothing here (see `settleTarget`); the web fade, which has
- *              no position to read, still commits on it.
- * - `rest`   — `onMomentumScrollEnd`, or the idle fallback below: scrolling actually stopped. This
- *              is where a sliding bar settles, on the position the user actually landed on.
+ * - `release`— `onScrollEndDrag`: the finger came up. An earned reveal and any dismissal fire here,
+ *              so the bar finishes its move immediately rather than riding out the fling.
+ * - `rest`   — `onMomentumScrollEnd`, or the idle fallback below: scrolling actually stopped. A
+ *              part-way reveal snaps back here, NOT at `release` — an upward fling should get the
+ *              chance to finish revealing the bar under its own momentum.
  *
  * The idle fallback covers everything the drag events can't: a web mouse wheel / trackpad (which
  * react-native-web's ScrollViewBase reports as `onScroll` only — it emits no drag events at all),
@@ -61,13 +62,12 @@ const listeners = new Set<Listener>();
 let dragging = false;
 /**
  * Depth of "this scroll is the app's own animation, not a gesture" windows — a settling bar driving
- * the scroller to stay locked to its own motion (`useSlidingBar`).
+ * the scroller to stay locked to its own motion (`useSlidingBar`'s `lockstepScroll`).
  *
  * Those frames arrive through `notifyScrollActivity` looking exactly like a wheel event, and on web
  * that is enough to infer a `begin` (see `inferBegin`) — which cancels settles. The settle would
  * therefore cancel itself on its own first frame and park the bar half-way. Counted rather than
- * flagged so overlapping settles (two bars, a re-entered screen) can't have the first one's end
- * re-open the window for the second.
+ * flagged so overlapping windows can't have the first one's end re-open things for the second.
  */
 let selfDriven = 0;
 // Between an inferred `begin` and the `rest` that ends it (web only — see `inferBegin`).

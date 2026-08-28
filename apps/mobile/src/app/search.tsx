@@ -335,7 +335,16 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     sharedValues,
     scrollRef,
     onScroll: onListScroll,
-  } = useSlidingBar(filtersBarH, { resetKey: scopeKey, listRef });
+  } = useSlidingBar(filtersBarH, {
+    resetKey: scopeKey,
+    listRef,
+    // The two opt-ins, and this is the only bar that takes them. It is one you MANIPULATE — the
+    // chips are the point, and pulling it half open only to have it shut again reads as the drag
+    // being ignored — and it moves alone, so it is free to answer a release differently from the
+    // top/tab bar pair that hide together. See `settleTarget` and `settleScrollDelta`.
+    settle: 'nearest',
+    lockstepScroll: true,
+  });
   // The top bar YIELDS ITS RULE while any of the filter bar is showing. Both bars are the same flat
   // colour and the filter bar sits flush beneath, carrying the edge for the pair — the same trade
   // StickySectionHeader makes with the Browse bar, and BarSurface's `borderBottomColor` is
