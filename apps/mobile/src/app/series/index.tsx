@@ -81,6 +81,7 @@ import {
   onZoomSurfaceChange,
   resolveZoomTarget,
   takeZoomOrigin,
+  type ZoomOrigin,
   type ZoomRect,
 } from '@/lib/series-zoom';
 import SearchScreen from '../search';
@@ -410,6 +411,94 @@ function zoomBoundShift(geom: { tracksScroll: boolean; maxShift: number } | null
   'worklet';
   if (!geom || !geom.tracksScroll) return 0;
   return Math.min(offset, geom.maxShift);
+}
+
+/** How much of the details' hero cover has to be left on screen for it to still be the thing a
+ *  collapse lands on. Half — see the note at `zoomGeomBound`, where the two destinations are
+ *  chosen between. */
+const ZOOM_BOUND_MIN_VISIBLE = 0.5;
+
+/**
+ * The zoom's geometry for one choice of DESTINATION. `computeContentTransformGeometry` verbatim —
+ * scale about the SCREEN centre, then translate so the destination bound's anchor meets the
+ * source's. `scaleMode: 'uniform'` with its aspect rule: near-equal aspects take max(sx, sy)
+ * (cover), genuinely different ones take min(sx, sy) (contain) and let the mask do the cropping.
+ * Ours differ (a 2:3 cover into a wide band), so it contains — which is exactly why the mask is
+ * not optional.
+ *
+ * A pure function of its four arguments because the page keeps TWO of these alive at once, one
+ * per candidate destination, and picks between them on the UI thread at the instant a collapse
+ * starts (see `zoomBoundOnScreen`). Deriving the loser lazily would mean deriving it mid-flight.
+ */
+function computeZoomGeom(hero: ZoomOrigin, bound: ZoomRect | null, width: number, height: number) {
+  // With a measured destination bound this is the library's `target: 'bound'` — align the two
+  // rects centre to centre. Without one it falls back to `getZoomContentTarget`'s computed
+  // target: a virtual destination that keeps ONE edge attached to the source, so a wide source
+  // fills the destination's width and follows its top edge while a narrow one fills the height
+  // and follows the leading edge. Anchors follow `getZoomContentAnchor` accordingly.
+  const sourceAspect = hero.width / hero.height;
+  const screenAspect = width / height;
+  // The computed target is CENTRED on the page. `getZoomContentTarget` pins it to an edge
+  // instead — top for a wide source, leading for a narrow one — which suits a gallery, where the
+  // destination really does start at the top of its screen. Here it has no counterpart in the
+  // layout at all: it stands in for the page as a whole, so anything but centred reads as the
+  // copy sitting off to one side of the thing it is supposed to be standing in for.
+  const fitToWidth = sourceAspect >= screenAspect;
+  const fitW = fitToWidth ? width : sourceAspect * height;
+  const fitH = fitToWidth ? (hero.height / hero.width) * width : height;
+  const end: ZoomRect = bound ?? {
+    x: (width - fitW) / 2,
+    y: (height - fitH) / 2,
+    width: fitW,
+    height: fitH,
+  };
+
+  const sx = hero.width / end.width;
+  const sy = hero.height / end.height;
+  const aspectDifference = Math.abs(sourceAspect - end.width / end.height);
+  const s = aspectDifference < ZOOM_ASPECT_EPSILON ? Math.max(sx, sy) : Math.min(sx, sy);
+
+  // getAnchorPoint, for the three anchors this transition can pick.
+  // Centre-to-centre either way now — the measured bound always used it, and the computed one
+  // is centred by construction above.
+  const anchorOf = (b: ZoomRect) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+  const startAnchor = anchorOf(hero);
+  const endAnchor = anchorOf(end);
+  const screenCenterX = width / 2;
+  const screenCenterY = height / 2;
+  // Where to lay the FLYING COPY out. Not `end` — `end` only lands on the card when the two
+  // rects share an aspect, because the page carries a single uniform scale and a scalar cannot
+  // reshape a rectangle. The copy's job is to be indistinguishable from the card at q = 0 (the
+  // last frames of a collapse, where it is the only thing still opaque), so it is sized to
+  // become the source rect exactly: `hero.size / s`, centred on `end`. When the aspects agree
+  // this IS `end` — s is then hero.width/end.width and the two expressions coincide — so the
+  // common case is untouched and the mismatched one stops being a mismatch.
+  //
+  // The trade lands on the other end: with genuinely different aspects the copy no longer
+  // matches the details hero at q = 1. That end is free — the copy is fully transparent by 0.32
+  // opening and doesn't start showing until 0.7 closing (see the fade ranges).
+  const thumbW = hero.width / s;
+  const thumbH = hero.height / s;
+  return {
+    s,
+    end,
+    thumb: {
+      x: endAnchor.x - thumbW / 2,
+      y: endAnchor.y - thumbH / 2,
+      width: thumbW,
+      height: thumbH,
+    },
+    tx: startAnchor.x - (screenCenterX + (endAnchor.x - screenCenterX) * s),
+    ty: startAnchor.y - (screenCenterY + (endAnchor.y - screenCenterY) * s),
+    // Everything above is in the coordinates the bound was MEASURED in — the details at the top
+    // of their scroll. `zoomBoundShift` carries it to where the cover currently is; these two
+    // are what it needs. Only the MEASURED bound moves: the computed fallback target is defined
+    // relative to the screen (it stands in for the page as a whole), so it has no scroll to
+    // follow. The cap is a screen height — off screen is allowed and wanted, unreadably far off
+    // isn't; see the helper.
+    tracksScroll: bound !== null,
+    maxShift: height,
+  };
 }
 
 /** `resolveZoomCrossAxisDragTranslation` — the off-axis, which follows loosely and never leads. */
@@ -2129,97 +2218,56 @@ function SeriesReaderInstance({
   // (attempt two) had to inflate past anything real and then dissolve down into the strip, which
   // is the pop on expand. With the mask there is nothing to hand over: one object, one motion.
   //
-  // Geometry is `computeContentTransformGeometry` verbatim — scale about the SCREEN centre, then
-  // translate so the destination bound's anchor meets the source's. `scaleMode: 'uniform'` with
-  // its aspect rule: near-equal aspects take max(sx, sy) (cover), genuinely different ones take
-  // min(sx, sy) (contain) and let the mask do the cropping. Ours differ (a 2:3 cover into a wide
-  // band), so it contains — which is exactly why the mask is not optional.
-  const zoomGeom = useMemo(() => {
-    if (!hero) return null;
-    // With a measured destination bound this is the library's `target: 'bound'` — align the two
-    // rects centre to centre. Without one it falls back to `getZoomContentTarget`'s computed
-    // target: a virtual destination that keeps ONE edge attached to the source, so a wide source
-    // fills the destination's width and follows its top edge while a narrow one fills the height
-    // and follows the leading edge. Anchors follow `getZoomContentAnchor` accordingly.
-    // WHICH bound depends on what is actually on screen. The measured hero cover is only the
-    // right destination while the DETAILS are up — that is where the picture lives, and landing on
-    // it is what makes the transition a shared element. Collapsing out of the expanded READER it
-    // is the wrong answer twice over: the details are slid away, so that rect corresponds to
-    // nothing visible, and it is a fixed small box, so the copy sat at one static size over a
-    // full-screen page instead of shrinking with it.
-    //
-    // So the reader uses the computed target instead, which is defined RELATIVE to the screen —
-    // full width at the source thumbnail's aspect. The copy is then a constant fraction of the
-    // page and scales with it all the way down into the card, which is what "swiping the page
-    // away" should look like. (It also collapses much further: the page scales to roughly the
-    // card's width fraction rather than the ~0.91 a details-sized bound gives.)
-    const bound = detailsActive ? destBound : null;
-    const sourceAspect = hero.width / hero.height;
-    const screenAspect = width / height;
-    // The computed target is CENTRED on the page. `getZoomContentTarget` pins it to an edge
-    // instead — top for a wide source, leading for a narrow one — which suits a gallery, where the
-    // destination really does start at the top of its screen. Here it has no counterpart in the
-    // layout at all: it stands in for the page as a whole, so anything but centred reads as the
-    // copy sitting off to one side of the thing it is supposed to be standing in for.
-    const fitToWidth = sourceAspect >= screenAspect;
-    const fitW = fitToWidth ? width : sourceAspect * height;
-    const fitH = fitToWidth ? (hero.height / hero.width) * width : height;
-    const end: ZoomRect = bound ?? {
-      x: (width - fitW) / 2,
-      y: (height - fitH) / 2,
-      width: fitW,
-      height: fitH,
-    };
-
-    const sx = hero.width / end.width;
-    const sy = hero.height / end.height;
-    const aspectDifference = Math.abs(sourceAspect - end.width / end.height);
-    const s = aspectDifference < ZOOM_ASPECT_EPSILON ? Math.max(sx, sy) : Math.min(sx, sy);
-
-    // getAnchorPoint, for the three anchors this transition can pick.
-    // Centre-to-centre either way now — the measured bound always used it, and the computed one
-    // is centred by construction above.
-    const anchorOf = (b: ZoomRect) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
-    const startAnchor = anchorOf(hero);
-    const endAnchor = anchorOf(end);
-    const screenCenterX = width / 2;
-    const screenCenterY = height / 2;
-    // Where to lay the FLYING COPY out. Not `end` — `end` only lands on the card when the two
-    // rects share an aspect, because the page carries a single uniform scale and a scalar cannot
-    // reshape a rectangle. The copy's job is to be indistinguishable from the card at q = 0 (the
-    // last frames of a collapse, where it is the only thing still opaque), so it is sized to
-    // become the source rect exactly: `hero.size / s`, centred on `end`. When the aspects agree
-    // this IS `end` — s is then hero.width/end.width and the two expressions coincide — so the
-    // common case is untouched and the mismatched one stops being a mismatch.
-    //
-    // The trade lands on the other end: with genuinely different aspects the copy no longer
-    // matches the details hero at q = 1. That end is free — the copy is fully transparent by 0.32
-    // opening and doesn't start showing until 0.7 closing (see the fade ranges).
-    const thumbW = hero.width / s;
-    const thumbH = hero.height / s;
-    return {
-      s,
-      end,
-      thumb: {
-        x: endAnchor.x - thumbW / 2,
-        y: endAnchor.y - thumbH / 2,
-        width: thumbW,
-        height: thumbH,
-      },
-      tx: startAnchor.x - (screenCenterX + (endAnchor.x - screenCenterX) * s),
-      ty: startAnchor.y - (screenCenterY + (endAnchor.y - screenCenterY) * s),
-      // Everything above is in the coordinates the bound was MEASURED in — the details at the top
-      // of their scroll. `zoomBoundShift` carries it to where the cover currently is; these two
-      // are what it needs. Only the MEASURED bound moves: the computed fallback target is defined
-      // relative to the screen (it stands in for the page as a whole), so it has no scroll to
-      // follow. The cap is a screen height — off screen is allowed and wanted, unreadably far off
-      // isn't; see the helper.
-      tracksScroll: bound !== null,
-      maxShift: height,
-    };
+  // WHICH bound depends on what is actually on screen. The measured hero cover is only the
+  // right destination while the DETAILS are up — that is where the picture lives, and landing on
+  // it is what makes the transition a shared element. Collapsing out of the expanded READER it
+  // is the wrong answer twice over: the details are slid away, so that rect corresponds to
+  // nothing visible, and it is a fixed small box, so the copy sat at one static size over a
+  // full-screen page instead of shrinking with it.
+  //
+  // …and it is the wrong answer once the details have been SCROLLED PAST their cover, for the
+  // first of those two reasons again. The bound follows the scroll (`zoomBoundShift`), so a
+  // collapse begun from halfway down the chapter list aimed at a box hundreds of points above the
+  // top edge and dragged the whole page up to meet it — the page scrolling itself away under the
+  // finger, which is not a zoom of anything. Nothing is being shared: the picture the transition
+  // is supposed to be about is not on screen to share.
+  //
+  // Both cases fall back to the computed target instead, which is defined RELATIVE to the screen —
+  // full width at the source thumbnail's aspect. The copy is then a constant fraction of the page
+  // and scales with it all the way down into the card, which is what "swipe the page away, fade
+  // into the card" should look like. (It also collapses much further: the page scales to roughly
+  // the card's width fraction rather than the ~0.91 a details-sized bound gives.)
+  const zoomGeomBound = useMemo(
     // `detailsActive` is COMMITTED state, so it only flips when a reveal or collapse finishes —
     // never mid-flight, which is what would make swapping the bound visible.
-  }, [hero, destBound, detailsActive, width, height]);
+    () => (hero && detailsActive && destBound ? computeZoomGeom(hero, destBound, width, height) : null),
+    [hero, destBound, detailsActive, width, height],
+  );
+  const zoomGeomFree = useMemo(() => (hero ? computeZoomGeom(hero, null, width, height) : null), [hero, width, height]);
+  /** For the render rather than for a frame of the transition: whether to mount the flying copy at
+   *  all, and the layout rect it starts at. Either geometry answers both, and the animated style
+   *  overwrites that rect in the same commit. */
+  const zoomGeom = zoomGeomBound ?? zoomGeomFree;
+
+  /**
+   * Which of the two the transition is currently aimed at — LATCHED, because every frame of ONE
+   * collapse has to answer it the same way. Written only while the page is at rest (`zoom` at the
+   * top); from the first frame of a drag it holds whatever it said when the finger went down. The
+   * `detailsActive` note above is the same guard by other means, and a choice read live off the
+   * scroll would break it several times a second.
+   */
+  const zoomBoundOnScreen = useSharedValue(true);
+  /** The scroll offset at which the cover is half off the top — past it the bound stops being a
+   *  destination worth flying to. Plain JS: the bound and the inset are both state, so the
+   *  reaction only ever compares two numbers. */
+  const zoomBoundLostAt = destBound ? destBound.y + destBound.height * (1 - ZOOM_BOUND_MIN_VISIBLE) - insets.top : 0;
+  useAnimatedReaction(
+    () => (zoom.value >= COLLAPSE_ARMED ? detailsScrollOffset.value : null),
+    (offset) => {
+      if (offset !== null) zoomBoundOnScreen.set(offset <= zoomBoundLostAt);
+    },
+    [zoomBoundLostAt],
+  );
 
   // THE MASK. Grows from the source rect to the whole screen, carrying the card's corner radius
   // out to 0. In the library this lives INSIDE the transformed content and undoes the content
@@ -2269,7 +2317,10 @@ function SeriesReaderInstance({
     if (!zoomArmed.value) {
       return { transform: [{ translateX: 0 }, { translateY: 0 }, { scale: 1 }] };
     }
-    if (!zoomGeom || !hero) {
+    // Which destination this collapse is aimed at, latched at its first frame — see
+    // `zoomBoundOnScreen`. Both are the same shape, so nothing below needs a second path.
+    const geom = (zoomBoundOnScreen.value && zoomGeomBound) || zoomGeomFree;
+    if (!geom || !hero) {
       // No source rect (deep link, web): no mask, no alignment — just the small centred zoom.
       // Same three transform entries as every other branch: reanimated wants one stable style
       // shape per view, and this branch and the unarmed one above can both run for one instance.
@@ -2286,13 +2337,13 @@ function SeriesReaderInstance({
     // Scale: normally the base content scale modulated by the drag's shrink. Once the finger has
     // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
     // released at, down to the collapsed scale, biased by the release velocity.
-    const scale = zoomGeom.s + (1 - zoomGeom.s) * q;
+    const scale = geom.s + (1 - geom.s) * q;
     // The vertical alignment is corrected for how far the details have SCROLLED since the bound was
     // measured (see zoomBoundShift). Moving the destination anchor UP by `shift` moves the
     // translation that lands it on the card DOWN by `s * shift` — the anchor is scaled before it is
     // translated, so the correction is scaled too. Nothing else in here changes: `s` is a ratio of
     // sizes, and the mask travels between the card and the screen, neither of which scrolls.
-    const shift = zoomBoundShift(zoomGeom, detailsScrollOffset.value);
+    const shift = zoomBoundShift(geom, detailsScrollOffset.value);
     // NOTE the compensation uses the UNDRAGGED mask origin. The mask sits at `maskLeft + dragX`
     // and the page at `T - maskLeft` inside it, which puts the page at `T + dragX` in window
     // space: mask and content displaced by exactly the same amount, so the window keeps framing
@@ -2302,12 +2353,12 @@ function SeriesReaderInstance({
         // heroShift is added to the page's own target as well as the mask's origin. The mask offset
         // cancels out of the page's absolute position, so shifting only the mask moves the window
         // without moving what's behind it.
-        { translateX: (zoomGeom.tx + heroShiftX.value) * (1 - q) - maskLeft },
-        { translateY: (zoomGeom.ty + zoomGeom.s * shift + heroShiftY.value) * (1 - q) - maskTop },
+        { translateX: (geom.tx + heroShiftX.value) * (1 - q) - maskLeft },
+        { translateY: (geom.ty + geom.s * shift + heroShiftY.value) * (1 - q) - maskTop },
         { scale },
       ],
     };
-  }, [zoomGeom, hero]);
+  }, [zoomGeomBound, zoomGeomFree, hero]);
 
   // The two halves of the cross-fade. The page's own opacity is separated from its transform so
   // the thumbnail copy can ride that same transform (it is a sibling INSIDE the transformed page,
@@ -2337,7 +2388,10 @@ function SeriesReaderInstance({
   // fit-width gates the morph off — the page doesn't render at the contain rect there.
   const copyMorphs = !!sequence && settings.pageFit === 'fit-page';
   const zoomThumbStyle = useAnimatedStyle(() => {
-    const base = zoomGeom?.thumb ?? { x: 0, y: 0, width: 0, height: 0 };
+    // Which destination this collapse is aimed at, latched at its first frame — see
+    // `zoomBoundOnScreen`. Both are the same shape, so nothing below needs a second path.
+    const geom = (zoomBoundOnScreen.value && zoomGeomBound) || zoomGeomFree;
+    const base = geom?.thumb ?? { x: 0, y: 0, width: 0, height: 0 };
     if (!zoomArmed.value) {
       // Same style SHAPE as the branch below — reanimated wants one per view, and both can run for
       // one instance.
@@ -2358,7 +2412,7 @@ function SeriesReaderInstance({
     // rect rides the page's transform, so divide that scale out to hold the on-screen radius
     // steady rather than letting it grow with the page. (The library gets this for free: it moves
     // the real source view, which simply keeps its own radius under the tracked scale.)
-    const s = zoomGeom ? zoomGeom.s + (1 - zoomGeom.s) * q : 1;
+    const s = geom ? geom.s + (1 - geom.s) * q : 1;
     let rect = base;
     const ia = zoomThumbAspect.value;
     if (copyMorphs && ia > 0) {
@@ -2388,9 +2442,9 @@ function SeriesReaderInstance({
       // where "the cover moved up by `shift`" is exactly `-shift`. Its counterpart in zoomPageStyle
       // carries the same shift in the other direction, which is what keeps the copy landing on the
       // card at q = 0 and on the real cover at q = 1.
-      transform: [{ translateY: -zoomBoundShift(zoomGeom, detailsScrollOffset.value) }],
+      transform: [{ translateY: -zoomBoundShift(geom, detailsScrollOffset.value) }],
     };
-  }, [zoomGeom, hero, copyMorphs, width, height]);
+  }, [zoomGeomBound, zoomGeomFree, hero, copyMorphs, width, height]);
   // What the flying copy DRAWS. A series open flies the series cover (the route's `cover` param is
   // the tapped card's own URL). A SEQUENCE open grew out of a page TILE, so the copy is that
   // page's image — the MOUNT entry's URI (already latched in sequenceTarget), which is the very

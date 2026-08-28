@@ -152,6 +152,14 @@ The series page grows out of the card that opened it and collapses back into it 
 The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
 runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
 
+**The page lands on its own hero cover only while that cover is at least half on screen.** Scrolled
+past it, the collapse aims at the screen-relative target instead and the page just swipes away and
+cross-fades into the card — the two callers of `computeZoomGeom` in `apps/mobile/src/app/series/index.tsx`.
+A bound that has scrolled off is still a bound the page has to fly onto, so aiming at one drags the
+whole page up to meet it: the page appears to scroll itself away under the finger. Which of the two
+is in play is LATCHED while the page is at rest (`zoomBoundOnScreen`), never read live off the
+scroll — swapping destinations mid-collapse is a visible jump.
+
 **A list that reorders is asked where its item is; it is not measured.** `useZoomSurfaceLocator`
 answers out of the virtualization state (`getState().positionAtIndex` / `.scroll`), which knows every
 index — including rows it hasn't mounted — and knows the new one a render before the row is drawn

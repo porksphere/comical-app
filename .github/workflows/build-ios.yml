@@ -354,4 +354,4 @@ jobs:
       - name: Rebuild ios-pr source
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/refresh-ios-pr-source.sh
+        run: bash .github/scripts/refresh-ios-pr-source.sh pr

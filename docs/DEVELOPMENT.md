@@ -183,21 +183,26 @@ session, so an unauthenticated fetch returns an HTML login page, which the sidel
 `Encountered unknown tag html on line 1` / `isn't in the correct format`. Artifacts are also
 double-zipped.)
 
-### The four iOS channels (SideStore sources)
+### The five iOS channels (SideStore sources)
 
 | Channel | Source URL (`…/releases/download/<tag>/apps.json`) | Trigger | Build | Bundle id |
 |---------|-----------------------------------------------------|---------|-------|-----------|
 | **release** (public) | `ios-release` | `v*` tag (`release.yml`) | clean Release, **no profiler** | `com.porksphere.comical` |
 | **main** (perf testing) | `ios-main` | push to `main` (`build-ios.yml`) | **profiling** (Release + on-device Hermes profiler) | `com.porksphere.comical` |
 | **PR** (branch testing) | `ios-pr` | each open PR (`build-ios.yml`) | **profiling** | `com.porksphere.comical` |
-| **dev-client** (iterate over Metro) | `ios-devclient` | manual (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical` |
+| **dev-client** (iterate over Metro) | `ios-devclient` | nightly on `main` + manual (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical` |
+| **PR dev-client** (iterate on a branch) | `ios-devclient-pr` | each open PR (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical` |
 
-The first three share the **production bundle id**, so only one is installed at a time — switch
-lanes by picking a source/version in SideStore (a `main`/`pr`/`release` build replaces whichever is
-on the device). Only the dev-client uses a distinct `.dev` id and coexists. `main` and every PR are
-**profiling** builds on purpose (the app is marked "Comical (profiling)"), so any of them can be
-perf-tested on device without a special manual build; the clean **`ios-release`** channel carries no
-profiler and is what a normal user subscribes to (see the [README](../README.md#ios)).
+**All five share the production bundle id**, so exactly one is installed at a time — switch lanes by
+picking a source/version in SideStore, and whatever you install replaces what was there. That is
+deliberate for the dev-client too: coexistence and a shared data container are mutually exclusive on
+iOS (the container is keyed by bundle id), and iterating over Metro against your real library beats
+iterating against an empty one. See `apps/mobile/plugins/with-devclient-variant.js`.
+
+`main` and every PR are **profiling** builds on purpose (the app is marked "Comical (profiling)"), so
+any of them can be perf-tested on device without a special manual build; the clean **`ios-release`**
+channel carries no profiler and is what a normal user subscribes to (see the
+[README](../README.md#ios)).
 
 ### `ios-release` — the public channel (all tagged versions)
 
@@ -264,20 +269,36 @@ Each channel also carries a `version.json` (`{commit, version, publishedAt}`). T
 check (`src/data/use-app-update.ts`) compares its `commit` against the running build's — equality,
 not ordering, because `versionName` doesn't move between builds within a release series.
 
-### Dev-client build — iterate on a device from any OS (incl. Windows)
+### Dev-client builds — iterate on a device from any OS (incl. Windows)
 
 Separate from the Release builds above: the **`Build iOS dev-client`** workflow
-(`build-ios-devclient.yml`, manual `workflow_dispatch`) builds a Debug + `expo-dev-client` shell —
-via the reusable workflow's `configuration: Debug` + `dev_client: true` inputs — and publishes it to
-a rolling **`ios-devclient`** SideStore source. It carries the shared `com.porksphere.comical`
-bundle id (the env-gated `with-devclient-variant` plugin, active only when `COMICAL_DEVCLIENT=1`), so
-it installs *alongside* the release app.
+(`build-ios-devclient.yml`) builds a Debug + `expo-dev-client` shell — via the reusable workflow's
+`configuration: Debug` + `dev_client: true` inputs. It carries the shared `com.porksphere.comical`
+bundle id (the env-gated `with-devclient-variant` plugin, active only when `COMICAL_DEVCLIENT=1`),
+so installing it *replaces* whatever Comical is on the device and inherits its data.
 
-This is the shell for the Windows iterative loop: build it once on CI, install via the `ios-devclient`
-source, then drive it from `bun run dev:device` (Metro over your LAN). Rebuild only when native code
-changes. It's the sanctioned Expo development-build flow — the JS loads from Metro (online), which is
-why it works where an offline debug build can't. Full walkthrough: [PROFILING.md](PROFILING.md) →
+It runs on three triggers, publishing to two places:
+
+- **nightly on `main`, and any manual `workflow_dispatch`** → the rolling **`ios-devclient`** source.
+  This is the shell for the Windows iterative loop: install it once, then drive it from
+  `bun run dev:device` (Metro over your LAN). Rebuild only when native code changes — and since the
+  nightly does that for you, usually never by hand.
+- **every open PR** → an `ios-devclient-pr-<N>` prerelease, aggregated into the **`ios-devclient-pr`**
+  source exactly as `ios-pr` aggregates the profiling builds. Install a PR's shell to iterate over
+  Metro against *its* native code, which is the only thing a dev-client build can differ in (the JS
+  comes from your machine). It doubles as the repo's only Debug compile check.
+
+It's the sanctioned Expo development-build flow — the JS loads from Metro (online), which is why it
+works where an offline debug build can't. Full walkthrough: [PROFILING.md](PROFILING.md) →
 "Iterative dev & profiling from Windows".
+
+**Why the nightly exists.** ccache is keyed by build flavor (`BUILD_FLAVOR` in
+`build-ios-reusable.yml`): SDK × configuration × dev-client. A Debug build shares essentially no
+object code with the Release lanes, so nothing else can warm this flavor's cache — and only the
+default branch writes caches. While this workflow was manual-only it therefore compiled from cold
+every single run (~30 min). The nightly writes the entry that the per-PR builds restore. Nightly
+rather than per-push because ccache is content-addressed and nearly everything in it is
+node_modules/pods, which move with `bun.lock` rather than with a day of app commits.
 
 Constraint: avoid entitlements a free Apple ID can't grant (push, certain App Groups) for
 now. A future TestFlight/App Store path can be added as an extra `eas.json` profile + signed
