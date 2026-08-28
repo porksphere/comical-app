@@ -28,8 +28,8 @@
     </radialGradient>
 
     <!-- Gray dither screened over both pages for a newsprint/comic-halftone texture. -->
-    <pattern id="pageTone" width="32" height="32" patternUnits="userSpaceOnUse" patternTransform="rotate(8)">
-      <circle cx="16" cy="16" r="10" fill="#B8B8B8"/>
+    <pattern id="pageTone" width="24" height="24" patternUnits="userSpaceOnUse" patternTransform="rotate(8)">
+      <circle cx="12" cy="12" r="7" fill="#B8B8B8"/>
     </pattern>
   </defs>
 
