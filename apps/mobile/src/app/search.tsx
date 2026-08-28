@@ -45,13 +45,10 @@ const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;
 // Stable empty array so `useCrossBridgeRails` runs zero queries in single-bridge mode.
 const NO_BRIDGES: Bridge[] = [];
 
-// Peak opacity of the top bar's drop shadow at the mid-point of the filter bar's slide.
-const SHADOW_PEAK_OPACITY = 0.16;
-
 /**
  * The dedicated Search screen, pushed over the tabs. Its top bar holds the search
- * field; a secondary bar directly below holds the filters and slides away as the
- * results scroll down (reappearing on scroll up). It inherits the Browse-selected
+ * field; a secondary bar directly below holds the filters and closes over them as
+ * the results scroll down (reopening on scroll up). It inherits the Browse-selected
  * bridge (`useInheritedBridge`) — filters are per-bridge — and owns the free-text
  * query + filter/sort state (`useBridgeFilters`). A Series→Search tag/meta intent
  * (see search-intent.ts) is consumed on mount and applied against the intent's bridge.
@@ -326,25 +323,39 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   const scopeKey = scope ? `${bridgeId}|${query}|${committedSort?.key ?? ''}|${JSON.stringify(committedFilters ?? {})}` : 'blank';
 
   // ── Sliding filter bar ─────────────────────────────────────────────────────
-  // The filter bar sits just below the (fixed) search bar and slides up out of view as the results
-  // scroll down, back in as they scroll up. Same shared helper the Browse bar uses (so the motion
-  // can't drift); a new search (`scopeKey` change) snaps it back to visible and the list to the top.
+  // The filter bar sits just below the (fixed) search bar and closes as the results scroll down,
+  // back open as they scroll up — the offset is the bar's own slide, which `filterBar` turns into a
+  // wipe over chips that hold still. Same shared helper the Browse bar uses (so the motion can't
+  // drift); a new search (`scopeKey` change) snaps it back open and the list to the top.
   const { scrollY, offset: filtersOffsetY, barStyle: filtersStyle, sharedValues, onScroll: onListScroll } =
     useSlidingBar(filtersBarH, { resetKey: scopeKey, listRef });
-  // The top bar's hairline is ALWAYS on (BarSurface draws it), including while the filter bar is
-  // expanded right beneath it. It used to fade out there, so the two bars read as one flush unit,
-  // which was wrong back when they were two separate BLUR surfaces: a blur only samples the content
-  // directly behind ITSELF, so the two never quite matched at the join and with no divider that
-  // mismatch read as a smudge. Both bars are now the same flat colour, so they WOULD match — but the
-  // hairline stays, because the seam is real either way: these are two bars, one of which slides up
-  // behind the other, and a divider is what says so.
-  // A subtle drop shadow only while the filter bar is mid-slide — a depth cue as it pops out from
-  // behind the top bar. Zero at both rest states (fully expanded = flush unit; fully collapsed = the
-  // hairline takes over), peaking in the middle of the motion (a parabola over the slide progress).
-  const topBarShadowStyle = useAnimatedStyle(() => {
-    const t = filtersBarH > 0 ? Math.min(1, Math.max(0, -filtersOffsetY.value / filtersBarH)) : 0;
-    return { shadowOpacity: SHADOW_PEAK_OPACITY * 4 * t * (1 - t) };
-  });
+  // The top bar YIELDS ITS RULE while any of the filter bar is showing. Both bars are the same flat
+  // colour and the filter bar sits flush beneath, carrying the edge for the pair — the same trade
+  // StickySectionHeader makes with the Browse bar, and BarSurface's `borderBottomColor` is
+  // overridable from an animated style for exactly this.
+  //
+  // It used to stay on, on the grounds that the seam was real: two bars, one sliding up BEHIND the
+  // other, and a divider is what says so. The shutter ended that. Nothing slides behind anything
+  // now — the filter bar closes in place — so the only edge there is is the one it closes to, and a
+  // second line above it was drawing a join that no longer happens.
+  //
+  // The handoff at the end is invisible rather than merely quick: the filter bar's own hairline is
+  // its bottom border, so as it finishes closing that line arrives at exactly `topBarTotal` and
+  // disappears behind the top bar on the same pixel the top bar's own line appears. No cross-fade
+  // needed, and none would help — a partly-faded rule above a fully-drawn one is two lines, not one.
+  //
+  // `t` is 1 when there is no filter bar at all, which is the same "nothing is covering the seam"
+  // state as fully closed. A 0 there would have left the rule permanently transparent on a bridge
+  // with no filters.
+  // The dep array carries `filtersBarH` as well as the colour, and has to: it is 0 on the first
+  // renders (the bridge's filter defs have not arrived yet) and only then becomes the bar's height,
+  // and an explicit dep array REPLACES the ones Reanimated's plugin would otherwise infer from the
+  // worklet's own closure. Without it the worklet keeps the captured 0, `t` is pinned at 1 by the
+  // guard above, and the rule never yields at all — which is exactly what it did.
+  const topBarRuleStyle = useAnimatedStyle(() => {
+    const t = filtersBarH > 0 ? Math.min(1, Math.max(0, -filtersOffsetY.value / filtersBarH)) : 1;
+    return { borderBottomColor: t >= 1 ? theme.barHairline : 'transparent' };
+  }, [theme.barHairline, filtersBarH]);
 
   // Pull-to-refresh: the whole thing (gesture per platform, spinner, min-visible window, content
   // shift) lives in the shared hook — same one the Browse grid uses. Refetches the CURRENT search;
@@ -424,7 +435,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     <ThemedView style={styles.container} {...pull.touchHandlers}>
       {/* Overlaid top bar: back button + search field (autofocused after the push settles) + sort.
           Opaque, like every other bar (BarSurface): the results scroll behind it. */}
-      <BarSurface style={[styles.topBar, topBarShadowStyle]}>
+      <BarSurface style={[styles.topBar, topBarRuleStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
           <Pressable
             testID="search.back"
@@ -532,12 +543,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 20,
-    // Downward drop shadow (iOS/web); its opacity is animated by topBarShadowStyle so it only shows
-    // mid-slide. Elevation is deliberately omitted — the Android system shadow can't be faded the
-    // same way, and this is a minor iOS/web depth cue.
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
   },
   topBarRow: {
     flexDirection: 'row',
