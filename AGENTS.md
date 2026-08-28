@@ -162,7 +162,10 @@ and dropping to the screen-relative `page` target instead (which is what this di
 the flying copy to full screen width. Which destination is in play is LATCHED while the page is at
 rest (`zoomBoundOnScreen`), never read live off the scroll — swapping mid-collapse is a visible
 jump. A copy that is not landing on the real cover also fades in later and slower, since there is no
-identical picture underneath to hide the cross-fade.
+identical picture underneath to hide the cross-fade, and it FLIES IN from off the top edge rather
+than materialising mid-screen — the direction the cover actually went, at a fixed "just off screen"
+distance rather than the real scroll depth. That entry rides the copy alone; putting it on the
+destination instead would drag the page with it, which is the artifact above pointing the other way.
 
 **A list that reorders is asked where its item is; it is not measured.** `useZoomSurfaceLocator`
 answers out of the virtualization state (`getState().positionAtIndex` / `.scroll`), which knows every

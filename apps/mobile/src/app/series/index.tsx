@@ -250,6 +250,20 @@ const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // travel instead of 0.3. Still fully opaque well before the page's own content finishes fading out
 // at 0.13, so there is no frame with neither picture on it.
 const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.5, 0.9];
+// Where the `cover-offscreen` copy comes FROM, as a slice of the travel. It is the only destination
+// whose copy has nowhere real to start: `cover` starts on the actual cover, `page` starts as the
+// page's own image, and this one is a picture of something that has scrolled off the top — so
+// centred and un-animated it simply materialised mid-screen, arriving from nothing.
+//
+// So it flies in from where the cover actually went: off the top edge. The offset is JUST off
+// screen — the copy's own bottom edge parked on the page's top — and deliberately not the real
+// scroll distance, which can be thousands of points and would spend the whole collapse crossing the
+// edge at a speed nothing can read. Where it came from is a direction, not a measurement.
+//
+// It lands (offset 0) at 0.4, a little after the fade above finishes at 0.5, so the picture is
+// fully opaque for the last of its approach and the rest of the collapse is the clean shrink into
+// the card. It starts at 0.95 rather than 1 so the first frames of a drag move the page alone.
+const ZOOM_THUMB_ENTRY_CLOSE = [0.4, 0.95];
 // The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
 // carried away, it is the surface being uncovered, so matching the page's curve held it opaque
 // through the first third of the collapse and kept the grid hidden long after the page had
@@ -2494,12 +2508,29 @@ function SeriesReaderInstance({
       height: rect.height,
       opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP),
       borderRadius: (hero ? hero.radius : 0) / Math.max(s, 0.01),
-      // The copy is laid out ON the destination bound, so it takes the scroll correction as a plain
-      // layout offset — this is INSIDE the page, in the same coordinates the bound was measured in,
-      // where "the cover moved up by `shift`" is exactly `-shift`. Its counterpart in zoomPageStyle
-      // carries the same shift in the other direction, which is what keeps the copy landing on the
-      // card at q = 0 and on the real cover at q = 1.
-      transform: [{ translateY: -zoomBoundShift(geom, detailsScrollOffset.value) }],
+      // Two translates, and only one of them is ever non-zero.
+      //
+      // `cover` takes the SCROLL CORRECTION: the copy is laid out on the destination bound, so this
+      // is INSIDE the page, in the same coordinates the bound was measured in, where "the cover
+      // moved up by `shift`" is exactly `-shift`. Its counterpart in zoomPageStyle carries the same
+      // shift the other way, which is what keeps the copy landing on the card at q = 0 and on the
+      // real cover at q = 1.
+      //
+      // `cover-offscreen` takes the ENTRY instead (see ZOOM_THUMB_ENTRY_CLOSE) — a slide down into
+      // place from off the top edge. Deliberately on the COPY alone and not on `end`: moving the
+      // destination would move the page with it, which is the drag-the-page-up artifact this
+      // destination exists to avoid, just pointing the other way. Nothing has to compensate for it
+      // in zoomPageStyle for the same reason, and it decays to 0 well before the landing, so the
+      // copy still arrives exactly on the card.
+      transform: [
+        {
+          translateY:
+            -zoomBoundShift(geom, detailsScrollOffset.value) -
+            (geom?.kind === 'cover-offscreen'
+              ? (rect.y + rect.height) * interpolate(q, ZOOM_THUMB_ENTRY_CLOSE, [0, 1], Extrapolation.CLAMP)
+              : 0),
+        },
+      ],
     };
   }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, copyMorphs, width, height]);
   // What the flying copy DRAWS. A series open flies the series cover (the route's `cover` param is
