@@ -409,33 +409,6 @@ function zoomHorizontalDrag(translation: number, dimension: number): number {
 }
 
 /**
- * How fast the FOLLOW is moving per unit of finger, at a given point in the drag — the derivative
- * of the curve above, which for `(D/r)(1 - e^(-r·t/D))·S` is simply `S·e^(-r·t/D)`.
- *
- * This is what a release has to hand to the follow's spring. The finger's own velocity is the wrong
- * number: the resistance has already been applied to everything the page did, so at 200 points in
- * the page is tracking at about half the thumb's speed, and starting the spring at the raw figure
- * would fling it out at twice the rate it was visibly moving. Handing over the rate the page was
- * ACTUALLY travelling at is what makes the release the same motion continuing.
- */
-function zoomHorizontalDragRate(translation: number, dimension: number): number {
-  'worklet';
-  const normalized = Math.abs(translation) / Math.max(1, dimension);
-  return (
-    ZOOM_PRIMARY_DRAG_TRANSLATION_SCALE *
-    ZOOM_HORIZONTAL_DRAG_DISTANCE_SCALE *
-    Math.exp(-ZOOM_PRIMARY_DRAG_RESISTANCE * 0.85 * normalized)
-  );
-}
-
-/** The same, for the loose off-axis follow. */
-function zoomCrossAxisDragRate(translation: number, dimension: number): number {
-  'worklet';
-  const normalized = Math.abs(translation) / Math.max(1, dimension);
-  return ZOOM_CROSS_AXIS_DRAG_TRANSLATION_SCALE * Math.exp(-ZOOM_CROSS_AXIS_DRAG_RESISTANCE * normalized);
-}
-
-/**
  * How far the DESTINATION BOUND has travelled since it was measured, because the details SCROLLED
  * under it.
  *
@@ -1553,14 +1526,7 @@ function SeriesReaderInstance({
    * gets cancelled before arriving is still covered by the wall-clock backstop above.
    */
   useAnimatedReaction(
-    // AND the follow having settled, not just the collapse. `zoom` reaching the card says the page
-    // is the right SIZE and the mask is the card's box; `dragX/dragY` are what say it is in the
-    // right PLACE. They were always allowed to lag — `zoom` gets the throw's speed and used to
-    // arrive first — and now that the follow carries the throw's direction as well it can still be
-    // running on when the collapse lands. Leaving there un-blanks the source card under a copy that
-    // is not on it yet, which is a jump. Nothing can strand on this: the wall-clock backstop in
-    // LeavingMask is armed by the same commit.
-    () => edgeCommitting.value && zoom.value <= LEAVE_AT_ZOOM && Math.hypot(dragX.value, dragY.value) <= 0.5,
+    () => edgeCommitting.value && zoom.value <= LEAVE_AT_ZOOM,
     (arrived, was) => {
       if (arrived && !was) runOnJS(leaveOnce)();
     },
@@ -1682,12 +1648,8 @@ function SeriesReaderInstance({
             // `zoom` actually reaching the card (see the reaction near leaveOnce).
             withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -throwSpeed }),
           );
-          // The follow carries the throw's DIRECTION, as it does on the back-swipe — and here the
-          // pan's own velocity is exactly right, because this follow is the translation itself with
-          // no resistance in between. Clamped so it can run on past the release point the way it was
-          // thrown without crossing the card.
-          dragX.set(withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: e.velocityX }));
-          dragY.set(withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: e.velocityY }));
+          dragX.set(withSpring(0, ZOOM_OUT_SPRING));
+          dragY.set(withSpring(0, ZOOM_OUT_SPRING));
         })
         // Always fires once the gesture resolves (release OR cancel) — the next gesture decides
         // its own mode fresh.
@@ -2094,7 +2056,7 @@ function SeriesReaderInstance({
     // the collapse's callback on the frame the finger lifted and the page would simply be gone.
     // (That symptom turned out to have a different cause here — see onFinalize — but the guard is
     // still the right shape, and a one-way latch read across callbacks is the read that works.)
-    const commit = (velocityX: number, velocityY: number, tx: number, ty: number) => {
+    const commit = (velocityX: number) => {
       'worklet';
       trace(tag, 'commit', { vx: velocityX, zoom: zoom.value, already: edgeCommitting.value });
       if (edgeCommitting.value) return;
@@ -2121,30 +2083,8 @@ function SeriesReaderInstance({
           trace(tag, 'collapse.done', { finished: !!finished, zoom: zoom.value });
         }),
       );
-      // …and so does the FOLLOW, which is the half that carries the throw's DIRECTION. Without a
-      // velocity here the page stopped tracking the finger the instant it lifted and set off for the
-      // card from rest, so every dismissal left along the same line whatever you did to it — the
-      // throw survived only as speed, in `zoom`, never as heading. The rate is the follow's own (see
-      // zoomHorizontalDragRate), not the pan's, because the resistance curve has already damped
-      // everything the page did.
-      //
-      // `overshootClamping` on both: the follow may run ON past the release point in the direction
-      // it was thrown, which is the whole point, but it must not cross zero — under it is the card,
-      // and there is nothing on the far side to swing through.
-      dragX.set(
-        withSpring(0, {
-          ...ZOOM_OUT_SPRING,
-          overshootClamping: true,
-          velocity: velocityX * zoomHorizontalDragRate(tx, width),
-        }),
-      );
-      dragY.set(
-        withSpring(0, {
-          ...ZOOM_OUT_SPRING,
-          overshootClamping: true,
-          velocity: velocityY * zoomCrossAxisDragRate(ty, height),
-        }),
-      );
+      dragX.set(withSpring(0, ZOOM_OUT_SPRING));
+      dragY.set(withSpring(0, ZOOM_OUT_SPRING));
     };
     // The shared activation criteria (lib/back-swipe). Everything after it is this surface's own:
     // a back-swipe here drives the gallery collapse, not a slide. Whether the details are the side
@@ -2201,7 +2141,7 @@ function SeriesReaderInstance({
           backSwipeStayedHorizontal(tx, ty, qualified) &&
           releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)
         )
-          commit(e.velocityX, e.velocityY, tx, ty);
+          commit(e.velocityX);
         // …and a losing copy must not settle over a commit the winner just made, hence the check
         // here as well as in onFinalize.
         else if (!edgeCommitting.value) settle();
