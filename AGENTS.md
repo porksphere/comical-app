@@ -190,6 +190,20 @@ the rect captured on press-in, which for one that can't reorder IS the answer. D
 card instead: while a page is open its grid sits under the backdrop's scale, so the measurement comes
 back shrunk toward the screen centre and only an arithmetic reconstruction gets it back.
 
+**A dismissal drag is in the SWIPE's coordinates; only the release is in the card's.** The collapse
+converges on the source card, so running it under a finger used to drag the page toward the card as
+you swiped — open a series from a card near the bottom, swipe sideways, and it sank as it went.
+`zoomHoming` splits the two: while the finger is down the page is centred and offset purely by the
+drag, and the convergence arrives over the rest of the collapse after release.
+
+That homing is DERIVED FROM `zoom`, never animated. An earlier attempt gave the follow its own
+spring beside the collapse's and had to be reverted — two springs racing means the page is wherever
+the loser left it when the winner finishes, which is the moment it leaves and the source card
+un-blanks. As a function of the collapse's own progress it reaches exactly 1 on the frame `zoom`
+reaches 0, so the page cannot land anywhere but the card. For the same reason the drag values are
+left frozen at release rather than sprung back: `home` retires them on that one clock. Every path
+that drives `zoom` sets `homeAt` first — there is no default that is right for all of them.
+
 # Press-in warms the destination
 
 Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is

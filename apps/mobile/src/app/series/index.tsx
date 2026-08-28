@@ -572,6 +572,67 @@ function pickZoomGeom(
   return (onCover ? cover : offCover) ?? page;
 }
 
+/**
+ * WHOSE COORDINATES the collapse is in right now: the swipe's, or the source card's.
+ *
+ * A dismissal drag runs the collapse under the finger, and the collapse's whole job is to converge
+ * on the card — so the page used to start sliding toward the card the moment you began dragging.
+ * Drag horizontally on a page opened from a card near the bottom and it sank as it went, chasing a
+ * destination rather than following the thumb. The position was the SOURCE's throughout; only its
+ * size was the gesture's.
+ *
+ * So the two are separated. While the finger is down the page is centred on the screen and offset
+ * purely by the drag — it shrinks where you are holding it. The convergence is the RELEASE's, and it
+ * arrives over the rest of the collapse.
+ *
+ * DERIVED FROM `q`, NOT ANIMATED. This is the important part, and the reason an earlier attempt at
+ * "follow the swipe" had to be reverted: that one gave the follow its own spring alongside the
+ * collapse's, and two springs racing means the page is wherever the loser left it when the winner
+ * finishes — which is when the page leaves and the source card un-blanks. Here the homing is a pure
+ * function of the collapse's own progress, so it reaches exactly 1 on the frame `q` reaches 0. The
+ * page is on the card when it lands because it cannot be anywhere else.
+ *
+ * `homeAt` carries the state in one number:
+ *   < 0   a finger owns the page (or is springing it back) — position is the swipe's.
+ *   = 0   nothing was dragged: the entrance, the chevron, hardware back. The classic collapse.
+ *   > 0   the `q` a committed drag was released at; the ramp runs from there to 0.
+ */
+function zoomHoming(homeAt: number, q: number): number {
+  'worklet';
+  if (homeAt < 0) return 0;
+  if (homeAt === 0) return 1;
+  return Math.min(1, Math.max(0, (homeAt - q) / homeAt));
+}
+
+/**
+ * The mask's box, UNDRAGGED — read by all three of the zoom's animated styles so they cannot
+ * disagree about where the window is. The drag is added by the mask alone (see `zoomMaskStyle`);
+ * the page compensates for this origin, and the flying copy measures its entry against it.
+ *
+ * `home` interpolates the origin between the two coordinate systems above. Note that at q = 1 both
+ * agree on 0 — a full-screen window is at the origin whichever way you got there — so a page at
+ * rest cannot tell them apart, and nothing jumps when a drag takes it over.
+ */
+function zoomMaskBox(
+  hero: ZoomOrigin,
+  shiftX: number,
+  shiftY: number,
+  q: number,
+  home: number,
+  width: number,
+  height: number,
+): { left: number; top: number; width: number; height: number } {
+  'worklet';
+  const w = hero.width + (width - hero.width) * q;
+  const h = hero.height + (height - hero.height) * q;
+  return {
+    left: (hero.x + shiftX) * (1 - q) * home + ((width - w) / 2) * (1 - home),
+    top: (hero.y + shiftY) * (1 - q) * home + ((height - h) / 2) * (1 - home),
+    width: w,
+    height: h,
+  };
+}
+
 /** `resolveZoomCrossAxisDragTranslation` — the off-axis, which follows loosely and never leads. */
 function zoomCrossAxisDrag(translation: number, dimension: number): number {
   'worklet';
@@ -1506,6 +1567,9 @@ function SeriesReaderInstance({
   //    collapse, so a page released well off to the side still lands exactly on its card.
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
+  /** See `zoomHoming`. Every path that drives `zoom` sets this first — there is no default that is
+   *  right for all of them, and a stale one is a page that converges on the wrong thing. */
+  const homeAt = useSharedValue(0);
   const edgeCommitting = useSharedValue(false);
 
   /**
@@ -1599,6 +1663,7 @@ function SeriesReaderInstance({
           // in ANY direction drives it, since unlike the back-swipe this gesture has no single
           // axis to measure along.
           zoomClosing.set(true);
+          homeAt.set(-1);
           zoom.set(
             1 - Math.min(1, Math.hypot(e.translationX, e.translationY) / (dismissSpan * ZOOM_DRAG_TRAVEL)),
           );
@@ -1641,6 +1706,10 @@ function SeriesReaderInstance({
           // see there for why a committed collapse must never be settled back.
           dismissing.set(true);
           edgeCommitting.set(true);
+          // Homing starts NOW, from where the finger left it (see `zoomHoming`). The drag values
+          // stay frozen at their release positions — `home` is what retires them, on the collapse's
+          // own clock, so nothing is still moving them when it lands.
+          homeAt.set(Math.max(0.001, zoom.value));
           const throwSpeed = zoomThrowSpeed(Math.hypot(e.velocityX, e.velocityY), dismissSpan, zoom.value);
           zoom.set(
             // overshootClamping: there is nothing past "collapsed", so the spring must not travel
@@ -1648,8 +1717,6 @@ function SeriesReaderInstance({
             // `zoom` actually reaching the card (see the reaction near leaveOnce).
             withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -throwSpeed }),
           );
-          dragX.set(withSpring(0, ZOOM_OUT_SPRING));
-          dragY.set(withSpring(0, ZOOM_OUT_SPRING));
         })
         // Always fires once the gesture resolves (release OR cancel) — the next gesture decides
         // its own mode fresh.
@@ -1690,6 +1757,7 @@ function SeriesReaderInstance({
     dismissing,
     detailsActiveSV,
     commitReveal,
+    homeAt,
     zoom,
     zoomClosing,
     dragX,
@@ -1892,6 +1960,8 @@ function SeriesReaderInstance({
       }, ZOOM_THUMB_PAINT_WAIT_MS);
     }
     zoomArmed.set(true);
+    // Nothing was dragged: the classic collapse, in the card's coordinates from the first frame.
+    homeAt.set(0);
     zoom.set(
       withSpring(1, ZOOM_IN_SPRING, (finished) => {
         // Closes the bracket opened at mount — see the effect below. The span between them is the
@@ -1903,7 +1973,7 @@ function SeriesReaderInstance({
         runOnJS(markEntranceSettled)();
       }),
     );
-  }, [zoom, zoomArmed, blankSource, markEntranceSettled]);
+  }, [zoom, zoomArmed, homeAt, blankSource, markEntranceSettled]);
   const onHeroCoverRect = useCallback((rect: ZoomRect) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
     // as its aspect settles, and moving the destination mid-flight would visibly jump. What the
@@ -1954,10 +2024,11 @@ function SeriesReaderInstance({
     if (LEFT.has(token)) return;
     zoomClosing.set(true);
     edgeCommitting.set(true);
+    homeAt.set(0);
     zoom.set(withSpring(0, ZOOM_OUT_SPRING));
     // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
     // leaveOnce), with the `leaving` backstop above as the safety net.
-  }, [token, edgeCommitting, zoom, zoomClosing]);
+  }, [token, edgeCommitting, homeAt, zoom, zoomClosing]);
 
   /**
    * Ask the source card where it is, once per collapse. Hung off `zoom` leaving the top rather than
@@ -2061,6 +2132,9 @@ function SeriesReaderInstance({
       trace(tag, 'commit', { vx: velocityX, zoom: zoom.value, already: edgeCommitting.value });
       if (edgeCommitting.value) return;
       edgeCommitting.set(true);
+      // Homing starts here, from wherever the drag got to — see the reader's commit for why the
+      // drag is left frozen rather than sprung back.
+      homeAt.set(Math.max(0.001, zoom.value));
       // Read STRAIGHT back — and on device this reports FALSE. `commit.latched readback=n` is what
       // a real trace says: a shared-value write is not visible to a read later in the SAME worklet
       // invocation, though it is visible to the next one (which is why the guard above still works
@@ -2083,8 +2157,6 @@ function SeriesReaderInstance({
           trace(tag, 'collapse.done', { finished: !!finished, zoom: zoom.value });
         }),
       );
-      dragX.set(withSpring(0, ZOOM_OUT_SPRING));
-      dragY.set(withSpring(0, ZOOM_OUT_SPRING));
     };
     // The shared activation criteria (lib/back-swipe). Everything after it is this surface's own:
     // a back-swipe here drives the gallery collapse, not a slide. Whether the details are the side
@@ -2102,6 +2174,8 @@ function SeriesReaderInstance({
         originY.set(e.translationY);
         resetBackSwipeShape(qualified);
         runOnJS(setSwipeLocked)(true);
+        // The finger owns the page's position for as long as it is down (see `zoomHoming`).
+        homeAt.set(-1);
         // A drag IS a collapse, so it uses the collapse's cross-fade ranges from the first frame.
         zoomClosing.set(true);
       })
@@ -2179,6 +2253,7 @@ function SeriesReaderInstance({
     dragY,
     edgeCommitting,
     detailsActiveSV,
+    homeAt,
     zoom,
     zoomClosing,
   ]);
@@ -2368,14 +2443,22 @@ function SeriesReaderInstance({
     // narrower than the card — and briefly a NEGATIVE width. The top needs no clamp: the open
     // spring is heavily overdamped and never passes 1.
     const q = Math.max(0, zoom.value);
+    const home = zoomHoming(homeAt.value, q);
+    const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, home, width, height);
     return {
       // The drag moves the MASK, not the page inside it. Both have to travel together or the page
       // slides out from under its own window — a rectangle of page hanging in the wrong place,
       // which is exactly what a dragged mask-less collapse looked like.
-      left: (hero.x + heroShiftX.value) * (1 - q) + dragX.value,
-      top: (hero.y + heroShiftY.value) * (1 - q) + dragY.value,
-      width: hero.width + (width - hero.width) * q,
-      height: hero.height + (height - hero.height) * q,
+      //
+      // It fades with `home` rather than springing back on release, and that is what makes the
+      // landing exact: at q = 0 the homing is 1, so the drag contributes nothing whatever the finger
+      // was doing, and the window is the card's box. The drag's own value is simply left where the
+      // release froze it — nothing has to animate it away, so nothing can still be animating it when
+      // the page leaves.
+      left: box.left + dragX.value * (1 - home),
+      top: box.top + dragY.value * (1 - home),
+      width: box.width,
+      height: box.height,
       borderRadius: hero.radius * (1 - q),
       borderCurve: 'continuous' as const,
     };
@@ -2414,8 +2497,8 @@ function SeriesReaderInstance({
         ],
       };
     }
-    const maskLeft = (hero.x + heroShiftX.value) * (1 - q);
-    const maskTop = (hero.y + heroShiftY.value) * (1 - q);
+    const home = zoomHoming(homeAt.value, q);
+    const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, home, width, height);
     // Scale: normally the base content scale modulated by the drag's shrink. Once the finger has
     // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
     // released at, down to the collapsed scale, biased by the release velocity.
@@ -2426,17 +2509,22 @@ function SeriesReaderInstance({
     // translated, so the correction is scaled too. Nothing else in here changes: `s` is a ratio of
     // sizes, and the mask travels between the card and the screen, neither of which scrolls.
     const shift = zoomBoundShift(geom, detailsScrollOffset.value);
-    // NOTE the compensation uses the UNDRAGGED mask origin. The mask sits at `maskLeft + dragX`
-    // and the page at `T - maskLeft` inside it, which puts the page at `T + dragX` in window
-    // space: mask and content displaced by exactly the same amount, so the window keeps framing
-    // the same part of the page however far it is dragged.
+    // NOTE the compensation uses the UNDRAGGED mask origin. The mask sits at `box + drag` and the
+    // page at `target - box` inside it, which puts the page at `target + drag` in window space:
+    // mask and content displaced by exactly the same amount, so the window keeps framing the same
+    // part of the page however far it is dragged.
+    //
+    // The TARGET carries `home`, so at 0 it is nothing at all: the page sits centred in a centred
+    // window and the pair simply travels with the thumb. The scroll correction goes with it for the
+    // same reason (and the copy's counterpart matches), since it exists only to land the copy on a
+    // cover the homing has not started aiming at yet.
     return {
       transform: [
         // heroShift is added to the page's own target as well as the mask's origin. The mask offset
         // cancels out of the page's absolute position, so shifting only the mask moves the window
         // without moving what's behind it.
-        { translateX: (geom.tx + heroShiftX.value) * (1 - q) - maskLeft },
-        { translateY: (geom.ty + geom.s * shift + heroShiftY.value) * (1 - q) - maskTop },
+        { translateX: (geom.tx + heroShiftX.value) * (1 - q) * home - box.left },
+        { translateY: (geom.ty + geom.s * shift + heroShiftY.value) * (1 - q) * home - box.top },
         { scale },
       ],
     };
@@ -2488,6 +2576,7 @@ function SeriesReaderInstance({
       };
     }
     const q = Math.max(0, zoom.value);
+    const home = zoomHoming(homeAt.value, q);
     const closing = geom?.kind === 'cover-offscreen' ? ZOOM_THUMB_FADE_CLOSE_OFFCOVER : ZOOM_THUMB_FADE_CLOSE;
     const range = zoomClosing.value ? closing : ZOOM_THUMB_FADE_OPEN;
     // The copy has to READ as the thumbnail it came off, corner included — 10pt on a grid card, 6
@@ -2532,17 +2621,21 @@ function SeriesReaderInstance({
     let entryX = 0;
     let entryY = 0;
     if (geom && hero && geom.kind === 'cover-offscreen') {
-      const u = 1 - q;
+      // The path is only travelled to the extent the page is homing — under a finger it isn't
+      // travelled at all, the pair just moves with the thumb. So the parameter is `(1 - q) * home`,
+      // the same factor the page's own target carries. The drag itself needs no term here: it
+      // displaces the copy and the mask by the identical amount, so it cancels out of a separation
+      // measured between them.
+      const u = (1 - q) * home;
       const vx = geom.tx + heroShiftX.value;
       const vy = geom.ty + heroShiftY.value;
       const hw = (rect.width * s) / 2;
       const hh = (rect.height * s) / 2;
-      const maskLeft = (hero.x + heroShiftX.value) * u;
-      const maskTop = (hero.y + heroShiftY.value) * u;
-      const maskRight = maskLeft + hero.width + (width - hero.width) * q;
-      const maskBottom = maskTop + hero.height + (height - hero.height) * q;
-      const kx = vx > 0 ? u - (maskLeft - width / 2 - hw) / vx : vx < 0 ? u - (maskRight - width / 2 + hw) / vx : Infinity;
-      const ky = vy > 0 ? u - (maskTop - height / 2 - hh) / vy : vy < 0 ? u - (maskBottom - height / 2 + hh) / vy : Infinity;
+      const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, home, width, height);
+      const maskRight = box.left + box.width;
+      const maskBottom = box.top + box.height;
+      const kx = vx > 0 ? u - (box.left - width / 2 - hw) / vx : vx < 0 ? u - (maskRight - width / 2 + hw) / vx : Infinity;
+      const ky = vy > 0 ? u - (box.top - height / 2 - hh) / vy : vy < 0 ? u - (maskBottom - height / 2 + hh) / vy : Infinity;
       const len = Math.hypot(vx, vy);
       const cap = len > 0.5 ? Math.hypot(width, height) / len : 0;
       const k =
@@ -2575,7 +2668,9 @@ function SeriesReaderInstance({
       // still arrives exactly on the card.
       transform: [
         { translateX: entryX },
-        { translateY: -zoomBoundShift(geom, detailsScrollOffset.value) + entryY },
+        // The scroll correction is scaled by `home` to stay the exact counterpart of the page's,
+        // which carries the same factor — the two are one correction split across two views.
+        { translateY: -zoomBoundShift(geom, detailsScrollOffset.value) * home + entryY },
       ],
     };
   }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, copyMorphs, width, height]);
