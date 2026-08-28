@@ -292,7 +292,8 @@ works where an offline debug build can't. Full walkthrough: [PROFILING.md](PROFI
 "Iterative dev & profiling from Windows".
 
 **What manual-only costs, and why it's still the right call.** ccache is keyed by build flavor
-(`BUILD_FLAVOR` in `build-ios-reusable.yml`): SDK × configuration × dev-client. A Debug build shares
+(`BUILD_FLAVOR` in `build-ios-reusable.yml`): SDK × configuration × dev-client, with Release left
+implicit so the long-standing `device`/`sim` entries keep their names. A Debug build shares
 essentially no object code with the Release lanes, so nothing else in the repo can warm this
 flavor's entry — and only the default branch writes caches at all. Fixing the key is what took this
 lane off its old ~30 minutes (it had been restoring a cache warmed exclusively by Release compiles
