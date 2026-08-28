@@ -190,6 +190,14 @@ the rect captured on press-in, which for one that can't reorder IS the answer. D
 card instead: while a page is open its grid sits under the backdrop's scale, so the measurement comes
 back shrunk toward the screen centre and only an arithmetic reconstruction gets it back.
 
+**A committed dismissal hands over its DIRECTION as well as its speed.** `zoom` carries the throw's
+speed and the follow (`dragX`/`dragY`) carries its heading — springing those from rest is what made
+every dismissal leave along the same line however it was thrown. The velocity handed to the follow is
+the FOLLOW's rate, not the pan's, wherever a resistance curve sits between them
+(`zoomHorizontalDragRate`). Leaving then waits for the follow as well as the collapse: `zoom` at 0
+says the page is the right size, `dragX`/`dragY` at 0 say it is in the right place, and un-blanking
+the source card under a copy still running on is a jump.
+
 # Press-in warms the destination
 
 Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is
