@@ -11,42 +11,36 @@ name: Build iOS dev-client (Windows iterative dev)
 # config plugin / SDK bump) need a fresh run of this workflow. See docs/PROFILING.md → "Iterative
 # Expo dev from Windows".
 #
-# ON DEMAND, not per PR. The shell embeds no JS at all, so a pull request's changes are invisible to
-# it unless they are native — which almost none are. Building one per PR was most of a macOS runner
-# hour spent producing a shell identical to the last one.
+# MANUAL ONLY. The shell embeds no JS at all, so a pull request's changes are invisible to it unless
+# they are native — which almost none are. Building one per PR was most of a macOS runner hour spent
+# producing a shell identical to the last one.
 #
-# THE HEARTBEAT IS NOT COSMETIC. This is the repo's only Debug build, and a Debug compile shares
-# essentially no object code with the Release lanes, so nothing else can warm its ccache entry (see
-# BUILD_FLAVOR in build-ios-reusable.yml). Only the DEFAULT BRANCH writes caches, and GitHub evicts
-# an entry after seven days without access. On-demand alone therefore has no cache to take advantage
-# of: every dispatch that follows a quiet week compiles from cold, which is ~30 minutes, and a quiet
-# week is exactly when you reach for this. The schedule exists to keep that entry alive and current,
-# so a dispatch lands in minutes. Twice weekly rather than nightly — comfortably inside the eviction
-# window at a quarter of the runner cost, and ccache is content-addressed with almost everything in
-# it coming from node_modules/pods, which move with `bun.lock` rather than with a few days of app
-# commits. It refreshes the rolling channel while it is there, so the source is never far behind
-# main either.
+# WHAT THAT COSTS, so nobody re-diagnoses it as a regression: this is the repo's only Debug build,
+# and a Debug compile shares essentially no object code with the Release lanes, so nothing else can
+# warm its ccache entry (see BUILD_FLAVOR in build-ios-reusable.yml). Only the DEFAULT BRANCH writes
+# caches, and GitHub evicts an entry after seven days without access. So a dispatch that follows a
+# quiet week compiles from cold — around half an hour — and only a second dispatch within the week
+# lands in minutes. That is the deliberate trade: nothing runs on a timer here, and the price is paid
+# by whoever needs a shell after a lull rather than by every PR. If it starts biting, the fix is a
+# scheduled run on main often enough to stay inside the eviction window (twice weekly is plenty), not
+# a wider trigger.
+#
+# Dispatch from `main` when you can: the cache SAVE steps are gated on the default branch, so a run
+# from a feature branch reads the cache but leaves nothing behind for the next one.
 #
 # Kept separate from build-ios.yml on purpose: the ios-main / per-PR ios-pr builds are profiling
 # Release and the tagged ios-release build is clean Release — this is the only thing that builds
 # Debug.
 
 on:
-  # Manual. Pick the branch/tag to build from in the "Run workflow" dialog (or
+  # Manual only — see the header. Pick the branch/tag to build from in the "Run workflow" dialog (or
   # `gh workflow run build-ios-devclient.yml --ref <branch>`); the whole workflow — including the
-  # reusable build's checkout — runs on that ref. Dispatch from `main` when you want the run to
-  # WRITE the ccache as well as read it; the save steps are gated on the default branch.
+  # reusable build's checkout — runs on that ref.
   workflow_dispatch: {}
 
-  # The cache heartbeat — see the header. Mondays and Thursdays, off the hour to avoid GitHub's
-  # scheduled-run backlog at :00. `github.ref` on a schedule event is the default branch, which is
-  # what gates the reusable workflow's cache SAVE steps.
-  schedule:
-    - cron: '41 6 * * 1,4'
-
-# Per-ref rather than the bare string `ios-devclient`: a dispatch on a branch and the scheduled run
-# on main are different work with different destinations for the cache, and cancelling one because
-# the other started would throw away whichever got there first.
+# Per-ref rather than the bare string `ios-devclient`: a dispatch on main and one on a feature branch
+# are different work with different destinations for the cache, and cancelling one because the other
+# started would throw away whichever got there first.
 concurrency:
   group: ios-devclient-${{ github.ref }}
   cancel-in-progress: true
@@ -145,5 +139,5 @@ jobs:
           \`${BASE}/apps.json\`
 
           Then run \`bun run dev:device\` on your PC and connect from the app's launcher.
-          Rebuilt twice weekly from main; re-run this workflow to refresh it immediately after a
-          native change lands. Pure JS/TS iterates over Metro with no rebuild at all."
+          Rebuild (re-run this workflow) only when native code changes — a native module, a config
+          plugin, an SDK bump. Pure JS/TS iterates over Metro with no rebuild at all."

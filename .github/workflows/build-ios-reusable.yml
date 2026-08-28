@@ -178,9 +178,10 @@ jobs:
       #                 module on it), so the two see different headers.
       # Three live flavors now (device-Release, sim-Release, device-Debug-devclient) against the
       # repo's shared 10 GB cache budget. ccache entries compress well under it, and GitHub's LRU
-      # drops the oldest per-commit entries first, which are the ones nothing restores from. Each
-      # flavor also needs its writer to run at least weekly: GitHub evicts an entry after seven days
-      # without access, and a flavor whose only writer is occasional is a flavor with no cache.
+      # drops the oldest per-commit entries first, which are the ones nothing restores from. Note
+      # that a flavor only HAS a cache while something writes it at least weekly — GitHub evicts an
+      # entry after seven days without access — which is why the two push-driven flavors below are
+      # reliably warm and the manual one is not.
       BUILD_FLAVOR: ${{ inputs.simulator && 'sim' || 'device' }}-${{ inputs.configuration }}${{ inputs.dev_client && '-devclient' || '' }}
     steps:
       - uses: actions/checkout@v4
@@ -234,9 +235,10 @@ jobs:
       #
       # Keyed on BUILD_FLAVOR (see the job env above for what's in it and why). Every flavor
       # needs something on the default branch that writes its entry, or branches restore nothing:
-      # e2e.yml's push-to-main keeps `sim` warm, build-ios.yml's keeps `device-Release`, and
-      # build-ios-devclient.yml's twice-weekly schedule keeps `device-Debug-devclient` — that one
-      # exists ONLY for this, since nothing else in the repo builds Debug (see its header).
+      # e2e.yml's push-to-main keeps `sim` warm and build-ios.yml's keeps `device-Release`. Nothing
+      # keeps `device-Debug-devclient` warm on a timer: build-ios-devclient.yml is manual, so that
+      # entry is only written when someone dispatches it from main, and a dispatch after a week's
+      # gap finds it evicted and compiles cold. Deliberate — see that workflow's header.
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
