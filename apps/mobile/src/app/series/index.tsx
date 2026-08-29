@@ -658,42 +658,53 @@ function zoomDetach(start: number, size: number, home: number, span: number): nu
 }
 
 /**
- * Where the follow asymptotes, in multiples of the floor's travel. The one knob: raise it and the
- * page keeps more of the finger everywhere, lower it and it goes stiff sooner.
+ * The follow's two knobs, and they are independent on purpose.
  *
- * 1.6 is picked so the curve below traces the exponential it replaced almost exactly over the part
- * of the drag anyone actually swipes — 34/58/84pt against 35/60/86pt at 40/80/136pt of finger — and
- * differs only in the tail. The feel up to the floor was already right; the tail was not.
+ * `REACH` is where it asymptotes, in multiples of the floor's travel — how far the page can ever
+ * get. `GRIP` is its rate at the FIRST pixel — how much of your thumb it takes before it has
+ * travelled anywhere at all.
+ *
+ * One parameter could not express what this needs. Tie the rate at 0 to the asymptote (grip = 1,
+ * which every earlier shape did) and the whole change from free to stuck has to happen inside the
+ * first `reach` points, because that is the only length in the formula. Lowering the asymptote to
+ * bring the spring on sooner only compresses it further. Splitting them lets the spring be in
+ * effect immediately AND take the whole drag to arrive: at 0.6/1.9 the rate goes 0.60 → 0.35 → 0.18
+ * across the first 350pt, where 1.0/1.6 went 1.00 → 0.38 → 0.15 over the same distance and did
+ * three quarters of that in the first third of it. Worst stiffening over any 20pt: 0.05, against
+ * 0.16.
  */
-const ZOOM_DRAG_FOLLOW_REACH = 1.6;
+const ZOOM_DRAG_FOLLOW_REACH = 1.9;
+const ZOOM_DRAG_FOLLOW_GRIP = 0.6;
 
 /**
- * The follow: a spring, not a leash. Resistance grows from the first pixel and keeps growing, so
- * the page is asymptotic to `reach` with no point where it stops behaving one way and starts
+ * The follow: a spring, not a leash. Resistance is there from the first pixel and grows from there,
+ * so the page is asymptotic to `reach` with no point where it stops behaving one way and starts
  * behaving another.
  *
- * Two shapes were wrong before this one, and each was wrong at a different END of the drag:
+ * Three shapes were wrong before this one, each at a different part of the drag:
  *
  *  · Free to the shrink floor, then rubber-banded. C¹ at the knee and still read as binary —
- *    continuity of SPEED is not continuity of FEEL. All the curvature sat in the ~20pt after the
- *    knee, so the page went from weightless to stuck within a thumb's width.
- *  · One exponential over the whole drag. Gradual where the first shape was abrupt, but it
- *    FLATLINES: `1 - e^-t` is within a percent of its limit by 3 time constants, so past ~450pt the
- *    page simply stopped, and a page that stops dead is a wall wherever you put it.
+ *    continuity of SPEED is not continuity of FEEL. All the curvature sat in the ~20pt after it.
+ *  · One exponential over the whole drag. Gradual, then FLATLINED: `1 - e^-t` is within a percent
+ *    of its limit by three time constants, so past ~450pt the page simply stopped, and a page that
+ *    stops dead is a wall wherever you put it.
+ *  · `A·t/(A + t)` — iOS's scroll-boundary band, which fixed the tail (its rate decays as 1/t², so
+ *    there is always something left to give) but still left the drag feeling like it all happened
+ *    at once, because a rate starting at exactly 1 has the whole of its range to fall through.
  *
- * So: a polynomial tail, `A·t/(A + t)`, which is the rubber band iOS uses at a scroll boundary.
- * Its rate is `(A/(A+t))²` — 1 at the first pixel, like the exponential, but decaying as 1/t²
- * instead of e^-t, so there is always a little left to give. At 900pt of finger it still yields
- * 0.04pt per pt where the exponential yields 0.00. Nothing ever arrives; it only ever slows.
+ * Same band, with the initial rate freed from the asymptote: `reach·d / (reach/grip + d)`, whose
+ * rate is `grip · (S/(S + d))²` for `S = reach/grip`. `grip` sets where that starts and `S` how
+ * long it takes to get anywhere, and neither moves the other.
  *
- * `reach` is anchored to the floor's own travel (see the caller), so the page runs out of room in
- * the same stretch the size does.
+ * `reach` is anchored to the floor's own travel (see the callers), so the page runs out of room in
+ * the same stretch the size does. `grip < 1` also guarantees it can never outrun the finger, since
+ * `S > reach` makes `held(d) < d` everywhere.
  */
-function zoomDragFollow(distance: number, reach: number): number {
+function zoomDragFollow(distance: number, reach: number, grip: number): number {
   'worklet';
-  if (reach <= 0) return distance;
+  if (reach <= 0 || grip <= 0) return distance;
   const d = Math.abs(distance);
-  const held = (reach * d) / (reach + d);
+  const held = (reach * d) / (reach / grip + d);
   return distance < 0 ? -held : held;
 }
 
@@ -1754,7 +1765,11 @@ function SeriesReaderInstance({
           // Scaling the vector by the resisted/raw ratio, rather than resisting each axis, keeps
           // the page moving along the finger's own direction — this gesture has no primary axis to
           // resist along.
-          const held = zoomDragFollow(reach, ZOOM_DRAG_FOLLOW_REACH * (1 - zoomDragFloor.value) * travel);
+          const held = zoomDragFollow(
+            reach,
+            ZOOM_DRAG_FOLLOW_REACH * (1 - zoomDragFloor.value) * travel,
+            ZOOM_DRAG_FOLLOW_GRIP,
+          );
           const hold = reach > 0 ? held / reach : 0;
           dragX.set(e.translationX * hold);
           dragY.set(e.translationY * hold);
@@ -2284,14 +2299,27 @@ function SeriesReaderInstance({
         traceThrottled(updateGate, 60, tag, 'update', { tx, ty, zoom: zoom.value });
         trackBackSwipeShape(qualified, tx, ty, width * DISMISS_COMMIT_FRACTION);
         const travel = width * ZOOM_DRAG_TRAVEL;
-        zoom.set(Math.max(zoomDragFloor.value, 1 - Math.min(1, Math.max(0, tx / travel))));
-        // The spring is on tx, the axis that drives `zoom` here, so the follow runs out of room
-        // where the shrink does. The cross axis is left alone — it never led, and it is already the
-        // loosest thing in the gesture.
+        // RIGHTWARD ONLY, and the clamp has to be on the follow as well as the collapse. The
+        // gesture can only ACTIVATE rightward (`backSwipePan`'s activeOffsetX/failOffsetX), but
+        // `tx` is measured from the activation point, so a finger that starts right and then comes
+        // back left goes negative — and the collapse was already clamped while the follow was not.
+        // The page slid left, and the mask, cover and flying copy went with it: the whole dismissal
+        // playing out on the wrong side of the screen, aimed at a card it was never going to reach.
+        const forward = Math.max(0, tx);
+        zoom.set(Math.max(zoomDragFloor.value, 1 - Math.min(1, forward / travel)));
+        // The spring is on the forward axis, the one that drives `zoom` here, so the follow runs
+        // out of room where the shrink does.
         dragX.set(
-          zoomHorizontalDrag(zoomDragFollow(tx, ZOOM_DRAG_FOLLOW_REACH * (1 - zoomDragFloor.value) * travel), width),
+          zoomHorizontalDrag(
+            zoomDragFollow(forward, ZOOM_DRAG_FOLLOW_REACH * (1 - zoomDragFloor.value) * travel, ZOOM_DRAG_FOLLOW_GRIP),
+            width,
+          ),
         );
-        dragY.set(zoomCrossAxisDrag(ty, height));
+        // The cross axis rides the forward one rather than being read on its own: with no forward
+        // travel there is no dismissal to drift, and a page sliding purely up or down is the same
+        // wrong-direction artifact one axis over. It never led anyway — this is the loosest thing
+        // in the gesture.
+        dragY.set(forward > 0 ? zoomCrossAxisDrag(ty, height) : 0);
       })
       .onEnd((e) => {
         'worklet';

@@ -226,9 +226,20 @@ continuity of feel**, and all its curvature sat in the ~20pt after the knee. One
 that and then FLATLINED, since `1 - e^-t` is within a percent of its limit by three time constants,
 so past ~450pt the page simply stopped — and a page that stops dead is a wall wherever you put it.
 
-The shape that works is a polynomial tail (iOS's scroll-boundary band): rate `(A/(A+t))²`, which is
-1 at the first pixel like the exponential but decays as 1/t² rather than e^-t, so there is always a
-little left to give. Nothing ever arrives; it only ever slows.
+A polynomial tail (iOS's scroll-boundary band) fixed that end — its rate decays as 1/t², so there is
+always something left to give — but starting that rate at exactly 1 still read as everything
+happening at once, because the whole of its range had to fall through one length. So the initial
+rate is freed from the asymptote: `reach·d / (reach/grip + d)`, rate `grip·(S/(S+d))²` for
+`S = reach/grip`. **`GRIP` says how immediately the spring is felt, `REACH` how far the page can
+ever get, and neither moves the other** — which is the whole reason a single-parameter band could
+never be tuned into this.
+
+**The series page's dismissal is RIGHTWARD ONLY, and the clamp belongs on the follow as well as the
+collapse.** `backSwipePan` can only activate rightward, but `tx` is measured from the activation
+point, so a finger that starts right and comes back left goes negative; with only the collapse
+clamped, the page slid left and took the mask, cover and flying copy with it — the whole dismissal
+on the wrong side of the screen, aimed at a card it could never reach. The cross axis rides the
+forward one for the same reason.
 
 **A release decision reads the FINGER, never the follow.** They were the same number until the
 resistance existed; afterwards the follow tops out well below `DISMISS_COMMIT_FRACTION` of the span,
