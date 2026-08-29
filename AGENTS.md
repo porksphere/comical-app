@@ -252,16 +252,21 @@ so judging by it makes a deliberate slow swipe impossible to commit and leaves o
 velocity able to dismiss at all. What the user swiped is the question; how far the page was allowed
 to move in reply is not.
 
-**The corner rounds in the first twelfth of the collapse** (`ZOOM_RADIUS_ROUNDED_BY`), not linearly
-across all of it. Judge that threshold by FINGER TRAVEL, not by `q`: the reader's paged dismiss
-measures over the height, so the same swipe moves it half as far as the series back-swipe — 0.92 is
-a full corner after 78pt of a back-swipe and 168pt of a paged dismiss. Radius is the earliest signal that a page has become a card — at the top of a
-dismissal size and position have barely moved, so it is the only thing saying what is about to
-happen — and since the spring took over the shrink a drag only carries `zoom` to about 0.87, which
-on a linear ramp is 13% of the corner, i.e. square. ONE curve serves both directions, and that is
-forced: `settle` clears `zoomClosing` on the frame a cancelled swipe releases, so a per-direction
-curve would jump the radius ~9.5pt→~1.5pt in that frame — a pop on the one gesture meant to look
-like nothing happened.
+**The corner is fully rounded within the first 3% of the collapse** (`ZOOM_RADIUS_ROUNDED_BY_CLOSE`),
+not carried linearly across all of it. Radius is the earliest signal that a page has become a card —
+at the top of a dismissal size and position have barely moved, so it is the only thing saying what is
+about to happen — and since the spring took over the shrink a drag only carries `zoom` to about 0.87,
+which on a linear ramp is 13% of the corner, i.e. square. Judge the threshold by FINGER TRAVEL, not
+by `q`: the reader's paged dismiss measures over the height, so the same swipe moves it half as far
+as the series back-swipe. 0.97 is a full corner after 27pt of a back-swipe and 57pt of a paged
+dismiss.
+
+**Opening keeps its own, gentler threshold**, because there the corner signals nothing — you already
+touched the card — so squaring off has to stay a tail rather than an event. The split is only safe
+because the curve is chosen by `zoomRadiusClosing`, NOT by `zoomClosing`: that one is cleared by
+`settle` on the frame a cancelled swipe releases, mid-springback, which would swap 12pt for 3.8pt in
+a single frame. `zoomRadiusClosing` is retired by a reaction on `zoom` itself, at
+`ZOOM_RADIUS_CURVE_SWAP_AT` — where the two curves have converged to 0.16pt of each other.
 
 **The reader dismiss's flying copy follows the FORWARD progress, not the raw distance**
 (`zoomThumbBias`). That gesture measures with a hypot, which cannot tell "further out" from "back

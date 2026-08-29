@@ -681,11 +681,22 @@ const ZOOM_DRAG_FOLLOW_GRIP = 0.6;
  * swipe) clears `zoomClosing` on the frame the finger lifts, so a curve that keyed off it would
  * jump the radius from ~9.5pt to ~1.5pt in that single frame — the pop would land on exactly the
  * gesture that is supposed to look like nothing happened. Opening just inherits it: the window
- * keeps the card's corner for most of its growth and squares off over the spring's tail — the last
- * 8% of `q`, which is slow in TIME even though it is a thin slice of progress. That tail is the
- * reason not to push this much past 0.92: the squaring-off has to stay a tail, not an event.
+ * The two directions have their OWN thresholds, which is what lets the close be this aggressive.
+ * Opening, the corner is not a signal of anything — you already touched the card — so squaring off
+ * has to stay a tail rather than an event, and a slice as thin as the close's would be one.
+ *
+ * The split is only safe because `zoomRadiusClosing` is not `zoomClosing`: it flips back when the
+ * page has actually reached the top, not on the frame a cancelled swipe releases. Both curves run
+ * to 0 at `q` = 1, so the flip lands where they have all but converged — 0.16pt apart at the
+ * threshold the reaction uses. Keying this off `zoomClosing`, which `settle` clears immediately,
+ * would swap them mid-springback instead: 12pt to 3.8pt in one frame for a swipe released at 0.95,
+ * on the one gesture meant to look like nothing happened.
  */
-const ZOOM_RADIUS_ROUNDED_BY = 0.92;
+const ZOOM_RADIUS_ROUNDED_BY_CLOSE = 0.97;
+const ZOOM_RADIUS_ROUNDED_BY_OPEN = 0.84;
+/** Where the two curves swap. Late enough that they have converged to 0.16pt of each other, and
+ *  reachable because a settled spring writes its target exactly. */
+const ZOOM_RADIUS_CURVE_SWAP_AT = 0.9995;
 /** How far the reader's dismiss must travel before it HAS a direction to be judged against. Small
  *  enough that it is latched almost immediately, large enough that the first frames of a drag —
  *  which are noise, and on web arrive with translation 0 — cannot set it. */
@@ -1655,6 +1666,9 @@ function SeriesReaderInstance({
    *  except a reader dismiss dragged back the other way — see that gesture's onUpdate, and
    *  `zoomThumbStyle`, which applies this to the copy's OPACITY alone. */
   const zoomThumbBias = useSharedValue(1);
+  /** Which corner curve the window is on. Set by every closing path alongside `zoomClosing`, but
+   *  NOT cleared with it — see the reaction below, and `ZOOM_RADIUS_ROUNDED_BY_CLOSE`. */
+  const zoomRadiusClosing = useSharedValue(false);
   // Back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
   // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get
   // the real one. A decisive rightward drag ANYWHERE on the details (full-surface, like the
@@ -1691,6 +1705,19 @@ function SeriesReaderInstance({
    * zoom at the card is what leaving means; and it cannot strand the page, because a collapse that
    * gets cancelled before arriving is still covered by the wall-clock backstop above.
    */
+  /**
+   * Retire the closing corner curve only once the page has actually got back to the top.
+   *
+   * `zoomClosing` cannot do this job: `settle` clears it on the frame a cancelled swipe releases,
+   * which is mid-springback, where the two curves disagree by most of a corner. Waiting for zoom
+   * itself puts the flip at q = 1, where both curves give 0 and the swap is invisible.
+   */
+  useAnimatedReaction(
+    () => zoom.value >= ZOOM_RADIUS_CURVE_SWAP_AT,
+    (home) => {
+      if (home) zoomRadiusClosing.set(false);
+    },
+  );
   useAnimatedReaction(
     () => edgeCommitting.value && zoom.value <= LEAVE_AT_ZOOM,
     (arrived, was) => {
@@ -1765,6 +1792,7 @@ function SeriesReaderInstance({
           // direction drives it, since unlike the back-swipe this gesture has no single axis to
           // measure along.
           zoomClosing.set(true);
+          zoomRadiusClosing.set(true);
           homeAt.set(-1);
           const travel = dismissSpan * ZOOM_DRAG_TRAVEL;
           const pull = Math.hypot(e.translationX, e.translationY);
@@ -1900,6 +1928,7 @@ function SeriesReaderInstance({
     collapseEnabled,
     width,
     height,
+    zoomRadiusClosing,
     dismissDirX,
     dismissDirY,
     zoomThumbBias,
@@ -2176,12 +2205,13 @@ function SeriesReaderInstance({
   const closeLayer = useCallback(() => {
     if (LEFT.has(token)) return;
     zoomClosing.set(true);
+    zoomRadiusClosing.set(true);
     edgeCommitting.set(true);
     homeAt.set(0);
     zoom.set(withSpring(0, ZOOM_OUT_SPRING));
     // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
     // leaveOnce), with the `leaving` backstop above as the safety net.
-  }, [token, edgeCommitting, homeAt, zoom, zoomClosing]);
+  }, [token, edgeCommitting, homeAt, zoom, zoomClosing, zoomRadiusClosing]);
 
   /**
    * Ask the source card where it is, once per collapse. Hung off `zoom` leaving the top rather than
@@ -2331,6 +2361,7 @@ function SeriesReaderInstance({
         homeAt.set(-1);
         // A drag IS a collapse, so it uses the collapse's cross-fade ranges from the first frame.
         zoomClosing.set(true);
+        zoomRadiusClosing.set(true);
       })
       .onUpdate((e) => {
         'worklet';
@@ -2424,6 +2455,7 @@ function SeriesReaderInstance({
     dragX,
     dragY,
     edgeCommitting,
+    zoomRadiusClosing,
     detailsActiveSV,
     homeAt,
     zoom,
@@ -2633,7 +2665,14 @@ function SeriesReaderInstance({
       top: box.top + zoomDetach(box.top, box.height, home, height) + dragY.value * (1 - home),
       width: box.width,
       height: box.height,
-      borderRadius: hero.radius * interpolate(q, [ZOOM_RADIUS_ROUNDED_BY, 1], [1, 0], Extrapolation.CLAMP),
+      borderRadius:
+        hero.radius *
+        interpolate(
+          q,
+          [zoomRadiusClosing.value ? ZOOM_RADIUS_ROUNDED_BY_CLOSE : ZOOM_RADIUS_ROUNDED_BY_OPEN, 1],
+          [1, 0],
+          Extrapolation.CLAMP,
+        ),
       borderCurve: 'continuous' as const,
     };
   }, [hero, width, height]);
