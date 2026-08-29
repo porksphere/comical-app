@@ -1,32 +1,52 @@
 name: Build iOS dev-client (Windows iterative dev)
 
-# Manual-only. Builds the iOS **development-client** shell — a Debug build with
-# expo-dev-client, carrying the SAME `com.porksphere.comical` bundle id as every other build — and
-# publishes it to its own rolling `ios-devclient` SideStore/AltStore source.
+# Builds the iOS **development-client** shell — a Debug build with expo-dev-client, carrying the
+# SAME `com.porksphere.comical` bundle id as every other build (see
+# apps/mobile/plugins/with-devclient-variant.js for why it doesn't coexist) — and publishes it to
+# its own rolling `ios-devclient` SideStore/AltStore source.
 #
-# Install it once via that source; from then on you iterate entirely from a
-# Windows PC: run `bun run dev:device` (Metro over your LAN) and connect the
-# installed dev build to it from the phone's launcher. JS/TS edits hot-reload on
-# device; only NATIVE changes (new native module / config plugin / SDK bump)
-# need a fresh run of this workflow. See docs/PROFILING.md → "Iterative Expo dev
-# from Windows".
+# Install it once via that source; from then on you iterate entirely from a Windows PC: run
+# `bun run dev:device` (Metro over your LAN) and connect the installed dev build to it from the
+# phone's launcher. JS/TS edits hot-reload on device; only NATIVE changes (new native module /
+# config plugin / SDK bump) need a fresh run of this workflow. See docs/PROFILING.md → "Iterative
+# Expo dev from Windows".
 #
-# Kept separate from build-ios.yml on purpose: the ios-main / per-PR ios-pr builds
-# are profiling Release and the tagged ios-release build is clean Release — this is
-# the only thing that builds Debug.
+# MANUAL ONLY. The shell embeds no JS at all, so a pull request's changes are invisible to it unless
+# they are native — which almost none are. Building one per PR was most of a macOS runner hour spent
+# producing a shell identical to the last one.
+#
+# WHAT THAT COSTS, so nobody re-diagnoses it as a regression: this is the repo's only Debug build,
+# and a Debug compile shares essentially no object code with the Release lanes, so nothing else can
+# warm its ccache entry (see BUILD_FLAVOR in build-ios-reusable.yml). Only the DEFAULT BRANCH writes
+# caches, and GitHub evicts an entry after seven days without access. So a dispatch that follows a
+# quiet week compiles from cold — around half an hour — and only a second dispatch within the week
+# lands in minutes. That is the deliberate trade: nothing runs on a timer here, and the price is paid
+# by whoever needs a shell after a lull rather than by every PR. If it starts biting, the fix is a
+# scheduled run on main often enough to stay inside the eviction window (twice weekly is plenty), not
+# a wider trigger.
+#
+# Dispatch from `main` when you can: the cache SAVE steps are gated on the default branch, so a run
+# from a feature branch reads the cache but leaves nothing behind for the next one.
+#
+# Kept separate from build-ios.yml on purpose: the ios-main / per-PR ios-pr builds are profiling
+# Release and the tagged ios-release build is clean Release — this is the only thing that builds
+# Debug.
 
 on:
-  # Manual only. Pick the branch/tag to build from in the "Run workflow" dialog
-  # (or `gh workflow run build-ios-devclient.yml --ref <branch>`); the whole
-  # workflow — including the reusable build's checkout — runs on that ref.
+  # Manual only — see the header. Pick the branch/tag to build from in the "Run workflow" dialog (or
+  # `gh workflow run build-ios-devclient.yml --ref <branch>`); the whole workflow — including the
+  # reusable build's checkout — runs on that ref.
   workflow_dispatch: {}
 
+# Per-ref rather than the bare string `ios-devclient`: a dispatch on main and one on a feature branch
+# are different work with different destinations for the cache, and cancelling one because the other
+# started would throw away whichever got there first.
 concurrency:
-  group: ios-devclient
+  group: ios-devclient-${{ github.ref }}
   cancel-in-progress: true
 
-# Publish the IPA + source manifest to a GitHub Release (public, unauthenticated
-# direct-download URLs that SideStore/AltStore can fetch).
+# Publish the IPA + source manifest to a GitHub Release (public, unauthenticated direct-download
+# URLs that SideStore/AltStore can fetch).
 permissions:
   contents: write
 
@@ -119,5 +139,5 @@ jobs:
           \`${BASE}/apps.json\`
 
           Then run \`bun run dev:device\` on your PC and connect from the app's launcher.
-          Rebuild (re-run this workflow) only when native code changes — pure JS/TS
-          iterates over Metro with no rebuild."
+          Rebuild (re-run this workflow) only when native code changes — a native module, a config
+          plugin, an SDK bump. Pure JS/TS iterates over Metro with no rebuild at all."

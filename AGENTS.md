@@ -152,6 +152,26 @@ The series page grows out of the card that opened it and collapses back into it 
 The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
 runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
 
+**The page lands on its own hero cover only while that cover is at least half on screen.** A bound
+that has scrolled off is still a bound the page has to fly onto, so aiming at one drags the whole
+page up to meet it: the page appears to scroll itself away under the finger. Scrolled past it the
+collapse switches to `cover-offscreen` instead — the cover's SIZE, centred on the page, with no
+scroll to follow (`ZoomDest` in `apps/mobile/src/app/series/index.tsx`). Only the position was ever
+wrong: the size is what the collapse's scale is derived from, so keeping it keeps the same shrink,
+and dropping to the screen-relative `page` target instead (which is what this did first) balloons
+the flying copy to full screen width. Which destination is in play is LATCHED while the page is at
+rest (`zoomBoundOnScreen`), never read live off the scroll — swapping mid-collapse is a visible
+jump.
+
+A copy that is not landing on the real cover has no identical picture underneath to hide the
+cross-fade, so **it waits for the window to come down to the cover's own size** rather than fading
+on the same curve. The copy is only ever about a cover card wide, while the window starts at the
+whole screen, so fading in early leaves a picture adrift in a frame twice its width — which is what
+reads as a cover appearing out of nowhere. Timed off that fill instead, it arrives as it comes to
+fill the window. Moving it is not the answer and was tried twice: sliding it in from the mask edge,
+along its own path run backwards, is a second animation riding the collapse at any timing still
+legible enough to see. Nothing but the fade changes.
+
 **A list that reorders is asked where its item is; it is not measured.** `useZoomSurfaceLocator`
 answers out of the virtualization state (`getState().positionAtIndex` / `.scroll`), which knows every
 index — including rows it hasn't mounted — and knows the new one a render before the row is drawn
@@ -171,6 +191,111 @@ the rect captured on press-in, which for one that can't reorder IS the answer. D
 card instead: while a page is open its grid sits under the backdrop's scale, so the measurement comes
 back shrunk toward the screen centre and only an arithmetic reconstruction gets it back.
 
+**A dismissal drag is in the SWIPE's coordinates; only the release is in the card's.** The collapse
+converges on the source card, so running it under a finger used to drag the page toward the card as
+you swiped — open a series from a card near the bottom, swipe sideways, and it sank as it went.
+`zoomHoming` splits the two: while the finger is down the page is centred and offset purely by the
+drag, and the convergence arrives over the rest of the collapse after release.
+
+That homing is DERIVED FROM `zoom`, never animated. An earlier attempt gave the follow its own
+spring beside the collapse's and had to be reverted — two springs racing means the page is wherever
+the loser left it when the winner finishes, which is the moment it leaves and the source card
+un-blanks. As a function of the collapse's own progress it reaches exactly 1 on the frame `zoom`
+reaches 0, so the page cannot land anywhere but the card. For the same reason the drag values are
+left frozen at release rather than sprung back: `home` retires them on that one clock. Every path
+that drives `zoom` sets `homeAt` first — there is no default that is right for all of them.
+
+**ONE resisted distance drives both the size and the position, and nothing else limits either.**
+`zoom` is `1 - held/travel`, where `held` is the drag's spring-resisted travel (`zoomDragFollow`) —
+so the same resistance that slows the page down slows the window down, and the two cannot stop at
+different moments. The window is what reads as "the page" during a dismissal, since on a `cover`
+collapse the page's own scale barely moves and the mask does the visible shrinking; letting a raw
+drag carry that from full screen to a cover card turned the thing under your thumb into a thumbnail
+before you had decided to let go.
+
+There was an explicit floor first (`ZOOM_DRAG_MIN_WINDOW`, a per-card `zoom` clamp at 80%), and it
+worked but read as a wall: the shrink ran at full speed and then stopped dead, while the follow went
+on. Feeding `zoom` from the resisted distance makes the limit EMERGENT and eases into it — 91% of
+the screen at 136pt of finger, 84% at 300, 77% at 650, asymptotic to `1 - REACH`. It also turns "a
+drag can never finish the collapse" from a guard into arithmetic: `held` is asymptotic to
+`REACH · travel`, so `zoom > 1 - REACH` for any drag, however long.
+
+**The follow is a SPRING, resisting from the first pixel** (`zoomDragFollow`) — otherwise the floor
+buys stillness in size and hands it straight back in position, and a page that stops shrinking then
+slides anywhere you like at 80% reads as dragging a card around, not dismissing a screen. It
+asymptotes at the floor's own travel, so the page runs out of room exactly where the size does.
+
+Two earlier shapes were wrong at opposite ENDS of the drag. A piecewise band — free to the floor,
+rubber-banded after — read as binary despite being C¹ at the knee: **continuity of speed is not
+continuity of feel**, and all its curvature sat in the ~20pt after the knee. One exponential fixed
+that and then FLATLINED, since `1 - e^-t` is within a percent of its limit by three time constants,
+so past ~450pt the page simply stopped — and a page that stops dead is a wall wherever you put it.
+
+A polynomial tail (iOS's scroll-boundary band) fixed that end — its rate decays as 1/t², so there is
+always something left to give — but starting that rate at exactly 1 still read as everything
+happening at once, because the whole of its range had to fall through one length. So the initial
+rate is freed from the asymptote: `reach·d / (reach/grip + d)`, rate `grip·(S/(S+d))²` for
+`S = reach/grip`. **`GRIP` says how immediately the spring is felt, `REACH` how far the page can
+ever get, and neither moves the other** — which is the whole reason a single-parameter band could
+never be tuned into this.
+
+**The series page's dismissal is RIGHTWARD ONLY, and the clamp belongs on the follow as well as the
+collapse.** `backSwipePan` can only activate rightward, but `tx` is measured from the activation
+point, so a finger that starts right and comes back left goes negative; with only the collapse
+clamped, the page slid left and took the mask, cover and flying copy with it — the whole dismissal
+on the wrong side of the screen, aimed at a card it could never reach. The cross axis rides the
+forward one for the same reason.
+
+**A release decision reads the FINGER, never the follow.** They were the same number until the
+resistance existed; afterwards the follow tops out well below `DISMISS_COMMIT_FRACTION` of the span,
+so judging by it makes a deliberate slow swipe impossible to commit and leaves only a flick's
+velocity able to dismiss at all. What the user swiped is the question; how far the page was allowed
+to move in reply is not.
+
+**The corner is fully rounded within the first 3% of the collapse** (`ZOOM_RADIUS_ROUNDED_BY_CLOSE`),
+not carried linearly across all of it. Radius is the earliest signal that a page has become a card —
+at the top of a dismissal size and position have barely moved, so it is the only thing saying what is
+about to happen — and since the spring took over the shrink a drag only carries `zoom` to about 0.87,
+which on a linear ramp is 13% of the corner, i.e. square. Judge the threshold by FINGER TRAVEL, not
+by `q`: the reader's paged dismiss measures over the height, so the same swipe moves it half as far
+as the series back-swipe. 0.97 is a full corner after 27pt of a back-swipe and 57pt of a paged
+dismiss.
+
+**Opening keeps its own, gentler threshold**, because there the corner signals nothing — you already
+touched the card — so squaring off has to stay a tail rather than an event. The split is only safe
+because the curve is chosen by `zoomRadiusClosing`, NOT by `zoomClosing`: that one is cleared by
+`settle` on the frame a cancelled swipe releases, mid-springback, which would swap 12pt for 3.8pt in
+a single frame. `zoomRadiusClosing` is retired by a reaction on `zoom` itself, at
+`ZOOM_RADIUS_CURVE_SWAP_AT` — where the two curves have converged to 0.16pt of each other.
+
+**The reader dismiss's flying copy follows the FORWARD progress, not the raw distance**
+(`zoomThumbBias`). That gesture measures with a hypot, which cannot tell "further out" from "back
+through the start and out the other side" — swipe down, come back up past where you began, keep
+going up, and the hypot rises again, so the page shrinks again and the cover used to fade back in
+with it. Nothing about that second shrink is an approach to the card. Projecting onto the drag's
+launch direction separates them: the projection falls to zero as the finger returns and stays there
+past it. The bias reaches 0 exactly where the finger reaches its origin, where the copy is
+transparent anyway, so nothing blinks (worst opacity change 0.002 per pt). It rewinds the copy's
+OPACITY only — size and position keep tracking the real collapse, because the page really is
+shrinking; it just isn't arriving anywhere. A commit restores it over
+`ZOOM_THUMB_BIAS_RESTORE_MS`, never in one frame: released mid-reversal the copy is at zero and the
+page still has to land on the card with a picture on it.
+
+**Vertical play is EARNED by horizontal travel** on the series page: none at rest, all of it by the
+distance that would commit the dismissal, linear between. A page dragged back toward the left then
+arrives with its drift already gone instead of holding it to the last pixel and snapping — a gate at
+`forward > 0` is one frame wide and the whole height of the drift (52pt in one pixel of finger,
+against 0.13pt for the ramp).
+
+**Both the drag and the homing ride the MASK ALONE** (`zoomDetach`), never the page's target. The
+page is the mask's child and cancels the mask's own origin out of its transform, so an offset on the
+mask carries the window, the page, the flying copy and the cover together and leaves every relation
+between them untouched. Putting `home` on the page's target instead moves the page out from under
+its own window: the two then shrink about different anchors, the cover drifts toward an edge, and it
+is visibly clipped by the frame that is supposed to hold it. `zoomMaskBox` is deliberately ignorant
+of both — one box, read by all three animated styles, so they cannot disagree about where the window
+is.
+
 # Press-in warms the destination
 
 Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is
@@ -183,6 +308,25 @@ them separately is a second answer to a settled question: only some opts are key
 written into the cached object (`bridge: opts.bridgeName ?? ''`), so a warm that disagrees wins the
 race and leaves the page wrong. Where press-in and the navigation live in different components
 (collections tiles), the tile takes an `onWarm` callback rather than re-deriving the branch.
+
+# Release notes ride the update check's own fetch
+
+Settings → About → tap the **Version** row (`app/settings-whats-new.tsx`) — the notes belong to a
+version, so the version is what opens them. The screen shows two things: the changes in the update
+on offer, and the changes in the build already installed. Both come out of the manifest
+`useAppUpdateCheck` already fetches — `versions[].localizedDescription` in the iOS SideStore
+sources, `notes` in the Android/web `version.json` — so there is no second request and no way for
+the screen to disagree with the row that sent you there. Adding a surface means teaching a
+PUBLISHER to write notes into the artifact the checker reads, never adding a fetch here.
+
+Parsing lives in `data/release-notes.ts`, deliberately free of react-native imports so it can be
+tested; `data/use-app-update.ts` keeps the fetching, caching and the launch/foreground trigger. The
+toast stays a pointer ("Update available — see Settings") — a changelog is read when you choose to,
+not put over the screen.
+
+Which generator fills a channel is set by whether it is TAGGED: `changelog-section.sh` quotes
+`CHANGELOG.md`, `rolling-changelog.sh` lists the commits since the channel's last publish. See
+`docs/DEVELOPMENT.md` → "Release notes reach four places" for the full table.
 
 # Testing: new screens need a flow
 

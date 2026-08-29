@@ -134,8 +134,24 @@ Pushing a `v*` tag by hand still works and skips step 1–2, but `app.json` must
 the tag. Do **not** use the web Releases form to create the tag: it creates the Release object too,
 and `gh release create` then fails — after both builds have run.
 
-Release notes are GitHub's generated commit list appended to the install instructions
-(`--generate-notes`), and `CHANGELOG.md` carries the same history in-repo.
+**Release notes reach four places, from two generators.** `CHANGELOG.md` is the source for anything
+TAGGED and `.github/scripts/changelog-section.sh` quotes one version's section out of it; the
+rolling channels have no release to quote, so `.github/scripts/rolling-changelog.sh` lists the
+commits each has picked up since it last published (it measures from a `built-sha` marker the
+channel's own Release body carries). Between them they fill:
+
+| Surface | Notes from |
+| --- | --- |
+| The `vX.Y.Z` GitHub Release body | GitHub's own `--generate-notes` commit list |
+| `ios-release` source — every version in `versions[]` | `changelog-section.sh` for that tag |
+| `ios-main` source — the one current build | `rolling-changelog.sh ios-main` |
+| `android-release` / `android-latest` — `version.json` `notes` + the Release body | tag section / rolling |
+| gh-pages `version.json` `notes` | `rolling-changelog.sh web-pages` |
+
+The app reads the SAME artifacts its update check already fetches, so Settings → About → the
+**Version** row shows both the update's changes and the running build's with no second request — see
+`src/data/release-notes.ts`. That is why the iOS source lists the full history rather than only the
+installable head: an install that skipped three releases gets all three.
 
 **Version strings.** `expo.version` in `app.json` is a *base* that only moves on a release.
 Everything else derives from it in `.github/scripts/compute-build-version.sh`: a release build
@@ -190,14 +206,18 @@ double-zipped.)
 | **release** (public) | `ios-release` | `v*` tag (`release.yml`) | clean Release, **no profiler** | `com.porksphere.comical` |
 | **main** (perf testing) | `ios-main` | push to `main` (`build-ios.yml`) | **profiling** (Release + on-device Hermes profiler) | `com.porksphere.comical` |
 | **PR** (branch testing) | `ios-pr` | each open PR (`build-ios.yml`) | **profiling** | `com.porksphere.comical` |
-| **dev-client** (iterate over Metro) | `ios-devclient` | manual (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical` |
+| **dev-client** (iterate over Metro) | `ios-devclient` | manual only (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical` |
 
-The first three share the **production bundle id**, so only one is installed at a time — switch
-lanes by picking a source/version in SideStore (a `main`/`pr`/`release` build replaces whichever is
-on the device). Only the dev-client uses a distinct `.dev` id and coexists. `main` and every PR are
-**profiling** builds on purpose (the app is marked "Comical (profiling)"), so any of them can be
-perf-tested on device without a special manual build; the clean **`ios-release`** channel carries no
-profiler and is what a normal user subscribes to (see the [README](../README.md#ios)).
+**All four share the production bundle id**, so exactly one is installed at a time — switch lanes by
+picking a source/version in SideStore, and whatever you install replaces what was there. That is
+deliberate for the dev-client too: coexistence and a shared data container are mutually exclusive on
+iOS (the container is keyed by bundle id), and iterating over Metro against your real library beats
+iterating against an empty one. See `apps/mobile/plugins/with-devclient-variant.js`.
+
+`main` and every PR are **profiling** builds on purpose (the app is marked "Comical (profiling)"), so
+any of them can be perf-tested on device without a special manual build; the clean **`ios-release`**
+channel carries no profiler and is what a normal user subscribes to (see the
+[README](../README.md#ios)).
 
 ### `ios-release` — the public channel (all tagged versions)
 
@@ -264,20 +284,41 @@ Each channel also carries a `version.json` (`{commit, version, publishedAt}`). T
 check (`src/data/use-app-update.ts`) compares its `commit` against the running build's — equality,
 not ordering, because `versionName` doesn't move between builds within a release series.
 
-### Dev-client build — iterate on a device from any OS (incl. Windows)
+### Dev-client builds — iterate on a device from any OS (incl. Windows)
 
 Separate from the Release builds above: the **`Build iOS dev-client`** workflow
-(`build-ios-devclient.yml`, manual `workflow_dispatch`) builds a Debug + `expo-dev-client` shell —
-via the reusable workflow's `configuration: Debug` + `dev_client: true` inputs — and publishes it to
-a rolling **`ios-devclient`** SideStore source. It carries the shared `com.porksphere.comical`
-bundle id (the env-gated `with-devclient-variant` plugin, active only when `COMICAL_DEVCLIENT=1`), so
-it installs *alongside* the release app.
+(`build-ios-devclient.yml`) builds a Debug + `expo-dev-client` shell — via the reusable workflow's
+`configuration: Debug` + `dev_client: true` inputs. It carries the shared `com.porksphere.comical`
+bundle id (the env-gated `with-devclient-variant` plugin, active only when `COMICAL_DEVCLIENT=1`),
+so installing it *replaces* whatever Comical is on the device and inherits its data.
 
-This is the shell for the Windows iterative loop: build it once on CI, install via the `ios-devclient`
-source, then drive it from `bun run dev:device` (Metro over your LAN). Rebuild only when native code
-changes. It's the sanctioned Expo development-build flow — the JS loads from Metro (online), which is
-why it works where an offline debug build can't. Full walkthrough: [PROFILING.md](PROFILING.md) →
+It publishes to the rolling **`ios-devclient`** source, on a **manual `workflow_dispatch` only**.
+This is the shell for the Windows iterative loop: install it once, then drive it from
+`bun run dev:device` (Metro over your LAN).
+
+It is deliberately **not** built per PR, and not on a timer. The shell embeds no JS, so a pull
+request's changes are invisible to it unless they are native — which almost none are; a per-PR build
+spent most of a macOS runner hour producing a shell identical to the last one. Rebuild by hand after
+a native change (a native module, a config plugin, an SDK bump, a `bun.lock` or submodule move) and
+not otherwise. Dispatch from `main` where you can: the cache save steps are gated on the default
+branch, so a run from a feature branch reads the cache but leaves nothing behind.
+
+It's the sanctioned Expo development-build flow — the JS loads from Metro (online), which is why it
+works where an offline debug build can't. Full walkthrough: [PROFILING.md](PROFILING.md) →
 "Iterative dev & profiling from Windows".
+
+**What manual-only costs, and why it's still the right call.** ccache is keyed by build flavor
+(`BUILD_FLAVOR` in `build-ios-reusable.yml`): SDK × configuration × dev-client, with Release left
+implicit so the long-standing `device`/`sim` entries keep their names. A Debug build shares
+essentially no object code with the Release lanes, so nothing else in the repo can warm this
+flavor's entry — and only the default branch writes caches at all. Fixing the key is what took this
+lane off its old ~30 minutes (it had been restoring a cache warmed exclusively by Release compiles
+and missing on nearly everything). But GitHub evicts a cache entry after **seven days without
+access**, and nothing here runs on a timer, so a dispatch following a quiet week still compiles cold;
+only a second dispatch inside that week is quick. That's the accepted trade — the cost lands on
+whoever wants a shell after a lull rather than on every PR. If it starts to bite, the fix is a
+scheduled run on `main` often enough to stay inside the eviction window (twice weekly is plenty),
+not a wider trigger.
 
 Constraint: avoid entitlements a free Apple ID can't grant (push, certain App Groups) for
 now. A future TestFlight/App Store path can be added as an extra `eas.json` profile + signed

@@ -2,7 +2,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
-import Animated, { type SharedValue } from 'react-native-reanimated';
+import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { HomeGridBlock } from '@/components/home-grid-block';
 import { SkeletonCard } from '@/components/grid-skeleton';
@@ -100,6 +100,7 @@ export function ContentFeed({
   rows,
   scopeKey,
   listRef,
+  scrollRef,
   header,
   terminalLoading,
   paddingTop,
@@ -123,6 +124,8 @@ export function ContentFeed({
   /** Feeds the list `key` and the terminal cards' recycle `cohort` (reset on scope change). */
   scopeKey: string;
   listRef?: RefObject<LegendListRef | null>;
+  /** Passed through to `RecyclerList` — see the doc there (the sliding bar's lockstep scroll). */
+  scrollRef?: AnimatedRef<Animated.ScrollView>;
   /** Above the first row — the error-retry block (the back banner never shows on composed Home). */
   header?: ReactElement | null;
   /** Render the terminal-grid first-load skeleton as the list footer (rows padded to match cells). */
@@ -269,6 +272,7 @@ export function ContentFeed({
       data={rows}
       scopeKey={scopeKey}
       listRef={listRef}
+      scrollRef={scrollRef}
       keyExtractor={(row) => row.key}
       // Pool recycled views per row-type so a rail never recycles into a grid row (and vice versa).
       getItemType={(row) => contentRowType(row)}

@@ -4,9 +4,13 @@ import {
   COMMIT_DISTANCE,
   dismissesNow,
   dismissTarget,
+  dismissThreshold,
   DISMISS_DISTANCE,
+  hideCeiling,
   MAX_SCROLL_UNMEASURED,
+  settleScrollDelta,
   settleStep,
+  settleTarget,
   slideStep,
 } from './slide-step';
 
@@ -164,6 +168,65 @@ describe('dismissesNow', () => {
   test('commits a hide the moment the finger lifts', () => {
     expect(dismissesNow(SPAN, false)).toBe(true);
     expect(dismissesNow(SPAN, true)).toBe(true);
+  });
+});
+
+describe('settleTarget', () => {
+  const DEEP = 400; // far enough down that `dismissTarget` allows a resting hide
+
+  test('settles to whichever end the bar is nearer', () => {
+    expect(settleTarget(SPAN, DEEP, SPAN)).toBe(SPAN);
+    expect(settleTarget(SPAN / 2 + 1, DEEP, SPAN)).toBe(SPAN);
+    expect(settleTarget(SPAN / 2, DEEP, SPAN)).toBe(0);
+    expect(settleTarget(0, DEEP, SPAN)).toBe(0);
+  });
+
+  // The behaviour the Search filter bar opts in for: scroll it back past halfway and let go, and it
+  // stays open. The earned rule closes it again — the gesture scrolled down at some point, which
+  // spent the credit, so where it actually left the bar counts for nothing.
+  test('a bar scrolled back past its midpoint comes open where the earned rule would shut it', () => {
+    // 55px of upward scroll: past this bar's midpoint, one short of the earned rule's threshold.
+    let hidden = SPAN;
+    let up = 0;
+    let y = DEEP;
+    for (let i = 0; i < 11; i++, y -= 5) {
+      const next = settleStep(hidden, up, y - 5, y, UNMEASURED, SPAN);
+      hidden = next.hidden;
+      up = next.up;
+    }
+    expect(hidden).toBe(SPAN - 55); // 45 of 100 — past halfway open
+    expect(settleTarget(hidden, y, SPAN)).toBe(0);
+    // ...where the earned rule, one px short of its credit, would put it all the way back out.
+    expect(up).toBe(COMMIT_DISTANCE - 1);
+    expect(dismissTarget(y, SPAN)).toBe(SPAN);
+  });
+
+  test('never rests hidden where the content has not scrolled far enough to hide it', () => {
+    expect(settleTarget(SPAN, 20, SPAN)).toBe(0);
+    expect(settleTarget(SPAN, dismissThreshold(SPAN) - 1, SPAN)).toBe(0);
+    expect(settleTarget(SPAN, dismissThreshold(SPAN), SPAN)).toBe(SPAN);
+  });
+});
+
+describe('settleScrollDelta', () => {
+  // The settle scrolls the content by exactly the travel the bar still owes — a bar hides by
+  // accumulating scroll 1:1, so finishing its last 30px IS 30px of scrolling (see useSlidingBar).
+  test('finishing a hide scrolls down by the remaining travel', () => {
+    expect(settleScrollDelta(SPAN - 30, SPAN)).toBe(30);
+    expect(settleScrollDelta(0, SPAN)).toBe(SPAN);
+  });
+
+  test('coming back open scrolls up by however far the bar was hidden', () => {
+    expect(settleScrollDelta(30, 0)).toBe(-30);
+    expect(settleScrollDelta(SPAN, 0)).toBe(-SPAN);
+  });
+
+  // `hideCeiling` won't let a bar be hidden further than the content has scrolled, so a reveal's
+  // scroll target can never go negative and needs no clamp of its own.
+  test('a reveal can never ask the list to scroll above the top', () => {
+    for (const y of [0, 5, 30, SPAN, 400]) {
+      expect(y + settleScrollDelta(hideCeiling(y, SPAN), 0)).toBeGreaterThanOrEqual(0);
+    }
   });
 });
 

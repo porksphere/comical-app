@@ -1,0 +1,44 @@
+# What's new — the release notes screen, reached by tapping the Version row on About
+# (settings-whats-new.tsx). The version is the entry point because the notes belong to a version.
+#
+# Its two halves come from the update check's own fetch, and an e2e build's channel ("*-e2e", and
+# local-dev when run by hand) is `unsupported` — no network call, no notes. So this covers the
+# SHAPE: the version row leads somewhere, the screen renders, and it says why it's empty rather than
+# showing a blank. The populated case can only exist on a published build; there is nothing to fake
+# here without stubbing the transport, which no other flow does either.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- assertVisible:
+    id: "screen-title.settings"
+
+- scrollUntilVisible:
+    element:
+      id: "settings.category.about"
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: "settings.category.about"
+
+# First row of the first section, so it's on screen without scrolling — unlike about.share, which
+# the walkthrough has to scroll to.
+- assertVisible:
+    id: "about.version"
+- tapOn:
+    id: "about.version"
+
+# The TopBar title is a plain ThemedText with no testID, so `text:` rather than `id:`.
+- assertVisible:
+    text: "What's new"
+- takeScreenshot: whats-new
+# The empty state, which is what every build this flow can run on will show.
+- assertVisible:
+    text: "This build has no update channel to read notes from."
+
+- tapOn:
+    id: "top-bar.back"
+- assertVisible:
+    id: "about.version"

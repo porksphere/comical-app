@@ -167,12 +167,25 @@ jobs:
         env:
           FULL: ${{ steps.ver.outputs.full }}
           BUILT_AT: ${{ steps.ver.outputs.built_at }}
+          # rolling-changelog.sh asks the API for the channel's previous build marker.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # `commit` is what the checker actually compares (see checkWebPages); `version` is for
           # anyone reading this file directly, and matches the string the running bundle shows.
-          jq -n --arg commit "${GITHUB_SHA:0:7}" --arg version "$FULL" --arg publishedAt "$BUILT_AT" \
-            '{commit: $commit, version: $version, publishedAt: $publishedAt}' > dist/version.json
+          #
+          # `notes` is what Settings shows for the build — the commits since this channel last
+          # published, the same rolling rule ios-main and android-latest use. The marker it measures
+          # from is the web-pages Release's; this lane publishes to gh-pages rather than a Release,
+          # so `rolling-changelog.sh` finds no marker and falls back to recent commits. That is the
+          # honest answer for a branch preview, which is most of what this workflow deploys.
+          # Absolute: this step runs in apps/mobile (the export's working directory), and the
+          # script and CHANGELOG.md both live at the repo root.
+          NOTES="$(bash "$GITHUB_WORKSPACE/.github/scripts/rolling-changelog.sh" web-pages || true)"
+          jq -n --arg commit "${GITHUB_SHA:0:7}" --arg version "$FULL" --arg notes "$NOTES" \
+            --arg publishedAt "$BUILT_AT" \
+            '{commit: $commit, version: $version, notes: $notes, publishedAt: $publishedAt}' \
+            > dist/version.json
 
       # ── Update gh-pages content store ────────────────────────────────────────
 

@@ -15,8 +15,9 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { openBrowserAsync } from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, Share, StyleSheet } from 'react-native';
+import { Platform, ScrollView, Share, StyleSheet, View } from 'react-native';
 
+import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { UpdateDot } from '@/components/tab-badge';
 import { ThemedText } from '@/components/themed-text';
@@ -29,6 +30,7 @@ import { IS_DEMO_MODE, useMockActive } from '@/data/source';
 import { useAppUpdateCheck } from '@/data/use-app-update';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
+import { router } from '@/lib/nav';
 import {
   APP_VERSION,
   BUILD_COMMIT,
@@ -160,9 +162,21 @@ export default function AboutScreen() {
           <SettingsSection key={title} title={title}>
             {rows
               .filter(([, value]) => value)
-              .map(([label, value]) => (
-                <SettingsRow key={label} label={label} right={<InfoValue value={value} />} />
-              ))}
+              .map(([label, value]) =>
+                // Version is the only row here that leads anywhere: the notes belong to a version,
+                // so the version is what you tap to read them. Every other row is a fact.
+                label === 'Version' ? (
+                  <SettingsRow
+                    key={label}
+                    testID="about.version"
+                    label={label}
+                    right={<InfoValueLink value={value} />}
+                    onPress={() => router.push('/settings-whats-new')}
+                  />
+                ) : (
+                  <SettingsRow key={label} label={label} right={<InfoValue value={value} />} />
+                ),
+              )}
             {title === 'Build' && appUpdate.status !== 'unsupported' && (
               <SettingsRow
                 key="check-for-updates"
@@ -222,6 +236,23 @@ function InfoValue({ value }: { value: string }) {
   );
 }
 
+/** The same value with the chevron a pressable row would have grown on its own. `SettingsRow`
+ *  suppresses that chevron whenever `right` is occupied (so a Switch doesn't also get one), so a row
+ *  that shows a value AND leads somewhere has to put both there itself — otherwise the one row on
+ *  this screen you can tap looks exactly like the eight you can't. Not `selectable`: a row whose
+ *  press opens a screen shouldn't also start a text selection under the finger. */
+function InfoValueLink({ value }: { value: string }) {
+  const theme = useTheme();
+  return (
+    <View style={styles.valueLink}>
+      <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.value}>
+        {value}
+      </ThemedText>
+      <ChevronRightIcon color={theme.textSecondary} size={18} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -232,6 +263,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     gap: Spacing.five,
   },
+  valueLink: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flexShrink: 1 },
   value: {
     flexShrink: 1,
     textAlign: 'right',

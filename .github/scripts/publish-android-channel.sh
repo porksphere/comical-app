@@ -27,8 +27,10 @@ set -euo pipefail
 TAG="${1:?usage: publish-android-channel.sh <channel> <path-to-apk> [version] [commit]}"
 APK="${2:?usage: publish-android-channel.sh <channel> <path-to-apk> [version] [commit]}"
 VERSION="${3:-}"
-COMMIT="${4:-}"
-COMMIT="${COMMIT:0:7}"
+# Both forms are needed: the app compares against a SHORT sha (build-info.ts truncates to 7), while
+# the rolling channel's `built-sha` marker has to stay a full 40 so `git merge-base` can resolve it.
+FULL_COMMIT="${4:-}"
+COMMIT="${FULL_COMMIT:0:7}"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY not set}"
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
 
@@ -55,13 +57,36 @@ esac
 # reads it from the build job) still gets a valid release.
 [ -n "$VERSION" ] && TITLE="$TITLE — $VERSION"
 
+# What CHANGED in this APK, by the same rule the iOS sources use: a tagged channel quotes the
+# release's CHANGELOG section, a rolling one lists the commits since it last published. Android has
+# no source manifest to carry this, so it goes in version.json — which the in-app update check
+# already fetches — and into the release body for anyone reading the page.
+case "$TAG" in
+  android-release) NOTES="$(bash .github/scripts/changelog-section.sh "${VERSION#v}" || true)" ;;
+  android-latest)  NOTES="$(bash .github/scripts/rolling-changelog.sh android-latest || true)" ;;
+esac
+
 # version.json: what the in-app update checker (apps/mobile/src/data/use-app-update.ts) compares
 # BUILD_COMMIT against to decide "there's a newer build on my channel than the one I'm running".
 # Equality-only, not ordering — Android's versionName never moves per-build (see
 # build-android-reusable.yml), so the commit is the only thing that changes between two APKs.
+#
+# `notes` is what Settings shows for this build — either as the pending update's changes or, once
+# installed, as what the running version brought (the check matches on `commit`, so the same file
+# answers both questions).
 WORK="$(mktemp -d)"
-jq -n --arg commit "$COMMIT" --arg version "$VERSION" --arg publishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  '{commit: $commit, version: $version, publishedAt: $publishedAt}' > "$WORK/version.json"
+jq -n --arg commit "$COMMIT" --arg version "$VERSION" --arg notes "$NOTES" \
+  --arg publishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{commit: $commit, version: $version, notes: $notes, publishedAt: $publishedAt}' > "$WORK/version.json"
+
+# Built here rather than inline in the body below: bash parses the word of a `${var:+…}`
+# expansion, so an apostrophe in the heading would open a quote inside the release notes string.
+WHATS_NEW=""
+[ -n "$NOTES" ] && WHATS_NEW="
+## What changed
+
+${NOTES}
+"
 
 gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag || true
 gh release create "$TAG" \
@@ -75,6 +100,8 @@ gh release create "$TAG" \
 
 On-device: enable \"Install unknown apps\" for your browser, open the link, install.
 
-${LANE_NOTES}"
+${LANE_NOTES}
+${WHATS_NEW}
+$(bash .github/scripts/rolling-changelog.sh stamp-line "$FULL_COMMIT")"
 
 echo "Refreshed ${TAG} -> ${VERSION:-unknown} (${COMMIT:-no commit})."

@@ -204,6 +204,47 @@ export function dismissesNow(hideTo: number, atRest: boolean): boolean {
 }
 
 /**
+ * The OTHER settle rule: settle to whichever end the bar is NEARER. Opt-in, and currently opted
+ * into by exactly one bar — the Search screen's filter bar (`useSlidingBar`'s `settle: 'nearest'`).
+ *
+ * The default rule everywhere else is the EARNED one above (`settleStep` + `COMMIT_DISTANCE`):
+ * upward scroll accumulated within the gesture, any downward scroll spending the credit.
+ * Deliberately asymmetric — you flick down to get chrome out of the way constantly and ask for it
+ * back deliberately — and for a bar you are *manipulating* rather than scrolling past, that reads
+ * as stuck: drag it half open, let go, and it closes again, because where the gesture left it
+ * counted for nothing.
+ *
+ * The two rules disagree, and a bar has to pick one. Which is why this is per-bar and not a change
+ * to `settleStep`: the top bar and the tab bar hide together off one gesture, and two bars
+ * answering the same release differently is the failure this whole file keeps coming back to. The
+ * filter bar is not in that pair — nothing else moves with it — so it is free to answer differently.
+ *
+ * `dismissTarget` still has the last word: past its midpoint but with no room to rest hidden, a bar
+ * comes back rather than parking half-way.
+ */
+export function settleTarget(hidden: number, y: number, span: number): number {
+  'worklet';
+  return hidden * 2 > span ? dismissTarget(y, span) : 0;
+}
+
+/**
+ * How far a settle has to move the CONTENT for the bar to stay locked to it. Paired with
+ * `settleTarget` (see `useSlidingBar`'s `lockstepScroll`), and opt-in for the same reason.
+ *
+ * A bar hides by accumulating downward-scroll pixels 1:1, so a settle that closes the last 30px of
+ * a bar is, in the content's terms, 30px of scrolling the user didn't do. Animating the bar alone
+ * leaves the rows underneath frozen while chrome slides over them, which reads as two surfaces that
+ * have come unstuck from each other.
+ *
+ * Positive = scroll down (the bar is finishing its hide). Can't go negative past the top: a bar can
+ * never be hidden further than the content has scrolled (`hideCeiling`), so `y - hidden >= 0`.
+ */
+export function settleScrollDelta(hidden: number, target: number): number {
+  'worklet';
+  return target - hidden;
+}
+
+/**
  * `slideStep` plus the bookkeeping for the commit-on-release rule the bars actually ship: both
  * directions track the finger 1:1, and letting go finishes the job in whichever direction the
  * gesture earned.

@@ -2,7 +2,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMemo, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
-import Animated, { type SharedValue } from 'react-native-reanimated';
+import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { GroupedGrid } from '@/components/grouped-grid';
 import { RecyclerList } from '@/components/recycler-list';
@@ -50,6 +50,7 @@ export function SeriesGrid({
   items,
   scopeKey,
   listRef,
+  scrollRef,
   header,
   footer,
   paddingTop,
@@ -75,6 +76,8 @@ export function SeriesGrid({
   /** Identifies the current scope; feeds the list `key` and the cards' recycle `cohort`. */
   scopeKey: string;
   listRef?: RefObject<LegendListRef | null>;
+  /** Passed through to `RecyclerList` — see the doc there (the sliding bar's lockstep scroll). */
+  scrollRef?: AnimatedRef<Animated.ScrollView>;
   header?: ReactElement | null;
   footer?: ReactElement | null;
   /** Space above the first row — typically the top bar's resting height (content scrolls behind it). */
@@ -142,6 +145,7 @@ export function SeriesGrid({
         rowHeight={cellHeight}
         scopeKey={scopeKey}
         listRef={listRef}
+        scrollRef={scrollRef}
         header={header}
         paddingTop={paddingTop}
         paddingBottom={paddingBottom ?? BottomTabInset + Spacing.five}
@@ -178,6 +182,7 @@ export function SeriesGrid({
       data={items}
       scopeKey={scopeKey}
       listRef={listRef}
+      scrollRef={scrollRef}
       keyExtractor={keyOf}
       // EXACT, not a hint: every cell is pinned to `cellHeight` below, so this matches every measured row.
       estimatedItemSize={cellHeight}

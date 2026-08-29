@@ -60,6 +60,16 @@ const inferBegin = Platform.OS === 'web';
 
 const listeners = new Set<Listener>();
 let dragging = false;
+/**
+ * Depth of "this scroll is the app's own animation, not a gesture" windows — a settling bar driving
+ * the scroller to stay locked to its own motion (`useSlidingBar`'s `lockstepScroll`).
+ *
+ * Those frames arrive through `notifyScrollActivity` looking exactly like a wheel event, and on web
+ * that is enough to infer a `begin` (see `inferBegin`) — which cancels settles. The settle would
+ * therefore cancel itself on its own first frame and park the bar half-way. Counted rather than
+ * flagged so overlapping windows can't have the first one's end re-open things for the second.
+ */
+let selfDriven = 0;
 // Between an inferred `begin` and the `rest` that ends it (web only — see `inferBegin`).
 let gesturing = false;
 let lastActivity = 0;
@@ -129,6 +139,7 @@ export function notifyScrollRest(): void {
  * mid-settle takes it over at the position it had reached instead of being ignored until it lands.
  */
 export function notifyScrollActivity(): void {
+  if (selfDriven > 0) return;
   lastActivity = Date.now();
   if (dragging) return;
   if (inferBegin && !gesturing) {
@@ -136,6 +147,21 @@ export function notifyScrollActivity(): void {
     emit('begin');
   }
   armIdle();
+}
+
+/** Open the window described at `selfDriven`. Pair every call with `endSelfDrivenScroll`. */
+export function beginSelfDrivenScroll(): void {
+  selfDriven += 1;
+  clearIdle();
+}
+
+/** Close it. The scroller has just moved, so the idle clock restarts from here — a real gesture
+ *  arriving straight afterwards still gets its `rest`. */
+export function endSelfDrivenScroll(): void {
+  if (selfDriven > 0) selfDriven -= 1;
+  if (selfDriven > 0) return;
+  lastActivity = Date.now();
+  if (!dragging) armIdle();
 }
 
 /**

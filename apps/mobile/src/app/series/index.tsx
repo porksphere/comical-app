@@ -81,6 +81,7 @@ import {
   onZoomSurfaceChange,
   resolveZoomTarget,
   takeZoomOrigin,
+  type ZoomOrigin,
   type ZoomRect,
 } from '@/lib/series-zoom';
 import SearchScreen from '../search';
@@ -240,6 +241,25 @@ const ZOOM_CONTENT_FADE_OPEN = [0, 0.28];
 const ZOOM_CONTENT_FADE_CLOSE = [0.13, 0.7];
 const ZOOM_THUMB_FADE_OPEN = [0.5, 0.85];
 const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
+// The same fade for a copy that is NOT landing on the real cover — the `cover-offscreen`
+// destination, where the details have scrolled past their own cover. On `cover` this cross-fade is
+// undetectable: the copy is drawn over an identical picture, so it can be as quick as it likes. Here
+// it appears over whatever chapter rows are on screen, and at [0.7, 1] — full strength a quarter of
+// the way through a fling — that read as the cover popping in rather than arriving.
+//
+// So it waits for the WINDOW TO COME DOWN TO THE COVER'S OWN SIZE. The copy is only ever about a
+// cover card wide — it is `hero.size / s`, so it shrinks from the on-page cover to the grid card
+// across the collapse — while the window starts at the whole screen. Early on that leaves a small
+// picture adrift in a frame twice its width, which is what reads as a cover materialising out of
+// nowhere rather than the page becoming one. The fill is what the timing tracks: the copy spans
+// about 53% of the window at 0.5, 62% at 0.32, 79% at 0.13 and all of it at 0. Fading in over the
+// last stretch means it arrives as it comes to fill the window, and there is never a frame with a
+// cover floating in the middle of one.
+//
+// 0.13 is also a floor, and the two agree: it is where the page's own content finishes fading out
+// (ZOOM_CONTENT_FADE_CLOSE), so finishing any later leaves frames with neither picture on them and
+// the window showing straight through to the grid.
+const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.13, 0.32];
 // The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
 // carried away, it is the surface being uncovered, so matching the page's curve held it opaque
 // through the first third of the collapse and kept the grid hidden long after the page had
@@ -391,25 +411,331 @@ function zoomHorizontalDrag(translation: number, dimension: number): number {
  * page sits open the shift shows nowhere (at `zoom` 1 the mask is the screen, the transform is
  * identity and the copy is transparent).
  *
- * The bound is allowed OFF SCREEN, which is the point: scroll past the cover and the collapse
- * should start above the top edge and fly the picture in, not park it at the edge pretending the
- * cover is still there. A clamp that kept the bound inside the screen just moved the fixed spot up.
+ * The bound is allowed to go PARTLY off screen, and must be: clamping it to the edge would just
+ * move the fixed spot up. It is not allowed to go all the way — a bound with nothing left on screen
+ * is not a shared element any more, and a collapse that finds one switches to `cover-offscreen`
+ * rather than flying onto a box nobody can see. That threshold is where this function stops being
+ * the answer, not a case it handles.
  *
- * It is still CAPPED, at one screen height of scroll (`maxShift`), because the copy only becomes
- * visible at 0.7 of the way through the collapse and its whole travel from there is a few hundred
- * points. Around a screen height of shift that puts it just off the top edge when it appears —
- * arriving. Much beyond it the copy spends the visible part of the collapse outside the screen and
- * crosses the edge at a speed nothing can read, which is a picture that never arrives at all: the
- * cap is where "flying in from off screen" stops buying anything. A 250-chapter list scrolled to
- * the bottom parks there.
+ * ONLY the `cover` destination shifts, and only it can: the others are defined relative to the
+ * screen, not to a box on the page. Which one is in play already bounds this — a collapse aims at
+ * `cover` only while the cover is at least half on screen (see `ZOOM_BOUND_MIN_VISIBLE`), so the
+ * shift is a few hundred points at most before it starts. `maxShift` survives as the backstop for
+ * the one thing that bound doesn't cover: a fling still decelerating UNDER a collapse, which keeps
+ * feeding offsets after the choice was latched. Past about a screen height the copy would spend the
+ * visible part of the collapse outside the screen and cross the edge at a speed nothing can read —
+ * a picture that never arrives at all.
  *
  * A NEGATIVE offset (the iOS rubber-band, pulling the content down) is tracked as-is: the cover
  * really has moved down, and the bound belongs on it.
  */
-function zoomBoundShift(geom: { tracksScroll: boolean; maxShift: number } | null, offset: number): number {
+function zoomBoundShift(geom: { kind: ZoomDestKind; maxShift: number } | null, offset: number): number {
   'worklet';
-  if (!geom || !geom.tracksScroll) return 0;
+  if (!geom || geom.kind !== 'cover') return 0;
   return Math.min(offset, geom.maxShift);
+}
+
+/** How much of the details' hero cover has to be left on screen for it to still be the thing a
+ *  collapse lands on. Half — see `ZoomDest`, and `zoomBoundOnScreen` for when it is decided. */
+const ZOOM_BOUND_MIN_VISIBLE = 0.5;
+
+/**
+ * Which DESTINATION a collapse is aimed at. The page keeps a geometry alive for both of the ones
+ * currently reachable, so the choice can be made on the UI thread at the instant a collapse starts
+ * (see `zoomBoundOnScreen`) — deriving the loser lazily would mean deriving it mid-flight.
+ *
+ *  · `cover` — the details' hero cover, where it actually is. The real shared element: the flying
+ *    copy lands on the same picture the page is already showing, which is why its cross-fade there
+ *    is invisible. This is the one that follows the details' scroll (`zoomBoundShift`).
+ *  · `cover-offscreen` — the cover's SHAPE, centred on the page, once the details have scrolled
+ *    past it. Nothing is being shared any more, so the destination stops chasing a box that has
+ *    left the screen; keeping the cover's SIZE is what keeps the collapse identical in every other
+ *    respect, because the size is the whole of what `s` is derived from. The copy therefore still
+ *    shrinks out of a cover-sized picture rather than ballooning to a full-width one.
+ *  · `page` — the page as a whole: full width at the source thumbnail's aspect, centred. For the
+ *    expanded reader (the details are slid away, so their cover rect corresponds to nothing on
+ *    screen, and the copy IS the page's own image) and for an instance with no measured bound.
+ */
+type ZoomDest = { kind: 'cover' | 'cover-offscreen'; bound: ZoomRect } | { kind: 'page' };
+type ZoomDestKind = ZoomDest['kind'];
+
+/**
+ * The zoom's geometry for one choice of destination. `computeContentTransformGeometry` verbatim —
+ * scale about the SCREEN centre, then translate so the destination's anchor meets the source's.
+ * `scaleMode: 'uniform'` with its aspect rule: near-equal aspects take max(sx, sy) (cover),
+ * genuinely different ones take min(sx, sy) (contain) and let the mask do the cropping. Ours differ
+ * (a 2:3 cover into a wide band), so it contains — which is exactly why the mask is not optional.
+ */
+function computeZoomGeom(hero: ZoomOrigin, dest: ZoomDest, width: number, height: number) {
+  // `target: 'bound'` — align the two rects centre to centre — over whichever rect the destination
+  // resolves to. `page` has none to align to, so it falls back to `getZoomContentTarget`'s computed
+  // target: a virtual destination that keeps ONE edge attached to the source, so a wide source
+  // fills the destination's width and follows its top edge while a narrow one fills the height
+  // and follows the leading edge. Anchors follow `getZoomContentAnchor` accordingly.
+  const sourceAspect = hero.width / hero.height;
+  const screenAspect = width / height;
+  const fitToWidth = sourceAspect >= screenAspect;
+  const fitW = fitToWidth ? width : sourceAspect * height;
+  const fitH = fitToWidth ? (hero.height / hero.width) * width : height;
+  // Everything but `cover` is CENTRED on the page. `getZoomContentTarget` pins its computed target
+  // to an edge instead — top for a wide source, leading for a narrow one — which suits a gallery,
+  // where the destination really does start at the top of its screen. Here neither of these has any
+  // counterpart in the layout at all: they stand in for the page, so anything but centred reads as
+  // the copy sitting off to one side of the thing it is supposed to be standing in for. That
+  // applies to `cover-offscreen` exactly as it does to `page` — the cover it is shaped like is not
+  // on screen, so there is no position it could honour, only a size.
+  const endW = dest.kind === 'page' ? fitW : dest.bound.width;
+  const endH = dest.kind === 'page' ? fitH : dest.bound.height;
+  const end: ZoomRect =
+    dest.kind === 'cover'
+      ? dest.bound
+      : { x: (width - endW) / 2, y: (height - endH) / 2, width: endW, height: endH };
+
+  const sx = hero.width / end.width;
+  const sy = hero.height / end.height;
+  const aspectDifference = Math.abs(sourceAspect - end.width / end.height);
+  const s = aspectDifference < ZOOM_ASPECT_EPSILON ? Math.max(sx, sy) : Math.min(sx, sy);
+
+  // getAnchorPoint, for the three anchors this transition can pick.
+  // Centre-to-centre either way now — the measured bound always used it, and the computed one
+  // is centred by construction above.
+  const anchorOf = (b: ZoomRect) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+  const startAnchor = anchorOf(hero);
+  const endAnchor = anchorOf(end);
+  const screenCenterX = width / 2;
+  const screenCenterY = height / 2;
+  // Where to lay the FLYING COPY out. Not `end` — `end` only lands on the card when the two
+  // rects share an aspect, because the page carries a single uniform scale and a scalar cannot
+  // reshape a rectangle. The copy's job is to be indistinguishable from the card at q = 0 (the
+  // last frames of a collapse, where it is the only thing still opaque), so it is sized to
+  // become the source rect exactly: `hero.size / s`, centred on `end`. When the aspects agree
+  // this IS `end` — s is then hero.width/end.width and the two expressions coincide — so the
+  // common case is untouched and the mismatched one stops being a mismatch.
+  //
+  // The trade lands on the other end: with genuinely different aspects the copy no longer
+  // matches the details hero at q = 1. That end is free — the copy is fully transparent by 0.32
+  // opening and doesn't start showing until 0.7 closing (see the fade ranges).
+  const thumbW = hero.width / s;
+  const thumbH = hero.height / s;
+  return {
+    s,
+    end,
+    thumb: {
+      x: endAnchor.x - thumbW / 2,
+      y: endAnchor.y - thumbH / 2,
+      width: thumbW,
+      height: thumbH,
+    },
+    tx: startAnchor.x - (screenCenterX + (endAnchor.x - screenCenterX) * s),
+    ty: startAnchor.y - (screenCenterY + (endAnchor.y - screenCenterY) * s),
+    // Read by `zoomBoundShift` (only `cover` is in the details' scrolling coordinates, so only it
+    // has a scroll to follow) and by the copy's close fade, which is invisible on `cover` and a
+    // picture appearing from nowhere on `cover-offscreen`. See ZOOM_THUMB_FADE_CLOSE_OFFCOVER.
+    kind: dest.kind,
+    maxShift: height,
+  };
+}
+
+type ZoomGeom = ReturnType<typeof computeZoomGeom>;
+
+/**
+ * Which of a page's live geometries a frame belongs to. Read by every animated style that has to
+ * know, so the three of them can't answer it differently — and so the latch (`zoomBoundOnScreen`)
+ * has one reader rather than one per style.
+ *
+ * `cover` and `cover-offscreen` exist together or not at all, so the `page` fallback covers exactly
+ * the cases where neither does: the expanded reader, a deep link, web.
+ */
+function pickZoomGeom(
+  onCover: boolean,
+  cover: ZoomGeom | null,
+  offCover: ZoomGeom | null,
+  page: ZoomGeom | null,
+): ZoomGeom | null {
+  'worklet';
+  return (onCover ? cover : offCover) ?? page;
+}
+
+/**
+ * WHOSE COORDINATES the collapse is in right now: the swipe's, or the source card's.
+ *
+ * A dismissal drag runs the collapse under the finger, and the collapse's whole job is to converge
+ * on the card — so the page used to start sliding toward the card the moment you began dragging.
+ * Drag horizontally on a page opened from a card near the bottom and it sank as it went, chasing a
+ * destination rather than following the thumb. The position was the SOURCE's throughout; only its
+ * size was the gesture's.
+ *
+ * So the two are separated. While the finger is down the page is centred on the screen and offset
+ * purely by the drag — it shrinks where you are holding it. The convergence is the RELEASE's, and it
+ * arrives over the rest of the collapse.
+ *
+ * DERIVED FROM `q`, NOT ANIMATED. This is the important part, and the reason an earlier attempt at
+ * "follow the swipe" had to be reverted: that one gave the follow its own spring alongside the
+ * collapse's, and two springs racing means the page is wherever the loser left it when the winner
+ * finishes — which is when the page leaves and the source card un-blanks. Here the homing is a pure
+ * function of the collapse's own progress, so it reaches exactly 1 on the frame `q` reaches 0. The
+ * page is on the card when it lands because it cannot be anywhere else.
+ *
+ * `homeAt` carries the state in one number:
+ *   < 0   a finger owns the page (or is springing it back) — position is the swipe's.
+ *   = 0   nothing was dragged: the entrance, the chevron, hardware back. The classic collapse.
+ *   > 0   the `q` a committed drag was released at; the ramp runs from there to 0.
+ */
+function zoomHoming(homeAt: number, q: number): number {
+  'worklet';
+  if (homeAt < 0) return 0;
+  if (homeAt === 0) return 1;
+  return Math.min(1, Math.max(0, (homeAt - q) / homeAt));
+}
+
+/**
+ * The mask's box on its way to the card — read by all three of the zoom's animated styles so they
+ * cannot disagree about where the window is. The page compensates for this origin, and the flying
+ * copy measures its entry against it.
+ *
+ * Deliberately knows nothing about the drag or the homing. Everything inside the window is placed
+ * RELATIVE to this box, so the pair can be moved anywhere as one (see `zoomDetach`) without any of
+ * those relationships changing — which is the property that keeps the cover framed.
+ */
+function zoomMaskBox(
+  hero: ZoomOrigin,
+  shiftX: number,
+  shiftY: number,
+  q: number,
+  width: number,
+  height: number,
+): { left: number; top: number; width: number; height: number } {
+  'worklet';
+  return {
+    left: (hero.x + shiftX) * (1 - q),
+    top: (hero.y + shiftY) * (1 - q),
+    width: hero.width + (width - hero.width) * q,
+    height: hero.height + (height - hero.height) * q,
+  };
+}
+
+/**
+ * How far to carry the whole assembly off its converging path, so that a page under a finger sits
+ * where the swipe put it rather than where the card is.
+ *
+ * Applied to the MASK ALONE, and that is the entire trick. The page is the mask's child and
+ * compensates for the mask's own origin, so moving the mask moves everything inside it by the same
+ * amount: the window, the page, the flying copy and the cover all travel together and nothing about
+ * their relative geometry changes. The first attempt at this instead scaled the page's TARGET by
+ * `home`, which does move the page — and moves it out from under its own window, so the cover
+ * drifted toward an edge as the two shrank at different anchors and got clipped.
+ *
+ * The offset is whatever puts the window back in the middle of the screen, so at `home` 0 the
+ * assembly shrinks about the screen centre wherever the card happens to live. At q = 1 it is zero
+ * on its own — a full-screen window is already centred — so a page at rest cannot tell the two
+ * coordinate systems apart and nothing jumps when a drag takes it over.
+ */
+function zoomDetach(start: number, size: number, home: number, span: number): number {
+  'worklet';
+  return (span / 2 - start - size / 2) * (1 - home);
+}
+
+/**
+ * The follow's two knobs, and they are independent on purpose.
+ *
+ * `REACH` is where it asymptotes, as a fraction of the drag's own travel — how far the page can
+ * ever get, and (since the resisted distance is what drives `zoom`) how small the window can ever
+ * get. `GRIP` is its rate at the FIRST pixel — how much of your thumb it takes before it has
+ * travelled anywhere at all.
+ *
+ * One parameter could not express what this needs. Tie the rate at 0 to the asymptote (grip = 1,
+ * which every earlier shape did) and the whole change from free to stuck has to happen inside the
+ * first `reach` points, because that is the only length in the formula. Lowering the asymptote to
+ * bring the spring on sooner only compresses it further. Splitting them lets the spring be in
+ * effect immediately AND take the whole drag to arrive: at 0.6/1.9 the rate goes 0.60 → 0.35 → 0.18
+ * across the first 350pt, where 1.0/1.6 went 1.00 → 0.38 → 0.15 over the same distance and did
+ * three quarters of that in the first third of it. Worst stiffening over any 20pt: 0.05, against
+ * 0.16.
+ *
+ * The shrink is not clamped anywhere: `zoom` is `1 - held/travel`, so the SAME resistance that
+ * slows the page down slows the window down, and the two cannot disagree about when to stop. That
+ * also makes "a drag can never finish the collapse" arithmetic rather than a guard — `held` is
+ * asymptotic to `REACH · travel`, so `zoom > 1 - REACH` for any drag, however long. 0.53 is the
+ * reach the old explicit floor implied on a grid card, kept to the point so the follow feels
+ * exactly as it did; only what limits the shrink has changed.
+ */
+const ZOOM_DRAG_FOLLOW_REACH = 0.53;
+const ZOOM_DRAG_FOLLOW_GRIP = 0.6;
+/**
+ * The `zoom` by which the window's corners are FULLY rounded on the way out — reached in the first
+ * TWELFTH of the collapse, not carried linearly across all of it.
+ *
+ * Corner radius is the earliest signal that a page has become a card, and it arrives before any
+ * other: at the top of a dismissal the window is still nearly full-screen, so size and position
+ * have barely moved and the rounding is the only thing saying what is about to happen. Spread
+ * linearly over `1 - q` it never got the chance — since the spring took over the shrink a drag only
+ * carries `zoom` to about 0.87, which on the old curve is 13% of the corner, i.e. square.
+ *
+ * The threshold is set against FINGER TRAVEL, not against `q`, because `q` means different
+ * distances on the two surfaces this serves: the reader's paged dismiss measures over the height,
+ * so the same swipe moves it half as far as the series back-swipe does. At 0.92 the corner is full
+ * after 78pt of a back-swipe and 168pt of a paged dismiss; at 0.84 it took 188 and 407, which on
+ * the reader is most of a swipe.
+ *
+ * ONE curve, not one per direction, and that is forced rather than chosen. `settle` (a cancelled
+ * swipe) clears `zoomClosing` on the frame the finger lifts, so a curve that keyed off it would
+ * jump the radius from ~9.5pt to ~1.5pt in that single frame — the pop would land on exactly the
+ * gesture that is supposed to look like nothing happened. Opening just inherits it: the window
+ * The two directions have their OWN thresholds, which is what lets the close be this aggressive.
+ * Opening, the corner is not a signal of anything — you already touched the card — so squaring off
+ * has to stay a tail rather than an event, and a slice as thin as the close's would be one.
+ *
+ * The split is only safe because `zoomRadiusClosing` is not `zoomClosing`: it flips back when the
+ * page has actually reached the top, not on the frame a cancelled swipe releases. Both curves run
+ * to 0 at `q` = 1, so the flip lands where they have all but converged — 0.16pt apart at the
+ * threshold the reaction uses. Keying this off `zoomClosing`, which `settle` clears immediately,
+ * would swap them mid-springback instead: 12pt to 3.8pt in one frame for a swipe released at 0.95,
+ * on the one gesture meant to look like nothing happened.
+ */
+const ZOOM_RADIUS_ROUNDED_BY_CLOSE = 0.97;
+const ZOOM_RADIUS_ROUNDED_BY_OPEN = 0.84;
+/** Where the two curves swap. Late enough that they have converged to 0.16pt of each other, and
+ *  reachable because a settled spring writes its target exactly. */
+const ZOOM_RADIUS_CURVE_SWAP_AT = 0.9995;
+/** How far the reader's dismiss must travel before it HAS a direction to be judged against. Small
+ *  enough that it is latched almost immediately, large enough that the first frames of a drag —
+ *  which are noise, and on web arrive with translation 0 — cannot set it. */
+const ZOOM_DISMISS_DIR_MIN = 6;
+/** How long the flying copy takes to come back after a reversed drag commits. It is a real fade,
+ *  not a reset, because a release mid-reversal has the copy at zero opacity and the page still has
+ *  to land on the card with a picture on it. */
+const ZOOM_THUMB_BIAS_RESTORE_MS = 160;
+
+/**
+ * The follow: a spring, not a leash. Resistance is there from the first pixel and grows from there,
+ * so the page is asymptotic to `reach` with no point where it stops behaving one way and starts
+ * behaving another.
+ *
+ * Three shapes were wrong before this one, each at a different part of the drag:
+ *
+ *  · Free to the shrink floor, then rubber-banded. C¹ at the knee and still read as binary —
+ *    continuity of SPEED is not continuity of FEEL. All the curvature sat in the ~20pt after it.
+ *  · One exponential over the whole drag. Gradual, then FLATLINED: `1 - e^-t` is within a percent
+ *    of its limit by three time constants, so past ~450pt the page simply stopped, and a page that
+ *    stops dead is a wall wherever you put it.
+ *  · `A·t/(A + t)` — iOS's scroll-boundary band, which fixed the tail (its rate decays as 1/t², so
+ *    there is always something left to give) but still left the drag feeling like it all happened
+ *    at once, because a rate starting at exactly 1 has the whole of its range to fall through.
+ *
+ * Same band, with the initial rate freed from the asymptote: `reach·d / (reach/grip + d)`, whose
+ * rate is `grip · (S/(S + d))²` for `S = reach/grip`. `grip` sets where that starts and `S` how
+ * long it takes to get anywhere, and neither moves the other.
+ *
+ * `reach` is anchored to the floor's own travel (see the callers), so the page runs out of room in
+ * the same stretch the size does. `grip < 1` also guarantees it can never outrun the finger, since
+ * `S > reach` makes `held(d) < d` everywhere.
+ */
+function zoomDragFollow(distance: number, reach: number, grip: number): number {
+  'worklet';
+  if (reach <= 0 || grip <= 0) return distance;
+  const d = Math.abs(distance);
+  const held = (reach * d) / (reach / grip + d);
+  return distance < 0 ? -held : held;
 }
 
 /** `resolveZoomCrossAxisDragTranslation` — the off-axis, which follows loosely and never leads. */
@@ -1332,6 +1658,17 @@ function SeriesReaderInstance({
   // the sequence-mode copy morph needs (see zoomThumbStyle): the copy's rect interpolates toward
   // the image's true fit rect, and only the image itself knows its shape.
   const zoomThumbAspect = useSharedValue(0);
+  /** The reader dismiss's LAUNCH DIRECTION, as a unit vector, latched the first frame the drag has
+   *  enough distance to have one. (0, 0) until then, and cleared by every gesture. */
+  const dismissDirX = useSharedValue(0);
+  const dismissDirY = useSharedValue(0);
+  /** How much of the collapse the flying copy should treat as having happened, 0..1. 1 everywhere
+   *  except a reader dismiss dragged back the other way — see that gesture's onUpdate, and
+   *  `zoomThumbStyle`, which applies this to the copy's OPACITY alone. */
+  const zoomThumbBias = useSharedValue(1);
+  /** Which corner curve the window is on. Set by every closing path alongside `zoomClosing`, but
+   *  NOT cleared with it — see the reaction below, and `ZOOM_RADIUS_ROUNDED_BY_CLOSE`. */
+  const zoomRadiusClosing = useSharedValue(false);
   // Back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
   // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get
   // the real one. A decisive rightward drag ANYWHERE on the details (full-surface, like the
@@ -1346,6 +1683,9 @@ function SeriesReaderInstance({
   //    collapse, so a page released well off to the side still lands exactly on its card.
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
+  /** See `zoomHoming`. Every path that drives `zoom` sets this first — there is no default that is
+   *  right for all of them, and a stale one is a page that converges on the wrong thing. */
+  const homeAt = useSharedValue(0);
   const edgeCommitting = useSharedValue(false);
 
   /**
@@ -1365,6 +1705,19 @@ function SeriesReaderInstance({
    * zoom at the card is what leaving means; and it cannot strand the page, because a collapse that
    * gets cancelled before arriving is still covered by the wall-clock backstop above.
    */
+  /**
+   * Retire the closing corner curve only once the page has actually got back to the top.
+   *
+   * `zoomClosing` cannot do this job: `settle` clears it on the frame a cancelled swipe releases,
+   * which is mid-springback, where the two curves disagree by most of a corner. Waiting for zoom
+   * itself puts the flip at q = 1, where both curves give 0 and the swap is invisible.
+   */
+  useAnimatedReaction(
+    () => zoom.value >= ZOOM_RADIUS_CURVE_SWAP_AT,
+    (home) => {
+      if (home) zoomRadiusClosing.set(false);
+    },
+  );
   useAnimatedReaction(
     () => edgeCommitting.value && zoom.value <= LEAVE_AT_ZOOM,
     (arrived, was) => {
@@ -1435,15 +1788,49 @@ function SeriesReaderInstance({
             progress.set(Math.min(1, Math.max(0, progressStartSV.value + -cross / span)));
             return;
           }
-          // The follow: both axes, unclamped — feeding the collapse instead of a fling. Distance
-          // in ANY direction drives it, since unlike the back-swipe this gesture has no single
-          // axis to measure along.
+          // The follow: both axes, feeding the collapse instead of a fling. Distance in ANY
+          // direction drives it, since unlike the back-swipe this gesture has no single axis to
+          // measure along.
           zoomClosing.set(true);
-          zoom.set(
-            1 - Math.min(1, Math.hypot(e.translationX, e.translationY) / (dismissSpan * ZOOM_DRAG_TRAVEL)),
-          );
-          dragX.set(e.translationX);
-          dragY.set(e.translationY);
+          zoomRadiusClosing.set(true);
+          homeAt.set(-1);
+          const travel = dismissSpan * ZOOM_DRAG_TRAVEL;
+          const pull = Math.hypot(e.translationX, e.translationY);
+          // ONE resisted distance drives both the size and the position, so the spring is the only
+          // thing limiting either and they cannot stop at different moments.
+          const held = zoomDragFollow(pull, ZOOM_DRAG_FOLLOW_REACH * travel, ZOOM_DRAG_FOLLOW_GRIP);
+          zoom.set(1 - Math.min(1, held / travel));
+          // Scaling the vector by the resisted/raw ratio, rather than resisting each axis, keeps
+          // the page moving along the finger's own direction — this gesture has no primary axis to
+          // resist along.
+          const hold = pull > 0 ? held / pull : 0;
+          dragX.set(e.translationX * hold);
+          dragY.set(e.translationY * hold);
+
+          // The COPY follows the FORWARD progress, not the raw distance — because this gesture
+          // measures with a hypot, and a hypot cannot tell "further out" from "back through the
+          // start and out the other side". Swipe down, come back up past where you began, keep
+          // going up: the hypot rises again, so the page shrinks again, and the copy used to fade
+          // back in with it. Nothing about that second shrink is an approach to the card.
+          //
+          // Projecting onto the launch direction separates the two: the projection falls to zero as
+          // the finger returns and stays there past it, so the cover fades out on the way back and
+          // does not return. Continuous by construction — the bias reaches 0 exactly where the
+          // finger reaches its origin, where the copy is transparent anyway — so nothing blinks.
+          if (dismissDirX.value === 0 && dismissDirY.value === 0 && pull >= ZOOM_DISMISS_DIR_MIN) {
+            dismissDirX.set(e.translationX / pull);
+            dismissDirY.set(e.translationY / pull);
+          }
+          // Before a direction is latched there is nothing to be going the wrong way relative to, so
+          // all of the travel counts as forward. Without this the first few pixels of EVERY drag
+          // project onto (0, 0) and read as fully reversed — invisible in practice (the copy is at
+          // ~1% there) but a lie the moment anyone changes the fade ranges.
+          const aimed = dismissDirX.value !== 0 || dismissDirY.value !== 0;
+          const forward = aimed
+            ? Math.max(0, e.translationX * dismissDirX.value + e.translationY * dismissDirY.value)
+            : pull;
+          const heldForward = zoomDragFollow(forward, ZOOM_DRAG_FOLLOW_REACH * travel, ZOOM_DRAG_FOLLOW_GRIP);
+          zoomThumbBias.set(held > 0 ? heldForward / held : 1);
         })
         .onEnd((e) => {
           trace('reader.collapse', 'END', {
@@ -1467,7 +1854,14 @@ function SeriesReaderInstance({
           }
           // The release decision — the shared projection (lib/gesture-release), judged along the
           // direction the page actually travelled, since this one can be thrown off either side.
-          const crossOffset = settings.mode === 'paged' ? dragY.value : dragX.value;
+          //
+          // The FINGER's travel, not `dragX/dragY`. Those were the same number until the follow
+          // gained its past-floor resistance, and reading them now would make the threshold
+          // unreachable: the follow tops out around 160px while DISMISS_COMMIT_FRACTION wants half
+          // the span (196px in webtoon, 426px in paged), so a deliberate slow swipe could never
+          // commit and only a flick's velocity would dismiss at all. What the user swiped is the
+          // question; how far the page was allowed to move in reply is not.
+          const crossOffset = settings.mode === 'paged' ? e.translationY : e.translationX;
           const crossVelocityRaw = settings.mode === 'paged' ? e.velocityY : e.velocityX;
           if (!releaseCommittedEitherWay(crossOffset, crossVelocityRaw, dismissSpan * DISMISS_COMMIT_FRACTION)) {
             zoomClosing.set(false);
@@ -1481,6 +1875,14 @@ function SeriesReaderInstance({
           // see there for why a committed collapse must never be settled back.
           dismissing.set(true);
           edgeCommitting.set(true);
+          // Whatever the drag did, the page is landing on the card now and must have a picture when
+          // it gets there. Timed rather than set: released mid-reversal the copy is at zero, and
+          // snapping the bias back would put the cover on screen in one frame.
+          zoomThumbBias.set(withTiming(1, { duration: ZOOM_THUMB_BIAS_RESTORE_MS }));
+          // Homing starts NOW, from where the finger left it (see `zoomHoming`). The drag values
+          // stay frozen at their release positions — `home` is what retires them, on the collapse's
+          // own clock, so nothing is still moving them when it lands.
+          homeAt.set(Math.max(0.001, zoom.value));
           const throwSpeed = zoomThrowSpeed(Math.hypot(e.velocityX, e.velocityY), dismissSpan, zoom.value);
           zoom.set(
             // overshootClamping: there is nothing past "collapsed", so the spring must not travel
@@ -1488,8 +1890,6 @@ function SeriesReaderInstance({
             // `zoom` actually reaching the card (see the reaction near leaveOnce).
             withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -throwSpeed }),
           );
-          dragX.set(withSpring(0, ZOOM_OUT_SPRING));
-          dragY.set(withSpring(0, ZOOM_OUT_SPRING));
         })
         // Always fires once the gesture resolves (release OR cancel) — the next gesture decides
         // its own mode fresh.
@@ -1501,8 +1901,13 @@ function SeriesReaderInstance({
             zoom.set(withSpring(1, SPRING_BACK));
             dragX.set(withSpring(0, SPRING_BACK));
             dragY.set(withSpring(0, SPRING_BACK));
+            zoomThumbBias.set(withTiming(1, { duration: ZOOM_THUMB_BIAS_RESTORE_MS }));
           }
           gestureMode.set(0);
+          // The next drag gets its own launch direction; a stale one would judge it against a
+          // gesture that is over.
+          dismissDirX.set(0);
+          dismissDirY.set(0);
         });
       // The back-swipe's ACTIVATION-side dominance (lib/back-swipe), applied to whichever axis this
       // mode dismisses along: paged drags across the pages' axis (vertical), webtoon across the
@@ -1523,6 +1928,10 @@ function SeriesReaderInstance({
     collapseEnabled,
     width,
     height,
+    zoomRadiusClosing,
+    dismissDirX,
+    dismissDirY,
+    zoomThumbBias,
     headerSpan,
     gestureMode,
     progressStartSV,
@@ -1530,6 +1939,7 @@ function SeriesReaderInstance({
     dismissing,
     detailsActiveSV,
     commitReveal,
+    homeAt,
     zoom,
     zoomClosing,
     dragX,
@@ -1732,6 +2142,8 @@ function SeriesReaderInstance({
       }, ZOOM_THUMB_PAINT_WAIT_MS);
     }
     zoomArmed.set(true);
+    // Nothing was dragged: the classic collapse, in the card's coordinates from the first frame.
+    homeAt.set(0);
     zoom.set(
       withSpring(1, ZOOM_IN_SPRING, (finished) => {
         // Closes the bracket opened at mount — see the effect below. The span between them is the
@@ -1743,7 +2155,7 @@ function SeriesReaderInstance({
         runOnJS(markEntranceSettled)();
       }),
     );
-  }, [zoom, zoomArmed, blankSource, markEntranceSettled]);
+  }, [zoom, zoomArmed, homeAt, blankSource, markEntranceSettled]);
   const onHeroCoverRect = useCallback((rect: ZoomRect) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
     // as its aspect settles, and moving the destination mid-flight would visibly jump. What the
@@ -1793,11 +2205,13 @@ function SeriesReaderInstance({
   const closeLayer = useCallback(() => {
     if (LEFT.has(token)) return;
     zoomClosing.set(true);
+    zoomRadiusClosing.set(true);
     edgeCommitting.set(true);
+    homeAt.set(0);
     zoom.set(withSpring(0, ZOOM_OUT_SPRING));
     // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
     // leaveOnce), with the `leaving` backstop above as the safety net.
-  }, [token, edgeCommitting, zoom, zoomClosing]);
+  }, [token, edgeCommitting, homeAt, zoom, zoomClosing, zoomRadiusClosing]);
 
   /**
    * Ask the source card where it is, once per collapse. Hung off `zoom` leaving the top rather than
@@ -1901,6 +2315,9 @@ function SeriesReaderInstance({
       trace(tag, 'commit', { vx: velocityX, zoom: zoom.value, already: edgeCommitting.value });
       if (edgeCommitting.value) return;
       edgeCommitting.set(true);
+      // Homing starts here, from wherever the drag got to — see the reader's commit for why the
+      // drag is left frozen rather than sprung back.
+      homeAt.set(Math.max(0.001, zoom.value));
       // Read STRAIGHT back — and on device this reports FALSE. `commit.latched readback=n` is what
       // a real trace says: a shared-value write is not visible to a read later in the SAME worklet
       // invocation, though it is visible to the next one (which is why the guard above still works
@@ -1923,8 +2340,6 @@ function SeriesReaderInstance({
           trace(tag, 'collapse.done', { finished: !!finished, zoom: zoom.value });
         }),
       );
-      dragX.set(withSpring(0, ZOOM_OUT_SPRING));
-      dragY.set(withSpring(0, ZOOM_OUT_SPRING));
     };
     // The shared activation criteria (lib/back-swipe). Everything after it is this surface's own:
     // a back-swipe here drives the gallery collapse, not a slide. Whether the details are the side
@@ -1942,8 +2357,11 @@ function SeriesReaderInstance({
         originY.set(e.translationY);
         resetBackSwipeShape(qualified);
         runOnJS(setSwipeLocked)(true);
+        // The finger owns the page's position for as long as it is down (see `zoomHoming`).
+        homeAt.set(-1);
         // A drag IS a collapse, so it uses the collapse's cross-fade ranges from the first frame.
         zoomClosing.set(true);
+        zoomRadiusClosing.set(true);
       })
       .onUpdate((e) => {
         'worklet';
@@ -1952,9 +2370,28 @@ function SeriesReaderInstance({
         const ty = e.translationY - originY.value;
         traceThrottled(updateGate, 60, tag, 'update', { tx, ty, zoom: zoom.value });
         trackBackSwipeShape(qualified, tx, ty, width * DISMISS_COMMIT_FRACTION);
-        zoom.set(1 - Math.min(1, Math.max(0, tx / (width * ZOOM_DRAG_TRAVEL))));
-        dragX.set(zoomHorizontalDrag(tx, width));
-        dragY.set(zoomCrossAxisDrag(ty, height));
+        const travel = width * ZOOM_DRAG_TRAVEL;
+        // RIGHTWARD ONLY, and the clamp has to be on the follow as well as the collapse. The
+        // gesture can only ACTIVATE rightward (`backSwipePan`'s activeOffsetX/failOffsetX), but
+        // `tx` is measured from the activation point, so a finger that starts right and then comes
+        // back left goes negative — and the collapse was already clamped while the follow was not.
+        // The page slid left, and the mask, cover and flying copy went with it: the whole dismissal
+        // playing out on the wrong side of the screen, aimed at a card it was never going to reach.
+        const forward = Math.max(0, tx);
+        // ONE resisted distance drives both the size and the position — see the reader's copy.
+        const held = zoomDragFollow(forward, ZOOM_DRAG_FOLLOW_REACH * travel, ZOOM_DRAG_FOLLOW_GRIP);
+        zoom.set(1 - Math.min(1, held / travel));
+        dragX.set(zoomHorizontalDrag(held, width));
+        // The cross axis rides the forward one PROPORTIONALLY, not as an on/off gate. Vertical play
+        // is earned by horizontal travel: none at rest, all of it by the distance that would commit
+        // the dismissal, linear in between. Two things fall out of that. A page dragged back toward
+        // the left arrives with its vertical offset already gone, instead of holding an offset to
+        // the last pixel and then snapping — which is what a gate at `forward > 0` did, one frame
+        // wide but the whole height of the drift. And the further out the page is, the more it can
+        // be steered, which is the only place steering means anything: near the left it is going
+        // back to where it started, and there is nothing to aim.
+        const lead = Math.min(1, forward / (width * DISMISS_COMMIT_FRACTION));
+        dragY.set(zoomCrossAxisDrag(ty, height) * lead);
       })
       .onEnd((e) => {
         'worklet';
@@ -2018,7 +2455,9 @@ function SeriesReaderInstance({
     dragX,
     dragY,
     edgeCommitting,
+    zoomRadiusClosing,
     detailsActiveSV,
+    homeAt,
     zoom,
     zoomClosing,
   ]);
@@ -2129,97 +2568,67 @@ function SeriesReaderInstance({
   // (attempt two) had to inflate past anything real and then dissolve down into the strip, which
   // is the pop on expand. With the mask there is nothing to hand over: one object, one motion.
   //
-  // Geometry is `computeContentTransformGeometry` verbatim — scale about the SCREEN centre, then
-  // translate so the destination bound's anchor meets the source's. `scaleMode: 'uniform'` with
-  // its aspect rule: near-equal aspects take max(sx, sy) (cover), genuinely different ones take
-  // min(sx, sy) (contain) and let the mask do the cropping. Ours differ (a 2:3 cover into a wide
-  // band), so it contains — which is exactly why the mask is not optional.
-  const zoomGeom = useMemo(() => {
-    if (!hero) return null;
-    // With a measured destination bound this is the library's `target: 'bound'` — align the two
-    // rects centre to centre. Without one it falls back to `getZoomContentTarget`'s computed
-    // target: a virtual destination that keeps ONE edge attached to the source, so a wide source
-    // fills the destination's width and follows its top edge while a narrow one fills the height
-    // and follows the leading edge. Anchors follow `getZoomContentAnchor` accordingly.
-    // WHICH bound depends on what is actually on screen. The measured hero cover is only the
-    // right destination while the DETAILS are up — that is where the picture lives, and landing on
-    // it is what makes the transition a shared element. Collapsing out of the expanded READER it
-    // is the wrong answer twice over: the details are slid away, so that rect corresponds to
-    // nothing visible, and it is a fixed small box, so the copy sat at one static size over a
-    // full-screen page instead of shrinking with it.
-    //
-    // So the reader uses the computed target instead, which is defined RELATIVE to the screen —
-    // full width at the source thumbnail's aspect. The copy is then a constant fraction of the
-    // page and scales with it all the way down into the card, which is what "swiping the page
-    // away" should look like. (It also collapses much further: the page scales to roughly the
-    // card's width fraction rather than the ~0.91 a details-sized bound gives.)
-    const bound = detailsActive ? destBound : null;
-    const sourceAspect = hero.width / hero.height;
-    const screenAspect = width / height;
-    // The computed target is CENTRED on the page. `getZoomContentTarget` pins it to an edge
-    // instead — top for a wide source, leading for a narrow one — which suits a gallery, where the
-    // destination really does start at the top of its screen. Here it has no counterpart in the
-    // layout at all: it stands in for the page as a whole, so anything but centred reads as the
-    // copy sitting off to one side of the thing it is supposed to be standing in for.
-    const fitToWidth = sourceAspect >= screenAspect;
-    const fitW = fitToWidth ? width : sourceAspect * height;
-    const fitH = fitToWidth ? (hero.height / hero.width) * width : height;
-    const end: ZoomRect = bound ?? {
-      x: (width - fitW) / 2,
-      y: (height - fitH) / 2,
-      width: fitW,
-      height: fitH,
-    };
+  // WHICH destination, of the three in `ZoomDest`, depends on what is actually on screen.
+  //
+  // The measured hero cover (`cover`) is the right one only while the DETAILS are up AND still
+  // showing it. Out of the expanded READER it is wrong twice over: the details are slid away, so
+  // that rect corresponds to nothing visible, and it is a fixed small box, so the copy sat at one
+  // static size over a full-screen page instead of shrinking with it. That case takes `page`.
+  //
+  // Scrolled PAST the cover it is wrong for the first of those reasons alone — and only the
+  // POSITION is wrong. The bound follows the scroll (`zoomBoundShift`), so a collapse begun from
+  // halfway down the chapter list aimed at a box hundreds of points above the top edge and dragged
+  // the whole page up to meet it: the page scrolling itself away under the finger, which is not a
+  // zoom of anything. The cover's SIZE is still exactly right, though — it is what the collapse's
+  // scale is derived from, and it is the size the picture ought to arrive at. So that case takes
+  // `cover-offscreen`, which keeps the size and centres it: the page swipes away and a cover-sized
+  // picture shrinks into the card, the same shrink `cover` gives, just not out of a shared element.
+  // Aiming at `page` there instead (which is what this did first) kept the shrink but ballooned the
+  // copy to full screen width, so the thing that faded in was far bigger than any cover ever is.
+  //
+  // `detailsActive` is COMMITTED state, so it only flips when a reveal or collapse finishes — never
+  // mid-flight, which is what would make swapping the destination visible. The two cover-derived
+  // geometries exist together or not at all; `zoomBoundOnScreen` picks between them per collapse.
+  const zoomGeomCover = useMemo(
+    () => (hero && detailsActive && destBound ? computeZoomGeom(hero, { kind: 'cover', bound: destBound }, width, height) : null),
+    [hero, detailsActive, destBound, width, height],
+  );
+  const zoomGeomOffCover = useMemo(
+    () =>
+      hero && detailsActive && destBound
+        ? computeZoomGeom(hero, { kind: 'cover-offscreen', bound: destBound }, width, height)
+        : null,
+    [hero, detailsActive, destBound, width, height],
+  );
+  const zoomGeomPage = useMemo(
+    () => (hero ? computeZoomGeom(hero, { kind: 'page' }, width, height) : null),
+    [hero, width, height],
+  );
+  /** For the render rather than for a frame of the transition: whether to mount the flying copy at
+   *  all, and the layout rect it starts at. Any geometry answers both, and the animated style
+   *  overwrites that rect in the same commit. */
+  const zoomGeom = zoomGeomCover ?? zoomGeomPage;
 
-    const sx = hero.width / end.width;
-    const sy = hero.height / end.height;
-    const aspectDifference = Math.abs(sourceAspect - end.width / end.height);
-    const s = aspectDifference < ZOOM_ASPECT_EPSILON ? Math.max(sx, sy) : Math.min(sx, sy);
-
-    // getAnchorPoint, for the three anchors this transition can pick.
-    // Centre-to-centre either way now — the measured bound always used it, and the computed one
-    // is centred by construction above.
-    const anchorOf = (b: ZoomRect) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
-    const startAnchor = anchorOf(hero);
-    const endAnchor = anchorOf(end);
-    const screenCenterX = width / 2;
-    const screenCenterY = height / 2;
-    // Where to lay the FLYING COPY out. Not `end` — `end` only lands on the card when the two
-    // rects share an aspect, because the page carries a single uniform scale and a scalar cannot
-    // reshape a rectangle. The copy's job is to be indistinguishable from the card at q = 0 (the
-    // last frames of a collapse, where it is the only thing still opaque), so it is sized to
-    // become the source rect exactly: `hero.size / s`, centred on `end`. When the aspects agree
-    // this IS `end` — s is then hero.width/end.width and the two expressions coincide — so the
-    // common case is untouched and the mismatched one stops being a mismatch.
-    //
-    // The trade lands on the other end: with genuinely different aspects the copy no longer
-    // matches the details hero at q = 1. That end is free — the copy is fully transparent by 0.32
-    // opening and doesn't start showing until 0.7 closing (see the fade ranges).
-    const thumbW = hero.width / s;
-    const thumbH = hero.height / s;
-    return {
-      s,
-      end,
-      thumb: {
-        x: endAnchor.x - thumbW / 2,
-        y: endAnchor.y - thumbH / 2,
-        width: thumbW,
-        height: thumbH,
-      },
-      tx: startAnchor.x - (screenCenterX + (endAnchor.x - screenCenterX) * s),
-      ty: startAnchor.y - (screenCenterY + (endAnchor.y - screenCenterY) * s),
-      // Everything above is in the coordinates the bound was MEASURED in — the details at the top
-      // of their scroll. `zoomBoundShift` carries it to where the cover currently is; these two
-      // are what it needs. Only the MEASURED bound moves: the computed fallback target is defined
-      // relative to the screen (it stands in for the page as a whole), so it has no scroll to
-      // follow. The cap is a screen height — off screen is allowed and wanted, unreadably far off
-      // isn't; see the helper.
-      tracksScroll: bound !== null,
-      maxShift: height,
-    };
-    // `detailsActive` is COMMITTED state, so it only flips when a reveal or collapse finishes —
-    // never mid-flight, which is what would make swapping the bound visible.
-  }, [hero, destBound, detailsActive, width, height]);
+  /**
+   * Whether the cover is still on screen — i.e. whether a collapse aims at `cover` or at
+   * `cover-offscreen`. LATCHED, because every frame of ONE collapse has to answer it the same way.
+   * Written only while the page is at rest (`zoom` at the top); from the first frame of a drag it
+   * holds whatever it said when the finger went down. The `detailsActive` note above is the same
+   * guard by other means, and a choice read live off the scroll would break it several times a
+   * second.
+   */
+  const zoomBoundOnScreen = useSharedValue(true);
+  /** The scroll offset at which the cover is half off the top — past it, it stops being a place
+   *  worth flying to and only its size is still worth keeping. Plain JS: the bound and the inset are
+   *  both state, so the reaction only ever compares two numbers. */
+  const zoomBoundLostAt = destBound ? destBound.y + destBound.height * (1 - ZOOM_BOUND_MIN_VISIBLE) - insets.top : 0;
+  useAnimatedReaction(
+    () => (zoom.value >= COLLAPSE_ARMED ? detailsScrollOffset.value : null),
+    (offset) => {
+      if (offset !== null) zoomBoundOnScreen.set(offset <= zoomBoundLostAt);
+    },
+    [zoomBoundLostAt],
+  );
 
   // THE MASK. Grows from the source rect to the whole screen, carrying the card's corner radius
   // out to 0. In the library this lives INSIDE the transformed content and undoes the content
@@ -2238,15 +2647,32 @@ function SeriesReaderInstance({
     // narrower than the card — and briefly a NEGATIVE width. The top needs no clamp: the open
     // spring is heavily overdamped and never passes 1.
     const q = Math.max(0, zoom.value);
+    const home = zoomHoming(homeAt.value, q);
+    const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, width, height);
     return {
       // The drag moves the MASK, not the page inside it. Both have to travel together or the page
       // slides out from under its own window — a rectangle of page hanging in the wrong place,
-      // which is exactly what a dragged mask-less collapse looked like.
-      left: (hero.x + heroShiftX.value) * (1 - q) + dragX.value,
-      top: (hero.y + heroShiftY.value) * (1 - q) + dragY.value,
-      width: hero.width + (width - hero.width) * q,
-      height: hero.height + (height - hero.height) * q,
-      borderRadius: hero.radius * (1 - q),
+      // which is exactly what a dragged mask-less collapse looked like. Which is also why the
+      // DETACH rides here and only here: everything in the window is placed relative to this
+      // origin, so moving it carries the page, the cover and the flying copy along untouched.
+      //
+      // Both fade out with `home` rather than springing back on release, and that is what makes the
+      // landing exact: at q = 0 the homing is 1, so neither contributes anything whatever the finger
+      // was doing, and the window is the card's box. The drag's own value is simply left where the
+      // release froze it — nothing has to animate it away, so nothing can still be animating it when
+      // the page leaves.
+      left: box.left + zoomDetach(box.left, box.width, home, width) + dragX.value * (1 - home),
+      top: box.top + zoomDetach(box.top, box.height, home, height) + dragY.value * (1 - home),
+      width: box.width,
+      height: box.height,
+      borderRadius:
+        hero.radius *
+        interpolate(
+          q,
+          [zoomRadiusClosing.value ? ZOOM_RADIUS_ROUNDED_BY_CLOSE : ZOOM_RADIUS_ROUNDED_BY_OPEN, 1],
+          [1, 0],
+          Extrapolation.CLAMP,
+        ),
       borderCurve: 'continuous' as const,
     };
   }, [hero, width, height]);
@@ -2269,7 +2695,10 @@ function SeriesReaderInstance({
     if (!zoomArmed.value) {
       return { transform: [{ translateX: 0 }, { translateY: 0 }, { scale: 1 }] };
     }
-    if (!zoomGeom || !hero) {
+    // Which destination this collapse is aimed at, latched at its first frame — see
+    // `zoomBoundOnScreen`. All three are the same shape, so nothing below needs a second path.
+    const geom = pickZoomGeom(zoomBoundOnScreen.value, zoomGeomCover, zoomGeomOffCover, zoomGeomPage);
+    if (!geom || !hero) {
       // No source rect (deep link, web): no mask, no alignment — just the small centred zoom.
       // Same three transform entries as every other branch: reanimated wants one stable style
       // shape per view, and this branch and the unarmed one above can both run for one instance.
@@ -2281,33 +2710,37 @@ function SeriesReaderInstance({
         ],
       };
     }
-    const maskLeft = (hero.x + heroShiftX.value) * (1 - q);
-    const maskTop = (hero.y + heroShiftY.value) * (1 - q);
+    const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, width, height);
     // Scale: normally the base content scale modulated by the drag's shrink. Once the finger has
     // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
     // released at, down to the collapsed scale, biased by the release velocity.
-    const scale = zoomGeom.s + (1 - zoomGeom.s) * q;
+    const scale = geom.s + (1 - geom.s) * q;
     // The vertical alignment is corrected for how far the details have SCROLLED since the bound was
     // measured (see zoomBoundShift). Moving the destination anchor UP by `shift` moves the
     // translation that lands it on the card DOWN by `s * shift` — the anchor is scaled before it is
     // translated, so the correction is scaled too. Nothing else in here changes: `s` is a ratio of
     // sizes, and the mask travels between the card and the screen, neither of which scrolls.
-    const shift = zoomBoundShift(zoomGeom, detailsScrollOffset.value);
-    // NOTE the compensation uses the UNDRAGGED mask origin. The mask sits at `maskLeft + dragX`
-    // and the page at `T - maskLeft` inside it, which puts the page at `T + dragX` in window
-    // space: mask and content displaced by exactly the same amount, so the window keeps framing
-    // the same part of the page however far it is dragged.
+    const shift = zoomBoundShift(geom, detailsScrollOffset.value);
+    // NOTE the compensation uses the UNDRAGGED mask origin. The mask sits at `box + drag` and the
+    // page at `target - box` inside it, which puts the page at `target + drag` in window space:
+    // mask and content displaced by exactly the same amount, so the window keeps framing the same
+    // part of the page however far it is dragged.
+    //
+    // The homing is NOT in here. It is the mask's alone (`zoomDetach`), because the page is the
+    // mask's child and compensating for the mask's origin is what keeps the two locked together —
+    // put `home` on this target instead and the page slides out from under its own window, which
+    // clips whatever it is meant to be framing.
     return {
       transform: [
         // heroShift is added to the page's own target as well as the mask's origin. The mask offset
         // cancels out of the page's absolute position, so shifting only the mask moves the window
         // without moving what's behind it.
-        { translateX: (zoomGeom.tx + heroShiftX.value) * (1 - q) - maskLeft },
-        { translateY: (zoomGeom.ty + zoomGeom.s * shift + heroShiftY.value) * (1 - q) - maskTop },
+        { translateX: (geom.tx + heroShiftX.value) * (1 - q) - box.left },
+        { translateY: (geom.ty + geom.s * shift + heroShiftY.value) * (1 - q) - box.top },
         { scale },
       ],
     };
-  }, [zoomGeom, hero]);
+  }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero]);
 
   // The two halves of the cross-fade. The page's own opacity is separated from its transform so
   // the thumbnail copy can ride that same transform (it is a sibling INSIDE the transformed page,
@@ -2337,7 +2770,10 @@ function SeriesReaderInstance({
   // fit-width gates the morph off — the page doesn't render at the contain rect there.
   const copyMorphs = !!sequence && settings.pageFit === 'fit-page';
   const zoomThumbStyle = useAnimatedStyle(() => {
-    const base = zoomGeom?.thumb ?? { x: 0, y: 0, width: 0, height: 0 };
+    // Which destination this collapse is aimed at, latched at its first frame — see
+    // `zoomBoundOnScreen`. All three are the same shape, so nothing below needs a second path.
+    const geom = pickZoomGeom(zoomBoundOnScreen.value, zoomGeomCover, zoomGeomOffCover, zoomGeomPage);
+    const base = geom?.thumb ?? { x: 0, y: 0, width: 0, height: 0 };
     if (!zoomArmed.value) {
       // Same style SHAPE as the branch below — reanimated wants one per view, and both can run for
       // one instance.
@@ -2352,14 +2788,16 @@ function SeriesReaderInstance({
       };
     }
     const q = Math.max(0, zoom.value);
-    const range = zoomClosing.value ? ZOOM_THUMB_FADE_CLOSE : ZOOM_THUMB_FADE_OPEN;
+    const closing = geom?.kind === 'cover-offscreen' ? ZOOM_THUMB_FADE_CLOSE_OFFCOVER : ZOOM_THUMB_FADE_CLOSE;
+    const range = zoomClosing.value ? closing : ZOOM_THUMB_FADE_OPEN;
     // The copy has to READ as the thumbnail it came off, corner included — 10pt on a grid card, 6
     // on a History/Activity row (see ZoomOrigin). This
     // rect rides the page's transform, so divide that scale out to hold the on-screen radius
     // steady rather than letting it grow with the page. (The library gets this for free: it moves
     // the real source view, which simply keeps its own radius under the tracked scale.)
-    const s = zoomGeom ? zoomGeom.s + (1 - zoomGeom.s) * q : 1;
+    const s = geom ? geom.s + (1 - geom.s) * q : 1;
     let rect = base;
+
     const ia = zoomThumbAspect.value;
     if (copyMorphs && ia > 0) {
       // The image's fit-page rect (contain, centred) — in PAGE coordinates, which for a
@@ -2381,16 +2819,27 @@ function SeriesReaderInstance({
       top: rect.y,
       width: rect.width,
       height: rect.height,
-      opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP),
+      // The bias applies HERE and nowhere else: the copy keeps tracking the real collapse in size
+      // and position (it is still riding a page that is genuinely shrinking), it just doesn't claim
+      // to be arriving anywhere. Rewinding `q` for the fade alone is what says that. See
+      // `zoomThumbBias` — 1 for every gesture but a reversed reader dismiss, so this is the
+      // identity everywhere else.
+      opacity: interpolate(1 - (1 - q) * zoomThumbBias.value, range, [1, 0], Extrapolation.CLAMP),
       borderRadius: (hero ? hero.radius : 0) / Math.max(s, 0.01),
-      // The copy is laid out ON the destination bound, so it takes the scroll correction as a plain
-      // layout offset — this is INSIDE the page, in the same coordinates the bound was measured in,
-      // where "the cover moved up by `shift`" is exactly `-shift`. Its counterpart in zoomPageStyle
-      // carries the same shift in the other direction, which is what keeps the copy landing on the
-      // card at q = 0 and on the real cover at q = 1.
-      transform: [{ translateY: -zoomBoundShift(zoomGeom, detailsScrollOffset.value) }],
+      // The SCROLL CORRECTION, which only `cover` ever has (`zoomBoundShift` returns 0 for the
+      // others). The copy is laid out on the destination bound, so this is INSIDE the page, in the
+      // same coordinates the bound was measured in, where "the cover moved up by `shift`" is
+      // exactly `-shift`. Its counterpart in zoomPageStyle carries the same shift the other way,
+      // which is what keeps the copy landing on the card at q = 0 and on the real cover at q = 1.
+      //
+      // Nothing else moves the copy. `cover-offscreen` used to slide in along its own path from
+      // behind the mask edge, on the theory that a picture with nowhere real to start should arrive
+      // rather than appear; at any timing that was still legible it read as a second animation
+      // riding the collapse. Waiting until the window is cover-card sized (see
+      // ZOOM_THUMB_FADE_CLOSE_OFFCOVER) settles it without moving anything.
+      transform: [{ translateY: -zoomBoundShift(geom, detailsScrollOffset.value) }],
     };
-  }, [zoomGeom, hero, copyMorphs, width, height]);
+  }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, copyMorphs, width, height]);
   // What the flying copy DRAWS. A series open flies the series cover (the route's `cover` param is
   // the tapped card's own URL). A SEQUENCE open grew out of a page TILE, so the copy is that
   // page's image — the MOUNT entry's URI (already latched in sequenceTarget), which is the very

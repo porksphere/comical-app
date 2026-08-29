@@ -1,9 +1,9 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
-import type { ReactElement, RefObject } from 'react';
+import type { ComponentProps, ReactElement, RefObject } from 'react';
 import { Platform, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
-import Animated, { type SharedValue } from 'react-native-reanimated';
+import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 import { ZoomSurfaceContext, useZoomSurfaceKey } from '@/lib/series-zoom';
@@ -33,6 +33,7 @@ export function RecyclerList<T>({
   recycleItems = true,
   drawDistance,
   listRef,
+  scrollRef,
   header,
   footer,
   paddingTop,
@@ -78,6 +79,10 @@ export function RecyclerList<T>({
    *  cover images. */
   drawDistance?: number;
   listRef?: RefObject<LegendListRef | null>;
+  /** The underlying ScrollView, for a caller that has to move it on the UI thread — `useSlidingBar`'s
+   *  settle scrolls the content in lockstep with the bar (Reanimated's `scrollTo` needs the scroller
+   *  itself, not LegendList's JS-side `scrollToOffset`). */
+  scrollRef?: AnimatedRef<Animated.ScrollView>;
   header?: ReactElement | null;
   footer?: ReactElement | null;
   /** Space above the first row — typically the top bar's resting height (content scrolls behind it). */
@@ -124,6 +129,11 @@ export function RecyclerList<T>({
   const list = (
       <AnimatedLegendList
         ref={listRef}
+        // AnimatedLegendList types this as a ref to ITS OWN AnimatedScrollView alias, which isn't
+        // structurally the same declaration as `Animated.ScrollView` even though it is the same
+        // component. One cast, at the one boundary, rather than leaking the alias upward through
+        // four components' prop types.
+        refScrollView={scrollRef as unknown as ComponentProps<typeof AnimatedLegendList>['refScrollView']}
         key={listKey}
         style={styles.list}
         data={data}

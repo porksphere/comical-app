@@ -114,11 +114,15 @@ Build the shell once; iterate the JS forever from the PC.
 > supported path; don't chase the offline one.
 
 **One-time (CI does the macOS part):**
-1. Run the **Build iOS dev-client** workflow (`build-ios-devclient.yml`, manual `workflow_dispatch`)
-   — it builds a Debug + `expo-dev-client` shell carrying the shared `com.porksphere.comical`
-   bundle id and publishes it to a rolling `ios-devclient` SideStore source.
-2. Add that source in SideStore/AltStore and install **Comical (dev)**. It sits next to the release
-   app. Rebuild only when *native* code changes (a native module, a config plugin, an SDK bump).
+1. `build-ios-devclient.yml` builds a Debug + `expo-dev-client` shell carrying the shared
+   `com.porksphere.comical` bundle id and publishes it to the rolling `ios-devclient` SideStore
+   source. It is **manual only** (`workflow_dispatch`) — run it when native code has changed since
+   the last one; pure JS/TS needs no rebuild at all. Dispatch from `main` where you can, so the run
+   writes the compiler cache the next one restores.
+2. Add that source in SideStore/AltStore and install **Comical (dev)**. It carries the production
+   bundle id, so it *replaces* whatever Comical is installed and inherits its data — which is the
+   point: you iterate against your real library. Reinstall from `ios-main`/`ios-release` to switch
+   back. Rebuild only when *native* code changes (a native module, a config plugin, an SDK bump).
 
 **Every day (all on Windows):**
 1. `bun run dev:device` on the PC → Metro on `http://<lan-ip>:8081`, prints a QR.
@@ -131,5 +135,6 @@ phone — press `j` in the `bun run dev:device` terminal. Only **Xcode Instrumen
 CPU/GPU/memory) still needs macOS. So Windows covers JS-thread profiling; the Mac is only for native.
 
 For a fully local setup on a Mac instead, `cd apps/mobile && bun run ios --device` builds and runs the
-same dev-client shell directly. See [DEVELOPMENT.md](DEVELOPMENT.md) for the build pipeline; the
-per-PR SideStore builds remain plain **Release** (installable for UI checks, no dev menu).
+same dev-client shell directly. To iterate against a PR's NATIVE code, dispatch this workflow on that
+branch. See [DEVELOPMENT.md](DEVELOPMENT.md) for the build pipeline; the per-PR `ios-pr` builds
+remain plain **Release** (installable for UI checks, no dev menu).

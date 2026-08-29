@@ -69,6 +69,13 @@ jobs:
         working-directory: apps/mobile
         run: bun run lint:testids
 
+      # Unlike the advisory check below, this one GATES: an unregistered route renders the
+      # navigator's default header over the screen's own TopBar, and nothing else in this pipeline
+      # can see it (it typechecks, lints, and renders).
+      - name: Check every screen is registered in the Stack
+        working-directory: apps/mobile
+        run: bun run check:route-headers
+
       - name: Check e2e flow coverage (advisory)
         working-directory: apps/mobile
         # Never fails the job -- see scripts/check-flow-coverage.mjs's header. `|| true` is a second

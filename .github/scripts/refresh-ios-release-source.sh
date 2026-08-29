@@ -42,8 +42,15 @@ while IFS= read -r rel; do
   name="$(jq -r '.name // empty' <<<"$meta")"
   version="${rel#v}"
   date="${createdAt%%T*}"
-  desc="${name:-Comical $rel}"
   dl="https://github.com/${REPO}/releases/download/${rel}/${IPA_NAME}"
+
+  # What SideStore/AltStore shows under the version: the CHANGELOG section for it, so the public
+  # channel says what CHANGED rather than restating its own title. CHANGELOG.md carries every
+  # version's section, so one read of the working tree annotates the whole back catalogue — no
+  # checkout per tag. Releases cut before the changelog existed have no section; those keep the
+  # release title, which is what this field used to be for all of them.
+  notes="$(bash .github/scripts/changelog-section.sh "$version" || true)"
+  desc="${notes:-${name:-Comical $rel}}"
 
   jq -n \
     --arg version "$version" \
@@ -69,6 +76,11 @@ fi
 # versions[0] as the headline installable version (by ARRAY ORDER), so the most
 # recently published tag installs with one tap; older tags stay selectable and
 # their permanent IPAs still download.
+#
+# The app's own update check reads this same array (data/use-app-update.ts): entries newer than the
+# running build are the "what's new" it offers, and the entry MATCHING the running build is how
+# Settings can show what the installed version brought. That second use is why the full history
+# stays here even though only versions[0] is installable-with-one-tap.
 VERSIONS="$(jq -s '
   sort_by(.createdAt) | reverse
   | map({version, date, localizedDescription, downloadURL, size})

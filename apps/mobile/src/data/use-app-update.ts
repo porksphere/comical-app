@@ -35,7 +35,17 @@ import { AppState } from 'react-native';
 import { showToast } from '@/components/toast';
 import { queryKeys } from '@/data/queries';
 import { queryClient } from '@/data/query-client';
+import {
+  type ChannelRead,
+  type ChannelVersionJson,
+  type IosSourceJson,
+  type ReleaseNote,
+  readChannelVersion,
+  readIosSource,
+} from '@/data/release-notes';
 import { APP_VERSION, BUILD_CHANNEL, BUILD_COMMIT, WEB_BASE_URL } from '@/lib/build-info';
+
+export { compareVersions, type ReleaseNote } from '@/data/release-notes';
 
 export type AppUpdateStatus = 'checking' | 'up-to-date' | 'update-available' | 'unsupported' | 'error';
 
@@ -47,6 +57,14 @@ export type AppUpdateCheck = {
   /** Where the Update button should send the user. Undefined on web-pages — that row's action is
    *  `window.location.reload()`, not a URL. */
   downloadUrl?: string;
+  /** Versions newer than the running build, newest first — what "What's new" offers. Only
+   *  ios-release can hold more than one: its source lists every tag, while the rolling channels
+   *  keep a single current build. */
+  pending?: ReleaseNote[];
+  /** The RUNNING build's own entry, when its channel still lists it. This is the "what did the
+   *  version I'm on bring" half, and it is why the check is worth running on an up-to-date app at
+   *  all — on the rolling channels it is present exactly when there's no update. */
+  running?: ReleaseNote;
 };
 
 const IOS_RELEASE_APPS_JSON_URL = 'https://github.com/porksphere/comical-app/releases/download/ios-release/apps.json';
@@ -85,53 +103,40 @@ function isSupportedChannel(channel: string): boolean {
   return SUPPORTED_CHANNELS.has(channel);
 }
 
-/** Numeric part-by-part compare of `MAJOR.MINOR.PATCH[.N]` strings (missing parts treated as 0),
- *  positive when `a` is newer than `b`. Not general semver — doesn't need to be: every version this
- *  compares is minted by CI as numeric parts only, never a pre-release suffix — a `vX.Y.Z` tag on
- *  ios-release, `X.Y.Z.<series build number>` on ios-main. The optional 4th part is why the shorter
- *  side's missing parts count as 0: that's what makes a tag and the main builds derived from it
- *  order correctly, though in practice the two never meet (each channel compares only against its
- *  own source). Most-significant-part-first is also what makes the counter safe to restart at .1
- *  on a release: the base moving up outranks the counter dropping, so 0.2.0.1 > 0.1.1.4287. */
-export function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
-  const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
-
 /** Both iOS channels publish the same AltStore/SideStore manifest shape, differing only in which
  *  Release hosts it and how the version string is minted — so one reader serves both, given its
- *  channel's source URL. `apps[0]`'s legacy top-level `version`/`downloadURL` (which both
- *  publishers emit alongside `versions[]`) is the headline build on either source. */
+ *  channel's source URL. */
 async function checkIosSource(url: string, signal?: AbortSignal): Promise<AppUpdateCheck> {
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`apps.json fetch failed: ${res.status}`);
-  const json = (await res.json()) as { apps?: { version?: string; downloadURL?: string }[] };
-  const latest = json.apps?.[0];
-  if (!latest?.version || !latest.downloadURL || compareVersions(latest.version, APP_VERSION) <= 0) {
-    return { status: 'up-to-date' };
-  }
-  return { status: 'update-available', latestVersionLabel: latest.version, downloadUrl: latest.downloadURL };
+  return toCheck(readIosSource((await res.json()) as IosSourceJson, APP_VERSION));
 }
 
 async function checkAndroidChannel(tag: string, signal?: AbortSignal): Promise<AppUpdateCheck> {
   const res = await fetch(androidVersionJsonUrl(tag), { signal });
   if (!res.ok) throw new Error(`version.json fetch failed: ${res.status}`);
-  const json = (await res.json()) as { commit?: string; version?: string };
-  if (!json.commit || !BUILD_COMMIT || json.commit === BUILD_COMMIT) return { status: 'up-to-date' };
-  return { status: 'update-available', latestVersionLabel: json.version, downloadUrl: androidApkUrl(tag) };
+  return toCheck(readChannelVersion((await res.json()) as ChannelVersionJson, BUILD_COMMIT, androidApkUrl(tag)));
 }
 
 async function checkWebPages(signal?: AbortSignal): Promise<AppUpdateCheck> {
   const res = await fetch(`${WEB_BASE_URL}/version.json`, { signal, cache: 'no-store' });
   if (!res.ok) throw new Error(`version.json fetch failed: ${res.status}`);
-  const json = (await res.json()) as { commit?: string };
-  if (!json.commit || !BUILD_COMMIT || json.commit === BUILD_COMMIT) return { status: 'up-to-date' };
-  return { status: 'update-available' }; // no downloadUrl — the row's action is a reload
+  // No downloadUrl — the row's action is a reload onto whatever the server is already serving.
+  return toCheck(readChannelVersion((await res.json()) as ChannelVersionJson, BUILD_COMMIT));
+}
+
+/** The one place a manifest read becomes a status. `pending` is dropped when it's empty so the
+ *  cached object stays the shape the UI checks (`update.pending ?? []`) rather than carrying an
+ *  array that means the same as absent. */
+function toCheck(read: ChannelRead): AppUpdateCheck {
+  if (!read.newer) return { status: 'up-to-date', running: read.running };
+  return {
+    status: 'update-available',
+    latestVersionLabel: read.latestVersionLabel,
+    downloadUrl: read.downloadUrl,
+    pending: read.pending.length ? read.pending : undefined,
+    running: read.running,
+  };
 }
 
 async function fetchAppUpdateCheck(signal?: AbortSignal): Promise<AppUpdateCheck> {
