@@ -167,7 +167,7 @@ jobs:
         env:
           FULL: ${{ steps.ver.outputs.full }}
           BUILT_AT: ${{ steps.ver.outputs.built_at }}
-        env:
+          # rolling-changelog.sh asks the API for the channel's previous build marker.
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
