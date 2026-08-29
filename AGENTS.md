@@ -215,11 +215,16 @@ size change saved for the release. The floor is a `zoom` value derived per card
 (`zoomDragFloorFor`), not a constant: the same progress is a different window for a different source
 rect, and a card already wider than the floor gets none.
 
-**The follow stiffens at that same knee** (`zoomDragPastFloor`), or the floor buys stillness in size
-and hands it straight back in position — a page that stops shrinking and then slides anywhere you
-like at 80% reads as dragging a card around, not dismissing a screen. Past the knee the page gains
-about a thumb's width however far you swipe. The band is C¹ there, so nothing changes pace at the
-moment the shrink floors.
+**The follow is a SPRING, resisting from the first pixel** (`zoomDragFollow`) — otherwise the floor
+buys stillness in size and hands it straight back in position, and a page that stops shrinking then
+slides anywhere you like at 80% reads as dragging a card around, not dismissing a screen. It
+asymptotes at the floor's own travel, so the page runs out of room exactly where the size does.
+
+It was a piecewise band first — free to the floor, rubber-banded after — and that read as binary
+even though it was C¹ at the knee. **Continuity of speed is not continuity of feel**: the same total
+travel packed all its curvature into the ~20pt after the knee, so the page went from weightless to
+stuck within a thumb's width (worst stiffening over any 20pt: 0.70, against 0.14 for the
+exponential). Spreading the change across the whole drag is what makes it read as weight.
 
 **A release decision reads the FINGER, never the follow.** They were the same number until the
 resistance existed; afterwards the follow tops out well below `DISMISS_COMMIT_FRACTION` of the span,
