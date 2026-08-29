@@ -85,12 +85,16 @@ export default function WhatsNewScreen() {
           </SettingsSection>
         )}
 
+        {/* Untitled, and that's the point: you got here by tapping the version, so a heading
+            restating "Installed" over its own notes is a label for something already named by the
+            row that opened the screen. The pending block above keeps its heading because it names
+            something you do NOT have. */}
         {update.running ? (
-          <SettingsSection title="Installed">
+          <SettingsSection>
             <ReleaseNoteCard note={update.running} />
           </SettingsSection>
         ) : (
-          <SettingsSection title="Installed">
+          <SettingsSection>
             <SettingsRow
               label={`Version ${APP_VERSION}`}
               // Three different reasons land here and none is an error worth a warning colour: a

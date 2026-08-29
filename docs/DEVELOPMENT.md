@@ -148,8 +148,8 @@ channel's own Release body carries). Between them they fill:
 | `android-release` / `android-latest` — `version.json` `notes` + the Release body | tag section / rolling |
 | gh-pages `version.json` `notes` | `rolling-changelog.sh web-pages` |
 
-The app reads the SAME artifacts its update check already fetches, so Settings → About → **What's
-new** shows both the update's changes and the running build's with no second request — see
+The app reads the SAME artifacts its update check already fetches, so Settings → About → the
+**Version** row shows both the update's changes and the running build's with no second request — see
 `src/data/release-notes.ts`. That is why the iOS source lists the full history rather than only the
 installable head: an install that skipped three releases gets all three.
 

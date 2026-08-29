@@ -2,12 +2,12 @@
 # aria-label quirk (see ../README.md):
 #   - tab bar: "Settings", not tab.settings (same as smoke.yaml).
 #   - settings.category.about sets accessibilityLabel={title} — select by the row's title, "About".
-#   - about.whatsNew is a SettingsRow, so it sets accessibilityLabel={label} — select by "What's
-#     new". Unlike about.share that label is NOT platform-split, so both copies say the same thing.
+#   - about.version is a SettingsRow, so it sets accessibilityLabel={label} — select by "Version".
+#     That label is not platform-split, so both copies name the same row.
 #   - top-bar.back sets accessibilityLabel="Go back" — same as every other flow using it.
 #
-# The screen's own assertions use `text:` on both copies already: the title is a TopBar heading and
-# "Installed" a section heading, neither of which carries accessibility metadata for `id:` to match.
+# The screen's own assertions use `text:` on both copies already: the TopBar title and the empty
+# state are plain ThemedTexts, with no accessibility metadata for `id:` to match.
 url: http://localhost:4000/comical-app
 ---
 - launchApp
@@ -26,17 +26,17 @@ url: http://localhost:4000/comical-app
     id: "About"
 
 - assertVisible:
-    id: "What's new"
+    id: "Version"
 - tapOn:
-    id: "What's new"
+    id: "Version"
 
 - assertVisible:
     text: "What's new"
 - takeScreenshot: whats-new
 - assertVisible:
-    text: "Installed"
+    text: "This build has no update channel to read notes from."
 
 - tapOn:
     id: "Go back"
 - assertVisible:
-    id: "What's new"
+    id: "Version"

@@ -15,8 +15,9 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { openBrowserAsync } from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, Share, StyleSheet } from 'react-native';
+import { Platform, ScrollView, Share, StyleSheet, View } from 'react-native';
 
+import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { UpdateDot } from '@/components/tab-badge';
 import { ThemedText } from '@/components/themed-text';
@@ -161,9 +162,21 @@ export default function AboutScreen() {
           <SettingsSection key={title} title={title}>
             {rows
               .filter(([, value]) => value)
-              .map(([label, value]) => (
-                <SettingsRow key={label} label={label} right={<InfoValue value={value} />} />
-              ))}
+              .map(([label, value]) =>
+                // Version is the only row here that leads anywhere: the notes belong to a version,
+                // so the version is what you tap to read them. Every other row is a fact.
+                label === 'Version' ? (
+                  <SettingsRow
+                    key={label}
+                    testID="about.version"
+                    label={label}
+                    right={<InfoValueLink value={value} />}
+                    onPress={() => router.push('/settings-whats-new')}
+                  />
+                ) : (
+                  <SettingsRow key={label} label={label} right={<InfoValue value={value} />} />
+                ),
+              )}
             {title === 'Build' && appUpdate.status !== 'unsupported' && (
               <SettingsRow
                 key="check-for-updates"
@@ -187,26 +200,6 @@ export default function AboutScreen() {
                   ) : undefined
                 }
                 onPress={appUpdate.status === 'update-available' ? handleUpdatePress : undefined}
-              />
-            )}
-            {/* Alongside the row above, not folded into it: that one ACTS (it hands you the
-                download), this one READS. Shown when up to date too — "what did the version I'm on
-                bring" is the half of this that has no other home.
-
-                Unlike "Check for updates" it is NOT gated on a supported channel. There is nothing
-                to check on a dev build, but there is something to say, and the screen says it; the
-                alternative is a feature that no e2e run and no developer ever sees. */}
-            {title === 'Build' && (
-              <SettingsRow
-                key="whats-new"
-                testID="about.whatsNew"
-                label="What's new"
-                description={
-                  appUpdate.status === 'update-available'
-                    ? 'Changes in the update, and in this build'
-                    : 'Changes in this build'
-                }
-                onPress={() => router.push('/settings-whats-new')}
               />
             )}
           </SettingsSection>
@@ -243,6 +236,23 @@ function InfoValue({ value }: { value: string }) {
   );
 }
 
+/** The same value with the chevron a pressable row would have grown on its own. `SettingsRow`
+ *  suppresses that chevron whenever `right` is occupied (so a Switch doesn't also get one), so a row
+ *  that shows a value AND leads somewhere has to put both there itself — otherwise the one row on
+ *  this screen you can tap looks exactly like the eight you can't. Not `selectable`: a row whose
+ *  press opens a screen shouldn't also start a text selection under the finger. */
+function InfoValueLink({ value }: { value: string }) {
+  const theme = useTheme();
+  return (
+    <View style={styles.valueLink}>
+      <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.value}>
+        {value}
+      </ThemedText>
+      <ChevronRightIcon color={theme.textSecondary} size={18} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -253,6 +263,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     gap: Spacing.five,
   },
+  valueLink: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flexShrink: 1 },
   value: {
     flexShrink: 1,
     textAlign: 'right',

@@ -238,8 +238,9 @@ race and leaves the page wrong. Where press-in and the navigation live in differ
 
 # Release notes ride the update check's own fetch
 
-Settings → About → **What's new** (`app/settings-whats-new.tsx`) shows two things: the changes in
-the update on offer, and the changes in the build already installed. Both come out of the manifest
+Settings → About → tap the **Version** row (`app/settings-whats-new.tsx`) — the notes belong to a
+version, so the version is what opens them. The screen shows two things: the changes in the update
+on offer, and the changes in the build already installed. Both come out of the manifest
 `useAppUpdateCheck` already fetches — `versions[].localizedDescription` in the iOS SideStore
 sources, `notes` in the Android/web `version.json` — so there is no second request and no way for
 the screen to disagree with the row that sent you there. Adding a surface means teaching a

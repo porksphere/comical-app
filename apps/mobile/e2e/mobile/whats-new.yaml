@@ -1,11 +1,11 @@
-# What's new — the release notes screen reached from About (settings-whats-new.tsx).
+# What's new — the release notes screen, reached by tapping the Version row on About
+# (settings-whats-new.tsx). The version is the entry point because the notes belong to a version.
 #
-# Its two halves come from the update check's own fetch, and an e2e build's channel ("*-e2e" /
-# local-dev) is `unsupported` — no network call, no notes. So this covers the SHAPE: the row is
-# reachable from About on every channel (deliberately not gated on a supported one — see the
-# comment on the row), the screen renders, and it says why it's empty rather than showing a blank.
-# The populated case can only exist on a published build; there is nothing to fake here without
-# stubbing the transport, which no other flow does either.
+# Its two halves come from the update check's own fetch, and an e2e build's channel ("*-e2e", and
+# local-dev when run by hand) is `unsupported` — no network call, no notes. So this covers the
+# SHAPE: the version row leads somewhere, the screen renders, and it says why it's empty rather than
+# showing a blank. The populated case can only exist on a published build; there is nothing to fake
+# here without stubbing the transport, which no other flow does either.
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -23,20 +23,22 @@ appId: com.porksphere.comical
 - tapOn:
     id: "settings.category.about"
 
-# Sits in the Build section, above the three info sections About ends with, so it's on screen
-# without scrolling — unlike about.share, which the walkthrough has to scroll to.
+# First row of the first section, so it's on screen without scrolling — unlike about.share, which
+# the walkthrough has to scroll to.
 - assertVisible:
-    id: "about.whatsNew"
+    id: "about.version"
 - tapOn:
-    id: "about.whatsNew"
+    id: "about.version"
 
+# The TopBar title is a plain ThemedText with no testID, so `text:` rather than `id:`.
 - assertVisible:
     text: "What's new"
 - takeScreenshot: whats-new
+# The empty state, which is what every build this flow can run on will show.
 - assertVisible:
-    text: "Installed"
+    text: "This build has no update channel to read notes from."
 
 - tapOn:
     id: "top-bar.back"
 - assertVisible:
-    id: "about.whatsNew"
+    id: "about.version"
