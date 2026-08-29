@@ -13,6 +13,12 @@ what the app shows under Settings → About → What's new. Keep the `## X.Y.Z �
 the extractor matches on the version field, and a section it can't find silently degrades to the
 release's title.
 
+## 0.2.2 — 2026-08-29
+
+- Swipe the page away when its cover has scrolled off, and build a dev-client per PR (#133) (42d643af)
+- Coarsen the halftone screen on the icon's pages (#134) (3aeb8fc6)
+- Update README.md (2313266a)
+
 ## 0.2.1 — 2026-08-26
 
 - Add README screenshots and demo capture workflow (#131) (80e6deec)
