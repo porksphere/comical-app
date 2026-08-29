@@ -330,28 +330,6 @@ const ZOOM_CROSS_AXIS_DRAG_RESISTANCE = 0.05;
  * is the number to lower, and it trades directly against the length of the release.
  */
 const ZOOM_DRAG_TRAVEL = 1.25;
-/**
- * How small the WINDOW may get while the finger is still down, as a fraction of the screen. Below
- * this the drag simply stops shrinking it; the rest of the collapse is the release's.
- *
- * The window is what reads as "the page" during a dismissal — the page's own scale barely moves on
- * a `cover` collapse (s ≈ 0.7, since the cover only has to become the card) and the mask does
- * almost all of the visible shrinking. Letting a drag carry that from full screen to a cover card
- * means the thing under your thumb has become a thumbnail before you have decided to let go, which
- * is a lot of animation spent on a gesture you might still cancel.
- *
- * `ZOOM_DRAG_TRAVEL` already reserves a third of the collapse for the release by making the drag's
- * travel longer than the screen; this reserves it by SIZE instead, which is the half a user can
- * see. The two compose — whichever binds first wins — and at 0.8 this one binds almost immediately:
- * a grid card's floor is `zoom` 0.72, which an ordinary swipe passes in its first third. What is
- * left under the finger is mostly the FOLLOW — the page slides with the thumb and only hints at
- * shrinking — with the whole of the size change saved for the release.
- *
- * Expressed as a size rather than a progress because progress means different things per
- * destination: the same `zoom` is a different window on a `cover` collapse than on a `page` one.
- * `zoomDragFloorFor` converts it.
- */
-const ZOOM_DRAG_MIN_WINDOW = 0.8;
 // The collapse carries on at the speed the finger was moving — but only up to a point, and this cap
 // is not cosmetic.
 //
@@ -660,7 +638,8 @@ function zoomDetach(start: number, size: number, home: number, span: number): nu
 /**
  * The follow's two knobs, and they are independent on purpose.
  *
- * `REACH` is where it asymptotes, in multiples of the floor's travel — how far the page can ever
+ * `REACH` is where it asymptotes, as a fraction of the drag's own travel — how far the page can
+ * ever get, and (since the resisted distance is what drives `zoom`) how small the window can ever
  * get. `GRIP` is its rate at the FIRST pixel — how much of your thumb it takes before it has
  * travelled anywhere at all.
  *
@@ -672,8 +651,15 @@ function zoomDetach(start: number, size: number, home: number, span: number): nu
  * across the first 350pt, where 1.0/1.6 went 1.00 → 0.38 → 0.15 over the same distance and did
  * three quarters of that in the first third of it. Worst stiffening over any 20pt: 0.05, against
  * 0.16.
+ *
+ * The shrink is not clamped anywhere: `zoom` is `1 - held/travel`, so the SAME resistance that
+ * slows the page down slows the window down, and the two cannot disagree about when to stop. That
+ * also makes "a drag can never finish the collapse" arithmetic rather than a guard — `held` is
+ * asymptotic to `REACH · travel`, so `zoom > 1 - REACH` for any drag, however long. 0.53 is the
+ * reach the old explicit floor implied on a grid card, kept to the point so the follow feels
+ * exactly as it did; only what limits the shrink has changed.
  */
-const ZOOM_DRAG_FOLLOW_REACH = 1.9;
+const ZOOM_DRAG_FOLLOW_REACH = 0.53;
 const ZOOM_DRAG_FOLLOW_GRIP = 0.6;
 
 /**
@@ -706,22 +692,6 @@ function zoomDragFollow(distance: number, reach: number, grip: number): number {
   const d = Math.abs(distance);
   const held = (reach * d) / (reach / grip + d);
   return distance < 0 ? -held : held;
-}
-
-/**
- * The `zoom` at which the window is `ZOOM_DRAG_MIN_WINDOW` of the screen — the floor a drag clamps
- * to. Inverts `zoomMaskBox`'s width term, which is the one the eye actually measures; the height
- * follows it, since both interpolate on the same `q`.
- *
- * 0 when there is no source rect to shrink toward (a deep link opens with no card), which leaves
- * the drag exactly as it was — the clamp can only ever remove travel, never add any.
- */
-function zoomDragFloorFor(hero: ZoomOrigin | null, width: number): number {
-  'worklet';
-  if (!hero || width <= 0) return 0;
-  const span = width - hero.width;
-  if (span <= 0) return 0;
-  return Math.min(1, Math.max(0, (ZOOM_DRAG_MIN_WINDOW * width - hero.width) / span));
 }
 
 /** `resolveZoomCrossAxisDragTranslation` — the off-axis, which follows loosely and never leads. */
@@ -1661,10 +1631,6 @@ function SeriesReaderInstance({
   /** See `zoomHoming`. Every path that drives `zoom` sets this first — there is no default that is
    *  right for all of them, and a stale one is a page that converges on the wrong thing. */
   const homeAt = useSharedValue(0);
-  /** How far a DRAG may take `zoom` down — see `ZOOM_DRAG_MIN_WINDOW`. Written from the geometry
-   *  once the source rect is known, and read by both drag worklets; it is a shared value rather than
-   *  a closed-over number because the reader's pan is built above where `hero` is resolved. */
-  const zoomDragFloor = useSharedValue(0);
   const edgeCommitting = useSharedValue(false);
 
   /**
@@ -1760,17 +1726,15 @@ function SeriesReaderInstance({
           zoomClosing.set(true);
           homeAt.set(-1);
           const travel = dismissSpan * ZOOM_DRAG_TRAVEL;
-          const reach = Math.hypot(e.translationX, e.translationY);
-          zoom.set(Math.max(zoomDragFloor.value, 1 - Math.min(1, reach / travel)));
+          const pull = Math.hypot(e.translationX, e.translationY);
+          // ONE resisted distance drives both the size and the position, so the spring is the only
+          // thing limiting either and they cannot stop at different moments.
+          const held = zoomDragFollow(pull, ZOOM_DRAG_FOLLOW_REACH * travel, ZOOM_DRAG_FOLLOW_GRIP);
+          zoom.set(1 - Math.min(1, held / travel));
           // Scaling the vector by the resisted/raw ratio, rather than resisting each axis, keeps
           // the page moving along the finger's own direction — this gesture has no primary axis to
           // resist along.
-          const held = zoomDragFollow(
-            reach,
-            ZOOM_DRAG_FOLLOW_REACH * (1 - zoomDragFloor.value) * travel,
-            ZOOM_DRAG_FOLLOW_GRIP,
-          );
-          const hold = reach > 0 ? held / reach : 0;
+          const hold = pull > 0 ? held / pull : 0;
           dragX.set(e.translationX * hold);
           dragY.set(e.translationY * hold);
         })
@@ -1861,7 +1825,6 @@ function SeriesReaderInstance({
     collapseEnabled,
     width,
     height,
-    zoomDragFloor,
     headerSpan,
     gestureMode,
     progressStartSV,
@@ -2306,15 +2269,10 @@ function SeriesReaderInstance({
         // The page slid left, and the mask, cover and flying copy went with it: the whole dismissal
         // playing out on the wrong side of the screen, aimed at a card it was never going to reach.
         const forward = Math.max(0, tx);
-        zoom.set(Math.max(zoomDragFloor.value, 1 - Math.min(1, forward / travel)));
-        // The spring is on the forward axis, the one that drives `zoom` here, so the follow runs
-        // out of room where the shrink does.
-        dragX.set(
-          zoomHorizontalDrag(
-            zoomDragFollow(forward, ZOOM_DRAG_FOLLOW_REACH * (1 - zoomDragFloor.value) * travel, ZOOM_DRAG_FOLLOW_GRIP),
-            width,
-          ),
-        );
+        // ONE resisted distance drives both the size and the position — see the reader's copy.
+        const held = zoomDragFollow(forward, ZOOM_DRAG_FOLLOW_REACH * travel, ZOOM_DRAG_FOLLOW_GRIP);
+        zoom.set(1 - Math.min(1, held / travel));
+        dragX.set(zoomHorizontalDrag(held, width));
         // The cross axis rides the forward one rather than being read on its own: with no forward
         // travel there is no dismissal to drift, and a page sliding purely up or down is the same
         // wrong-direction artifact one axis over. It never led anyway — this is the loosest thing
@@ -2383,7 +2341,6 @@ function SeriesReaderInstance({
     dragX,
     dragY,
     edgeCommitting,
-    zoomDragFloor,
     detailsActiveSV,
     homeAt,
     zoom,
@@ -2545,9 +2502,6 @@ function SeriesReaderInstance({
    * guard by other means, and a choice read live off the scroll would break it several times a
    * second.
    */
-  useEffect(() => {
-    zoomDragFloor.set(zoomDragFloorFor(hero, width));
-  }, [hero, width, zoomDragFloor]);
   const zoomBoundOnScreen = useSharedValue(true);
   /** The scroll offset at which the cover is half off the top — past it, it stops being a place
    *  worth flying to and only its size is still worth keeping. Plain JS: the bound and the inset are
