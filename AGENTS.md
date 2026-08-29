@@ -215,6 +215,18 @@ size change saved for the release. The floor is a `zoom` value derived per card
 (`zoomDragFloorFor`), not a constant: the same progress is a different window for a different source
 rect, and a card already wider than the floor gets none.
 
+**The follow stiffens at that same knee** (`zoomDragPastFloor`), or the floor buys stillness in size
+and hands it straight back in position — a page that stops shrinking and then slides anywhere you
+like at 80% reads as dragging a card around, not dismissing a screen. Past the knee the page gains
+about a thumb's width however far you swipe. The band is C¹ there, so nothing changes pace at the
+moment the shrink floors.
+
+**A release decision reads the FINGER, never the follow.** They were the same number until the
+resistance existed; afterwards the follow tops out well below `DISMISS_COMMIT_FRACTION` of the span,
+so judging by it makes a deliberate slow swipe impossible to commit and leaves only a flick's
+velocity able to dismiss at all. What the user swiped is the question; how far the page was allowed
+to move in reply is not.
+
 **Both the drag and the homing ride the MASK ALONE** (`zoomDetach`), never the page's target. The
 page is the mask's child and cancels the mask's own origin out of its transform, so an offset on the
 mask carries the window, the page, the flying copy and the cover together and leaves every relation

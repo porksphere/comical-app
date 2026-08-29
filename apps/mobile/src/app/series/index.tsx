@@ -658,6 +658,42 @@ function zoomDetach(start: number, size: number, home: number, span: number): nu
 }
 
 /**
+ * How much further the page may travel once the shrink has floored, as a fraction of the drag's
+ * span. Past that point the finger keeps moving and the page essentially doesn't.
+ *
+ * Without this the floor bought stillness in SIZE and gave it all back in POSITION: the window
+ * stopped shrinking at 80% and then the page slid wherever you liked at that size, which reads as
+ * dragging a card around rather than dismissing a screen — and it made the drag look like it was
+ * doing nothing, since size was the only thing still changing and it had stopped.
+ *
+ * A rubber band rather than a hard stop, and one that is C¹ at the knee: its derivative there is
+ * exactly 1, so the page does not visibly change speed at the moment the shrink floors. It just
+ * runs out of room within about a thumb's width, which is what makes the limit legible as
+ * resistance instead of as a bug.
+ */
+const ZOOM_DRAG_PAST_FLOOR_GIVE = 0.06;
+
+/**
+ * The follow, resisted past `knee` — the travel at which the shrink hit `ZOOM_DRAG_MIN_WINDOW`.
+ *
+ * Deliberately applied to the drag's INPUT, in the same units as the thing that drives `zoom`
+ * (hypot for the reader's 2D dismiss, tx for the back-swipe), so the two cannot disagree about
+ * where the knee is. The existing per-axis resistance then runs on top as before.
+ *
+ * The gesture's own `e.translation*` is untouched, which is what keeps the RELEASE honest: the
+ * commit decision reads raw finger travel, so a long swipe still dismisses even though the page
+ * stopped moving a hundred points ago.
+ */
+function zoomDragPastFloor(translation: number, knee: number, give: number): number {
+  'worklet';
+  const t = Math.abs(translation);
+  if (give <= 0 || t <= knee) return translation;
+  const over = t - knee;
+  const held = knee + give * (1 - 1 / (1 + over / give));
+  return translation < 0 ? -held : held;
+}
+
+/**
  * The `zoom` at which the window is `ZOOM_DRAG_MIN_WINDOW` of the screen — the floor a drag clamps
  * to. Inverts `zoomMaskBox`'s width term, which is the one the eye actually measures; the height
  * follows it, since both interpolate on the same `q`.
@@ -1703,19 +1739,24 @@ function SeriesReaderInstance({
             progress.set(Math.min(1, Math.max(0, progressStartSV.value + -cross / span)));
             return;
           }
-          // The follow: both axes, unclamped — feeding the collapse instead of a fling. Distance
-          // in ANY direction drives it, since unlike the back-swipe this gesture has no single
-          // axis to measure along.
+          // The follow: both axes, feeding the collapse instead of a fling. Distance in ANY
+          // direction drives it, since unlike the back-swipe this gesture has no single axis to
+          // measure along. Free until the shrink floors, and firmly resisted after.
           zoomClosing.set(true);
           homeAt.set(-1);
-          zoom.set(
-            Math.max(
-              zoomDragFloor.value,
-              1 - Math.min(1, Math.hypot(e.translationX, e.translationY) / (dismissSpan * ZOOM_DRAG_TRAVEL)),
-            ),
-          );
-          dragX.set(e.translationX);
-          dragY.set(e.translationY);
+          const travel = dismissSpan * ZOOM_DRAG_TRAVEL;
+          const reach = Math.hypot(e.translationX, e.translationY);
+          zoom.set(Math.max(zoomDragFloor.value, 1 - Math.min(1, reach / travel)));
+          // Past the floor the follow stiffens sharply (see zoomDragPastFloor). Scaling the vector
+          // by the resisted/raw ratio rather than resisting each axis keeps the page moving along
+          // the finger's own direction — this gesture has no primary axis to resist along.
+          // The KNEE is in this gesture's own span (paged dismisses along the height), but the GIVE
+          // is off the width in both modes: it is a thumb's width of remaining slack, and that is
+          // the same distance whichever way the reader happens to scroll.
+          const held = zoomDragPastFloor(reach, (1 - zoomDragFloor.value) * travel, width * ZOOM_DRAG_PAST_FLOOR_GIVE);
+          const hold = reach > 0 ? held / reach : 0;
+          dragX.set(e.translationX * hold);
+          dragY.set(e.translationY * hold);
         })
         .onEnd((e) => {
           trace('reader.collapse', 'END', {
@@ -1739,7 +1780,14 @@ function SeriesReaderInstance({
           }
           // The release decision — the shared projection (lib/gesture-release), judged along the
           // direction the page actually travelled, since this one can be thrown off either side.
-          const crossOffset = settings.mode === 'paged' ? dragY.value : dragX.value;
+          //
+          // The FINGER's travel, not `dragX/dragY`. Those were the same number until the follow
+          // gained its past-floor resistance, and reading them now would make the threshold
+          // unreachable: the follow tops out around 160px while DISMISS_COMMIT_FRACTION wants half
+          // the span (196px in webtoon, 426px in paged), so a deliberate slow swipe could never
+          // commit and only a flick's velocity would dismiss at all. What the user swiped is the
+          // question; how far the page was allowed to move in reply is not.
+          const crossOffset = settings.mode === 'paged' ? e.translationY : e.translationX;
           const crossVelocityRaw = settings.mode === 'paged' ? e.velocityY : e.velocityX;
           if (!releaseCommittedEitherWay(crossOffset, crossVelocityRaw, dismissSpan * DISMISS_COMMIT_FRACTION)) {
             zoomClosing.set(false);
@@ -2234,8 +2282,17 @@ function SeriesReaderInstance({
         const ty = e.translationY - originY.value;
         traceThrottled(updateGate, 60, tag, 'update', { tx, ty, zoom: zoom.value });
         trackBackSwipeShape(qualified, tx, ty, width * DISMISS_COMMIT_FRACTION);
-        zoom.set(Math.max(zoomDragFloor.value, 1 - Math.min(1, Math.max(0, tx / (width * ZOOM_DRAG_TRAVEL)))));
-        dragX.set(zoomHorizontalDrag(tx, width));
+        const travel = width * ZOOM_DRAG_TRAVEL;
+        zoom.set(Math.max(zoomDragFloor.value, 1 - Math.min(1, Math.max(0, tx / travel))));
+        // The knee is on tx, the axis that drives `zoom` here, so the follow stops giving at the
+        // same instant the shrink does. The cross axis is left alone — it never led, and it is
+        // already the loosest thing in the gesture.
+        dragX.set(
+          zoomHorizontalDrag(
+            zoomDragPastFloor(tx, (1 - zoomDragFloor.value) * travel, width * ZOOM_DRAG_PAST_FLOOR_GIVE),
+            width,
+          ),
+        );
         dragY.set(zoomCrossAxisDrag(ty, height));
       })
       .onEnd((e) => {
