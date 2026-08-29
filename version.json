@@ -1,5 +1,6 @@
 {
-  "commit": "3aeb8fc",
-  "version": "0.2.1.3",
-  "publishedAt": "2026-08-28T14:50:41Z"
+  "commit": "42d643a",
+  "version": "0.2.1.4",
+  "notes": "• Swipe the page away when its cover has scrolled off, and build a dev-client per PR (#133)\n• Coarsen the halftone screen on the icon's pages (#134)\n• Update README.md\n• release: 0.2.1 (#132)\n• Add README screenshots and demo capture workflow (#131)\n• Claude/readme docs i4qlvg (#130)\n• Let the dev-client reach a Metro server that isn't on your LAN (#129)\n• Only re-aim a collapse when the surface says the card moved\n• Log the two open threads from the collapse trace\n• One adapter for a LegendList zoom surface, and Activity's wrong index\n• Don't grow the reading strip while a dismiss is in flight\n• Ask the list where the row is, not the row\n• Make the reveal path readable in the gesture trace\n• Slide the re-sorting row instead of teleporting it\n• Warm collections tiles, and the page image a resume lands on\n• Warm the destination on press-in\n• Hold the flying cover most of the way in\n• Re-ask where the card is until the answer stops moving\n• Keep the backdrop recede, except under History and Activity\n• Backdrop: dim the screen underneath, don't scale it",
+  "publishedAt": "2026-08-29T18:41:28Z"
 }
