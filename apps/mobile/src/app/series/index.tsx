@@ -342,13 +342,16 @@ const ZOOM_DRAG_TRAVEL = 1.25;
  *
  * `ZOOM_DRAG_TRAVEL` already reserves a third of the collapse for the release by making the drag's
  * travel longer than the screen; this reserves it by SIZE instead, which is the half a user can
- * see. The two compose — whichever binds first wins — and this one binds on any real swipe.
+ * see. The two compose — whichever binds first wins — and at 0.8 this one binds almost immediately:
+ * a grid card's floor is `zoom` 0.72, which an ordinary swipe passes in its first third. What is
+ * left under the finger is mostly the FOLLOW — the page slides with the thumb and only hints at
+ * shrinking — with the whole of the size change saved for the release.
  *
  * Expressed as a size rather than a progress because progress means different things per
  * destination: the same `zoom` is a different window on a `cover` collapse than on a `page` one.
  * `zoomDragFloorFor` converts it.
  */
-const ZOOM_DRAG_MIN_WINDOW = 0.65;
+const ZOOM_DRAG_MIN_WINDOW = 0.8;
 // The collapse carries on at the speed the finger was moving — but only up to a point, and this cap
 // is not cosmetic.
 //

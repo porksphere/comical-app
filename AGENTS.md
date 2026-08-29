@@ -205,12 +205,13 @@ reaches 0, so the page cannot land anywhere but the card. For the same reason th
 left frozen at release rather than sprung back: `home` retires them on that one clock. Every path
 that drives `zoom` sets `homeAt` first — there is no default that is right for all of them.
 
-**A drag stops shrinking the window at `ZOOM_DRAG_MIN_WINDOW`** (65% of the screen). The window is
+**A drag stops shrinking the window at `ZOOM_DRAG_MIN_WINDOW`** (80% of the screen). The window is
 what reads as "the page" during a dismissal — on a `cover` collapse the page's own scale barely
 moves and the mask does the visible shrinking — so an unclamped drag turned the thing under your
 thumb into a thumbnail before you had decided to let go. `ZOOM_DRAG_TRAVEL` already reserves part of
 the collapse for the release by making the drag's travel longer than the screen; this reserves it by
-SIZE, which is the half a user can see. The floor is a `zoom` value derived per card
+SIZE, which is the half a user can see. What is left under the finger is mostly the FOLLOW, with the
+size change saved for the release. The floor is a `zoom` value derived per card
 (`zoomDragFloorFor`), not a constant: the same progress is a different window for a different source
 rect, and a card already wider than the floor gets none.
 
