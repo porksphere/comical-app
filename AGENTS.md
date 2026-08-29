@@ -220,11 +220,15 @@ buys stillness in size and hands it straight back in position, and a page that s
 slides anywhere you like at 80% reads as dragging a card around, not dismissing a screen. It
 asymptotes at the floor's own travel, so the page runs out of room exactly where the size does.
 
-It was a piecewise band first — free to the floor, rubber-banded after — and that read as binary
-even though it was C¹ at the knee. **Continuity of speed is not continuity of feel**: the same total
-travel packed all its curvature into the ~20pt after the knee, so the page went from weightless to
-stuck within a thumb's width (worst stiffening over any 20pt: 0.70, against 0.14 for the
-exponential). Spreading the change across the whole drag is what makes it read as weight.
+Two earlier shapes were wrong at opposite ENDS of the drag. A piecewise band — free to the floor,
+rubber-banded after — read as binary despite being C¹ at the knee: **continuity of speed is not
+continuity of feel**, and all its curvature sat in the ~20pt after the knee. One exponential fixed
+that and then FLATLINED, since `1 - e^-t` is within a percent of its limit by three time constants,
+so past ~450pt the page simply stopped — and a page that stops dead is a wall wherever you put it.
+
+The shape that works is a polynomial tail (iOS's scroll-boundary band): rate `(A/(A+t))²`, which is
+1 at the first pixel like the exponential but decays as 1/t² rather than e^-t, so there is always a
+little left to give. Nothing ever arrives; it only ever slows.
 
 **A release decision reads the FINGER, never the follow.** They were the same number until the
 resistance existed; afterwards the follow tops out well below `DISMISS_COMMIT_FRACTION` of the span,
