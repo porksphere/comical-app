@@ -7,6 +7,12 @@ a version bump — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 Binaries for each version are attached to its
 [GitHub Release](https://github.com/porksphere/comical-app/releases).
 
+**This file is read by CI, not just by people.** `.github/scripts/changelog-section.sh` quotes a
+version's section verbatim into the iOS SideStore source and the Android `version.json`, which is
+what the app shows under Settings → About → What's new. Keep the `## X.Y.Z — DATE` heading shape:
+the extractor matches on the version field, and a section it can't find silently degrades to the
+release's title.
+
 ## 0.2.1 — 2026-08-26
 
 - Add README screenshots and demo capture workflow (#131) (80e6deec)

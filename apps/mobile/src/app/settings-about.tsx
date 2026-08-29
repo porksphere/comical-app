@@ -29,6 +29,7 @@ import { IS_DEMO_MODE, useMockActive } from '@/data/source';
 import { useAppUpdateCheck } from '@/data/use-app-update';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
+import { router } from '@/lib/nav';
 import {
   APP_VERSION,
   BUILD_COMMIT,
@@ -186,6 +187,26 @@ export default function AboutScreen() {
                   ) : undefined
                 }
                 onPress={appUpdate.status === 'update-available' ? handleUpdatePress : undefined}
+              />
+            )}
+            {/* Alongside the row above, not folded into it: that one ACTS (it hands you the
+                download), this one READS. Shown when up to date too — "what did the version I'm on
+                bring" is the half of this that has no other home.
+
+                Unlike "Check for updates" it is NOT gated on a supported channel. There is nothing
+                to check on a dev build, but there is something to say, and the screen says it; the
+                alternative is a feature that no e2e run and no developer ever sees. */}
+            {title === 'Build' && (
+              <SettingsRow
+                key="whats-new"
+                testID="about.whatsNew"
+                label="What's new"
+                description={
+                  appUpdate.status === 'update-available'
+                    ? 'Changes in the update, and in this build'
+                    : 'Changes in this build'
+                }
+                onPress={() => router.push('/settings-whats-new')}
               />
             )}
           </SettingsSection>

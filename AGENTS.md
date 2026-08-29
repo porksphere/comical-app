@@ -227,6 +227,24 @@ written into the cached object (`bridge: opts.bridgeName ?? ''`), so a warm that
 race and leaves the page wrong. Where press-in and the navigation live in different components
 (collections tiles), the tile takes an `onWarm` callback rather than re-deriving the branch.
 
+# Release notes ride the update check's own fetch
+
+Settings → About → **What's new** (`app/settings-whats-new.tsx`) shows two things: the changes in
+the update on offer, and the changes in the build already installed. Both come out of the manifest
+`useAppUpdateCheck` already fetches — `versions[].localizedDescription` in the iOS SideStore
+sources, `notes` in the Android/web `version.json` — so there is no second request and no way for
+the screen to disagree with the row that sent you there. Adding a surface means teaching a
+PUBLISHER to write notes into the artifact the checker reads, never adding a fetch here.
+
+Parsing lives in `data/release-notes.ts`, deliberately free of react-native imports so it can be
+tested; `data/use-app-update.ts` keeps the fetching, caching and the launch/foreground trigger. The
+toast stays a pointer ("Update available — see Settings") — a changelog is read when you choose to,
+not put over the screen.
+
+Which generator fills a channel is set by whether it is TAGGED: `changelog-section.sh` quotes
+`CHANGELOG.md`, `rolling-changelog.sh` lists the commits since the channel's last publish. See
+`docs/DEVELOPMENT.md` → "Release notes reach four places" for the full table.
+
 # Testing: new screens need a flow
 
 A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.

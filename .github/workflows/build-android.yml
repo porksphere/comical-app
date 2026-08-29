@@ -96,6 +96,11 @@ jobs:
       # android-latest (rolling main) and release.yml owns android-release (newest tag). See the
       # script's header for why they used to be one Release and what that cost.
       - uses: actions/checkout@v4
+        with:
+          # Full history so the publish step's patch notes can span from the channel's previously
+          # published commit (see rolling-changelog.sh). release.yml's own checkout can stay shallow
+          # — the tagged lane quotes CHANGELOG.md, which needs no history at all.
+          fetch-depth: 0
 
       - name: Publish APK to the android-latest Release
         env:

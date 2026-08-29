@@ -134,8 +134,24 @@ Pushing a `v*` tag by hand still works and skips step 1–2, but `app.json` must
 the tag. Do **not** use the web Releases form to create the tag: it creates the Release object too,
 and `gh release create` then fails — after both builds have run.
 
-Release notes are GitHub's generated commit list appended to the install instructions
-(`--generate-notes`), and `CHANGELOG.md` carries the same history in-repo.
+**Release notes reach four places, from two generators.** `CHANGELOG.md` is the source for anything
+TAGGED and `.github/scripts/changelog-section.sh` quotes one version's section out of it; the
+rolling channels have no release to quote, so `.github/scripts/rolling-changelog.sh` lists the
+commits each has picked up since it last published (it measures from a `built-sha` marker the
+channel's own Release body carries). Between them they fill:
+
+| Surface | Notes from |
+| --- | --- |
+| The `vX.Y.Z` GitHub Release body | GitHub's own `--generate-notes` commit list |
+| `ios-release` source — every version in `versions[]` | `changelog-section.sh` for that tag |
+| `ios-main` source — the one current build | `rolling-changelog.sh ios-main` |
+| `android-release` / `android-latest` — `version.json` `notes` + the Release body | tag section / rolling |
+| gh-pages `version.json` `notes` | `rolling-changelog.sh web-pages` |
+
+The app reads the SAME artifacts its update check already fetches, so Settings → About → **What's
+new** shows both the update's changes and the running build's with no second request — see
+`src/data/release-notes.ts`. That is why the iOS source lists the full history rather than only the
+installable head: an install that skipped three releases gets all three.
 
 **Version strings.** `expo.version` in `app.json` is a *base* that only moves on a release.
 Everything else derives from it in `.github/scripts/compute-build-version.sh`: a release build

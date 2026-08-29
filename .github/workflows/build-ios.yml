@@ -135,22 +135,12 @@ jobs:
           # Icon for the source listing, served as a Release asset.
           cp apps/mobile/assets/images/icon.png "$RUNNER_TEMP/icon.png"
 
-          # Patch notes (AltStore/SideStore "versionDescription") = commit history
-          # since the previously published build. The previous ios-main release
-          # body carries a hidden "built-sha" marker with the commit it was built
-          # from; list commits from there to HEAD. On the first run — or if that
-          # commit isn't an ancestor of HEAD (e.g. after a rebase/force-push, or a
-          # re-run on the same SHA) — fall back to the most recent commits.
-          PREV_SHA=$(gh release view ios-main --repo "$GITHUB_REPOSITORY" \
-            --json body -q .body 2>/dev/null \
-            | sed -n 's/.*built-sha: \([0-9a-f]\{40\}\).*/\1/p' | head -n1 || true)
-
-          if [ -n "${PREV_SHA:-}" ] && [ "$PREV_SHA" != "$GITHUB_SHA" ] \
-             && git merge-base --is-ancestor "$PREV_SHA" HEAD 2>/dev/null; then
-            CHANGELOG=$(git log "${PREV_SHA}..HEAD" --no-merges --pretty=format:'• %s')
-          else
-            CHANGELOG=$(git log -n 20 --no-merges --pretty=format:'• %s' HEAD)
-          fi
+          # Patch notes (AltStore/SideStore "versionDescription") = the commits this channel has
+          # picked up since it last published, which rolling-changelog.sh works out from the
+          # `built-sha` marker this job's own release body writes below. Shared with the other
+          # rolling lanes (android-latest, web-pages) so all three quote the same range the same
+          # way — see that script for what happens when there's no usable marker.
+          CHANGELOG=$(bash .github/scripts/rolling-changelog.sh ios-main)
           [ -n "$CHANGELOG" ] || CHANGELOG="• Routine build (${FULL_VERSION})"
 
           # SideStore/AltStore source manifest. Add this URL as a source:
@@ -215,7 +205,7 @@ jobs:
           **Or install the IPA directly:**
           \`${BASE}/comical-unsigned.ipa\`
 
-          <!-- built-sha: ${GITHUB_SHA} -->"
+          $(bash .github/scripts/rolling-changelog.sh stamp-line "$GITHUB_SHA")"
 
   # Per-PR IPA host. Each open PR gets an `ios-pr-<N>` prerelease holding just
   # the IPA + a `meta.json` fragment — NOT its own source. The refresh-dev-source

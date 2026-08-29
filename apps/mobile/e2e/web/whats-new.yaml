@@ -1,0 +1,42 @@
+# Same journey as ../mobile/whats-new.yaml, kept in sync by hand. Selectors hitting the web-only
+# aria-label quirk (see ../README.md):
+#   - tab bar: "Settings", not tab.settings (same as smoke.yaml).
+#   - settings.category.about sets accessibilityLabel={title} — select by the row's title, "About".
+#   - about.whatsNew is a SettingsRow, so it sets accessibilityLabel={label} — select by "What's
+#     new". Unlike about.share that label is NOT platform-split, so both copies say the same thing.
+#   - top-bar.back sets accessibilityLabel="Go back" — same as every other flow using it.
+#
+# The screen's own assertions use `text:` on both copies already: the title is a TopBar heading and
+# "Installed" a section heading, neither of which carries accessibility metadata for `id:` to match.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Settings"
+- assertVisible:
+    id: "screen-title.settings"
+
+- scrollUntilVisible:
+    element:
+      id: "About"
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: "About"
+
+- assertVisible:
+    id: "What's new"
+- tapOn:
+    id: "What's new"
+
+- assertVisible:
+    text: "What's new"
+- takeScreenshot: whats-new
+- assertVisible:
+    text: "Installed"
+
+- tapOn:
+    id: "Go back"
+- assertVisible:
+    id: "What's new"
