@@ -661,6 +661,24 @@ function zoomDetach(start: number, size: number, home: number, span: number): nu
  */
 const ZOOM_DRAG_FOLLOW_REACH = 0.53;
 const ZOOM_DRAG_FOLLOW_GRIP = 0.6;
+/**
+ * The `zoom` by which the window's corners are FULLY rounded on the way out — reached in the first
+ * sixth of the collapse, not carried linearly across all of it.
+ *
+ * Corner radius is the earliest signal that a page has become a card, and it arrives before any
+ * other: at the top of a dismissal the window is still nearly full-screen, so size and position
+ * have barely moved and the rounding is the only thing saying what is about to happen. Spread
+ * linearly over `1 - q` it never got the chance — since the spring took over the shrink a drag only
+ * carries `zoom` to about 0.87, which on the old curve is 13% of the corner, i.e. square.
+ *
+ * ONE curve, not one per direction, and that is forced rather than chosen. `settle` (a cancelled
+ * swipe) clears `zoomClosing` on the frame the finger lifts, so a curve that keyed off it would
+ * jump the radius from ~9.5pt to ~1.5pt in that single frame — the pop would land on exactly the
+ * gesture that is supposed to look like nothing happened. Opening just inherits it: the window
+ * keeps the card's corner for most of its growth and squares off over the spring's tail, which is
+ * slow in TIME even though it is a small slice of `q`.
+ */
+const ZOOM_RADIUS_ROUNDED_BY = 0.84;
 
 /**
  * The follow: a spring, not a leash. Resistance is there from the first pixel and grows from there,
@@ -2273,11 +2291,16 @@ function SeriesReaderInstance({
         const held = zoomDragFollow(forward, ZOOM_DRAG_FOLLOW_REACH * travel, ZOOM_DRAG_FOLLOW_GRIP);
         zoom.set(1 - Math.min(1, held / travel));
         dragX.set(zoomHorizontalDrag(held, width));
-        // The cross axis rides the forward one rather than being read on its own: with no forward
-        // travel there is no dismissal to drift, and a page sliding purely up or down is the same
-        // wrong-direction artifact one axis over. It never led anyway — this is the loosest thing
-        // in the gesture.
-        dragY.set(forward > 0 ? zoomCrossAxisDrag(ty, height) : 0);
+        // The cross axis rides the forward one PROPORTIONALLY, not as an on/off gate. Vertical play
+        // is earned by horizontal travel: none at rest, all of it by the distance that would commit
+        // the dismissal, linear in between. Two things fall out of that. A page dragged back toward
+        // the left arrives with its vertical offset already gone, instead of holding an offset to
+        // the last pixel and then snapping — which is what a gate at `forward > 0` did, one frame
+        // wide but the whole height of the drift. And the further out the page is, the more it can
+        // be steered, which is the only place steering means anything: near the left it is going
+        // back to where it started, and there is nothing to aim.
+        const lead = Math.min(1, forward / (width * DISMISS_COMMIT_FRACTION));
+        dragY.set(zoomCrossAxisDrag(ty, height) * lead);
       })
       .onEnd((e) => {
         'worklet';
@@ -2550,7 +2573,7 @@ function SeriesReaderInstance({
       top: box.top + zoomDetach(box.top, box.height, home, height) + dragY.value * (1 - home),
       width: box.width,
       height: box.height,
-      borderRadius: hero.radius * (1 - q),
+      borderRadius: hero.radius * interpolate(q, [ZOOM_RADIUS_ROUNDED_BY, 1], [1, 0], Extrapolation.CLAMP),
       borderCurve: 'continuous' as const,
     };
   }, [hero, width, height]);

@@ -252,6 +252,21 @@ so judging by it makes a deliberate slow swipe impossible to commit and leaves o
 velocity able to dismiss at all. What the user swiped is the question; how far the page was allowed
 to move in reply is not.
 
+**The corner rounds in the first sixth of the collapse** (`ZOOM_RADIUS_ROUNDED_BY`), not linearly
+across all of it. Radius is the earliest signal that a page has become a card — at the top of a
+dismissal size and position have barely moved, so it is the only thing saying what is about to
+happen — and since the spring took over the shrink a drag only carries `zoom` to about 0.87, which
+on a linear ramp is 13% of the corner, i.e. square. ONE curve serves both directions, and that is
+forced: `settle` clears `zoomClosing` on the frame a cancelled swipe releases, so a per-direction
+curve would jump the radius ~9.5pt→~1.5pt in that frame — a pop on the one gesture meant to look
+like nothing happened.
+
+**Vertical play is EARNED by horizontal travel** on the series page: none at rest, all of it by the
+distance that would commit the dismissal, linear between. A page dragged back toward the left then
+arrives with its drift already gone instead of holding it to the last pixel and snapping — a gate at
+`forward > 0` is one frame wide and the whole height of the drift (52pt in one pixel of finger,
+against 0.13pt for the ramp).
+
 **Both the drag and the homing ride the MASK ALONE** (`zoomDetach`), never the page's target. The
 page is the mask's child and cancels the mask's own origin out of its transform, so an offset on the
 mask carries the window, the page, the flying copy and the cover together and leaves every relation
