@@ -663,7 +663,7 @@ const ZOOM_DRAG_FOLLOW_REACH = 0.53;
 const ZOOM_DRAG_FOLLOW_GRIP = 0.6;
 /**
  * The `zoom` by which the window's corners are FULLY rounded on the way out — reached in the first
- * sixth of the collapse, not carried linearly across all of it.
+ * TWELFTH of the collapse, not carried linearly across all of it.
  *
  * Corner radius is the earliest signal that a page has become a card, and it arrives before any
  * other: at the top of a dismissal the window is still nearly full-screen, so size and position
@@ -671,14 +671,21 @@ const ZOOM_DRAG_FOLLOW_GRIP = 0.6;
  * linearly over `1 - q` it never got the chance — since the spring took over the shrink a drag only
  * carries `zoom` to about 0.87, which on the old curve is 13% of the corner, i.e. square.
  *
+ * The threshold is set against FINGER TRAVEL, not against `q`, because `q` means different
+ * distances on the two surfaces this serves: the reader's paged dismiss measures over the height,
+ * so the same swipe moves it half as far as the series back-swipe does. At 0.92 the corner is full
+ * after 78pt of a back-swipe and 168pt of a paged dismiss; at 0.84 it took 188 and 407, which on
+ * the reader is most of a swipe.
+ *
  * ONE curve, not one per direction, and that is forced rather than chosen. `settle` (a cancelled
  * swipe) clears `zoomClosing` on the frame the finger lifts, so a curve that keyed off it would
  * jump the radius from ~9.5pt to ~1.5pt in that single frame — the pop would land on exactly the
  * gesture that is supposed to look like nothing happened. Opening just inherits it: the window
- * keeps the card's corner for most of its growth and squares off over the spring's tail, which is
- * slow in TIME even though it is a small slice of `q`.
+ * keeps the card's corner for most of its growth and squares off over the spring's tail — the last
+ * 8% of `q`, which is slow in TIME even though it is a thin slice of progress. That tail is the
+ * reason not to push this much past 0.92: the squaring-off has to stay a tail, not an event.
  */
-const ZOOM_RADIUS_ROUNDED_BY = 0.84;
+const ZOOM_RADIUS_ROUNDED_BY = 0.92;
 /** How far the reader's dismiss must travel before it HAS a direction to be judged against. Small
  *  enough that it is latched almost immediately, large enough that the first frames of a drag —
  *  which are noise, and on web arrive with translation 0 — cannot set it. */

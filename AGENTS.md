@@ -252,8 +252,10 @@ so judging by it makes a deliberate slow swipe impossible to commit and leaves o
 velocity able to dismiss at all. What the user swiped is the question; how far the page was allowed
 to move in reply is not.
 
-**The corner rounds in the first sixth of the collapse** (`ZOOM_RADIUS_ROUNDED_BY`), not linearly
-across all of it. Radius is the earliest signal that a page has become a card — at the top of a
+**The corner rounds in the first twelfth of the collapse** (`ZOOM_RADIUS_ROUNDED_BY`), not linearly
+across all of it. Judge that threshold by FINGER TRAVEL, not by `q`: the reader's paged dismiss
+measures over the height, so the same swipe moves it half as far as the series back-swipe — 0.92 is
+a full corner after 78pt of a back-swipe and 168pt of a paged dismiss. Radius is the earliest signal that a page has become a card — at the top of a
 dismissal size and position have barely moved, so it is the only thing saying what is about to
 happen — and since the spring took over the shrink a drag only carries `zoom` to about 0.87, which
 on a linear ramp is 13% of the corner, i.e. square. ONE curve serves both directions, and that is
