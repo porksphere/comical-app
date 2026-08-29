@@ -261,6 +261,19 @@ forced: `settle` clears `zoomClosing` on the frame a cancelled swipe releases, s
 curve would jump the radius ~9.5pt→~1.5pt in that frame — a pop on the one gesture meant to look
 like nothing happened.
 
+**The reader dismiss's flying copy follows the FORWARD progress, not the raw distance**
+(`zoomThumbBias`). That gesture measures with a hypot, which cannot tell "further out" from "back
+through the start and out the other side" — swipe down, come back up past where you began, keep
+going up, and the hypot rises again, so the page shrinks again and the cover used to fade back in
+with it. Nothing about that second shrink is an approach to the card. Projecting onto the drag's
+launch direction separates them: the projection falls to zero as the finger returns and stays there
+past it. The bias reaches 0 exactly where the finger reaches its origin, where the copy is
+transparent anyway, so nothing blinks (worst opacity change 0.002 per pt). It rewinds the copy's
+OPACITY only — size and position keep tracking the real collapse, because the page really is
+shrinking; it just isn't arriving anywhere. A commit restores it over
+`ZOOM_THUMB_BIAS_RESTORE_MS`, never in one frame: released mid-reversal the copy is at zero and the
+page still has to land on the card with a picture on it.
+
 **Vertical play is EARNED by horizontal travel** on the series page: none at rest, all of it by the
 distance that would commit the dismissal, linear between. A page dragged back toward the left then
 arrives with its drift already gone instead of holding it to the last pixel and snapping — a gate at

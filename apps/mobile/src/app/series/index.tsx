@@ -679,6 +679,14 @@ const ZOOM_DRAG_FOLLOW_GRIP = 0.6;
  * slow in TIME even though it is a small slice of `q`.
  */
 const ZOOM_RADIUS_ROUNDED_BY = 0.84;
+/** How far the reader's dismiss must travel before it HAS a direction to be judged against. Small
+ *  enough that it is latched almost immediately, large enough that the first frames of a drag —
+ *  which are noise, and on web arrive with translation 0 — cannot set it. */
+const ZOOM_DISMISS_DIR_MIN = 6;
+/** How long the flying copy takes to come back after a reversed drag commits. It is a real fade,
+ *  not a reset, because a release mid-reversal has the copy at zero opacity and the page still has
+ *  to land on the card with a picture on it. */
+const ZOOM_THUMB_BIAS_RESTORE_MS = 160;
 
 /**
  * The follow: a spring, not a leash. Resistance is there from the first pixel and grows from there,
@@ -1632,6 +1640,14 @@ function SeriesReaderInstance({
   // the sequence-mode copy morph needs (see zoomThumbStyle): the copy's rect interpolates toward
   // the image's true fit rect, and only the image itself knows its shape.
   const zoomThumbAspect = useSharedValue(0);
+  /** The reader dismiss's LAUNCH DIRECTION, as a unit vector, latched the first frame the drag has
+   *  enough distance to have one. (0, 0) until then, and cleared by every gesture. */
+  const dismissDirX = useSharedValue(0);
+  const dismissDirY = useSharedValue(0);
+  /** How much of the collapse the flying copy should treat as having happened, 0..1. 1 everywhere
+   *  except a reader dismiss dragged back the other way — see that gesture's onUpdate, and
+   *  `zoomThumbStyle`, which applies this to the copy's OPACITY alone. */
+  const zoomThumbBias = useSharedValue(1);
   // Back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
   // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get
   // the real one. A decisive rightward drag ANYWHERE on the details (full-surface, like the
@@ -1755,6 +1771,31 @@ function SeriesReaderInstance({
           const hold = pull > 0 ? held / pull : 0;
           dragX.set(e.translationX * hold);
           dragY.set(e.translationY * hold);
+
+          // The COPY follows the FORWARD progress, not the raw distance — because this gesture
+          // measures with a hypot, and a hypot cannot tell "further out" from "back through the
+          // start and out the other side". Swipe down, come back up past where you began, keep
+          // going up: the hypot rises again, so the page shrinks again, and the copy used to fade
+          // back in with it. Nothing about that second shrink is an approach to the card.
+          //
+          // Projecting onto the launch direction separates the two: the projection falls to zero as
+          // the finger returns and stays there past it, so the cover fades out on the way back and
+          // does not return. Continuous by construction — the bias reaches 0 exactly where the
+          // finger reaches its origin, where the copy is transparent anyway — so nothing blinks.
+          if (dismissDirX.value === 0 && dismissDirY.value === 0 && pull >= ZOOM_DISMISS_DIR_MIN) {
+            dismissDirX.set(e.translationX / pull);
+            dismissDirY.set(e.translationY / pull);
+          }
+          // Before a direction is latched there is nothing to be going the wrong way relative to, so
+          // all of the travel counts as forward. Without this the first few pixels of EVERY drag
+          // project onto (0, 0) and read as fully reversed — invisible in practice (the copy is at
+          // ~1% there) but a lie the moment anyone changes the fade ranges.
+          const aimed = dismissDirX.value !== 0 || dismissDirY.value !== 0;
+          const forward = aimed
+            ? Math.max(0, e.translationX * dismissDirX.value + e.translationY * dismissDirY.value)
+            : pull;
+          const heldForward = zoomDragFollow(forward, ZOOM_DRAG_FOLLOW_REACH * travel, ZOOM_DRAG_FOLLOW_GRIP);
+          zoomThumbBias.set(held > 0 ? heldForward / held : 1);
         })
         .onEnd((e) => {
           trace('reader.collapse', 'END', {
@@ -1799,6 +1840,10 @@ function SeriesReaderInstance({
           // see there for why a committed collapse must never be settled back.
           dismissing.set(true);
           edgeCommitting.set(true);
+          // Whatever the drag did, the page is landing on the card now and must have a picture when
+          // it gets there. Timed rather than set: released mid-reversal the copy is at zero, and
+          // snapping the bias back would put the cover on screen in one frame.
+          zoomThumbBias.set(withTiming(1, { duration: ZOOM_THUMB_BIAS_RESTORE_MS }));
           // Homing starts NOW, from where the finger left it (see `zoomHoming`). The drag values
           // stay frozen at their release positions — `home` is what retires them, on the collapse's
           // own clock, so nothing is still moving them when it lands.
@@ -1821,8 +1866,13 @@ function SeriesReaderInstance({
             zoom.set(withSpring(1, SPRING_BACK));
             dragX.set(withSpring(0, SPRING_BACK));
             dragY.set(withSpring(0, SPRING_BACK));
+            zoomThumbBias.set(withTiming(1, { duration: ZOOM_THUMB_BIAS_RESTORE_MS }));
           }
           gestureMode.set(0);
+          // The next drag gets its own launch direction; a stale one would judge it against a
+          // gesture that is over.
+          dismissDirX.set(0);
+          dismissDirY.set(0);
         });
       // The back-swipe's ACTIVATION-side dominance (lib/back-swipe), applied to whichever axis this
       // mode dismisses along: paged drags across the pages' axis (vertical), webtoon across the
@@ -1843,6 +1893,9 @@ function SeriesReaderInstance({
     collapseEnabled,
     width,
     height,
+    dismissDirX,
+    dismissDirY,
+    zoomThumbBias,
     headerSpan,
     gestureMode,
     progressStartSV,
@@ -2720,7 +2773,12 @@ function SeriesReaderInstance({
       top: rect.y,
       width: rect.width,
       height: rect.height,
-      opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP),
+      // The bias applies HERE and nowhere else: the copy keeps tracking the real collapse in size
+      // and position (it is still riding a page that is genuinely shrinking), it just doesn't claim
+      // to be arriving anywhere. Rewinding `q` for the fade alone is what says that. See
+      // `zoomThumbBias` — 1 for every gesture but a reversed reader dismiss, so this is the
+      // identity everywhere else.
+      opacity: interpolate(1 - (1 - q) * zoomThumbBias.value, range, [1, 0], Extrapolation.CLAMP),
       borderRadius: (hero ? hero.radius : 0) / Math.max(s, 0.01),
       // The SCROLL CORRECTION, which only `cover` ever has (`zoomBoundShift` returns 0 for the
       // others). The copy is laid out on the destination bound, so this is INSIDE the page, in the
