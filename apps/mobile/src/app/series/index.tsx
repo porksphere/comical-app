@@ -269,22 +269,26 @@ const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // it appears over whatever chapter rows are on screen, and at [0.7, 1] — full strength a quarter of
 // the way through a fling — that read as the cover popping in rather than arriving.
 //
-// So it comes in LATE, over the last stretch, where the collapse has already said what it is doing:
-// by 0.32 the window is half the screen's width and still closing, so a picture arriving in it
-// reads as the page becoming a card rather than as a cover appearing from nowhere.
+// It has to CROSS the content's fade, not follow it. The copy draws over the page and neither the
+// mask nor the page carries a background, so what is not covered by one of them is a hole straight
+// through to the grid — composite coverage is `copy + (1 - copy) * content`, and both ends of that
+// have to be paid for by somebody.
 //
-// This used to be argued from the FILL — the copy was `hero.size / s`, so it lagged the window and
-// only caught up at the end (62% of its width here, 79% by 0.13), and the fade was timed to land
-// where the two met. That reasoning is gone: the copy is sized to the window now (see
-// `zoomThumbStyle`), so it fills it at every `q`. What the lateness still buys is the window's own
-// SIZE as context, and one thing the sizing makes newly load-bearing — the copy is a full 393pt
-// wide at q = 1, so the fade is the only thing keeping a screen-sized cover off the screen. Do not
-// start it earlier without checking what it would be showing.
+// At [0.13, 0.32] nobody was. The content is down to 0.33 by q = 0.32 and the copy had not started,
+// so the middle of every off-screen dismissal was a window two thirds transparent, which is what it
+// looked like: a gap, not a cross-fade. `cover` never had this because ITS copy is opaque from 0.7,
+// before the content begins to leave — it just cannot be copied here, where an opaque
+// window-filling cover that early would replace the page rather than dissolve into it.
 //
-// 0.13 is a floor rather than taste: it is where the page's own content finishes fading out
-// (ZOOM_CONTENT_FADE_CLOSE), so finishing any later leaves frames with neither picture on them and
-// the window showing straight through to the grid.
-const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.13, 0.32];
+// So: the copy starts arriving at 0.72, within a frame or two of where the content starts leaving
+// (ZOOM_CONTENT_FADE_CLOSE's 0.7), and is fully in by 0.5. Worst coverage 0.92 at q = 0.60 — the
+// ordinary dip of a dissolve — against 0.33 before. Below 0.5 the two destinations then behave
+// alike: an opaque cover, shrinking onto the card.
+//
+// The lower bound is what keeps a screen-sized cover off the screen, and that is newer than it
+// looks: the copy is sized to the WINDOW now (see `zoomThumbStyle`), so it is a full 393pt wide at
+// q = 1. Raising 0.72 much further starts showing that.
+const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.5, 0.72];
 // The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
 // carried away, it is the surface being uncovered, so matching the page's curve held it opaque
 // through the first third of the collapse and kept the grid hidden long after the page had

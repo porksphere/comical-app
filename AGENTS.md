@@ -171,10 +171,19 @@ than the frame becoming the cover. Divide the window's width back out through th
 centres already coincide at every `q`, and at q = 0 the window IS the card, so the landing is
 untouched.
 
-That copy also has no identical picture underneath to hide its cross-fade, so **it comes in late**,
-where the collapse has already said what it is doing. Moving it is not the answer and was tried
-twice: sliding it in from the mask edge, along its own path run backwards, is a second animation
-riding the collapse at any timing still legible enough to see. Nothing but the fade changes.
+That copy also has no identical picture underneath to hide its cross-fade, so **its fade has to
+CROSS the content's, not follow it**. The copy draws over the page and nothing in the window carries
+a background, so coverage is `copy + (1 - copy) · content` and a hole in that is a hole through to
+the grid. Timed late (it was [0.13, 0.32]) the content was down to 0.33 before the copy started, and
+the middle of every off-screen dismissal was a window two thirds transparent — a gap, not a
+cross-fade. `cover` never shows this because its copy is opaque from 0.7, before the content starts
+leaving; that cannot be copied here, where an opaque window-filling cover that early would replace
+the page instead of dissolving into it. Starting the copy where the content starts leaving gets the
+worst coverage to 0.92, the ordinary dip of a dissolve.
+
+Moving it is not the answer and was tried twice: sliding it in from the mask edge, along its own
+path run backwards, is a second animation riding the collapse at any timing still legible enough to
+see. Nothing but the fade changes.
 
 **A list that reorders is asked where its item is; it is not measured.** `useZoomSurfaceLocator`
 answers out of the virtualization state (`getState().positionAtIndex` / `.scroll`), which knows every
