@@ -163,14 +163,18 @@ the flying copy to full screen width. Which destination is in play is LATCHED wh
 rest (`zoomBoundOnScreen`), never read live off the scroll — swapping mid-collapse is a visible
 jump.
 
-A copy that is not landing on the real cover has no identical picture underneath to hide the
-cross-fade, so **it waits for the window to come down to the cover's own size** rather than fading
-on the same curve. The copy is only ever about a cover card wide, while the window starts at the
-whole screen, so fading in early leaves a picture adrift in a frame twice its width — which is what
-reads as a cover appearing out of nowhere. Timed off that fill instead, it arrives as it comes to
-fill the window. Moving it is not the answer and was tried twice: sliding it in from the mask edge,
-along its own path run backwards, is a second animation riding the collapse at any timing still
-legible enough to see. Nothing but the fade changes.
+**A copy that is not landing on the real cover is sized to the WINDOW, not to the cover.** There is
+no on-screen cover for it to be the size of — that is the case's whole premise — so the only honest
+size is the frame it is arriving in. Left at the page's scale it lagged the window badly (62% of its
+width where the fade starts, 79% by the end), which reads as a cover sitting inside the frame rather
+than the frame becoming the cover. Divide the window's width back out through the page's scale; the
+centres already coincide at every `q`, and at q = 0 the window IS the card, so the landing is
+untouched.
+
+That copy also has no identical picture underneath to hide its cross-fade, so **it comes in late**,
+where the collapse has already said what it is doing. Moving it is not the answer and was tried
+twice: sliding it in from the mask edge, along its own path run backwards, is a second animation
+riding the collapse at any timing still legible enough to see. Nothing but the fade changes.
 
 **A list that reorders is asked where its item is; it is not measured.** `useZoomSurfaceLocator`
 answers out of the virtualization state (`getState().positionAtIndex` / `.scroll`), which knows every

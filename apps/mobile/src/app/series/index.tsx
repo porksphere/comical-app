@@ -269,16 +269,19 @@ const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // it appears over whatever chapter rows are on screen, and at [0.7, 1] — full strength a quarter of
 // the way through a fling — that read as the cover popping in rather than arriving.
 //
-// So it waits for the WINDOW TO COME DOWN TO THE COVER'S OWN SIZE. The copy is only ever about a
-// cover card wide — it is `hero.size / s`, so it shrinks from the on-page cover to the grid card
-// across the collapse — while the window starts at the whole screen. Early on that leaves a small
-// picture adrift in a frame twice its width, which is what reads as a cover materialising out of
-// nowhere rather than the page becoming one. The fill is what the timing tracks: the copy spans
-// about 53% of the window at 0.5, 62% at 0.32, 79% at 0.13 and all of it at 0. Fading in over the
-// last stretch means it arrives as it comes to fill the window, and there is never a frame with a
-// cover floating in the middle of one.
+// So it comes in LATE, over the last stretch, where the collapse has already said what it is doing:
+// by 0.32 the window is half the screen's width and still closing, so a picture arriving in it
+// reads as the page becoming a card rather than as a cover appearing from nowhere.
 //
-// 0.13 is also a floor, and the two agree: it is where the page's own content finishes fading out
+// This used to be argued from the FILL — the copy was `hero.size / s`, so it lagged the window and
+// only caught up at the end (62% of its width here, 79% by 0.13), and the fade was timed to land
+// where the two met. That reasoning is gone: the copy is sized to the window now (see
+// `zoomThumbStyle`), so it fills it at every `q`. What the lateness still buys is the window's own
+// SIZE as context, and one thing the sizing makes newly load-bearing — the copy is a full 393pt
+// wide at q = 1, so the fade is the only thing keeping a screen-sized cover off the screen. Do not
+// start it earlier without checking what it would be showing.
+//
+// 0.13 is a floor rather than taste: it is where the page's own content finishes fading out
 // (ZOOM_CONTENT_FADE_CLOSE), so finishing any later leaves frames with neither picture on them and
 // the window showing straight through to the grid.
 const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.13, 0.32];
@@ -2821,7 +2824,24 @@ function SeriesReaderInstance({
     let rect = base;
 
     const ia = zoomThumbAspect.value;
-    if (copyMorphs && ia > 0) {
+    if (geom && hero && geom.kind === 'cover-offscreen') {
+      // FILL THE WINDOW. This destination's copy has no real cover to be the size of — the page's
+      // own has scrolled away — so the only thing it can honestly be the size of is the window it
+      // is arriving in. Left at the page's scale it shrank far more slowly than the window did
+      // (62% of its width at the fade's start, 79% by the end), which reads as a cover sitting
+      // inside the frame rather than as the frame becoming the cover.
+      //
+      // Divide the window's width back out through the page's scale, since this rect is in PAGE
+      // coordinates and the page's transform is applied over it. Nothing moves: `end` is centred on
+      // the page for this destination, and the page's target puts that centre on the window's
+      // centre at every `q` (both run from the card's centre to the screen's, linearly), so a rect
+      // kept centred stays centred. The landing is untouched too — at q = 0 the window IS the card,
+      // so this resolves to exactly the rect it used to be.
+      const onScreen = hero.width + (width - hero.width) * q;
+      const w = onScreen / Math.max(s, 0.01);
+      const h = w / Math.max(base.width / base.height, 0.01);
+      rect = { x: (width - w) / 2, y: (height - h) / 2, width: w, height: h };
+    } else if (copyMorphs && ia > 0) {
       // The image's fit-page rect (contain, centred) — in PAGE coordinates, which for a
       // screen-sized page are screen coordinates.
       const screenAspect = width / height;
