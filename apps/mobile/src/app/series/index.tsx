@@ -223,6 +223,28 @@ const ZOOM_OUT_SPRING = {
   overshootClamping: false,
   restSpeedThreshold: 0.02,
 } as const;
+/**
+ * The READER's dismiss gets a looser one: ω 11.0 rad/s against 13.0, ζ held at 0.91, which is a
+ * typical collapse of ~620ms against ~500ms.
+ *
+ * Why only this gesture. The series back-swipe is a BACK — it retraces a path the user already
+ * knows, so it wants to feel prompt, and slowing it reads as the screen being reluctant to leave.
+ * The reader's dismiss is throwing a page away, and that wants to carry.
+ *
+ * SOFTER MEANS LESS STIFFNESS, NOT LESS DAMPING, and the difference is not academic here. The
+ * caller clamps the overshoot and the page leaves at `zoom` 0, so an under-damped spring FINISHES
+ * EARLY — it reaches zero on its way through rather than easing into it. Dropping ζ from 0.90 to
+ * 0.85 made the collapse 4% quicker, i.e. the opposite of the intent. Lowering stiffness with the
+ * ratio held is what actually lengthens it, and it changes the ending too: at 0.91 the spring
+ * rests onto the card instead of being cut off crossing it.
+ */
+const ZOOM_OUT_SPRING_READER = {
+  damping: 20,
+  stiffness: 120,
+  mass: 1,
+  overshootClamping: false,
+  restSpeedThreshold: 0.02,
+} as const;
 // The cross-fade. The ARRIVING PAGE fades in (`ZOOM_FOCUSED_ELEMENT_*`) while a COPY OF THE TAPPED
 // THUMBNAIL, flying the same path, fades out (`ZOOM_UNFOCUSED_ELEMENT_*` — there it is the real
 // source element on the screen underneath, transformed to track; from inside a modal we can't touch
@@ -1888,7 +1910,7 @@ function SeriesReaderInstance({
             // overshootClamping: there is nothing past "collapsed", so the spring must not travel
             // through 0 and settle back up to it. No completion callback — leaving is driven by
             // `zoom` actually reaching the card (see the reaction near leaveOnce).
-            withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -throwSpeed }),
+            withSpring(0, { ...ZOOM_OUT_SPRING_READER, overshootClamping: true, velocity: -throwSpeed }),
           );
         })
         // Always fires once the gesture resolves (release OR cancel) — the next gesture decides
