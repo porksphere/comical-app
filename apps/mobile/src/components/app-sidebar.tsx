@@ -13,7 +13,6 @@ import { type LucideIcon } from 'lucide-react-native';
 import { Platform, Pressable, StyleSheet, Text, View, type PressableProps } from 'react-native';
 
 import { ChevronDownIcon, ChevronRightIcon } from '@/components/icons/ui-icons';
-import { SidebarBridges } from '@/components/sidebar-bridges';
 
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
@@ -93,7 +92,6 @@ export function AppSidebar({ top, children }: { top: number; children: React.Rea
           as dead chrome and once as the live aggregate row. The app is named by its window title and
           its icon; a nav rail naming its own app is not how anything else does it. */}
       {children}
-      <SidebarBridges />
     </View>
   );
 }

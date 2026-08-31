@@ -1,3 +1,4 @@
+import { usePathname } from 'expo-router';
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
 import { Bell, Compass, History, Library, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -14,6 +15,8 @@ import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppSidebar, SidebarItem } from '@/components/app-sidebar';
+import { SidebarBridges } from '@/components/sidebar-bridges';
+import { SidebarCollections } from '@/components/sidebar-collections';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { DesktopTopBarHeight, MaxTopLevelWidth, navInsetFor, Spacing } from '@/constants/theme';
@@ -38,12 +41,23 @@ import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility'
 // no separate nav bar).
 /** `noRecede`: this tab's rows reorder as you read, and one that re-renders under the scaled
  *  backdrop measures short — see `setBackdropRecede`. */
-const TABS: { name: string; href: string; label: string; Icon: LucideIcon; noRecede?: boolean }[] = [
+/** `Scope`: the group of things this destination can be narrowed to — bridges for Browse,
+ *  collections for Library. Rendered in the SIDEBAR ONLY, nested under its own row and only while
+ *  that row is the active one. A scope list is meaningless anywhere but the destination it scopes:
+ *  shown unconditionally, Bridges sat under Settings offering to re-point a tab you can't see. */
+const TABS: {
+  name: string;
+  href: string;
+  label: string;
+  Icon: LucideIcon;
+  noRecede?: boolean;
+  Scope?: React.ComponentType<{ onNavigate?: () => void }>;
+}[] = [
   // A compass, not a grid: Browse is the discover surface, and `LayoutGrid` both named a layout
   // this tab doesn't always have (its home is rails) and was already Settings' Custom Pages mark.
   // The compass came off Trackers to get here — see `TrackersIcon` before moving it back.
-  { name: 'browse', href: '/', label: 'Browse', Icon: Compass },
-  { name: 'library', href: '/library', label: 'Library', Icon: Library },
+  { name: 'browse', href: '/', label: 'Browse', Icon: Compass, Scope: SidebarBridges },
+  { name: 'library', href: '/library', label: 'Library', Icon: Library, Scope: SidebarCollections },
   { name: 'history', href: '/history', label: 'History', Icon: History, noRecede: true },
   { name: 'activity', href: '/activity', label: 'Activity', Icon: Bell, noRecede: true },
   { name: 'settings', href: '/settings', label: 'Settings', Icon: Settings },
@@ -245,6 +259,7 @@ const HIDE_OFFSET_SLACK = 2;
 export default function AppTabs() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const pathname = usePathname();
   const theme = useTheme();
 
   // Static web export (`web.output: "static"`) prerenders every route on the
@@ -316,6 +331,24 @@ export default function AppTabs() {
     [isMobile, sidebar, reveal],
   );
 
+  // The rail's children: the same triggers, each followed by its own scope group while that
+  // destination is active. A FLAT array with keys, not Fragments — `Tabs` walks its children by type
+  // and descends through Fragments (see TAB_REGISTRATION), so a flat list keeps this chrome plainly
+  // skippable. The groups are built here rather than inside `AppSidebar` because only this file
+  // knows the tab table they hang off.
+  // Exact match, with no fallback: on a path that isn't a tab root (a pushed screen over the tabs)
+  // no scope group is the right answer, and defaulting to Browse's would hang Bridges off whatever
+  // row happened to be first.
+  const activeTab = TABS.find((t) => t.href === pathname)?.name;
+  const sidebarChildren = useMemo(
+    () =>
+      TABS.flatMap((tab, i) => {
+        const row = triggers[i];
+        return tab.Scope && activeTab === tab.name ? [row, <tab.Scope key={`${tab.name}-scope`} />] : [row];
+      }),
+    [triggers, activeTab],
+  );
+
   // See the wrapper below — both rest at identity/transparent unless the series page is open.
   const seriesReaderBackdropStyle = useSeriesReaderBackdropStyle();
   const seriesReaderBackdropDim = useSeriesReaderBackdropDimStyle();
@@ -344,7 +377,7 @@ export default function AppTabs() {
           {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
           {sidebar && (
             <View style={styles.sidebarWrap}>
-              <AppSidebar top={insets.top}>{triggers}</AppSidebar>
+              <AppSidebar top={insets.top}>{sidebarChildren}</AppSidebar>
             </View>
           )}
 
