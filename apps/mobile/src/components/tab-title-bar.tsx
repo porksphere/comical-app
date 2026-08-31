@@ -3,11 +3,9 @@ import { Platform, StyleSheet, View, type ViewProps } from 'react-native';
 import type { AnimatedProps } from 'react-native-reanimated';
 
 import { BarSurface } from '@/components/bar-surface';
-import { DesktopNavWidth } from '@/components/app-tabs';
 import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { useHasSidebar } from '@/hooks/use-content-width';
-import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
+import { useTopBarHeight } from '@/hooks/use-responsive';
 import { testId } from '@/lib/test-id';
 
 /**
@@ -35,15 +33,6 @@ export function TabTitleBar({
   barStyle?: AnimatedProps<ViewProps>['style'];
 }) {
   const barHeight = useTopBarHeight();
-  // On wide/desktop viewports app-tabs.tsx overlays its icon-only nav row at this same bar's
-  // trailing edge (see its `navRight` comment). Without reserving room for it here, `right`'s own
-  // trailing icons render at literally the same coordinates as the nav's icons and swallow taps
-  // meant for this bar — see `DesktopNavWidth`'s comment for how that was found and measured.
-  // ...but only where that nav is actually rendered. At rail widths it isn't (the sidebar replaced
-  // it), so reserving its width there is pure dead space between `right` and the bar's edge.
-  const largeScreen = useIsLargeScreen();
-  const railNav = useHasSidebar();
-  const reserveForDesktopNav = largeScreen && !railNav;
   return (
     <BarSurface style={[styles.topBar, barStyle]}>
       {/* Cap+centre only on web; native fills the width so the title aligns with the full-width grids. */}
@@ -53,7 +42,7 @@ export function TabTitleBar({
             {title}
           </ThemedText>
         )}
-        {right != null && <View style={[styles.right, reserveForDesktopNav && styles.rightDesktop]}>{right}</View>}
+        {right != null && <View style={styles.right}>{right}</View>}
       </View>
     </BarSurface>
   );
@@ -88,9 +77,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
-  },
-  rightDesktop: {
-    // + Spacing.four as a buffer gap, not flush against the nav's own icons.
-    marginRight: DesktopNavWidth + Spacing.four,
   },
 });

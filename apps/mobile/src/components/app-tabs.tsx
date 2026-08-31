@@ -19,9 +19,8 @@ import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
-import { DesktopTopBarHeight, MaxTopLevelWidth, navInsetFor, Spacing } from '@/constants/theme';
+import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
-import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
@@ -63,16 +62,12 @@ const TABS: {
   { name: 'settings', href: '/settings', label: 'Settings', Icon: Settings },
 ];
 
-const MOBILE_BREAKPOINT = 768;
-
-// Each desktop nav icon is a 22px Icon inside `iconButton`'s Spacing.one (4px) padding on every
-// side, laid out in `topNav`'s Spacing.three (16px) gap — see the styles below. Kept as a formula
-// (not a guessed constant) so a screen's own trailing header controls can reserve exactly enough
-// room to clear this row on wide/desktop web, rather than drifting out of sync with a hardcoded
-// pixel value the way index.tsx's old `searchPillWrap.marginRight` did (verified too narrow —
-// left only ~14px clearance — when the same gap was needed for TabTitleBar's `right` slot).
-const DESKTOP_NAV_ICON_SIZE = 22 + Spacing.one * 2;
-export const DesktopNavWidth = TABS.length * DESKTOP_NAV_ICON_SIZE + (TABS.length - 1) * Spacing.three;
+// No mid-size layout. A top-right icon row used to sit between the bar and the rail, and it was the
+// only nav that OVERLAID content: every screen had to reserve `DesktopNavWidth` in its own trailing
+// slot so the row's icons didn't land on the screen's controls and swallow their taps. That
+// reservation was a standing coupling between the nav and every bar in the app, and the bug it
+// guarded against was found the hard way. The bar already works at these widths, so the row and the
+// whole reservation mechanism are gone.
 
 // Rounding slack for "is this offset at the content end?" — see the bounce guard in the scroll
 // listener below.
@@ -274,9 +269,10 @@ export default function AppTabs() {
   const [hydrated, setHydrated] = useState(false);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the point IS the post-hydration render: React's own remedy for an SSR mismatch, and the cascade is the fix rather than a cost.
   useEffect(() => setHydrated(true), []);
-  const isMobile = !hydrated || width < MOBILE_BREAKPOINT;
-  // The third layout. `navInsetFor` is the single source of truth for whether the sidebar is showing.
-  const sidebar = !isMobile && navInsetFor(width) > 0;
+  const isMobile = !hydrated || width < SidebarBreakpoint;
+  // Two layouts, not three: the bar below, the rail above. There is no in-between any more — see the
+  // note at MOBILE_BREAKPOINT's removal below.
+  const sidebar = !isMobile;
   // ONE number for the space the rail takes: it pads the slot AND it is what the content width has
   // subtracted, so the two cannot disagree about how much room the rail took. Recomputing the
   // provider's value from `navInsetFor(width)` instead would drift for exactly one render —
@@ -304,11 +300,6 @@ export default function AppTabs() {
   const slideStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: tabBarProgress.value * tabBarHideOffset.value }],
   }));
-
-  // Pin the desktop nav to the right edge of the constrained content (the same
-  // MaxTopLevelWidth the views centre within), not the raw screen edge, so it
-  // lines up with the Browse selector bar on wide viewports.
-  const navRight = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
 
   // The buttons actually drawn. No `href`: these address the routes registered by TAB_REGISTRATION,
   // which is what a `TabTrigger` outside a `TabList` is for. Memoized because they're the expensive
@@ -380,13 +371,6 @@ export default function AppTabs() {
             <View style={styles.sidebarWrap}>
               <AppSidebar top={insets.top}>{sidebarChildren}</AppSidebar>
             </View>
-          )}
-
-          {/* Desktop: icon-only nav pinned to the top-right, aligned with the Browse selector bar row
-              (top = its paddingTop, height = the subtitle line-height so the icons centre against the
-              selectors). */}
-          {!isMobile && !sidebar && (
-            <View style={[styles.topNav, { top: insets.top, right: navRight }]}>{triggers}</View>
           )}
 
           {isMobile && (
@@ -462,7 +446,6 @@ function TabButton({
   noRecede?: boolean;
 }) {
   const theme = useTheme();
-  const { hovered, handlers } = useHover();
 
   // Only the ARRIVING tab writes, so the two buttons that re-render on a switch can't race. The
   // series page opens as a sibling of the whole tab navigator, which blurs it without changing
@@ -520,28 +503,9 @@ function TabButton({
     );
   }
 
-  // Desktop: icon only (no label), tinted with the theme so it reads on the
-  // page background rather than a bar of its own.
-  const color = isFocused ? theme.text : theme.textSecondary;
-  return (
-    <Pressable
-      {...props}
-      {...handlers}
-      testID={`tab.${routeName}`}
-      onPress={handlePress}
-      accessibilityLabel={typeof children === 'string' ? children : undefined}
-      style={({ pressed }) => [
-        styles.iconButton,
-        hovered && { backgroundColor: theme.backgroundSelected },
-        pressed && styles.pressed,
-      ]}>
-      <View style={styles.iconWrap}>
-        <Icon size={22} color={color} strokeWidth={2.25} />
-        {routeName === 'activity' && <ActivityTabBadge />}
-        {routeName === 'settings' && <SettingsTabBadge />}
-      </View>
-    </Pressable>
-  );
+  // Unreachable: `mobile` and `sidebar` now cover every width between them, so the icon-only desktop
+  // form that used to live here went with the top-right row.
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -573,15 +537,6 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     bottom: 0,
-  },
-  topNav: {
-    position: 'absolute',
-    // right is set inline so it tracks the constrained content edge.
-    height: DesktopTopBarHeight,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    zIndex: 10,
   },
   iconButton: {
     padding: Spacing.one,

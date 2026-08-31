@@ -12,7 +12,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { DesktopNavWidth } from '@/components/app-tabs';
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { GridSkeleton } from '@/components/grid-skeleton';
@@ -1045,14 +1044,14 @@ const styles = StyleSheet.create({
   cell: {},
   // Desktop search pill: takes the middle of the selector row (flex), capped so it reads as a
   // search bar, with a right margin reserving space for the desktop tab-icon nav (app-tabs).
-  // DesktopNavWidth is the nav's actual rendered width — a hardcoded 200px here previously left
+  // No margin: the top-right icon row this used to clear no longer exists at any width, so the pill
+  // simply centres.
   // only ~14px of clearance (measured), which is how a near-identical overlap surfaced on the
   // Library screen's own trailing icons once they needed the same reservation (see
   // tab-title-bar.tsx's `rightDesktop`).
   searchPillWrap: {
     flex: 1,
     alignItems: 'center',
-    marginRight: DesktopNavWidth + Spacing.four,
   },
   searchPillTrailing: {
     flex: 1,
