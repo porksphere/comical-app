@@ -123,7 +123,7 @@ export default function GeneralSettingsScreen() {
               the gesture's only documentation — nothing on Browse says the icon is holdable. */}
           <SettingsSelectRow
             label="Hold bridge icon"
-            description="What holding the icon in the Browse tab's top-left corner does."
+            description="What holding the Browse tab's bridge icon does."
             value={holdAction}
             options={HOLD_ACTION_OPTIONS}
             onChange={setHoldAction}

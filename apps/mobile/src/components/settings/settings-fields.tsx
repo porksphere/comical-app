@@ -11,6 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
+import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
@@ -27,7 +28,31 @@ import { testId } from '@/lib/test-id';
  */
 
 /**
- * The narrowest a text row's value column is ever allowed to get, whatever is on its left.
+/**
+ * Where a select row's current value goes when the row is too narrow to seat it beside the label.
+ *
+ * Both columns are one line and the row's height is FIXED (see settingsRowFrame — uniform height is
+ * what makes a settings list read as a list), so a narrow viewport can't be answered by wrapping or
+ * by growing the row. It can be answered by giving the value the second line instead of the
+ * description: same two lines, same height, and the value gets the row's whole width rather than the
+ * ~110pt left over beside a label. On a 360pt phone that is nearly three times the room, which is
+ * the difference between "Show NSFW until app is closed" and "Show NSFW unti…".
+ *
+ * The DESCRIPTION is what gives way, and that is the right way round. It is static prose about what
+ * the setting is; the value is live state, and the state is the thing a settings row exists to
+ * report. The prose is also still reachable — the picker this row opens lists every option with its
+ * own description, which is where you are going anyway if the row's answer isn't the one you wanted.
+ * Title-over-summary is Material's shape for exactly this row, and iOS only gets away with keeping
+ * both on one line because its values are short enough to be words.
+ *
+ * Deliberately keyed on the VIEWPORT rather than on how long this particular value happens to be:
+ * a character-count threshold would be a guess about glyph widths that breaks in another language,
+ * and would make two rows in the same list disagree about their own shape for no reason a reader
+ * could see. Bridges declare their own setting labels, so arbitrary length is the normal case here,
+ * not the exception.
+ */
+
+/** The narrowest a text row's value column is ever allowed to get, whatever is on its left.
  *
  * This is a hard guarantee, not a hint: a bridge declares its own setting labels and descriptions, so
  * a long one ("Paste the `cf_clearance` cookie from your browser…") must not be able to squeeze the
@@ -72,6 +97,10 @@ export function SettingsSelectRow<T extends string>({
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const current = options.find((o) => o.value === value);
   const base = testId('settings.select', label);
+  // See the note above `ValueColumnMinWidth`: on a narrow viewport the value takes the second line
+  // and the description stands down, rather than the two of them splitting one line badly.
+  const stacked = useIsCompact();
+  const valueText = current?.label ?? (value || placeholder || '');
   return (
     <Pressable
       testID={base}
@@ -89,18 +118,28 @@ export function SettingsSelectRow<T extends string>({
           <ThemedText type="small" numberOfLines={1}>
             {label}
           </ThemedText>
-          {description && (
+          {stacked ? (
+            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+              {valueText}
+            </ThemedText>
+          ) : description ? (
             <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
               {description}
             </ThemedText>
-          )}
+          ) : null}
         </View>
-        <View style={styles.rowValue}>
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.valueLabel}>
-            {current?.label ?? (value || placeholder || '')}
-          </ThemedText>
+        {/* The chevron stays INSIDE the value column when there is one: `rowValue`'s own gap sits it
+            4pt off the value, where the row's gap would push it 16 and read as a detached arrow. */}
+        {stacked ? (
           <ChevronRightIcon color={theme.textSecondary} size={18} />
-        </View>
+        ) : (
+          <View style={styles.rowValue}>
+            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.valueLabel}>
+              {valueText}
+            </ThemedText>
+            <ChevronRightIcon color={theme.textSecondary} size={18} />
+          </View>
+        )}
       </View>
     </Pressable>
   );
