@@ -178,8 +178,15 @@ the grid. Timed late (it was [0.13, 0.32]) the content was down to 0.33 before t
 the middle of every off-screen dismissal was a window two thirds transparent — a gap, not a
 cross-fade. `cover` never shows this because its copy is opaque from 0.7, before the content starts
 leaving; that cannot be copied here, where an opaque window-filling cover that early would replace
-the page instead of dissolving into it. Starting the copy where the content starts leaving gets the
-worst coverage to 0.92, the ordinary dip of a dissolve.
+the page instead of dissolving into it. So `cover-offscreen` gets its OWN content curve
+(`ZOOM_CONTENT_FADE_CLOSE_OFFCOVER`) holding the page opaque through the first half, which is what
+lets the copy take a long fade without opening a hole: worst coverage 0.90.
+
+**Judge that fade's length in MILLISECONDS, never in `q`.** `q` does not move at a constant rate,
+and the drag cannot take it below about 0.47 at all — the follow asymptotes first — so this whole
+cross-fade plays inside the release spring, which is fastest exactly where `q` is high. A band up
+there is crossed in a few frames however wide it looks: [0.5, 0.72] is a fifth of the collapse and
+50ms of it. [0.15, 0.75] is 172ms of ~480ms.
 
 Moving it is not the answer and was tried twice: sliding it in from the mask edge, along its own
 path run backwards, is a second animation riding the collapse at any timing still legible enough to

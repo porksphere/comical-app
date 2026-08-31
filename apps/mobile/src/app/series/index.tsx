@@ -261,6 +261,17 @@ const ZOOM_OUT_SPRING_READER = {
 // transparent onto whatever the modal was opened over.
 const ZOOM_CONTENT_FADE_OPEN = [0, 0.28];
 const ZOOM_CONTENT_FADE_CLOSE = [0.13, 0.7];
+/**
+ * The page's fade for `cover-offscreen`, where it is the OTHER half of a real cross-fade rather
+ * than the thing being uncovered.
+ *
+ * On `cover` the copy is opaque from 0.7 — before the page starts leaving — so the page's curve is
+ * unconstrained: whatever it does, the cover underneath is already carrying the frame. Here nothing
+ * is underneath, so the page has to hold the frame until the cover has arrived. Opaque through the
+ * first half and gone by 0.08 lets the copy take a long, visible fade (see
+ * ZOOM_THUMB_FADE_CLOSE_OFFCOVER) without opening the hole that timing would otherwise cost.
+ */
+const ZOOM_CONTENT_FADE_CLOSE_OFFCOVER = [0.08, 0.45];
 const ZOOM_THUMB_FADE_OPEN = [0.5, 0.85];
 const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // The same fade for a copy that is NOT landing on the real cover — the `cover-offscreen`
@@ -280,15 +291,21 @@ const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // before the content begins to leave — it just cannot be copied here, where an opaque
 // window-filling cover that early would replace the page rather than dissolve into it.
 //
-// So: the copy starts arriving at 0.72, within a frame or two of where the content starts leaving
-// (ZOOM_CONTENT_FADE_CLOSE's 0.7), and is fully in by 0.5. Worst coverage 0.92 at q = 0.60 — the
-// ordinary dip of a dissolve — against 0.33 before. Below 0.5 the two destinations then behave
-// alike: an opaque cover, shrinking onto the card.
+// The band also has to be WIDE, and that is not the same requirement. `q` does not move at a
+// constant rate: the drag cannot take it below about 0.47 at all (the follow asymptotes first), so
+// this whole cross-fade plays out inside the release spring — which is at its fastest exactly where
+// `q` is high. A band of [0.5, 0.72] is 0.22 of the collapse and 50ms of it, three frames, which
+// reads as the cover simply appearing. [0.15, 0.75] is 172ms of a ~355ms collapse.
 //
-// The lower bound is what keeps a screen-sized cover off the screen, and that is newer than it
+// Spanning that much range would normally cost coverage, since it means fading in against a page
+// that is also fading. It doesn't, because `cover-offscreen` has its own content curve
+// (ZOOM_CONTENT_FADE_CLOSE_OFFCOVER) that holds the page opaque through the first half. Worst
+// coverage 0.90 at q = 0.30, against 0.33 before.
+//
+// The upper bound is what keeps a screen-sized cover off the screen, and that is newer than it
 // looks: the copy is sized to the WINDOW now (see `zoomThumbStyle`), so it is a full 393pt wide at
-// q = 1. Raising 0.72 much further starts showing that.
-const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.5, 0.72];
+// q = 1. Raising 0.75 much further starts showing that.
+const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.15, 0.75];
 // The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
 // carried away, it is the surface being uncovered, so matching the page's curve held it opaque
 // through the first third of the collapse and kept the grid hidden long after the page had
@@ -2778,9 +2795,15 @@ function SeriesReaderInstance({
   const zoomContentFadeStyle = useAnimatedStyle(() => {
     if (!zoomArmed.value) return { opacity: 0 };
     const q = Math.max(0, zoom.value);
-    const range = zoomClosing.value ? ZOOM_CONTENT_FADE_CLOSE : ZOOM_CONTENT_FADE_OPEN;
+    // The destination decides the CLOSE, because it decides whether anything is underneath this
+    // page while it leaves — see ZOOM_CONTENT_FADE_CLOSE_OFFCOVER. Picked the same way the copy
+    // picks its own range, off the same latched flag, so the two halves of the cross-fade cannot
+    // end up describing different destinations.
+    const geom = pickZoomGeom(zoomBoundOnScreen.value, zoomGeomCover, zoomGeomOffCover, zoomGeomPage);
+    const closing = geom?.kind === 'cover-offscreen' ? ZOOM_CONTENT_FADE_CLOSE_OFFCOVER : ZOOM_CONTENT_FADE_CLOSE;
+    const range = zoomClosing.value ? closing : ZOOM_CONTENT_FADE_OPEN;
     return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
-  });
+  }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage]);
   // See ZOOM_BACKDROP_FADE_CLOSE / _OPEN — same shape as the content fade, its own ranges.
   const zoomBackdropFadeStyle = useAnimatedStyle(() => {
     if (!zoomArmed.value) return { opacity: 0 };
