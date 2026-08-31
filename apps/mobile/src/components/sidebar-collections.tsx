@@ -16,7 +16,7 @@ import { setSelectedCollection, useSelectedCollectionId } from '@/data/selected-
 import { useCollections } from '@/hooks/use-collections';
 import { router } from '@/lib/nav';
 
-export function SidebarCollections({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarCollections({ active, onNavigate }: { active?: boolean; onNavigate?: () => void }) {
   const selected = useSelectedCollectionId();
   const { collections } = useCollections();
 
@@ -29,7 +29,7 @@ export function SidebarCollections({ onNavigate }: { onNavigate?: () => void }) 
           key={row.id ?? 'all'}
           testID={`sidebar.collection.${row.id ?? 'all'}`}
           label={row.name}
-          active={row.id === selected}
+          active={active === true && row.id === selected}
           onPress={() => {
             setSelectedCollection(row.id);
             router.navigate('/library');

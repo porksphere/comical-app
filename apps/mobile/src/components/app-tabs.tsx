@@ -1,3 +1,4 @@
+import { usePathname } from 'expo-router';
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
 import { Bell, Compass, History, Library, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -52,7 +53,7 @@ const TABS: {
   label: string;
   Icon: LucideIcon;
   noRecede?: boolean;
-  Scope?: React.ComponentType<{ onNavigate?: () => void }>;
+  Scope?: React.ComponentType<{ active?: boolean; onNavigate?: () => void }>;
 }[] = [
   // A compass, not a grid: Browse is the discover surface, and `LayoutGrid` both named a layout
   // this tab doesn't always have (its home is rails) and was already Settings' Custom Pages mark.
@@ -256,6 +257,7 @@ const HIDE_OFFSET_SLACK = 2;
 export default function AppTabs() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const pathname = usePathname();
   const theme = useTheme();
 
   // Static web export (`web.output: "static"`) prerenders every route on the
@@ -334,6 +336,12 @@ export default function AppTabs() {
   // Fragments — `Tabs` walks its children by type and descends through Fragments (see
   // TAB_REGISTRATION), so a flat list keeps this chrome plainly skippable. The groups are built here
   // rather than inside `AppSidebar` because only this file knows the tab table they hang off.
+  // Exactly ONE row in the rail is selected at a time, and it belongs to the tab you are on. A scope
+  // group whose destination isn't active shows its rows unhighlighted: the bridge it lists is still
+  // the one Browse would show, but Browse isn't what you're looking at, so claiming it as the current
+  // selection puts two (or three) filled rows on screen at once. Exact pathname match, no fallback —
+  // on a pushed screen over the tabs nothing in the rail is current.
+  const activeTab = TABS.find((t) => t.href === pathname)?.name;
   const sidebarChildren = useMemo(
     () =>
       TABS.flatMap((tab, i) => {
@@ -342,11 +350,11 @@ export default function AppTabs() {
         return [
           row,
           <SidebarGroup key={`${tab.name}-scope`} name={tab.name} testID={`sidebar.group.${tab.name}`}>
-            <tab.Scope />
+            <tab.Scope active={activeTab === tab.name} />
           </SidebarGroup>,
         ];
       }),
-    [triggers],
+    [triggers, activeTab],
   );
 
   // See the wrapper below — both rest at identity/transparent unless the series page is open.

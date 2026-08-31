@@ -28,7 +28,7 @@ import { router } from '@/lib/nav';
 
 /** Device-local, and persisted: a group collapsed to keep the five destinations above the fold must
  *  stay collapsed across launches, or it re-expands and buries them again. */
-export function SidebarBridges({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarBridges({ active, onNavigate }: { active?: boolean; onNavigate?: () => void }) {
   // `bridgeId`, not `bridge`: the raw id is null until the user has picked one, while Browse is
   // already showing the aggregate it resolves to. Highlighting the raw id leaves a fresh install
   // with a rail where nothing is current and the page plainly is.
@@ -45,7 +45,7 @@ export function SidebarBridges({ onNavigate }: { onNavigate?: () => void }) {
           key={b.id}
           testID={`sidebar.bridge.${b.id}`}
           label={b.name}
-          active={b.id === bridgeId}
+          active={active === true && b.id === bridgeId}
           thumbnail={
             isComicalBridge(b.id) ? (
               <Image source={COMICAL_ICON} style={styles.thumb} contentFit="cover" />

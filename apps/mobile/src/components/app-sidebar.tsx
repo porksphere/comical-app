@@ -18,6 +18,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 
 import { useHover } from '@/hooks/use-hover';
+import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useSectionOpen } from '@/hooks/use-sidebar-sections';
 import { useTheme } from '@/hooks/use-theme';
 import { Fonts, Spacing } from '@/constants/theme';
@@ -25,6 +26,10 @@ import { Fonts, Spacing } from '@/constants/theme';
 /** Short, and eased out: a disclosure is an acknowledgement of a tap, not a transition between
  *  places. Long enough to read as movement, short enough that a second tap never queues behind it. */
 const DISCLOSE_TIMING = { duration: 180, easing: Easing.out(Easing.cubic) };
+
+/** A destination row's height. Named because the rail's top padding is derived from it — see
+ *  `AppSidebar` — rather than picked to look about right. */
+const ITEM_HEIGHT = 44;
 
 /** A row in the sidebar. `active` drives the pill; the icon and label come from the tab table. */
 /** Extends `PressableProps` so a `TabTrigger`'s injected props (onPress, testID, accessibility)
@@ -58,14 +63,17 @@ export function SidebarItem({
   const theme = useTheme();
   const { hovered, handlers } = useHover();
 
-  // Active is a filled pill; hover is the same neutral surface at rest opacity, so moving down the
-  // list previews the shape the selected row already has rather than introducing a new one.
+  // Hover and selected are DIFFERENT surfaces, not the same one: they used to share
+  // `backgroundSelected`, so hovering any row made it look chosen and the actual selection was
+  // indistinguishable from the pointer's position. Hover is the lighter `backgroundElement` — enough
+  // to say "this is a target", not enough to claim the row is current.
+  //
   // A row with a scope group never takes the filled pill: one of its children always holds the
   // selection (there is always a current bridge, always a current collection), so filling both
   // stacks two selected-looking rows and leaves the actual choice ambiguous. Weight, colour and the
   // chevron still mark it as the section you're in; only the fill moves down.
   const selectedFill = active && !scope;
-  const background = selectedFill || hovered ? theme.backgroundSelected : 'transparent';
+  const background = selectedFill ? theme.backgroundSelected : hovered ? theme.backgroundElement : 'transparent';
   const color = active ? theme.text : theme.textSecondary;
 
   return (
@@ -129,10 +137,14 @@ export function AppSidebar({
   children: React.ReactNode;
 }) {
   const theme = useTheme();
+  const barHeight = useTopBarHeight();
   return (
     <ScrollView
       style={[styles.sidebar, { width, borderRightColor: theme.barHairline, backgroundColor: theme.background }]}
-      contentContainerStyle={[styles.sidebarContent, { paddingTop: top + Spacing.three }]}
+      // Centres the FIRST row against the bar's title rather than padding by a round number: the bar
+      // is `barHeight` tall below the inset and centres its content, so matching that puts the two
+      // on one line. A flat Spacing.three sat the row 7pt low against it.
+      contentContainerStyle={[styles.sidebarContent, { paddingTop: top + barHeight / 2 - ITEM_HEIGHT / 2 }]}
       // A rail is nav, not a document: a scrollbar parked down its edge reads as a second column
       // divider. It scrolls when an expanded group outgrows the viewport and is invisible otherwise.
       showsVerticalScrollIndicator={false}>
@@ -164,7 +176,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    height: 44,
+    height: ITEM_HEIGHT,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.two,
     // The pointer cursor react-native-web gives a Pressable is right here — these are nav links.
@@ -201,6 +213,10 @@ const styles = StyleSheet.create({
   // Clips the measured children to the animated fraction of their height.
   group: {
     overflow: 'hidden',
+  },
+  groupRows: {
+    gap: Spacing.one,
+    paddingTop: Spacing.one,
   },
   subDot: { width: 18, height: 18 },
   subLabel: {
@@ -255,7 +271,12 @@ export function SidebarGroup({ name, testID, children }: { name: string; testID:
   }));
   return (
     <Animated.View testID={testID} style={[styles.group, style]}>
-      <View onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>{children}</View>
+      {/* The gap lives HERE, not on the rail: the rail's own gap only separates its direct children
+          (the rows and the groups), so without this the sub-item highlights were flush against each
+          other — a selected row and the one you were hovering below it read as a single block. */}
+      <View style={styles.groupRows} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
+        {children}
+      </View>
     </Animated.View>
   );
 }
@@ -288,7 +309,7 @@ export function SidebarSubItem({
       accessibilityState={{ selected: active }}
       style={({ pressed }) => [
         styles.subItem,
-        (active || hovered) && { backgroundColor: theme.backgroundSelected },
+        { backgroundColor: active ? theme.backgroundSelected : hovered ? theme.backgroundElement : 'transparent' },
         pressed && styles.pressed,
       ]}>
       {thumbnail ?? <View style={styles.subDot} />}
