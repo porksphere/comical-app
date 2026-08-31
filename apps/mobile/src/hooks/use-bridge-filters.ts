@@ -24,6 +24,7 @@ import {
   type FilterDef,
   type FilterValue,
 } from '@/components/filters/filter-types';
+import { useSearchSort } from '@/hooks/use-search-sort';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive, type QueryOpts } from '@/data/source';
 import type { Bridge } from '@/data/types';
@@ -48,6 +49,12 @@ export type BridgeFilters = {
   /** Debounced snapshot the fetch depends on (not the raw values). */
   committedFilters: QueryOpts['filters'];
   committedSort: QueryOpts['sort'];
+  /** Whether `committedSort` was CHOSEN on this screen rather than restored from the per-bridge
+   *  memory — the caller's test for "the user has expressed a search". A remembered sort orders a
+   *  search; it must never be the thing that STARTS one, or opening Search on a bridge you have
+   *  ever sorted would fire a query-less listing behind the blank page's keyboard. Committed in the
+   *  same debounce as the sort itself, so the two can never disagree about one request. */
+  committedSortExplicit: boolean;
   hasActiveQuery: boolean;
 };
 
@@ -101,7 +108,24 @@ export function useBridgeFilters(bridgeId: string | undefined, currentBridge: Br
   // User-editable selections. `filterValues` is SPARSE — only the user's explicit changes; any unset
   // filter falls back to its `initialValue` lazily (see `resolvedValues`). Reset on bridge change.
   const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
-  const [sortValue, setSortValue] = useState<SortState>(null);
+  // Per-bridge and PERSISTED, unlike the filters beside it — so a bridge you always read by
+  // "latest chapter" is still sorted that way on the next search, and after a restart. Derived from
+  // `bridgeId` rather than held in state, which is also what retires the sort half of the
+  // bridge-change reset below: switching bridges now reads the new bridge's own remembered choice
+  // instead of clearing to the default. See useSearchSort for why per bridge is the only shape the
+  // key vocabulary allows.
+  const [sortValue, setStoredSort] = useSearchSort(bridgeId, sortOptions);
+  // Whether the sort in effect was tapped on this screen, as opposed to restored for this bridge.
+  // See `committedSortExplicit`. Cleared with the filters on a bridge change: the next bridge's
+  // remembered sort is, again, not something the user has asked for here.
+  const [sortTouched, setSortTouched] = useState(false);
+  const setSortValue = useCallback(
+    (next: SortState) => {
+      setSortTouched(true);
+      setStoredSort(next);
+    },
+    [setStoredSort],
+  );
   const setFilterValue = useCallback((id: string, v: FilterValue) => {
     setFilterValues((prev) => ({ ...prev, [id]: v }));
   }, []);
@@ -110,8 +134,10 @@ export function useBridgeFilters(bridgeId: string | undefined, currentBridge: Br
     [filterDefs, filterValues],
   );
 
-  // Reset user filter/sort state (and label hints) when the bridge changes — the new bridge's
-  // defaults apply lazily. A pending intent applies AFTER this, gated on `filtersSettled`.
+  // Reset user FILTER state (and label hints) when the bridge changes — the new bridge's defaults
+  // apply lazily. Sort is not reset here and does not need to be: it is per-bridge and persisted,
+  // so it re-derives from the new `bridgeId` on its own. A pending intent applies AFTER this, gated
+  // on `filtersSettled`.
   // Done during render rather than in an effect so the new bridge is never described by the old
   // bridge's selections for a commit: the reset lands in the same render that first sees the new
   // `bridgeId`, instead of one paint later. (The effect form also ran a no-op reset on mount; this
@@ -120,7 +146,7 @@ export function useBridgeFilters(bridgeId: string | undefined, currentBridge: Br
   if (prevBridgeId !== bridgeId) {
     setPrevBridgeId(bridgeId);
     setFilterValues({});
-    setSortValue(null);
+    setSortTouched(false);
     setLabelHints({});
   }
 
@@ -128,6 +154,7 @@ export function useBridgeFilters(bridgeId: string | undefined, currentBridge: Br
   // don't each fire a request.
   const [committedFilters, setCommittedFilters] = useState<QueryOpts['filters']>(undefined);
   const [committedSort, setCommittedSort] = useState<QueryOpts['sort']>(undefined);
+  const [committedSortExplicit, setCommittedSortExplicit] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => {
       const next = filterDefs
@@ -135,10 +162,11 @@ export function useBridgeFilters(bridgeId: string | undefined, currentBridge: Br
         .filter((v): v is { key: string; value: unknown } => v !== null);
       setCommittedFilters(next.length ? (next as QueryOpts['filters']) : undefined);
       setCommittedSort(sortValue ? { key: sortValue.key, ascending: sortValue.ascending } : undefined);
+      setCommittedSortExplicit(!!sortValue && sortTouched);
     }, FILTER_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [filterDefs, resolvedValues, sortValue]);
-  const hasActiveQuery = !!committedFilters || !!committedSort;
+  }, [filterDefs, resolvedValues, sortValue, sortTouched]);
+  const hasActiveQuery = !!committedFilters || committedSortExplicit;
 
   return {
     filterDefs,
@@ -153,6 +181,7 @@ export function useBridgeFilters(bridgeId: string | undefined, currentBridge: Br
     setLabelHints,
     committedFilters,
     committedSort,
+    committedSortExplicit,
     hasActiveQuery,
   };
 }
