@@ -18,6 +18,7 @@ import { hydrateDownloadIndex } from '@/data/downloads/index-cache';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } from '@/data/embedded';
 import { queryClient } from '@/data/query-client';
+import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
@@ -37,6 +38,22 @@ const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
   },
 ];
 
+/** The hold gesture has no label and no visual affordance, so these descriptions are the only
+ *  place it is ever explained — write them as the feature's documentation, not as option blurbs. */
+const HOLD_ACTION_OPTIONS: SettingsOption<BrowseHoldAction>[] = [
+  { value: 'none', label: 'Nothing', description: 'The bridge icon does nothing when held.' },
+  {
+    value: 'nsfw-until-closed',
+    label: 'Show NSFW until app is closed',
+    description: 'Hold to reveal NSFW-flagged bridges until you leave or minimize the app. Hold again to hide them.',
+  },
+  {
+    value: 'nsfw-until-restart',
+    label: 'Show NSFW until app restarts',
+    description: 'Hold to reveal NSFW-flagged bridges until Comical is next relaunched — they survive switching apps. Hold again to hide them.',
+  },
+];
+
 const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
   { value: 'system', label: 'System', description: 'Follow the device’s light or dark setting.' },
   { value: 'light', label: 'Light', description: 'Always use the light theme.' },
@@ -46,6 +63,7 @@ const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
 export default function GeneralSettingsScreen() {
   const contentPadding = useSettingsScrollPadding();
   const [nsfwMode, setNsfwMode] = useNsfwMode();
+  const [holdAction, setHoldAction] = useBrowseHoldAction();
   const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
@@ -100,6 +118,15 @@ export default function GeneralSettingsScreen() {
             value={nsfwMode}
             options={NSFW_MODE_OPTIONS}
             onChange={setNsfwMode}
+          />
+          {/* Directly under the NSFW row because that is what it acts on, and because this row is
+              the gesture's only documentation — nothing on Browse says the icon is holdable. */}
+          <SettingsSelectRow
+            label="Hold bridge icon"
+            description="What holding the Browse tab's bridge icon does."
+            value={holdAction}
+            options={HOLD_ACTION_OPTIONS}
+            onChange={setHoldAction}
           />
           {embeddedAvailable && (
             <SettingsToggleRow

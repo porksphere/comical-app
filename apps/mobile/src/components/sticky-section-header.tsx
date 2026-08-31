@@ -28,13 +28,11 @@ const SNAP_SPEED = 0.12;
 
 /**
  * WHICH heading belongs at the pin line, and how far the band has been pushed out — both derived
- * from the scroll alone, on the UI thread, with no reference to React state beyond `shown`.
+ * from the scroll ALONE, on the UI thread, with no reference to React state at all. That last part
+ * is load-bearing rather than tidy: see `stackStyle`.
  *
- * `k` is the section the scroll says is pinned, clamped to `shown ± 1`. The clamp is the whole
- * design: the component pre-renders those three headings, so whichever one the scroll lands on is
- * ALREADY on screen and arrives by translation — no JS round trip on the visual path. A fling that
- * crosses several sections at once outruns the pre-render; the band hides for those frames rather
- * than showing a heading it knows is stale.
+ * `k` is the pinned section's index in the LIST's own numbering — not a slot, and not clamped to
+ * what happens to be rendered. `outrun` below is what knows about the rendered window.
  *
  * `p` is 0 at rest, down to −`bandHeight` fully pushed out by the following heading — unless the
  * push is DEFERRED (`snapped`), in which case it stays 0 and the whole swap is `k` advancing on a
@@ -45,17 +43,15 @@ const SNAP_SPEED = 0.12;
  */
 function pinAt(
   sections: StickySection[],
-  shown: number,
   line: number,
   bandHeight: number,
   /** Whether the push is currently deferred — see `SNAP_SPEED`. */
   snapped: boolean,
 ) {
   'worklet';
-  if (sections.length === 0) return { k: shown, p: 0, outrun: false, atRest: true };
-  let idx = 0;
-  for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) idx = i;
-  const k = Math.max(0, Math.max(shown - 1, Math.min(shown + 1, idx)));
+  if (sections.length === 0) return { k: 0, p: 0, atRest: true };
+  let k = 0;
+  for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) k = i;
   const next = sections[k + 1];
 
   // Distance from the pin line to the heading coming up behind: ≥ a band is at rest, ≤ 0 fully out.
@@ -64,11 +60,23 @@ function pinAt(
   // rest, and `k` advancing on the frame the gap closes performs the whole swap. There is no
   // intermediate value in that mode to catch a frame of.
   const p = next && !snapped ? -bandHeight * Math.max(0, Math.min(1, 1 - gap / bandHeight)) : 0;
-  // `outrun` means the pinned section is one this stack hasn't rendered — a fling crossing several
-  // at once. The band HIDES for those frames rather than holding a neighbour at the pin line: a
-  // heading that is merely absent for two frames reads as the list scrolling, where a confidently
-  // drawn WRONG heading reads as a bug.
-  return { k, p, outrun: k !== idx, atRest: gap >= bandHeight };
+  return { k, p, atRest: gap >= bandHeight };
+}
+
+/**
+ * Whether the pinned section is one this stack hasn't rendered — a fling crossing several at once
+ * outruns the three pre-rendered headings. The band HIDES for those frames rather than holding a
+ * neighbour at the pin line: a heading that is merely absent for two frames reads as the list
+ * scrolling, where a confidently drawn WRONG heading reads as a bug.
+ *
+ * This is the ONE predicate here allowed to read the JS `shown`, because it gates opacity and
+ * nothing else. A frame of staleness either way resolves to a hidden band — which is this
+ * predicate's own answer for the case it is detecting, so being late costs nothing it wasn't
+ * already spending.
+ */
+function outrun(k: number, shown: number) {
+  'worklet';
+  return k < shown - 1 || k > shown + 1;
 }
 
 /** Whether ANY heading is pinned: the first section has reached the pin line. Both the band and the
@@ -198,9 +206,25 @@ export function useInlineHeadingStyle(hidden: boolean, pin?: InlineHeadingPin) {
  * which was correct and stalled. Instead the component renders THREE headings — `shown` and its
  * two neighbours — stacked a band apart with `shown` in the middle, and the UI thread simply
  * translates whichever one the scroll wants to the pin line. The neighbours sit outside the clip,
- * so they cost nothing visually until one arrives. `shown` re-bases afterwards, and because the
- * translate loses exactly the band it gains, the rendered position is identical either side of
- * that commit — a late update is invisible rather than a jump.
+ * so they cost nothing visually until one arrives, and `shown` re-bases afterwards.
+ *
+ * ── The re-base must move NOTHING, and that is a constraint on the transform ──
+ * The stack is laid out in the LIST's section-index space: its top is `(shown − 1)·bandHeight`, so
+ * every slot sits at its own section's index times a band, and the ride is `p − k·bandHeight` —
+ * with no `shown` term in it at all. Both halves of the re-base (which sections the slots hold, and
+ * where the stack sits) are then ONE React commit, and the transform simply doesn't change across
+ * it.
+ *
+ * That is the fix for a real flash, not a refactor. The obvious form of this — slots at a fixed
+ * `top: −bandHeight` and `p − (k − shown)·bandHeight` — is algebraically identical and states the
+ * same position, but it splits that position across the two update paths React Native has: the slot
+ * contents arrive on the mount commit, the transform arrives when Reanimated re-runs the mapper
+ * whose deps changed. Those are not the same frame, and a band is exactly what they disagree by.
+ * Late transform and you get the PREVIOUS heading back at the pin line for a frame; early and you
+ * get the one after next. Both read as the heading flickering as it changes.
+ *
+ * So `pinAt` takes no `shown`, and of the four styles below only the two computing OPACITY may read
+ * it — see `outrun` for why a stale frame is free there.
  *
  * The reaction deliberately ignores its INITIAL report (prev === null): the scroll shared value
  * only updates on scroll events, so right after a remount it can still hold the previous scope's
@@ -352,17 +376,18 @@ export function StickySectionHeader<S extends StickySection>({
       const s = speed.value * SPEED_SMOOTHING + Math.abs(v - prev) * (1 - SPEED_SMOOTHING);
       speed.set(s);
       const line = v + pinLine + (barOffset?.value ?? 0);
-      if (!pinAt(sections, shown, line, bandHeight, snapped.value).atRest) return;
+      if (!pinAt(sections, line, bandHeight, snapped.value).atRest) return;
       snapped.set(s >= bandHeight * SNAP_SPEED);
     },
-    [sections, pinLine, scrollOffset, barOffset, shown, bandHeight],
+    [sections, pinLine, scrollOffset, barOffset, bandHeight],
   );
 
   // Visibility + the ride on the bar's slide, so the heading stays glued to the bar's bottom edge.
   const bandStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
+    const { k } = pinAt(sections, line, bandHeight, snapped.value);
     return {
-      opacity: pinAt(sections, shown, line, bandHeight, snapped.value).outrun || !isPinned(sections[0]?.top, line) ? 0 : 1,
+      opacity: outrun(k, shown) || !isPinned(sections[0]?.top, line) ? 0 : 1,
       transform: [{ translateY: barOffset?.value ?? 0 }],
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
@@ -373,16 +398,16 @@ export function StickySectionHeader<S extends StickySection>({
   // row recycling. That queue is what made this feel slower than the sliding bars, which read the
   // same `scrollOffset` and never touch JS.
   //
-  // The stack is three bands tall with `shown` in the MIDDLE (its top starts one band above the
-  // clip), so `k` lands at the pin line by translating `p − (k − shown)·bandHeight`. When `shown`
-  // later catches up to `k`, that term goes to zero and `p` re-bases with it: the rendered position
-  // is identical either side of the commit, which is what makes a late JS update invisible rather
-  // than a jump.
+  // The stack is three bands tall and laid out in SECTION-INDEX space (its top is
+  // `(shown − 1)·bandHeight`, below), so section `i`'s slot sits at `i·bandHeight` and `k` lands at
+  // the pin line by translating `p − k·bandHeight`. `shown` is deliberately absent from that — it
+  // is what makes the re-base commit move nothing at all rather than merely balance out. See the
+  // component doc.
   const stackStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    const { k, p } = pinAt(sections, shown, line, bandHeight, snapped.value);
-    return { transform: [{ translateY: p - (k - shown) * bandHeight }] };
-  }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
+    const { k, p } = pinAt(sections, line, bandHeight, snapped.value);
+    return { transform: [{ translateY: p - k * bandHeight }] };
+  }, [sections, pinLine, scrollOffset, barOffset, bandHeight]);
 
   // The pinned heading's rule, hard-switched: on only while a heading is AT REST at the pin line.
   // It lives on the clip rather than in the stack — at rest the band fills the clip, so the two
@@ -391,8 +416,8 @@ export function StickySectionHeader<S extends StickySection>({
   // up only while pushed out).
   const ruleStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    return { opacity: pinAt(sections, shown, line, bandHeight, snapped.value).p < 0 ? 0 : 1 };
-  }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
+    return { opacity: pinAt(sections, line, bandHeight, snapped.value).p < 0 ? 0 : 1 };
+  }, [sections, pinLine, scrollOffset, barOffset, bandHeight]);
 
   // The SUPERSEDING heading's rule — the other half of the hand-off. The heading pushing the pinned
   // one out is the list's own inline row, one band below the clip's bottom edge and rising, so its
@@ -410,9 +435,9 @@ export function StickySectionHeader<S extends StickySection>({
   // track the SCROLL (a list row doesn't ride the sliding bar) while the pinned band does.
   const nextRuleStyle = useAnimatedStyle(() => {
     const bar = barOffset?.value ?? 0;
-    const { p, outrun } = pinAt(sections, shown, scrollOffset.value + pinLine + bar, bandHeight, snapped.value);
+    const { k, p } = pinAt(sections, scrollOffset.value + pinLine + bar, bandHeight, snapped.value);
     return {
-      opacity: p < 0 && !outrun && isPinned(sections[0]?.top, scrollOffset.value + pinLine + bar) ? 1 : 0,
+      opacity: p < 0 && !outrun(k, shown) && isPinned(sections[0]?.top, scrollOffset.value + pinLine + bar) ? 1 : 0,
       transform: [{ translateY: bandHeight * 2 + p + bar }],
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
@@ -437,8 +462,11 @@ export function StickySectionHeader<S extends StickySection>({
         style={[styles.clip, { top: stickyTop, height: bandHeight }, bandStyle]}>
         <Animated.View
           pointerEvents="box-none"
-          // Starts one band ABOVE the clip so the middle slot is the one at rest at the pin line.
-          style={[styles.stack, { top: -bandHeight, height: bandHeight * 3 }, stackStyle]}>
+          // The stack's HALF of the re-base, and the reason it is a laid-out `top` rather than part
+          // of the transform: this and the slot contents below are one commit, so the two can never
+          // be a frame apart. At `shown` it puts the middle slot at the pin line, exactly as a
+          // constant `-bandHeight` did. See the component doc.
+          style={[styles.stack, { top: (shown - 1) * bandHeight, height: bandHeight * 3 }, stackStyle]}>
           {slots.map((slot, i) => (
             <View
               // Keyed by SLOT, not by section: the stack is three fixed positions whose contents

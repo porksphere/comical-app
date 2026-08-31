@@ -15,7 +15,7 @@ import { useHovered } from '@/hooks/use-hovered';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
-import { ZoomSurfaceContext, useZoomSurfaceKey } from '@/lib/series-zoom';
+import { ZoomSurfaceContext, useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 import { testId } from '@/lib/test-id';
 
 // Card cover aspect is 2:3, so a card of width W has a cover of height W·3/2;
@@ -350,6 +350,13 @@ export function Rail({
   }));
 
   const zoomSurface = useZoomSurfaceKey(`rail:${section.id}`);
+  // A rail can lose a card without going anywhere itself (a filter narrowing its contents), which
+  // its unmount alone would never report. Positions it cannot answer — it is a horizontal strip with
+  // its own scroll, not a list `resolveZoomTarget` can interrogate — but membership it can.
+  useZoomSurfaceMembership(
+    zoomSurface,
+    useCallback((seriesId: string) => section.items.some((i) => String(i.id) === seriesId), [section.items]),
+  );
   const gridItems = section.items.slice(0, GRID_ITEMS);
   const gridRows: SeriesEntry[][] = [];
   for (let i = 0; i < gridItems.length; i += GRID_COLUMNS) gridRows.push(gridItems.slice(i, i + GRID_COLUMNS));

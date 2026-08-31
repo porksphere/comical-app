@@ -140,6 +140,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     setSortValue,
     committedFilters,
     committedSort,
+    committedSortExplicit,
   } = useBridgeFilters(bridgeId, currentBridge);
 
   // Pending tag/meta intent, resolved once this bridge's filter defs have loaded (`filtersSettled`) —
@@ -185,11 +186,17 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   // subscription and quietly re-search itself, while the search layer the chip opened mounted on an
   // empty intent and showed nothing. `isTop` is the host telling us which layer is actually live.
   //
-  // Seed the same three paths as mount — but clear the existing query/filters/sort first, so the tap
+  // Seed the same three paths as mount — but clear the existing query and FILTERS first, so the tap
   // lands on a clean slate exactly as it would on a freshly-pushed Search. Without that, the new tag
   // would MERGE into whatever refinement is already on screen (the filters hook only self-resets on a
   // bridge CHANGE, and this intent is usually for the same bridge), silently ANDing the tag with the
   // previous search's filters — not what "search this tag" means.
+  //
+  // The sort is deliberately NOT cleared with them, and that is the difference between the two: a
+  // filter narrows WHICH series come back, so carrying one over answers a question the user didn't
+  // ask, while a sort only orders whatever did — and it is now a remembered per-bridge preference
+  // (see useSearchSort), so clearing it here would quietly discard a setting rather than reset a
+  // refinement.
   const focusedRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
@@ -214,7 +221,6 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
         if (!intent) return;
         setBridge(intent.bridgeId);
         setFilterValues({});
-        setSortValue(null);
         setQuery(intent.kind === 'query' ? intent.query : '');
         setPendingTag(
           intent.kind === 'tag'
@@ -225,7 +231,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
           intent.kind === 'meta' ? { bridgeId: intent.bridgeId, metaKey: intent.metaKey, value: intent.value } : null,
         );
       }),
-    [setBridge, setFilterValues, setSortValue],
+    [setBridge, setFilterValues],
   );
 
   useEffect(() => {
@@ -282,10 +288,11 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   // this one value (see BrowseScope).
   const scope = useMemo<BrowseScope | null>(() => {
     if (!bridgeId) return null;
-    const active = !!query || (committedFilters?.length ?? 0) > 0 || !!committedSort;
+    // A RESTORED per-bridge sort orders a search but never starts one — see committedSortExplicit.
+    const active = !!query || (committedFilters?.length ?? 0) > 0 || committedSortExplicit;
     if (!active) return null;
     return { kind: 'search', query, opts: { filters: committedFilters, sort: committedSort } };
-  }, [bridgeId, query, committedFilters, committedSort]);
+  }, [bridgeId, query, committedFilters, committedSort, committedSortExplicit]);
 
   const resultsQuery = useInfiniteQuery({
     queryKey: scope ? queryKeys.browseGrid(mock, bridgeId ?? '', scope) : DISABLED_RESULTS_KEY,

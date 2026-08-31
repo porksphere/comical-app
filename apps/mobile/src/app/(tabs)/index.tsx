@@ -26,7 +26,7 @@ import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { showToast } from '@/components/toast';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
-import { toggleNsfwUntilClosed } from '@/data/nsfw';
+import { runBrowseHoldAction, useBrowseHoldAction } from '@/data/browse-hold-action';
 import {
   bridgePageOptions,
   comicalPageOptions,
@@ -579,19 +579,17 @@ export default function BrowseScreen() {
     beginCrossfade(() => setPage(next));
   };
 
-  // Hold the bridge icon to flip the session-only NSFW override: three haptic beats ramp up while
-  // holding, then the flip commits (see useRampedHold) and a toast says what happened. A plain tap
-  // still does nothing — the icon stays a passive identity mark otherwise.
+  // Hold the bridge icon to run whatever Settings has the gesture bound to: three haptic beats ramp
+  // up while holding, then it commits (see useRampedHold) and a toast says what happened. A plain
+  // tap still does nothing — the icon stays a passive identity mark otherwise.
+  const [holdAction] = useBrowseHoldAction();
   const nsfwHold = useRampedHold(() => {
-    const result = toggleNsfwUntilClosed();
-    showToast(
-      result === 'enabled'
-        ? 'NSFW enabled until the app is closed'
-        : result === 'reverted'
-          ? 'NSFW hidden again'
-          : 'NSFW is already enabled in Settings',
-    );
+    const message = runBrowseHoldAction();
+    if (message) showToast(message);
   });
+  // Bound to 'none' the gesture is GONE, not merely inert: the handlers come off entirely, so a
+  // long press on the icon never even starts the haptic ramp. Arming it and dropping the result
+  // would still buzz three times at someone who turned it off.
 
   // Shared with the series-detail bar so both stay the same height.
   const barHeight = useTopBarHeight();
@@ -680,8 +678,7 @@ export default function BrowseScreen() {
         {currentBridge ? (
           <Pressable
             testID="browse.nsfw-hold"
-            onPressIn={nsfwHold.onPressIn}
-            onPressOut={nsfwHold.onPressOut}
+            {...(holdAction !== 'none' && { onPressIn: nsfwHold.onPressIn, onPressOut: nsfwHold.onPressOut })}
             accessibilityRole="button"
             accessibilityLabel="Hold to show NSFW content until the app is closed"
             style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]}>

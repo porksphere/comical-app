@@ -53,24 +53,35 @@ export function useNsfwMode(): [NsfwMode, (mode: NsfwMode) => void] {
   return [use$(nsfwMode$), setNsfwMode];
 }
 
+/** The two session-only overrides, the ones nothing durable is ever written for. */
+export type SessionNsfwMode = Extract<NsfwMode, 'until-background' | 'until-restart'>;
+
 /**
- * Flip the SESSION-ONLY 'until-background' override (the Browse bridge-icon hold gesture): hidden →
- * shown until the app is next backgrounded; an active session override → back to the stored durable
- * mode. This is the shortest-lived of the two session modes on purpose — a gesture that's easy to
- * trigger by accident shouldn't leave NSFW content showing for the rest of the process's life.
- * Picking the longer 'until-restart' is a deliberate act, so it stays a Settings-only choice.
+ * Flip a SESSION-ONLY override (the Browse bridge-icon hold gesture): hidden → shown for the life
+ * of `until`; an active session override of EITHER length → back to the stored durable mode.
  * Nothing durable is ever written. The return value says what happened, so the caller can toast it:
- *  - 'enabled'          — NSFW now visible until the app is closed
+ *  - 'enabled'          — NSFW now visible for this session
  *  - 'reverted'         — the session override was dropped; NSFW is hidden again
  *  - 'already-visible'  — the DURABLE mode already shows NSFW ('on'), so there was nothing to flip
+ *
+ * `until` was fixed at 'until-background' while the gesture had exactly one meaning: the shorter
+ * override is the safer default for something easy to trigger by accident. It is a parameter now
+ * that the gesture's action is configurable (see `data/browse-hold-action.ts`) — choosing the
+ * longer one in Settings IS the deliberate act that reasoning asked for, rather than a default
+ * nobody opted into.
+ *
+ * Note the 'already-visible' arm: with a durable 'on' this is a NO-OP, because a session gesture
+ * must not quietly rewrite a persisted preference. That leaves the hold unable to hide anything
+ * while NSFW is durably on — the one state where it can't help. Closing that needs a session-scoped
+ * HIDE mode, which does not exist yet; every current override only ever reveals.
  */
-export function toggleNsfwUntilClosed(): 'enabled' | 'reverted' | 'already-visible' {
+export function toggleNsfwSession(until: SessionNsfwMode): 'enabled' | 'reverted' | 'already-visible' {
   const mode = nsfwMode$.peek();
   if (mode === 'off') {
-    nsfwMode$.set('until-background');
+    nsfwMode$.set(until);
     return 'enabled';
   }
-  // A live session override ('until-restart' or 'until-background') drops back to the durable mode.
+  // A live session override of either length drops back to the durable mode.
   if (mode !== 'on') {
     const durable = durableNsfw$.peek();
     nsfwMode$.set(durable);

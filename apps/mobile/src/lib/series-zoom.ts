@@ -200,6 +200,7 @@ const locators = new Map<ZoomSourceKey, ZoomSurfaceLocate>();
 export function useZoomSurfaceLocator(surface: ZoomSourceKey, locate: ZoomSurfaceLocate): void {
   useEffect(() => {
     locators.set(surface, locate);
+    everRegistered.add(surface);
     return () => {
       if (locators.get(surface) === locate) locators.delete(surface);
     };
@@ -207,9 +208,96 @@ export function useZoomSurfaceLocator(surface: ZoomSourceKey, locate: ZoomSurfac
 }
 
 /**
+ * Whether a surface still HOLDS an item at all — a different question from where it is, and a much
+ * cheaper one to answer. Splitting the two is what lets every surface report a vanished source,
+ * including the ones that can't report a position: a grouped grid coalesces N series into one row,
+ * so `positionAtIndex` has no index to give, but `items.some(...)` is trivial.
+ *
+ * It matters because a source can DISAPPEAR under an open page, not just move — NSFW re-hiding when
+ * the app is backgrounded is the easy way to see it (`useVisibleByBridge` re-filters with no
+ * refetch), but a deleted history row, an aged-out activity row, a library removal or a bridge
+ * uninstall all do it. Until this existed the collapse had no way to learn that and flew back to the
+ * rect captured at press-in, landing on whatever series had slid into that spot.
+ */
+export type ZoomSurfaceHas = (id: string) => boolean;
+
+const membership = new Map<ZoomSourceKey, ZoomSurfaceHas>();
+
+/**
+ * Every key that has EVER answered — never pruned, and that is the point. A surface which
+ * registered and has since gone is not a surface that cannot say: it is the strongest possible
+ * report that its cards are not where they were, since the whole list went with them. Without this,
+ * a rail vanishing from the Comical composite when NSFW re-hides looked identical to a context-menu
+ * preview that was never a list at all, and both kept the stale rect. Bounded by the number of
+ * distinct surfaces the app can name, exactly as `surfaceKeys` is.
+ */
+const everRegistered = new Set<ZoomSourceKey>();
+
+/**
+ * Register this list as able to say whether it still holds an item. Safe to call unconditionally.
+ *
+ * ANNOUNCES ITSELF. Registering the answer without announcing that it changed is registering
+ * nothing: an open page reads this once when it subscribes and then waits to be told, so a surface
+ * that quietly swapped in a new `has` would keep reporting the membership it had when the page
+ * opened. That is exactly what shipped first — the grids registered membership, nothing notified,
+ * and a card could vanish without the page ever hearing.
+ *
+ * `has` is rebuilt whenever the surface's items change (that is what it closes over), so its
+ * identity IS the change signal, and this effect already runs on precisely those renders.
+ * `useZoomSurfaceList` notifies separately for the same renders; the overlap is two idempotent
+ * re-reads, and keeping it means an adapter stays self-contained if it ever registers a locator
+ * without membership.
+ */
+export function useZoomSurfaceMembership(surface: ZoomSourceKey, has: ZoomSurfaceHas): void {
+  useEffect(() => {
+    membership.set(surface, has);
+    everRegistered.add(surface);
+    notifyZoomSurfaceChanged(surface);
+    return () => {
+      if (membership.get(surface) !== has) return;
+      membership.delete(surface);
+      // Going away is news too, and nothing else carries it: when a whole rail leaves the Comical
+      // composite, no OTHER surface's notice reaches a page watching this key. Re-running the effect
+      // (new items, so a new `has`) briefly reports gone and then present again on the same tick;
+      // that is two ordered writes to a latch nothing reads outside a collapse, and it ends on the
+      // right one.
+      notifyZoomSurfaceChanged(surface);
+    };
+  }, [has, surface]);
+}
+
+/**
+ * Whether `source` still holds `id`. TRI-STATE, and the third state is the point: `undefined` means
+ * the surface CANNOT SAY — nothing was ever registered under this key — which is not the same as
+ * "gone" and must not be treated as it. A context-menu preview and a deep link answer `undefined`,
+ * and both want the existing behaviour of trusting the capture.
+ *
+ * A surface that HAS gone is a different answer, and getting those two confused is what made this
+ * miss the case it was written for: an NSFW rail leaving the Comical composite doesn't lose an item,
+ * it unmounts wholesale, taking its registration with it — which read as "cannot say" and kept the
+ * stale rect. `everRegistered` separates them.
+ *
+ * Falls back to the locator where a surface registered one but no membership: for a list that can
+ * answer WHERE, a null answer already means "not here".
+ */
+export function zoomSourceHolds(source: ZoomSourceKey, id: string): boolean | undefined {
+  const has = membership.get(source);
+  if (has) return has(id);
+  const locate = locators.get(source);
+  if (locate) return locate(id) !== null;
+  // Registered once and silent now — the surface itself has gone. See `everRegistered`.
+  if (everRegistered.has(source)) return false;
+  return undefined;
+}
+
+/**
  * A surface announcing that its items moved. Measuring once at collapse start assumes the source
  * stops moving when you let go; the write and refetch behind a reorder are async and either can
  * land mid-collapse, so a collapse in flight subscribes and re-aims.
+ *
+ * The same notice also carries "an item LEFT" (see `zoomSourceHolds`), which an open page listens
+ * for while at REST rather than mid-collapse — a destination may not change once a collapse has
+ * started, so the answer has to be settled before one can.
  */
 const watchers = new Map<ZoomSourceKey, Set<() => void>>();
 
@@ -265,7 +353,11 @@ function shifted(origin: ZoomOrigin, base: ZoomSurfacePlace, now: ZoomSurfacePla
  *
  * No locator — a grid card, the context menu's synthesized preview, anything that cannot reorder
  * under an open page — and nothing is reported at all: the caller keeps its capture, which for a
- * source that hasn't moved IS the answer. Measuring one of those instead was a regression; the card
+ * source that hasn't moved IS the answer. A locator that returns null (the item has LEFT) reports
+ * nothing either, and that is deliberate rather than an oversight: there is no better position to
+ * offer for an item that isn't there, and the caller has already stopped aiming at one — it learns
+ * the item is gone from `zoomSourceHolds` while at rest, and collapses to a destination that needs
+ * no position at all. Measuring one of those instead was a regression; the card
  * sits under the backdrop's scale, so the rect comes back shrunk toward the screen centre and has to
  * be divided back out, trading an exact number for an arithmetic reconstruction of it.
  */

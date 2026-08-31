@@ -27,6 +27,7 @@ import {
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
+import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useRouter } from '@/lib/nav';
@@ -173,6 +174,28 @@ export function ContentFeed({
   // terminal `gridRow` via `styles.row`). So the container carries ONLY the centering inset, and
   // each row's own gutter lands its content at the same x as a results-grid cell.
   const centerPad = topLevelCenterInset(width);
+
+  // Which series this feed still holds, for a page collapsing back into it — see zoomSourceHolds.
+  // RAIL rows are deliberately excluded: each rail is its own zoom surface with its own key (see
+  // rail.tsx), so its cards never captured against this one and answering for them here would have
+  // this feed vouch for a card that belongs to a surface it can't see. What is left is everything
+  // that DOES capture under RecyclerList's key below — the terminal grid's rows and any non-terminal
+  // grid block. Positions stay unanswerable (a heterogeneous feed has no index into `rows` that
+  // means a card), which is exactly the split membership exists for.
+  useZoomSurfaceMembership(
+    useZoomSurfaceKey(scopeKey),
+    useCallback(
+      (seriesId: string) =>
+        rows.some((row) =>
+          row.type === 'gridRow'
+            ? row.items.some((i) => String(i.id) === seriesId)
+            : row.type === 'gridBlock'
+              ? row.section.items.some((i) => String(i.id) === seriesId)
+              : false,
+        ),
+      [rows],
+    ),
+  );
 
   // Row-type sizing. gridRow is EXACT (cellHeight), so the many uniform terminal rows never re-measure.
   // Headings and rails are fixed upper-bound heights; non-terminal grid BLOCKS are variable (arbitrary
