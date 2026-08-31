@@ -2673,28 +2673,33 @@ function SeriesReaderInstance({
     [hero, width, height],
   );
   /**
-   * The collapse for a source that has GONE. Unlike the other three this substitutes the HERO, not
-   * the destination — and that is the whole of the fix, because the hero is the half that goes
-   * stale. Every geometry here maps its destination onto `hero`, so with the card removed all three
-   * land on a rect that now belongs to whichever series slid into that slot.
+   * THE substituted hero, for a source that has gone: the card's own size at the screen's centre.
    *
    * Its size is kept and only its POSITION replaced, exactly as `cover-offscreen` keeps the cover's
-   * size when it loses its position: the size is what the collapse's scale is derived from, so
-   * keeping it keeps the same shrink, and the card's own size is still the honest thing for a page
-   * that came out of that card to shrink back to. What is not honest is any position on this
-   * screen, so it takes the only neutral one there is — the centre.
+   * size when it loses its position — the size is what the collapse's scale is derived from, so
+   * keeping it keeps the same shrink, and the card's size is still the honest thing for a page that
+   * came out of that card to shrink back to. What is not honest is any position on this screen, so
+   * it takes the only neutral one there is.
+   *
+   * It has to be read by EVERY consumer of `hero` on the converging path, not just by the geometry.
+   * That was the bug in the first cut: `computeZoomGeom` took the centred rect while `zoomMaskStyle`
+   * and `zoomPageStyle` went on calling `zoomMaskBox(hero, …)` with the real one, so the window
+   * converged on the card's old slot while the page inside it converged on the middle. Centre-ish
+   * cards hid it — the two answers nearly coincide there — and a card down the left edge showed it
+   * as a page clipped by a window somewhere else, with its left corners square because that window
+   * had run into the screen edge.
+   *
+   * `zoomDetach` is the reason the centre is exactly right rather than merely neutral: its offset is
+   * `span/2 − start − size/2`, which for a centred box is 0 at every `home`. So a no-source collapse
+   * sits still under a drag instead of being pulled toward a card, with no special case anywhere.
    */
-  const zoomGeomNoSource = useMemo(
-    () =>
-      hero
-        ? computeZoomGeom(
-            { ...hero, x: (width - hero.width) / 2, y: (height - hero.height) / 2 },
-            { kind: 'no-source' },
-            width,
-            height,
-          )
-        : null,
+  const heroCentred = useMemo(
+    () => (hero ? { ...hero, x: (width - hero.width) / 2, y: (height - hero.height) / 2 } : null),
     [hero, width, height],
+  );
+  const zoomGeomNoSource = useMemo(
+    () => (heroCentred ? computeZoomGeom(heroCentred, { kind: 'no-source' }, width, height) : null),
+    [heroCentred, width, height],
   );
   /** For the render rather than for a frame of the transition: whether to mount the flying copy at
    *  all, and the layout rect it starts at. Any geometry answers both, and the animated style
@@ -2774,7 +2779,11 @@ function SeriesReaderInstance({
     // Always explicit numbers, never a percentage fallback from the stylesheet — a mask that is
     // sometimes laid out and sometimes transformed is how the two halves get to disagree.
     // No source rect, or not yet armed: the whole screen, so nothing is clipped.
-    if (!hero || !zoomArmed.value) {
+    // The rect this collapse actually converges on — the card's, or its stand-in once the card has
+    // gone. Every reader of it below must pick the same one, or the window and its contents shrink
+    // toward different places. See `heroCentred`.
+    const h = (zoomSourceAlive.value ? hero : heroCentred) ?? hero;
+    if (!h || !zoomArmed.value) {
       return { left: 0, top: 0, width, height, borderRadius: 0, borderCurve: 'continuous' as const };
     }
     // Clamped at the bottom: the close spring is underdamped (damping ratio ~0.85, the library's
@@ -2783,7 +2792,7 @@ function SeriesReaderInstance({
     // spring is heavily overdamped and never passes 1.
     const q = Math.max(0, zoom.value);
     const home = zoomHoming(homeAt.value, q);
-    const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, width, height);
+    const box = zoomMaskBox(h, heroShiftX.value, heroShiftY.value, q, width, height);
     return {
       // The drag moves the MASK, not the page inside it. Both have to travel together or the page
       // slides out from under its own window — a rectangle of page hanging in the wrong place,
@@ -2801,7 +2810,7 @@ function SeriesReaderInstance({
       width: box.width,
       height: box.height,
       borderRadius:
-        hero.radius *
+        h.radius *
         interpolate(
           q,
           [zoomRadiusClosing.value ? ZOOM_RADIUS_ROUNDED_BY_CLOSE : ZOOM_RADIUS_ROUNDED_BY_OPEN, 1],
@@ -2810,7 +2819,7 @@ function SeriesReaderInstance({
         ),
       borderCurve: 'continuous' as const,
     };
-  }, [hero, width, height]);
+  }, [hero, heroCentred, width, height]);
 
   // THE CONTENT. The whole page, scaled about its own centre (which is the screen centre) and
   // translated onto the source rect, fading in over the first slice of the travel — the library's
@@ -2840,7 +2849,8 @@ function SeriesReaderInstance({
       zoomGeomOffCover,
       zoomGeomPage,
     );
-    if (!geom || !hero) {
+    const h = (zoomSourceAlive.value ? hero : heroCentred) ?? hero;
+    if (!geom || !h) {
       // No source rect (deep link, web): no mask, no alignment — just the small centred zoom.
       // Same three transform entries as every other branch: reanimated wants one stable style
       // shape per view, and this branch and the unarmed one above can both run for one instance.
@@ -2852,7 +2862,7 @@ function SeriesReaderInstance({
         ],
       };
     }
-    const box = zoomMaskBox(hero, heroShiftX.value, heroShiftY.value, q, width, height);
+    const box = zoomMaskBox(h, heroShiftX.value, heroShiftY.value, q, width, height);
     // Scale: normally the base content scale modulated by the drag's shrink. Once the finger has
     // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
     // released at, down to the collapsed scale, biased by the release velocity.
@@ -2882,7 +2892,7 @@ function SeriesReaderInstance({
         { scale },
       ],
     };
-  }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero]);
+  }, [zoomGeomNoSource, zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, heroCentred]);
 
   // The two halves of the cross-fade. The page's own opacity is separated from its transform so
   // the thumbnail copy can ride that same transform (it is a sibling INSIDE the transformed page,

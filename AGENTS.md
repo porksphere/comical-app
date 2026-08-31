@@ -177,7 +177,15 @@ coalesces N cards into one row, so it has no index to return and never had a loc
 
 The collapse then takes a fourth destination, `no-source`, and that one substitutes the HERO rather
 than the destination — the hero is the half that goes stale, since every geometry here maps its
-destination onto it. Keep the card's SIZE and replace only its position with the screen's centre:
+destination onto it. Substitute it for EVERY reader on the converging path, not just for
+`computeZoomGeom`: `zoomMaskStyle` and `zoomPageStyle` call `zoomMaskBox` themselves, and leaving
+those on the real rect while the geometry took the stand-in had the window converge on the card's
+old slot while the page inside it converged on the middle. A centre-ish card hides that completely
+(the two land 0.5pt apart); a card down the left edge puts them 126pt apart, which reads as a page
+clipped by a frame somewhere else, its left corners square because the frame has run into the screen
+edge. `zoomDetach` is what makes the centre exactly right rather than merely neutral — its offset is
+`span/2 - start - size/2`, which is 0 for a centred box at every `home`, so the assembly sits still
+under a drag instead of being pulled toward a card that isn't there. Keep the card's SIZE and replace only its position with the screen's centre:
 the same trade `cover-offscreen` makes, for the same reason, so the page performs the identical
 shrink and simply lands nowhere in particular. The flying copy is not drawn there at all — it exists
 to be the shared element with the card, and with no card it would sit opaque mid-screen at q = 0
