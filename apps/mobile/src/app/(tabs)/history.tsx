@@ -7,6 +7,8 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
+import { SearchField } from '@/components/search-field';
+import { SearchPill } from '@/components/search-pill';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import {
@@ -29,7 +31,7 @@ import { historyQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useContentWidth } from '@/hooks/use-content-width';
+import { useContentWidth, useHasSidebar } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
@@ -47,6 +49,11 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   // The content column, not the window — the sidebar's inset is already out of it.
   const width = useContentWidth();
+  const railNav = useHasSidebar();
+  // Wide only: the trailing search this tab never had. Below the rail breakpoint History is
+  // unchanged — no control, no filter.
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
   const queryClient = useQueryClient();
   const hideNsfw = useHideNsfw();
   const { byId, nameOf, directOf } = useBridgeMap();
@@ -90,10 +97,13 @@ export default function HistoryScreen() {
 
   // Memoized so the identity only changes when the ORDER can have: a fresh array every render
   // would tell every collapse in flight that the list moved (see the notice below).
-  const visible = useMemo(
-    () => (items && hideNsfw ? items.filter((h) => !byId.get(h.bridgeId)?.nsfw) : items),
-    [byId, hideNsfw, items],
-  );
+  const visible = useMemo(() => {
+    const shown = items && hideNsfw ? items.filter((h) => !byId.get(h.bridgeId)?.nsfw) : items;
+    // A filter over rows already loaded, not a query: this list is fetched whole, so narrowing it
+    // costs nothing and needs no server support.
+    const q = query.trim().toLowerCase();
+    return q && shown ? shown.filter((h) => h.title.toLowerCase().includes(q)) : shown;
+  }, [byId, hideNsfw, items, query]);
 
   // Reading reorders this list, so a series opened from partway down can end up above the viewport
   // by the time the page closes — see useZoomSurfaceList.
@@ -208,7 +218,30 @@ export default function HistoryScreen() {
         />
       )}
 
-      <TabTitleBar title="History" />
+      <TabTitleBar
+        title="History"
+        titleSlot={
+          railNav && searching ? (
+            <SearchField
+              testID="history.search-field"
+              value={query}
+              onSubmit={(q) => setQuery(q.trim())}
+              onClear={() => {
+                setQuery('');
+                setSearching(false);
+              }}
+              placeholder="Search history…"
+              autoFocus
+              immediateFocus
+            />
+          ) : undefined
+        }
+        right={
+          railNav && !searching ? (
+            <SearchPill testID="history.search-pill" onPress={() => setSearching(true)} placeholder="Search history…" />
+          ) : undefined
+        }
+      />
     </ThemedView>
     </ZoomSurfaceContext.Provider>
   );

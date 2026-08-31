@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { SearchIcon } from '@/components/icons/ui-icons';
+import { SearchPill } from '@/components/search-pill';
 import { LibraryCollectionSelector } from '@/components/library-collection-selector';
 import { LibrarySortButton } from '@/components/library-sort-button';
 import { RetryBlock } from '@/components/retry-block';
@@ -387,17 +388,25 @@ export default function LibraryScreen() {
         }
         right={
           <>
-            {!searching && (
-              <Pressable
-                testID="library.search-icon"
-                onPress={() => setSearching(true)}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Search library"
-                style={styles.searchIconButton}>
-                <SearchIcon color={theme.text} size={22} />
-              </Pressable>
-            )}
+            {/* Wide: the shared trailing pill every content tab uses. Narrow: the icon, unchanged. */}
+            {!searching &&
+              (railNav ? (
+                <SearchPill
+                  testID="library.search-pill"
+                  onPress={() => setSearching(true)}
+                  placeholder="Search library…"
+                />
+              ) : (
+                <Pressable
+                  testID="library.search-icon"
+                  onPress={() => setSearching(true)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Search library"
+                  style={styles.searchIconButton}>
+                  <SearchIcon color={theme.text} size={22} />
+                </Pressable>
+              ))}
             {/* Sort applies to the library grid only. The saved-pages view has its own sort/dir
                 axes (Phase 3); showing this control there would be a lever that does nothing. */}
             {showingCollected ? (

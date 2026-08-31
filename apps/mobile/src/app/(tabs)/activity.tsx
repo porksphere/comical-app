@@ -23,6 +23,8 @@ import { RetryBlock } from '@/components/retry-block';
 import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
+import { SearchField } from '@/components/search-field';
+import { SearchPill } from '@/components/search-pill';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -32,7 +34,7 @@ import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useContentWidth } from '@/hooks/use-content-width';
+import { useContentWidth, useHasSidebar } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -77,6 +79,10 @@ export default function ActivityScreen() {
   const insets = useSafeAreaInsets();
   // The content column, not the window — the sidebar's inset is already out of it.
   const width = useContentWidth();
+  const railNav = useHasSidebar();
+  // Wide only — below the rail breakpoint Activity is unchanged.
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
   const queryClient = useQueryClient();
   const hideNsfw = useHideNsfw();
   const { byId, nameOf, directOf } = useBridgeMap();
@@ -208,8 +214,11 @@ export default function ActivityScreen() {
     // Newest update first. (Insertion order is already close to this, but ties/interleaving make the
     // explicit sort the source of truth.)
     out.sort((a, b) => b.latestAt - a.latestAt);
-    return out;
-  }, [visible]);
+    // A filter over rows already grouped, not a query: applied after coalescing so a match keeps the
+    // whole series' row rather than splitting its entries.
+    const q = query.trim().toLowerCase();
+    return q ? out.filter((r) => r.title.toLowerCase().includes(q)) : out;
+  }, [visible, query]);
 
   // Reading reorders this list, so a series opened from partway down can end up above the viewport
   // by the time the page closes — see useZoomSurfaceList.
@@ -339,7 +348,34 @@ export default function ActivityScreen() {
       )}
 
       <PullIndicator {...pull.indicator} top={headerHeight} />
-      <TabTitleBar title="Activity" />
+      <TabTitleBar
+        title="Activity"
+        titleSlot={
+          railNav && searching ? (
+            <SearchField
+              testID="activity.search-field"
+              value={query}
+              onSubmit={(q) => setQuery(q.trim())}
+              onClear={() => {
+                setQuery('');
+                setSearching(false);
+              }}
+              placeholder="Search activity…"
+              autoFocus
+              immediateFocus
+            />
+          ) : undefined
+        }
+        right={
+          railNav && !searching ? (
+            <SearchPill
+              testID="activity.search-pill"
+              onPress={() => setSearching(true)}
+              placeholder="Search activity…"
+            />
+          ) : undefined
+        }
+      />
     </ThemedView>
     </ZoomSurfaceContext.Provider>
   );

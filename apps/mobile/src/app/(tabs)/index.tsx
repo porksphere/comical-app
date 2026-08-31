@@ -18,6 +18,7 @@ import { BridgeThumb } from '@/components/bridge-thumb';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ContentFeed } from '@/components/content-feed';
 import { SearchIcon } from '@/components/icons/ui-icons';
+import { SearchPill } from '@/components/search-pill';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
 import { BridgeThumbSize, Selector } from '@/components/selector';
@@ -720,10 +721,15 @@ export default function BrowseScreen() {
           size="subtitle"
           labels={pageLabels}
         />
-        {isLargeScreen ? (
-          // Desktop: an always-visible search pill in the middle of the bar. Pressing it opens the
-          // (blank) Search screen — real typing happens there. `searchPillWrap`'s right margin
-          // reserves room for the desktop tab-icon nav overlaid at the row's right edge (app-tabs).
+        {isLargeScreen && railNav ? (
+          // Wide: the shared trailing control every content tab uses (see `search-pill`). No right
+          // margin — the icon nav the centred version reserved room for doesn't exist at this width.
+          <View style={styles.searchPillTrailing}>
+            <SearchPill testID="browse.search-pill" onPress={openSearch} />
+          </View>
+        ) : isLargeScreen ? (
+          // Desktop below the rail breakpoint: unchanged — a centred pill, with the right margin
+          // still reserving room for the top-right icon nav.
           <View style={styles.searchPillWrap}>
             <Pressable
               testID="browse.search-pill"
@@ -1047,6 +1053,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     marginRight: DesktopNavWidth + Spacing.four,
+  },
+  searchPillTrailing: {
+    flex: 1,
+    alignItems: 'flex-end',
   },
   searchPill: {
     width: '100%',
