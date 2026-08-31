@@ -163,6 +163,33 @@ the flying copy to full screen width. Which destination is in play is LATCHED wh
 rest (`zoomBoundOnScreen`), never read live off the scroll — swapping mid-collapse is a visible
 jump.
 
+**A source card can also STOP EXISTING while the page is open, and that is a different question
+from where it went.** NSFW re-hiding on background is the easy way to see it — the filter is a pure
+derive over the same query, so the card leaves its list with no refetch — but a deleted history row,
+an aged-out activity row, a library removal or a bridge uninstall all do it. A surface answering "I
+no longer hold this" used to be indistinguishable from a surface that was never asked: both left the
+caller holding its press-in rect, so the page flew back to a slot another series had since taken.
+`zoomSourceHolds` is what separates them, and it is TRI-STATE on purpose — `undefined` (a
+context-menu preview, an unmounted list) is not `false`, and only `false` may change anything.
+Splitting existence from position is also what gets the grids covered at all: a grouped grid
+coalesces N cards into one row, so it has no index to return and never had a locator, but
+`items.some(...)` is free.
+
+The collapse then takes a fourth destination, `no-source`, and that one substitutes the HERO rather
+than the destination — the hero is the half that goes stale, since every geometry here maps its
+destination onto it. Keep the card's SIZE and replace only its position with the screen's centre:
+the same trade `cover-offscreen` makes, for the same reason, so the page performs the identical
+shrink and simply lands nowhere in particular. The flying copy is not drawn there at all — it exists
+to be the shared element with the card, and with no card it would sit opaque mid-screen at q = 0
+purely to blink out — so the page carries the whole collapse on a fade that lasts to the end of it
+(`ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE`), rather than one that hands over half way.
+
+Latched like `zoomBoundOnScreen`, and the latch is doing more work here: the fact arrives
+asynchronously, whenever a surface's items change, which can be mid-collapse — exactly when a
+destination may not be swapped. So the page listens to its surface while at REST as well
+(`notifyZoomSurfaceChanged` no-ops with no listeners, so this is nearly free) and a collapse only
+ever reads an answer that was settled before it started.
+
 **A copy that is not landing on the real cover is sized to the WINDOW, not to the cover.** There is
 no on-screen cover for it to be the size of — that is the case's whole premise — so the only honest
 size is the frame it is arriving in. Left at the page's scale it lagged the window badly (62% of its
@@ -202,12 +229,15 @@ it WAS. Both of those were real bugs, not hypotheticals.
 
 To make another LegendList a zoom source: give it a stable key via `useZoomSurfaceKey`, put that on
 `ZoomSurfaceContext` around the rows, have cards call `useZoomOriginSource`, and call
-`useZoomSurfaceList` — the adapter that registers locate, reveal and the order-changed notice
-together. Hand it the list's OWN data array, not whatever it was derived from: the index it finds is
-an index into `data`, and Activity coalesces its entries into rows, so the two are different lists.
-`lib/series-zoom` knows nothing about LegendList; the three contracts it owns can be implemented from
-anything. Every step degrades to the previous behaviour if skipped — a surface with no locator keeps
-the rect captured on press-in, which for one that can't reorder IS the answer. Don't re-measure the
+`useZoomSurfaceList` — the adapter that registers locate, membership, reveal and the order-changed
+notice together. Hand it the list's OWN data array, not whatever it was derived from: the index it
+finds is an index into `data`, and Activity coalesces its entries into rows, so the two are different
+lists. `lib/series-zoom` knows nothing about LegendList; the four contracts it owns can be
+implemented from anything, and MEMBERSHIP can be implemented where the other three can't — register
+it alone (`useZoomSurfaceMembership`) for a list that knows what it holds but not where, which is
+what the grids do. Every step degrades to the previous behaviour if skipped — a surface with no
+locator keeps the rect captured on press-in, which for one that can't reorder IS the answer, and one
+with no membership can never report its source gone. Don't re-measure the
 card instead: while a page is open its grid sits under the backdrop's scale, so the measurement comes
 back shrunk toward the screen centre and only an arithmetic reconstruction gets it back.
 
