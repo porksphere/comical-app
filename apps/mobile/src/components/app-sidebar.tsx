@@ -10,13 +10,21 @@
  * in what's left, which is what `navInsetFor` encodes for the rest of the app.
  */
 import { type LucideIcon } from 'lucide-react-native';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type PressableProps } from 'react-native';
 
-import { ChevronDownIcon, ChevronRightIcon } from '@/components/icons/ui-icons';
+import { useEffect, useState } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type PressableProps } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+
+import { ChevronRightIcon } from '@/components/icons/ui-icons';
 
 import { useHover } from '@/hooks/use-hover';
+import { useSectionOpen } from '@/hooks/use-sidebar-sections';
 import { useTheme } from '@/hooks/use-theme';
 import { Fonts, Spacing } from '@/constants/theme';
+
+/** Short, and eased out: a disclosure is an acknowledgement of a tap, not a transition between
+ *  places. Long enough to read as movement, short enough that a second tap never queues behind it. */
+const DISCLOSE_TIMING = { duration: 180, easing: Easing.out(Easing.cubic) };
 
 /** A row in the sidebar. `active` drives the pill; the icon and label come from the tab table. */
 /** Extends `PressableProps` so a `TabTrigger`'s injected props (onPress, testID, accessibility)
@@ -29,6 +37,10 @@ type SidebarItemProps = PressableProps & {
   /** This row owns a scope group, drawn directly beneath it. The chevron is the only thing that says
    *  so — there is no group heading, because the row IS the heading. */
   scope?: boolean;
+  /** Whether that group is expanded, and how to flip it. Separate from `active`: the row navigates,
+   *  the chevron discloses, and neither implies the other. */
+  expanded?: boolean;
+  onToggleScope?: () => void;
 };
 
 export function SidebarItem({
@@ -37,6 +49,8 @@ export function SidebarItem({
   active,
   badge,
   scope,
+  expanded,
+  onToggleScope,
   onPress,
   testID,
   ...props
@@ -55,40 +69,49 @@ export function SidebarItem({
   const color = active ? theme.text : theme.textSecondary;
 
   return (
-    <Pressable
-      {...props}
-      {...handlers}
-      // Destructured out of `props` and set explicitly: the trigger does supply it, but
-      // `comical/require-test-id` is a syntactic rule and can't see a prop arriving via spread.
-      testID={testID}
-      onPress={onPress}
-      accessibilityLabel={label}
-      accessibilityRole="tab"
-      accessibilityState={{ selected: active }}
-      style={({ pressed }) => [
-        styles.item,
-        { backgroundColor: background, opacity: !selectedFill && hovered ? 0.999 : 1 },
-        pressed && styles.pressed,
-      ]}>
-      <View style={styles.iconWrap}>
-        <Icon size={22} color={color} strokeWidth={active ? 2.25 : 2} />
-        {badge}
-      </View>
-      {/* `numberOfLines` so a long label truncates rather than wrapping the row to two lines and
-          breaking the rhythm of a fixed-height list. */}
-      <Text numberOfLines={1} style={[styles.label, { color, fontWeight: active ? '600' : '500' }]}>
-        {label}
-      </Text>
-      {/* Open exactly when the row is active — the group follows the selection rather than a second
-          piece of state, so the chevron reports it instead of controlling it. */}
+    // The chevron is a SIBLING of the navigating row, not a child of it. Nested Pressables both fire
+    // on react-native-web — `stopPropagation` on the inner one doesn't stop the outer, which uses its
+    // own responder rather than the DOM click — so a nested chevron navigated to the destination
+    // every time you tried to peek at its list, which is the exact coupling this split removes.
+    <View style={styles.row}>
+      <Pressable
+        {...props}
+        {...handlers}
+        // Destructured out of `props` and set explicitly: the trigger does supply it, but
+        // `comical/require-test-id` is a syntactic rule and can't see a prop arriving via spread.
+        testID={testID}
+        onPress={onPress}
+        accessibilityLabel={label}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: active }}
+        style={({ pressed }) => [
+          styles.item,
+          { backgroundColor: background, opacity: !selectedFill && hovered ? 0.999 : 1 },
+          pressed && styles.pressed,
+        ]}>
+        <View style={styles.iconWrap}>
+          <Icon size={22} color={color} strokeWidth={active ? 2.25 : 2} />
+          {badge}
+        </View>
+        {/* `numberOfLines` so a long label truncates rather than wrapping the row to two lines and
+            breaking the rhythm of a fixed-height list. */}
+        <Text numberOfLines={1} style={[styles.label, { color, fontWeight: active ? '600' : '500' }]}>
+          {label}
+        </Text>
+      </Pressable>
       {scope ? (
-        active ? (
-          <ChevronDownIcon color={color} size={14} />
-        ) : (
-          <ChevronRightIcon color={color} size={14} />
-        )
+        <Pressable
+          testID={`${testID ?? 'sidebar'}.disclose`}
+          onPress={onToggleScope}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
+          accessibilityState={{ expanded }}
+          style={styles.disclose}>
+          <Chevron open={expanded} color={color} />
+        </Pressable>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 
@@ -137,6 +160,7 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   item: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
@@ -164,6 +188,20 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
   },
+  // The row and the chevron sit side by side; the row takes the slack so the pill still spans the
+  // label, and the chevron keeps a target of its own at the trailing edge.
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  disclose: {
+    padding: Spacing.two,
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
+  },
+  // Clips the measured children to the animated fraction of their height.
+  group: {
+    overflow: 'hidden',
+  },
   subDot: { width: 18, height: 18 },
   subLabel: {
     fontFamily: Fonts.sans,
@@ -171,6 +209,56 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 });
+
+
+/** ONE chevron that rotates, not two glyphs swapped: a swap is a cut, and the thing being described
+ *  — a group opening — is continuous. Right-pointing at rest, down at 90°, so the rotation reads as
+ *  the disclosure turning rather than an arrow spinning. */
+function Chevron({ open, color }: { open?: boolean; color: string }) {
+  const turn = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    turn.value = withTiming(open ? 1 : 0, DISCLOSE_TIMING);
+  }, [open, turn]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 90}deg` }] }));
+  return (
+    <Animated.View style={style}>
+      <ChevronRightIcon color={color} size={14} />
+    </Animated.View>
+  );
+}
+
+/**
+ * A scope group that opens and closes.
+ *
+ * Height has to be MEASURED, not guessed: the rows are query-backed, so how many there are isn't
+ * known until they arrive, and animating to a wrong height either clips the last row or leaves a gap
+ * under it. The inner view lays out at its natural size and reports it; the outer clips to whatever
+ * fraction of that the animation is at.
+ *
+ * The children stay MOUNTED while closed, which is the trade this makes on purpose. Unmounting them
+ * would save two query subscriptions, but there would then be nothing to measure at the moment the
+ * group is asked to open, so the first open of every group would snap instead of animating.
+ */
+export function SidebarGroup({ name, testID, children }: { name: string; testID: string; children: React.ReactNode }) {
+  const open = useSectionOpen(name);
+  const [height, setHeight] = useState(0);
+  const progress = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    progress.value = withTiming(open ? 1 : 0, DISCLOSE_TIMING);
+  }, [open, progress]);
+  const style = useAnimatedStyle(() => ({
+    height: progress.value * height,
+    // Fades over the FIRST half of the travel, so a group on its way out is gone before it has
+    // finished shrinking — the rows below it then slide up past empty space rather than through
+    // text that is still legible.
+    opacity: Math.min(1, progress.value * 2),
+  }));
+  return (
+    <Animated.View testID={testID} style={[styles.group, style]}>
+      <View onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>{children}</View>
+    </Animated.View>
+  );
+}
 
 /** A child row inside a section — indented, lighter, and without the icon slot the top-level
  *  destinations use, so the two levels never read as peers. */

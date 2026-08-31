@@ -1,4 +1,3 @@
-import { usePathname } from 'expo-router';
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
 import { Bell, Compass, History, Library, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -14,7 +13,7 @@ import {
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppSidebar, SidebarItem } from '@/components/app-sidebar';
+import { AppSidebar, SidebarGroup, SidebarItem } from '@/components/app-sidebar';
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
 import { SidebarResizer } from '@/components/sidebar-resizer';
@@ -22,6 +21,7 @@ import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
+import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
 import { useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
@@ -256,7 +256,6 @@ const HIDE_OFFSET_SLACK = 2;
 export default function AppTabs() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const pathname = usePathname();
   const theme = useTheme();
 
   // Static web export (`web.output: "static"`) prerenders every route on the
@@ -329,22 +328,25 @@ export default function AppTabs() {
     [isMobile, sidebar, reveal],
   );
 
-  // The rail's children: the same triggers, each followed by its own scope group while that
-  // destination is active. A FLAT array with keys, not Fragments — `Tabs` walks its children by type
-  // and descends through Fragments (see TAB_REGISTRATION), so a flat list keeps this chrome plainly
-  // skippable. The groups are built here rather than inside `AppSidebar` because only this file
-  // knows the tab table they hang off.
-  // Exact match, with no fallback: on a path that isn't a tab root (a pushed screen over the tabs)
-  // no scope group is the right answer, and defaulting to Browse's would hang Bridges off whatever
-  // row happened to be first.
-  const activeTab = TABS.find((t) => t.href === pathname)?.name;
+  // The rail's children: the same triggers, each followed by its own scope group. Which groups are
+  // OPEN is independent of which tab is active, so more than one shows at once — the group is always
+  // rendered and `SidebarGroup` animates it to zero height when closed. A FLAT array with keys, not
+  // Fragments — `Tabs` walks its children by type and descends through Fragments (see
+  // TAB_REGISTRATION), so a flat list keeps this chrome plainly skippable. The groups are built here
+  // rather than inside `AppSidebar` because only this file knows the tab table they hang off.
   const sidebarChildren = useMemo(
     () =>
       TABS.flatMap((tab, i) => {
         const row = triggers[i];
-        return tab.Scope && activeTab === tab.name ? [row, <tab.Scope key={`${tab.name}-scope`} />] : [row];
+        if (!tab.Scope) return [row];
+        return [
+          row,
+          <SidebarGroup key={`${tab.name}-scope`} name={tab.name} testID={`sidebar.group.${tab.name}`}>
+            <tab.Scope />
+          </SidebarGroup>,
+        ];
       }),
-    [triggers, activeTab],
+    [triggers],
   );
 
   // See the wrapper below — both rest at identity/transparent unless the series page is open.
@@ -455,6 +457,7 @@ function TabButton({
   noRecede?: boolean;
 }) {
   const theme = useTheme();
+  const sectionOpen = useSectionOpen(routeName);
 
   // Only the ARRIVING tab writes, so the two buttons that re-render on a switch can't race. The
   // series page opens as a sibling of the whole tab navigator, which blurs it without changing
@@ -504,6 +507,8 @@ function TabButton({
         label={typeof children === 'string' ? children : routeName}
         active={isFocused}
         scope={scope}
+        expanded={sectionOpen}
+        onToggleScope={() => toggleSection(routeName)}
         badge={
           routeName === 'activity' ? <ActivityTabBadge /> : routeName === 'settings' ? <SettingsTabBadge /> : undefined
         }
