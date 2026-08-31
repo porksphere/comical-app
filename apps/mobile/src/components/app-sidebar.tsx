@@ -10,7 +10,7 @@
  * in what's left, which is what `navInsetFor` encodes for the rest of the app.
  */
 import { type LucideIcon } from 'lucide-react-native';
-import { Platform, Pressable, StyleSheet, Text, View, type PressableProps } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type PressableProps } from 'react-native';
 
 import { ChevronDownIcon, ChevronRightIcon } from '@/components/icons/ui-icons';
 
@@ -46,7 +46,12 @@ export function SidebarItem({
 
   // Active is a filled pill; hover is the same neutral surface at rest opacity, so moving down the
   // list previews the shape the selected row already has rather than introducing a new one.
-  const background = active ? theme.backgroundSelected : hovered ? theme.backgroundSelected : 'transparent';
+  // A row with a scope group never takes the filled pill: one of its children always holds the
+  // selection (there is always a current bridge, always a current collection), so filling both
+  // stacks two selected-looking rows and leaves the actual choice ambiguous. Weight, colour and the
+  // chevron still mark it as the section you're in; only the fill moves down.
+  const selectedFill = active && !scope;
+  const background = selectedFill || hovered ? theme.backgroundSelected : 'transparent';
   const color = active ? theme.text : theme.textSecondary;
 
   return (
@@ -62,7 +67,7 @@ export function SidebarItem({
       accessibilityState={{ selected: active }}
       style={({ pressed }) => [
         styles.item,
-        { backgroundColor: background, opacity: !active && hovered ? 0.999 : 1 },
+        { backgroundColor: background, opacity: !selectedFill && hovered ? 0.999 : 1 },
         pressed && styles.pressed,
       ]}>
       <View style={styles.iconWrap}>
@@ -94,18 +99,19 @@ export function SidebarItem({
 export function AppSidebar({ top, children }: { top: number; children: React.ReactNode }) {
   const theme = useTheme();
   return (
-    <View
-      style={[
-        styles.sidebar,
-        { paddingTop: top + Spacing.three, borderRightColor: theme.barHairline, backgroundColor: theme.background },
-      ]}>
+    <ScrollView
+      style={[styles.sidebar, { borderRightColor: theme.barHairline, backgroundColor: theme.background }]}
+      contentContainerStyle={[styles.sidebarContent, { paddingTop: top + Spacing.three }]}
+      // A rail is nav, not a document: a scrollbar parked down its edge reads as a second column
+      // divider. It scrolls when an expanded group outgrows the viewport and is invisible otherwise.
+      showsVerticalScrollIndicator={false}>
       {/* No wordmark. One was here to "replace the top bar's title", but the row that goes away at
           this width is the top-RIGHT icon nav — the bar's own title row stays — so it replaced
           nothing, and once the Bridges group landed below it the rail printed "Comical" twice: once
           as dead chrome and once as the live aggregate row. The app is named by its window title and
           its icon; a nav rail naming its own app is not how anything else does it. */}
       {children}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -114,7 +120,12 @@ const styles = StyleSheet.create({
     flex: 1,
     width: SidebarWidth,
     borderRightWidth: StyleSheet.hairlineWidth,
+  },
+  // Padding and gap belong to the CONTENT, not the scroller: on the scroller they'd clip the rows
+  // rather than travel with them, and the last row would sit flush against the bottom edge.
+  sidebarContent: {
     paddingHorizontal: Spacing.two,
+    paddingBottom: Spacing.three,
     gap: Spacing.one,
   },
   item: {

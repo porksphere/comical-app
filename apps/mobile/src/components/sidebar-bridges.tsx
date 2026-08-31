@@ -22,7 +22,7 @@ import { Image } from 'expo-image';
 import { StyleSheet } from 'react-native';
 
 import { SidebarSubItem } from '@/components/app-sidebar';
-import { Spacing } from '@/constants/theme';
+import { BridgeThumbSize } from '@/components/selector';
 import { COMICAL_ICON, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { router } from '@/lib/nav';
 
@@ -64,6 +64,11 @@ export function SidebarBridges({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+/** Matches the Browse top bar's thumbnail corner (8 on a 28pt box) by RATIO, not by copying the
+ *  pixel value: this thumb is 18pt, where an 8 would read as a lozenge rather than the same shape. */
+const THUMB_SIZE = 18;
+const THUMB_RADIUS = Math.round(THUMB_SIZE * (8 / BridgeThumbSize));
+
 const styles = StyleSheet.create({
-  thumb: { width: 18, height: 18, borderRadius: Spacing.half },
+  thumb: { width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: THUMB_RADIUS },
 });
