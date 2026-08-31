@@ -200,6 +200,7 @@ const locators = new Map<ZoomSourceKey, ZoomSurfaceLocate>();
 export function useZoomSurfaceLocator(surface: ZoomSourceKey, locate: ZoomSurfaceLocate): void {
   useEffect(() => {
     locators.set(surface, locate);
+    everRegistered.add(surface);
     return () => {
       if (locators.get(surface) === locate) locators.delete(surface);
     };
@@ -223,6 +224,16 @@ export type ZoomSurfaceHas = (id: string) => boolean;
 const membership = new Map<ZoomSourceKey, ZoomSurfaceHas>();
 
 /**
+ * Every key that has EVER answered — never pruned, and that is the point. A surface which
+ * registered and has since gone is not a surface that cannot say: it is the strongest possible
+ * report that its cards are not where they were, since the whole list went with them. Without this,
+ * a rail vanishing from the Comical composite when NSFW re-hides looked identical to a context-menu
+ * preview that was never a list at all, and both kept the stale rect. Bounded by the number of
+ * distinct surfaces the app can name, exactly as `surfaceKeys` is.
+ */
+const everRegistered = new Set<ZoomSourceKey>();
+
+/**
  * Register this list as able to say whether it still holds an item. Safe to call unconditionally.
  *
  * ANNOUNCES ITSELF. Registering the answer without announcing that it changed is registering
@@ -240,19 +251,31 @@ const membership = new Map<ZoomSourceKey, ZoomSurfaceHas>();
 export function useZoomSurfaceMembership(surface: ZoomSourceKey, has: ZoomSurfaceHas): void {
   useEffect(() => {
     membership.set(surface, has);
+    everRegistered.add(surface);
     notifyZoomSurfaceChanged(surface);
     return () => {
-      if (membership.get(surface) === has) membership.delete(surface);
+      if (membership.get(surface) !== has) return;
+      membership.delete(surface);
+      // Going away is news too, and nothing else carries it: when a whole rail leaves the Comical
+      // composite, no OTHER surface's notice reaches a page watching this key. Re-running the effect
+      // (new items, so a new `has`) briefly reports gone and then present again on the same tick;
+      // that is two ordered writes to a latch nothing reads outside a collapse, and it ends on the
+      // right one.
+      notifyZoomSurfaceChanged(surface);
     };
   }, [has, surface]);
 }
 
 /**
  * Whether `source` still holds `id`. TRI-STATE, and the third state is the point: `undefined` means
- * the surface CANNOT SAY — nothing registered, or the list has unmounted — which is not the same as
- * "gone" and must not be treated as it. A context-menu preview, a deep link and a surface that has
- * gone away all answer `undefined`, and all of them want the existing behaviour of trusting the
- * capture. Only an explicit `false` is a surface positively reporting that the item has left.
+ * the surface CANNOT SAY — nothing was ever registered under this key — which is not the same as
+ * "gone" and must not be treated as it. A context-menu preview and a deep link answer `undefined`,
+ * and both want the existing behaviour of trusting the capture.
+ *
+ * A surface that HAS gone is a different answer, and getting those two confused is what made this
+ * miss the case it was written for: an NSFW rail leaving the Comical composite doesn't lose an item,
+ * it unmounts wholesale, taking its registration with it — which read as "cannot say" and kept the
+ * stale rect. `everRegistered` separates them.
  *
  * Falls back to the locator where a surface registered one but no membership: for a list that can
  * answer WHERE, a null answer already means "not here".
@@ -262,6 +285,8 @@ export function zoomSourceHolds(source: ZoomSourceKey, id: string): boolean | un
   if (has) return has(id);
   const locate = locators.get(source);
   if (locate) return locate(id) !== null;
+  // Registered once and silent now — the surface itself has gone. See `everRegistered`.
+  if (everRegistered.has(source)) return false;
   return undefined;
 }
 
