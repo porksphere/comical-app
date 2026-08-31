@@ -1,5 +1,5 @@
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
-import { Bell, History, LayoutGrid, Library, Settings, type LucideIcon } from 'lucide-react-native';
+import { Bell, Compass, History, Library, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
@@ -37,7 +37,10 @@ import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility'
 /** `noRecede`: this tab's rows reorder as you read, and one that re-renders under the scaled
  *  backdrop measures short — see `setBackdropRecede`. */
 const TABS: { name: string; href: string; label: string; Icon: LucideIcon; noRecede?: boolean }[] = [
-  { name: 'browse', href: '/', label: 'Browse', Icon: LayoutGrid },
+  // A compass, not a grid: Browse is the discover surface, and `LayoutGrid` both named a layout
+  // this tab doesn't always have (its home is rails) and was already Settings' Custom Pages mark.
+  // The compass came off Trackers to get here — see `TrackersIcon` before moving it back.
+  { name: 'browse', href: '/', label: 'Browse', Icon: Compass },
   { name: 'library', href: '/library', label: 'Library', Icon: Library },
   { name: 'history', href: '/history', label: 'History', Icon: History, noRecede: true },
   { name: 'activity', href: '/activity', label: 'Activity', Icon: Bell, noRecede: true },

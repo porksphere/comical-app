@@ -11,7 +11,6 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  Compass,
   Clock,
   Database,
   Download,
@@ -21,6 +20,7 @@ import {
   HardDrive,
   Info,
   Pause,
+  RefreshCw,
   RotateCcw,
   TriangleAlert,
   GripVertical,
@@ -84,7 +84,12 @@ export const GripIcon = ({ color, size = 16 }: IconProps) => <GripVertical color
 export const GeneralSettingsIcon = ({ color, size = 16 }: IconProps) => <SlidersHorizontal color={color} size={size} />;
 export const NotificationsIcon = ({ color, size = 16 }: IconProps) => <Bell color={color} size={size} />;
 export const BridgesIcon = ({ color, size = 16 }: IconProps) => <Blocks color={color} size={size} />;
-export const TrackersIcon = ({ color, size = 16 }: IconProps) => <Compass color={color} size={size} />;
+// Sync arrows, because that is what the screen itself says a tracker does — "sync your reading
+// progress to an external service". It held `Compass` until that went to the Browse TAB, where the
+// explore read is load-bearing and a settings row's permanent label can carry more of its own
+// meaning. Near-neighbour to `RetryIcon`'s single-arrow `RotateCcw` by design, not accident: the
+// two never appear on the same screen and mean different things (keep in step vs. try again).
+export const TrackersIcon = ({ color, size = 16 }: IconProps) => <RefreshCw color={color} size={size} />;
 export const RegistriesIcon = ({ color, size = 16 }: IconProps) => <Database color={color} size={size} />;
 export const DeveloperIcon = ({ color, size = 16 }: IconProps) => <Terminal color={color} size={size} />;
 export const DiagnosticsIcon = ({ color, size = 16 }: IconProps) => <Bug color={color} size={size} />;
