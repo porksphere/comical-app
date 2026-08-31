@@ -16,7 +16,7 @@ import { ChevronDownIcon, ChevronRightIcon } from '@/components/icons/ui-icons';
 
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
-import { Fonts, SidebarWidth, Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 
 /** A row in the sidebar. `active` drives the pill; the icon and label come from the tab table. */
 /** Extends `PressableProps` so a `TabTrigger`'s injected props (onPress, testID, accessibility)
@@ -96,11 +96,19 @@ export function SidebarItem({
  *
  *  `flex: 1` matters — without it the column is only as tall as its items and the page background
  *  shows through beneath them, which reads as a floating card rather than a rail. */
-export function AppSidebar({ top, children }: { top: number; children: React.ReactNode }) {
+export function AppSidebar({
+  top,
+  width,
+  children,
+}: {
+  top: number;
+  width: number;
+  children: React.ReactNode;
+}) {
   const theme = useTheme();
   return (
     <ScrollView
-      style={[styles.sidebar, { borderRightColor: theme.barHairline, backgroundColor: theme.background }]}
+      style={[styles.sidebar, { width, borderRightColor: theme.barHairline, backgroundColor: theme.background }]}
       contentContainerStyle={[styles.sidebarContent, { paddingTop: top + Spacing.three }]}
       // A rail is nav, not a document: a scrollbar parked down its edge reads as a second column
       // divider. It scrolls when an expanded group outgrows the viewport and is invisible otherwise.
@@ -118,7 +126,7 @@ export function AppSidebar({ top, children }: { top: number; children: React.Rea
 const styles = StyleSheet.create({
   sidebar: {
     flex: 1,
-    width: SidebarWidth,
+    // `width` is set inline — it's a preference now, not a constant (see `use-sidebar-width`).
     borderRightWidth: StyleSheet.hairlineWidth,
   },
   // Padding and gap belong to the CONTENT, not the scroller: on the scroller they'd clip the rows

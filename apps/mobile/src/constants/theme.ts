@@ -199,6 +199,7 @@ export const topLevelCenterInset = (width: number): number =>
  * to gain a nav rail. Above it the content column is already capped and the sidebar takes space the
  * page was leaving as margin anyway.
  */
+/** The rail's DEFAULT width. The live value is a preference — see `use-sidebar-width`. */
 export const SidebarWidth = 240;
 export const SidebarBreakpoint = MaxTopLevelWidth - 160;
 
@@ -214,8 +215,13 @@ export const SidebarBreakpoint = MaxTopLevelWidth - 160;
  *
  * NOT web-gated, unlike `topLevelCenterInset`: a landscape iPad is exactly the case the sidebar is
  * for, and the padding has to apply there even though native content isn't width-capped.
+ *
+ * `railWidth` is a parameter, not a read of the store, so this stays a pure function of its inputs —
+ * and so the BREAKPOINT never depends on it. Deriving "is the rail showing" from a width the user
+ * can drag would let a resize flip the layout out from under them.
  */
-export const navInsetFor = (width: number): number => (width >= SidebarBreakpoint ? SidebarWidth : 0);
+export const navInsetFor = (width: number, railWidth: number = SidebarWidth): number =>
+  width >= SidebarBreakpoint ? railWidth : 0;
 /** Standard height of a tappable row — the filter bar's own controls
  *  (`CONTROL_HEIGHT` in filter-types.ts) and every selectable list row inside
  *  an overlay (genre/tag checkboxes, bridge/page picker rows, …), so a row

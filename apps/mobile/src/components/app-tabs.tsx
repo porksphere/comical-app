@@ -17,10 +17,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppSidebar, SidebarItem } from '@/components/app-sidebar';
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
+import { SidebarResizer } from '@/components/sidebar-resizer';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
+import { useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
@@ -273,12 +275,16 @@ export default function AppTabs() {
   // Two layouts, not three: the bar below, the rail above. There is no in-between any more — see the
   // note at MOBILE_BREAKPOINT's removal below.
   const sidebar = !isMobile;
+  // The rail's width is a preference now, so the ONE number that pads the slot is read rather than
+  // assumed. `navInsetFor` takes it as an argument for the same reason it always did: so the
+  // breakpoint above can't depend on a value the user can drag.
+  const railWidth = useSidebarWidth();
   // ONE number for the space the rail takes: it pads the slot AND it is what the content width has
   // subtracted, so the two cannot disagree about how much room the rail took. Recomputing the
   // provider's value from `navInsetFor(width)` instead would drift for exactly one render —
   // pre-hydration `isMobile` is forced true while `width` is already real, so the slot would carry
   // no padding while the maths had already taken 240 off.
-  const contentInset = sidebar ? navInsetFor(width) : 0;
+  const contentInset = sidebar ? navInsetFor(width, railWidth) : 0;
 
   // Fade the mobile bottom bar away while scrolling down (web only - see hook);
   // bringing it back on upward scroll, at the top, or when a tab is touched (`reveal`).
@@ -369,7 +375,10 @@ export default function AppTabs() {
           {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
           {sidebar && (
             <View style={styles.sidebarWrap}>
-              <AppSidebar top={insets.top}>{sidebarChildren}</AppSidebar>
+              <AppSidebar top={insets.top} width={railWidth}>
+                {sidebarChildren}
+              </AppSidebar>
+              <SidebarResizer width={railWidth} />
             </View>
           )}
 
