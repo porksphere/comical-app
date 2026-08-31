@@ -229,8 +229,8 @@ it WAS. Both of those were real bugs, not hypotheticals.
 
 To make another LegendList a zoom source: give it a stable key via `useZoomSurfaceKey`, put that on
 `ZoomSurfaceContext` around the rows, have cards call `useZoomOriginSource`, and call
-`useZoomSurfaceList` — the adapter that registers locate, membership, reveal and the order-changed
-notice together. Hand it the list's OWN data array, not whatever it was derived from: the index it
+`useZoomSurfaceList` — the adapter that registers locate, membership and reveal together (the
+order-changed notice rides on membership, which is rebuilt over the new items anyway). Hand it the list's OWN data array, not whatever it was derived from: the index it
 finds is an index into `data`, and Activity coalesces its entries into rows, so the two are different
 lists. `lib/series-zoom` knows nothing about LegendList; the four contracts it owns can be
 implemented from anything, and MEMBERSHIP can be implemented where the other three can't — register

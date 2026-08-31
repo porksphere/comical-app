@@ -1,9 +1,8 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useCallback, useEffect, type RefObject } from 'react';
+import { useCallback, type RefObject } from 'react';
 
 import { traceJS } from '@/lib/gesture-trace';
 import {
-  notifyZoomSurfaceChanged,
   useZoomSurfaceLocator,
   useZoomSurfaceMembership,
   useZoomSurfaceReveal,
@@ -11,9 +10,14 @@ import {
 } from '@/lib/series-zoom';
 
 /**
- * A LegendList as a zoom surface: where it has an item, how to bring it into view, and the notice
- * that its order changed. `lib/series-zoom` owns those three contracts and knows nothing about any
- * particular list; this is the adapter that implements them from `getState()`.
+ * A LegendList as a zoom surface: where it has an item, whether it still holds it, and how to bring
+ * it into view. `lib/series-zoom` owns those contracts and knows nothing about any particular list;
+ * this is the adapter that implements them from `getState()`.
+ *
+ * The "its items changed" notice rides on the membership registration rather than a separate effect
+ * of its own — `has` is rebuilt over the new items on exactly the renders such an effect would fire,
+ * so a second one was the same announcement twice, and during a collapse that meant two re-aim
+ * probes per change.
  *
  * `seriesIdOf` has to be stable — a module-level function, not an inline arrow — or every render
  * re-registers all three.
@@ -63,7 +67,4 @@ export function useZoomSurfaceList<T>(
     ),
   );
 
-  useEffect(() => {
-    notifyZoomSurfaceChanged(surface);
-  }, [items, surface]);
 }

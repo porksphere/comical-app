@@ -93,8 +93,8 @@ export function filterDefFromApi(f: ApiFilter): FilterDef {
 /**
  * Convert this UI's `FilterValue` back into the `@comical/contract` shape for a
  * query — `null` when the value is still at its untouched `initialValue`, so an
- * unset filter never counts as "active" (that's what drops Browse into results
- * mode — see `index.tsx`'s `hasActiveQuery`). A `number` filter's initial value
+ * unset filter never counts as "active" (which is what decides whether Search
+ * runs at all — see `scope` in `app/search.tsx`). A `number` filter's initial value
  * is its `default`/`min`, not empty, so it needs an explicit comparison rather
  * than a truthiness check; same for a `multi` filter that starts fully selected
  * (`selectAllByDefault`) — its initial value is a full, non-empty array.

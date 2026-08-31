@@ -55,7 +55,6 @@ export type BridgeFilters = {
    *  ever sorted would fire a query-less listing behind the blank page's keyboard. Committed in the
    *  same debounce as the sort itself, so the two can never disagree about one request. */
   committedSortExplicit: boolean;
-  hasActiveQuery: boolean;
 };
 
 export function useBridgeFilters(bridgeId: string | undefined, currentBridge: Bridge | undefined): BridgeFilters {
@@ -166,7 +165,6 @@ export function useBridgeFilters(bridgeId: string | undefined, currentBridge: Br
     }, FILTER_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [filterDefs, resolvedValues, sortValue, sortTouched]);
-  const hasActiveQuery = !!committedFilters || committedSortExplicit;
 
   return {
     filterDefs,
@@ -182,6 +180,5 @@ export function useBridgeFilters(bridgeId: string | undefined, currentBridge: Br
     committedFilters,
     committedSort,
     committedSortExplicit,
-    hasActiveQuery,
   };
 }
