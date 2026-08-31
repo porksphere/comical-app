@@ -222,10 +222,25 @@ export type ZoomSurfaceHas = (id: string) => boolean;
 
 const membership = new Map<ZoomSourceKey, ZoomSurfaceHas>();
 
-/** Register this list as able to say whether it still holds an item. Safe to call unconditionally. */
+/**
+ * Register this list as able to say whether it still holds an item. Safe to call unconditionally.
+ *
+ * ANNOUNCES ITSELF. Registering the answer without announcing that it changed is registering
+ * nothing: an open page reads this once when it subscribes and then waits to be told, so a surface
+ * that quietly swapped in a new `has` would keep reporting the membership it had when the page
+ * opened. That is exactly what shipped first — the grids registered membership, nothing notified,
+ * and a card could vanish without the page ever hearing.
+ *
+ * `has` is rebuilt whenever the surface's items change (that is what it closes over), so its
+ * identity IS the change signal, and this effect already runs on precisely those renders.
+ * `useZoomSurfaceList` notifies separately for the same renders; the overlap is two idempotent
+ * re-reads, and keeping it means an adapter stays self-contained if it ever registers a locator
+ * without membership.
+ */
 export function useZoomSurfaceMembership(surface: ZoomSourceKey, has: ZoomSurfaceHas): void {
   useEffect(() => {
     membership.set(surface, has);
+    notifyZoomSurfaceChanged(surface);
     return () => {
       if (membership.get(surface) === has) membership.delete(surface);
     };

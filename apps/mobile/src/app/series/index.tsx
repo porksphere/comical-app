@@ -2725,23 +2725,29 @@ function SeriesReaderInstance({
    * `undefined` — a surface that cannot say, or has unmounted — deliberately leaves the latch alone
    * rather than reading as gone. See `zoomSourceHolds`.
    *
-   * Two guards keep it off the latch mid-flight, because one of them can't cover the whole window.
-   * The subscription is not held AT ALL while `collapsing` (the same shape as the exit-origin
-   * subscription below, and the reason a reorder can re-aim but never re-destine), and `collapsing`
-   * only turns on once `zoom` has fallen past COLLAPSE_STARTED — so the frames between a drag
-   * beginning and that threshold are covered by the `zoom` read instead. That read is on the JS
-   * side and can trail the UI thread by a frame, which is why it is the backstop rather than the
-   * guard: what would have to happen to slip through both is an item being REMOVED within a frame
-   * or two of a collapse starting. A reorder in that window is harmless — it moves the item without
-   * removing it, so this answers the same either way.
+   * Two guards keep it off the latch mid-flight. The subscription is not held AT ALL while
+   * `collapsing` (the same shape as the exit-origin subscription below, and the reason a reorder can
+   * re-aim but never re-destine), and since `collapsing` only turns on once `zoom` has fallen past
+   * COLLAPSE_STARTED, the frames between a drag beginning and that threshold are covered by reading
+   * `zoom` directly.
+   *
+   * That read is done ON THE UI THREAD, which is the point of the hop below rather than an
+   * indulgence: `zoom` is driven by springs in the UI runtime, so it is the only runtime whose read
+   * of it is authoritative for the current frame. Membership is JS-side data and stays here; only
+   * the guard and the write cross over.
    */
   const zoomSourceAlive = useSharedValue(true);
   useEffect(() => {
     if (collapsing || !zoomSource || !id) return;
     const check = () => {
-      if (zoom.value < COLLAPSE_ARMED) return;
       const holds = zoomSourceHolds(zoomSource.source, id);
-      if (holds !== undefined) zoomSourceAlive.set(holds);
+      traceJS('zoom', 'holds', { holds: holds ?? false, known: holds !== undefined });
+      // `undefined` is a surface that cannot say — never read as gone. See `zoomSourceHolds`.
+      if (holds === undefined) return;
+      runOnUI((h: boolean) => {
+        'worklet';
+        if (zoom.value >= COLLAPSE_ARMED) zoomSourceAlive.set(h);
+      })(holds);
     };
     // Also on (re-)subscribe: a cancelled collapse re-arms the page, and this is where it re-reads.
     check();
