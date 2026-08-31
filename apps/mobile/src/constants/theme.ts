@@ -179,9 +179,13 @@ export const TopLevelGutter = Spacing.three;
  * native (iOS/Android) a phone or tablet fills its own screen; there's no desktop margin to reclaim, so
  * capping the content to 1200 there just leaves a weird border (most visible on an iPad). Native returns
  * 0 (full device width). Callers add their own edge gutter on top of this (`TopLevelGutter` for the
- * card surfaces). */
+ * card surfaces).
+ *
+ * Takes the CONTENT width (`useContentWidth()`), not the window's: the sidebar is already subtracted
+ * there, so subtracting it again here would double-count it and pull every top-level view 120pt left
+ * of centre. */
 export const topLevelCenterInset = (width: number): number =>
-  Platform.OS === 'web' ? Math.max(0, (width - navInsetFor(width) - MaxTopLevelWidth) / 2) : 0;
+  Platform.OS === 'web' ? Math.max(0, (width - MaxTopLevelWidth) / 2) : 0;
 
 /**
  * The side navigation, on viewports wide enough for it.
@@ -201,11 +205,12 @@ export const SidebarBreakpoint = MaxTopLevelWidth - 160;
 /**
  * How far the left nav insets content at this width — 0 when the sidebar isn't showing.
  *
- * Deliberately a pure function of width rather than a store: the sidebar's presence is derived from
- * the viewport and nothing else, so every consumer can compute it from the `useWindowDimensions()`
- * they already have. That's what keeps `topLevelCenterInset` above correct with no change at any of
- * its call sites — the slot is padded by this, and the centring maths subtracts the same value, so
- * the two agree by construction instead of by convention.
+ * A pure function of width, because the sidebar's presence really is derived from the viewport and
+ * nothing else. Where it applies is a separate question and NOT derivable from width — only the tab
+ * screens sit inside the padded slot, while search, results, series and the settings stack cover the
+ * rail — so exactly one caller subtracts this (`app-tabs`, feeding `ContentWidthProvider`) and every
+ * layout consumer reads the answer from `useContentWidth()`. Subtracting it a second time anywhere
+ * downstream double-counts the rail.
  *
  * NOT web-gated, unlike `topLevelCenterInset`: a landscape iPad is exactly the case the sidebar is
  * for, and the padding has to apply there even though native content isn't width-capped.

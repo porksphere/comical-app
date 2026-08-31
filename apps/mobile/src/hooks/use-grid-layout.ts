@@ -10,9 +10,8 @@
  * known on the first render, so it's used immediately — deferring there would lay every
  * rail card out at the 390px fallback for one frame and then visibly snap them wider.
  */
-import { useWindowDimensions } from 'react-native';
-
 import { Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
+import { useContentWidth } from '@/hooks/use-content-width';
 import { useHydrated } from '@/hooks/use-responsive';
 
 // The reference's mobile grid uses a tighter inter-card gap than its row gap; Spacing.two (8px) is
@@ -30,11 +29,16 @@ export type GridLayout = {
    *  a short final row can just end: an elastic cell would stretch to fill the row instead. */
   cardWidth: number;
   hydrated: boolean;
+  /** The CONTENT width this geometry was derived from — the window minus the sidebar, inside the
+   *  tabs; the window itself everywhere else. Not `useWindowDimensions().width`. */
   width: number;
 };
 
 export function useGridLayout(): GridLayout {
-  const { width } = useWindowDimensions();
+  // The content column, NOT the window: the sidebar is reserved by a paddingLeft on the tab slot, and
+  // dividing the window's width into columns inside that padding lays out a grid wider than the space
+  // it was given — the rail's width of the last column ends up past the right edge.
+  const width = useContentWidth();
   const hydrated = useHydrated();
 
   const numColumns = !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));

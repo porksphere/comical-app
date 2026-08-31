@@ -17,6 +17,7 @@ import { AppSidebar, SidebarItem } from '@/components/app-sidebar';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { DesktopTopBarHeight, MaxTopLevelWidth, navInsetFor, Spacing } from '@/constants/theme';
+import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
@@ -259,10 +260,14 @@ export default function AppTabs() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the point IS the post-hydration render: React's own remedy for an SSR mismatch, and the cascade is the fix rather than a cost.
   useEffect(() => setHydrated(true), []);
   const isMobile = !hydrated || width < MOBILE_BREAKPOINT;
-  // The third layout. `navInsetFor` is the single source of truth for whether the sidebar is
-  // showing — the same function the content-centring maths consults, so the rail and the page can't
-  // disagree about how much room it takes.
+  // The third layout. `navInsetFor` is the single source of truth for whether the sidebar is showing.
   const sidebar = !isMobile && navInsetFor(width) > 0;
+  // ONE number for the space the rail takes: it pads the slot AND it is what the content width has
+  // subtracted, so the two cannot disagree about how much room the rail took. Recomputing the
+  // provider's value from `navInsetFor(width)` instead would drift for exactly one render —
+  // pre-hydration `isMobile` is forced true while `width` is already real, so the slot would carry
+  // no padding while the maths had already taken 240 off.
+  const contentInset = sidebar ? navInsetFor(width) : 0;
 
   // Fade the mobile bottom bar away while scrolling down (web only - see hook);
   // bringing it back on upward scroll, at the top, or when a tab is touched (`reveal`).
@@ -321,76 +326,80 @@ export default function AppTabs() {
     // instead (see lib/series-backdrop.ts). With no series page open the transform is identity and
     // the dim fully transparent, so this costs nothing at rest.
     <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
-      <Tabs style={styles.tabs}>
-        {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
-            appearing in one frame — see `tab-slot-fade`. */}
-        {/* Padded, not overlaid: the sidebar is a real column, so content centres in what's left.
-            `TabSlot` stays a DIRECT child of `Tabs` — wrapping it in a row View alongside the rail
-            would read better, but the navigator discovers its slot by child type the same way it
-            discovers TabList (see TAB_REGISTRATION), and nesting it yields a blank screen. */}
-        <TabSlot
-          style={[styles.slot, sidebar && { paddingLeft: navInsetFor(width) }]}
-          renderFn={renderFadingTabScreen}
-        />
+      {/* Everything under `Tabs` lays out inside the slot's padding, so this is the width those
+          screens actually have. It wraps `Tabs` from OUTSIDE — a provider renders no view, but
+          putting it between `Tabs` and `TabSlot` would still break the child-type discovery the
+          slot and the registration TabList both depend on. The stack screens that cover the rail
+          (search, results, series, settings/*) are not in this subtree and keep the window. */}
+      <ContentWidthProvider width={width - contentInset}>
+        <Tabs style={styles.tabs}>
+          {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
+              appearing in one frame — see `tab-slot-fade`. */}
+          {/* Padded, not overlaid: the sidebar is a real column, so content centres in what's left.
+              `TabSlot` stays a DIRECT child of `Tabs` — wrapping it in a row View alongside the rail
+              would read better, but the navigator discovers its slot by child type the same way it
+              discovers TabList (see TAB_REGISTRATION), and nesting it yields a blank screen. */}
+          <TabSlot style={[styles.slot, { paddingLeft: contentInset }]} renderFn={renderFadingTabScreen} />
 
-        {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
-        {sidebar && (
-          <View style={styles.sidebarWrap}>
-            <AppSidebar top={insets.top}>{triggers}</AppSidebar>
-          </View>
-        )}
+          {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
+          {sidebar && (
+            <View style={styles.sidebarWrap}>
+              <AppSidebar top={insets.top}>{triggers}</AppSidebar>
+            </View>
+          )}
 
-        {/* Desktop: icon-only nav pinned to the top-right, aligned with the Browse selector bar row
-            (top = its paddingTop, height = the subtitle line-height so the icons centre against the
-            selectors). */}
-        {!isMobile && !sidebar && (
-          <View style={[styles.topNav, { top: insets.top, right: navRight }]}>{triggers}</View>
-        )}
+          {/* Desktop: icon-only nav pinned to the top-right, aligned with the Browse selector bar row
+              (top = its paddingTop, height = the subtitle line-height so the icons centre against the
+              selectors). */}
+          {!isMobile && !sidebar && (
+            <View style={[styles.topNav, { top: insets.top, right: navRight }]}>{triggers}</View>
+          )}
 
-        {isMobile && (
-          <Animated.View
-            onLayout={onBarLayout}
-            style={[
-              styles.bottomBar,
-              Platform.OS === 'web' && FADE_TRANSITION,
-              {
-                // The same flat, fully opaque `theme.background` every top bar paints (see
-                // `BarSurface`) — the bar reads as the page continuing, not as a surface over it.
-                // Content that scrolls behind it is simply hidden; this used to be a frosted
-                // `BarBlur` it showed through.
-                backgroundColor: theme.background,
-                borderTopColor: theme.barHairline,
-                paddingBottom: Math.max(insets.bottom, Spacing.two),
-                // Web: fade to a faint ghost (still touchable, so tapping where it sits brings it
-                // back) while scrolling down. Native: slide the whole bar down out of view instead
-                // (`slideStyle`), continuously tracking scroll position X/Twitter-style. Either way
-                // the bar is an absolute overlay (see styles.bottomBar), so screen content scrolls
-                // behind it rather than being clipped by a dead strip — and, now that the bar is
-                // opaque, is revealed by the bar getting out of the way.
-                opacity: hidden ? FADED_OPACITY : 1,
-                bottom: 0,
-              },
-              // Slide via transform (compositor) rather than animating `bottom` (layout), and via an
-              // animated style rather than a re-render: the bar is repositioned on every scroll
-              // frame. translateY > 0 pushes it down off-screen, by the bar's own measured height
-              // (see onBarLayout) so it stops right at the edge.
-              slideStyle,
-            ]}>
-            {triggers}
-          </Animated.View>
-        )}
+          {isMobile && (
+            <Animated.View
+              onLayout={onBarLayout}
+              style={[
+                styles.bottomBar,
+                Platform.OS === 'web' && FADE_TRANSITION,
+                {
+                  // The same flat, fully opaque `theme.background` every top bar paints (see
+                  // `BarSurface`) — the bar reads as the page continuing, not as a surface over it.
+                  // Content that scrolls behind it is simply hidden; this used to be a frosted
+                  // `BarBlur` it showed through.
+                  backgroundColor: theme.background,
+                  borderTopColor: theme.barHairline,
+                  paddingBottom: Math.max(insets.bottom, Spacing.two),
+                  // Web: fade to a faint ghost (still touchable, so tapping where it sits brings it
+                  // back) while scrolling down. Native: slide the whole bar down out of view instead
+                  // (`slideStyle`), continuously tracking scroll position X/Twitter-style. Either way
+                  // the bar is an absolute overlay (see styles.bottomBar), so screen content scrolls
+                  // behind it rather than being clipped by a dead strip — and, now that the bar is
+                  // opaque, is revealed by the bar getting out of the way.
+                  opacity: hidden ? FADED_OPACITY : 1,
+                  bottom: 0,
+                },
+                // Slide via transform (compositor) rather than animating `bottom` (layout), and via an
+                // animated style rather than a re-render: the bar is repositioned on every scroll
+                // frame. translateY > 0 pushes it down off-screen, by the bar's own measured height
+                // (see onBarLayout) so it stops right at the edge.
+                slideStyle,
+              ]}>
+              {triggers}
+            </Animated.View>
+          )}
 
-        {/* Routes only, no UI — see the note above `AppTabs`. Inline, NOT extracted to a component:
-            the discovery walk matches on `child.type === TabList` (and descends through Fragments
-            and TabLists alone), so both a wrapping View and a wrapper component leave the navigator
-            with zero screens — expo/expo#37796. The visible chrome above is an ordinary child,
-            which that same walk simply skips. */}
-        <TabList style={styles.registration}>
-          {TABS.map((tab) => (
-            <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} />
-          ))}
-        </TabList>
-      </Tabs>
+          {/* Routes only, no UI — see the note above `AppTabs`. Inline, NOT extracted to a component:
+              the discovery walk matches on `child.type === TabList` (and descends through Fragments
+              and TabLists alone), so both a wrapping View and a wrapper component leave the navigator
+              with zero screens — expo/expo#37796. The visible chrome above is an ordinary child,
+              which that same walk simply skips. */}
+          <TabList style={styles.registration}>
+            {TABS.map((tab) => (
+              <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} />
+            ))}
+          </TabList>
+        </Tabs>
+      </ContentWidthProvider>
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
     </Animated.View>
