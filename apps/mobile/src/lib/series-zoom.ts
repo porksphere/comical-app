@@ -207,9 +207,57 @@ export function useZoomSurfaceLocator(surface: ZoomSourceKey, locate: ZoomSurfac
 }
 
 /**
+ * Whether a surface still HOLDS an item at all — a different question from where it is, and a much
+ * cheaper one to answer. Splitting the two is what lets every surface report a vanished source,
+ * including the ones that can't report a position: a grouped grid coalesces N series into one row,
+ * so `positionAtIndex` has no index to give, but `items.some(...)` is trivial.
+ *
+ * It matters because a source can DISAPPEAR under an open page, not just move — NSFW re-hiding when
+ * the app is backgrounded is the easy way to see it (`useVisibleByBridge` re-filters with no
+ * refetch), but a deleted history row, an aged-out activity row, a library removal or a bridge
+ * uninstall all do it. Until this existed the collapse had no way to learn that and flew back to the
+ * rect captured at press-in, landing on whatever series had slid into that spot.
+ */
+export type ZoomSurfaceHas = (id: string) => boolean;
+
+const membership = new Map<ZoomSourceKey, ZoomSurfaceHas>();
+
+/** Register this list as able to say whether it still holds an item. Safe to call unconditionally. */
+export function useZoomSurfaceMembership(surface: ZoomSourceKey, has: ZoomSurfaceHas): void {
+  useEffect(() => {
+    membership.set(surface, has);
+    return () => {
+      if (membership.get(surface) === has) membership.delete(surface);
+    };
+  }, [has, surface]);
+}
+
+/**
+ * Whether `source` still holds `id`. TRI-STATE, and the third state is the point: `undefined` means
+ * the surface CANNOT SAY — nothing registered, or the list has unmounted — which is not the same as
+ * "gone" and must not be treated as it. A context-menu preview, a deep link and a surface that has
+ * gone away all answer `undefined`, and all of them want the existing behaviour of trusting the
+ * capture. Only an explicit `false` is a surface positively reporting that the item has left.
+ *
+ * Falls back to the locator where a surface registered one but no membership: for a list that can
+ * answer WHERE, a null answer already means "not here".
+ */
+export function zoomSourceHolds(source: ZoomSourceKey, id: string): boolean | undefined {
+  const has = membership.get(source);
+  if (has) return has(id);
+  const locate = locators.get(source);
+  if (locate) return locate(id) !== null;
+  return undefined;
+}
+
+/**
  * A surface announcing that its items moved. Measuring once at collapse start assumes the source
  * stops moving when you let go; the write and refetch behind a reorder are async and either can
  * land mid-collapse, so a collapse in flight subscribes and re-aims.
+ *
+ * The same notice also carries "an item LEFT" (see `zoomSourceHolds`), which an open page listens
+ * for while at REST rather than mid-collapse — a destination may not change once a collapse has
+ * started, so the answer has to be settled before one can.
  */
 const watchers = new Map<ZoomSourceKey, Set<() => void>>();
 
@@ -265,7 +313,11 @@ function shifted(origin: ZoomOrigin, base: ZoomSurfacePlace, now: ZoomSurfacePla
  *
  * No locator — a grid card, the context menu's synthesized preview, anything that cannot reorder
  * under an open page — and nothing is reported at all: the caller keeps its capture, which for a
- * source that hasn't moved IS the answer. Measuring one of those instead was a regression; the card
+ * source that hasn't moved IS the answer. A locator that returns null (the item has LEFT) reports
+ * nothing either, and that is deliberate rather than an oversight: there is no better position to
+ * offer for an item that isn't there, and the caller has already stopped aiming at one — it learns
+ * the item is gone from `zoomSourceHolds` while at rest, and collapses to a destination that needs
+ * no position at all. Measuring one of those instead was a regression; the card
  * sits under the backdrop's scale, so the rect comes back shrunk toward the screen centre and has to
  * be divided back out, trading an exact number for an arithmetic reconstruction of it.
  */

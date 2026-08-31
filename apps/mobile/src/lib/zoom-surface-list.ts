@@ -5,6 +5,7 @@ import { traceJS } from '@/lib/gesture-trace';
 import {
   notifyZoomSurfaceChanged,
   useZoomSurfaceLocator,
+  useZoomSurfaceMembership,
   useZoomSurfaceReveal,
   type ZoomSourceKey,
 } from '@/lib/series-zoom';
@@ -40,6 +41,13 @@ export function useZoomSurfaceList<T>(
       },
       [indexOf, items, listRef],
     ),
+  );
+
+  // Cheaper than `locate` and answerable when it isn't — see `zoomSourceHolds`. Registered from the
+  // same `indexOf`, so a list can never say it has an item it can't find.
+  useZoomSurfaceMembership(
+    surface,
+    useCallback((seriesId: string) => indexOf(seriesId) >= 0, [indexOf]),
   );
 
   useZoomSurfaceLocator(

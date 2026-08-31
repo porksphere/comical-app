@@ -1,5 +1,5 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useMemo, type ReactElement, type RefObject } from 'react';
+import { useCallback, useMemo, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
@@ -12,6 +12,7 @@ import { buildGroupedRows } from '@/data/grouped-rows';
 import type { SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
+import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 
 // A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are absolutely
 // positioned). Split top/bottom rather than all-bottom because LegendList's web row container is
@@ -131,6 +132,17 @@ export function SeriesGrid({
   // cross-bridge grid, and two bridges can hand out the same seriesId. Single-bridge grids leave
   // bridgeId unset, so their keys are unchanged.
   const keyOf = (item: SeriesGridItem) => (item.bridgeId ? `${item.bridgeId}:${item.id}` : String(item.id));
+
+  // WHETHER this grid still holds a series, for a page collapsing back into it. Not where — a
+  // grouped grid coalesces N cards into one row, so there is no index to hand back, which is why
+  // this grid never registered a locator and why membership is a separate contract. Keyed off the
+  // SAME `scopeKey` RecyclerList derives its surface key from (`useZoomSurfaceKey` memoizes by
+  // name), so this registers against the very surface the cards capture into. The id is the series
+  // id the card registers under (`entry.id`), never `keyOf`'s bridge-qualified one.
+  useZoomSurfaceMembership(
+    useZoomSurfaceKey(scopeKey),
+    useCallback((seriesId: string) => items.some((i) => String(i.id) === seriesId), [items]),
+  );
 
   // ── GROUPED mode: pre-chunked rows + section headers through GroupedGrid ──
   // Hooks run unconditionally (the memo is cheap when ungrouped); the render forks below.

@@ -81,6 +81,7 @@ import {
   onZoomSurfaceChange,
   resolveZoomTarget,
   takeZoomOrigin,
+  zoomSourceHolds,
   type ZoomOrigin,
   type ZoomRect,
 } from '@/lib/series-zoom';
@@ -272,6 +273,14 @@ const ZOOM_CONTENT_FADE_CLOSE = [0.13, 0.7];
  * ZOOM_THUMB_FADE_CLOSE_OFFCOVER) without opening the hole that timing would otherwise cost.
  */
 const ZOOM_CONTENT_FADE_CLOSE_OFFCOVER = [0.08, 0.45];
+/**
+ * The page's fade for `no-source`, where nothing takes over from it. `cover` hands the frame to the
+ * flying copy at 0.7 and `cover-offscreen` cross-fades with it, so both can be gone well before the
+ * collapse ends. Here the copy is not drawn at all — it exists to be a shared element with the card,
+ * and the card is what has gone — so the page is the only thing carrying the motion and has to stay
+ * until the end of it. Opaque until the last third, then out.
+ */
+const ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE = [0, 0.35];
 const ZOOM_THUMB_FADE_OPEN = [0.5, 0.85];
 const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // The same fade for a copy that is NOT landing on the real cover — the `cover-offscreen`
@@ -501,8 +510,14 @@ const ZOOM_BOUND_MIN_VISIBLE = 0.5;
  *  · `page` — the page as a whole: full width at the source thumbnail's aspect, centred. For the
  *    expanded reader (the details are slid away, so their cover rect corresponds to nothing on
  *    screen, and the copy IS the page's own image) and for an instance with no measured bound.
+ *  · `no-source` — the SOURCE CARD has gone while this page was open (the surface says so; see
+ *    `zoomSourceHolds`). Every other destination answers "what does the copy fly out of"; this one
+ *    answers the question none of them can, which is where it flies TO when the answer is nowhere.
+ *    There is no card left, so the collapse converges on the SCREEN's centre at the card's own size
+ *    and the page fades out over it — see `zoomGeomNoSource`, which substitutes the HERO rather
+ *    than the destination, because the hero is the half that went stale.
  */
-type ZoomDest = { kind: 'cover' | 'cover-offscreen'; bound: ZoomRect } | { kind: 'page' };
+type ZoomDest = { kind: 'cover' | 'cover-offscreen'; bound: ZoomRect } | { kind: 'page' } | { kind: 'no-source' };
 type ZoomDestKind = ZoomDest['kind'];
 
 /**
@@ -530,8 +545,9 @@ function computeZoomGeom(hero: ZoomOrigin, dest: ZoomDest, width: number, height
   // the copy sitting off to one side of the thing it is supposed to be standing in for. That
   // applies to `cover-offscreen` exactly as it does to `page` — the cover it is shaped like is not
   // on screen, so there is no position it could honour, only a size.
-  const endW = dest.kind === 'page' ? fitW : dest.bound.width;
-  const endH = dest.kind === 'page' ? fitH : dest.bound.height;
+  const sized = dest.kind === 'page' || dest.kind === 'no-source';
+  const endW = sized ? fitW : dest.bound.width;
+  const endH = sized ? fitH : dest.bound.height;
   const end: ZoomRect =
     dest.kind === 'cover'
       ? dest.bound
@@ -590,15 +606,21 @@ type ZoomGeom = ReturnType<typeof computeZoomGeom>;
  * has one reader rather than one per style.
  *
  * `cover` and `cover-offscreen` exist together or not at all, so the `page` fallback covers exactly
- * the cases where neither does: the expanded reader, a deep link, web.
+ * the cases where neither does: the expanded reader, a deep link, web. `no-source` needs only a
+ * hero, so it exists wherever any of them do.
  */
 function pickZoomGeom(
+  sourceAlive: boolean,
   onCover: boolean,
+  noSource: ZoomGeom | null,
   cover: ZoomGeom | null,
   offCover: ZoomGeom | null,
   page: ZoomGeom | null,
 ): ZoomGeom | null {
   'worklet';
+  // A dead source outranks the cover question entirely: the other three all END on the card, and
+  // there is no card. Latched at rest like `onCover`, for the same reason — see `zoomSourceAlive`.
+  if (!sourceAlive) return noSource ?? page;
   return (onCover ? cover : offCover) ?? page;
 }
 
@@ -2650,6 +2672,30 @@ function SeriesReaderInstance({
     () => (hero ? computeZoomGeom(hero, { kind: 'page' }, width, height) : null),
     [hero, width, height],
   );
+  /**
+   * The collapse for a source that has GONE. Unlike the other three this substitutes the HERO, not
+   * the destination — and that is the whole of the fix, because the hero is the half that goes
+   * stale. Every geometry here maps its destination onto `hero`, so with the card removed all three
+   * land on a rect that now belongs to whichever series slid into that slot.
+   *
+   * Its size is kept and only its POSITION replaced, exactly as `cover-offscreen` keeps the cover's
+   * size when it loses its position: the size is what the collapse's scale is derived from, so
+   * keeping it keeps the same shrink, and the card's own size is still the honest thing for a page
+   * that came out of that card to shrink back to. What is not honest is any position on this
+   * screen, so it takes the only neutral one there is — the centre.
+   */
+  const zoomGeomNoSource = useMemo(
+    () =>
+      hero
+        ? computeZoomGeom(
+            { ...hero, x: (width - hero.width) / 2, y: (height - hero.height) / 2 },
+            { kind: 'no-source' },
+            width,
+            height,
+          )
+        : null,
+    [hero, width, height],
+  );
   /** For the render rather than for a frame of the transition: whether to mount the flying copy at
    *  all, and the layout rect it starts at. Any geometry answers both, and the animated style
    *  overwrites that rect in the same commit. */
@@ -2664,6 +2710,43 @@ function SeriesReaderInstance({
    * second.
    */
   const zoomBoundOnScreen = useSharedValue(true);
+  /**
+   * Whether the card this page came out of is still in its list. LATCHED exactly like
+   * `zoomBoundOnScreen` and for the same reason — one collapse must answer it the same way on every
+   * frame — but the latch is doing more work here, because the fact itself arrives asynchronously:
+   * a surface reports a removal whenever its items change, which can be mid-collapse, and that is
+   * precisely when a destination may not be swapped.
+   *
+   * So it is read while the page is at REST (`zoom` at the top), and the collapse only ever consults
+   * what was already settled before it started. Subscribing at rest is what makes that possible, and
+   * it is nearly free: `notifyZoomSurfaceChanged` no-ops when nobody is listening, and this is the
+   * only listener a page keeps outside a collapse.
+   *
+   * `undefined` — a surface that cannot say, or has unmounted — deliberately leaves the latch alone
+   * rather than reading as gone. See `zoomSourceHolds`.
+   *
+   * Two guards keep it off the latch mid-flight, because one of them can't cover the whole window.
+   * The subscription is not held AT ALL while `collapsing` (the same shape as the exit-origin
+   * subscription below, and the reason a reorder can re-aim but never re-destine), and `collapsing`
+   * only turns on once `zoom` has fallen past COLLAPSE_STARTED — so the frames between a drag
+   * beginning and that threshold are covered by the `zoom` read instead. That read is on the JS
+   * side and can trail the UI thread by a frame, which is why it is the backstop rather than the
+   * guard: what would have to happen to slip through both is an item being REMOVED within a frame
+   * or two of a collapse starting. A reorder in that window is harmless — it moves the item without
+   * removing it, so this answers the same either way.
+   */
+  const zoomSourceAlive = useSharedValue(true);
+  useEffect(() => {
+    if (collapsing || !zoomSource || !id) return;
+    const check = () => {
+      if (zoom.value < COLLAPSE_ARMED) return;
+      const holds = zoomSourceHolds(zoomSource.source, id);
+      if (holds !== undefined) zoomSourceAlive.set(holds);
+    };
+    // Also on (re-)subscribe: a cancelled collapse re-arms the page, and this is where it re-reads.
+    check();
+    return onZoomSurfaceChange(zoomSource.source, check);
+  }, [collapsing, id, zoom, zoomSource, zoomSourceAlive]);
   /** The scroll offset at which the cover is half off the top — past it, it stops being a place
    *  worth flying to and only its size is still worth keeping. Plain JS: the bound and the inset are
    *  both state, so the reaction only ever compares two numbers. */
@@ -2743,7 +2826,14 @@ function SeriesReaderInstance({
     }
     // Which destination this collapse is aimed at, latched at its first frame — see
     // `zoomBoundOnScreen`. All three are the same shape, so nothing below needs a second path.
-    const geom = pickZoomGeom(zoomBoundOnScreen.value, zoomGeomCover, zoomGeomOffCover, zoomGeomPage);
+    const geom = pickZoomGeom(
+      zoomSourceAlive.value,
+      zoomBoundOnScreen.value,
+      zoomGeomNoSource,
+      zoomGeomCover,
+      zoomGeomOffCover,
+      zoomGeomPage,
+    );
     if (!geom || !hero) {
       // No source rect (deep link, web): no mask, no alignment — just the small centred zoom.
       // Same three transform entries as every other branch: reanimated wants one stable style
@@ -2799,11 +2889,23 @@ function SeriesReaderInstance({
     // page while it leaves — see ZOOM_CONTENT_FADE_CLOSE_OFFCOVER. Picked the same way the copy
     // picks its own range, off the same latched flag, so the two halves of the cross-fade cannot
     // end up describing different destinations.
-    const geom = pickZoomGeom(zoomBoundOnScreen.value, zoomGeomCover, zoomGeomOffCover, zoomGeomPage);
-    const closing = geom?.kind === 'cover-offscreen' ? ZOOM_CONTENT_FADE_CLOSE_OFFCOVER : ZOOM_CONTENT_FADE_CLOSE;
+    const geom = pickZoomGeom(
+      zoomSourceAlive.value,
+      zoomBoundOnScreen.value,
+      zoomGeomNoSource,
+      zoomGeomCover,
+      zoomGeomOffCover,
+      zoomGeomPage,
+    );
+    const closing =
+      geom?.kind === 'no-source'
+        ? ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE
+        : geom?.kind === 'cover-offscreen'
+          ? ZOOM_CONTENT_FADE_CLOSE_OFFCOVER
+          : ZOOM_CONTENT_FADE_CLOSE;
     const range = zoomClosing.value ? closing : ZOOM_CONTENT_FADE_OPEN;
     return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
-  }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage]);
+  }, [zoomGeomNoSource, zoomGeomCover, zoomGeomOffCover, zoomGeomPage]);
   // See ZOOM_BACKDROP_FADE_CLOSE / _OPEN — same shape as the content fade, its own ranges.
   const zoomBackdropFadeStyle = useAnimatedStyle(() => {
     if (!zoomArmed.value) return { opacity: 0 };
@@ -2824,7 +2926,14 @@ function SeriesReaderInstance({
   const zoomThumbStyle = useAnimatedStyle(() => {
     // Which destination this collapse is aimed at, latched at its first frame — see
     // `zoomBoundOnScreen`. All three are the same shape, so nothing below needs a second path.
-    const geom = pickZoomGeom(zoomBoundOnScreen.value, zoomGeomCover, zoomGeomOffCover, zoomGeomPage);
+    const geom = pickZoomGeom(
+      zoomSourceAlive.value,
+      zoomBoundOnScreen.value,
+      zoomGeomNoSource,
+      zoomGeomCover,
+      zoomGeomOffCover,
+      zoomGeomPage,
+    );
     const base = geom?.thumb ?? { x: 0, y: 0, width: 0, height: 0 };
     if (!zoomArmed.value) {
       // Same style SHAPE as the branch below — reanimated wants one per view, and both can run for
@@ -2840,6 +2949,24 @@ function SeriesReaderInstance({
       };
     }
     const q = Math.max(0, zoom.value);
+    // NOT DRAWN AT ALL for `no-source`. The copy's entire job is to be the shared element between
+    // the page and the card — it is what lands ON the card, opaque, while the page underneath has
+    // already gone. With the card removed there is nothing to land on, and it would instead sit
+    // fully opaque in the middle of the screen at q = 0 and then blink out with the page: a cover
+    // appearing from nowhere purely to disappear. Better to never draw it and let the page carry
+    // the whole collapse (see ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE) than to fly a picture to a place
+    // nothing is arriving at.
+    if (geom?.kind === 'no-source') {
+      return {
+        left: base.x,
+        top: base.y,
+        width: base.width,
+        height: base.height,
+        opacity: 0,
+        borderRadius: hero ? hero.radius : 0,
+        transform: [{ translateY: 0 }],
+      };
+    }
     const closing = geom?.kind === 'cover-offscreen' ? ZOOM_THUMB_FADE_CLOSE_OFFCOVER : ZOOM_THUMB_FADE_CLOSE;
     const range = zoomClosing.value ? closing : ZOOM_THUMB_FADE_OPEN;
     // The copy has to READ as the thumbnail it came off, corner included — 10pt on a grid card, 6
