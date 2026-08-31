@@ -331,7 +331,7 @@ export default function AppTabs() {
           putting it between `Tabs` and `TabSlot` would still break the child-type discovery the
           slot and the registration TabList both depend on. The stack screens that cover the rail
           (search, results, series, settings/*) are not in this subtree and keep the window. */}
-      <ContentWidthProvider width={width - contentInset}>
+      <ContentWidthProvider width={width - contentInset} sidebar={sidebar}>
         <Tabs style={styles.tabs}>
           {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
               appearing in one frame — see `tab-slot-fade`. */}

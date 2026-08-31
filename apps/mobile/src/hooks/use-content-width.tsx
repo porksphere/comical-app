@@ -18,18 +18,40 @@
  * This is layout geometry read during render, not client state — it is not a fourth home for
  * preferences, and `ZoomSurfaceContext` is the same shape for the same reason.
  */
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { useWindowDimensions } from 'react-native';
 
-const ContentWidthContext = createContext<number | null>(null);
+type NavLayout = {
+  /** The width left for content after the rail. */
+  contentWidth: number;
+  /** Whether the rail is the nav for this subtree — the same latch that reserved the space, never
+   *  re-derived from width downstream (see `navInsetFor`). A screen asks this to decide whether a
+   *  control of its own is now a duplicate of one the rail is already showing. */
+  sidebar: boolean;
+};
 
-export function ContentWidthProvider({ width, children }: { width: number; children: React.ReactNode }) {
-  return <ContentWidthContext.Provider value={width}>{children}</ContentWidthContext.Provider>;
+const NavLayoutContext = createContext<NavLayout | null>(null);
+
+export function ContentWidthProvider({
+  width,
+  sidebar,
+  children,
+}: {
+  width: number;
+  sidebar: boolean;
+  children: React.ReactNode;
+}) {
+  const value = useMemo(() => ({ contentWidth: width, sidebar }), [width, sidebar]);
+  return <NavLayoutContext.Provider value={value}>{children}</NavLayoutContext.Provider>;
 }
 
 /** The window's width outside a provider, the inset content column inside one. */
 export function useContentWidth(): number {
   const { width } = useWindowDimensions();
-  const provided = useContext(ContentWidthContext);
-  return provided ?? width;
+  return useContext(NavLayoutContext)?.contentWidth ?? width;
+}
+
+/** True only where the rail is actually rendered — false on every screen that covers it. */
+export function useHasSidebar(): boolean {
+  return useContext(NavLayoutContext)?.sidebar ?? false;
 }

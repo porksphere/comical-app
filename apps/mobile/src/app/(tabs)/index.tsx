@@ -58,6 +58,7 @@ import { COMICAL_BRIDGE_ID, COMICAL_ICON, isComicalBridge, useSelectedBridge } f
 import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
 import type { Bridge, BridgeList } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
+import { useHasSidebar } from '@/hooks/use-content-width';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
@@ -598,6 +599,9 @@ export default function BrowseScreen() {
   // Desktop shows an always-visible search pill in the top bar; mobile shows just a search icon.
   // Both open the pushed Search screen (search field in its own top bar, filters + results below).
   const isLargeScreen = useIsLargeScreen();
+  // Asked of the layout, not derived from width: only this subtree has the rail, and the answer has
+  // to be the same latch that decided to render it (see `navInsetFor`).
+  const railNav = useHasSidebar();
   const openSearch = () => router.push('/search');
   // Column count for the terminal-grid row chunking + skeletons (buildHomeRows). ContentFeed/SeriesGrid
   // derive their own full layout (incl. the rail viewport) from the same hook, so nothing can disagree.
@@ -691,17 +695,22 @@ export default function BrowseScreen() {
             />
           </Pressable>
         ) : null}
-        <Selector
-          testID="browse.bridge-selector"
-          title="Bridge"
-          value={currentBridge?.id ?? ''}
-          options={visibleBridges.map((b) => b.id)}
-          onChange={selectBridge}
-          size="subtitle"
-          thumbnails={bridgeThumbnails}
-          sources={COMICAL_SOURCES}
-          labels={bridgeLabels}
-        />
+        {/* The rail lists the bridges when it's showing, so this would be a second control for one
+            selection sitting a few pixels from the first. The THUMBNAIL above stays either way —
+            it's the NSFW press-and-hold target, not decoration, and that has nowhere else to go. */}
+        {!railNav && (
+          <Selector
+            testID="browse.bridge-selector"
+            title="Bridge"
+            value={currentBridge?.id ?? ''}
+            options={visibleBridges.map((b) => b.id)}
+            onChange={selectBridge}
+            size="subtitle"
+            thumbnails={bridgeThumbnails}
+            sources={COMICAL_SOURCES}
+            labels={bridgeLabels}
+          />
+        )}
         <Selector
           testID="browse.page-selector"
           title="Page"

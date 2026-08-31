@@ -13,6 +13,7 @@ import { type LucideIcon } from 'lucide-react-native';
 import { Platform, Pressable, StyleSheet, Text, View, type PressableProps } from 'react-native';
 
 import { ChevronDownIcon, ChevronRightIcon } from '@/components/icons/ui-icons';
+import { SidebarBridges } from '@/components/sidebar-bridges';
 
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
@@ -86,10 +87,13 @@ export function AppSidebar({ top, children }: { top: number; children: React.Rea
         styles.sidebar,
         { paddingTop: top + Spacing.three, borderRightColor: theme.barHairline, backgroundColor: theme.background },
       ]}>
-      {/* The wordmark takes the place the top bar's own title held, so the app still identifies
-          itself once the top row is gone. */}
-      <Text style={[styles.wordmark, { color: theme.text }]}>Comical</Text>
+      {/* No wordmark. One was here to "replace the top bar's title", but the row that goes away at
+          this width is the top-RIGHT icon nav — the bar's own title row stays — so it replaced
+          nothing, and once the Bridges group landed below it the rail printed "Comical" twice: once
+          as dead chrome and once as the live aggregate row. The app is named by its window title and
+          its icon; a nav rail naming its own app is not how anything else does it. */}
       {children}
+      <SidebarBridges />
     </View>
   );
 }
@@ -101,14 +105,6 @@ const styles = StyleSheet.create({
     borderRightWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing.two,
     gap: Spacing.one,
-  },
-  wordmark: {
-    fontFamily: Fonts.sans,
-    fontSize: 20,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    paddingHorizontal: Spacing.three,
-    paddingBottom: Spacing.three,
   },
   item: {
     flexDirection: 'row',
