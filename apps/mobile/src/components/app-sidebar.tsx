@@ -26,6 +26,9 @@ type SidebarItemProps = PressableProps & {
   label: string;
   active?: boolean;
   badge?: React.ReactNode;
+  /** This row owns a scope group, drawn directly beneath it. The chevron is the only thing that says
+   *  so — there is no group heading, because the row IS the heading. */
+  scope?: boolean;
 };
 
 export function SidebarItem({
@@ -33,6 +36,7 @@ export function SidebarItem({
   label,
   active,
   badge,
+  scope,
   onPress,
   testID,
   ...props
@@ -70,6 +74,15 @@ export function SidebarItem({
       <Text numberOfLines={1} style={[styles.label, { color, fontWeight: active ? '600' : '500' }]}>
         {label}
       </Text>
+      {/* Open exactly when the row is active — the group follows the selection rather than a second
+          piece of state, so the chevron reports it instead of controlling it. */}
+      {scope ? (
+        active ? (
+          <ChevronDownIcon color={color} size={14} />
+        ) : (
+          <ChevronRightIcon color={color} size={14} />
+        )
+      ) : null}
     </Pressable>
   );
 }
@@ -121,24 +134,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     flexShrink: 1,
   },
-  section: { marginTop: Spacing.three },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-    height: 28,
-    paddingHorizontal: Spacing.two,
-    borderRadius: Spacing.two,
-    ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
-  },
-  sectionLabel: {
-    fontFamily: Fonts.sans,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  sectionBody: { gap: 1, marginTop: Spacing.half },
   subItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -157,48 +152,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 });
-
-/**
- * A collapsible group — a heading that toggles its children.
- *
- * Collapsing is what makes an UNBOUNDED list safe in a fixed-height rail: a source can advertise
- * as many pages as it likes, and the five top-level destinations must never be pushed below the
- * fold by one. The open/closed choice is a device-local preference (`persisted$`), so a collapsed
- * group stays collapsed across launches rather than re-expanding to bury the nav again.
- */
-export function SidebarSection({
-  label,
-  open,
-  onToggle,
-  children,
-}: {
-  label: string;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  const theme = useTheme();
-  const { hovered, handlers } = useHover();
-  const Chevron = open ? ChevronDownIcon : ChevronRightIcon;
-
-  return (
-    <View style={styles.section}>
-      <Pressable
-        {...handlers}
-        testID={`sidebar.section.${label.toLowerCase()}`}
-        onPress={onToggle}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        style={[styles.sectionHeader, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        <Chevron color={theme.textSecondary} size={14} />
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{label}</Text>
-      </Pressable>
-      {/* Unmounted, not hidden, when closed: the children are query-backed rows, and keeping a
-          collapsed group mounted would keep re-rendering a list nobody can see. */}
-      {open && <View style={styles.sectionBody}>{children}</View>}
-    </View>
-  );
-}
 
 /** A child row inside a section — indented, lighter, and without the icon slot the top-level
  *  destinations use, so the two levels never read as peers. */

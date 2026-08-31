@@ -20,25 +20,15 @@
  */
 import { Image } from 'expo-image';
 import { StyleSheet } from 'react-native';
-import { use$ } from '@legendapp/state/react';
 
-import { SidebarSection, SidebarSubItem } from '@/components/app-sidebar';
+import { SidebarSubItem } from '@/components/app-sidebar';
 import { Spacing } from '@/constants/theme';
 import { COMICAL_ICON, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { router } from '@/lib/nav';
-import { persisted$ } from '@/lib/observable';
 
 /** Device-local, and persisted: a group collapsed to keep the five destinations above the fold must
  *  stay collapsed across launches, or it re-expands and buries them again. */
-const bridgesOpen$ = persisted$('comical:sidebarBridgesOpen', true);
-
-/** The one safe shape for reading an observable — a `use`-prefixed hook with nothing after it. */
-function useBridgesOpen(): boolean {
-  return use$(bridgesOpen$);
-}
-
 export function SidebarBridges({ onNavigate }: { onNavigate?: () => void }) {
-  const open = useBridgesOpen();
   // `bridgeId`, not `bridge`: the raw id is null until the user has picked one, while Browse is
   // already showing the aggregate it resolves to. Highlighting the raw id leaves a fresh install
   // with a rail where nothing is current and the page plainly is.
@@ -49,7 +39,7 @@ export function SidebarBridges({ onNavigate }: { onNavigate?: () => void }) {
   if (visibleBridges.length === 0) return null;
 
   return (
-    <SidebarSection label="Bridges" open={open} onToggle={() => bridgesOpen$.set(!open)}>
+    <>
       {visibleBridges.map((b) => (
         <SidebarSubItem
           key={b.id}
@@ -70,7 +60,7 @@ export function SidebarBridges({ onNavigate }: { onNavigate?: () => void }) {
           }}
         />
       ))}
-    </SidebarSection>
+    </>
   );
 }
 

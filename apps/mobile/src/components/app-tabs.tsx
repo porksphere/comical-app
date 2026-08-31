@@ -320,6 +320,7 @@ export default function AppTabs() {
           <TabButton
             mobile={isMobile}
             sidebar={sidebar}
+            scope={Boolean(tab.Scope)}
             Icon={tab.Icon}
             onInteract={reveal}
             routeName={tab.name}
@@ -444,6 +445,7 @@ function TabButton({
   isFocused,
   mobile,
   sidebar,
+  scope,
   Icon,
   onInteract,
   routeName,
@@ -453,6 +455,7 @@ function TabButton({
 }: TabTriggerSlotProps & {
   mobile?: boolean;
   sidebar?: boolean;
+  scope?: boolean;
   Icon: LucideIcon;
   onInteract?: () => void;
   routeName: string;
@@ -508,6 +511,7 @@ function TabButton({
         Icon={Icon}
         label={typeof children === 'string' ? children : routeName}
         active={isFocused}
+        scope={scope}
         badge={
           routeName === 'activity' ? <ActivityTabBadge /> : routeName === 'settings' ? <SettingsTabBadge /> : undefined
         }
