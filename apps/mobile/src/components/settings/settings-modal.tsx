@@ -11,7 +11,8 @@
  *
  * Native is untouched: nothing renders this, and the rail keeps its Settings row there.
  */
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import AboutScreen from '@/app/settings-about';
 import BridgesScreen from '@/app/bridges';
@@ -51,12 +52,26 @@ export function SettingsModal() {
   const { open, category } = useSettingsModal();
   const current = CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0]!;
 
+  // `Modal` gave Escape for free; an in-tree panel has to ask for it.
+  useEffect(() => {
+    if (!open || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSettingsModal();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  if (!open) return null;
+
   return (
-    // `Modal` rather than an absolutely-positioned View: it renders above everything without this
-    // component having to win a z-index argument with the toasts, the context menus and the series
-    // page's own overlay, and it gives Escape-to-close for free on web.
-    <Modal visible={open} transparent animationType="fade" onRequestClose={closeSettingsModal}>
-      <View style={styles.scrim}>
+    // An absolutely-positioned View, NOT `Modal`. A `Modal` renders in a layer above the whole app
+    // tree — including `OverlayProvider`, which sits at the root and paints its stack after its
+    // children — so every selector opened from a settings row appeared UNDERNEATH this panel. In the
+    // tree, the ordering comes out right on its own: the panel is inside the provider's children, so
+    // the provider's overlays are painted over it, which is what a dropdown from a row in here
+    // should do.
+    <View style={styles.scrim} pointerEvents="auto">
         {/* BEHIND the panel, not around it: a scrim that wrapped the panel made one button the child
             of another, which is invalid HTML — the browser says so out loud — and made the whole
             dialog one press target for a screen reader. */}
@@ -71,12 +86,8 @@ export function SettingsModal() {
           testID="settings.modal.panel"
           style={[styles.panel, { backgroundColor: theme.background, borderColor: theme.barHairline }]}>
           <View style={[styles.categories, { borderRightColor: theme.barHairline }]}>
-            {/* Close lives on the category column's heading row — where a title bar would have been,
-                and the one place in the panel with room. Floating it over the pane put it on top of
-                the first row's own control. */}
             <View style={styles.heading}>
               <ThemedText type="smallBold">Settings</ThemedText>
-              <CloseButton />
             </View>
             <ScrollView contentContainerStyle={styles.categoryList} showsVerticalScrollIndicator={false}>
               {CATEGORIES.map((c) => (
@@ -95,10 +106,16 @@ export function SettingsModal() {
                 <current.Screen />
               </SettingsPaneContext.Provider>
             </View>
+            {/* Over the pane, in the corner a close belongs in. It is RAISED — its own surface, a
+                hairline and a shadow — because the thing beneath it is settings rows, not empty
+                space: transparent, it read as one more chevron in the list. The pane pays for the
+                room it needs (see `useSettingsScrollPadding`), so it never covers a row's control. */}
+            <View style={styles.closeFloat}>
+              <CloseButton />
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
+    </View>
   );
 }
 
@@ -133,7 +150,10 @@ function CloseButton() {
       onPress={closeSettingsModal}
       accessibilityRole="button"
       accessibilityLabel="Close settings"
-      style={[styles.close, { backgroundColor: hovered ? theme.backgroundElement : 'transparent' }]}>
+      style={[
+        styles.close,
+        { backgroundColor: hovered ? theme.backgroundSelected : theme.backgroundElement, borderColor: theme.barHairline },
+      ]}>
       <ClearIcon color={theme.textSecondary} size={18} />
     </Pressable>
   );
@@ -143,7 +163,12 @@ const CATEGORY_WIDTH = 200;
 
 const styles = StyleSheet.create({
   scrim: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 50,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -171,10 +196,13 @@ const styles = StyleSheet.create({
   heading: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingLeft: Spacing.three,
-    paddingRight: Spacing.two,
+    paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.two,
+  },
+  closeFloat: {
+    position: 'absolute',
+    top: Spacing.two,
+    right: Spacing.two,
   },
   categoryList: {
     paddingHorizontal: Spacing.two,
@@ -198,6 +226,10 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: Spacing.two,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    // Same `boxShadow` the cards and badges use — the one shadow idiom in the app (`shadow*` props
+    // are deprecated and Metro says so).
+    boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.25)',
   },
 });
