@@ -18,14 +18,28 @@
  */
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
+import { useOverlayPresentation } from '@/components/overlay/overlay';
 import { CheckIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { RowHeight, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 
 const IS_WEB = Platform.OS === 'web';
+
+/**
+ * The desktop treatment is the POPOVER's, not the web build's.
+ *
+ * A narrow browser window gets the bottom SHEET — the same surface a phone gets, dragged up from
+ * the screen edge — and a sheet's rows are sized and spaced for a thumb. Gating on `Platform` alone
+ * shipped 34pt menu rows into that sheet, which is the mobile variant wearing desktop chrome.
+ */
+function useDesktopRow(): boolean {
+  // The hook runs unconditionally — `IS_WEB` is a module constant, but `&&` would still short it
+  // out on native and the rule (rightly) can't tell a constant from a prop.
+  const presentation = useOverlayPresentation();
+  return IS_WEB && presentation === 'popover';
+}
 
 export function OptionRow({
   label,
@@ -45,29 +59,31 @@ export function OptionRow({
   testID: string;
 }) {
   const theme = useTheme();
+  const desktop = useDesktopRow();
   const { hovered, handlers } = useHover();
   return (
     <Pressable testID={testID} onPress={onPress} accessibilityState={{ selected }} {...handlers}>
-      <ThemedView
-        type={IS_WEB ? 'backgroundPanel' : 'backgroundElement'}
+      <View
         style={[
           styles.row,
-          IS_WEB && styles.webRow,
-          IS_WEB
-            ? {
-                backgroundColor: selected
-                  ? theme.backgroundSelected
-                  : hovered
-                    ? theme.backgroundElement
-                    : 'transparent',
-              }
-            : hovered && { backgroundColor: theme.backgroundSelected },
+          desktop && styles.webRow,
+          {
+            backgroundColor: desktop
+              ? selected
+                ? theme.overlaySelected
+                : hovered
+                  ? theme.overlayHover
+                  : 'transparent'
+              : hovered
+                ? theme.overlaySelected
+                : theme.overlayHover,
+          },
         ]}>
         {leading}
         <View style={styles.text}>
           <ThemedText
-            style={IS_WEB && selected ? styles.webLabelSelected : undefined}
-            themeColor={IS_WEB && !selected ? 'textSecondary' : 'text'}
+            style={desktop && selected ? styles.webLabelSelected : undefined}
+            themeColor={desktop && !selected ? 'textSecondary' : 'text'}
             numberOfLines={1}>
             {label}
           </ThemedText>
@@ -81,12 +97,12 @@ export function OptionRow({
             answer), so the mark confirms rather than carries it — and at 16pt beside a label it
             stops being the loudest thing in the menu. The slot is reserved either way, so selecting
             a row never reflows the labels beside it. */}
-        {IS_WEB ? (
+        {desktop ? (
           <View style={styles.check}>{selected ? <CheckIcon color={theme.accent} size={16} /> : null}</View>
         ) : (
           <View style={[styles.dot, selected && styles.dotOn]} />
         )}
-      </ThemedView>
+      </View>
     </Pressable>
   );
 }
@@ -104,20 +120,26 @@ export function OptionActionRow({
   testID: string;
 }) {
   const theme = useTheme();
+  const desktop = useDesktopRow();
   const { hovered, handlers } = useHover();
   return (
     <Pressable testID={testID} onPress={onPress} {...handlers}>
-      <ThemedView
-        type={IS_WEB ? 'backgroundPanel' : 'backgroundElement'}
+      <View
         style={[
           styles.row,
-          IS_WEB && styles.webRow,
-          IS_WEB
-            ? { backgroundColor: hovered ? theme.backgroundElement : 'transparent' }
-            : hovered && { backgroundColor: theme.backgroundSelected },
+          desktop && styles.webRow,
+          {
+            backgroundColor: desktop
+              ? hovered
+                ? theme.overlayHover
+                : 'transparent'
+              : hovered
+                ? theme.overlaySelected
+                : theme.overlayHover,
+          },
         ]}>
         <ThemedText style={{ color: theme.accent }}>{label}</ThemedText>
-      </ThemedView>
+      </View>
     </Pressable>
   );
 }

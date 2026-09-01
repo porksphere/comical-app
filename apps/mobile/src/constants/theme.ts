@@ -17,6 +17,26 @@ export const Colors = {
     backgroundPanel: '#F7F7F9',
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
+    /**
+     * The RAISED surface ladder — an overlay's panel and the rows on it.
+     *
+     * Separate from `backgroundPanel` because a floating surface has a different job from an inset
+     * one: `backgroundPanel` sits INSIDE the page and only has to be told apart from it, while an
+     * overlay sits OVER the page and has to read as a thing in front of it. The inset tiering was
+     * doing neither well — on dark, #17181b on a #000000 page is about a 6% lift, so a menu's
+     * boundary was very nearly invisible and it read as a hole rather than a card.
+     *
+     * The dark values are sampled from iOS's own raised sheet (page #1C1C1D, card #2C2C2D, divider
+     * #404042): a 16-point lift, and pure neutral rather than the blue-leaning inset tokens. Light
+     * goes the other way and lands on white, because a raised surface on a light page is lighter
+     * than it — which on a white page means the shadow, not the fill, is what separates them.
+     */
+    overlaySurface: '#FFFFFF',
+    overlayHover: '#F0F0F3',
+    overlaySelected: '#E0E1E6',
+    /** The panel's own edge. Stronger than `barHairline`, which divides two things already on the
+     *  same plane; this one has to hold a white panel off a white page. */
+    overlayHairline: '#D8D9DF',
     textSecondary: '#60646C',
     // Shared accent + chrome tokens (mirrored in `dark`). Used by cards, badges,
     // chips and the series action buttons so colors aren't re-hardcoded per file.
@@ -68,6 +88,13 @@ export const Colors = {
     backgroundPanel: '#17181b',
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
+    // The raised ladder — see `light.overlaySurface` for what these are and where they come from.
+    // #2C2C2D is iOS's own raised card and #404042 its divider; the two steps between them are the
+    // row's hover and selection, which an iOS settings list has no need for and a menu does.
+    overlaySurface: '#2C2C2D',
+    overlayHover: '#3A3A3C',
+    overlaySelected: '#47474A',
+    overlayHairline: '#404042',
     textSecondary: '#B0B4BA',
     accent: '#3478F6',
     accentHover: '#5A90FF',

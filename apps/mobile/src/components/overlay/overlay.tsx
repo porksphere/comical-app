@@ -28,7 +28,6 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -703,6 +702,7 @@ function OverlaySheet({
 }) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const translateY = useSharedValue(height);
   const depthSV = useSharedValue(depthFromTop);
   const isTop = depthFromTop === 0;
@@ -978,7 +978,9 @@ function OverlaySheet({
               background at all, so a backgroundless rounded container never reaches it;
               this fill is uniform (square) and gets clipped to the rounded top by the
               parent, so the look is unchanged. */}
-          <ThemedView type="backgroundPanel" style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]} />
+          <View
+            style={[StyleSheet.absoluteFill, { backgroundColor: theme.overlaySurface, pointerEvents: 'none' }]}
+          />
           <GestureDetector gesture={handlePan}>
             <View style={styles.handleArea}>
               <View style={styles.handle} />
@@ -1133,9 +1135,16 @@ function OverlayPopover({
   return (
     <Animated.View
       style={[styles.popoverWrap, { left, top, width, pointerEvents: 'box-none' }, animStyle]}>
-      <ThemedView
-        type="backgroundPanel"
-        style={[styles.popover, IS_WEB && styles.popoverEdge, IS_WEB && { borderColor: theme.barHairline }, { maxHeight }]}
+      <View
+        style={[
+          styles.popover,
+          { backgroundColor: theme.overlaySurface, maxHeight },
+          // The HAIRLINE is the desktop variant's alone. A sheet is anchored to the screen edge and
+          // fills its width, so its boundary is never in question; a panel floating over content is
+          // the only one that has to declare where it ends.
+          IS_WEB && styles.popoverEdge,
+          IS_WEB && { borderColor: theme.overlayHairline },
+        ]}
         onLayout={(e) => {
           const { width: w, height: hh } = e.nativeEvent.layout;
           setCard((prev) => (prev && prev.height === hh && prev.width === w ? prev : { width: w, height: hh }));
@@ -1143,7 +1152,7 @@ function OverlayPopover({
         <OverlayPresentationContext.Provider value="popover">
           <SheetBudgetContext.Provider value={budget}>{children}</SheetBudgetContext.Provider>
         </OverlayPresentationContext.Provider>
-      </ThemedView>
+      </View>
     </Animated.View>
   );
 }
