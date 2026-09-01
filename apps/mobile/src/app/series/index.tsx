@@ -1241,7 +1241,9 @@ function SeriesReaderInstance({
   // starts, on the thread the spring is drawing on. So the pane rides `standby` until this flips:
   // the visible page mounts and paints (it is what the entrance reveals), everything else waits
   // out the flight — the same deferral `detailsSettled` gives the reveal, applied to the open.
-  const [entranceSettled, setEntranceSettled] = useState(false);
+  // Starts SETTLED on web: there is no entrance there to defer behind (see `startZoom`), so the
+  // page has nothing to wait out and the pager may mount in the first commit like anything else.
+  const [entranceSettled, setEntranceSettled] = useState(IS_WEB);
   const markEntranceSettled = useCallback(() => setEntranceSettled(true), []);
   useEffect(() => {
     const t = setTimeout(() => {
@@ -2263,6 +2265,16 @@ function SeriesReaderInstance({
     zoomArmed.set(true);
     // Nothing was dragged: the classic collapse, in the card's coordinates from the first frame.
     homeAt.set(0);
+    // WEB has no entrance to play. `zoomSource` is null there (see its declaration), so there is no
+    // card for the page to grow out of and the spring was a page scaling up from the middle of
+    // nothing — which is what read as a laggy fade rather than as an opening. Land on the open state
+    // in one frame instead. The COLLAPSE is untouched: that one follows a finger, so it is a
+    // response rather than a flourish, and it still needs `zoom` to travel.
+    if (IS_WEB) {
+      zoom.set(1);
+      traceJS('open', 'entered', { finished: true, instant: true });
+      return;
+    }
     zoom.set(
       withSpring(1, ZOOM_IN_SPRING, (finished) => {
         // Closes the bracket opened at mount — see the effect below. The span between them is the
