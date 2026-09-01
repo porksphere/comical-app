@@ -1,4 +1,4 @@
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
 import {
@@ -21,12 +21,10 @@ import { testId } from '@/lib/test-id';
  *  browse top bar so the two read at the same size. */
 export const BridgeThumbSize = 28;
 
-/** The dropdown takes desktop chrome on web only. A landscape iPad shows this same menu and is not
- *  part of this pass. */
-const IS_WEB = Platform.OS === 'web';
-/** Matches the rail's own bridge thumbnail (`THUMB_SIZE` in sidebar-bridges), because on web these
- *  are two views of one list. */
-const WEB_THUMB_SIZE = 18;
+/** Matches the rail's own bridge thumbnail (`THUMB_SIZE` in sidebar-bridges), because on the
+ *  popover those are two views of one list. The sheet's rows are 10pt taller, so they keep the full
+ *  size — the thumb is sized to its row, not to the platform. */
+const POPOVER_THUMB_SIZE = 18;
 
 type SelectorProps = {
   /** Menu heading, e.g. "Bridge" or "Page". */
@@ -164,6 +162,7 @@ function OptionThumb({
   thumbnail?: string | null;
   source?: number;
 }) {
+  const popover = useOverlayPresentation() === 'popover';
   if (thumbnail === undefined && source === undefined) return null;
   return (
     <BridgeThumb
@@ -171,8 +170,8 @@ function OptionThumb({
       source={source}
       uri={thumbnail ?? undefined}
       label={label}
-      size={IS_WEB ? WEB_THUMB_SIZE : BridgeThumbSize}
-      style={IS_WEB ? styles.webOptionThumb : styles.optionThumb}
+      size={popover ? POPOVER_THUMB_SIZE : BridgeThumbSize}
+      style={popover ? styles.popoverOptionThumb : styles.optionThumb}
     />
   );
 }
@@ -231,7 +230,7 @@ const styles = StyleSheet.create({
   },
   // Same corner RATIO as the full-size thumb (6 on 28), so the smaller tile is the same shape
   // rather than a lozenge — the rule sidebar-bridges' own thumb follows.
-  webOptionThumb: {
+  popoverOptionThumb: {
     borderRadius: 4,
   },
 });

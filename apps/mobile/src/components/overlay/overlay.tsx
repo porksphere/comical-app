@@ -392,7 +392,7 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       <View
-        style={[listStyles.rowsWrapper, IS_WEB && presentation === 'popover' && listStyles.rowsWrapperWeb]}
+        style={listStyles.rowsWrapper}
         onLayout={(e) => {
           coreHeightRef.current = e.nativeEvent.layout.height;
           evaluate();
@@ -437,13 +437,10 @@ const listStyles = StyleSheet.create({
   // Shared by both presentations — the inner View `OptionList` measures its
   // rows against, unpadded so neither presentation's fits/needs-scroll
   // decision gets thrown off by the padding it's used to decide.
+  // 8pt between rows was a sheet's, where every row was a filled button that needed separating from
+  // the next. Rows are transparent until hovered or selected now, so a gap separates nothing and
+  // only makes the list tall — the rail's own 2 is the right amount, on both presentations.
   rowsWrapper: {
-    gap: Spacing.two,
-  },
-  // 8pt between rows is a sheet's, where every row is a filled button that needs separating from
-  // the next. A web popover's rows are transparent until hovered, so the gap is separating nothing
-  // and only makes the menu tall — the rail's own 2 is the right amount.
-  rowsWrapperWeb: {
     gap: Spacing.half,
   },
 });
