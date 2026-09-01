@@ -37,6 +37,16 @@ export const Colors = {
     /** The panel's own edge. Stronger than `barHairline`, which divides two things already on the
      *  same plane; this one has to hold a white panel off a white page. */
     overlayHairline: '#D8D9DF',
+    /**
+     * `overlaySurface` as a MATERIAL — the translucent tint that sits over a blur, for the anchored
+     * menu (see `MenuSurface` in context-menu-material: a frosted surface is a blur *and* a
+     * translucent tint of the surface over it, or it isn't a material).
+     *
+     * Same colour and same alpha as the long-press menu's own fill, so the two menus in the app are
+     * made of the same thing. The dark one differs from `MENU_FILL` in hue alone, because that
+     * constant predates the raised ladder above and still carries the old inset panel colour.
+     */
+    overlayMaterial: 'rgba(255,255,255,0.55)',
     textSecondary: '#60646C',
     // Shared accent + chrome tokens (mirrored in `dark`). Used by cards, badges,
     // chips and the series action buttons so colors aren't re-hardcoded per file.
@@ -95,6 +105,7 @@ export const Colors = {
     overlayHover: '#3A3A3C',
     overlaySelected: '#47474A',
     overlayHairline: '#404042',
+    overlayMaterial: 'rgba(44,44,45,0.62)',
     textSecondary: '#B0B4BA',
     accent: '#3478F6',
     accentHover: '#5A90FF',

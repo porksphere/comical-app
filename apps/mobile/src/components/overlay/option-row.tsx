@@ -18,29 +18,14 @@
  *   cursor; a finger cannot, so it gets the same tint on `pressed` instead. With no fill at rest
  *   there is otherwise nothing at all between touching a row and the sheet closing.
  */
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useOverlayPresentation } from '@/components/overlay/overlay';
 import { CheckIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { RowHeight, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
+import { usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-
-const IS_WEB = Platform.OS === 'web';
-
-/**
- * Whether this row is being pointed at rather than touched — the POPOVER's presentation on web.
- *
- * Not `Platform` alone: a narrow browser window gets the bottom SHEET, the same surface a phone
- * gets, and a finger is a finger whichever build it is driving.
- */
-function usePointerRow(): boolean {
-  // The hook runs unconditionally — `IS_WEB` is a module constant, but `&&` would still short it
-  // out on native and the rule (rightly) can't tell a constant from a prop.
-  const presentation = useOverlayPresentation();
-  return IS_WEB && presentation === 'popover';
-}
 
 export function OptionRow({
   label,
@@ -60,7 +45,7 @@ export function OptionRow({
   testID: string;
 }) {
   const theme = useTheme();
-  const pointer = usePointerRow();
+  const pointer = usePointerFine();
   const { hovered, handlers } = useHover();
   return (
     <Pressable
@@ -115,7 +100,7 @@ export function OptionActionRow({
   testID: string;
 }) {
   const theme = useTheme();
-  const pointer = usePointerRow();
+  const pointer = usePointerFine();
   const { hovered, handlers } = useHover();
   return (
     <Pressable

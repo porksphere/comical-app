@@ -14,7 +14,7 @@ import { OptionRow } from '@/components/overlay/option-row';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
-import { useIsCompact } from '@/hooks/use-responsive';
+import { useIsCompact, usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
@@ -25,7 +25,7 @@ export const BridgeThumbSize = 28;
 /** Matches the rail's own bridge thumbnail (`THUMB_SIZE` in sidebar-bridges), because on the
  *  popover those are two views of one list. The sheet's rows are 10pt taller, so they keep the full
  *  size — the thumb is sized to its row, not to the platform. */
-const POPOVER_THUMB_SIZE = 18;
+const POINTER_THUMB_SIZE = 18;
 
 type SelectorProps = {
   /** Menu heading, e.g. "Bridge" or "Page". */
@@ -170,7 +170,7 @@ function OptionThumb({
   thumbnail?: string | null;
   source?: number;
 }) {
-  const popover = useOverlayPresentation() === 'popover';
+  const pointer = usePointerFine();
   if (thumbnail === undefined && source === undefined) return null;
   return (
     <BridgeThumb
@@ -178,8 +178,8 @@ function OptionThumb({
       source={source}
       uri={thumbnail ?? undefined}
       label={label}
-      size={popover ? POPOVER_THUMB_SIZE : BridgeThumbSize}
-      style={popover ? styles.popoverOptionThumb : styles.optionThumb}
+      size={pointer ? POINTER_THUMB_SIZE : BridgeThumbSize}
+      style={pointer ? styles.pointerOptionThumb : styles.optionThumb}
     />
   );
 }
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
   },
   // Same corner RATIO as the full-size thumb (6 on 28), so the smaller tile is the same shape
   // rather than a lozenge — the rule sidebar-bridges' own thumb follows.
-  popoverOptionThumb: {
+  pointerOptionThumb: {
     borderRadius: 4,
   },
 });

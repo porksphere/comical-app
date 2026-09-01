@@ -25,12 +25,14 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ANDROID_BLUR, MENU_BLUR } from '@/components/context-menu-material';
 import { ThemedText } from '@/components/themed-text';
 import { RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
-import { useTheme } from '@/hooks/use-theme';
+import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { sharedPushback } from '@/lib/pushback-signal';
 import { armSettleCheck, cancelSettleCheck, notePushback, reportStuck } from '@/lib/pushback-watchdog';
 
@@ -1046,6 +1048,7 @@ function OverlayPopover({
 }) {
   const { width: vw, height: vh } = useWindowDimensions();
   const theme = useTheme();
+  const scheme = useActiveColorScheme();
   const [card, setCard] = useState<{ width: number; height: number } | null>(null);
   const progress = useSharedValue(0);
   const entered = useRef(false);
@@ -1144,10 +1147,13 @@ function OverlayPopover({
   return (
     <Animated.View
       style={[styles.popoverWrap, { left, top, width, pointerEvents: 'box-none' }, animStyle]}>
-      <View
+      <BlurView
+        tint={scheme}
+        intensity={MENU_BLUR}
+        experimentalBlurMethod={ANDROID_BLUR}
         style={[
           styles.popover,
-          { backgroundColor: theme.overlaySurface, maxHeight },
+          { maxHeight },
           // The HAIRLINE belongs to the MENU, not to a platform. A sheet is anchored to the screen
           // edge and fills its width, so its boundary is never in question and it takes none; a
           // panel floating over content is the only one that has to declare where it ends, and it
@@ -1159,10 +1165,14 @@ function OverlayPopover({
           const { width: w, height: hh } = e.nativeEvent.layout;
           setCard((prev) => (prev && prev.height === hh && prev.width === w ? prev : { width: w, height: hh }));
         }}>
+        {/* The surface tint — its own layer INSIDE the blur, never a `backgroundColor` on the
+            BlurView: expo-blur's web build applies its own tint background last and silently drops
+            yours (the same note MenuSurface carries). */}
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.overlayMaterial }]} />
         <OverlayPresentationContext.Provider value="popover">
           <SheetBudgetContext.Provider value={budget}>{children}</SheetBudgetContext.Provider>
         </OverlayPresentationContext.Provider>
-      </View>
+      </BlurView>
     </Animated.View>
   );
 }
