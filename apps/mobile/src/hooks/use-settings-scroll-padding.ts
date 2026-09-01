@@ -1,6 +1,6 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { SettingsPaneTopInset, useInSettingsPane } from '@/lib/settings-pane';
+import { useInSettingsPane } from '@/lib/settings-pane';
 
 
 import { BottomTabInset, SettingsGutter, SettingsTopGap, Spacing } from '@/constants/theme';
@@ -31,7 +31,7 @@ export function useSettingsScrollPadding() {
   // anyway left a bar's worth of empty space above the first row and a tab bar's worth below.
   const inPane = useInSettingsPane();
   if (inPane) {
-    return { paddingTop: SettingsPaneTopInset, paddingBottom: Spacing.five, paddingHorizontal: SettingsGutter };
+    return { paddingTop: SettingsTopGap, paddingBottom: Spacing.five, paddingHorizontal: SettingsGutter };
   }
   return {
     // Same value `useTopBarInset()` returns — the tab screen and the pushed screens have the same

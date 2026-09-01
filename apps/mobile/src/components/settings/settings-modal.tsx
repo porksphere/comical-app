@@ -43,7 +43,13 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { closeSettingsModal, setSettingsCategory, useSettingsModal } from '@/lib/settings-modal';
-import { SettingsPaneContext, SettingsPaneNavContext, type PaneNav, type PaneParams } from '@/lib/settings-pane';
+import {
+  SettingsPaneContext,
+  SettingsPaneNavContext,
+  SettingsPaneTopInset,
+  type PaneNav,
+  type PaneParams,
+} from '@/lib/settings-pane';
 
 import AddRegistryScreen from '@/app/add-registry';
 import BridgeSettingsScreen from '@/app/bridge-settings';
@@ -57,18 +63,18 @@ import WhatsNewScreen from '@/app/settings-whats-new';
 
 /** Every screen the settings pane can push to. A push to anything NOT in here falls through to the
  *  router — which is how something that genuinely does leave settings still can. */
-const SUB_PAGES: Record<string, () => React.ReactNode> = {
-  '/bridge-settings': BridgeSettingsScreen,
-  '/registries': RegistriesScreen,
-  '/registry-browse': RegistryBrowseScreen,
-  '/add-registry': AddRegistryScreen,
-  '/custom-page-editor': CustomPageEditorScreen,
-  '/custom-section-editor': CustomSectionEditorScreen,
-  '/tracker-settings': TrackerSettingsScreen,
-  '/downloads': DownloadsScreen,
-  '/series-downloads': SeriesDownloadsScreen,
-  '/gesture-trace': GestureTraceScreen,
-  '/settings-whats-new': WhatsNewScreen,
+const SUB_PAGES: Record<string, { title: string; Screen: () => React.ReactNode }> = {
+  '/bridge-settings': { title: 'Bridge', Screen: BridgeSettingsScreen },
+  '/registries': { title: 'Registries', Screen: RegistriesScreen },
+  '/registry-browse': { title: 'Registry', Screen: RegistryBrowseScreen },
+  '/add-registry': { title: 'Add registry', Screen: AddRegistryScreen },
+  '/custom-page-editor': { title: 'Page', Screen: CustomPageEditorScreen },
+  '/custom-section-editor': { title: 'Section', Screen: CustomSectionEditorScreen },
+  '/tracker-settings': { title: 'Tracker', Screen: TrackerSettingsScreen },
+  '/downloads': { title: 'Downloads', Screen: DownloadsScreen },
+  '/series-downloads': { title: 'Downloads', Screen: SeriesDownloadsScreen },
+  '/gesture-trace': { title: 'Gesture trace', Screen: GestureTraceScreen },
+  '/settings-whats-new': { title: "What's new", Screen: WhatsNewScreen },
 };
 
 /** The same categories, in the same order, with the same ICONS as the Settings tab's own list — this
@@ -152,11 +158,6 @@ export function SettingsModal() {
           testID="settings.modal.panel"
           style={[styles.panel, { backgroundColor: theme.background, borderColor: theme.barHairline }]}>
           <View style={[styles.categories, { borderRightColor: theme.barHairline }]}>
-            <View style={styles.heading}>
-              <ThemedText type="smallBold" style={styles.headingText}>
-                Settings
-              </ThemedText>
-            </View>
             <ScrollView contentContainerStyle={styles.categoryList} showsVerticalScrollIndicator={false}>
               {CATEGORIES.map((c) => (
                 <CategoryRow key={c.id} id={c.id} label={c.label} Icon={c.Icon} active={c.id === current.id} />
@@ -164,9 +165,16 @@ export function SettingsModal() {
             </ScrollView>
           </View>
           <View style={styles.pane}>
-            {/* No header bar. The category list already names what you're looking at, so a title over
-                the pane only repeated it — and a bar is what this modal exists to get away from.
-                Close floats in the corner instead, over the pane rather than above it. */}
+            {/* OUTSIDE the scroller, so it stays put while the pane's content moves under it. Its
+                height is `SettingsPaneTopInset` — the same number the category list starts at — so
+                the pane's first row still begins on the line the first category does. */}
+            <View style={[styles.paneHeader, { borderBottomColor: theme.barHairline }]}>
+              {top ? <PaneBackButton onPress={() => setStack((s) => s.slice(0, -1))} /> : null}
+              <ThemedText type="smallBold" numberOfLines={1} style={styles.paneTitle}>
+                {top ? SUB_PAGES[top.pathname]?.title : current.label}
+              </ThemedText>
+              <CloseButton />
+            </View>
             {/* Keyed so switching category remounts the screen rather than handing the next one the
                 previous one's state — these are route components, written expecting a fresh mount. */}
             <View style={styles.paneBody} key={top ? `${stack.length}:${top.pathname}` : current.id}>
@@ -176,17 +184,6 @@ export function SettingsModal() {
                 </SettingsPaneNavContext.Provider>
               </SettingsPaneContext.Provider>
             </View>
-            {top ? (
-              <View style={styles.backFloat}>
-                <PaneBackButton onPress={() => setStack((s) => s.slice(0, -1))} />
-              </View>
-            ) : null}
-            {/* Over the pane, in the corner a close belongs in. Nothing under it — no chip, no
-                shadow: the rows it floats over are quiet enough that a bare glyph reads, and the
-                content deliberately runs beneath it rather than being pushed down to clear it. */}
-            <View style={styles.closeFloat}>
-              <CloseButton />
-            </View>
           </View>
         </View>
     </View>
@@ -194,8 +191,8 @@ export function SettingsModal() {
 }
 
 function SubPage({ pathname }: { pathname: string }) {
-  const Screen = SUB_PAGES[pathname];
-  return Screen ? <Screen /> : null;
+  const entry = SUB_PAGES[pathname];
+  return entry ? <entry.Screen /> : null;
 }
 
 /** The pane's own back. The pushed screen's `TopBar` is suppressed in here, so this is the only way
@@ -296,31 +293,25 @@ const styles = StyleSheet.create({
   categories: {
     width: CATEGORY_WIDTH,
     borderRightWidth: StyleSheet.hairlineWidth,
-    paddingTop: Spacing.three,
-  },
-  // Fixed, because `SettingsPaneTopInset` is stated in terms of it — a heading that grew with its
-  // font would slide the two columns out of line.
-  headingText: {
-    height: 20,
-  },
-  heading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.three,
-    paddingBottom: Spacing.two,
+    // No heading of its own — the panel is plainly the settings panel, and a label saying so over a
+    // list of settings categories said nothing the list didn't. It pays the header's height as
+    // padding instead, so both columns' first rows start on the same line.
+    paddingTop: SettingsPaneTopInset,
   },
   // Tucked right into the corner. Content runs beneath it by design, but at the pane's own inset it
   // landed exactly on the first row's chevron, which reads as a glyph drawn twice rather than a
   // control over a list.
-  backFloat: {
-    position: 'absolute',
-    top: Spacing.half,
-    left: Spacing.half,
+  paneHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    height: SettingsPaneTopInset,
+    paddingLeft: Spacing.three,
+    paddingRight: Spacing.two,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  closeFloat: {
-    position: 'absolute',
-    top: Spacing.half,
-    right: Spacing.half,
+  paneTitle: {
+    flex: 1,
   },
   categoryList: {
     paddingHorizontal: Spacing.two,
