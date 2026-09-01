@@ -43,12 +43,12 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { closeSettingsModal, setSettingsCategory, useSettingsModal } from '@/lib/settings-modal';
+import { PaneParamsContext, type PaneParams } from '@/lib/pane-params';
 import {
   SettingsPaneContext,
   SettingsPaneNavContext,
   SettingsPaneTopInset,
   type PaneNav,
-  type PaneParams,
 } from '@/lib/settings-pane';
 
 import AddRegistryScreen from '@/app/add-registry';
@@ -180,7 +180,9 @@ export function SettingsModal() {
             <View style={styles.paneBody} key={top ? `${stack.length}:${top.pathname}` : current.id}>
               <SettingsPaneContext.Provider value={true}>
                 <SettingsPaneNavContext.Provider value={nav}>
-                  {top ? <SubPage pathname={top.pathname} /> : <current.Screen />}
+                  <PaneParamsContext.Provider value={nav.params}>
+                    {top ? <SubPage pathname={top.pathname} /> : <current.Screen />}
+                  </PaneParamsContext.Provider>
                 </SettingsPaneNavContext.Provider>
               </SettingsPaneContext.Provider>
             </View>

@@ -8,7 +8,8 @@ import {
 } from 'expo-router';
 import { useMemo, type ComponentProps } from 'react';
 
-import { useSettingsPaneNav, type PaneParams } from '@/lib/settings-pane';
+import { usePaneParams, type PaneParams } from '@/lib/pane-params';
+import { useSettingsPaneNav } from '@/lib/settings-pane';
 
 import { BACK_TARGET, claimNavigation, navTargetKey } from '@/lib/nav-guard';
 
@@ -124,8 +125,8 @@ export function useLocalSearchParams<T extends PaneParams = PaneParams>(): T {
   // Untyped against the route table on purpose: a pane's params come from a `push` the pane
   // intercepted, not from a route, so there is no path for expo-router to check them against.
   const routeParams = useExpoLocalSearchParams() as T;
-  const pane = useSettingsPaneNav();
-  return pane ? (pane.params as T) : routeParams;
+  const paneParams = usePaneParams();
+  return paneParams ? (paneParams as T) : routeParams;
 }
 
 /** Guarded drop-in for expo-router's `router` singleton (for call sites outside a component). */

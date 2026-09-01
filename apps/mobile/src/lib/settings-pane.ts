@@ -13,6 +13,8 @@
  */
 import { createContext, useContext } from 'react';
 
+import type { PaneParams } from '@/lib/pane-params';
+
 /**
  * The height of the modal's pane header.
  *
@@ -25,8 +27,6 @@ export const SettingsPaneTopInset = 48;
 export const SettingsPaneContext = createContext(false);
 
 export const useInSettingsPane = (): boolean => useContext(SettingsPaneContext);
-
-export type PaneParams = Record<string, string | undefined>;
 
 export type PaneNav = {
   /** Returns true when the pane took the navigation, false to let it go to the router. */
