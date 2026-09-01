@@ -24,14 +24,14 @@ import { COMICAL_BRIDGE_ID, setSelectedBridge } from '@/data/selected-bridge';
 import { setSelectedCollection } from '@/data/selected-collection';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
-import { navInsetFor, seriesPaneWidthFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
+import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
 import { SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { openSettingsModal } from '@/lib/settings-modal';
-import { setSeriesPaneAvailable, useSeriesPane } from '@/lib/series-pane';
+import { closeSeriesPane, setSeriesPaneAvailable, useSeriesPane } from '@/lib/series-pane';
 import { setSidebarDragWidth, sidebarDragWidth } from '@/lib/sidebar-drag';
 import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
@@ -334,7 +334,6 @@ export default function AppTabs() {
   const paneAvailable = SERIES_AS_PANE && sidebar;
   useEffect(() => setSeriesPaneAvailable(paneAvailable), [paneAvailable]);
   const seriesPaneOpen = useSeriesPaneOpen();
-  const paneWidth = seriesPaneOpen ? seriesPaneWidthFor(width) : 0;
   // The rail's edge follows the pointer on the UI thread; the content's inset can't (see
   // `sidebar-drag`), so it is committed at column boundaries instead. At rest the two are the same
   // number, and this is what keeps them that way — after a release, after a collapse, after a
@@ -414,7 +413,9 @@ export default function AppTabs() {
         return [
           row,
           <SidebarGroup key={`${tab.name}-scope`} name={tab.name} testID={`sidebar.group.${tab.name}`}>
-            <tab.Scope active={activeTab === tab.name} />
+            {/* Same reason as the destination rows above: a scope picked in the rail changes what
+                the covered screen shows, so the pane has to get out of its way. */}
+            <tab.Scope active={activeTab === tab.name} onNavigate={closeSeriesPane} />
           </SidebarGroup>,
         ];
       }),
@@ -439,7 +440,7 @@ export default function AppTabs() {
           putting it between `Tabs` and `TabSlot` would still break the child-type discovery the
           slot and the registration TabList both depend on. The stack screens that cover the rail
           (search, results, series, settings/*) are not in this subtree and keep the window. */}
-      <ContentWidthProvider width={width - contentInset - paneWidth} sidebar={sidebar}>
+      <ContentWidthProvider width={width - contentInset} sidebar={sidebar}>
         <Tabs style={styles.tabs}>
           {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
               appearing in one frame — see `tab-slot-fade`. */}
@@ -447,10 +448,7 @@ export default function AppTabs() {
               `TabSlot` stays a DIRECT child of `Tabs` — wrapping it in a row View alongside the rail
               would read better, but the navigator discovers its slot by child type the same way it
               discovers TabList (see TAB_REGISTRATION), and nesting it yields a blank screen. */}
-          <TabSlot
-            style={[styles.slot, { paddingLeft: contentInset, paddingRight: paneWidth }]}
-            renderFn={renderFadingTabScreen}
-          />
+          <TabSlot style={[styles.slot, { paddingLeft: contentInset }]} renderFn={renderFadingTabScreen} />
 
           {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
           {sidebar && (
@@ -524,8 +522,10 @@ export default function AppTabs() {
           to be a pushed route, so nothing about the router changes. */}
       {/* Outside `Tabs` alongside the settings modal, for the same reason: it replaces what used to
           be a pushed route, so nothing about the router changes — and inside the tabs' own tree, so
-          an overlay opened from within it (a chapter menu, a selector) still paints over it. */}
-      {paneWidth > 0 ? <SeriesPane width={paneWidth} top={insets.top} /> : null}
+          an overlay opened from within it (a chapter menu, a selector) still paints over it.
+          It covers the CONTENT REGION and nothing else: the rail stays lit and usable beside it, so
+          the series is over the grid you opened it from rather than over the whole app. */}
+      {seriesPaneOpen ? <SeriesPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
@@ -582,6 +582,10 @@ function TabButton({
     if (isFocused) scrollToTopFor(routeName);
     // Only where the rail is showing the scope this resets — see `selectDefault` on the tab table.
     if (sidebar) selectDefault?.();
+    // The rail is the one surface still visible beside an open series pane, so a destination
+    // pressed there has to reveal itself: the pane covers the content region, and a tab switch
+    // under it would look like the click did nothing. Free when no pane is open.
+    closeSeriesPane();
     onPress?.(e);
   };
 

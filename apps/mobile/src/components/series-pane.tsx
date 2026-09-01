@@ -1,5 +1,9 @@
 /**
- * The right-hand series pane — the series page rendered beside the grid instead of over it.
+ * The series pane — the series page over the CONTENT REGION rather than over the window.
+ *
+ * It covers the grid it was opened from and stops at the rail, which stays lit and usable beside
+ * it: the page you left is one click away in the nav you never lost, and the page's own chevron is
+ * the way back to the grid underneath.
  *
  * WEB ONLY (see `lib/series-pane` for why it exists and why it has no URL). What it renders is the
  * real series SCREEN, not a copy: it is a route component, so everything it needs to know about
@@ -36,14 +40,16 @@ const PANE_NAV: PaneNav = {
   canGoBack: () => true,
 };
 
-export function SeriesPane({ width, top }: { width: number; top: number }) {
+export function SeriesPane({ left, width, top }: { left: number; width: number; top: number }) {
   const theme = useTheme();
   const { params } = useSeriesPane();
   if (!params) return null;
   return (
     <View
       testID="series.pane"
-      style={[styles.pane, { width, paddingTop: top, backgroundColor: theme.background, borderLeftColor: theme.barHairline }]}>
+      // `left` is the rail's own width, so the pane starts exactly where the content it replaces
+      // did — no border of its own, since the rail already draws the hairline on that seam.
+      style={[styles.pane, { left, width, paddingTop: top, backgroundColor: theme.background }]}>
       {/* Keyed on the series so opening another from the grid gets a fresh mount rather than
           handing the next one the previous one's chapter list, scroll and reader state — the
           screen is written expecting exactly that, because a route push is what it usually is. */}
@@ -64,8 +70,9 @@ export function SeriesPane({ width, top }: { width: number; top: number }) {
 
 const styles = StyleSheet.create({
   // Absolute for the same reason the rail is: `TabSlot` has to stay a direct child of `Tabs`, so
-  // the columns beside it can't be siblings in a row — they overlay a slot that pads itself out of
-  // their way.
-  pane: { position: 'absolute', top: 0, right: 0, bottom: 0, borderLeftWidth: StyleSheet.hairlineWidth },
+  // nothing here can be its sibling in a row. Opaque, and it covers the slot rather than insetting
+  // it — the grid underneath keeps its own width, so closing the pane puts it back exactly as it
+  // was instead of reflowing every card.
+  pane: { position: 'absolute', top: 0, bottom: 0 },
   body: { flex: 1 },
 });
