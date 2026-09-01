@@ -87,14 +87,14 @@ export default function SettingsScreen() {
             testID="settings.category.general"
             icon={<GeneralSettingsIcon color={theme.textSecondary} size={22} />}
             title="General"
-            onPress={() => router.push('/settings/general')}
+            onPress={() => router.push('/settings-general')}
           />
           <Divider />
           <CategoryRow
             testID="settings.category.notifications"
             icon={<NotificationsIcon color={theme.textSecondary} size={22} />}
             title="Notifications"
-            onPress={() => router.push('/settings/notifications')}
+            onPress={() => router.push('/settings-notifications')}
           />
           <Divider />
           <CategoryRow
@@ -166,7 +166,7 @@ export default function SettingsScreen() {
             // CATEGORY row like Bridges/Trackers, and keeping the same pill means the tab badge's
             // total is exactly the sum of the pips visible on this screen.
             updates={appUpdate.status === 'update-available' ? 1 : 0}
-            onPress={() => router.push('/settings/about')}
+            onPress={() => router.push('/settings-about')}
           />
           {PROFILING_ENABLED && (
             <>
@@ -175,7 +175,7 @@ export default function SettingsScreen() {
                 testID="settings.category.developer"
                 icon={<DeveloperIcon color={theme.textSecondary} size={22} />}
                 title="Developer"
-                onPress={() => router.push('/settings/developer')}
+                onPress={() => router.push('/settings-developer')}
               />
             </>
           )}

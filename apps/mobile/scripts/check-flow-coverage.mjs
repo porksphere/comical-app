@@ -50,7 +50,7 @@ if (appTabsSrc) {
 // --- Screen titles: literal <TabTitleBar title="..."> props -> screen-title.<slug> ---
 // Only literal string titles are discoverable statically; screens that build a custom `titleSlot`
 // (e.g. library.tsx's search bar) have no single title string and are skipped, not flagged.
-const screenTitleFiles = ['src/app/(tabs)/activity.tsx', 'src/app/(tabs)/history.tsx', 'src/app/(tabs)/settings/index.tsx'];
+const screenTitleFiles = ['src/app/(tabs)/activity.tsx', 'src/app/(tabs)/history.tsx', 'src/app/(tabs)/settings.tsx'];
 for (const file of screenTitleFiles) {
   const src = read(file);
   if (!src) continue;
@@ -60,13 +60,13 @@ for (const file of screenTitleFiles) {
 }
 
 // --- Settings categories: literal testID="settings.category.*" rows in the Settings screen ---
-const settingsSrc = read('src/app/(tabs)/settings/index.tsx');
+const settingsSrc = read('src/app/(tabs)/settings.tsx');
 if (settingsSrc) {
   for (const m of settingsSrc.matchAll(/testID="(settings\.category\.[a-z-]+)"/g)) {
-    anchors.push({ id: m[1], source: 'src/app/(tabs)/settings/index.tsx' });
+    anchors.push({ id: m[1], source: 'src/app/(tabs)/settings.tsx' });
   }
 } else {
-  console.warn('[check-flow-coverage] could not read src/app/(tabs)/settings/index.tsx -- skipping settings.category.* anchors');
+  console.warn('[check-flow-coverage] could not read src/app/(tabs)/settings.tsx -- skipping settings.category.* anchors');
 }
 
 // --- Collect every committed flow's raw text (mobile + web) ---
