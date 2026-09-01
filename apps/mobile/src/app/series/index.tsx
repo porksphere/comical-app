@@ -2339,7 +2339,12 @@ function SeriesReaderInstance({
     zoomRadiusClosing.set(true);
     edgeCommitting.set(true);
     homeAt.set(0);
-    zoom.set(withSpring(0, ZOOM_OUT_SPRING));
+    // WEB closes in one frame, the mirror of the entrance: with no source card the collapse has
+    // nothing to shrink INTO, so it was a page scaling down toward the middle of a grid it never
+    // came from. A gesture's release is different and still springs (see the back-swipe's onEnd and
+    // the reader dismiss's): there the finger has already moved the page, and cutting the rest
+    // would strand it mid-drag. This one is a click, and a click has no motion to finish.
+    zoom.set(IS_WEB ? 0 : withSpring(0, ZOOM_OUT_SPRING));
     // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
     // leaveOnce), with the `leaving` backstop above as the safety net.
   }, [token, edgeCommitting, homeAt, zoom, zoomClosing, zoomRadiusClosing]);
