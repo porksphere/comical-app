@@ -67,11 +67,17 @@ export function SettingsModal() {
           onPress={closeSettingsModal}
           style={StyleSheet.absoluteFill}
         />
-        <View testID="settings.modal.panel" style={[styles.panel, { backgroundColor: theme.background }]}>
+        <View
+          testID="settings.modal.panel"
+          style={[styles.panel, { backgroundColor: theme.background, borderColor: theme.barHairline }]}>
           <View style={[styles.categories, { borderRightColor: theme.barHairline }]}>
-            <ThemedText type="smallBold" style={styles.heading}>
-              Settings
-            </ThemedText>
+            {/* Close lives on the category column's heading row — where a title bar would have been,
+                and the one place in the panel with room. Floating it over the pane put it on top of
+                the first row's own control. */}
+            <View style={styles.heading}>
+              <ThemedText type="smallBold">Settings</ThemedText>
+              <CloseButton />
+            </View>
             <ScrollView contentContainerStyle={styles.categoryList} showsVerticalScrollIndicator={false}>
               {CATEGORIES.map((c) => (
                 <CategoryRow key={c.id} id={c.id} label={c.label} active={c.id === current.id} />
@@ -79,10 +85,9 @@ export function SettingsModal() {
             </ScrollView>
           </View>
           <View style={styles.pane}>
-            <View style={[styles.paneHeader, { borderBottomColor: theme.barHairline }]}>
-              <ThemedText type="smallBold">{current.label}</ThemedText>
-              <CloseButton />
-            </View>
+            {/* No header bar. The category list already names what you're looking at, so a title over
+                the pane only repeated it — and a bar is what this modal exists to get away from.
+                Close floats in the corner instead, over the pane rather than above it. */}
             {/* Keyed so switching category remounts the screen rather than handing the next one the
                 previous one's state — these are route components, written expecting a fresh mount. */}
             <View style={styles.paneBody} key={current.id}>
@@ -147,6 +152,10 @@ const styles = StyleSheet.create({
   // The panel sits above the scrim's own press target purely by document order.
   panel: {
     flexDirection: 'row',
+    // A hairline all the way round, not just the divider between the panes: on the dark theme the
+    // panel is painted the same `background` as the page it floats over, so without an edge it read
+    // as a hole rather than a surface. The scrim alone wasn't enough to separate them.
+    borderWidth: StyleSheet.hairlineWidth,
     width: '100%',
     maxWidth: MaxContentWidth + CATEGORY_WIDTH,
     height: '100%',
@@ -160,7 +169,11 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.three,
   },
   heading: {
-    paddingHorizontal: Spacing.three,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: Spacing.three,
+    paddingRight: Spacing.two,
     paddingBottom: Spacing.two,
   },
   categoryList: {
@@ -176,15 +189,6 @@ const styles = StyleSheet.create({
   },
   pane: {
     flex: 1,
-  },
-  paneHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    height: 48,
-    paddingLeft: Spacing.four,
-    paddingRight: Spacing.two,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   paneBody: {
     flex: 1,
