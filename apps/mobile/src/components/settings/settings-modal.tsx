@@ -153,7 +153,9 @@ export function SettingsModal() {
           style={[styles.panel, { backgroundColor: theme.background, borderColor: theme.barHairline }]}>
           <View style={[styles.categories, { borderRightColor: theme.barHairline }]}>
             <View style={styles.heading}>
-              <ThemedText type="smallBold">Settings</ThemedText>
+              <ThemedText type="smallBold" style={styles.headingText}>
+                Settings
+              </ThemedText>
             </View>
             <ScrollView contentContainerStyle={styles.categoryList} showsVerticalScrollIndicator={false}>
               {CATEGORIES.map((c) => (
@@ -295,6 +297,11 @@ const styles = StyleSheet.create({
     width: CATEGORY_WIDTH,
     borderRightWidth: StyleSheet.hairlineWidth,
     paddingTop: Spacing.three,
+  },
+  // Fixed, because `SettingsPaneTopInset` is stated in terms of it — a heading that grew with its
+  // font would slide the two columns out of line.
+  headingText: {
+    height: 20,
   },
   heading: {
     flexDirection: 'row',
