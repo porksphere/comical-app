@@ -41,9 +41,23 @@ export function setSeriesPaneAvailable(available: boolean): void {
 /**
  * Show a series in the pane, reporting whether the pane took it. False means there is no pane —
  * the caller navigates as it always did.
+ *
+ * A navigation that opens straight into the READER is declined even when a pane is up. A reader is
+ * the one thing on web that still wants the whole window: a page rendered 500pt wide is a page you
+ * cannot read. That covers the History and Activity rows (`reader=1`), a collection tile's album
+ * (`seq=1`), and the pane's OWN handover when you start reading in it — which is why that handover
+ * is an ordinary push rather than a special exit.
  */
 export function openSeriesPane(params: PaneParams): boolean {
   if (!seriesPane$.available.peek()) return false;
+  if (params.reader === '1' || params.seq === '1') {
+    // …and the pane gives way rather than sitting behind it. At most ONE series page may be
+    // mounted at a time — `registerDrillSeries` is a module singleton and the second page to mount
+    // would take the handler off the first (see lib/series-nav) — so a reader route opening over an
+    // open pane is not a layering question, it is two series pages.
+    seriesPane$.params.set(null);
+    return false;
+  }
   seriesPane$.params.set(params);
   return true;
 }

@@ -74,6 +74,7 @@ import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } fro
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
+import { closeSeriesPane } from '@/lib/series-pane';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import {
@@ -984,10 +985,6 @@ function SeriesReaderInstance({
   const { width, height } = useViewport();
   const insets = useSafeAreaInsets();
   const mock = useMockActive();
-  // Depth 0 dims and scales the tabs behind an open series page — but in the pane the tabs are
-  // BESIDE it, not beneath it, and dimming the grid you are still reading from is the opposite of
-  // what the pane is for.
-  const overTabs = useSeriesPaneWidth() === null;
   const [settings] = useReaderSettings();
 
   const {
@@ -1559,6 +1556,33 @@ function SeriesReaderInstance({
     [armSeriesQueries],
   );
 
+  /**
+   * Reading STARTED, in the pane — so hand this series to the full-screen route and let the pane go.
+   *
+   * A reader is the one thing on web that still takes the whole window (see components/series-pane),
+   * and the details half of this screen is what the pane exists to show. The handover is an ordinary
+   * reader-first push — the same params a History row carries — because `openSeriesPane` declines
+   * those on purpose; there is no exit hatch here that the rest of the app doesn't already use.
+   *
+   * Answers false outside the pane, which is every native build and every narrow viewport, so the
+   * reveal below is untouched there.
+   */
+  const inPane = useSeriesPaneWidth() !== null;
+  const leavePaneToRead = useCallback((): boolean => {
+    if (!inPane) return false;
+    const next: Record<string, string> = { reader: '1', start: String(target?.start ?? 0) };
+    for (const [k, v] of Object.entries(params)) if (typeof v === 'string') next[k] = v;
+    if (target?.chapterId) {
+      next.chapterId = target.chapterId;
+      next.chapterName = target.chapterName ?? '';
+    } else if (isDirect) {
+      next.direct = '1';
+    }
+    closeSeriesPane();
+    router.push({ pathname: '/series', params: next });
+    return true;
+  }, [inPane, params, target, isDirect, router]);
+
   // JS-side half of a commit — deliberately closes over nothing but state setters (no shared
   // values, no timer refs), so the gesture worklets can `runOnJS` it; the worklets animate
   // `progress` themselves. Landing back in the reader re-shows the chrome (it may have auto-hidden
@@ -1568,21 +1592,26 @@ function SeriesReaderInstance({
     // that transition specifically, and the question is what the reader side has to show at the
     // instant it becomes visible — see the `reader ready` mark below for the other half.
     traceJS('reveal', 'commit', { toReader: to === 0 });
+    if (to === 0 && leavePaneToRead()) return;
     setDetailsActive(to === 1);
     if (to === 0) setChromeVisible(true);
-  }, []);
+  }, [leavePaneToRead]);
   useEffect(() => {
     if (!detailsActive) scheduleHide();
   }, [detailsActive, scheduleHide]);
   // Full JS-side reveal (pill, grab-handle, hardware back, chapter/page intents).
   const setRevealed = useCallback(
     (to: 0 | 1) => {
+      // Ahead of the 240ms reveal, not just at its commit: in the pane the reader is not where
+      // this is going, so playing the reveal first would show a page at pane width and then
+      // replace it.
+      if (to === 0 && leavePaneToRead()) return;
       detailsActiveSV.set(to === 1);
       pullEngagedSV.set(false); // the commit animation owns `progress` — stop any live pull-follow
       progress.set(withTiming(to, { duration: 240, easing: Easing.out(Easing.cubic) }));
       commitReveal(to);
     },
-    [progress, detailsActiveSV, pullEngagedSV, commitReveal],
+    [progress, detailsActiveSV, pullEngagedSV, commitReveal, leavePaneToRead],
   );
 
   // The collapsed reader strip is the top of the details PAGE, so its reveal is the page's own
@@ -3201,9 +3230,9 @@ function SeriesReaderInstance({
       return zoom.value;
     },
     (covered) => {
-      if (depth === 0 && overTabs) seriesReaderDim.set(covered);
+      if (depth === 0 && !inPane) seriesReaderDim.set(covered);
     },
-    [depth, overTabs],
+    [depth, inPane],
   );
   // Belt and braces: nothing may strand the backdrop dimmed if this screen goes away without its
   // exit animation finishing (a deep link replacing the route, a dev reload). The hold's release
@@ -3211,9 +3240,9 @@ function SeriesReaderInstance({
   // one JS-thread write against a value the reaction above writes every frame, and on its own it
   // has no way to notice when it loses that race (see lib/pushback-watchdog).
   useEffect(() => {
-    if (depth > 0 || !overTabs) return;
+    if (depth > 0 || inPane) return;
     return holdSeriesBackdrop();
-  }, [depth, overTabs]);
+  }, [depth, inPane]);
 
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
