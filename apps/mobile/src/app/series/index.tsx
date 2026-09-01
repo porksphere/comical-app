@@ -2600,33 +2600,27 @@ function SeriesReaderInstance({
   // `traceOn` is a DEP on purpose: backSwipePan only attaches its touch observers while the trace
   // is recording, so flipping the toggle has to rebuild the gestures for the change to take.
   const traceOn = useGestureTraceEnabled();
-  // WEB ONLY. This used to be a second copy of the back-swipe living on the screen-level detector,
-  // alongside the one riding the list — the theory being that the list copy covers the scroller and
-  // this one covers the chrome around it.
+  // THE back-swipe, and NATIVE ONLY.
   //
-  // A device trace killed that. Across ~20 attempts the screen-level copy activated ZERO times, and
-  // in every failed attempt BOTH copies finalized unsuccessfully in the same millisecond, right as
-  // the drag reached the activation threshold — with `dy` of one or two pixels, so nothing in the
-  // criteria had failed. That is what an ancestor detector and a descendant detector reaching for
-  // the same touch on the same frame looks like: they are not declared simultaneous with each
+  // There used to be a second copy on the screen-level detector, alongside this one riding the list
+  // — the theory being that the list copy covers the scroller and that one covers the chrome around
+  // it. A device trace killed it. Across ~20 attempts the screen-level copy activated ZERO times,
+  // and in every failed attempt BOTH copies finalized unsuccessfully in the same millisecond, right
+  // as the drag reached the activation threshold — with `dy` of one or two pixels, so nothing in
+  // the criteria had failed. That is what an ancestor detector and a descendant detector reaching
+  // for the same touch on the same frame looks like: they are not declared simultaneous with each
   // other, so each cancels the other and the swipe dies at exactly the moment it should have
   // started. The swipes that DID work were the fast ones, where one copy crossed the threshold a
-  // frame before the other could contest it.
+  // frame before the other could contest it. So there is one back-swipe: the copy composed with the
+  // scroller, which is the only one that ever won.
   //
-  // So on native there is now ONE back-swipe: the copy composed with the scroller (below), which is
-  // the only one that ever won. Web keeps this one instead, because there `detailsScrollGesture` is
-  // undefined — no native recognizer to be simultaneous with, and nothing for it to fight.
-  //
-  // Not merely disabled on native — not BUILT. A permanently-disabled gesture still rebuilds when
-  // its deps change, and a rebuilt gesture costs a full re-serialization of its callbacks (see
-  // detailsBackSwipe below for the measurement). Dead weight that bills on every settle is worse
-  // than dead weight.
-  const edgePan = useMemo(
-    () => (IS_WEB ? makeBackSwipePan(`series.edge@${depth}`).enabled(detailsActive) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [makeBackSwipePan, detailsActive, traceOn, depth],
-  );
-  // THE back-swipe on native (see edgePan above for why it's the only one).
+  // WEB has no back-swipe at all. The screen-level copy survived there for a while (nothing to
+  // fight, since `detailsScrollGesture` is undefined on web) — but a page dismissed by dragging is
+  // a touch idiom, and on web the series sits in a pane you leave by clicking the chevron or by
+  // picking somewhere else in the rail. Not merely disabled — not BUILT: a permanently-disabled
+  // gesture still rebuilds when its deps change, and a rebuilt gesture costs a full
+  // re-serialization of its callbacks (measured below). Dead weight that bills on every settle is
+  // worse than dead weight.
   //
   // Held separately from the composition below because the rails inside the details need to name it
   // — they declare that THIS waits for THEM, which is the one relation keeping a rail scrollable now
@@ -2683,8 +2677,8 @@ function SeriesReaderInstance({
       });
   }, [detailsActive, detailsActiveSV, pullEngagedSV, detailsScrollOffset, progress, commitReveal]);
   const detailsGestures = useMemo(
-    () => (edgePan ? Gesture.Race(edgePan, returnPan, pullReleaseWatch) : Gesture.Race(returnPan, pullReleaseWatch)),
-    [edgePan, returnPan, pullReleaseWatch],
+    () => Gesture.Race(returnPan, pullReleaseWatch),
+    [returnPan, pullReleaseWatch],
   );
   // Geometry: the reader strip's height — the top-of-page band the details content starts below.
   // The details layer itself is full-screen (the strip is page, not chrome). Declared up here
