@@ -18,19 +18,43 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-nativ
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { setSidebarWidth, SidebarMaxWidth, SidebarMinWidth } from '@/hooks/use-sidebar-width';
+import { setSidebarDragWidth, sidebarDragWidth } from '@/lib/sidebar-drag';
 
 /** Wider than the hairline it sits on: a 1pt grab target is a coin toss with a mouse and impossible
  *  with a finger. Centred over the border so the rail doesn't visibly gain padding. */
 const HANDLE_WIDTH = Spacing.two + Spacing.one;
 
-export function SidebarResizer({ width }: { width: number }) {
+/** How far the rail may run ahead of the content before the inset is committed anyway. Small enough
+ *  that the overlap reads as the edge leading slightly, large enough that a full drag costs a
+ *  handful of relayouts rather than one per frame. */
+const COMMIT_SLACK = 48;
+
+/** The grid's own column rule (see `useGridLayout`), duplicated onto the UI thread because a worklet
+ *  can't call it. If that rule changes, this has to change with it — the point is to commit at
+ *  exactly the widths where the grid would reflow anyway, so a stale copy would commit at the wrong
+ *  moments rather than merely being untidy. */
+function columnsFor(contentWidth: number): number {
+  'worklet';
+  return contentWidth < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(contentWidth / 200)));
+}
+
+export function SidebarResizer({ width, viewport }: { width: number; viewport: number }) {
   const theme = useTheme();
   const dragging = useSharedValue(false);
-  const live = useSharedValue(width);
+  // What the committed width currently represents. A commit fires when the drag would change the
+  // COLUMN COUNT — not per pixel, which relayouts the grid for nothing, and not only on release,
+  // which leaves the cards wrong for the whole gesture.
+  const committedColumns = useSharedValue(0);
+  // ...and a distance backstop, because column boundaries are ~200pt of travel apart. The rail is an
+  // opaque overlay, so between commits it slides OVER content that hasn't been re-inset yet; without
+  // this the overlap could reach the width of a whole column before anything caught up.
+  const committedWidth = useSharedValue(0);
 
   const gesture = Gesture.Pan()
     .onBegin(() => {
-      live.value = width;
+      setSidebarDragWidth(width);
+      committedColumns.value = columnsFor(viewport - width);
+      committedWidth.value = width;
       dragging.value = true;
     })
     .onUpdate((e) => {
@@ -40,18 +64,29 @@ export function SidebarResizer({ width }: { width: number }) {
       // `sidebarWrap`), so the pointer's absolute x IS the width it is asking for.
       // Clamped on the UI thread with the same bounds the commit uses, so the guide can never show a
       // width the release won't honour.
-      live.value = Math.min(SidebarMaxWidth, Math.max(SidebarMinWidth, e.absoluteX));
+      const next = Math.min(SidebarMaxWidth, Math.max(SidebarMinWidth, e.absoluteX));
+      setSidebarDragWidth(next);
+      const cols = columnsFor(viewport - next);
+      if (cols !== committedColumns.value || Math.abs(next - committedWidth.value) > COMMIT_SLACK) {
+        committedColumns.value = cols;
+        committedWidth.value = next;
+        runOnJS(setSidebarWidth)(next);
+      }
     })
     .onEnd(() => {
-      runOnJS(setSidebarWidth)(live.value);
+      runOnJS(setSidebarWidth)(sidebarDragWidth.value);
     })
     .onFinalize(() => {
       dragging.value = false;
     });
 
+  // The guide rides the live width the same way the rail does, so the two edges stay together while
+  // the committed width lags behind them. The HIT AREA is left at the committed position on purpose:
+  // a pan captures the pointer, so where the strip sits during the gesture never matters, and
+  // animating it would mean an Animated.View that can't carry the web cursor.
   const guide = useAnimatedStyle(() => ({
     opacity: dragging.value ? 1 : 0,
-    transform: [{ translateX: live.value - width }],
+    transform: [{ translateX: sidebarDragWidth.value - width }],
   }));
 
   return (

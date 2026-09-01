@@ -15,11 +15,12 @@ import { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type PressableProps } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { ChevronRightIcon } from '@/components/icons/ui-icons';
+import { ChevronRightIcon, PanelCollapseIcon, PanelExpandIcon } from '@/components/icons/ui-icons';
 
 import { useHover } from '@/hooks/use-hover';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useSectionOpen } from '@/hooks/use-sidebar-sections';
+import { toggleSidebarCollapsed } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
 import { Fonts, Spacing } from '@/constants/theme';
 
@@ -41,6 +42,8 @@ type SidebarItemProps = PressableProps & {
   badge?: React.ReactNode;
   /** This row owns a scope group, drawn directly beneath it. The chevron is the only thing that says
    *  so — there is no group heading, because the row IS the heading. */
+  /** Icon-only: the rail is collapsed, so there is no room for a label and no group to disclose. */
+  compact?: boolean;
   scope?: boolean;
   /** Whether that group is expanded, and how to flip it. Separate from `active`: the row navigates,
    *  the chevron discloses, and neither implies the other. */
@@ -53,6 +56,7 @@ export function SidebarItem({
   label,
   active,
   badge,
+  compact,
   scope,
   expanded,
   onToggleScope,
@@ -72,7 +76,7 @@ export function SidebarItem({
   // selection (there is always a current bridge, always a current collection), so filling both
   // stacks two selected-looking rows and leaves the actual choice ambiguous. Weight, colour and the
   // chevron still mark it as the section you're in; only the fill moves down.
-  const selectedFill = active && !scope;
+  const selectedFill = active && (!scope || compact === true);
   const background = selectedFill ? theme.backgroundSelected : hovered ? theme.backgroundElement : 'transparent';
   const color = active ? theme.text : theme.textSecondary;
 
@@ -94,6 +98,7 @@ export function SidebarItem({
         accessibilityState={{ selected: active }}
         style={({ pressed }) => [
           styles.item,
+          compact && styles.itemCompact,
           { backgroundColor: background, opacity: !selectedFill && hovered ? 0.999 : 1 },
           pressed && styles.pressed,
         ]}>
@@ -103,11 +108,13 @@ export function SidebarItem({
         </View>
         {/* `numberOfLines` so a long label truncates rather than wrapping the row to two lines and
             breaking the rhythm of a fixed-height list. */}
-        <Text numberOfLines={1} style={[styles.label, { color, fontWeight: active ? '600' : '500' }]}>
-          {label}
-        </Text>
+        {compact ? null : (
+          <Text numberOfLines={1} style={[styles.label, { color, fontWeight: active ? '600' : '500' }]}>
+            {label}
+          </Text>
+        )}
       </Pressable>
-      {scope ? (
+      {scope && !compact ? (
         <Pressable
           testID={`${testID ?? 'sidebar'}.disclose`}
           onPress={onToggleScope}
@@ -129,40 +136,80 @@ export function SidebarItem({
  *  shows through beneath them, which reads as a floating card rather than a rail. */
 export function AppSidebar({
   top,
-  width,
+  collapsed,
   children,
 }: {
   top: number;
-  width: number;
+  collapsed: boolean;
   children: React.ReactNode;
 }) {
   const theme = useTheme();
   const barHeight = useTopBarHeight();
   return (
-    <ScrollView
-      style={[styles.sidebar, { width, borderRightColor: theme.barHairline, backgroundColor: theme.background }]}
-      // Centres the FIRST row against the bar's title rather than padding by a round number: the bar
-      // is `barHeight` tall below the inset and centres its content, so matching that puts the two
-      // on one line. A flat Spacing.three sat the row 7pt low against it.
-      contentContainerStyle={[styles.sidebarContent, { paddingTop: top + barHeight / 2 - ITEM_HEIGHT / 2 }]}
-      // A rail is nav, not a document: a scrollbar parked down its edge reads as a second column
-      // divider. It scrolls when an expanded group outgrows the viewport and is invisible otherwise.
-      showsVerticalScrollIndicator={false}>
-      {/* No wordmark. One was here to "replace the top bar's title", but the row that goes away at
-          this width is the top-RIGHT icon nav — the bar's own title row stays — so it replaced
-          nothing, and once the Bridges group landed below it the rail printed "Comical" twice: once
-          as dead chrome and once as the live aggregate row. The app is named by its window title and
-          its icon; a nav rail naming its own app is not how anything else does it. */}
-      {children}
-    </ScrollView>
+    <View style={[styles.rail, { borderRightColor: theme.barHairline, backgroundColor: theme.background }]}>
+      <ScrollView
+        style={styles.sidebar}
+        // Centres the FIRST row against the bar's title rather than padding by a round number: the
+        // bar is `barHeight` tall below the inset and centres its content, so matching that puts the
+        // two on one line. A flat Spacing.three sat the row 7pt low against it.
+        contentContainerStyle={[
+          styles.sidebarContent,
+          collapsed && styles.sidebarContentCompact,
+          { paddingTop: top + barHeight / 2 - ITEM_HEIGHT / 2 },
+        ]}
+        // A rail is nav, not a document: a scrollbar parked down its edge reads as a second column
+        // divider. It scrolls when an expanded group outgrows the viewport and is invisible otherwise.
+        showsVerticalScrollIndicator={false}>
+        {/* No wordmark. One was here to "replace the top bar's title", but the row that goes away at
+            this width is the top-RIGHT icon nav — the bar's own title row stays — so it replaced
+            nothing, and once the Bridges group landed below it the rail printed "Comical" twice: once
+            as dead chrome and once as the live aggregate row. The app is named by its window title
+            and its icon; a nav rail naming its own app is not how anything else does it. */}
+        {children}
+      </ScrollView>
+      {/* Pinned BELOW the scroller, not inside it: collapsed is the state you need this control to
+          get out of, so it must never be the thing that scrolled off. */}
+      <CollapseToggle collapsed={collapsed} />
+    </View>
+  );
+}
+
+/** The rail's own collapse control. */
+function CollapseToggle({ collapsed }: { collapsed: boolean }) {
+  const theme = useTheme();
+  const { hovered, handlers } = useHover();
+  const Icon = collapsed ? PanelExpandIcon : PanelCollapseIcon;
+  return (
+    <Pressable
+      {...handlers}
+      testID="sidebar.collapse-toggle"
+      onPress={toggleSidebarCollapsed}
+      accessibilityRole="button"
+      accessibilityLabel={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      accessibilityState={{ expanded: !collapsed }}
+      style={({ pressed }) => [
+        styles.collapseToggle,
+        collapsed && styles.itemCompact,
+        { backgroundColor: hovered ? theme.backgroundElement : 'transparent' },
+        pressed && styles.pressed,
+      ]}>
+      <View style={styles.iconWrap}>
+        <Icon color={theme.textSecondary} size={20} />
+      </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  // The rail's frame. Its WIDTH comes from the animated wrapper in `app-tabs`, so the edge can track
+  // a drag on the UI thread; everything here just fills it.
+  rail: {
+    flex: 1,
+    width: '100%',
+    borderRightWidth: StyleSheet.hairlineWidth,
+  },
   sidebar: {
     flex: 1,
-    // `width` is set inline — it's a preference now, not a constant (see `use-sidebar-width`).
-    borderRightWidth: StyleSheet.hairlineWidth,
   },
   // Padding and gap belong to the CONTENT, not the scroller: on the scroller they'd clip the rows
   // rather than travel with them, and the last row would sit flush against the bottom edge.
@@ -170,6 +217,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     paddingBottom: Spacing.three,
     gap: Spacing.one,
+  },
+  sidebarContentCompact: {
+    paddingHorizontal: Spacing.one,
+  },
+  itemCompact: {
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+  },
+  // Deliberately NOT `styles.item` plus an override: that style carries `flex: 1` for the row it
+  // shares with the chevron, and react-native-web maps a `flex` shorthand to a flex-BASIS, which in
+  // this column container collapsed the toggle to zero height. Same metrics, stated once.
+  collapseToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: ITEM_HEIGHT,
+    borderRadius: Spacing.two,
+    marginHorizontal: Spacing.two,
+    marginBottom: Spacing.two,
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
   },
   item: {
     flex: 1,

@@ -28,6 +28,8 @@ import {
   ListPlus,
   Minus,
   MoreVertical,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Play,
   Plus,
@@ -52,6 +54,8 @@ export type IconProps = {
   strokeWidth?: number;
 };
 
+export const PanelCollapseIcon = ({ color, size = 16 }: IconProps) => <PanelLeftClose color={color} size={size} />;
+export const PanelExpandIcon = ({ color, size = 16 }: IconProps) => <PanelLeftOpen color={color} size={size} />;
 export const SearchIcon = ({ color, size = 16 }: IconProps) => <Search color={color} size={size} />;
 export const ClearIcon = ({ color, size = 16 }: IconProps) => <X color={color} size={size} />;
 // Filled by default (the conventional read/da-capo triangle); pass `filled={false}` where a solid

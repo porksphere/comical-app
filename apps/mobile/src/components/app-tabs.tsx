@@ -23,9 +23,10 @@ import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
-import { useSidebarWidth } from '@/hooks/use-sidebar-width';
+import { SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
+import { setSidebarDragWidth, sidebarDragWidth } from '@/lib/sidebar-drag';
 import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
 import { COMMIT_DISTANCE, dismissThreshold, SETTLE_MS, TOP_GUARD } from '@/lib/slide-step';
@@ -279,13 +280,24 @@ export default function AppTabs() {
   // The rail's width is a preference now, so the ONE number that pads the slot is read rather than
   // assumed. `navInsetFor` takes it as an argument for the same reason it always did: so the
   // breakpoint above can't depend on a value the user can drag.
-  const railWidth = useSidebarWidth();
+  const collapsed = useSidebarCollapsed();
+  const draggedWidth = useSidebarWidth();
+  // Collapsed is a STATE, not a width: the dragged width is remembered underneath it, so expanding
+  // comes back to what you set rather than to whatever the collapsed rail happened to be.
+  const railWidth = collapsed ? SidebarCollapsedWidth : draggedWidth;
   // ONE number for the space the rail takes: it pads the slot AND it is what the content width has
   // subtracted, so the two cannot disagree about how much room the rail took. Recomputing the
   // provider's value from `navInsetFor(width)` instead would drift for exactly one render —
   // pre-hydration `isMobile` is forced true while `width` is already real, so the slot would carry
   // no padding while the maths had already taken 240 off.
   const contentInset = sidebar ? navInsetFor(width, railWidth) : 0;
+  // The rail's edge follows the pointer on the UI thread; the content's inset can't (see
+  // `sidebar-drag`), so it is committed at column boundaries instead. At rest the two are the same
+  // number, and this is what keeps them that way — after a release, after a collapse, after a
+  // width restored from storage.
+  useEffect(() => {
+    setSidebarDragWidth(railWidth);
+  }, [railWidth]);
 
   // Fade the mobile bottom bar away while scrolling down (web only - see hook);
   // bringing it back on upward scroll, at the top, or when a tab is touched (`reveal`).
@@ -319,6 +331,7 @@ export default function AppTabs() {
             mobile={isMobile}
             sidebar={sidebar}
             scope={Boolean(tab.Scope)}
+            compact={collapsed}
             Icon={tab.Icon}
             onInteract={reveal}
             routeName={tab.name}
@@ -327,7 +340,7 @@ export default function AppTabs() {
           </TabButton>
         </TabTrigger>
       )),
-    [isMobile, sidebar, reveal],
+    [isMobile, sidebar, reveal, collapsed],
   );
 
   // The rail's children: the same triggers, each followed by its own scope group. Which groups are
@@ -346,7 +359,9 @@ export default function AppTabs() {
     () =>
       TABS.flatMap((tab, i) => {
         const row = triggers[i];
-        if (!tab.Scope) return [row];
+        // Collapsed, there is no label for a group to sit under and collections have no icon of their
+        // own, so the rail shows destinations only.
+        if (!tab.Scope || collapsed) return [row];
         return [
           row,
           <SidebarGroup key={`${tab.name}-scope`} name={tab.name} testID={`sidebar.group.${tab.name}`}>
@@ -354,8 +369,11 @@ export default function AppTabs() {
           </SidebarGroup>,
         ];
       }),
-    [triggers, activeTab],
+    [triggers, activeTab, collapsed],
   );
+
+  // The rail's own width, read straight off the shared value so a drag moves it without a render.
+  const railStyle = useAnimatedStyle(() => ({ width: sidebarDragWidth.value }));
 
   // See the wrapper below — both rest at identity/transparent unless the series page is open.
   const seriesReaderBackdropStyle = useSeriesReaderBackdropStyle();
@@ -384,12 +402,13 @@ export default function AppTabs() {
 
           {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
           {sidebar && (
-            <View style={styles.sidebarWrap}>
-              <AppSidebar top={insets.top} width={railWidth}>
+            <Animated.View style={[styles.sidebarWrap, railStyle]}>
+              <AppSidebar top={insets.top} collapsed={collapsed}>
                 {sidebarChildren}
               </AppSidebar>
-              <SidebarResizer width={railWidth} />
-            </View>
+              {/* Nothing to drag on an icon rail — its width is the state, not a preference. */}
+              {collapsed ? null : <SidebarResizer width={railWidth} viewport={width} />}
+            </Animated.View>
           )}
 
           {isMobile && (
@@ -449,6 +468,7 @@ function TabButton({
   mobile,
   sidebar,
   scope,
+  compact,
   Icon,
   onInteract,
   routeName,
@@ -459,6 +479,7 @@ function TabButton({
   mobile?: boolean;
   sidebar?: boolean;
   scope?: boolean;
+  compact?: boolean;
   Icon: LucideIcon;
   onInteract?: () => void;
   routeName: string;
@@ -515,6 +536,7 @@ function TabButton({
         label={typeof children === 'string' ? children : routeName}
         active={isFocused}
         scope={scope}
+        compact={compact}
         expanded={sectionOpen}
         onToggleScope={() => toggleSection(routeName)}
         badge={

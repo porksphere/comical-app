@@ -17,7 +17,15 @@ import { persisted$ } from '@/lib/observable';
 export const SidebarMinWidth = 180;
 export const SidebarMaxWidth = 400;
 
+/** Collapsed, the rail keeps the five destinations as icons rather than disappearing. Collapsing to
+ *  nothing would take the navigation with it and need a floating button to get it back; this is the
+ *  same collapsed/expanded pair Material's rail describes and Obsidian's ribbon implements. It is a
+ *  separate STATE from the width, not a width of 64 — so a rail you dragged to 320, collapsed, and
+ *  expanded again comes back at 320 rather than having been overwritten. */
+export const SidebarCollapsedWidth = 64;
+
 const sidebarWidth$ = persisted$('comical:sidebarWidth', SidebarWidth);
+const sidebarCollapsed$ = persisted$('comical:sidebarCollapsed', false);
 
 export const clampSidebarWidth = (w: number): number =>
   Math.round(Math.min(SidebarMaxWidth, Math.max(SidebarMinWidth, w)));
@@ -29,4 +37,13 @@ export function useSidebarWidth(): number {
 
 export function setSidebarWidth(w: number): void {
   sidebarWidth$.set(clampSidebarWidth(w));
+}
+
+/** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
+export function useSidebarCollapsed(): boolean {
+  return use$(sidebarCollapsed$);
+}
+
+export function toggleSidebarCollapsed(): void {
+  sidebarCollapsed$.set(!sidebarCollapsed$.peek());
 }
