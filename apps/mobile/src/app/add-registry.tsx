@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+
 import { useEffect } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +11,7 @@ import { BarContentGap, MaxContentWidth, Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
-import { useRouter } from '@/lib/nav';
+import {useLocalSearchParams, useRouter} from '@/lib/nav';
 
 // Deep-link entry point: comical://add-registry?url=<registry index.json URL>
 // (also reachable via a Universal/App Link once one is wired up on a verified

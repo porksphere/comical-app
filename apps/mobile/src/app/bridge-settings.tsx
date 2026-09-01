@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -22,7 +22,7 @@ import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
-import { useRouter } from '@/lib/nav';
+import {useLocalSearchParams, useRouter} from '@/lib/nav';
 
 /** The PUT body for a settings save: every non-secret value (edited or existing, so the server gets a
  *  full set) plus only the secrets the user actually changed (an untouched secret is omitted, which

@@ -1,7 +1,14 @@
 import { Platform } from 'react-native';
 
-import { Link as ExpoLink, router as expoRouter, useRouter as useExpoRouter } from 'expo-router';
-import type { ComponentProps } from 'react';
+import {
+  Link as ExpoLink,
+  router as expoRouter,
+  useLocalSearchParams as useExpoLocalSearchParams,
+  useRouter as useExpoRouter,
+} from 'expo-router';
+import { useMemo, type ComponentProps } from 'react';
+
+import { useSettingsPaneNav, type PaneParams } from '@/lib/settings-pane';
 
 import { BACK_TARGET, claimNavigation, navTargetKey } from '@/lib/nav-guard';
 
@@ -63,9 +70,62 @@ function guard(base: Router): Router {
   return wrapper;
 }
 
-/** Guarded drop-in for expo-router's `useRouter()`. */
+/**
+ * Guarded drop-in for expo-router's `useRouter()`.
+ *
+ * Inside the settings modal it also stays inside it: a settings screen that pushes a sub-page (a
+ * bridge's settings, a registry's contents, a page editor) would otherwise navigate the whole app to
+ * a full-screen route and leave the panel behind. The pane gets first refusal on every push and
+ * every back; anything it declines goes to the router as usual.
+ */
 export function useRouter(): Router {
-  return guard(useExpoRouter());
+  const base = guard(useExpoRouter());
+  const pane = useSettingsPaneNav();
+  return useMemo(() => {
+    if (!pane) return base;
+    return {
+      ...base,
+      push: (href: Parameters<Router['push']>[0]) => {
+        const { pathname, params } = splitHref(href);
+        if (pathname && pane.push(pathname, params)) return;
+        base.push(href);
+      },
+      back: () => {
+        if (pane.back()) return;
+        base.back();
+      },
+    };
+  }, [base, pane]);
+}
+
+/** Both shapes expo-router accepts, reduced to the pathname and params the pane needs to render. */
+function splitHref(href: unknown): { pathname: string | null; params: PaneParams } {
+  if (typeof href === 'string') {
+    const [pathname, query] = href.split('?');
+    return { pathname: pathname ?? null, params: Object.fromEntries(new URLSearchParams(query ?? '')) };
+  }
+  if (href && typeof href === 'object' && 'pathname' in href) {
+    const o = href as { pathname?: unknown; params?: Record<string, unknown> };
+    const params: PaneParams = {};
+    for (const [k, v] of Object.entries(o.params ?? {})) params[k] = v == null ? undefined : String(v);
+    return { pathname: typeof o.pathname === 'string' ? o.pathname : null, params };
+  }
+  return { pathname: null, params: {} };
+}
+
+/**
+ * Drop-in for expo-router's `useLocalSearchParams` that prefers the settings pane's own params.
+ *
+ * A screen rendered as a pane was never navigated to, so the URL still describes whatever route is
+ * actually showing — the pane's `bridge-settings` would have read the Browse tab's params. Screens
+ * that can appear in the pane import this instead.
+ */
+export function useLocalSearchParams<T extends PaneParams = PaneParams>(): T {
+  // Untyped against the route table on purpose: a pane's params come from a `push` the pane
+  // intercepted, not from a route, so there is no path for expo-router to check them against.
+  const routeParams = useExpoLocalSearchParams() as T;
+  const pane = useSettingsPaneNav();
+  return pane ? (pane.params as T) : routeParams;
 }
 
 /** Guarded drop-in for expo-router's `router` singleton (for call sites outside a component). */

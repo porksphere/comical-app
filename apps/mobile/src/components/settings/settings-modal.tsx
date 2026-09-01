@@ -11,7 +11,7 @@
  *
  * Native is untouched: nothing renders this, and the rail keeps its Settings row there.
  */
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import AboutScreen from '@/app/settings-about';
@@ -24,13 +24,40 @@ import NotificationsScreen from '@/app/settings-notifications';
 import RegistriesScreen from '@/app/registries';
 import StorageScreen from '@/app/storage';
 import TrackersScreen from '@/app/trackers';
+import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { ClearIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { closeSettingsModal, setSettingsCategory, useSettingsModal } from '@/lib/settings-modal';
-import { SettingsPaneContext } from '@/lib/settings-pane';
+import { SettingsPaneContext, SettingsPaneNavContext, type PaneNav, type PaneParams } from '@/lib/settings-pane';
+
+import AddRegistryScreen from '@/app/add-registry';
+import BridgeSettingsScreen from '@/app/bridge-settings';
+import CustomPageEditorScreen from '@/app/custom-page-editor';
+import CustomSectionEditorScreen from '@/app/custom-section-editor';
+import GestureTraceScreen from '@/app/gesture-trace';
+import RegistryBrowseScreen from '@/app/registry-browse';
+import SeriesDownloadsScreen from '@/app/series-downloads';
+import TrackerSettingsScreen from '@/app/tracker-settings';
+import WhatsNewScreen from '@/app/settings-whats-new';
+
+/** Every screen the settings pane can push to. A push to anything NOT in here falls through to the
+ *  router — which is how something that genuinely does leave settings still can. */
+const SUB_PAGES: Record<string, () => React.ReactNode> = {
+  '/bridge-settings': BridgeSettingsScreen,
+  '/registries': RegistriesScreen,
+  '/registry-browse': RegistryBrowseScreen,
+  '/add-registry': AddRegistryScreen,
+  '/custom-page-editor': CustomPageEditorScreen,
+  '/custom-section-editor': CustomSectionEditorScreen,
+  '/tracker-settings': TrackerSettingsScreen,
+  '/downloads': DownloadsScreen,
+  '/series-downloads': SeriesDownloadsScreen,
+  '/gesture-trace': GestureTraceScreen,
+  '/settings-whats-new': WhatsNewScreen,
+};
 
 /** The same categories, in the same order, as the Settings tab's own list — this is a second way in
  *  to one set of screens, never a second set. */
@@ -51,6 +78,30 @@ export function SettingsModal() {
   const theme = useTheme();
   const { open, category } = useSettingsModal();
   const current = CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0]!;
+  // Sub-pages pushed from within the pane. A stack, not a single slot: bridges → registries →
+  // registry-browse is three deep, and each step has to come back to the one before it.
+  const [stack, setStack] = useState<{ pathname: string; params: PaneParams }[]>([]);
+  const top = stack[stack.length - 1];
+
+  const nav = useMemo<PaneNav>(
+    () => ({
+      push: (pathname, params) => {
+        if (!SUB_PAGES[pathname]) return false;
+        setStack((s) => [...s, { pathname, params }]);
+        return true;
+      },
+      back: () => {
+        let popped = false;
+        setStack((s) => {
+          popped = s.length > 0;
+          return s.slice(0, -1);
+        });
+        return popped;
+      },
+      params: top?.params ?? {},
+    }),
+    [top],
+  );
 
   // `Modal` gave Escape for free; an in-tree panel has to ask for it.
   useEffect(() => {
@@ -101,11 +152,18 @@ export function SettingsModal() {
                 Close floats in the corner instead, over the pane rather than above it. */}
             {/* Keyed so switching category remounts the screen rather than handing the next one the
                 previous one's state — these are route components, written expecting a fresh mount. */}
-            <View style={styles.paneBody} key={current.id}>
+            <View style={styles.paneBody} key={top ? `${stack.length}:${top.pathname}` : current.id}>
               <SettingsPaneContext.Provider value={true}>
-                <current.Screen />
+                <SettingsPaneNavContext.Provider value={nav}>
+                  {top ? <SubPage pathname={top.pathname} /> : <current.Screen />}
+                </SettingsPaneNavContext.Provider>
               </SettingsPaneContext.Provider>
             </View>
+            {top ? (
+              <View style={styles.backFloat}>
+                <PaneBackButton onPress={() => setStack((s) => s.slice(0, -1))} />
+              </View>
+            ) : null}
             {/* Over the pane, in the corner a close belongs in. Nothing under it — no chip, no
                 shadow: the rows it floats over are quiet enough that a bare glyph reads, and the
                 content deliberately runs beneath it rather than being pushed down to clear it. */}
@@ -115,6 +173,29 @@ export function SettingsModal() {
           </View>
         </View>
     </View>
+  );
+}
+
+function SubPage({ pathname }: { pathname: string }) {
+  const Screen = SUB_PAGES[pathname];
+  return Screen ? <Screen /> : null;
+}
+
+/** The pane's own back. The pushed screen's `TopBar` is suppressed in here, so this is the only way
+ *  out of a sub-page — mirrored against the close, in the corner content runs under. */
+function PaneBackButton({ onPress }: { onPress: () => void }) {
+  const theme = useTheme();
+  const { hovered, handlers } = useHover();
+  return (
+    <Pressable
+      {...handlers}
+      testID="settings.modal.back"
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Back"
+      style={[styles.close, { backgroundColor: hovered ? theme.backgroundElement : 'transparent' }]}>
+      <ChevronLeftIcon color={theme.textSecondary} size={18} />
+    </Pressable>
   );
 }
 
@@ -198,6 +279,11 @@ const styles = StyleSheet.create({
   // Tucked right into the corner. Content runs beneath it by design, but at the pane's own inset it
   // landed exactly on the first row's chevron, which reads as a glyph drawn twice rather than a
   // control over a list.
+  backFloat: {
+    position: 'absolute',
+    top: Spacing.half,
+    left: Spacing.half,
+  },
   closeFloat: {
     position: 'absolute',
     top: Spacing.half,
