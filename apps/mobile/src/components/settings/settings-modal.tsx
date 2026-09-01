@@ -25,7 +25,19 @@ import RegistriesScreen from '@/app/registries';
 import StorageScreen from '@/app/storage';
 import TrackersScreen from '@/app/trackers';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
-import { ClearIcon } from '@/components/icons/ui-icons';
+import {
+  AboutIcon,
+  BridgesIcon,
+  ClearIcon,
+  CustomPagesIcon,
+  DiagnosticsIcon,
+  DownloadsIcon,
+  GeneralSettingsIcon,
+  NotificationsIcon,
+  RegistriesIcon,
+  StorageIcon,
+  TrackersIcon,
+} from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
@@ -59,20 +71,23 @@ const SUB_PAGES: Record<string, () => React.ReactNode> = {
   '/settings-whats-new': WhatsNewScreen,
 };
 
-/** The same categories, in the same order, as the Settings tab's own list — this is a second way in
- *  to one set of screens, never a second set. */
-const CATEGORIES: { id: string; label: string; Screen: () => React.ReactNode }[] = [
-  { id: 'general', label: 'General', Screen: GeneralScreen },
-  { id: 'notifications', label: 'Notifications', Screen: NotificationsScreen },
-  { id: 'bridges', label: 'Bridges', Screen: BridgesScreen },
-  { id: 'trackers', label: 'Trackers', Screen: TrackersScreen },
-  { id: 'registries', label: 'Registries', Screen: RegistriesScreen },
-  { id: 'custom-pages', label: 'Custom pages', Screen: CustomPagesScreen },
-  { id: 'downloads', label: 'Downloads', Screen: DownloadsScreen },
-  { id: 'storage', label: 'Storage', Screen: StorageScreen },
-  { id: 'diagnostics', label: 'Diagnostics', Screen: DiagnosticsScreen },
-  { id: 'about', label: 'About', Screen: AboutScreen },
+/** The same categories, in the same order, with the same ICONS as the Settings tab's own list — this
+ *  is a second way in to one set of screens, never a second set, so a row that reads differently in
+ *  the two places is a bug rather than a variation. */
+const CATEGORIES: { id: string; label: string; Icon: SettingsIcon; Screen: () => React.ReactNode }[] = [
+  { id: 'general', label: 'General', Icon: GeneralSettingsIcon, Screen: GeneralScreen },
+  { id: 'notifications', label: 'Notifications', Icon: NotificationsIcon, Screen: NotificationsScreen },
+  { id: 'bridges', label: 'Bridges', Icon: BridgesIcon, Screen: BridgesScreen },
+  { id: 'trackers', label: 'Trackers', Icon: TrackersIcon, Screen: TrackersScreen },
+  { id: 'registries', label: 'Registries', Icon: RegistriesIcon, Screen: RegistriesScreen },
+  { id: 'custom-pages', label: 'Custom pages', Icon: CustomPagesIcon, Screen: CustomPagesScreen },
+  { id: 'downloads', label: 'Downloads', Icon: DownloadsIcon, Screen: DownloadsScreen },
+  { id: 'storage', label: 'Storage', Icon: StorageIcon, Screen: StorageScreen },
+  { id: 'diagnostics', label: 'Diagnostics', Icon: DiagnosticsIcon, Screen: DiagnosticsScreen },
+  { id: 'about', label: 'About', Icon: AboutIcon, Screen: AboutScreen },
 ];
+
+type SettingsIcon = (props: { color: string; size?: number }) => React.ReactNode;
 
 export function SettingsModal() {
   const theme = useTheme();
@@ -142,7 +157,7 @@ export function SettingsModal() {
             </View>
             <ScrollView contentContainerStyle={styles.categoryList} showsVerticalScrollIndicator={false}>
               {CATEGORIES.map((c) => (
-                <CategoryRow key={c.id} id={c.id} label={c.label} active={c.id === current.id} />
+                <CategoryRow key={c.id} id={c.id} label={c.label} Icon={c.Icon} active={c.id === current.id} />
               ))}
             </ScrollView>
           </View>
@@ -199,7 +214,17 @@ function PaneBackButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-function CategoryRow({ id, label, active }: { id: string; label: string; active: boolean }) {
+function CategoryRow({
+  id,
+  label,
+  Icon,
+  active,
+}: {
+  id: string;
+  label: string;
+  Icon: SettingsIcon;
+  active: boolean;
+}) {
   const theme = useTheme();
   const { hovered, handlers } = useHover();
   return (
@@ -213,6 +238,7 @@ function CategoryRow({ id, label, active }: { id: string; label: string; active:
         styles.categoryRow,
         { backgroundColor: active ? theme.backgroundSelected : hovered ? theme.backgroundElement : 'transparent' },
       ]}>
+      <Icon color={active ? theme.text : theme.textSecondary} size={20} />
       <ThemedText numberOfLines={1} themeColor={active ? 'text' : 'textSecondary'}>
         {label}
       </ThemedText>
@@ -295,9 +321,11 @@ const styles = StyleSheet.create({
     gap: Spacing.half,
   },
   categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
     height: 36,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.two,
     borderRadius: Spacing.two,
   },
   pane: {
