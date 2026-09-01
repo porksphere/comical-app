@@ -106,10 +106,9 @@ export function SettingsModal() {
                 <current.Screen />
               </SettingsPaneContext.Provider>
             </View>
-            {/* Over the pane, in the corner a close belongs in. It is RAISED — its own surface, a
-                hairline and a shadow — because the thing beneath it is settings rows, not empty
-                space: transparent, it read as one more chevron in the list. The pane pays for the
-                room it needs (see `useSettingsScrollPadding`), so it never covers a row's control. */}
+            {/* Over the pane, in the corner a close belongs in. Nothing under it — no chip, no
+                shadow: the rows it floats over are quiet enough that a bare glyph reads, and the
+                content deliberately runs beneath it rather than being pushed down to clear it. */}
             <View style={styles.closeFloat}>
               <CloseButton />
             </View>
@@ -150,11 +149,8 @@ function CloseButton() {
       onPress={closeSettingsModal}
       accessibilityRole="button"
       accessibilityLabel="Close settings"
-      style={[
-        styles.close,
-        { backgroundColor: hovered ? theme.backgroundSelected : theme.backgroundElement, borderColor: theme.barHairline },
-      ]}>
-      <ClearIcon color={theme.textSecondary} size={18} />
+      style={[styles.close, { backgroundColor: hovered ? theme.backgroundElement : 'transparent' }]}>
+      <ClearIcon color={theme.textSecondary} size={16} />
     </Pressable>
   );
 }
@@ -199,10 +195,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.two,
   },
+  // Tucked right into the corner. Content runs beneath it by design, but at the pane's own inset it
+  // landed exactly on the first row's chevron, which reads as a glyph drawn twice rather than a
+  // control over a list.
   closeFloat: {
     position: 'absolute',
-    top: Spacing.two,
-    right: Spacing.two,
+    top: Spacing.half,
+    right: Spacing.half,
   },
   categoryList: {
     paddingHorizontal: Spacing.two,
@@ -222,14 +221,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   close: {
-    width: 32,
-    height: 32,
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    // Same `boxShadow` the cards and badges use — the one shadow idiom in the app (`shadow*` props
-    // are deprecated and Metro says so).
-    boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.25)',
+    borderRadius: 14,
   },
 });

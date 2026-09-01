@@ -6,10 +6,6 @@ import { useInSettingsPane } from '@/lib/settings-pane';
 import { BottomTabInset, SettingsGutter, SettingsTopGap, Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 
-/** Height of the settings modal's floating close button plus the inset it sits at — the room a pane
- *  has to leave at its top so a row's trailing control never lands beneath it. */
-export const SettingsCloseClearance = 32 + 8 * 2;
-
 /**
  * The scroll-content padding shared by every settings screen — the landing tab, the pushed category
  * screens, and the detail screens (bridge/tracker settings, registry browse, diagnostics) alike.
@@ -35,9 +31,7 @@ export function useSettingsScrollPadding() {
   // anyway left a bar's worth of empty space above the first row and a tab bar's worth below.
   const inPane = useInSettingsPane();
   if (inPane) {
-    // `SettingsCloseClearance`, not a bare gap: the modal floats its close button in this corner, and
-    // the first row's own trailing control would otherwise sit under it.
-    return { paddingTop: SettingsCloseClearance, paddingBottom: Spacing.five, paddingHorizontal: SettingsGutter };
+    return { paddingTop: SettingsTopGap, paddingBottom: Spacing.five, paddingHorizontal: SettingsGutter };
   }
   return {
     // Same value `useTopBarInset()` returns — the tab screen and the pushed screens have the same
