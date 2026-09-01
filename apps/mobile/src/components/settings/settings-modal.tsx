@@ -299,9 +299,6 @@ const styles = StyleSheet.create({
     width: CATEGORY_WIDTH,
     borderRightWidth: StyleSheet.hairlineWidth,
   },
-  // Nothing above the list: no heading, and no block standing in for the pane's header either. The
-  // categories start at the panel's edge and the pane's title sits beside them, which is the
-  // arrangement that leaves no empty band on this side.
   // Tucked right into the corner. Content runs beneath it by design, but at the pane's own inset it
   // landed exactly on the first row's chevron, which reads as a glyph drawn twice rather than a
   // control over a list.
@@ -317,8 +314,12 @@ const styles = StyleSheet.create({
   paneTitle: {
     flex: 1,
   },
+  // Nothing HEADER-shaped above the list — no heading, and no block standing in for the pane's
+  // header, which on this side would just be an empty band. The list still gets the same inset off
+  // the panel corner that it has off the panel's left edge; without it the first row sat flush in
+  // the corner while every other edge around it was padded.
   categoryList: {
-    paddingHorizontal: Spacing.two,
+    padding: Spacing.two,
     paddingBottom: Spacing.three,
     gap: Spacing.half,
   },
