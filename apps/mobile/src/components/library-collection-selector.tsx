@@ -8,9 +8,9 @@ import {
   useOverlay,
   useOverlayPresentation,
 } from '@/components/overlay/overlay';
+import { OptionActionRow, OptionRow } from '@/components/overlay/option-row';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { RowHeight, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import type { Collection } from '@/data/types';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
@@ -90,7 +90,7 @@ function CollectionMenu({
         {/* NOT "Library": the default collection is an ordinary row below, and while a freshly
             migrated shelf is the only thing in it, both rows list exactly the same series. Two rows,
             one word, one list. */}
-        <ViewRow
+        <OptionRow
           testID="library.collection.all"
           label="All"
           hint="Everything you've saved"
@@ -98,7 +98,7 @@ function CollectionMenu({
           onPress={() => pick(null)}
         />
         {collections.map((c) => (
-          <ViewRow
+          <OptionRow
             key={c.id}
             testID={`library.collection.${c.id}`}
             label={c.name}
@@ -106,7 +106,7 @@ function CollectionMenu({
             onPress={() => pick(c.id)}
           />
         ))}
-        <ActionRow
+        <OptionActionRow
           testID="library.collection.manage"
           label="Manage collections…"
           onPress={() => {
@@ -119,53 +119,7 @@ function CollectionMenu({
   );
 }
 
-function ViewRow({
-  label,
-  hint,
-  selected,
-  onPress,
-  testID,
-}: {
-  label: string;
-  hint?: string;
-  selected: boolean;
-  onPress: () => void;
-  testID: string;
-}) {
-  const theme = useTheme();
-  const { hovered, handlers } = useHover();
-  return (
-    <Pressable testID={testID} onPress={onPress} {...handlers}>
-      <ThemedView
-        type="backgroundElement"
-        style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        <View style={styles.rowText}>
-          <ThemedText numberOfLines={1}>{label}</ThemedText>
-          {hint ? (
-            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-              {hint}
-            </ThemedText>
-          ) : null}
-        </View>
-        <View style={[styles.dot, selected && styles.dotOn]} />
-      </ThemedView>
-    </Pressable>
-  );
-}
 
-function ActionRow({ label, onPress, testID }: { label: string; onPress: () => void; testID: string }) {
-  const theme = useTheme();
-  const { hovered, handlers } = useHover();
-  return (
-    <Pressable testID={testID} onPress={onPress} {...handlers}>
-      <ThemedView
-        type="backgroundElement"
-        style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        <ThemedText style={{ color: theme.accent }}>{label}</ThemedText>
-      </ThemedView>
-    </Pressable>
-  );
-}
 
 const styles = StyleSheet.create({
   trigger: {
@@ -190,28 +144,5 @@ const styles = StyleSheet.create({
   },
   menu: {
     gap: Spacing.three,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    minHeight: RowHeight,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.one,
-    borderRadius: Spacing.three,
-  },
-  rowText: {
-    flex: 1,
-  },
-  dot: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: 'rgba(128,128,128,0.5)',
-  },
-  dotOn: {
-    borderColor: '#3478F6',
-    backgroundColor: '#3478F6',
   },
 });

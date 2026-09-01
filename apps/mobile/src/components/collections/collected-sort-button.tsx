@@ -9,9 +9,8 @@ import {
   useOverlay,
   useOverlayPresentation,
 } from '@/components/overlay/overlay';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { RowHeight, Spacing } from '@/constants/theme';
+import { OptionRow, OptionSectionLabel } from '@/components/overlay/option-row';
+import { Spacing } from '@/constants/theme';
 import {
   defaultDirFor,
   type CollectedDir,
@@ -96,9 +95,9 @@ function SortMenu({
       )}
 
       <OptionList>
-        <SectionLabel>Sort by</SectionLabel>
+        <OptionSectionLabel>Sort by</OptionSectionLabel>
         {SORT_ORDER.map((s) => (
-          <MenuRow
+          <OptionRow
             key={s}
             testID={`collected.sort.${s}`}
             label={SORT_LABELS[s]}
@@ -110,9 +109,9 @@ function SortMenu({
       </OptionList>
 
       <OptionList>
-        <SectionLabel>Order</SectionLabel>
+        <OptionSectionLabel>Order</OptionSectionLabel>
         {(['desc', 'asc'] as CollectedDir[]).map((d) => (
-          <MenuRow
+          <OptionRow
             key={d}
             testID={`collected.dir.${d}`}
             label={dirLabels[d]}
@@ -123,9 +122,9 @@ function SortMenu({
       </OptionList>
 
       <OptionList>
-        <SectionLabel>Group by</SectionLabel>
+        <OptionSectionLabel>Group by</OptionSectionLabel>
         {GROUP_ORDER.map((g) => (
-          <MenuRow
+          <OptionRow
             key={g}
             testID={`collected.group.${g}`}
             label={GROUP_LABELS[g]}
@@ -141,40 +140,7 @@ function SortMenu({
   );
 }
 
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <ThemedText type="small" themeColor="textSecondary" style={styles.sectionLabel}>
-      {children}
-    </ThemedText>
-  );
-}
 
-function MenuRow({
-  label,
-  selected,
-  onPress,
-  testID,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-  testID: string;
-}) {
-  const theme = useTheme();
-  const { hovered, handlers } = useHover();
-  return (
-    <Pressable testID={testID} onPress={onPress} {...handlers}>
-      <ThemedView
-        type="backgroundElement"
-        style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        <ThemedText style={styles.rowLabel} numberOfLines={1}>
-          {label}
-        </ThemedText>
-        <View style={[styles.dot, selected && styles.dotOn]} />
-      </ThemedView>
-    </Pressable>
-  );
-}
 
 const styles = StyleSheet.create({
   button: {
@@ -183,31 +149,5 @@ const styles = StyleSheet.create({
   },
   menu: {
     gap: Spacing.three,
-  },
-  sectionLabel: {
-    paddingHorizontal: Spacing.three,
-    paddingBottom: Spacing.half,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    height: RowHeight,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  rowLabel: {
-    flex: 1,
-  },
-  dot: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: 'rgba(128,128,128,0.5)',
-  },
-  dotOn: {
-    borderColor: '#3478F6',
-    backgroundColor: '#3478F6',
   },
 });
