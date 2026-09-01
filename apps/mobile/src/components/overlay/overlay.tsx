@@ -382,13 +382,18 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       }
       contentContainerStyle={
         presentation === 'popover'
-          ? [listStyles.listContentPopover, popoverPadded && listStyles.listContentPopoverPadded]
+          ? [
+              listStyles.listContentPopover,
+              // Not on web: the panel took this padding itself (see `styles.popoverEdge`), and both
+              // applying it stacked 32pt of empty band above and below a two-row menu.
+              popoverPadded && !IS_WEB && listStyles.listContentPopoverPadded,
+            ]
           : listStyles.listContent
       }
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       <View
-        style={listStyles.rowsWrapper}
+        style={[listStyles.rowsWrapper, IS_WEB && presentation === 'popover' && listStyles.rowsWrapperWeb]}
         onLayout={(e) => {
           coreHeightRef.current = e.nativeEvent.layout.height;
           evaluate();
@@ -435,6 +440,12 @@ const listStyles = StyleSheet.create({
   // decision gets thrown off by the padding it's used to decide.
   rowsWrapper: {
     gap: Spacing.two,
+  },
+  // 8pt between rows is a sheet's, where every row is a filled button that needs separating from
+  // the next. A web popover's rows are transparent until hovered, so the gap is separating nothing
+  // and only makes the menu tall — the rail's own 2 is the right amount.
+  rowsWrapperWeb: {
+    gap: Spacing.half,
   },
 });
 
@@ -997,6 +1008,11 @@ function OverlaySheet({
 // gestures (those are sheet-only); the shared backdrop handles outside-click
 // dismissal. Long content scrolls inside via the content's own list.
 const POPOVER_WIDTH = 320;
+/** The popover IS the desktop overlay form; web is where it gets desktop chrome. Deliberately
+ *  not `isLargeScreen`: a landscape iPad shows this same popover, and that viewport is not part of
+ *  this pass. */
+const IS_WEB = Platform.OS === 'web';
+
 const POPOVER_GAP = Spacing.one; // distance from the anchor edge
 const POPOVER_PAD = Spacing.three; // keep-off-the-viewport-edges padding
 
@@ -1018,6 +1034,7 @@ function OverlayPopover({
   children: ReactNode;
 }) {
   const { width: vw, height: vh } = useWindowDimensions();
+  const theme = useTheme();
   const [card, setCard] = useState<{ width: number; height: number } | null>(null);
   const progress = useSharedValue(0);
   const entered = useRef(false);
@@ -1118,7 +1135,7 @@ function OverlayPopover({
       style={[styles.popoverWrap, { left, top, width, pointerEvents: 'box-none' }, animStyle]}>
       <ThemedView
         type="backgroundPanel"
-        style={[styles.popover, { maxHeight }]}
+        style={[styles.popover, IS_WEB && styles.popoverEdge, IS_WEB && { borderColor: theme.barHairline }, { maxHeight }]}
         onLayout={(e) => {
           const { width: w, height: hh } = e.nativeEvent.layout;
           setCard((prev) => (prev && prev.height === hh && prev.width === w ? prev : { width: w, height: hh }));
@@ -1193,6 +1210,32 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: Spacing.four,
     overflow: 'hidden',
+  },
+  /**
+   * WEB gives the popover an EDGE rather than more contrast, and this is the fix for a real
+   * complaint: `backgroundPanel` is #17181b on a #000000 page — about a 6% lift — with nothing
+   * around it, so on the dark theme the menu's boundary was very nearly invisible and it read as a
+   * hole in the page. The obvious answer is to darken the page behind it, and that is the wrong
+   * lever: there is no scrim at these widths at all (see `backdropStyle`), and pushing the panel
+   * further from the background only walks it toward the same collision from the other side.
+   *
+   * A hairline plus elevation is how a desktop menu separates — the same fix the settings modal
+   * took, for the same reported symptom. `overflow: hidden` on the panel clips its own children,
+   * not its shadow, so the two coexist.
+   */
+  popoverEdge: {
+    // 24pt of side padding is a bottom sheet's — it exists so a thumb has margin. A pointer needs
+    // none, and the rows inside no longer carry a fill of their own (see selector.tsx), so that
+    // padding read as dead space around a floating list rather than as the menu's own body. The
+    // vertical pad is the same 8, for the reason the settings modal's category list takes one: a
+    // first row flush into a rounded corner while every other edge is padded.
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
   },
   heading: {
     marginBottom: Spacing.one,
