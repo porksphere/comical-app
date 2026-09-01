@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -67,7 +66,7 @@ import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
-import { useRouter } from '@/lib/nav';
+import { useLocalSearchParams, useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
 import { backSwipePan, backSwipeShape, backSwipeStayedHorizontal, resetBackSwipeShape, trackBackSwipeShape, BACK_ACTIVATE_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
@@ -75,6 +74,7 @@ import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } fro
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
+import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import {
   holdZoomingSeries,
@@ -144,6 +144,24 @@ const WARM_BEHIND = 2;
  */
 const PREV_WINDOW_GRACE_MS = 600;
 const IS_WEB = Platform.OS === 'web';
+
+/**
+ * The box this page is laid out in — the window, unless it is being rendered in the right-hand pane
+ * (see `components/series-pane`), where it is the pane's width and the window's height.
+ *
+ * Every width in here is a layout question ("how wide is the hero", "how far does a layer slide in
+ * from"), and in a pane the honest answer is the pane's. Reading the window instead put the details
+ * card's two-column threshold, the action column and the push parallax on a number nothing in this
+ * subtree is that wide.
+ */
+function useViewport(): { width: number; height: number } {
+  const win = useWindowDimensions();
+  const pane = useSeriesPaneWidth();
+  return useMemo(
+    () => (pane === null ? { width: win.width, height: win.height } : { width: pane, height: win.height }),
+    [pane, win.width, win.height],
+  );
+}
 const IS_IOS = Platform.OS === 'ios';
 // The reader surface's tone. Pure black, like every other page — it mirrored the reference's
 // `#reader-view { background: #0f0f0f }` until the app's own background stopped doing the same
@@ -963,9 +981,13 @@ function SeriesReaderInstance({
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
-  const { width, height } = useWindowDimensions();
+  const { width, height } = useViewport();
   const insets = useSafeAreaInsets();
   const mock = useMockActive();
+  // Depth 0 dims and scales the tabs behind an open series page — but in the pane the tabs are
+  // BESIDE it, not beneath it, and dimming the grid you are still reading from is the opposite of
+  // what the pane is for.
+  const overTabs = useSeriesPaneWidth() === null;
   const [settings] = useReaderSettings();
 
   const {
@@ -3179,9 +3201,9 @@ function SeriesReaderInstance({
       return zoom.value;
     },
     (covered) => {
-      if (depth === 0) seriesReaderDim.set(covered);
+      if (depth === 0 && overTabs) seriesReaderDim.set(covered);
     },
-    [depth],
+    [depth, overTabs],
   );
   // Belt and braces: nothing may strand the backdrop dimmed if this screen goes away without its
   // exit animation finishing (a deep link replacing the route, a dev reload). The hold's release
@@ -3189,9 +3211,9 @@ function SeriesReaderInstance({
   // one JS-thread write against a value the reaction above writes every frame, and on its own it
   // has no way to notice when it loses that race (see lib/pushback-watchdog).
   useEffect(() => {
-    if (depth > 0) return;
+    if (depth > 0 || !overTabs) return;
     return holdSeriesBackdrop();
-  }, [depth]);
+  }, [depth, overTabs]);
 
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
@@ -3748,7 +3770,7 @@ const MemoSeriesReaderInstance = memo(SeriesReaderInstance);
 export default function SeriesReaderScreen() {
   const params = useLocalSearchParams<SeriesReaderParams & ReaderSequenceParams>();
   const router = useRouter();
-  const { width } = useWindowDimensions();
+  const { width } = useViewport();
   const [drills, setDrills] = useState<DrillEntry[]>([]);
 
   // ── Sequence mode (`seq=1`): the reader pages over a COLLECTION's saved pages ──
@@ -3901,7 +3923,7 @@ function SearchLayer({
   coverSV?: SharedValue<number>;
   isTop?: boolean;
 }) {
-  const { width } = useWindowDimensions();
+  const { width } = useViewport();
   const theme = useTheme();
   const edgeX = useSharedValue(width);
   const edgeCommitting = useSharedValue(false);

@@ -18,18 +18,20 @@ import { AppSidebar, SidebarGroup, SidebarItem } from '@/components/app-sidebar'
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
 import { SettingsModal } from '@/components/settings/settings-modal';
+import { SeriesPane } from '@/components/series-pane';
 import { SidebarResizer } from '@/components/sidebar-resizer';
 import { COMICAL_BRIDGE_ID, setSelectedBridge } from '@/data/selected-bridge';
 import { setSelectedCollection } from '@/data/selected-collection';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
-import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
+import { navInsetFor, seriesPaneWidthFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
 import { SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { openSettingsModal } from '@/lib/settings-modal';
+import { setSeriesPaneAvailable, useSeriesPane } from '@/lib/series-pane';
 import { setSidebarDragWidth, sidebarDragWidth } from '@/lib/sidebar-drag';
 import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
@@ -104,6 +106,9 @@ const TABS: {
 /** Web puts Settings in a modal opened from the rail's footer instead of a destination row: it is a
  *  place you go, change one thing and leave, not somewhere you navigate to. Native keeps the tab. */
 const SETTINGS_AS_MODAL = Platform.OS === 'web';
+/** Same gate as the settings modal, and for the same reason: the pane is a web layout, not a wide
+ *  one. A landscape iPad shows the rail and still opens a series full-screen — see lib/series-pane. */
+const SERIES_AS_PANE = Platform.OS === 'web';
 
 // Rounding slack for "is this offset at the content end?" — see the bounce guard in the scroll
 // listener below.
@@ -323,6 +328,13 @@ export default function AppTabs() {
   // pre-hydration `isMobile` is forced true while `width` is already real, so the slot would carry
   // no padding while the maths had already taken 240 off.
   const contentInset = sidebar ? navInsetFor(width, railWidth) : 0;
+  // The pane exists only where the rail does — below that the window is the series page's, which is
+  // what the full-screen route already is. Published rather than derived at the call sites, because
+  // the router guard that hands `/series` over runs outside React (see lib/series-pane).
+  const paneAvailable = SERIES_AS_PANE && sidebar;
+  useEffect(() => setSeriesPaneAvailable(paneAvailable), [paneAvailable]);
+  const seriesPaneOpen = useSeriesPaneOpen();
+  const paneWidth = seriesPaneOpen ? seriesPaneWidthFor(width) : 0;
   // The rail's edge follows the pointer on the UI thread; the content's inset can't (see
   // `sidebar-drag`), so it is committed at column boundaries instead. At rest the two are the same
   // number, and this is what keeps them that way — after a release, after a collapse, after a
@@ -427,7 +439,7 @@ export default function AppTabs() {
           putting it between `Tabs` and `TabSlot` would still break the child-type discovery the
           slot and the registration TabList both depend on. The stack screens that cover the rail
           (search, results, series, settings/*) are not in this subtree and keep the window. */}
-      <ContentWidthProvider width={width - contentInset} sidebar={sidebar}>
+      <ContentWidthProvider width={width - contentInset - paneWidth} sidebar={sidebar}>
         <Tabs style={styles.tabs}>
           {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
               appearing in one frame — see `tab-slot-fade`. */}
@@ -435,7 +447,10 @@ export default function AppTabs() {
               `TabSlot` stays a DIRECT child of `Tabs` — wrapping it in a row View alongside the rail
               would read better, but the navigator discovers its slot by child type the same way it
               discovers TabList (see TAB_REGISTRATION), and nesting it yields a blank screen. */}
-          <TabSlot style={[styles.slot, { paddingLeft: contentInset }]} renderFn={renderFadingTabScreen} />
+          <TabSlot
+            style={[styles.slot, { paddingLeft: contentInset, paddingRight: paneWidth }]}
+            renderFn={renderFadingTabScreen}
+          />
 
           {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
           {sidebar && (
@@ -507,11 +522,22 @@ export default function AppTabs() {
       </ContentWidthProvider>
       {/* Web only, and rendered here so it is inside the tabs' own tree: the modal replaces what used
           to be a pushed route, so nothing about the router changes. */}
+      {/* Outside `Tabs` alongside the settings modal, for the same reason: it replaces what used to
+          be a pushed route, so nothing about the router changes — and inside the tabs' own tree, so
+          an overlay opened from within it (a chapter menu, a selector) still paints over it. */}
+      {paneWidth > 0 ? <SeriesPane width={paneWidth} top={insets.top} /> : null}
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
     </Animated.View>
   );
+}
+
+/** A `use`-prefixed wrapper around the pane store, and narrowed to the one fact this file needs:
+ *  the params themselves change on every series opened, and the layout only cares whether there
+ *  are any. */
+function useSeriesPaneOpen(): boolean {
+  return useSeriesPane().params !== null;
 }
 
 function TabButton({

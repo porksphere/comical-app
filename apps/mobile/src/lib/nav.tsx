@@ -8,8 +8,8 @@ import {
 } from 'expo-router';
 import { useMemo, type ComponentProps } from 'react';
 
-import { usePaneParams, type PaneParams } from '@/lib/pane-params';
-import { useSettingsPaneNav } from '@/lib/settings-pane';
+import { usePaneNav, usePaneParams, type PaneParams } from '@/lib/pane';
+import { openSeriesPane } from '@/lib/series-pane';
 
 import { BACK_TARGET, claimNavigation, navTargetKey } from '@/lib/nav-guard';
 
@@ -46,10 +46,14 @@ function guard(base: Router): Router {
   const wrapper: Router = {
     ...base,
     push: (href, options) => {
-      if (claimNavigation(navTargetKey(href))) base.push(href, options);
+      if (!claimNavigation(navTargetKey(href))) return;
+      if (takeSeriesPane(href)) return;
+      base.push(href, options);
     },
     navigate: (href, options) => {
-      if (claimNavigation(navTargetKey(href))) base.navigate(href, options);
+      if (!claimNavigation(navTargetKey(href))) return;
+      if (takeSeriesPane(href)) return;
+      base.navigate(href, options);
     },
     replace: (href, options) => {
       if (claimNavigation(navTargetKey(href))) base.replace(href, options);
@@ -74,14 +78,15 @@ function guard(base: Router): Router {
 /**
  * Guarded drop-in for expo-router's `useRouter()`.
  *
- * Inside the settings modal it also stays inside it: a settings screen that pushes a sub-page (a
- * bridge's settings, a registry's contents, a page editor) would otherwise navigate the whole app to
- * a full-screen route and leave the panel behind. The pane gets first refusal on every push and
- * every back; anything it declines goes to the router as usual.
+ * Inside a pane it also stays inside it: a settings screen that pushes a sub-page (a bridge's
+ * settings, a registry's contents, a page editor) would otherwise navigate the whole app to a
+ * full-screen route and leave the panel behind, and a series page's back would unwind the app under
+ * its own pane. The pane gets first refusal on every push and every back; anything it declines goes
+ * to the router as usual.
  */
 export function useRouter(): Router {
   const base = guard(useExpoRouter());
-  const pane = useSettingsPaneNav();
+  const pane = usePaneNav();
   return useMemo(() => {
     if (!pane) return base;
     return {
@@ -95,8 +100,22 @@ export function useRouter(): Router {
         if (pane.back()) return;
         base.back();
       },
+      canGoBack: () => pane.canGoBack() || base.canGoBack(),
     };
   }, [base, pane]);
+}
+
+/**
+ * Hands a `/series` navigation to the right-hand pane when one is up, and reports that it did.
+ *
+ * Here rather than at the call sites because there are eleven of them across cards, rows, menus and
+ * the series page's own related rails, and a pane that some of them missed would be a pane you can
+ * navigate out from under. `openSeriesPane` answers false whenever no pane is mounted — every
+ * viewport below the rail's, and every native build — so this reduces to the plain push there.
+ */
+function takeSeriesPane(href: unknown): boolean {
+  const { pathname, params } = splitHref(href);
+  return pathname === '/series' && openSeriesPane(params);
 }
 
 /** Both shapes expo-router accepts, reduced to the pathname and params the pane needs to render. */
@@ -164,6 +183,7 @@ export function Link({ onPress, ...rest }: LinkProps) {
     onPress?.(event);
     if (Platform.OS !== 'web') return;
     event.preventDefault();
+    if (takeSeriesPane(rest.href)) return;
     if (rest.replace) expoRouter.replace(rest.href);
     else if (rest.push) expoRouter.push(rest.href);
     else expoRouter.navigate(rest.href);

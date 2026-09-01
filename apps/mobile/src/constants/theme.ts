@@ -222,6 +222,22 @@ export const SidebarBreakpoint = MaxTopLevelWidth - 160;
  */
 export const navInsetFor = (width: number, railWidth: number = SidebarWidth): number =>
   width >= SidebarBreakpoint ? railWidth : 0;
+
+/**
+ * How wide the right-hand SERIES PANE is at this viewport — see `lib/series-pane`.
+ *
+ * Bounded on both sides for the same reason the grid is: below ~420 the details card's cover, blurb
+ * and action column stop fitting side by side and the page reads as a phone squeezed into a column;
+ * above ~560 the pane starts taking columns off the grid it exists to keep visible. Between them it
+ * is a fraction of the window, so widening the browser gives both halves something.
+ *
+ * A pure function of the WINDOW width, not the content width: the pane is a sibling of the rail, so
+ * it is sized against the same number the rail is, and the content between them is what's left.
+ */
+export const SeriesPaneMinWidth = 420;
+export const SeriesPaneMaxWidth = 560;
+export const seriesPaneWidthFor = (width: number): number =>
+  Math.round(Math.min(SeriesPaneMaxWidth, Math.max(SeriesPaneMinWidth, width * 0.36)));
 /** Standard height of a tappable row — the filter bar's own controls
  *  (`CONTROL_HEIGHT` in filter-types.ts) and every selectable list row inside
  *  an overlay (genre/tag checkboxes, bridge/page picker rows, …), so a row

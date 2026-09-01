@@ -11,7 +11,7 @@
  *
  * Native is untouched: nothing renders this, and the rail keeps its Settings row there.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import AboutScreen from '@/app/settings-about';
@@ -43,13 +43,8 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { closeSettingsModal, setSettingsCategory, useSettingsModal } from '@/lib/settings-modal';
-import { PaneParamsContext, type PaneParams } from '@/lib/pane-params';
-import {
-  SettingsPaneContext,
-  SettingsPaneNavContext,
-  SettingsPaneTopInset,
-  type PaneNav,
-} from '@/lib/settings-pane';
+import { PaneNavContext, PaneParamsContext, type PaneNav, type PaneParams } from '@/lib/pane';
+import { SettingsPaneContext, SettingsPaneTopInset } from '@/lib/settings-pane';
 
 import AddRegistryScreen from '@/app/add-registry';
 import BridgeSettingsScreen from '@/app/bridge-settings';
@@ -80,6 +75,9 @@ const SUB_PAGES: Record<string, { title: string; Screen: () => React.ReactNode }
 /** The same categories, in the same order, with the same ICONS as the Settings tab's own list — this
  *  is a second way in to one set of screens, never a second set, so a row that reads differently in
  *  the two places is a bug rather than a variation. */
+/** Stable identity so the params context doesn't hand every consumer a new object per render. */
+const EMPTY_PARAMS: PaneParams = {};
+
 const CATEGORIES: { id: string; label: string; Icon: SettingsIcon; Screen: () => React.ReactNode }[] = [
   { id: 'general', label: 'General', Icon: GeneralSettingsIcon, Screen: GeneralScreen },
   { id: 'notifications', label: 'Notifications', Icon: NotificationsIcon, Screen: NotificationsScreen },
@@ -103,6 +101,11 @@ export function SettingsModal() {
   // registry-browse is three deep, and each step has to come back to the one before it.
   const [stack, setStack] = useState<{ pathname: string; params: PaneParams }[]>([]);
   const top = stack[stack.length - 1];
+  // Read by `nav.canGoBack`, which is built once and must not go stale as the stack moves.
+  const stackDepth = useRef(stack.length);
+  useEffect(() => {
+    stackDepth.current = stack.length;
+  }, [stack.length]);
 
   const nav = useMemo<PaneNav>(
     () => ({
@@ -119,9 +122,9 @@ export function SettingsModal() {
         });
         return popped;
       },
-      params: top?.params ?? {},
+      canGoBack: () => stackDepth.current > 0,
     }),
-    [top],
+    [],
   );
 
   // `Modal` gave Escape for free; an in-tree panel has to ask for it.
@@ -179,11 +182,11 @@ export function SettingsModal() {
                 previous one's state — these are route components, written expecting a fresh mount. */}
             <View style={styles.paneBody} key={top ? `${stack.length}:${top.pathname}` : current.id}>
               <SettingsPaneContext.Provider value={true}>
-                <SettingsPaneNavContext.Provider value={nav}>
-                  <PaneParamsContext.Provider value={nav.params}>
+                <PaneNavContext.Provider value={nav}>
+                  <PaneParamsContext.Provider value={top?.params ?? EMPTY_PARAMS}>
                     {top ? <SubPage pathname={top.pathname} /> : <current.Screen />}
                   </PaneParamsContext.Provider>
-                </SettingsPaneNavContext.Provider>
+                </PaneNavContext.Provider>
               </SettingsPaneContext.Provider>
             </View>
           </View>
