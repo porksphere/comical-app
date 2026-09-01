@@ -24,6 +24,18 @@ import { persisted$ } from '@/lib/observable';
 const sortByBridge$ = persisted$<Record<string, SortState>>('comical:searchSortByBridge', {});
 
 /**
+ * Isolated because the React Compiler detects hooks by name (`use` + an uppercase letter), so it
+ * doesn't recognise `use$` (the `$` isn't a letter) and treats it as a plain call. Calling `use$`
+ * directly before another hook like `useMemo` in the same compiled function throws off the
+ * compiler's hook-slot accounting and crashes at runtime ("Should have a queue..."). Nesting it
+ * here — with nothing after it — keeps the caller's hook accounting correct, the same safe shape
+ * `useSelectedBridgeId` uses (see selected-bridge.ts).
+ */
+function useSortByBridgeMap(): Record<string, SortState> {
+  return use$(sortByBridge$);
+}
+
+/**
  * `[sort, setSort]` for the given bridge. `setSort` records the choice for *that* bridge only.
  *
  * The remembered sort is VALIDATED against the options the bridge currently advertises rather than
@@ -46,7 +58,7 @@ export function useSearchSort(
   bridgeId: string | undefined,
   sortOptions: SortOption[],
 ): [SortState, (sort: SortState) => void] {
-  const map = use$(sortByBridge$);
+  const map = useSortByBridgeMap();
   const remembered = bridgeId ? map[bridgeId] : null;
   const key = remembered && sortOptions.some((o) => o.key === remembered.key) ? remembered.key : null;
   const ascending = remembered?.ascending ?? false;
