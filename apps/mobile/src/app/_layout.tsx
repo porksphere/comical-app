@@ -146,14 +146,10 @@ function RootNavigation() {
             name="series"
             options={{ headerShown: false, animation: 'none', presentation: 'containedTransparentModal' }}
           />
-          {/* These render their own <TopBar> (matching series.tsx), so the native
-              stack header is hidden here too. The Settings tab is only a table of
-              contents — every category below is a screen it pushes. */}
-          <Stack.Screen name="settings-general" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-notifications" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-developer" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-about" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-whats-new" options={{ headerShown: false }} />
+          {/* These render their own <TopBar> (matching series.tsx), so the native stack header is
+              hidden here too. The Settings tab is only a table of contents — but the categories it
+              pushes are no longer registered here: they live in a stack INSIDE the tab now, so they
+              push within the slot rather than over it. See `(tabs)/settings/_layout.tsx`. */}
           <Stack.Screen name="bridges" options={{ headerShown: false }} />
           <Stack.Screen name="trackers" options={{ headerShown: false }} />
           <Stack.Screen name="bridge-settings" options={{ headerShown: false }} />

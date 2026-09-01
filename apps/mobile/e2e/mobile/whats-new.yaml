@@ -1,5 +1,5 @@
 # What's new — the release notes screen, reached by tapping the Version row on About
-# (settings-whats-new.tsx). The version is the entry point because the notes belong to a version.
+# (settings/whats-new.tsx). The version is the entry point because the notes belong to a version.
 #
 # Its two halves come from the update check's own fetch, and an e2e build's channel ("*-e2e", and
 # local-dev when run by hand) is `unsupported` — no network call, no notes. So this covers the

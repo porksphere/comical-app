@@ -171,7 +171,7 @@ export default function AboutScreen() {
                     testID="about.version"
                     label={label}
                     right={<InfoValueLink value={value} />}
-                    onPress={() => router.push('/settings-whats-new')}
+                    onPress={() => router.push('/settings/whats-new')}
                   />
                 ) : (
                   <SettingsRow key={label} label={label} right={<InfoValue value={value} />} />
