@@ -18,6 +18,8 @@ import { AppSidebar, SidebarGroup, SidebarItem } from '@/components/app-sidebar'
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
 import { SidebarResizer } from '@/components/sidebar-resizer';
+import { COMICAL_BRIDGE_ID, setSelectedBridge } from '@/data/selected-bridge';
+import { setSelectedCollection } from '@/data/selected-collection';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
@@ -55,12 +57,36 @@ const TABS: {
   Icon: LucideIcon;
   noRecede?: boolean;
   Scope?: React.ComponentType<{ active?: boolean; onNavigate?: () => void }>;
+  /** What pressing the DESTINATION row means for its scope: back to the front door. Browse's rows
+   *  are bridges and Library's are collections, so "go to Browse" with no further qualification is
+   *  the aggregate, and "go to Library" is the whole library — the same rows their groups already
+   *  lead with. Without this the row navigated but left whichever bridge or collection you were last
+   *  in selected, so the tab you asked for and the scope you got disagreed.
+   *
+   *  Rail only: below the breakpoint the same press is a bottom-bar tab, where there is no visible
+   *  scope list and silently re-pointing Browse would be a change with nothing on screen to explain
+   *  it. */
+  selectDefault?: () => void;
 }[] = [
   // A compass, not a grid: Browse is the discover surface, and `LayoutGrid` both named a layout
   // this tab doesn't always have (its home is rails) and was already Settings' Custom Pages mark.
   // The compass came off Trackers to get here — see `TrackersIcon` before moving it back.
-  { name: 'browse', href: '/', label: 'Browse', Icon: Compass, Scope: SidebarBridges },
-  { name: 'library', href: '/library', label: 'Library', Icon: Library, Scope: SidebarCollections },
+  {
+    name: 'browse',
+    href: '/',
+    label: 'Browse',
+    Icon: Compass,
+    Scope: SidebarBridges,
+    selectDefault: () => setSelectedBridge(COMICAL_BRIDGE_ID),
+  },
+  {
+    name: 'library',
+    href: '/library',
+    label: 'Library',
+    Icon: Library,
+    Scope: SidebarCollections,
+    selectDefault: () => setSelectedCollection(null),
+  },
   { name: 'history', href: '/history', label: 'History', Icon: History, noRecede: true },
   { name: 'activity', href: '/activity', label: 'Activity', Icon: Bell, noRecede: true },
   { name: 'settings', href: '/settings', label: 'Settings', Icon: Settings },
@@ -332,6 +358,7 @@ export default function AppTabs() {
             sidebar={sidebar}
             scope={Boolean(tab.Scope)}
             compact={collapsed}
+            selectDefault={tab.selectDefault}
             Icon={tab.Icon}
             onInteract={reveal}
             routeName={tab.name}
@@ -469,6 +496,7 @@ function TabButton({
   sidebar,
   scope,
   compact,
+  selectDefault,
   Icon,
   onInteract,
   routeName,
@@ -480,6 +508,7 @@ function TabButton({
   sidebar?: boolean;
   scope?: boolean;
   compact?: boolean;
+  selectDefault?: () => void;
   Icon: LucideIcon;
   onInteract?: () => void;
   routeName: string;
@@ -500,6 +529,8 @@ function TabButton({
   // free anymore - see useScrollToTopOnReselect).
   const handlePress = (e: GestureResponderEvent) => {
     if (isFocused) scrollToTopFor(routeName);
+    // Only where the rail is showing the scope this resets — see `selectDefault` on the tab table.
+    if (sidebar) selectDefault?.();
     onPress?.(e);
   };
 

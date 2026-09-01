@@ -180,23 +180,24 @@ function CollapseToggle({ collapsed }: { collapsed: boolean }) {
   const { hovered, handlers } = useHover();
   const Icon = collapsed ? PanelExpandIcon : PanelCollapseIcon;
   return (
-    <Pressable
-      {...handlers}
-      testID="sidebar.collapse-toggle"
-      onPress={toggleSidebarCollapsed}
-      accessibilityRole="button"
-      accessibilityLabel={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      accessibilityState={{ expanded: !collapsed }}
-      style={({ pressed }) => [
-        styles.collapseToggle,
-        collapsed && styles.itemCompact,
-        { backgroundColor: hovered ? theme.backgroundElement : 'transparent' },
-        pressed && styles.pressed,
-      ]}>
-      <View style={styles.iconWrap}>
+    // The button is a SQUARE in a row that aligns it, rather than a full-width row: it isn't a
+    // destination, and a hover that lit the whole rail made it look like one.
+    <View style={[styles.collapseRow, collapsed && styles.collapseRowCompact]}>
+      <Pressable
+        {...handlers}
+        testID="sidebar.collapse-toggle"
+        onPress={toggleSidebarCollapsed}
+        accessibilityRole="button"
+        accessibilityLabel={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        accessibilityState={{ expanded: !collapsed }}
+        style={({ pressed }) => [
+          styles.collapseToggle,
+          { backgroundColor: hovered ? theme.backgroundElement : 'transparent' },
+          pressed && styles.pressed,
+        ]}>
         <Icon color={theme.textSecondary} size={20} />
-      </View>
-    </Pressable>
+      </Pressable>
+    </View>
   );
 }
 
@@ -225,17 +226,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 0,
   },
+  collapseRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: Spacing.two,
+    paddingBottom: Spacing.two,
+  },
+  collapseRowCompact: {
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.one,
+  },
   // Deliberately NOT `styles.item` plus an override: that style carries `flex: 1` for the row it
   // shares with the chevron, and react-native-web maps a `flex` shorthand to a flex-BASIS, which in
-  // this column container collapsed the toggle to zero height. Same metrics, stated once.
+  // a column container collapsed this to zero height.
   collapseToggle: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: ITEM_HEIGHT,
+    width: 36,
+    height: 36,
     borderRadius: Spacing.two,
-    marginHorizontal: Spacing.two,
-    marginBottom: Spacing.two,
     ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
   },
   item: {
