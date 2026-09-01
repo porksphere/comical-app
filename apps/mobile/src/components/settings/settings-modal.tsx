@@ -158,10 +158,6 @@ export function SettingsModal() {
           testID="settings.modal.panel"
           style={[styles.panel, { backgroundColor: theme.background, borderColor: theme.barHairline }]}>
           <View style={[styles.categories, { borderRightColor: theme.barHairline }]}>
-            {/* The header's own height on this side, with the same hairline under it, so the band
-                runs the full width of the panel. Left as bare padding it read as a gap above the
-                list rather than as the row the pane's title sits in. */}
-            <View style={[styles.categoriesHeader, { borderBottomColor: theme.barHairline }]} />
             <ScrollView contentContainerStyle={styles.categoryList} showsVerticalScrollIndicator={false}>
               {CATEGORIES.map((c) => (
                 <CategoryRow key={c.id} id={c.id} label={c.label} Icon={c.Icon} active={c.id === current.id} />
@@ -170,8 +166,8 @@ export function SettingsModal() {
           </View>
           <View style={styles.pane}>
             {/* OUTSIDE the scroller, so it stays put while the pane's content moves under it. Its
-                height is `SettingsPaneTopInset` — the same number the category list starts at — so
-                the pane's first row still begins on the line the first category does. */}
+                height is `SettingsPaneTopInset`. The category list does NOT match it: nothing sits
+                above those rows, so anything reserved on that side is an empty band. */}
             <View style={[styles.paneHeader, { borderBottomColor: theme.barHairline }]}>
               {top ? <PaneBackButton onPress={() => setStack((s) => s.slice(0, -1))} /> : null}
               <ThemedText type="smallBold" numberOfLines={1} style={styles.paneTitle}>
@@ -298,14 +294,9 @@ const styles = StyleSheet.create({
     width: CATEGORY_WIDTH,
     borderRightWidth: StyleSheet.hairlineWidth,
   },
-  // No heading of its own — the panel is plainly the settings panel, and a label saying so over a
-  // list of settings categories said nothing the list didn't. This is the pane header's height
-  // carried across, so both columns' first rows start on the same line and the hairline is one line
-  // rather than two segments meeting at the divider.
-  categoriesHeader: {
-    height: SettingsPaneTopInset,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
+  // Nothing above the list: no heading, and no block standing in for the pane's header either. The
+  // categories start at the panel's edge and the pane's title sits beside them, which is the
+  // arrangement that leaves no empty band on this side.
   // Tucked right into the corner. Content runs beneath it by design, but at the pane's own inset it
   // landed exactly on the first row's chevron, which reads as a glyph drawn twice rather than a
   // control over a list.

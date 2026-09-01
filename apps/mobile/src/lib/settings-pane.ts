@@ -14,14 +14,11 @@
 import { createContext, useContext } from 'react';
 
 /**
- * The height of the modal's pane header, and therefore where BOTH of its columns start.
+ * The height of the modal's pane header.
  *
- * One number, read by the header and by the category list's top inset, so the first category row and
- * the first settings row begin on the same line. Without it the pane's content sat flush against the
- * panel's edge, 33pt above the row beside it, which is what read as the text sitting high.
- *
- * The category column has no heading of its own, so this is what stands in for one on that side —
- * which is why the list pays for it as padding rather than the two being tuned independently.
+ * Only the pane pays it. The category column deliberately doesn't match it: with no heading of its
+ * own, anything reserved above those rows is an empty band rather than a header, so the list starts
+ * at the panel's edge and the pane's title sits beside it.
  */
 export const SettingsPaneTopInset = 48;
 
