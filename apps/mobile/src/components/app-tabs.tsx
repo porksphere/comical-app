@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppSidebar, SidebarGroup, SidebarItem } from '@/components/app-sidebar';
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
+import { SettingsModal } from '@/components/settings/settings-modal';
 import { SidebarResizer } from '@/components/sidebar-resizer';
 import { COMICAL_BRIDGE_ID, setSelectedBridge } from '@/data/selected-bridge';
 import { setSelectedCollection } from '@/data/selected-collection';
@@ -28,6 +29,7 @@ import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
 import { SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
+import { openSettingsModal } from '@/lib/settings-modal';
 import { setSidebarDragWidth, sidebarDragWidth } from '@/lib/sidebar-drag';
 import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
@@ -98,6 +100,10 @@ const TABS: {
 // reservation was a standing coupling between the nav and every bar in the app, and the bug it
 // guarded against was found the hard way. The bar already works at these widths, so the row and the
 // whole reservation mechanism are gone.
+
+/** Web puts Settings in a modal opened from the rail's footer instead of a destination row: it is a
+ *  place you go, change one thing and leave, not somewhere you navigate to. Native keeps the tab. */
+const SETTINGS_AS_MODAL = Platform.OS === 'web';
 
 // Rounding slack for "is this offset at the content end?" — see the bounce guard in the scroll
 // listener below.
@@ -385,6 +391,10 @@ export default function AppTabs() {
   const sidebarChildren = useMemo(
     () =>
       TABS.flatMap((tab, i) => {
+        // Settings is a footer BUTTON in the rail on web (it opens a modal, it isn't a place), so its
+        // row is dropped here. The registration TabList below still lists it — the route has to keep
+        // existing, and on native it is still an ordinary destination.
+        if (SETTINGS_AS_MODAL && tab.name === 'settings') return [];
         const row = triggers[i];
         // Collapsed, there is no label for a group to sit under and collections have no icon of their
         // own, so the rail shows destinations only.
@@ -430,7 +440,19 @@ export default function AppTabs() {
           {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
           {sidebar && (
             <Animated.View style={[styles.sidebarWrap, railStyle]}>
-              <AppSidebar top={insets.top} collapsed={collapsed}>
+              <AppSidebar
+                top={insets.top}
+                collapsed={collapsed}
+                settingsButton={
+                  SETTINGS_AS_MODAL
+                    ? {
+                        testID: 'sidebar.settings',
+                        label: 'Settings',
+                        onPress: openSettingsModal,
+                        icon: <Settings size={20} color={theme.textSecondary} />,
+                      }
+                    : undefined
+                }>
                 {sidebarChildren}
               </AppSidebar>
               {/* Nothing to drag on an icon rail — its width is the state, not a preference. */}
@@ -483,6 +505,9 @@ export default function AppTabs() {
           </TabList>
         </Tabs>
       </ContentWidthProvider>
+      {/* Web only, and rendered here so it is inside the tabs' own tree: the modal replaces what used
+          to be a pushed route, so nothing about the router changes. */}
+      {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
     </Animated.View>

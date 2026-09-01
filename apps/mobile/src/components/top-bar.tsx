@@ -7,6 +7,7 @@ import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useInSettingsPane } from '@/lib/settings-pane';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
@@ -37,6 +38,10 @@ export function TopBar({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const barHeight = useTopBarHeight();
+  const inPane = useInSettingsPane();
+  // Inside the settings modal the pane has no bar of its own: the modal supplies the header, and a
+  // back button here would point at a stack this pane isn't on.
+  if (inPane) return null;
   return (
     <BarSurface style={[styles.topBar, { height: insets.top + barHeight }]}>
       {left ? (

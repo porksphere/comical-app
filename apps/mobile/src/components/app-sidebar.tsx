@@ -137,10 +137,14 @@ export function SidebarItem({
 export function AppSidebar({
   top,
   collapsed,
+  settingsButton,
   children,
 }: {
   top: number;
   collapsed: boolean;
+  /** Web only: Settings leaves the destination list and becomes a button down here, because it
+   *  opens a modal rather than going anywhere. Absent on native, where it is still a tab. */
+  settingsButton?: { icon: React.ReactNode; label: string; onPress: () => void; testID: string };
   children: React.ReactNode;
 }) {
   const theme = useTheme();
@@ -168,9 +172,43 @@ export function AppSidebar({
         {children}
       </ScrollView>
       {/* Pinned BELOW the scroller, not inside it: collapsed is the state you need this control to
-          get out of, so it must never be the thing that scrolled off. */}
-      <CollapseToggle collapsed={collapsed} />
+          get out of, so it must never be the thing that scrolled off. Settings sits with it because
+          it is the same kind of thing — a way to open something, not a place in the list above. */}
+      <View style={[styles.footer, collapsed && styles.footerCompact]}>
+        {settingsButton ? <FooterButton {...settingsButton} /> : null}
+        <CollapseToggle collapsed={collapsed} />
+      </View>
     </View>
+  );
+}
+
+function FooterButton({
+  icon,
+  label,
+  onPress,
+  testID,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onPress: () => void;
+  testID: string;
+}) {
+  const theme = useTheme();
+  const { hovered, handlers } = useHover();
+  return (
+    <Pressable
+      {...handlers}
+      testID={testID}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.collapseToggle,
+        { backgroundColor: hovered ? theme.backgroundElement : 'transparent' },
+        pressed && styles.pressed,
+      ]}>
+      {icon}
+    </Pressable>
   );
 }
 
@@ -226,15 +264,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 0,
   },
-  collapseRow: {
+  // Settings on the left, collapse on the right — the two ends of the row, so neither reads as
+  // belonging to the other.
+  footer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.two,
     paddingBottom: Spacing.two,
   },
+  footerCompact: {
+    flexDirection: 'column',
+    gap: Spacing.one,
+    paddingHorizontal: Spacing.one,
+  },
+  collapseRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
   collapseRowCompact: {
     justifyContent: 'center',
-    paddingHorizontal: Spacing.one,
   },
   // Deliberately NOT `styles.item` plus an override: that style carries `flex: 1` for the row it
   // shares with the chevron, and react-native-web maps a `flex` shorthand to a flex-BASIS, which in
