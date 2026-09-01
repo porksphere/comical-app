@@ -7,7 +7,7 @@ import {
   useAnchoredOverlay,
   useOverlay,
   useOverlayPresentation,
-} from '@/components/overlay/overlay';
+ MENU_MAX_ROWS } from '@/components/overlay/overlay';
 import { OptionActionRow, OptionRow } from '@/components/overlay/option-row';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -49,7 +49,12 @@ export function LibraryCollectionSelector({
       {...handlers}
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
-        openAt(() => <CollectionMenu value={value} collections={collections} onChange={onChange} />)
+        openAt(
+          () => <CollectionMenu value={value} collections={collections} onChange={onChange} />,
+          // +2 for the built-in All/Reading rows, +1 for "Manage collections…" — the count that
+          // decides this is the number of ROWS, not the number of collections.
+          { popover: collections.length + 3 <= MENU_MAX_ROWS },
+        )
       }>
       <ThemedText numberOfLines={1} style={styles.triggerLabel}>
         {currentLabel}

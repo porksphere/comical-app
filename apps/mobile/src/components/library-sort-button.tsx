@@ -64,9 +64,14 @@ export function LibrarySortButton({
       accessibilityLabel="Sort library"
       style={[styles.button, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
-        openAt(() => (
-          <SortMenu value={value} onChange={onChange} grouping={grouping} onGroupingChange={onGroupingChange} />
-        ))
+        openAt(
+          () => (
+            <SortMenu value={value} onChange={onChange} grouping={grouping} onGroupingChange={onGroupingChange} />
+          ),
+          // Fixed content, and two sections of four — the shape iOS draws as a pull-down menu from
+          // a bar button (Photos' own sort menu is this list). Never a sheet, at any width.
+          { popover: true },
+        )
       }>
       <SortIcon color={theme.text} size={22} />
     </Pressable>

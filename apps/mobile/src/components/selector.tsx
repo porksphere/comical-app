@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
 import {
+  MENU_MAX_ROWS,
   MeasuredHeader,
   OptionList,
   OverlayHeading,
@@ -64,18 +65,25 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
       {...handlers}
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
-        openAt(() => (
-          <SelectMenu
-            title={title}
-            options={options}
-            selected={value}
-            onSelect={onChange}
-            thumbnails={thumbnails}
-            sources={sources}
-            labels={labels}
-            testID={testID}
-          />
-        ))
+        openAt(
+          () => (
+            <SelectMenu
+              title={title}
+              options={options}
+              selected={value}
+              onSelect={onChange}
+              thumbnails={thumbnails}
+              sources={sources}
+              labels={labels}
+              testID={testID}
+            />
+          ),
+          // A short list opens as an anchored MENU on a phone too, not a bottom sheet — the shape
+          // the platform reaches for when a bar control changes what it is set to. A long one
+          // (plenty of installed bridges) stays a sheet, because a menu that scrolls is a list
+          // wearing a menu's chrome.
+          { popover: options.length <= MENU_MAX_ROWS },
+        )
       }>
       <ThemedText
         type={size}

@@ -68,7 +68,8 @@ export function CollectedSortButton({
       accessibilityRole="button"
       accessibilityLabel="Sort saved pages"
       style={[styles.button, hovered && { backgroundColor: theme.backgroundSelected }]}
-      onPress={() => openAt(() => <SortMenu value={value} onChange={onChange} />)}>
+      // Fixed, short content — a menu, never a sheet. See LibrarySortButton.
+      onPress={() => openAt(() => <SortMenu value={value} onChange={onChange} />, { popover: true })}>
       <SortIcon color={theme.text} size={22} />
     </Pressable>
   );

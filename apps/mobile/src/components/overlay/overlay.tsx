@@ -88,7 +88,10 @@ export function useAnchoredOverlay() {
   const [myId, setMyId] = useState<number | null>(null);
   const isOpen = myId !== null && myId === topId;
   const openAt = useCallback(
-    (render: () => ReactNode) => {
+    // `opts.popover` asks for the ANCHORED menu even on a phone, where an anchored overlay
+    // otherwise becomes a bottom sheet. A short single-select driven from a bar button is a menu on
+    // both platforms — see the note on `isPopoverItem`.
+    (render: () => ReactNode, opts?: { popover?: boolean }) => {
       if (myId !== null && myId === topId) {
         closeTop();
         return;
@@ -96,10 +99,10 @@ export function useAnchoredOverlay() {
       const node = ref.current;
       if (node && typeof node.measureInWindow === 'function') {
         node.measureInWindow((x, y, width, height) => {
-          setMyId(open(render, { x, y, width, height }));
+          setMyId(open(render, { x, y, width, height }, opts));
         });
       } else {
-        setMyId(open(render));
+        setMyId(open(render, undefined, opts));
       }
     },
     [open, closeTop, topId, myId],
@@ -363,7 +366,6 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
     reportNeedsScroll?.(needsScrollRef.current);
   }, [reportNeedsScroll]);
 
-  const popoverPadded = presentation === 'popover' && !needsScroll;
 
   return (
     <AnimatedScrollView
@@ -381,12 +383,9 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       }
       contentContainerStyle={
         presentation === 'popover'
-          ? [
-              listStyles.listContentPopover,
-              // Not on web: the panel took this padding itself (see `styles.popoverEdge`), and both
-              // applying it stacked 32pt of empty band above and below a two-row menu.
-              popoverPadded && !IS_WEB && listStyles.listContentPopoverPadded,
-            ]
+          ? // Flush: the PANEL carries the padding (see `styles.popover`), on every platform. Both
+            // applying it stacked 32pt of empty band above and below a two-row menu.
+            listStyles.listContentPopover
           : listStyles.listContent
       }
       keyboardShouldPersistTaps="handled"
@@ -429,11 +428,6 @@ const listStyles = StyleSheet.create({
   // `gap` lives on `rowsWrapper` instead, since rows sit inside that inner
   // measuring wrapper rather than directly in this contentContainerStyle.
   listContentPopover: {},
-  // Applied alongside `listContentPopover` once the settle logic decides the
-  // content comfortably fits without scrolling.
-  listContentPopoverPadded: {
-    paddingVertical: Spacing.four,
-  },
   // Shared by both presentations — the inner View `OptionList` measures its
   // rows against, unpadded so neither presentation's fits/needs-scroll
   // decision gets thrown off by the padding it's used to decide.
@@ -1007,10 +1001,28 @@ function OverlaySheet({
 // gestures (those are sheet-only); the shared backdrop handles outside-click
 // dismissal. Long content scrolls inside via the content's own list.
 const POPOVER_WIDTH = 320;
-/** The popover IS the desktop overlay form; web is where it gets desktop chrome. Deliberately
- *  not `isLargeScreen`: a landscape iPad shows this same popover, and that viewport is not part of
- *  this pass. */
-const IS_WEB = Platform.OS === 'web';
+/**
+ * …and never more than this much of the viewport.
+ *
+ * 320 is a menu on a desktop window and most of the screen on a phone — at 390pt it was 82% of the
+ * width, which stops reading as a menu hanging off its trigger and starts reading as a panel that
+ * happens not to reach the edges. The absolute cap still wins on anything wide; this one only
+ * binds on a phone.
+ */
+const POPOVER_MAX_VIEWPORT_FRACTION = 0.72;
+
+/**
+ * How many rows a list may have and still be a MENU rather than a sheet.
+ *
+ * A menu that has to scroll is a list wearing a menu's chrome, and the platform draws the line the
+ * same way: iOS reaches for a pull-down menu when a bar button changes what it is set to, and for a
+ * sheet once the choice needs room, search, or a screen of its own. 8 rows is what fits under a top
+ * bar on the shortest phone we support without the popover clamping and scrolling.
+ *
+ * Callers pass the verdict (`openAt(..., { popover })`); this is only the number they compare
+ * against, here so the four pickers can't disagree about where the line is.
+ */
+export const MENU_MAX_ROWS = 8;
 
 const POPOVER_GAP = Spacing.one; // distance from the anchor edge
 const POPOVER_PAD = Spacing.three; // keep-off-the-viewport-edges padding
@@ -1097,7 +1109,7 @@ function OverlayPopover({
     }
   }, [card, progress]);
 
-  const width = Math.min(POPOVER_WIDTH, vw - POPOVER_PAD * 2);
+  const width = Math.min(POPOVER_WIDTH, vw * POPOVER_MAX_VIEWPORT_FRACTION, vw - POPOVER_PAD * 2);
   const left = Math.min(Math.max(POPOVER_PAD, anchor.x), vw - width - POPOVER_PAD);
   const spaceBelow = vh - (anchor.y + anchor.height) - POPOVER_GAP - POPOVER_PAD;
   const spaceAbove = anchor.y - POPOVER_GAP - POPOVER_PAD;
@@ -1136,11 +1148,12 @@ function OverlayPopover({
         style={[
           styles.popover,
           { backgroundColor: theme.overlaySurface, maxHeight },
-          // The HAIRLINE is the desktop variant's alone. A sheet is anchored to the screen edge and
-          // fills its width, so its boundary is never in question; a panel floating over content is
-          // the only one that has to declare where it ends.
-          IS_WEB && styles.popoverEdge,
-          IS_WEB && { borderColor: theme.overlayHairline },
+          // The HAIRLINE belongs to the MENU, not to a platform. A sheet is anchored to the screen
+          // edge and fills its width, so its boundary is never in question and it takes none; a
+          // panel floating over content is the only one that has to declare where it ends, and it
+          // has to do that on a phone for the same reason it does on a desktop.
+          styles.popoverEdge,
+          { borderColor: theme.overlayHairline },
         ]}
         onLayout={(e) => {
           const { width: w, height: hh } = e.nativeEvent.layout;
