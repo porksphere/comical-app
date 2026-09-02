@@ -5,7 +5,7 @@
 
 import '@/global.css';
 
-import { Platform, type ViewStyle } from 'react-native';
+import { Platform, type ImageStyle, type ViewStyle } from 'react-native';
 
 export const Colors = {
   light: {
@@ -180,7 +180,7 @@ export const Fonts = Platform.select({
 export const ContinuousCorner = Platform.select({
   web: { cornerShape: 'squircle' },
   default: {},
-}) as ViewStyle;
+}) as ViewStyle & ImageStyle;
 
 export const Spacing = {
   half: 2,

@@ -22,7 +22,7 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useSectionOpen } from '@/hooks/use-sidebar-sections';
 import { toggleSidebarCollapsed } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
-import { Fonts, Spacing } from '@/constants/theme';
+import { ContinuousCorner, Fonts, Spacing } from '@/constants/theme';
 
 /** Short, and eased out: a disclosure is an acknowledgement of a tap, not a transition between
  *  places. Long enough to read as movement, short enough that a second tap never queues behind it. */
@@ -293,6 +293,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 36,
     height: 36,
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
     ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
   },
@@ -303,6 +304,7 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     height: ITEM_HEIGHT,
     paddingHorizontal: Spacing.three,
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
     // The pointer cursor react-native-web gives a Pressable is right here — these are nav links.
     ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
@@ -322,6 +324,7 @@ const styles = StyleSheet.create({
     // Indented to the top-level rows' LABEL, not their icon, so the hierarchy is legible at a glance.
     paddingLeft: Spacing.three + 22 + Spacing.three - 18,
     paddingRight: Spacing.three,
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
     ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
   },
