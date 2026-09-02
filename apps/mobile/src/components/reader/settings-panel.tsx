@@ -5,7 +5,7 @@ import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/c
 import type { IconProps } from '@/components/icons/ui-icons';
 import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { ContinuousCorner, Spacing } from '@/constants/theme';
 import {
   useReaderSettings,
   type PageFit,
@@ -184,6 +184,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingVertical: Spacing.one,
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
     backgroundColor: 'rgba(255,255,255,0.08)',
   },

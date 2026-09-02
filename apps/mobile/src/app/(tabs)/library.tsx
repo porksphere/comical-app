@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { SearchIcon } from '@/components/icons/ui-icons';
+import { SearchPill } from '@/components/search-pill';
 import { LibraryCollectionSelector } from '@/components/library-collection-selector';
 import { LibrarySortButton } from '@/components/library-sort-button';
 import { RetryBlock } from '@/components/retry-block';
@@ -24,12 +25,14 @@ import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import { useCollectedView } from '@/data/collected-view';
 import { collectionItemsQuery, libraryQuery } from '@/data/queries';
+import { setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
 import { DIRECT_CHAPTER_ID } from '@/data/types';
 import { encodeSeriesParam } from '@/lib/series-nav';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useHasSidebar } from '@/hooks/use-content-width';
 import { useCollections } from '@/hooks/use-collections';
 import { libraryGroupOf } from '@/data/library-grouping';
 import { useLibraryGrouping, useLibrarySort } from '@/hooks/use-library-sort';
@@ -64,8 +67,12 @@ export default function LibraryScreen() {
   // collection's CONTENTS — its series, chapters and saved pages, mixed. One axis, deliberately:
   // an earlier version split "collection" and "saved pages" into two selector sections, which read
   // as two competing lists of the same names.
-  const [collectionFilter, setCollectionFilter] = useState<string | null>(null);
+  // Shared, not local: the sidebar's Collections group moves this too (see `selected-collection.ts`).
+  const collectionFilter = useSelectedCollectionId();
+  const setCollectionFilter = setSelectedCollection;
   const showingCollected = collectionFilter !== null;
+  // Asked of the layout, not derived from width — see `useHasSidebar`.
+  const railNav = useHasSidebar();
   // The library grid's sort + grouping (they only apply there; a collection view has its own axes
   // below). Grouping is client-side sectioning over the server-sorted list.
   const [sort, setSort] = useLibrarySort(null);
@@ -362,26 +369,44 @@ export default function LibraryScreen() {
               </View>
             </View>
           ) : (
-            <LibraryCollectionSelector
-              value={collectionFilter}
-              collections={collections}
-              onChange={setCollectionFilter}
-            />
+            // The rail lists the collections when it's showing, so the selector would be a second
+            // control for one selection. Unlike Browse — whose `Home` selector is a different axis
+            // and stays — this one IS the screen's heading, so it degrades to a plain title rather
+            // than leaving the bar with nothing in it.
+            railNav ? (
+              <ThemedText numberOfLines={1} style={styles.railTitle}>
+                {collectionFilter ? (collections.find((c) => c.id === collectionFilter)?.name ?? 'Library') : 'Library'}
+              </ThemedText>
+            ) : (
+              <LibraryCollectionSelector
+                value={collectionFilter}
+                collections={collections}
+                onChange={setCollectionFilter}
+              />
+            )
           )
         }
         right={
           <>
-            {!searching && (
-              <Pressable
-                testID="library.search-icon"
-                onPress={() => setSearching(true)}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Search library"
-                style={styles.searchIconButton}>
-                <SearchIcon color={theme.text} size={22} />
-              </Pressable>
-            )}
+            {/* Wide: the shared trailing pill every content tab uses. Narrow: the icon, unchanged. */}
+            {!searching &&
+              (railNav ? (
+                <SearchPill
+                  testID="library.search-pill"
+                  onPress={() => setSearching(true)}
+                  placeholder="Search library…"
+                />
+              ) : (
+                <Pressable
+                  testID="library.search-icon"
+                  onPress={() => setSearching(true)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Search library"
+                  style={styles.searchIconButton}>
+                  <SearchIcon color={theme.text} size={22} />
+                </Pressable>
+              ))}
             {/* Sort applies to the library grid only. The saved-pages view has its own sort/dir
                 axes (Phase 3); showing this control there would be a lever that does nothing. */}
             {showingCollected ? (
@@ -428,6 +453,15 @@ function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }
 }
 
 const styles = StyleSheet.create({
+  // The type the collection selector's own trigger uses, so swapping one for the other doesn't
+  // change the bar's height or the title's weight.
+  railTitle: {
+    flexShrink: 1,
+    minWidth: 0,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+  },
   container: {
     flex: 1,
   },

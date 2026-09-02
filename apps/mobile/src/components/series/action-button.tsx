@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -81,6 +81,7 @@ export function NewBadge({ count }: { count: number }) {
 
 const styles = StyleSheet.create({
   btn: {
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
     overflow: 'hidden',
   },

@@ -19,7 +19,7 @@
  */
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -75,7 +75,7 @@ import { testId } from '@/lib/test-id';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import type { ChapterGroup } from '@/lib/chapter-order';
-import { useRouter } from '@/lib/nav';
+import {useLocalSearchParams, useRouter} from '@/lib/nav';
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
 /**

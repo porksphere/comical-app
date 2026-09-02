@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -67,7 +66,7 @@ import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
-import { useRouter } from '@/lib/nav';
+import { useLocalSearchParams, useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
 import { backSwipePan, backSwipeShape, backSwipeStayedHorizontal, resetBackSwipeShape, trackBackSwipeShape, BACK_ACTIVATE_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
@@ -75,6 +74,8 @@ import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } fro
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
+import { closeSeriesPane } from '@/lib/series-pane';
+import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import {
   holdZoomingSeries,
@@ -144,6 +145,24 @@ const WARM_BEHIND = 2;
  */
 const PREV_WINDOW_GRACE_MS = 600;
 const IS_WEB = Platform.OS === 'web';
+
+/**
+ * The box this page is laid out in — the window, unless it is being rendered in the right-hand pane
+ * (see `components/series-pane`), where it is the pane's width and the window's height.
+ *
+ * Every width in here is a layout question ("how wide is the hero", "how far does a layer slide in
+ * from"), and in a pane the honest answer is the pane's. Reading the window instead put the details
+ * card's two-column threshold, the action column and the push parallax on a number nothing in this
+ * subtree is that wide.
+ */
+function useViewport(): { width: number; height: number } {
+  const win = useWindowDimensions();
+  const pane = useSeriesPaneWidth();
+  return useMemo(
+    () => (pane === null ? { width: win.width, height: win.height } : { width: pane, height: win.height }),
+    [pane, win.width, win.height],
+  );
+}
 const IS_IOS = Platform.OS === 'ios';
 // The reader surface's tone. Pure black, like every other page — it mirrored the reference's
 // `#reader-view { background: #0f0f0f }` until the app's own background stopped doing the same
@@ -963,7 +982,7 @@ function SeriesReaderInstance({
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
-  const { width, height } = useWindowDimensions();
+  const { width, height } = useViewport();
   const insets = useSafeAreaInsets();
   const mock = useMockActive();
   const [settings] = useReaderSettings();
@@ -1222,7 +1241,9 @@ function SeriesReaderInstance({
   // starts, on the thread the spring is drawing on. So the pane rides `standby` until this flips:
   // the visible page mounts and paints (it is what the entrance reveals), everything else waits
   // out the flight — the same deferral `detailsSettled` gives the reveal, applied to the open.
-  const [entranceSettled, setEntranceSettled] = useState(false);
+  // Starts SETTLED on web: there is no entrance there to defer behind (see `startZoom`), so the
+  // page has nothing to wait out and the pager may mount in the first commit like anything else.
+  const [entranceSettled, setEntranceSettled] = useState(IS_WEB);
   const markEntranceSettled = useCallback(() => setEntranceSettled(true), []);
   useEffect(() => {
     const t = setTimeout(() => {
@@ -1537,6 +1558,33 @@ function SeriesReaderInstance({
     [armSeriesQueries],
   );
 
+  /**
+   * Reading STARTED, in the pane — so hand this series to the full-screen route and let the pane go.
+   *
+   * A reader is the one thing on web that still takes the whole window (see components/series-pane),
+   * and the details half of this screen is what the pane exists to show. The handover is an ordinary
+   * reader-first push — the same params a History row carries — because `openSeriesPane` declines
+   * those on purpose; there is no exit hatch here that the rest of the app doesn't already use.
+   *
+   * Answers false outside the pane, which is every native build and every narrow viewport, so the
+   * reveal below is untouched there.
+   */
+  const inPane = useSeriesPaneWidth() !== null;
+  const leavePaneToRead = useCallback((): boolean => {
+    if (!inPane) return false;
+    const next: Record<string, string> = { reader: '1', start: String(target?.start ?? 0) };
+    for (const [k, v] of Object.entries(params)) if (typeof v === 'string') next[k] = v;
+    if (target?.chapterId) {
+      next.chapterId = target.chapterId;
+      next.chapterName = target.chapterName ?? '';
+    } else if (isDirect) {
+      next.direct = '1';
+    }
+    closeSeriesPane();
+    router.push({ pathname: '/series', params: next });
+    return true;
+  }, [inPane, params, target, isDirect, router]);
+
   // JS-side half of a commit — deliberately closes over nothing but state setters (no shared
   // values, no timer refs), so the gesture worklets can `runOnJS` it; the worklets animate
   // `progress` themselves. Landing back in the reader re-shows the chrome (it may have auto-hidden
@@ -1546,21 +1594,26 @@ function SeriesReaderInstance({
     // that transition specifically, and the question is what the reader side has to show at the
     // instant it becomes visible — see the `reader ready` mark below for the other half.
     traceJS('reveal', 'commit', { toReader: to === 0 });
+    if (to === 0 && leavePaneToRead()) return;
     setDetailsActive(to === 1);
     if (to === 0) setChromeVisible(true);
-  }, []);
+  }, [leavePaneToRead]);
   useEffect(() => {
     if (!detailsActive) scheduleHide();
   }, [detailsActive, scheduleHide]);
   // Full JS-side reveal (pill, grab-handle, hardware back, chapter/page intents).
   const setRevealed = useCallback(
     (to: 0 | 1) => {
+      // Ahead of the 240ms reveal, not just at its commit: in the pane the reader is not where
+      // this is going, so playing the reveal first would show a page at pane width and then
+      // replace it.
+      if (to === 0 && leavePaneToRead()) return;
       detailsActiveSV.set(to === 1);
       pullEngagedSV.set(false); // the commit animation owns `progress` — stop any live pull-follow
       progress.set(withTiming(to, { duration: 240, easing: Easing.out(Easing.cubic) }));
       commitReveal(to);
     },
-    [progress, detailsActiveSV, pullEngagedSV, commitReveal],
+    [progress, detailsActiveSV, pullEngagedSV, commitReveal, leavePaneToRead],
   );
 
   // The collapsed reader strip is the top of the details PAGE, so its reveal is the page's own
@@ -2212,6 +2265,16 @@ function SeriesReaderInstance({
     zoomArmed.set(true);
     // Nothing was dragged: the classic collapse, in the card's coordinates from the first frame.
     homeAt.set(0);
+    // WEB has no entrance to play. `zoomSource` is null there (see its declaration), so there is no
+    // card for the page to grow out of and the spring was a page scaling up from the middle of
+    // nothing — which is what read as a laggy fade rather than as an opening. Land on the open state
+    // in one frame instead. The COLLAPSE is untouched: that one follows a finger, so it is a
+    // response rather than a flourish, and it still needs `zoom` to travel.
+    if (IS_WEB) {
+      zoom.set(1);
+      traceJS('open', 'entered', { finished: true, instant: true });
+      return;
+    }
     zoom.set(
       withSpring(1, ZOOM_IN_SPRING, (finished) => {
         // Closes the bracket opened at mount — see the effect below. The span between them is the
@@ -2276,7 +2339,12 @@ function SeriesReaderInstance({
     zoomRadiusClosing.set(true);
     edgeCommitting.set(true);
     homeAt.set(0);
-    zoom.set(withSpring(0, ZOOM_OUT_SPRING));
+    // WEB closes in one frame, the mirror of the entrance: with no source card the collapse has
+    // nothing to shrink INTO, so it was a page scaling down toward the middle of a grid it never
+    // came from. A gesture's release is different and still springs (see the back-swipe's onEnd and
+    // the reader dismiss's): there the finger has already moved the page, and cutting the rest
+    // would strand it mid-drag. This one is a click, and a click has no motion to finish.
+    zoom.set(IS_WEB ? 0 : withSpring(0, ZOOM_OUT_SPRING));
     // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
     // leaveOnce), with the `leaving` backstop above as the safety net.
   }, [token, edgeCommitting, homeAt, zoom, zoomClosing, zoomRadiusClosing]);
@@ -2532,33 +2600,27 @@ function SeriesReaderInstance({
   // `traceOn` is a DEP on purpose: backSwipePan only attaches its touch observers while the trace
   // is recording, so flipping the toggle has to rebuild the gestures for the change to take.
   const traceOn = useGestureTraceEnabled();
-  // WEB ONLY. This used to be a second copy of the back-swipe living on the screen-level detector,
-  // alongside the one riding the list — the theory being that the list copy covers the scroller and
-  // this one covers the chrome around it.
+  // THE back-swipe, and NATIVE ONLY.
   //
-  // A device trace killed that. Across ~20 attempts the screen-level copy activated ZERO times, and
-  // in every failed attempt BOTH copies finalized unsuccessfully in the same millisecond, right as
-  // the drag reached the activation threshold — with `dy` of one or two pixels, so nothing in the
-  // criteria had failed. That is what an ancestor detector and a descendant detector reaching for
-  // the same touch on the same frame looks like: they are not declared simultaneous with each
+  // There used to be a second copy on the screen-level detector, alongside this one riding the list
+  // — the theory being that the list copy covers the scroller and that one covers the chrome around
+  // it. A device trace killed it. Across ~20 attempts the screen-level copy activated ZERO times,
+  // and in every failed attempt BOTH copies finalized unsuccessfully in the same millisecond, right
+  // as the drag reached the activation threshold — with `dy` of one or two pixels, so nothing in
+  // the criteria had failed. That is what an ancestor detector and a descendant detector reaching
+  // for the same touch on the same frame looks like: they are not declared simultaneous with each
   // other, so each cancels the other and the swipe dies at exactly the moment it should have
   // started. The swipes that DID work were the fast ones, where one copy crossed the threshold a
-  // frame before the other could contest it.
+  // frame before the other could contest it. So there is one back-swipe: the copy composed with the
+  // scroller, which is the only one that ever won.
   //
-  // So on native there is now ONE back-swipe: the copy composed with the scroller (below), which is
-  // the only one that ever won. Web keeps this one instead, because there `detailsScrollGesture` is
-  // undefined — no native recognizer to be simultaneous with, and nothing for it to fight.
-  //
-  // Not merely disabled on native — not BUILT. A permanently-disabled gesture still rebuilds when
-  // its deps change, and a rebuilt gesture costs a full re-serialization of its callbacks (see
-  // detailsBackSwipe below for the measurement). Dead weight that bills on every settle is worse
-  // than dead weight.
-  const edgePan = useMemo(
-    () => (IS_WEB ? makeBackSwipePan(`series.edge@${depth}`).enabled(detailsActive) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [makeBackSwipePan, detailsActive, traceOn, depth],
-  );
-  // THE back-swipe on native (see edgePan above for why it's the only one).
+  // WEB has no back-swipe at all. The screen-level copy survived there for a while (nothing to
+  // fight, since `detailsScrollGesture` is undefined on web) — but a page dismissed by dragging is
+  // a touch idiom, and on web the series sits in a pane you leave by clicking the chevron or by
+  // picking somewhere else in the rail. Not merely disabled — not BUILT: a permanently-disabled
+  // gesture still rebuilds when its deps change, and a rebuilt gesture costs a full
+  // re-serialization of its callbacks (measured below). Dead weight that bills on every settle is
+  // worse than dead weight.
   //
   // Held separately from the composition below because the rails inside the details need to name it
   // — they declare that THIS waits for THEM, which is the one relation keeping a rail scrollable now
@@ -2615,8 +2677,8 @@ function SeriesReaderInstance({
       });
   }, [detailsActive, detailsActiveSV, pullEngagedSV, detailsScrollOffset, progress, commitReveal]);
   const detailsGestures = useMemo(
-    () => (edgePan ? Gesture.Race(edgePan, returnPan, pullReleaseWatch) : Gesture.Race(returnPan, pullReleaseWatch)),
-    [edgePan, returnPan, pullReleaseWatch],
+    () => Gesture.Race(returnPan, pullReleaseWatch),
+    [returnPan, pullReleaseWatch],
   );
   // Geometry: the reader strip's height — the top-of-page band the details content starts below.
   // The details layer itself is full-screen (the strip is page, not chrome). Declared up here
@@ -3179,9 +3241,9 @@ function SeriesReaderInstance({
       return zoom.value;
     },
     (covered) => {
-      if (depth === 0) seriesReaderDim.set(covered);
+      if (depth === 0 && !inPane) seriesReaderDim.set(covered);
     },
-    [depth],
+    [depth, inPane],
   );
   // Belt and braces: nothing may strand the backdrop dimmed if this screen goes away without its
   // exit animation finishing (a deep link replacing the route, a dev reload). The hold's release
@@ -3189,9 +3251,9 @@ function SeriesReaderInstance({
   // one JS-thread write against a value the reaction above writes every frame, and on its own it
   // has no way to notice when it loses that race (see lib/pushback-watchdog).
   useEffect(() => {
-    if (depth > 0) return;
+    if (depth > 0 || inPane) return;
     return holdSeriesBackdrop();
-  }, [depth]);
+  }, [depth, inPane]);
 
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
@@ -3748,7 +3810,7 @@ const MemoSeriesReaderInstance = memo(SeriesReaderInstance);
 export default function SeriesReaderScreen() {
   const params = useLocalSearchParams<SeriesReaderParams & ReaderSequenceParams>();
   const router = useRouter();
-  const { width } = useWindowDimensions();
+  const { width } = useViewport();
   const [drills, setDrills] = useState<DrillEntry[]>([]);
 
   // ── Sequence mode (`seq=1`): the reader pages over a COLLECTION's saved pages ──
@@ -3901,7 +3963,7 @@ function SearchLayer({
   coverSV?: SharedValue<number>;
   isTop?: boolean;
 }) {
-  const { width } = useWindowDimensions();
+  const { width } = useViewport();
   const theme = useTheme();
   const edgeX = useSharedValue(width);
   const edgeCommitting = useSharedValue(false);

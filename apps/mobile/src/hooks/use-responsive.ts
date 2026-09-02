@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { useWindowDimensions } from 'react-native';
+import { Platform, useWindowDimensions } from 'react-native';
 
 import { DesktopTopBarHeight, TopBarHeight } from '@/constants/theme';
 
@@ -28,6 +28,30 @@ const prerenderSnapshot = () => false;
 
 export function useHydrated(): boolean {
   return useSyncExternalStore(subscribeToNothing, hydratedSnapshot, prerenderSnapshot);
+}
+
+/**
+ * Whether this viewer is POINTING rather than touching — the question that decides how big a
+ * tappable row has to be, and whether hover is worth wiring at all.
+ *
+ * Not the platform, and not the width. It used to be inferred from "web, and showing the desktop
+ * overlay", which was a fine proxy only while that overlay could not appear on a phone; once a
+ * short picker started opening as an anchored menu on a phone too (see MENU_MAX_ROWS), the proxy
+ * put 34pt pointer rows under a thumb. `hover: hover and pointer: fine` is the actual question, and
+ * the browser already answers it — a touch laptop with a trackpad says yes, a phone says no, and a
+ * tablet says no even in a desktop-width browser window.
+ *
+ * Native is never fine-pointer: even an iPad with a trackpad is a touch-first target, and its rows
+ * should stay thumb-sized.
+ *
+ * Hydration-safe (see `useHydrated`) — the static export prerenders with no `matchMedia`, so the
+ * first client render holds the touch assumption, which is the one that is never too small.
+ */
+export function usePointerFine(): boolean {
+  const hydrated = useHydrated();
+  return hydrated && Platform.OS === 'web' && typeof window !== 'undefined' && !!window.matchMedia
+    ? window.matchMedia('(hover: hover) and (pointer: fine)').matches
+    : false;
 }
 
 // The reference site switches its type scale at 560/561px (max-width:560 reads as

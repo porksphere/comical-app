@@ -1,5 +1,8 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useInSettingsPane } from '@/lib/settings-pane';
+
+
 import { BottomTabInset, SettingsGutter, SettingsTopGap, Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 
@@ -23,6 +26,13 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
 export function useSettingsScrollPadding() {
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
+  // In the settings modal the screen has neither of the things this reserves room for: its `TopBar`
+  // stands down (see `settings-pane`) and there is no tab bar under the panel. Paying for them
+  // anyway left a bar's worth of empty space above the first row and a tab bar's worth below.
+  const inPane = useInSettingsPane();
+  if (inPane) {
+    return { paddingTop: SettingsTopGap, paddingBottom: Spacing.five, paddingHorizontal: SettingsGutter };
+  }
   return {
     // Same value `useTopBarInset()` returns — the tab screen and the pushed screens have the same
     // bar, so they get the same inset without one of them having to know which it is.

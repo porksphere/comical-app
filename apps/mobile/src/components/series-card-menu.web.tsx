@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-n
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { useAnchoredOverlay } from '@/components/overlay/overlay';
 import { SeriesActionsMenu } from '@/components/series-card-actions-menu';
-import { Spacing } from '@/constants/theme';
+import { ContinuousCorner, Spacing } from '@/constants/theme';
 import type { SeriesEntry } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -88,6 +88,7 @@ const styles = StyleSheet.create({
     right: Spacing.one,
     width: 28,
     height: 28,
+    ...ContinuousCorner,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',

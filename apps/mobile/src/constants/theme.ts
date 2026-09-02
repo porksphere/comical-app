@@ -5,7 +5,7 @@
 
 import '@/global.css';
 
-import { Platform } from 'react-native';
+import { Platform, type ImageStyle, type ViewStyle } from 'react-native';
 
 export const Colors = {
   light: {
@@ -17,6 +17,26 @@ export const Colors = {
     backgroundPanel: '#F7F7F9',
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
+    /**
+     * The RAISED surface ladder — an overlay's panel and the rows on it.
+     *
+     * Separate from `backgroundPanel` because a floating surface has a different job from an inset
+     * one: `backgroundPanel` sits INSIDE the page and only has to be told apart from it, while an
+     * overlay sits OVER the page and has to read as a thing in front of it. The inset tiering was
+     * doing neither well — on dark, #17181b on a #000000 page is about a 6% lift, so a menu's
+     * boundary was very nearly invisible and it read as a hole rather than a card.
+     *
+     * The dark values are sampled from iOS's own raised sheet (page #1C1C1D, card #2C2C2D, divider
+     * #404042): a 16-point lift, and pure neutral rather than the blue-leaning inset tokens. Light
+     * goes the other way and lands on white, because a raised surface on a light page is lighter
+     * than it — which on a white page means the shadow, not the fill, is what separates them.
+     */
+    overlaySurface: '#FFFFFF',
+    overlayHover: '#F0F0F3',
+    overlaySelected: '#E0E1E6',
+    /** The panel's own edge. Stronger than `barHairline`, which divides two things already on the
+     *  same plane; this one has to hold a white panel off a white page. */
+    overlayHairline: '#D8D9DF',
     textSecondary: '#60646C',
     // Shared accent + chrome tokens (mirrored in `dark`). Used by cards, badges,
     // chips and the series action buttons so colors aren't re-hardcoded per file.
@@ -68,6 +88,13 @@ export const Colors = {
     backgroundPanel: '#17181b',
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
+    // The raised ladder — see `light.overlaySurface` for what these are and where they come from.
+    // #2C2C2D is iOS's own raised card and #404042 its divider; the two steps between them are the
+    // row's hover and selection, which an iOS settings list has no need for and a menu does.
+    overlaySurface: '#2C2C2D',
+    overlayHover: '#3A3A3C',
+    overlaySelected: '#47474A',
+    overlayHairline: '#404042',
     textSecondary: '#B0B4BA',
     accent: '#3478F6',
     accentHover: '#5A90FF',
@@ -128,6 +155,40 @@ export const Fonts = Platform.select({
   },
 });
 
+/**
+ * iOS's continuous corner curve — the superellipse Apple draws instead of a circular arc, so a
+ * corner leaves the straight edge gradually rather than at a tangent.
+ *
+ * **iOS gets the real thing; web gets the closest CSS has; Android gets nothing.** `borderCurve`
+ * sets `CALayer.cornerCurve`, so on iOS this is Apple's own curve — a circular arc spliced to
+ * Bezier segments that ramp curvature up from the straight edge. It isn't in Android's view config,
+ * so there it is ignored.
+ *
+ * The web value is NOT that shape. `squircle` is `superellipse(2)`, a true superellipse of exponent
+ * 4, and Apple's corner is not a superellipse at all — the arc-to-edge transition differs, which is
+ * the part that reads as iOS softness. Nothing available on the web is exact (the clip-path
+ * libraries draw Figma's construction, also not Apple's, and clip borders and shadows besides), so
+ * this is the closest analogue rather than a match.
+ *
+ * `cornerShape` is not a React Native style prop, and doesn't need to be: react-native-web's style
+ * compiler hyphenates any key it doesn't recognise straight into CSS, so this reaches the DOM as
+ * `corner-shape: squircle`. That is a real property in Chromium 139+; Safari and Firefox drop the
+ * declaration and keep the ordinary round corner, which is the whole fallback story — there is
+ * nothing to detect and nothing to polyfill. Unlike the SVG-clip-path trick usually used for those
+ * browsers, it also shapes borders and shadows rather than clipping them, which our popover's
+ * hairline and shadow both need.
+ *
+ * Pair it with a radius that already reads as rounded, and expect it to read SQUARER than the same
+ * radius does circular: the curve keeps more of the corner (measured at 3x, a 16pt corner loses 26
+ * device-px of area against a circular corner's 65). The effect scales with the radius squared, so
+ * it is worth having on a panel and nearly invisible on an 8pt row highlight.
+ */
+export const ContinuousCorner = Platform.select({
+  ios: { borderCurve: 'continuous' },
+  web: { cornerShape: 'squircle' },
+  default: {},
+}) as ViewStyle & ImageStyle;
+
 export const Spacing = {
   half: 2,
   one: 4,
@@ -179,9 +240,49 @@ export const TopLevelGutter = Spacing.three;
  * native (iOS/Android) a phone or tablet fills its own screen; there's no desktop margin to reclaim, so
  * capping the content to 1200 there just leaves a weird border (most visible on an iPad). Native returns
  * 0 (full device width). Callers add their own edge gutter on top of this (`TopLevelGutter` for the
- * card surfaces). */
+ * card surfaces).
+ *
+ * Takes the CONTENT width (`useContentWidth()`), not the window's: the sidebar is already subtracted
+ * there, so subtracting it again here would double-count it and pull every top-level view 120pt left
+ * of centre. */
 export const topLevelCenterInset = (width: number): number =>
   Platform.OS === 'web' ? Math.max(0, (width - MaxTopLevelWidth) / 2) : 0;
+
+/**
+ * The side navigation, on viewports wide enough for it.
+ *
+ * Three layouts, not two: a bottom bar on phones, the compact top-right icon row in between, and a
+ * labelled sidebar once there's width to spare. The sidebar REPLACES the top row rather than joining
+ * it — two nav surfaces at once reads as a mistake.
+ *
+ * `SidebarBreakpoint` is `MaxTopLevelWidth - 160`, not a round number picked by eye: below it the
+ * sidebar would eat into content that hasn't yet reached its max width, so the grid loses a column
+ * to gain a nav rail. Above it the content column is already capped and the sidebar takes space the
+ * page was leaving as margin anyway.
+ */
+/** The rail's DEFAULT width. The live value is a preference — see `use-sidebar-width`. */
+export const SidebarWidth = 240;
+export const SidebarBreakpoint = MaxTopLevelWidth - 160;
+
+/**
+ * How far the left nav insets content at this width — 0 when the sidebar isn't showing.
+ *
+ * A pure function of width, because the sidebar's presence really is derived from the viewport and
+ * nothing else. Where it applies is a separate question and NOT derivable from width — only the tab
+ * screens sit inside the padded slot, while search, results, series and the settings stack cover the
+ * rail — so exactly one caller subtracts this (`app-tabs`, feeding `ContentWidthProvider`) and every
+ * layout consumer reads the answer from `useContentWidth()`. Subtracting it a second time anywhere
+ * downstream double-counts the rail.
+ *
+ * NOT web-gated, unlike `topLevelCenterInset`: a landscape iPad is exactly the case the sidebar is
+ * for, and the padding has to apply there even though native content isn't width-capped.
+ *
+ * `railWidth` is a parameter, not a read of the store, so this stays a pure function of its inputs —
+ * and so the BREAKPOINT never depends on it. Deriving "is the rail showing" from a width the user
+ * can drag would let a resize flip the layout out from under them.
+ */
+export const navInsetFor = (width: number, railWidth: number = SidebarWidth): number =>
+  width >= SidebarBreakpoint ? railWidth : 0;
 /** Standard height of a tappable row — the filter bar's own controls
  *  (`CONTROL_HEIGHT` in filter-types.ts) and every selectable list row inside
  *  an overlay (genre/tag checkboxes, bridge/page picker rows, …), so a row

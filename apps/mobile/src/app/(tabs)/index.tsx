@@ -12,12 +12,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { DesktopNavWidth } from '@/components/app-tabs';
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ContentFeed } from '@/components/content-feed';
 import { SearchIcon } from '@/components/icons/ui-icons';
+import { SearchPill } from '@/components/search-pill';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
 import { BridgeThumbSize, Selector } from '@/components/selector';
@@ -58,6 +58,7 @@ import { COMICAL_BRIDGE_ID, COMICAL_ICON, isComicalBridge, useSelectedBridge } f
 import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
 import type { Bridge, BridgeList } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
+import { useHasSidebar } from '@/hooks/use-content-width';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
@@ -598,6 +599,9 @@ export default function BrowseScreen() {
   // Desktop shows an always-visible search pill in the top bar; mobile shows just a search icon.
   // Both open the pushed Search screen (search field in its own top bar, filters + results below).
   const isLargeScreen = useIsLargeScreen();
+  // Asked of the layout, not derived from width: only this subtree has the rail, and the answer has
+  // to be the same latch that decided to render it (see `navInsetFor`).
+  const railNav = useHasSidebar();
   const openSearch = () => router.push('/search');
   // Column count for the terminal-grid row chunking + skeletons (buildHomeRows). ContentFeed/SeriesGrid
   // derive their own full layout (incl. the rail viewport) from the same hook, so nothing can disagree.
@@ -691,17 +695,22 @@ export default function BrowseScreen() {
             />
           </Pressable>
         ) : null}
-        <Selector
-          testID="browse.bridge-selector"
-          title="Bridge"
-          value={currentBridge?.id ?? ''}
-          options={visibleBridges.map((b) => b.id)}
-          onChange={selectBridge}
-          size="subtitle"
-          thumbnails={bridgeThumbnails}
-          sources={COMICAL_SOURCES}
-          labels={bridgeLabels}
-        />
+        {/* The rail lists the bridges when it's showing, so this would be a second control for one
+            selection sitting a few pixels from the first. The THUMBNAIL above stays either way —
+            it's the NSFW press-and-hold target, not decoration, and that has nowhere else to go. */}
+        {!railNav && (
+          <Selector
+            testID="browse.bridge-selector"
+            title="Bridge"
+            value={currentBridge?.id ?? ''}
+            options={visibleBridges.map((b) => b.id)}
+            onChange={selectBridge}
+            size="subtitle"
+            thumbnails={bridgeThumbnails}
+            sources={COMICAL_SOURCES}
+            labels={bridgeLabels}
+          />
+        )}
         <Selector
           testID="browse.page-selector"
           title="Page"
@@ -711,10 +720,15 @@ export default function BrowseScreen() {
           size="subtitle"
           labels={pageLabels}
         />
-        {isLargeScreen ? (
-          // Desktop: an always-visible search pill in the middle of the bar. Pressing it opens the
-          // (blank) Search screen — real typing happens there. `searchPillWrap`'s right margin
-          // reserves room for the desktop tab-icon nav overlaid at the row's right edge (app-tabs).
+        {isLargeScreen && railNav ? (
+          // Wide: the shared trailing control every content tab uses (see `search-pill`). No right
+          // margin — the icon nav the centred version reserved room for doesn't exist at this width.
+          <View style={styles.searchPillTrailing}>
+            <SearchPill testID="browse.search-pill" onPress={openSearch} />
+          </View>
+        ) : isLargeScreen ? (
+          // Desktop below the rail breakpoint: unchanged — a centred pill, with the right margin
+          // still reserving room for the top-right icon nav.
           <View style={styles.searchPillWrap}>
             <Pressable
               testID="browse.search-pill"
@@ -1030,14 +1044,18 @@ const styles = StyleSheet.create({
   cell: {},
   // Desktop search pill: takes the middle of the selector row (flex), capped so it reads as a
   // search bar, with a right margin reserving space for the desktop tab-icon nav (app-tabs).
-  // DesktopNavWidth is the nav's actual rendered width — a hardcoded 200px here previously left
+  // No margin: the top-right icon row this used to clear no longer exists at any width, so the pill
+  // simply centres.
   // only ~14px of clearance (measured), which is how a near-identical overlap surfaced on the
   // Library screen's own trailing icons once they needed the same reservation (see
   // tab-title-bar.tsx's `rightDesktop`).
   searchPillWrap: {
     flex: 1,
     alignItems: 'center',
-    marginRight: DesktopNavWidth + Spacing.four,
+  },
+  searchPillTrailing: {
+    flex: 1,
+    alignItems: 'flex-end',
   },
   searchPill: {
     width: '100%',

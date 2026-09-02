@@ -1,6 +1,7 @@
 import { CONTRACT_VERSION, parseBridgeId } from '@comical/contract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+
+import { useLocalSearchParams } from '@/lib/nav';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { RetryBlock } from '@/components/retry-block';

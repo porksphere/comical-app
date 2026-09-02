@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+
 import { useMemo, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,7 +31,7 @@ import { useBridgeListsResolver } from '@/hooks/use-custom-page-rows';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticSelection } from '@/lib/haptics';
-import { useRouter } from '@/lib/nav';
+import {useLocalSearchParams, useRouter} from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
 const IS_WEB = Platform.OS === 'web';

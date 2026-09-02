@@ -1,25 +1,23 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
-import {
-  MeasuredHeader,
-  OptionList,
-  OverlayHeading,
-  useAnchoredOverlay,
-  useOverlay,
-  useOverlayPresentation,
-} from '@/components/overlay/overlay';
+import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { RowHeight, Spacing } from '@/constants/theme';
+import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
-import { useIsCompact } from '@/hooks/use-responsive';
+import { useIsCompact, usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
 /** Size of the bridge thumbnail shown in the dropdown rows — also reused by the
  *  browse top bar so the two read at the same size. */
 export const BridgeThumbSize = 28;
+
+/** Matches the rail's own bridge thumbnail (`THUMB_SIZE` in sidebar-bridges), because on the
+ *  popover those are two views of one list. The sheet's rows are 10pt taller, so they keep the full
+ *  size — the thumb is sized to its row, not to the platform. */
+const POINTER_THUMB_SIZE = 18;
 
 type SelectorProps = {
   /** Menu heading, e.g. "Bridge" or "Page". */
@@ -59,18 +57,25 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
       {...handlers}
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
-        openAt(() => (
-          <SelectMenu
-            title={title}
-            options={options}
-            selected={value}
-            onSelect={onChange}
-            thumbnails={thumbnails}
-            sources={sources}
-            labels={labels}
-            testID={testID}
-          />
-        ))
+        openAt(
+          () => (
+            <SelectMenu
+              title={title}
+              options={options}
+              selected={value}
+              onSelect={onChange}
+              thumbnails={thumbnails}
+              sources={sources}
+              labels={labels}
+              testID={testID}
+            />
+          ),
+          // A short list opens as an anchored MENU on a phone too, not a bottom sheet — the shape
+          // the platform reaches for when a bar control changes what it is set to. A long one
+          // (plenty of installed bridges) stays a sheet, because a menu that scrolls is a list
+          // wearing a menu's chrome.
+          { popover: options.length <= MENU_MAX_ROWS },
+        )
       }>
       <ThemedText
         type={size}
@@ -108,27 +113,16 @@ function SelectMenu({
   testID: string;
 }) {
   const { closeTop } = useOverlay();
-  const presentation = useOverlayPresentation();
   return (
-    <View style={styles.menu}>
-      {/* On the popover, OverlayHeading renders nothing (the trigger already
-          names the menu) — skip the wrapper entirely there too, since
-          `styles.menu`'s flex `gap` would otherwise still reserve space
-          before an empty sibling (see filter-editors.tsx's MultiEditor). */}
-      {presentation !== 'popover' && (
-        <MeasuredHeader>
-          <OverlayHeading>{title}</OverlayHeading>
-        </MeasuredHeader>
-      )}
+    <OptionMenu title={title}>
       <OptionList>
         {options.map((opt) => (
-          <SelectRow
+          <OptionRow
             key={opt}
             testID={testId(testID, 'option', opt)}
             label={labels?.[opt] ?? opt}
             selected={opt === selected}
-            thumbnail={thumbnails ? (thumbnails[opt] ?? null) : undefined}
-            source={sources?.[opt]}
+            leading={<OptionThumb label={labels?.[opt] ?? opt} thumbnail={thumbnails ? (thumbnails[opt] ?? null) : undefined} source={sources?.[opt]} />}
             onPress={() => {
               onSelect(opt);
               closeTop();
@@ -136,57 +130,38 @@ function SelectMenu({
           />
         ))}
       </OptionList>
-    </View>
+    </OptionMenu>
   );
 }
 
-function SelectRow({
+/**
+ * The row's leading slot. Renders the slot even when this option has NO thumbnail (and nothing at
+ * all when the menu has none at all), so a list mixing bridges with and without one keeps every
+ * title starting at the same x — omitting the Image instead drops a child from the row and the
+ * labels beside it shift.
+ */
+function OptionThumb({
   label,
-  selected,
   thumbnail,
   source,
-  onPress,
-  testID,
 }: {
   label: string;
-  selected: boolean;
-  /** `undefined` when the menu has no thumbnails at all; `null` for an option
-   *  that just doesn't have one (still reserves the slot — see below). */
+  /** `undefined` when the menu has no thumbnails at all; `null` for an option that just doesn't
+   *  have one (still reserves the slot). */
   thumbnail?: string | null;
-  /** A local image module for this option (e.g. Comical's bundled logo); takes precedence over `thumbnail`. */
   source?: number;
-  onPress: () => void;
-  testID: string;
 }) {
-  const theme = useTheme();
-  const { hovered, handlers } = useHover();
+  const pointer = usePointerFine();
+  if (thumbnail === undefined && source === undefined) return null;
   return (
-    <Pressable testID={testID} onPress={onPress} {...handlers}>
-      <ThemedView
-        type="backgroundElement"
-        style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        {/* Reserve the thumbnail's slot even when this option has none, so a
-            list mixing bridges with/without a thumbnail keeps every title
-            starting at the same x — conditionally omitting the Image instead
-            (as this used to) drops a child from the row, and `space-between`
-            reflows the remaining two to fill the gap, pushing untitled rows'
-            labels flush left while thumbnailed rows' labels sit shifted right. */}
-        {(thumbnail !== undefined || source !== undefined) && (
-          <BridgeThumb
-            key={thumbnail ?? label}
-            source={source}
-            uri={thumbnail ?? undefined}
-            label={label}
-            size={BridgeThumbSize}
-            style={styles.optionThumb}
-          />
-        )}
-        <ThemedText style={styles.optionLabel} numberOfLines={1}>
-          {label}
-        </ThemedText>
-        <View style={[styles.dot, selected && styles.dotOn]} />
-      </ThemedView>
-    </Pressable>
+    <BridgeThumb
+      key={thumbnail ?? label}
+      source={source}
+      uri={thumbnail ?? undefined}
+      label={label}
+      size={pointer ? POINTER_THUMB_SIZE : BridgeThumbSize}
+      style={pointer ? styles.pointerOptionThumb : styles.optionThumb}
+    />
   );
 }
 
@@ -205,6 +180,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
     paddingHorizontal: Spacing.one,
     paddingVertical: Spacing.half,
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
   },
   // React Native's `flexShrink` defaults to 0 (unlike web CSS's 1), so without
@@ -233,41 +209,12 @@ const styles = StyleSheet.create({
   caretSm: {
     fontSize: 13,
   },
-  // No `flex: 1` (see `sheetBody` in overlay.tsx for why) — this just hugs
-  // its `MeasuredHeader`/`OptionList` content, both of which already size
-  // themselves to a real number.
-  menu: {
-    gap: Spacing.three,
-  },
-  // Same height as the filter bar's own rows (`CONTROL_HEIGHT` in
-  // filter-types.ts) so a bridge/page picker row reads at the same size as
-  // every other tappable row in the app.
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    height: RowHeight,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  // `flex: 1` (not `row`'s old `justifyContent: 'space-between'`) so the label
-  // always starts right after the thumbnail slot and always ends right before
-  // the dot, regardless of whether the thumbnail slot is rendered this row.
-  optionLabel: {
-    flex: 1,
-  },
-  dot: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: 'rgba(128,128,128,0.5)',
-  },
-  dotOn: {
-    borderColor: '#3478F6',
-    backgroundColor: '#3478F6',
-  },
   optionThumb: {
     borderRadius: 6,
+  },
+  // Same corner RATIO as the full-size thumb (6 on 28), so the smaller tile is the same shape
+  // rather than a lozenge — the rule sidebar-bridges' own thumb follows.
+  pointerOptionThumb: {
+    borderRadius: 4,
   },
 });

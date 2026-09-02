@@ -4,6 +4,7 @@ import { ImageStyle, StyleProp, StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { ContinuousCorner } from '@/constants/theme';
 
 /** A bridge's thumbnail: the image if `uri` is set and loads, otherwise a
  *  fallback of the bridge name's first letter — so every bridge reads
@@ -42,12 +43,15 @@ export function BridgeThumb({
   if (!imgSource || failed) {
     const letter = label.trim().charAt(0).toUpperCase() || '?';
     return (
-      <ThemedView type="backgroundSelected" style={[boxStyle, styles.fallback, style]}>
+      <ThemedView type="backgroundSelected" style={[boxStyle, ContinuousCorner, styles.fallback, style]}>
         <ThemedText style={{ fontSize: size * 0.46, fontWeight: '700' }}>{letter}</ThemedText>
       </ThemedView>
     );
   }
-  return <Image source={imgSource} style={[boxStyle, style]} onError={() => setFailed(true)} />;
+  // The corner CURVE, not the radius — every caller sets its own radius and keeps it; this only
+  // says how that corner is drawn (see `ContinuousCorner`). Here rather than at the six call sites
+  // because a bridge's tile should be the same shape wherever it appears.
+  return <Image source={imgSource} style={[boxStyle, ContinuousCorner, style]} onError={() => setFailed(true)} />;
 }
 
 const styles = StyleSheet.create({

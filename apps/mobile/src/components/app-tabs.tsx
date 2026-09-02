@@ -1,3 +1,4 @@
+import { usePathname } from 'expo-router';
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
 import { Bell, Compass, History, Library, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -13,12 +14,25 @@ import {
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppSidebar, SidebarGroup, SidebarItem } from '@/components/app-sidebar';
+import { SidebarBridges } from '@/components/sidebar-bridges';
+import { SidebarCollections } from '@/components/sidebar-collections';
+import { SettingsModal } from '@/components/settings/settings-modal';
+import { SeriesPane } from '@/components/series-pane';
+import { SidebarResizer } from '@/components/sidebar-resizer';
+import { COMICAL_BRIDGE_ID, setSelectedBridge } from '@/data/selected-bridge';
+import { setSelectedCollection } from '@/data/selected-collection';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
-import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { useHover } from '@/hooks/use-hover';
+import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
+import { ContentWidthProvider } from '@/hooks/use-content-width';
+import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
+import { SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
+import { openSettingsModal } from '@/lib/settings-modal';
+import { closeSeriesPane, setSeriesPaneAvailable, useSeriesPane } from '@/lib/series-pane';
+import { setSidebarDragWidth, sidebarDragWidth } from '@/lib/sidebar-drag';
 import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
 import { COMMIT_DISTANCE, dismissThreshold, SETTLE_MS, TOP_GUARD } from '@/lib/slide-step';
@@ -36,27 +50,65 @@ import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility'
 // no separate nav bar).
 /** `noRecede`: this tab's rows reorder as you read, and one that re-renders under the scaled
  *  backdrop measures short — see `setBackdropRecede`. */
-const TABS: { name: string; href: string; label: string; Icon: LucideIcon; noRecede?: boolean }[] = [
+/** `Scope`: the group of things this destination can be narrowed to — bridges for Browse,
+ *  collections for Library. Rendered in the SIDEBAR ONLY, nested under its own row and only while
+ *  that row is the active one. A scope list is meaningless anywhere but the destination it scopes:
+ *  shown unconditionally, Bridges sat under Settings offering to re-point a tab you can't see. */
+const TABS: {
+  name: string;
+  href: string;
+  label: string;
+  Icon: LucideIcon;
+  noRecede?: boolean;
+  Scope?: React.ComponentType<{ active?: boolean; onNavigate?: () => void }>;
+  /** What pressing the DESTINATION row means for its scope: back to the front door. Browse's rows
+   *  are bridges and Library's are collections, so "go to Browse" with no further qualification is
+   *  the aggregate, and "go to Library" is the whole library — the same rows their groups already
+   *  lead with. Without this the row navigated but left whichever bridge or collection you were last
+   *  in selected, so the tab you asked for and the scope you got disagreed.
+   *
+   *  Rail only: below the breakpoint the same press is a bottom-bar tab, where there is no visible
+   *  scope list and silently re-pointing Browse would be a change with nothing on screen to explain
+   *  it. */
+  selectDefault?: () => void;
+}[] = [
   // A compass, not a grid: Browse is the discover surface, and `LayoutGrid` both named a layout
   // this tab doesn't always have (its home is rails) and was already Settings' Custom Pages mark.
   // The compass came off Trackers to get here — see `TrackersIcon` before moving it back.
-  { name: 'browse', href: '/', label: 'Browse', Icon: Compass },
-  { name: 'library', href: '/library', label: 'Library', Icon: Library },
+  {
+    name: 'browse',
+    href: '/',
+    label: 'Browse',
+    Icon: Compass,
+    Scope: SidebarBridges,
+    selectDefault: () => setSelectedBridge(COMICAL_BRIDGE_ID),
+  },
+  {
+    name: 'library',
+    href: '/library',
+    label: 'Library',
+    Icon: Library,
+    Scope: SidebarCollections,
+    selectDefault: () => setSelectedCollection(null),
+  },
   { name: 'history', href: '/history', label: 'History', Icon: History, noRecede: true },
   { name: 'activity', href: '/activity', label: 'Activity', Icon: Bell, noRecede: true },
   { name: 'settings', href: '/settings', label: 'Settings', Icon: Settings },
 ];
 
-const MOBILE_BREAKPOINT = 768;
+// No mid-size layout. A top-right icon row used to sit between the bar and the rail, and it was the
+// only nav that OVERLAID content: every screen had to reserve `DesktopNavWidth` in its own trailing
+// slot so the row's icons didn't land on the screen's controls and swallow their taps. That
+// reservation was a standing coupling between the nav and every bar in the app, and the bug it
+// guarded against was found the hard way. The bar already works at these widths, so the row and the
+// whole reservation mechanism are gone.
 
-// Each desktop nav icon is a 22px Icon inside `iconButton`'s Spacing.one (4px) padding on every
-// side, laid out in `topNav`'s Spacing.three (16px) gap — see the styles below. Kept as a formula
-// (not a guessed constant) so a screen's own trailing header controls can reserve exactly enough
-// room to clear this row on wide/desktop web, rather than drifting out of sync with a hardcoded
-// pixel value the way index.tsx's old `searchPillWrap.marginRight` did (verified too narrow —
-// left only ~14px clearance — when the same gap was needed for TabTitleBar's `right` slot).
-const DESKTOP_NAV_ICON_SIZE = 22 + Spacing.one * 2;
-export const DesktopNavWidth = TABS.length * DESKTOP_NAV_ICON_SIZE + (TABS.length - 1) * Spacing.three;
+/** Web puts Settings in a modal opened from the rail's footer instead of a destination row: it is a
+ *  place you go, change one thing and leave, not somewhere you navigate to. Native keeps the tab. */
+const SETTINGS_AS_MODAL = Platform.OS === 'web';
+/** Same gate as the settings modal, and for the same reason: the pane is a web layout, not a wide
+ *  one. A landscape iPad shows the rail and still opens a series full-screen — see lib/series-pane. */
+const SERIES_AS_PANE = Platform.OS === 'web';
 
 // Rounding slack for "is this offset at the content end?" — see the bounce guard in the scroll
 // listener below.
@@ -243,6 +295,7 @@ const HIDE_OFFSET_SLACK = 2;
 export default function AppTabs() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const pathname = usePathname();
   const theme = useTheme();
 
   // Static web export (`web.output: "static"`) prerenders every route on the
@@ -257,7 +310,37 @@ export default function AppTabs() {
   const [hydrated, setHydrated] = useState(false);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the point IS the post-hydration render: React's own remedy for an SSR mismatch, and the cascade is the fix rather than a cost.
   useEffect(() => setHydrated(true), []);
-  const isMobile = !hydrated || width < MOBILE_BREAKPOINT;
+  const isMobile = !hydrated || width < SidebarBreakpoint;
+  // Two layouts, not three: the bar below, the rail above. There is no in-between any more — see the
+  // note at MOBILE_BREAKPOINT's removal below.
+  const sidebar = !isMobile;
+  // The rail's width is a preference now, so the ONE number that pads the slot is read rather than
+  // assumed. `navInsetFor` takes it as an argument for the same reason it always did: so the
+  // breakpoint above can't depend on a value the user can drag.
+  const collapsed = useSidebarCollapsed();
+  const draggedWidth = useSidebarWidth();
+  // Collapsed is a STATE, not a width: the dragged width is remembered underneath it, so expanding
+  // comes back to what you set rather than to whatever the collapsed rail happened to be.
+  const railWidth = collapsed ? SidebarCollapsedWidth : draggedWidth;
+  // ONE number for the space the rail takes: it pads the slot AND it is what the content width has
+  // subtracted, so the two cannot disagree about how much room the rail took. Recomputing the
+  // provider's value from `navInsetFor(width)` instead would drift for exactly one render —
+  // pre-hydration `isMobile` is forced true while `width` is already real, so the slot would carry
+  // no padding while the maths had already taken 240 off.
+  const contentInset = sidebar ? navInsetFor(width, railWidth) : 0;
+  // The pane exists only where the rail does — below that the window is the series page's, which is
+  // what the full-screen route already is. Published rather than derived at the call sites, because
+  // the router guard that hands `/series` over runs outside React (see lib/series-pane).
+  const paneAvailable = SERIES_AS_PANE && sidebar;
+  useEffect(() => setSeriesPaneAvailable(paneAvailable), [paneAvailable]);
+  const seriesPaneOpen = useSeriesPaneOpen();
+  // The rail's edge follows the pointer on the UI thread; the content's inset can't (see
+  // `sidebar-drag`), so it is committed at column boundaries instead. At rest the two are the same
+  // number, and this is what keeps them that way — after a release, after a collapse, after a
+  // width restored from storage.
+  useEffect(() => {
+    setSidebarDragWidth(railWidth);
+  }, [railWidth]);
 
   // Fade the mobile bottom bar away while scrolling down (web only - see hook);
   // bringing it back on upward scroll, at the top, or when a tab is touched (`reveal`).
@@ -280,11 +363,6 @@ export default function AppTabs() {
     transform: [{ translateY: tabBarProgress.value * tabBarHideOffset.value }],
   }));
 
-  // Pin the desktop nav to the right edge of the constrained content (the same
-  // MaxTopLevelWidth the views centre within), not the raw screen edge, so it
-  // lines up with the Browse selector bar on wide viewports.
-  const navRight = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
-
   // The buttons actually drawn. No `href`: these address the routes registered by TAB_REGISTRATION,
   // which is what a `TabTrigger` outside a `TabList` is for. Memoized because they're the expensive
   // part of this tree and nothing about them changes while the bar slides.
@@ -292,13 +370,60 @@ export default function AppTabs() {
     () =>
       TABS.map((tab) => (
         <TabTrigger key={tab.name} name={tab.name} asChild>
-          <TabButton mobile={isMobile} Icon={tab.Icon} onInteract={reveal} routeName={tab.name} noRecede={tab.noRecede}>
+          <TabButton
+            mobile={isMobile}
+            sidebar={sidebar}
+            scope={Boolean(tab.Scope)}
+            compact={collapsed}
+            selectDefault={tab.selectDefault}
+            Icon={tab.Icon}
+            onInteract={reveal}
+            routeName={tab.name}
+            noRecede={tab.noRecede}>
             {tab.label}
           </TabButton>
         </TabTrigger>
       )),
-    [isMobile, reveal],
+    [isMobile, sidebar, reveal, collapsed],
   );
+
+  // The rail's children: the same triggers, each followed by its own scope group. Which groups are
+  // OPEN is independent of which tab is active, so more than one shows at once — the group is always
+  // rendered and `SidebarGroup` animates it to zero height when closed. A FLAT array with keys, not
+  // Fragments — `Tabs` walks its children by type and descends through Fragments (see
+  // TAB_REGISTRATION), so a flat list keeps this chrome plainly skippable. The groups are built here
+  // rather than inside `AppSidebar` because only this file knows the tab table they hang off.
+  // Exactly ONE row in the rail is selected at a time, and it belongs to the tab you are on. A scope
+  // group whose destination isn't active shows its rows unhighlighted: the bridge it lists is still
+  // the one Browse would show, but Browse isn't what you're looking at, so claiming it as the current
+  // selection puts two (or three) filled rows on screen at once. Exact pathname match, no fallback —
+  // on a pushed screen over the tabs nothing in the rail is current.
+  const activeTab = TABS.find((t) => t.href === pathname)?.name;
+  const sidebarChildren = useMemo(
+    () =>
+      TABS.flatMap((tab, i) => {
+        // Settings is a footer BUTTON in the rail on web (it opens a modal, it isn't a place), so its
+        // row is dropped here. The registration TabList below still lists it — the route has to keep
+        // existing, and on native it is still an ordinary destination.
+        if (SETTINGS_AS_MODAL && tab.name === 'settings') return [];
+        const row = triggers[i];
+        // Collapsed, there is no label for a group to sit under and collections have no icon of their
+        // own, so the rail shows destinations only.
+        if (!tab.Scope || collapsed) return [row];
+        return [
+          row,
+          <SidebarGroup key={`${tab.name}-scope`} name={tab.name} testID={`sidebar.group.${tab.name}`}>
+            {/* Same reason as the destination rows above: a scope picked in the rail changes what
+                the covered screen shows, so the pane has to get out of its way. */}
+            <tab.Scope active={activeTab === tab.name} onNavigate={closeSeriesPane} />
+          </SidebarGroup>,
+        ];
+      }),
+    [triggers, activeTab, collapsed],
+  );
+
+  // The rail's own width, read straight off the shared value so a drag moves it without a render.
+  const railStyle = useAnimatedStyle(() => ({ width: sidebarDragWidth.value }));
 
   // See the wrapper below — both rest at identity/transparent unless the series page is open.
   const seriesReaderBackdropStyle = useSeriesReaderBackdropStyle();
@@ -310,70 +435,119 @@ export default function AppTabs() {
     // instead (see lib/series-backdrop.ts). With no series page open the transform is identity and
     // the dim fully transparent, so this costs nothing at rest.
     <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
-      <Tabs style={styles.tabs}>
-        {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
-            appearing in one frame — see `tab-slot-fade`. */}
-        <TabSlot style={styles.slot} renderFn={renderFadingTabScreen} />
+      {/* Everything under `Tabs` lays out inside the slot's padding, so this is the width those
+          screens actually have. It wraps `Tabs` from OUTSIDE — a provider renders no view, but
+          putting it between `Tabs` and `TabSlot` would still break the child-type discovery the
+          slot and the registration TabList both depend on. The stack screens that cover the rail
+          (search, results, series, settings/*) are not in this subtree and keep the window. */}
+      <ContentWidthProvider width={width - contentInset} sidebar={sidebar}>
+        <Tabs style={styles.tabs}>
+          {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
+              appearing in one frame — see `tab-slot-fade`. */}
+          {/* Padded, not overlaid: the sidebar is a real column, so content centres in what's left.
+              `TabSlot` stays a DIRECT child of `Tabs` — wrapping it in a row View alongside the rail
+              would read better, but the navigator discovers its slot by child type the same way it
+              discovers TabList (see TAB_REGISTRATION), and nesting it yields a blank screen. */}
+          <TabSlot style={[styles.slot, { paddingLeft: contentInset }]} renderFn={renderFadingTabScreen} />
 
-        {/* Desktop: icon-only nav pinned to the top-right, aligned with the Browse selector bar row
-            (top = its paddingTop, height = the subtitle line-height so the icons centre against the
-            selectors). */}
-        {!isMobile && <View style={[styles.topNav, { top: insets.top, right: navRight }]}>{triggers}</View>}
+          {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
+          {sidebar && (
+            <Animated.View style={[styles.sidebarWrap, railStyle]}>
+              <AppSidebar
+                top={insets.top}
+                collapsed={collapsed}
+                settingsButton={
+                  SETTINGS_AS_MODAL
+                    ? {
+                        testID: 'sidebar.settings',
+                        label: 'Settings',
+                        onPress: openSettingsModal,
+                        icon: <Settings size={20} color={theme.textSecondary} />,
+                      }
+                    : undefined
+                }>
+                {sidebarChildren}
+              </AppSidebar>
+              {/* Nothing to drag on an icon rail — its width is the state, not a preference. */}
+              {collapsed ? null : <SidebarResizer width={railWidth} viewport={width} />}
+            </Animated.View>
+          )}
 
-        {isMobile && (
-          <Animated.View
-            onLayout={onBarLayout}
-            style={[
-              styles.bottomBar,
-              Platform.OS === 'web' && FADE_TRANSITION,
-              {
-                // The same flat, fully opaque `theme.background` every top bar paints (see
-                // `BarSurface`) — the bar reads as the page continuing, not as a surface over it.
-                // Content that scrolls behind it is simply hidden; this used to be a frosted
-                // `BarBlur` it showed through.
-                backgroundColor: theme.background,
-                borderTopColor: theme.barHairline,
-                paddingBottom: Math.max(insets.bottom, Spacing.two),
-                // Web: fade to a faint ghost (still touchable, so tapping where it sits brings it
-                // back) while scrolling down. Native: slide the whole bar down out of view instead
-                // (`slideStyle`), continuously tracking scroll position X/Twitter-style. Either way
-                // the bar is an absolute overlay (see styles.bottomBar), so screen content scrolls
-                // behind it rather than being clipped by a dead strip — and, now that the bar is
-                // opaque, is revealed by the bar getting out of the way.
-                opacity: hidden ? FADED_OPACITY : 1,
-                bottom: 0,
-              },
-              // Slide via transform (compositor) rather than animating `bottom` (layout), and via an
-              // animated style rather than a re-render: the bar is repositioned on every scroll
-              // frame. translateY > 0 pushes it down off-screen, by the bar's own measured height
-              // (see onBarLayout) so it stops right at the edge.
-              slideStyle,
-            ]}>
-            {triggers}
-          </Animated.View>
-        )}
+          {isMobile && (
+            <Animated.View
+              onLayout={onBarLayout}
+              style={[
+                styles.bottomBar,
+                Platform.OS === 'web' && FADE_TRANSITION,
+                {
+                  // The same flat, fully opaque `theme.background` every top bar paints (see
+                  // `BarSurface`) — the bar reads as the page continuing, not as a surface over it.
+                  // Content that scrolls behind it is simply hidden; this used to be a frosted
+                  // `BarBlur` it showed through.
+                  backgroundColor: theme.background,
+                  borderTopColor: theme.barHairline,
+                  paddingBottom: Math.max(insets.bottom, Spacing.two),
+                  // Web: fade to a faint ghost (still touchable, so tapping where it sits brings it
+                  // back) while scrolling down. Native: slide the whole bar down out of view instead
+                  // (`slideStyle`), continuously tracking scroll position X/Twitter-style. Either way
+                  // the bar is an absolute overlay (see styles.bottomBar), so screen content scrolls
+                  // behind it rather than being clipped by a dead strip — and, now that the bar is
+                  // opaque, is revealed by the bar getting out of the way.
+                  opacity: hidden ? FADED_OPACITY : 1,
+                  bottom: 0,
+                },
+                // Slide via transform (compositor) rather than animating `bottom` (layout), and via an
+                // animated style rather than a re-render: the bar is repositioned on every scroll
+                // frame. translateY > 0 pushes it down off-screen, by the bar's own measured height
+                // (see onBarLayout) so it stops right at the edge.
+                slideStyle,
+              ]}>
+              {triggers}
+            </Animated.View>
+          )}
 
-        {/* Routes only, no UI — see the note above `AppTabs`. Inline, NOT extracted to a component:
-            the discovery walk matches on `child.type === TabList` (and descends through Fragments
-            and TabLists alone), so both a wrapping View and a wrapper component leave the navigator
-            with zero screens — expo/expo#37796. The visible chrome above is an ordinary child,
-            which that same walk simply skips. */}
-        <TabList style={styles.registration}>
-          {TABS.map((tab) => (
-            <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} />
-          ))}
-        </TabList>
-      </Tabs>
+          {/* Routes only, no UI — see the note above `AppTabs`. Inline, NOT extracted to a component:
+              the discovery walk matches on `child.type === TabList` (and descends through Fragments
+              and TabLists alone), so both a wrapping View and a wrapper component leave the navigator
+              with zero screens — expo/expo#37796. The visible chrome above is an ordinary child,
+              which that same walk simply skips. */}
+          <TabList style={styles.registration}>
+            {TABS.map((tab) => (
+              <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} />
+            ))}
+          </TabList>
+        </Tabs>
+      </ContentWidthProvider>
+      {/* Web only, and rendered here so it is inside the tabs' own tree: the modal replaces what used
+          to be a pushed route, so nothing about the router changes. */}
+      {/* Outside `Tabs` alongside the settings modal, for the same reason: it replaces what used to
+          be a pushed route, so nothing about the router changes — and inside the tabs' own tree, so
+          an overlay opened from within it (a chapter menu, a selector) still paints over it.
+          It covers the CONTENT REGION and nothing else: the rail stays lit and usable beside it, so
+          the series is over the grid you opened it from rather than over the whole app. */}
+      {seriesPaneOpen ? <SeriesPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
+      {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
     </Animated.View>
   );
 }
 
+/** A `use`-prefixed wrapper around the pane store, and narrowed to the one fact this file needs:
+ *  the params themselves change on every series opened, and the layout only cares whether there
+ *  are any. */
+function useSeriesPaneOpen(): boolean {
+  return useSeriesPane().params !== null;
+}
+
 function TabButton({
   children,
   isFocused,
   mobile,
+  sidebar,
+  scope,
+  compact,
+  selectDefault,
   Icon,
   onInteract,
   routeName,
@@ -382,13 +556,17 @@ function TabButton({
   ...props
 }: TabTriggerSlotProps & {
   mobile?: boolean;
+  sidebar?: boolean;
+  scope?: boolean;
+  compact?: boolean;
+  selectDefault?: () => void;
   Icon: LucideIcon;
   onInteract?: () => void;
   routeName: string;
   noRecede?: boolean;
 }) {
   const theme = useTheme();
-  const { hovered, handlers } = useHover();
+  const sectionOpen = useSectionOpen(routeName);
 
   // Only the ARRIVING tab writes, so the two buttons that re-render on a switch can't race. The
   // series page opens as a sibling of the whole tab navigator, which blurs it without changing
@@ -402,6 +580,12 @@ function TabButton({
   // free anymore - see useScrollToTopOnReselect).
   const handlePress = (e: GestureResponderEvent) => {
     if (isFocused) scrollToTopFor(routeName);
+    // Only where the rail is showing the scope this resets — see `selectDefault` on the tab table.
+    if (sidebar) selectDefault?.();
+    // The rail is the one surface still visible beside an open series pane, so a destination
+    // pressed there has to reveal itself: the pane covers the content region, and a tab switch
+    // under it would look like the click did nothing. Free when no pane is open.
+    closeSeriesPane();
     onPress?.(e);
   };
 
@@ -427,28 +611,31 @@ function TabButton({
     );
   }
 
-  // Desktop: icon only (no label), tinted with the theme so it reads on the
-  // page background rather than a bar of its own.
-  const color = isFocused ? theme.text : theme.textSecondary;
-  return (
-    <Pressable
-      {...props}
-      {...handlers}
-      testID={`tab.${routeName}`}
-      onPress={handlePress}
-      accessibilityLabel={typeof children === 'string' ? children : undefined}
-      style={({ pressed }) => [
-        styles.iconButton,
-        hovered && { backgroundColor: theme.backgroundSelected },
-        pressed && styles.pressed,
-      ]}>
-      <View style={styles.iconWrap}>
-        <Icon size={22} color={color} strokeWidth={2.25} />
-        {routeName === 'activity' && <ActivityTabBadge />}
-        {routeName === 'settings' && <SettingsTabBadge />}
-      </View>
-    </Pressable>
-  );
+  // Wide: the same trigger, drawn as a labelled row. The badges are passed through rather than
+  // rebuilt so Activity/Settings keep the one implementation.
+  if (sidebar) {
+    return (
+      <SidebarItem
+        {...props}
+        testID={`tab.${routeName}`}
+        Icon={Icon}
+        label={typeof children === 'string' ? children : routeName}
+        active={isFocused}
+        scope={scope}
+        compact={compact}
+        expanded={sectionOpen}
+        onToggleScope={() => toggleSection(routeName)}
+        badge={
+          routeName === 'activity' ? <ActivityTabBadge /> : routeName === 'settings' ? <SettingsTabBadge /> : undefined
+        }
+        onPress={handlePress}
+      />
+    );
+  }
+
+  // Unreachable: `mobile` and `sidebar` now cover every width between them, so the icon-only desktop
+  // form that used to live here went with the top-right row.
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -473,14 +660,13 @@ const styles = StyleSheet.create({
     display: 'none',
   },
   // --- Desktop top-right icon nav ---
-  topNav: {
+  // Absolute so TabSlot can stay a direct child of Tabs (see the note at the slot); the slot's own
+  // paddingLeft is what actually reserves the space, so this never covers content.
+  sidebarWrap: {
     position: 'absolute',
-    // right is set inline so it tracks the constrained content edge.
-    height: DesktopTopBarHeight,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    zIndex: 10,
+    top: 0,
+    left: 0,
+    bottom: 0,
   },
   iconButton: {
     padding: Spacing.one,

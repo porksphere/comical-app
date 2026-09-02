@@ -28,8 +28,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { RowHeight, Spacing } from '@/constants/theme';
+import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { sharedPushback } from '@/lib/pushback-signal';
@@ -89,7 +88,10 @@ export function useAnchoredOverlay() {
   const [myId, setMyId] = useState<number | null>(null);
   const isOpen = myId !== null && myId === topId;
   const openAt = useCallback(
-    (render: () => ReactNode) => {
+    // `opts.popover` asks for the ANCHORED menu even on a phone, where an anchored overlay
+    // otherwise becomes a bottom sheet. A short single-select driven from a bar button is a menu on
+    // both platforms — see the note on `isPopoverItem`.
+    (render: () => ReactNode, opts?: { popover?: boolean }) => {
       if (myId !== null && myId === topId) {
         closeTop();
         return;
@@ -97,10 +99,10 @@ export function useAnchoredOverlay() {
       const node = ref.current;
       if (node && typeof node.measureInWindow === 'function') {
         node.measureInWindow((x, y, width, height) => {
-          setMyId(open(render, { x, y, width, height }));
+          setMyId(open(render, { x, y, width, height }, opts));
         });
       } else {
-        setMyId(open(render));
+        setMyId(open(render, undefined, opts));
       }
     },
     [open, closeTop, topId, myId],
@@ -240,10 +242,13 @@ const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two + Spacing.one + LIST_T
 const LIST_MIN_HEIGHT = 160;
 // Matches this file's own `handleArea` (paddingTop + handle height + paddingBottom).
 const HANDLE_AREA_HEIGHT = Spacing.two + 5 + Spacing.three;
-// Gap between a `MeasuredHeader` and the `OptionList` below it — owned by
-// each caller's own wrapper (`selector.tsx`'s `menu`, `filter-editors.tsx`'s
-// `body`), not by this file, but both use the same value.
-const HEADER_TO_LIST_GAP = Spacing.three;
+// Gap between a `MeasuredHeader` and the `OptionList` below it — drawn by the
+// caller's own wrapper (`OptionMenu`, `filter-editors.tsx`'s `body`) rather
+// than by this file, but SUBTRACTED here, so a wrapper that draws a different
+// gap silently mis-sizes the list. Exported for `OptionMenu`, which reaches
+// this total from a smaller flex `gap` plus a margin and so has to be told
+// what the total must come to.
+export const HEADER_TO_LIST_GAP = Spacing.three;
 
 /** Wraps a sheet's non-list content (title, helper text, search input, …). */
 export function MeasuredHeader({ children }: { children: ReactNode }) {
@@ -364,13 +369,20 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
     reportNeedsScroll?.(needsScrollRef.current);
   }, [reportNeedsScroll]);
 
-  const popoverPadded = presentation === 'popover' && !needsScroll;
 
   return (
     <AnimatedScrollView
       ref={sheet?.scrollRef as never}
       onScroll={onScroll}
       scrollEventThrottle={16}
+      // A list that FITS is not a scroller. Left enabled, a short menu still took a drag and
+      // rubber-banded against nothing, which reads as content hidden below the fold when there is
+      // none. `needsScroll` is the settle logic's own verdict (see `evaluate`), already measured
+      // against real layout, so this costs no extra work.
+      //
+      // The SHEET keeps it either way: its drag-to-dismiss is handed off from this scroller's
+      // offset (see SheetScroll), so disabling it there would take the sheet's gesture with it.
+      scrollEnabled={presentation === 'sheet' || needsScroll}
       onLayout={(e) => {
         scrollHeightRef.current = e.nativeEvent.layout.height;
         evaluate();
@@ -382,7 +394,9 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       }
       contentContainerStyle={
         presentation === 'popover'
-          ? [listStyles.listContentPopover, popoverPadded && listStyles.listContentPopoverPadded]
+          ? // Flush: the PANEL carries the padding (see `styles.popover`), on every platform. Both
+            // applying it stacked 32pt of empty band above and below a two-row menu.
+            listStyles.listContentPopover
           : listStyles.listContent
       }
       keyboardShouldPersistTaps="handled"
@@ -425,16 +439,14 @@ const listStyles = StyleSheet.create({
   // `gap` lives on `rowsWrapper` instead, since rows sit inside that inner
   // measuring wrapper rather than directly in this contentContainerStyle.
   listContentPopover: {},
-  // Applied alongside `listContentPopover` once the settle logic decides the
-  // content comfortably fits without scrolling.
-  listContentPopoverPadded: {
-    paddingVertical: Spacing.four,
-  },
   // Shared by both presentations — the inner View `OptionList` measures its
   // rows against, unpadded so neither presentation's fits/needs-scroll
   // decision gets thrown off by the padding it's used to decide.
+  // 8pt between rows was a sheet's, where every row was a filled button that needed separating from
+  // the next. Rows are transparent until hovered or selected now, so a gap separates nothing and
+  // only makes the list tall — the rail's own 2 is the right amount, on both presentations.
   rowsWrapper: {
-    gap: Spacing.two,
+    gap: Spacing.half,
   },
 });
 
@@ -692,6 +704,7 @@ function OverlaySheet({
 }) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const translateY = useSharedValue(height);
   const depthSV = useSharedValue(depthFromTop);
   const isTop = depthFromTop === 0;
@@ -967,7 +980,9 @@ function OverlaySheet({
               background at all, so a backgroundless rounded container never reaches it;
               this fill is uniform (square) and gets clipped to the rounded top by the
               parent, so the look is unchanged. */}
-          <ThemedView type="backgroundPanel" style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]} />
+          <View
+            style={[StyleSheet.absoluteFill, { backgroundColor: theme.overlaySurface, pointerEvents: 'none' }]}
+          />
           <GestureDetector gesture={handlePan}>
             <View style={styles.handleArea}>
               <View style={styles.handle} />
@@ -997,6 +1012,29 @@ function OverlaySheet({
 // gestures (those are sheet-only); the shared backdrop handles outside-click
 // dismissal. Long content scrolls inside via the content's own list.
 const POPOVER_WIDTH = 320;
+/**
+ * …and never more than this much of the viewport.
+ *
+ * 320 is a menu on a desktop window and most of the screen on a phone — at 390pt it was 82% of the
+ * width, which stops reading as a menu hanging off its trigger and starts reading as a panel that
+ * happens not to reach the edges. The absolute cap still wins on anything wide; this one only
+ * binds on a phone.
+ */
+const POPOVER_MAX_VIEWPORT_FRACTION = 0.72;
+
+/**
+ * How many rows a list may have and still be a MENU rather than a sheet.
+ *
+ * A menu that has to scroll is a list wearing a menu's chrome, and the platform draws the line the
+ * same way: iOS reaches for a pull-down menu when a bar button changes what it is set to, and for a
+ * sheet once the choice needs room, search, or a screen of its own. 8 rows is what fits under a top
+ * bar on the shortest phone we support without the popover clamping and scrolling.
+ *
+ * Callers pass the verdict (`openAt(..., { popover })`); this is only the number they compare
+ * against, here so the four pickers can't disagree about where the line is.
+ */
+export const MENU_MAX_ROWS = 8;
+
 const POPOVER_GAP = Spacing.one; // distance from the anchor edge
 const POPOVER_PAD = Spacing.three; // keep-off-the-viewport-edges padding
 
@@ -1018,6 +1056,7 @@ function OverlayPopover({
   children: ReactNode;
 }) {
   const { width: vw, height: vh } = useWindowDimensions();
+  const theme = useTheme();
   const [card, setCard] = useState<{ width: number; height: number } | null>(null);
   const progress = useSharedValue(0);
   const entered = useRef(false);
@@ -1081,7 +1120,7 @@ function OverlayPopover({
     }
   }, [card, progress]);
 
-  const width = Math.min(POPOVER_WIDTH, vw - POPOVER_PAD * 2);
+  const width = Math.min(POPOVER_WIDTH, vw * POPOVER_MAX_VIEWPORT_FRACTION, vw - POPOVER_PAD * 2);
   const left = Math.min(Math.max(POPOVER_PAD, anchor.x), vw - width - POPOVER_PAD);
   const spaceBelow = vh - (anchor.y + anchor.height) - POPOVER_GAP - POPOVER_PAD;
   const spaceAbove = anchor.y - POPOVER_GAP - POPOVER_PAD;
@@ -1116,9 +1155,17 @@ function OverlayPopover({
   return (
     <Animated.View
       style={[styles.popoverWrap, { left, top, width, pointerEvents: 'box-none' }, animStyle]}>
-      <ThemedView
-        type="backgroundPanel"
-        style={[styles.popover, { maxHeight }]}
+      <View
+        style={[
+          styles.popover,
+          { backgroundColor: theme.overlaySurface, maxHeight },
+          // The HAIRLINE belongs to the MENU, not to a platform. A sheet is anchored to the screen
+          // edge and fills its width, so its boundary is never in question and it takes none; a
+          // panel floating over content is the only one that has to declare where it ends, and it
+          // has to do that on a phone for the same reason it does on a desktop.
+          styles.popoverEdge,
+          { borderColor: theme.overlayHairline },
+        ]}
         onLayout={(e) => {
           const { width: w, height: hh } = e.nativeEvent.layout;
           setCard((prev) => (prev && prev.height === hh && prev.width === w ? prev : { width: w, height: hh }));
@@ -1126,7 +1173,7 @@ function OverlayPopover({
         <OverlayPresentationContext.Provider value="popover">
           <SheetBudgetContext.Provider value={budget}>{children}</SheetBudgetContext.Provider>
         </OverlayPresentationContext.Provider>
-      </ThemedView>
+      </View>
     </Animated.View>
   );
 }
@@ -1152,6 +1199,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sheet: {
+    ...ContinuousCorner,
     width: '100%',
     maxWidth: 520,
     borderTopLeftRadius: 24,
@@ -1190,9 +1238,36 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   popover: {
+    ...ContinuousCorner,
     borderRadius: 16,
     paddingHorizontal: Spacing.four,
     overflow: 'hidden',
+  },
+  /**
+   * WEB gives the popover an EDGE rather than more contrast, and this is the fix for a real
+   * complaint: `backgroundPanel` is #17181b on a #000000 page — about a 6% lift — with nothing
+   * around it, so on the dark theme the menu's boundary was very nearly invisible and it read as a
+   * hole in the page. The obvious answer is to darken the page behind it, and that is the wrong
+   * lever: there is no scrim at these widths at all (see `backdropStyle`), and pushing the panel
+   * further from the background only walks it toward the same collision from the other side.
+   *
+   * A hairline plus elevation is how a desktop menu separates — the same fix the settings modal
+   * took, for the same reported symptom. `overflow: hidden` on the panel clips its own children,
+   * not its shadow, so the two coexist.
+   */
+  popoverEdge: {
+    // 24pt of side padding is a bottom sheet's — it exists so a thumb has margin. A pointer needs
+    // none, and the rows inside no longer carry a fill of their own (see selector.tsx), so that
+    // padding read as dead space around a floating list rather than as the menu's own body. The
+    // vertical pad is the same 8, for the reason the settings modal's category list takes one: a
+    // first row flush into a rounded corner while every other edge is padded.
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
   },
   heading: {
     marginBottom: Spacing.one,
