@@ -42,11 +42,33 @@ const sortByBridge$ = persisted$<Record<string, SortState>>('comical:searchSortB
  * Writes REPLACE the whole record (new reference) so `use$` subscribers re-render immediately — a
  * nested `store$[key].set()` can leave the root snapshot's identity unchanged (see useLibrarySort).
  */
+/**
+ * The reactive read, isolated into its own hook — the SAME shape `useSelectedBridgeId` uses, and for
+ * the same reason.
+ *
+ * The React Compiler detects hooks by name (`use` + an uppercase letter), so it does not recognise
+ * `use$` — the `$` is not a letter — and compiles it as a plain call. Called directly in a function
+ * that has hooks AFTER it, as this did, the compiler may memoize it and skip it on a later render:
+ * `use$` is three hooks (useContext + useMemo + useSyncExternalStore), so every hook after it slides
+ * three slots and React's dispatcher throws.
+ *
+ * That was not theoretical. `useBridgeFilters` calls this and then `useState` immediately after, so
+ * the skip put that `useState` where the `use$`'s `useContext` had been — React's hook-order table
+ * agreed for 96 slots and diverged at 97, `useContext` → `useState` — and the whole Search screen
+ * came up as "Should have a queue. You are likely calling Hooks conditionally".
+ *
+ * A `use`-prefixed wrapper with NOTHING after the `use$` is what makes it safe: the compiler sees a
+ * hook by name, and there is nothing left in here for it to reorder.
+ */
+function useSortByBridge(): Record<string, SortState> {
+  return use$(sortByBridge$);
+}
+
 export function useSearchSort(
   bridgeId: string | undefined,
   sortOptions: SortOption[],
 ): [SortState, (sort: SortState) => void] {
-  const map = use$(sortByBridge$);
+  const map = useSortByBridge();
   const remembered = bridgeId ? map[bridgeId] : null;
   const key = remembered && sortOptions.some((o) => o.key === remembered.key) ? remembered.key : null;
   const ascending = remembered?.ascending ?? false;
