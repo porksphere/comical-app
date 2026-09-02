@@ -110,7 +110,7 @@ function SortMenu({
       </OptionList>
 
       <OptionList>
-        <OptionSectionLabel>Order</OptionSectionLabel>
+        <OptionSectionLabel divided>Order</OptionSectionLabel>
         {(['desc', 'asc'] as CollectedDir[]).map((d) => (
           <OptionRow
             key={d}
@@ -123,7 +123,7 @@ function SortMenu({
       </OptionList>
 
       <OptionList>
-        <OptionSectionLabel>Group by</OptionSectionLabel>
+        <OptionSectionLabel divided>Group by</OptionSectionLabel>
         {GROUP_ORDER.map((g) => (
           <OptionRow
             key={g}
@@ -148,7 +148,9 @@ const styles = StyleSheet.create({
     padding: Spacing.one,
     borderRadius: Spacing.two,
   },
+  // The groups are divided by a RULE now (see OptionSectionLabel), so this only has to keep the
+  // sheet's heading off the list — the gap is no longer what separates one group from the next.
   menu: {
-    gap: Spacing.three,
+    gap: Spacing.two,
   },
 });

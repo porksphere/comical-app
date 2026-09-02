@@ -165,17 +165,29 @@ export function OptionActionRow({
   );
 }
 
-/** A group heading inside a menu ("Sort by", "Group by"). Shared with the rows so its indent can't
- *  drift from theirs. */
-export function OptionSectionLabel({ children }: { children: string }) {
+/**
+ * A group heading inside a menu ("Sort by", "Group by"). Shared with the rows so its indent can't
+ * drift from theirs.
+ *
+ * `divided` draws the RULE above it, which is what both platforms use to separate groups in a menu:
+ * iOS puts a separator between a `UIMenu`'s inline sections (and, since 16, the section's title
+ * above it), and Material 3 divides menu item groups the same way. Space alone was carrying it here
+ * and space alone is weak — two groups four rows long read as one list with a stray caption in it.
+ *
+ * Pass it on every group but the first: a rule above the first one would fence the list off from
+ * the panel's own top edge rather than divide anything.
+ */
+export function OptionSectionLabel({ children, divided }: { children: string; divided?: boolean }) {
+  const theme = useTheme();
   const pointer = usePointerFine();
+  const inset = pointer ? POINTER_INSET : TOUCH_INSET;
   return (
-    <ThemedText
-      type="small"
-      themeColor="textSecondary"
-      style={[styles.sectionLabel, { paddingHorizontal: pointer ? POINTER_INSET : TOUCH_INSET }]}>
-      {children}
-    </ThemedText>
+    <View>
+      {divided ? <View style={[styles.sectionRule, { backgroundColor: theme.overlayHairline }]} /> : null}
+      <ThemedText type="small" themeColor="textSecondary" style={[styles.sectionLabel, { paddingHorizontal: inset }]}>
+        {children}
+      </ThemedText>
+    </View>
   );
 }
 
@@ -221,5 +233,14 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     paddingBottom: Spacing.half,
+  },
+  // FULL BLEED, which is why it pulls back by the panel's own padding: a menu's separator runs the
+  // whole width on both platforms, and one that stops where the rows stop reads as an underline for
+  // the caption rather than as a division of the menu. The rows keep their inset and sit within it,
+  // which is what a Material menu with a selected item looks like anyway.
+  sectionRule: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: -Spacing.two,
+    marginBottom: Spacing.two,
   },
 });
