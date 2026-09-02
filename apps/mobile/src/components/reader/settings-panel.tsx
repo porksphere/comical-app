@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
 import type { IconProps } from '@/components/icons/ui-icons';
 import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
+import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import {
@@ -87,15 +88,15 @@ function SettingsContent() {
           onChange={(v) => set({ zoomWidePages: v === 'fill-height' })}
         />
       )}
-      <Toggle
+      <ToggleRow
         label="Double-tap to zoom"
-        testIdPrefix="reader.settings.double-tap"
+        testID="reader.settings.double-tap"
         value={settings.doubleTapZoom}
         onChange={(v) => set({ doubleTapZoom: v })}
       />
-      <Toggle
+      <ToggleRow
         label="Keep screen on"
-        testIdPrefix="reader.settings.keep-awake"
+        testID="reader.settings.keep-awake"
         value={settings.keepAwake}
         onChange={(v) => set({ keepAwake: v })}
       />
@@ -152,29 +153,24 @@ function DirectionRow({
   );
 }
 
-/** An on/off row, drawn as a two-way segment so it sits with the rest. */
-function Toggle({
+/** A boolean row: label on the left, the app's switch (the same `ThemedSwitch` every Settings
+ *  toggle uses) on the right — an on/off choice is a switch, not a two-way segment. */
+function ToggleRow({
   label,
   value,
   onChange,
-  testIdPrefix,
+  testID,
 }: {
   label: string;
   value: boolean;
   onChange: (value: boolean) => void;
-  testIdPrefix: string;
+  testID: string;
 }) {
   return (
-    <Segment
-      label={label}
-      testIdPrefix={testIdPrefix}
-      value={value ? 'on' : 'off'}
-      options={[
-        ['on', 'On'],
-        ['off', 'Off'],
-      ]}
-      onChange={(v) => onChange(v === 'on')}
-    />
+    <View style={styles.toggleRow}>
+      <ThemedText style={styles.toggleLabel}>{label}</ThemedText>
+      <ThemedSwitch testID={testID} value={value} onValueChange={onChange} />
+    </View>
   );
 }
 
@@ -258,5 +254,15 @@ const styles = StyleSheet.create({
   hint: {
     color: 'rgba(255,255,255,0.4)',
     fontSize: 11,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  toggleLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
   },
 });
