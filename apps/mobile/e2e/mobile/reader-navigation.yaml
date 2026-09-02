@@ -21,12 +21,12 @@
 #     position-based name would mean the opposite thing in a right-to-left series.
 #   - reader.settings.open                  settings-panel.tsx's gear button, now in the toolbar's
 #     trailing (top-right) slot rather than floating at the bottom-right.
-#   - reader.navigator.page                 the navigator's current-page number. The page used to be
-#     read off the toolbar subtitle ("Page N of M"), but the toolbar now carries the series and
-#     chapter instead — the count belongs to the bottom bar, which is where it's asserted from.
-#     The navigator renders the page and the total as SEPARATE Text nodes (and a third, invisible,
-#     sizing ghost), so there's no "N / M" string to regex; this testID is on the node holding the
-#     current page alone, which is why the assertions below match a bare number.
+#   - reader.navigator.page                 the current-page number, in the counter chip UNDER the
+#     bar (chapter-navigator.tsx's COUNTER_H). The page used to be read off the toolbar subtitle
+#     ("Page N of M"), then off the slider's flanking numbers; the chip is where it lives now, and
+#     it stays faintly on screen even with the chrome hidden. The chip renders the page and the
+#     total as SEPARATE Text nodes, so there's no "N / M" string to regex; this testID is on the
+#     node holding the current page alone, which is why the assertions below match a bare number.
 #   - reader.settings.direction.ltr / .vertical / .rtl   The 3-way mode+direction row — NOT
 #     ".paged"/".webtoon" (a wrong name already caught and fixed in
 #     swipe-dismiss-webtoon.yaml this same session; DIRECTION_OPTIONS only has ltr/vertical/rtl).

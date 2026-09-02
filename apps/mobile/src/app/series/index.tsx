@@ -34,7 +34,7 @@ import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { ChevronUpIcon } from '@/components/icons/ui-icons';
-import { ChapterNavigator } from '@/components/reader/chapter-navigator';
+import { BOTTOM_CHROME_HEIGHT, ChapterNavigator } from '@/components/reader/chapter-navigator';
 import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
@@ -4907,7 +4907,13 @@ function DetailsHint({
   return (
     <Animated.View
       pointerEvents={visible ? 'box-none' : 'none'}
-      style={[styles.detailsHintWrap, { bottom: insets.bottom + Spacing.two + 48 }, style]}>
+      // Stacked on the bottom chrome's top edge: the navigator's on native, the progress pill's on
+      // web (which has no page counter under it and so sits lower).
+      style={[
+        styles.detailsHintWrap,
+        { bottom: insets.bottom + (IS_WEB ? Spacing.two + 48 : BOTTOM_CHROME_HEIGHT) },
+        style,
+      ]}>
       <Pressable
         testID="series-page.details"
         onPress={onPress}

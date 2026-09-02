@@ -20,7 +20,9 @@ import { useScrubHaptics } from '@/lib/scrub-haptics';
  * The reader's bottom bar (NATIVE only — web keeps the tap-to-jump progress pill):
  * a page scrubber flanked by chapter-skip buttons, modelled on Mihon's
  * `ChapterNavigator` (`presentation/reader/components/ChapterNavigator.kt`) for
- * its layout and on Suwatte for how the drag itself feels.
+ * its layout and on Suwatte for how the drag itself feels — with the page count
+ * moved out of the pill into a chip beneath it (see COUNTER_H), which is the one
+ * piece of the chrome that stays faintly on screen when the rest has hidden.
  *
  * Behaviour taken from Mihon:
  *   - The outer row stays LTR whatever the reading direction, so the ⏮ button is
@@ -82,6 +84,18 @@ function nowMs() {
 /** Height of the pill AND of the chapter-skip buttons — the bar and the arrows
  *  either side of it are one continuous row of the same weight. */
 const BAR_H = 40;
+/** The page counter under the bar — "12 / 26" in a small chip that sits just above the home
+ *  indicator (its bottom edge on the safe-area inset) and, unlike the bar, never fully leaves:
+ *  with the chrome hidden it stays at `COUNTER_FAINT` so a glance still says where you are. It is
+ *  never interactive, so it has no business being under a finger — and a chip INSIDE the inset
+ *  would sit under the indicator itself, which on iPhone draws over whatever is beneath it. */
+const COUNTER_H = 20;
+const COUNTER_BOTTOM = Spacing.one;
+const COUNTER_FAINT = 0.35;
+const BAR_BOTTOM = COUNTER_BOTTOM + COUNTER_H + Spacing.one;
+/** Where the bottom chrome ENDS, above the safe-area inset — the bar's top edge. Anything stacked
+ *  over the bar (the Details hint) measures from here. */
+export const BOTTOM_CHROME_HEIGHT = BAR_BOTTOM + BAR_H;
 
 type Props = {
   /** 0-based page within the chapter, and how many that chapter has. Only what's
@@ -163,6 +177,9 @@ export function ChapterNavigator({
   const insets = useSafeAreaInsets();
   const style = useAnimatedStyle(() => ({
     opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
+  }));
+  const counterStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(visible ? 1 : COUNTER_FAINT, { duration: 200 }),
   }));
 
   // The TRACK's domain — see `scrubTotal`. Never `total`, unless they are the same chapter.
@@ -370,29 +387,43 @@ export function ChapterNavigator({
   if (!chaptered && total <= 1) return null;
 
   return (
-    <Animated.View
-      pointerEvents={visible ? 'box-none' : 'none'}
-      style={[styles.wrap, { bottom: insets.bottom + Spacing.two }, style]}>
-      <View style={styles.row}>
-        {chaptered && <SkipButton {...left} Icon={SkipBackIcon} />}
-        {total > 1 ? (
-          <View style={[styles.pill, rtl && styles.pillRtl]}>
-            <NumSlot value={(scrubPage ?? page) + 1} widest={total} />
-            <GestureDetector gesture={pan}>
-              <View testID="reader.navigator.slider" style={styles.track} onLayout={onTrackLayout}>
-                <View style={styles.bar} />
-                <Animated.View style={[styles.fill, rtl ? styles.fillEnd : styles.fillStart, fillStyle]} />
-                <Animated.View style={[styles.thumb, thumbStyle]} />
-              </View>
-            </GestureDetector>
-            <ThemedText style={styles.num}>{total}</ThemedText>
-          </View>
-        ) : (
-          <View style={styles.spacer} />
-        )}
-        {chaptered && <SkipButton {...right} Icon={SkipForwardIcon} />}
-      </View>
-    </Animated.View>
+    <>
+      <Animated.View
+        pointerEvents={visible ? 'box-none' : 'none'}
+        style={[styles.wrap, { bottom: insets.bottom + BAR_BOTTOM }, style]}>
+        <View style={styles.row}>
+          {chaptered && <SkipButton {...left} Icon={SkipBackIcon} />}
+          {total > 1 ? (
+            <View style={styles.pill}>
+              <GestureDetector gesture={pan}>
+                <View testID="reader.navigator.slider" style={styles.track} onLayout={onTrackLayout}>
+                  <View style={styles.bar} />
+                  <Animated.View style={[styles.fill, rtl ? styles.fillEnd : styles.fillStart, fillStyle]} />
+                  <Animated.View style={[styles.thumb, thumbStyle]} />
+                </View>
+              </GestureDetector>
+            </View>
+          ) : (
+            <View style={styles.spacer} />
+          )}
+          {chaptered && <SkipButton {...right} Icon={SkipForwardIcon} />}
+        </View>
+      </Animated.View>
+      {/* The counter, under the bar and on its own fade — see COUNTER_H. Reads the scrub's own
+          position while a finger is down (`scrubPage`), for the same reason the pill used to. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.counterWrap, { bottom: insets.bottom + COUNTER_BOTTOM }, counterStyle]}>
+        <View style={styles.counter}>
+          {/* The one node holding the current page as its own text — e2e reads a page number off
+              the bar by this id, so the total stays a separate node. */}
+          <ThemedText testID="reader.navigator.page" style={styles.counterText}>
+            {(scrubPage ?? page) + 1}
+          </ThemedText>
+          <ThemedText style={[styles.counterText, styles.counterTotal]}>/ {total}</ThemedText>
+        </View>
+      </Animated.View>
+    </>
   );
 }
 
@@ -421,23 +452,6 @@ function SkipButton({
       accessibilityLabel={label}>
       <Icon color={enabled ? '#fff' : 'rgba(255,255,255,0.3)'} size={20} />
     </Pressable>
-  );
-}
-
-/** The current page, in a slot as wide as the total — otherwise the slider would
- *  shift sideways every time the page number gains a digit (Mihon's trick, with
- *  the widest value rendered invisibly underneath to size the slot). */
-function NumSlot({ value, widest }: { value: number; widest: number }) {
-  return (
-    <View>
-      <ThemedText style={[styles.num, styles.numGhost]}>{widest}</ThemedText>
-      {/* The one node holding the current page as its own text — the ghost
-          underneath holds the total, and e2e has to be able to tell them
-          apart to read a page number off the bar. */}
-      <ThemedText testID="reader.navigator.page" style={[styles.num, styles.numOver]}>
-        {value}
-      </ThemedText>
-    </View>
   );
 }
 
@@ -470,29 +484,34 @@ const styles = StyleSheet.create({
     height: BAR_H,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
     paddingHorizontal: Spacing.three,
     borderRadius: BAR_H / 2,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  // Reading right-to-left, the current page belongs on the right and the total on
-  // the left — the whole pill mirrors, not just the slider inside it.
-  pillRtl: {
-    flexDirection: 'row-reverse',
-  },
-  num: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 13,
-    fontVariant: ['tabular-nums'],
-    textAlign: 'center',
-  },
-  numGhost: {
-    opacity: 0,
-  },
-  numOver: {
+  counterWrap: {
     position: 'absolute',
     left: 0,
     right: 0,
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  counter: {
+    height: COUNTER_H,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: Spacing.two,
+    borderRadius: COUNTER_H / 2,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  counterText: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 11,
+    lineHeight: 14,
+    fontVariant: ['tabular-nums'],
+  },
+  counterTotal: {
+    color: 'rgba(255,255,255,0.6)',
   },
   // Full-height so the whole pill is grabbable, not just the 4px line in it.
   track: {
