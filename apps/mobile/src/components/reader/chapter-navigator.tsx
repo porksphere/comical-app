@@ -479,12 +479,15 @@ const styles = StyleSheet.create({
   spacer: {
     flex: 1,
   },
+  // The inset used to be Spacing.three, room for the numbers that flanked the track; with the
+  // track alone in here the thumb only needs to clear the capsule's curve (R against a 20pt
+  // radius), so the rest goes to travel.
   pill: {
     flex: 1,
     height: BAR_H,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.two,
     borderRadius: BAR_H / 2,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
