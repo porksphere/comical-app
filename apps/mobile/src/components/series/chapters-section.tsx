@@ -47,7 +47,7 @@ import { OptionList, useOverlay, type AnchorRect } from '@/components/overlay/ov
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, MaxContentWidth, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
+import { BarContentGap, ContinuousCorner, MaxContentWidth, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
@@ -1955,6 +1955,7 @@ const styles = StyleSheet.create({
   },
   skelChapterRow: {
     height: 44,
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
   },
   skelTileRow: {
@@ -1964,6 +1965,7 @@ const styles = StyleSheet.create({
   skelTile: {
     flex: 1,
     aspectRatio: DEFAULT_THUMB_ASPECT,
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
     overflow: 'hidden',
   },
@@ -1983,6 +1985,7 @@ const styles = StyleSheet.create({
     height: CONTROLS_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
+    ...ContinuousCorner,
     borderRadius: 10,
     padding: TAB_PAD,
     gap: TAB_GAP,
@@ -2002,6 +2005,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.one,
+    ...ContinuousCorner,
     borderRadius: 8,
   },
   // Sliding highlight behind the active option (see `Segmented`) — sized to
@@ -2016,6 +2020,7 @@ const styles = StyleSheet.create({
     top: TAB_PAD,
     bottom: TAB_PAD,
     left: 0,
+    ...ContinuousCorner,
     borderRadius: 8,
   },
   tab: {
@@ -2023,6 +2028,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.three,
+    ...ContinuousCorner,
     borderRadius: 8,
   },
   tabLabel: {
@@ -2038,6 +2044,7 @@ const styles = StyleSheet.create({
     width: CONTROLS_HEIGHT - TAB_PAD * 2,
     alignItems: 'center',
     justifyContent: 'center',
+    ...ContinuousCorner,
     borderRadius: 8,
   },
   row: {
@@ -2047,6 +2054,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
+    ...ContinuousCorner,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
   },
@@ -2123,6 +2131,7 @@ const styles = StyleSheet.create({
     left: -2,
     right: -2,
     bottom: -2,
+    ...ContinuousCorner,
     borderRadius: 10,
     borderWidth: 2,
     borderColor: '#60a5fa',
@@ -2145,6 +2154,7 @@ const styles = StyleSheet.create({
     // layer sits inside this, since clipping the SAME element being scaled
     // wouldn't actually contain overflow (the clip rect would scale too).
     flex: 1,
+    ...ContinuousCorner,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',

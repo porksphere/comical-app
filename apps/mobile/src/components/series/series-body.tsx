@@ -28,7 +28,7 @@ import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { useTopBarInset } from '@/components/top-bar';
-import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { ContinuousCorner, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { queryKeys, relatedGroupsQuery, seriesListQuery } from '@/data/queries';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -736,6 +736,7 @@ const styles = StyleSheet.create({
   // The animated cover box (see SeriesCoverBox): width from its wrap, height from the live aspect.
   coverBox: {
     width: '100%',
+    ...ContinuousCorner,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)'
@@ -776,6 +777,7 @@ const styles = StyleSheet.create({
     right: Spacing.two,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.half,
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
     backgroundColor: 'rgba(0,0,0,0.7)',
     // Mirrors `.cover-badge`'s `box-shadow: 0 1px 4px rgba(0,0,0,0.5)`.
@@ -832,6 +834,7 @@ const styles = StyleSheet.create({
   },
   skelButton: {
     height: 34,
+    ...ContinuousCorner,
     borderRadius: Spacing.two
   },
   skelChips: {
@@ -845,6 +848,7 @@ const styles = StyleSheet.create({
   },
   skelMeta: {
     height: 72,
+    ...ContinuousCorner,
     borderRadius: Spacing.three
   }
 });

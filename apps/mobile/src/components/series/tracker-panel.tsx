@@ -10,7 +10,7 @@ import { useKeyboardAvoidingInput, useOverlay, useSheetScroll } from '@/componen
 import { ActionButton } from '@/components/series/action-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ContinuousCorner, Spacing } from '@/constants/theme';
 import type { TrackerLinkSyncResult, TrackerSummary } from '@/data/api';
 import { relativeTime } from '@/data/mock';
 import { queryKeys } from '@/data/queries';
@@ -442,6 +442,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
+    ...ContinuousCorner,
     borderRadius: 8,
   },
   rowText: {
@@ -481,6 +482,7 @@ const styles = StyleSheet.create({
   // segments, the active one filled with the accent colour).
   serviceTabs: {
     flexDirection: 'row',
+    ...ContinuousCorner,
     borderRadius: 10,
     padding: 3,
     gap: 2,
@@ -490,6 +492,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
+    ...ContinuousCorner,
     borderRadius: 8,
   },
   search: {
@@ -498,6 +501,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.two,
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
     borderWidth: 1,
   },
@@ -518,6 +522,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
+    ...ContinuousCorner,
     borderRadius: 8,
   },
   resultThumb: {
