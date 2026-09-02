@@ -28,7 +28,7 @@ import Animated, {
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ANDROID_BLUR, MENU_BLUR } from '@/components/context-menu-material';
+import { ANDROID_BLUR, MENU_BLUR, MENU_BLUR_WEB } from '@/components/context-menu-material';
 import { ThemedText } from '@/components/themed-text';
 import { RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
@@ -1149,7 +1149,7 @@ function OverlayPopover({
       style={[styles.popoverWrap, { left, top, width, pointerEvents: 'box-none' }, animStyle]}>
       <BlurView
         tint={scheme}
-        intensity={MENU_BLUR}
+        intensity={Platform.OS === 'web' ? MENU_BLUR_WEB : MENU_BLUR}
         experimentalBlurMethod={ANDROID_BLUR}
         style={[
           styles.popover,
