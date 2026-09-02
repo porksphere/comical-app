@@ -41,6 +41,24 @@ const POINTER_ROW_HEIGHT = 34;
  * off the right, which reads as a mark shoved into the edge of its own highlight.
  */
 const rowInset = (height: number) => (height - CHECK_SIZE) / 2;
+/**
+ * Optical centring for the label, and it is a real offset rather than a taste call.
+ *
+ * A line box reserves room for a descender whether or not the label has one, so centring the BOX
+ * leaves the visible glyphs above the middle. Measured at 3x on a 34pt row: "Recently added" sat 26
+ * above / 27 below — balanced, because its `y` fills the reserved space — while "None", identical
+ * type, sat 28 / 37. The eye reads the second as high, and it is: both labels share a cap-to-
+ * baseline mass, and that mass was 1.5pt above centre in each.
+ *
+ * Padding on a centred box moves its content by HALF what it adds — the box grows, then re-centres
+ * — so the correction is twice the error. Applied to the text column, so a two-line row (the
+ * collection picker's counts) takes it once rather than per line.
+ *
+ * 2 rather than 3, and the difference is a real trade: the residual quantises to a pixel either way
+ * at 3x, and 3 pushed "Recently added" to 32 above / 21 below, tightening its descender against the
+ * bottom edge to fix a label that has none. 2 leaves both within a point of centre.
+ */
+const LABEL_OPTICAL_NUDGE = 2;
 const TOUCH_INSET = rowInset(RowHeight);
 const POINTER_INSET = rowInset(POINTER_ROW_HEIGHT);
 
@@ -178,6 +196,7 @@ const styles = StyleSheet.create({
   // leading slot and always ends right before the indicator, whether or not this row has either.
   text: {
     flex: 1,
+    paddingTop: LABEL_OPTICAL_NUDGE,
   },
   labelSelected: {
     fontWeight: '600',
