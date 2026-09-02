@@ -27,6 +27,23 @@ import { useHover } from '@/hooks/use-hover';
 import { usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
+/** The indicator's box, and the thing every inset below is measured against. */
+const CHECK_SIZE = 16;
+/** A pointer's row. A touch row is `RowHeight`, which is a target size rather than a chosen one. */
+const POINTER_ROW_HEIGHT = 34;
+/**
+ * The highlight's inset, DERIVED rather than picked: half the space a centred indicator leaves in
+ * its row, applied to the sides as well.
+ *
+ * A row's height is set by what it has to be — 44 for a thumb, 34 for a pointer — so the vertical
+ * gap around a 16pt glyph is already decided, and choosing a side padding independently means the
+ * two disagree. They did: on the touch row the check sat 14pt off the top and bottom against 8pt
+ * off the right, which reads as a mark shoved into the edge of its own highlight.
+ */
+const rowInset = (height: number) => (height - CHECK_SIZE) / 2;
+const TOUCH_INSET = rowInset(RowHeight);
+const POINTER_INSET = rowInset(POINTER_ROW_HEIGHT);
+
 export function OptionRow({
   label,
   hint,
@@ -82,7 +99,12 @@ export function OptionRow({
           rather than carrying it — and a ring per row, drawn whether or not anything is selected,
           was the loudest thing in a menu whose job is its labels. The slot is reserved either way,
           so selecting a row never reflows the labels beside it. */}
-      <View style={styles.check}>{selected ? <CheckIcon color={theme.accent} size={16} /> : null}</View>
+      <View style={styles.check}>
+        {/* `text`, not `accent` — the rail marks its current row with weight and the plain text
+            colour, and this is the same list. A blue tick was also the one hue in a menu whose job
+            is its labels (the hold menu's material carries the same rule, at more length). */}
+        {selected ? <CheckIcon color={theme.text} size={CHECK_SIZE} /> : null}
+      </View>
     </Pressable>
   );
 }
@@ -120,8 +142,12 @@ export function OptionActionRow({
 /** A group heading inside a menu ("Sort by", "Group by"). Shared with the rows so its indent can't
  *  drift from theirs. */
 export function OptionSectionLabel({ children }: { children: string }) {
+  const pointer = usePointerFine();
   return (
-    <ThemedText type="small" themeColor="textSecondary" style={styles.sectionLabel}>
+    <ThemedText
+      type="small"
+      themeColor="textSecondary"
+      style={[styles.sectionLabel, { paddingHorizontal: pointer ? POINTER_INSET : TOUCH_INSET }]}>
       {children}
     </ThemedText>
   );
@@ -136,16 +162,17 @@ const styles = StyleSheet.create({
     // carry made a filled row read as a pill, which is what made a list of them read as a stack of
     // buttons. The rail's own rows use the same corner.
     borderRadius: Spacing.two,
-    paddingHorizontal: Spacing.two,
   },
   // minHeight, not height: a row with a `hint` is two lines, and the collection picker's counts
   // were being clipped by a fixed one.
   touchRow: {
     minHeight: RowHeight,
+    paddingHorizontal: TOUCH_INSET,
     paddingVertical: Spacing.one,
   },
   pointerRow: {
-    minHeight: 34,
+    minHeight: POINTER_ROW_HEIGHT,
+    paddingHorizontal: POINTER_INSET,
   },
   // `flex: 1` (not `justifyContent: 'space-between'`) so the label always starts right after the
   // leading slot and always ends right before the indicator, whether or not this row has either.
@@ -156,11 +183,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   check: {
-    width: 16,
+    width: CHECK_SIZE,
     alignItems: 'center',
   },
   sectionLabel: {
-    paddingHorizontal: Spacing.two,
     paddingBottom: Spacing.half,
   },
 });
