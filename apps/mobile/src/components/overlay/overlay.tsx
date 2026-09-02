@@ -242,10 +242,13 @@ const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two + Spacing.one + LIST_T
 const LIST_MIN_HEIGHT = 160;
 // Matches this file's own `handleArea` (paddingTop + handle height + paddingBottom).
 const HANDLE_AREA_HEIGHT = Spacing.two + 5 + Spacing.three;
-// Gap between a `MeasuredHeader` and the `OptionList` below it — owned by
-// each caller's own wrapper (`selector.tsx`'s `menu`, `filter-editors.tsx`'s
-// `body`), not by this file, but both use the same value.
-const HEADER_TO_LIST_GAP = Spacing.three;
+// Gap between a `MeasuredHeader` and the `OptionList` below it — drawn by the
+// caller's own wrapper (`OptionMenu`, `filter-editors.tsx`'s `body`) rather
+// than by this file, but SUBTRACTED here, so a wrapper that draws a different
+// gap silently mis-sizes the list. Exported for `OptionMenu`, which reaches
+// this total from a smaller flex `gap` plus a margin and so has to be told
+// what the total must come to.
+export const HEADER_TO_LIST_GAP = Spacing.three;
 
 /** Wraps a sheet's non-list content (title, helper text, search input, …). */
 export function MeasuredHeader({ children }: { children: ReactNode }) {
@@ -1030,7 +1033,7 @@ const POPOVER_MAX_VIEWPORT_FRACTION = 0.72;
  * Callers pass the verdict (`openAt(..., { popover })`); this is only the number they compare
  * against, here so the four pickers can't disagree about where the line is.
  */
-export const MENU_MAX_ROWS = 8;
+export const MENU_MAX_ROWS = 1;
 
 const POPOVER_GAP = Spacing.one; // distance from the anchor edge
 const POPOVER_PAD = Spacing.three; // keep-off-the-viewport-edges padding

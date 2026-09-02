@@ -1,14 +1,7 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 
-import {
-  MeasuredHeader,
-  OptionList,
-  OverlayHeading,
-  useAnchoredOverlay,
-  useOverlay,
-  useOverlayPresentation,
- MENU_MAX_ROWS } from '@/components/overlay/overlay';
-import { OptionActionRow, OptionRow } from '@/components/overlay/option-row';
+import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { OptionActionRow, OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { Collection } from '@/data/types';
@@ -77,7 +70,6 @@ function CollectionMenu({
 }) {
   const { closeTop } = useOverlay();
   const router = useRouter();
-  const presentation = useOverlayPresentation();
 
   const pick = (v: string | null) => {
     onChange(v);
@@ -85,12 +77,7 @@ function CollectionMenu({
   };
 
   return (
-    <View style={styles.menu}>
-      {presentation !== 'popover' && (
-        <MeasuredHeader>
-          <OverlayHeading>Library</OverlayHeading>
-        </MeasuredHeader>
-      )}
+    <OptionMenu title="Library">
       <OptionList>
         {/* NOT "Library": the default collection is an ordinary row below, and while a freshly
             migrated shelf is the only thing in it, both rows list exactly the same series. Two rows,
@@ -119,7 +106,7 @@ function CollectionMenu({
           }}
         />
       </OptionList>
-    </View>
+    </OptionMenu>
   );
 }
 
@@ -145,8 +132,5 @@ const styles = StyleSheet.create({
   },
   caret: {
     fontSize: 18,
-  },
-  menu: {
-    gap: Spacing.three,
   },
 });

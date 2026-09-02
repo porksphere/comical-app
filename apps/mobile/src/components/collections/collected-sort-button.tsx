@@ -1,16 +1,11 @@
-import { Pressable, StyleSheet, View } from 'react-native';
-
 import { SortIcon } from '@/components/icons/ui-icons';
+import { OptionList, useOverlay } from '@/components/overlay/overlay';
 import {
-  MeasuredHeader,
-  OptionList,
-  OverlayHeading,
-  useAnchoredOverlay,
-  useOverlay,
-  useOverlayPresentation,
-} from '@/components/overlay/overlay';
-import { OptionRow, OptionSectionLabel } from '@/components/overlay/option-row';
-import { Spacing } from '@/constants/theme';
+  OptionMenu,
+  OptionMenuButton,
+  OptionRow,
+  OptionSectionLabel,
+} from '@/components/overlay/option-menu';
 import {
   defaultDirFor,
   type CollectedDir,
@@ -18,7 +13,6 @@ import {
   type CollectedSort,
   type CollectedViewPrefs,
 } from '@/data/collected-view';
-import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 
 const SORT_LABELS: Record<CollectedSort, string> = {
@@ -56,22 +50,14 @@ export function CollectedSortButton({
   value: CollectedViewPrefs;
   onChange: (patch: Partial<CollectedViewPrefs>) => void;
 }) {
-  const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
-  const { hovered, handlers } = useHover();
   return (
-    <Pressable
+    <OptionMenuButton
       testID="collected.sort"
-      ref={ref}
-      {...handlers}
-      hitSlop={8}
-      accessibilityRole="button"
       accessibilityLabel="Sort saved pages"
-      style={[styles.button, hovered && { backgroundColor: theme.backgroundSelected }]}
-      // Fixed, short content — a menu, never a sheet. See LibrarySortButton.
-      onPress={() => openAt(() => <SortMenu value={value} onChange={onChange} />, { popover: true })}>
-      <SortIcon color={theme.text} size={22} />
-    </Pressable>
+      icon={<SortIcon color={theme.text} size={22} />}
+      render={() => <SortMenu value={value} onChange={onChange} />}
+    />
   );
 }
 
@@ -83,18 +69,11 @@ function SortMenu({
   onChange: (patch: Partial<CollectedViewPrefs>) => void;
 }) {
   const { closeTop } = useOverlay();
-  const presentation = useOverlayPresentation();
   // "Newest/Oldest" only reads right for a time sort; for the positional ones it's up/down.
   const dirLabels = value.sort === 'added' ? DIR_LABELS : POSITIONAL_DIR_LABELS;
 
   return (
-    <View style={styles.menu}>
-      {presentation !== 'popover' && (
-        <MeasuredHeader>
-          <OverlayHeading>Saved pages</OverlayHeading>
-        </MeasuredHeader>
-      )}
-
+    <OptionMenu title="Saved pages">
       <OptionList>
         <OptionSectionLabel>Sort by</OptionSectionLabel>
         {SORT_ORDER.map((s) => (
@@ -137,20 +116,6 @@ function SortMenu({
           />
         ))}
       </OptionList>
-    </View>
+    </OptionMenu>
   );
 }
-
-
-
-const styles = StyleSheet.create({
-  button: {
-    padding: Spacing.one,
-    borderRadius: Spacing.two,
-  },
-  // The groups are divided by a RULE now (see OptionSectionLabel), so this only has to keep the
-  // sheet's heading off the list — the gap is no longer what separates one group from the next.
-  menu: {
-    gap: Spacing.two,
-  },
-});

@@ -1,19 +1,13 @@
-import { Pressable, StyleSheet, View } from 'react-native';
-
 import { SortIcon } from '@/components/icons/ui-icons';
+import { OptionList, useOverlay } from '@/components/overlay/overlay';
 import {
-  MeasuredHeader,
-  OptionList,
-  OverlayHeading,
-  useAnchoredOverlay,
-  useOverlay,
-  useOverlayPresentation,
-} from '@/components/overlay/overlay';
-import { OptionRow, OptionSectionLabel } from '@/components/overlay/option-row';
-import { Spacing } from '@/constants/theme';
+  OptionMenu,
+  OptionMenuButton,
+  OptionRow,
+  OptionSectionLabel,
+} from '@/components/overlay/option-menu';
 import type { LibrarySort } from '@/data/api';
 import type { LibraryGrouping } from '@/data/library-grouping';
-import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 
 // Sort options shown in the menu, mapped to the `/library?sort=` param.
@@ -51,30 +45,16 @@ export function LibrarySortButton({
   grouping: LibraryGrouping;
   onGroupingChange: (g: LibraryGrouping) => void;
 }) {
-  const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
-  const { hovered, handlers } = useHover();
   return (
-    <Pressable
+    <OptionMenuButton
       testID="library.sort"
-      ref={ref}
-      {...handlers}
-      hitSlop={8}
-      accessibilityRole="button"
       accessibilityLabel="Sort library"
-      style={[styles.button, hovered && { backgroundColor: theme.backgroundSelected }]}
-      onPress={() =>
-        openAt(
-          () => (
-            <SortMenu value={value} onChange={onChange} grouping={grouping} onGroupingChange={onGroupingChange} />
-          ),
-          // Fixed content, and two sections of four — the shape iOS draws as a pull-down menu from
-          // a bar button (Photos' own sort menu is this list). Never a sheet, at any width.
-          { popover: true },
-        )
-      }>
-      <SortIcon color={theme.text} size={22} />
-    </Pressable>
+      icon={<SortIcon color={theme.text} size={22} />}
+      render={() => (
+        <SortMenu value={value} onChange={onChange} grouping={grouping} onGroupingChange={onGroupingChange} />
+      )}
+    />
   );
 }
 
@@ -90,14 +70,8 @@ function SortMenu({
   onGroupingChange: (g: LibraryGrouping) => void;
 }) {
   const { closeTop } = useOverlay();
-  const presentation = useOverlayPresentation();
   return (
-    <View style={styles.menu}>
-      {presentation !== 'popover' && (
-        <MeasuredHeader>
-          <OverlayHeading>Library</OverlayHeading>
-        </MeasuredHeader>
-      )}
+    <OptionMenu title="Library">
       <OptionList>
         <OptionSectionLabel>Sort by</OptionSectionLabel>
         {SORT_ORDER.map((s) => (
@@ -128,20 +102,6 @@ function SortMenu({
           />
         ))}
       </OptionList>
-    </View>
+    </OptionMenu>
   );
 }
-
-
-
-const styles = StyleSheet.create({
-  button: {
-    padding: Spacing.one,
-    borderRadius: Spacing.two,
-  },
-  // The groups are divided by a RULE now (see OptionSectionLabel), so this only has to keep the
-  // sheet's heading off the list — the gap is no longer what separates one group from the next.
-  menu: {
-    gap: Spacing.two,
-  },
-});

@@ -1,11 +1,13 @@
 /**
- * The single-select row every overlay menu is built from — the bridge/page selector, both sort
- * menus, the collection picker.
+ * Everything a single-select overlay menu is built from — the frame, the trigger that opens one, the
+ * rows inside it. Four screens draw one of these (the bridge/page selector, both sort menus, the
+ * collection picker) and every one of them used to carry its own copy.
  *
- * It exists because there were FOUR copies of it, identical down to the `rgba(128,128,128,0.5)` in
- * the radio's border, and styling one of them made them four things to remember rather than one. A
- * menu row is one idea; the differences between those copies (a thumbnail, a second line, an action
- * that isn't a selection) are props.
+ * The row came out first, and for the reason the rest followed: there were FOUR copies of it,
+ * identical down to the `rgba(128,128,128,0.5)` in the radio's border, and styling one of them made
+ * them four things to remember rather than one. A menu row is one idea; the differences between
+ * those copies (a thumbnail, a second line, an action that isn't a selection) are props. The same
+ * was true a level up, of the heading, the block rhythm and the icon button.
  *
  * ONE look everywhere: transparent at rest on the panel's own surface, `overlaySelected` under the
  * current row, and a check at the end. The row is a list item with a highlight, not a stack of
@@ -18,9 +20,17 @@
  *   cursor; a finger cannot, so it gets the same tint on `pressed` instead. With no fill at rest
  *   there is otherwise nothing at all between touching a row and the sheet closing.
  */
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { CheckIcon } from '@/components/icons/ui-icons';
+import {
+  HEADER_TO_LIST_GAP,
+  MeasuredHeader,
+  OverlayHeading,
+  useAnchoredOverlay,
+  useOverlayPresentation,
+} from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { RowHeight, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
@@ -51,26 +61,72 @@ const ROW_ART = { touch: 28, pointer: 18 } as const;
 const rowInset = (height: number, art: number) => (height - art) / 2;
 const TOUCH_INSET = rowInset(RowHeight, ROW_ART.touch);
 const POINTER_INSET = rowInset(POINTER_ROW_HEIGHT, ROW_ART.pointer);
+
 /**
- * Optical centring for the label, and a real offset rather than a taste call.
+ * The menu itself — the frame all four selectors were repeating around their lists.
  *
- * A line box reserves room for a descender whether or not the label has one, so centring the BOX
- * leaves the visible glyphs above the middle. Measured at 3x on a 34pt row: "Recently added" sat 26
- * above / 27 below — balanced, because its `y` fills the reserved space — while "None", identical
- * type, sat 28 / 37. Both share a cap-to-baseline mass, and that mass was a point and a half above
- * centre in each.
+ * It owns the two things that are the same wherever a single-select menu is drawn: the heading,
+ * which appears on a SHEET and not on a popover (there the trigger you just pressed already names
+ * the menu), and the rhythm between the blocks inside it. Each caller had its own copy of both,
+ * and its own `styles.menu`, which is exactly the shape the row component was in before it was
+ * pulled out: identical copies that had already begun to drift.
  *
- * Padding on a centred box moves its content by HALF what it adds — the box grows, then re-centres
- * — so the correction is twice the error. It goes on the text column rather than the label, so a
- * a row whose label ever wraps takes it once rather than per line.
- *
- * The residual quantises — a unit of this moves the ink 6px at 3x, so it lands 3 either side of
- * centre and cannot land on it. 3 over 2 is decided by the BRIDGE row, which is the case that shows
- * it: a 28pt thumbnail sits beside the label, perfectly framed, so the eye has a reference line the
- * other menus don't give it. Measured there, 2 left the label 5px high and 3 leaves it 1px — while
- * the label-only rows go from 3 high to 3 low, which is the same error the other way.
+ * The popover DROPS the wrapper rather than letting `OverlayHeading` render nothing inside it: the
+ * flex `gap` below would still reserve a full step before an empty sibling (see filter-editors'
+ * MultiEditor for the same trap). No `flex: 1` — this hugs its content, which already sizes itself
+ * (see `sheetBody` in overlay.tsx).
  */
-const LABEL_OPTICAL_NUDGE = 3;
+export function OptionMenu({ title, children }: { title: string; children: ReactNode }) {
+  const presentation = useOverlayPresentation();
+  return (
+    <View style={styles.menu}>
+      {presentation !== 'popover' && (
+        <View style={styles.menuHeader}>
+          <MeasuredHeader>
+            <OverlayHeading>{title}</OverlayHeading>
+          </MeasuredHeader>
+        </View>
+      )}
+      {children}
+    </View>
+  );
+}
+
+/**
+ * A bar icon that opens one — the sort controls, which were byte-identical apart from their strings.
+ *
+ * It owns the anchor as well as the press, so a caller supplies what its menu IS and nothing about
+ * how a menu is opened. `popover: true` is not a parameter: these are fixed, short lists, which is
+ * the shape both platforms draw as a pull-down rather than a sheet (see MENU_MAX_ROWS).
+ */
+export function OptionMenuButton({
+  testID,
+  accessibilityLabel,
+  icon,
+  render,
+}: {
+  testID: string;
+  accessibilityLabel: string;
+  icon: ReactNode;
+  render: () => ReactNode;
+}) {
+  const { ref, openAt } = useAnchoredOverlay();
+  const theme = useTheme();
+  const { hovered, handlers } = useHover();
+  return (
+    <Pressable
+      testID={testID}
+      ref={ref}
+      {...handlers}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={[styles.menuButton, hovered && { backgroundColor: theme.backgroundSelected }]}
+      onPress={() => openAt(render, { popover: true })}>
+      {icon}
+    </Pressable>
+  );
+}
 
 export function OptionRow({
   label,
@@ -186,6 +242,25 @@ export function OptionSectionLabel({ children, divided }: { children: string; di
 }
 
 const styles = StyleSheet.create({
+  // The groups inside are divided by a RULE (see OptionSectionLabel), so this is only the rhythm
+  // between blocks, not what separates one group from the next.
+  menu: {
+    gap: Spacing.two,
+  },
+  // The heading's extra clearance from the list, on top of the gap above — the blocks inside a menu
+  // sit closer together than the heading sits above them, and a single flex `gap` can't say both.
+  //
+  // OUTSIDE `MeasuredHeader`, and that is not a detail: the sheet sizes its list as
+  // `budget - headerHeight - HEADER_TO_LIST_GAP`, so anything inside the measured box is counted
+  // twice and the list comes up short by it. Derived from that same constant for the same reason —
+  // this gap is the one the sheet has already been told to expect.
+  menuHeader: {
+    marginBottom: HEADER_TO_LIST_GAP - Spacing.two,
+  },
+  menuButton: {
+    padding: Spacing.one,
+    borderRadius: Spacing.two,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -210,7 +285,6 @@ const styles = StyleSheet.create({
   // leading slot and always ends right before the indicator, whether or not this row has either.
   text: {
     flex: 1,
-    paddingTop: LABEL_OPTICAL_NUDGE,
   },
   labelSelected: {
     fontWeight: '600',

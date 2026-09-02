@@ -1,16 +1,8 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
-import {
-  MENU_MAX_ROWS,
-  MeasuredHeader,
-  OptionList,
-  OverlayHeading,
-  useAnchoredOverlay,
-  useOverlay,
-  useOverlayPresentation,
-} from '@/components/overlay/overlay';
-import { OptionRow } from '@/components/overlay/option-row';
+import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
@@ -121,18 +113,8 @@ function SelectMenu({
   testID: string;
 }) {
   const { closeTop } = useOverlay();
-  const presentation = useOverlayPresentation();
   return (
-    <View style={styles.menu}>
-      {/* On the popover, OverlayHeading renders nothing (the trigger already
-          names the menu) — skip the wrapper entirely there too, since
-          `styles.menu`'s flex `gap` would otherwise still reserve space
-          before an empty sibling (see filter-editors.tsx's MultiEditor). */}
-      {presentation !== 'popover' && (
-        <MeasuredHeader>
-          <OverlayHeading>{title}</OverlayHeading>
-        </MeasuredHeader>
-      )}
+    <OptionMenu title={title}>
       <OptionList>
         {options.map((opt) => (
           <OptionRow
@@ -148,10 +130,9 @@ function SelectMenu({
           />
         ))}
       </OptionList>
-    </View>
+    </OptionMenu>
   );
 }
-
 
 /**
  * The row's leading slot. Renders the slot even when this option has NO thumbnail (and nothing at
@@ -226,12 +207,6 @@ const styles = StyleSheet.create({
   },
   caretSm: {
     fontSize: 13,
-  },
-  // No `flex: 1` (see `sheetBody` in overlay.tsx for why) — this just hugs
-  // its `MeasuredHeader`/`OptionList` content, both of which already size
-  // themselves to a real number.
-  menu: {
-    gap: Spacing.three,
   },
   optionThumb: {
     borderRadius: 6,
