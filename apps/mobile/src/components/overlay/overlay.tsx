@@ -1033,7 +1033,7 @@ const POPOVER_MAX_VIEWPORT_FRACTION = 0.72;
  * Callers pass the verdict (`openAt(..., { popover })`); this is only the number they compare
  * against, here so the four pickers can't disagree about where the line is.
  */
-export const MENU_MAX_ROWS = 1;
+export const MENU_MAX_ROWS = 8;
 
 const POPOVER_GAP = Spacing.one; // distance from the anchor edge
 const POPOVER_PAD = Spacing.three; // keep-off-the-viewport-edges padding
