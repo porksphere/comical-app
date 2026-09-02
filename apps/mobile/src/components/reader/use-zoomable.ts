@@ -1,14 +1,29 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useAnimatedStyle, useSharedValue, withDecay, withTiming } from 'react-native-reanimated';
+
+import {
+  edgeOffset,
+  panLimits,
+  TAP_PAN_FRACTION,
+  WIDE_ZOOM_HEADROOM,
+  ZOOMED_EDGE_TURN_FRACTION,
+  type RestEdge,
+  type Size,
+} from '@/components/reader/page-geometry';
+import { releaseCommitted } from '@/lib/gesture-release';
 
 // Shared NATIVE zoom primitive for both readers (a paged page, and each webtoon
 // page). It owns EVERYTHING the two share — not just the math but the whole gesture
 // wiring, so there's one place that defines how zoom behaves:
-//   - pinch-to-zoom, anchored on the focal point, clamped to a width×height box,
-//     ignoring finger-lift frames so the scale doesn't jump/rubber-band on release;
-//   - double-tap to toggle between fit and a fixed zoom, centred on the tap;
-//   - one-finger pan (only while zoomed) that flings with momentum on release;
+//   - pinch-to-zoom, anchored on the focal point, clamped to the picture's own box (so a page can't
+//     be pushed off into its letterbox), ignoring finger-lift frames so the scale doesn't
+//     jump/rubber-band on release;
+//   - double-tap to toggle between the page's REST and a fixed magnification, centred on the tap;
+//   - one-finger pan (only while zoomed) that flings with momentum on release, and hands a drag
+//     that began at an edge and was let go heading past it to the consumer as a page turn;
+//   - a rest that isn't always 1×: a spread rests at fit-height, at the edge reading starts from,
+//     with its side-zone taps panning across it before they turn the page (see `restScale`);
 //   - an optional single tap (page-turn zones / chrome toggle), and the mutually
 //     EXCLUSIVE composition of pinch vs the taps (so a pinch is never misread as a
 //     double-tap), with pan/extras running Simultaneous alongside.
@@ -17,9 +32,10 @@ import { runOnJS, useAnimatedStyle, useSharedValue, withDecay, withTiming } from
 // pointer-event implementations — this is native-only (reanimated + gesture-handler).
 
 const MAX_SCALE = 4;
-// At/below this we treat the content as "not zoomed" and snap back to a clean 1×.
+// At/below this we treat the content as "not zoomed" and snap back to a clean 1×. Also the
+// tolerance, as a ratio, for "at rest".
 const ZOOM_EPSILON = 1.01;
-// Scale a double-tap zooms into (and back out of).
+// Magnification a double-tap zooms into (and back out of), relative to the page's rest.
 const DOUBLE_TAP_SCALE = 2.5;
 // Movement caps that make the tap recognizers FAIL once the finger travels —
 // they must be explicit: RNGH's iOS tap handler has no default distance bound,
@@ -58,9 +74,42 @@ export function useZoomable({
   singleTapAllowed,
   simultaneousExternal,
   extraSimultaneous,
+  content,
+  restScale = 1,
+  restEdge = 'center',
+  active = true,
+  tapPanDirection,
+  onPanPastEdge,
 }: {
   width: number;
   height: number;
+  /** The picture's box at 1×, centred in the viewport — what every pan is clamped to, so a zoomed
+   *  page stops at its own edge rather than sliding on into its letterbox. Defaults to the
+   *  viewport, which is right for a page that fills it (and for a fit-width page, whose picture
+   *  is top-aligned rather than centred, so this clamp would be the wrong one). */
+  content?: Size;
+  /** Where the page sits when nothing is touching it (see page-geometry's `pageGeometry`): 1× for
+   *  most pages; a spread rests above 1×, at `restEdge`. Double-tap returns here, a page that
+   *  leaves the screen goes back here, and a rest above 1× keeps the side-zone taps live while
+   *  zoomed (they pan first — see `tapPanDirection`). Pinching OUT below the rest is allowed, down
+   *  to 1×, for a look at the whole spread; the next double-tap or page turn restores it. */
+  restScale?: number;
+  restEdge?: RestEdge;
+  /** Whether this is the page on screen. A page that leaves it is put back to rest SILENTLY: the
+   *  pager's zoomed flag is the visible page's, and the page arriving reports its own on becoming
+   *  active. Two pages reporting in one commit would race, and the order they commit in is the
+   *  order they sit in the tree, not the order they were read in. */
+  active?: boolean;
+  /** UI-thread worklet: which way a single tap at `x` asks a zoomed page to pan (-1 for the left
+   *  zone, 1 for the right, 0 for neither). The tap pans a step that way if the page has anything
+   *  left to show there, and falls through to `onSingleTap` — a turn — once it doesn't. Only a page
+   *  resting above 1× keeps its taps while zoomed; on any other zoomed page they stay off. */
+  tapPanDirection?: (x: number) => -1 | 0 | 1;
+  /** A one-finger drag that BEGAN at a zoomed page's edge and was let go heading further past it
+   *  (-1 the left, 1 the right): the page has nothing left to give that way, so the consumer turns.
+   *  Judged from where the finger landed, not where the drag ended, the way a nested scroller hands
+   *  off — one swipe carries you to the edge, the next one leaves. */
+  onPanPastEdge?: (dir: -1 | 1) => void;
   /** Gates pinch/double-tap/pan off entirely (e.g. a fit-width page that
    *  content-pans instead, or a failed page showing its Retry chip). */
   enabled?: boolean;
@@ -120,6 +169,11 @@ export function useZoomable({
   // start of (it runs for every outcome, including one that never activated).
   const pinching = useSharedValue(false);
 
+  // Latched at touch-down by the pan: whether it began with the content already showing its left /
+  // right edge, which is what decides whether a release heading past that edge is a page turn.
+  const fromLeftEdge = useSharedValue(false);
+  const fromRightEdge = useSharedValue(false);
+
   const [zoomed, setZoomed] = useState(false);
 
   const reportZoom = useCallback(
@@ -129,15 +183,45 @@ export function useZoomable({
     },
     [onZoomChange],
   );
+  // Boxed so the rest effect below can report without depending on the consumer's callback
+  // identity — a new `onZoomChange` closure must not put a page the reader has zoomed back to rest.
+  const reportZoomRef = useRef(reportZoom);
+  useEffect(() => {
+    reportZoomRef.current = reportZoom;
+  }, [reportZoom]);
 
-  const reset = useCallback(() => {
-    scale.set(1);
-    tx.set(0);
-    ty.set(0);
-    savedTx.set(0);
-    savedTy.set(0);
-    reportZoom(false);
-  }, [scale, tx, ty, savedTx, savedTy, reportZoom]);
+  const viewport: Size = { width, height };
+  const box: Size = content ?? viewport;
+  const maxScale = Math.max(MAX_SCALE, restScale * WIDE_ZOOM_HEADROOM);
+  const restTx = edgeOffset(restEdge, panLimits(restScale, box, viewport).x);
+  const restZoomed = restScale > ZOOM_EPSILON;
+
+  // Put the page at rest: on mount, whenever the rest itself moves (the picture's dimensions
+  // arriving, the spread setting flipped, a rotation), and when the page leaves the screen so its
+  // next arrival starts from rest. Animated if the page is being looked at — a spread that loads
+  // under your eyes grows into place — and instant for a neighbour being readied off screen.
+  // `box`/`width`/`height` are deliberately not deps: they only matter through `restTx`, and a
+  // page whose rest hasn't moved keeps whatever zoom the reader gave it.
+  useEffect(() => {
+    const settled =
+      Math.abs(scale.value - restScale) < 0.001 && Math.abs(tx.value - restTx) < 0.5 && Math.abs(ty.value) < 0.5;
+    if (!settled) {
+      if (active) {
+        scale.set(withTiming(restScale));
+        tx.set(withTiming(restTx));
+        ty.set(withTiming(0));
+      } else {
+        scale.set(restScale);
+        tx.set(restTx);
+        ty.set(0);
+      }
+      savedTx.set(restTx);
+      savedTy.set(0);
+    }
+    // The local `zoomed` flag is left alone off screen: it only gates gestures, and an inactive
+    // page receives none. It is set again, with the report, the moment the page is active.
+    if (active) reportZoomRef.current(restZoomed);
+  }, [active, restScale, restTx, restZoomed, scale, tx, ty, savedTx, savedTy]);
 
   const pinch = Gesture.Pinch()
     .enabled(enabled)
@@ -158,13 +242,12 @@ export function useZoomable({
       if (e.numberOfPointers < 2) return;
       const cx = width / 2;
       const cy = height / 2;
-      const nextScale = clamp(baseScale.value * e.scale, 1, MAX_SCALE);
+      const nextScale = clamp(baseScale.value * e.scale, 1, maxScale);
       const anchorX = (focalStartX.value - cx - baseTx.value) / baseScale.value;
       const anchorY = (focalStartY.value - cy - baseTy.value) / baseScale.value;
-      const limitX = ((nextScale - 1) * width) / 2;
-      const limitY = ((nextScale - 1) * height) / 2;
-      tx.set(clamp(e.focalX - cx - nextScale * anchorX, -limitX, limitX));
-      ty.set(clamp(e.focalY - cy - nextScale * anchorY, -limitY, limitY));
+      const limit = panLimits(nextScale, box, viewport);
+      tx.set(clamp(e.focalX - cx - nextScale * anchorX, -limit.x, limit.x));
+      ty.set(clamp(e.focalY - cy - nextScale * anchorY, -limit.y, limit.y));
       scale.set(nextScale);
     })
     .onEnd(() => {
@@ -199,23 +282,29 @@ export function useZoomable({
     .maxDuration(300)
     .maxDistance(DOUBLE_TAP_MAX_DIST)
     .onEnd((e) => {
-      if (scale.value > ZOOM_EPSILON) {
-        scale.set(withTiming(1));
-        tx.set(withTiming(0));
+      const s0 = scale.value;
+      // Anywhere but at rest — magnified, or pinched out below a spread's rest — goes back to rest.
+      if (s0 > restScale * ZOOM_EPSILON || s0 < restScale / ZOOM_EPSILON) {
+        scale.set(withTiming(restScale));
+        tx.set(withTiming(restTx));
         ty.set(withTiming(0));
-        savedTx.set(0);
+        savedTx.set(restTx);
         savedTy.set(0);
-        runOnJS(reportZoom)(false);
+        runOnJS(reportZoom)(restZoomed);
         return;
       }
       const cx = width / 2;
       const cy = height / 2;
-      const limitX = ((DOUBLE_TAP_SCALE - 1) * width) / 2;
-      const limitY = ((DOUBLE_TAP_SCALE - 1) * height) / 2;
-      // Keep the tapped content point under the finger: tx = (p − centre)(1 − scale).
-      const nx = clamp((e.x - cx) * (1 - DOUBLE_TAP_SCALE), -limitX, limitX);
-      const ny = clamp((e.y - cy) * (1 - DOUBLE_TAP_SCALE), -limitY, limitY);
-      scale.set(withTiming(DOUBLE_TAP_SCALE));
+      const target = Math.min(DOUBLE_TAP_SCALE * restScale, maxScale);
+      const limit = panLimits(target, box, viewport);
+      // Keep the tapped content point under the finger. From 1× at the origin this is the familiar
+      // tx = (p − centre)(1 − scale); from a spread's rest the point has to be read back through
+      // the rest transform first.
+      const anchorX = (e.x - cx - tx.value) / s0;
+      const anchorY = (e.y - cy - ty.value) / s0;
+      const nx = clamp(e.x - cx - target * anchorX, -limit.x, limit.x);
+      const ny = clamp(e.y - cy - target * anchorY, -limit.y, limit.y);
+      scale.set(withTiming(target));
       tx.set(withTiming(nx));
       ty.set(withTiming(ny));
       savedTx.set(nx);
@@ -232,30 +321,41 @@ export function useZoomable({
     .onStart(() => {
       savedTx.set(tx.value);
       savedTy.set(ty.value);
+      const limit = panLimits(scale.value, box, viewport);
+      fromLeftEdge.set(tx.value >= limit.x - 1);
+      fromRightEdge.set(tx.value <= 1 - limit.x);
     })
     .onUpdate((e) => {
-      const limitX = ((scale.value - 1) * width) / 2;
-      const limitY = ((scale.value - 1) * height) / 2;
-      tx.set(clamp(savedTx.value + e.translationX, -limitX, limitX));
-      ty.set(clamp(savedTy.value + e.translationY, -limitY, limitY));
+      const limit = panLimits(scale.value, box, viewport);
+      tx.set(clamp(savedTx.value + e.translationX, -limit.x, limit.x));
+      ty.set(clamp(savedTy.value + e.translationY, -limit.y, limit.y));
     })
     // Fling the zoomed image: keep gliding on release, decelerating and stopping at
     // the pan bounds (`clamp`). The next pan's onStart re-captures tx/ty as its base,
     // so grabbing mid-glide continues seamlessly from wherever it's coasted.
     .onEnd((e) => {
-      const limitX = ((scale.value - 1) * width) / 2;
-      const limitY = ((scale.value - 1) * height) / 2;
-      tx.set(withDecay({ velocity: e.velocityX, clamp: [-limitX, limitX], deceleration: 0.994 }));
-      ty.set(withDecay({ velocity: e.velocityY, clamp: [-limitY, limitY], deceleration: 0.994 }));
+      const limit = panLimits(scale.value, box, viewport);
+      tx.set(withDecay({ velocity: e.velocityX, clamp: [-limit.x, limit.x], deceleration: 0.994 }));
+      ty.set(withDecay({ velocity: e.velocityY, clamp: [-limit.y, limit.y], deceleration: 0.994 }));
+      if (!onPanPastEdge) return;
+      // Dragging the content RIGHT from its left edge asks for what lies to the left of the page.
+      const threshold = width * ZOOMED_EDGE_TURN_FRACTION;
+      if (fromLeftEdge.value && releaseCommitted(e.translationX, e.velocityX, threshold)) {
+        runOnJS(onPanPastEdge)(-1);
+      } else if (fromRightEdge.value && releaseCommitted(-e.translationX, -e.velocityX, threshold)) {
+        runOnJS(onPanPastEdge)(1);
+      }
     });
 
   // Optional single tap — page-turn zones (x-based) or a chrome toggle (ignores x).
-  // Off while zoomed (a tap there does nothing) and per the consumer's own gate.
-  // `singleTapArmed` carries the touch-down verdict (see `singleTapAllowed`) through to the
-  // release; with no gate supplied every touch arms it, which is the old behaviour exactly.
+  // Off while zoomed (a tap there does nothing) — except on a page that RESTS zoomed, a spread,
+  // where the side zones pan a step across it and only turn once there is nothing left that way —
+  // and per the consumer's own gate. `singleTapArmed` carries the touch-down verdict (see
+  // `singleTapAllowed`) through to the release; with no gate supplied every touch arms it, which
+  // is the old behaviour exactly.
   const singleTap = onSingleTap
     ? Gesture.Tap()
-        .enabled(!zoomed && singleTapEnabled)
+        .enabled((!zoomed || restZoomed) && singleTapEnabled)
         .numberOfTaps(1)
         .maxDuration(SINGLE_TAP_MAX_DURATION)
         .maxDistance(SINGLE_TAP_MAX_DIST)
@@ -264,6 +364,19 @@ export function useZoomable({
         })
         .onEnd((e) => {
           if (!singleTapArmed.value) return;
+          if (tapPanDirection && scale.value > ZOOM_EPSILON) {
+            const dir = tapPanDirection(e.x);
+            if (dir !== 0) {
+              const limit = panLimits(scale.value, box, viewport);
+              // The left zone asks for what lies to the LEFT, which is the content moving right.
+              const target = clamp(tx.value - dir * width * TAP_PAN_FRACTION, -limit.x, limit.x);
+              if (Math.abs(target - tx.value) > 1) {
+                tx.set(withTiming(target));
+                savedTx.set(target);
+                return;
+              }
+            }
+          }
           runOnJS(onSingleTap)(e.x);
         })
     : null;
@@ -294,5 +407,5 @@ export function useZoomable({
     transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
   }));
 
-  return { gesture, animatedStyle, zoomed, reset };
+  return { gesture, animatedStyle, zoomed };
 }

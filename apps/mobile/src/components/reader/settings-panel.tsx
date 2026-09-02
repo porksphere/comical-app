@@ -72,6 +72,18 @@ function SettingsContent() {
           {settings.pageFit === 'fit-page' ? 'One page at a time, like Paged' : 'Continuous scroll'}
         </ThemedText>
       )}
+      {settings.mode === 'paged' && settings.pageFit === 'fit-page' && (
+        <Segment
+          label="Wide pages"
+          testIdPrefix="reader.settings.wide-pages"
+          value={settings.zoomWidePages ? 'fill-height' : 'fit-page'}
+          options={[
+            ['fill-height', 'Fill height'],
+            ['fit-page', 'Fit page'],
+          ]}
+          onChange={(v) => set({ zoomWidePages: v === 'fill-height' })}
+        />
+      )}
       <Segment
         label="Preload ahead"
         testIdPrefix="reader.settings.preload-ahead"

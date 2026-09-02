@@ -14,11 +14,20 @@ export type ReaderSettings = {
   mode: ReaderMode;
   direction: ReaderDirection;
   pageFit: PageFit;
+  /** Rest a SPREAD (a page wider than it is tall) at the viewport's height instead of letterboxed
+   *  across its middle, so it reads by panning sideways. Paged mode, fit-page only. */
+  zoomWidePages: boolean;
   prefetchAhead: PrefetchAhead;
 };
 
 const STORAGE_KEY = 'comical:readerSettings';
-const DEFAULT_SETTINGS: ReaderSettings = { mode: 'paged', direction: 'ltr', pageFit: 'fit-page', prefetchAhead: 4 };
+const DEFAULT_SETTINGS: ReaderSettings = {
+  mode: 'paged',
+  direction: 'ltr',
+  pageFit: 'fit-page',
+  zoomWidePages: true,
+  prefetchAhead: 4,
+};
 
 // Starts at DEFAULT_SETTINGS (also the pre-hydration value the web static export
 // renders) and rehydrates from the same `comical:readerSettings` key the old

@@ -4765,6 +4765,7 @@ const ReaderPane = forwardRef<
           height={height}
           rtl={settings.direction === 'rtl'}
           pageFit={settings.pageFit}
+          zoomWidePages={settings.zoomWidePages}
           initialPage={stitched ? prefixLen + startIndex : startIndex}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // Keep the counter live during fast flicks — against the segment the page belongs to

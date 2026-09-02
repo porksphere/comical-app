@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
+import { pageGeometry, type Size } from '@/components/reader/page-geometry';
 import { ReaderPage } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
@@ -20,7 +21,8 @@ import type { PageFit } from '@/hooks/use-reader-settings';
 // fills the width edge to edge; if that makes the page taller than the viewport,
 // a one-finger vertical drag scrolls that content instead (mutually exclusive
 // with pinch-zoom — see `contentPan`). `pageFit === 'fit-page'` shows the whole
-// page, letterboxed, still pinch-zoomable.
+// page, letterboxed, still pinch-zoomable — and, with `zoomWidePages`, rests a
+// SPREAD at the viewport's height instead, panned sideways (see page-geometry).
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -33,6 +35,10 @@ type Props = {
   width: number;
   height: number;
   pageFit: PageFit;
+  /** Reading direction — which edge of a spread it rests at. */
+  rtl: boolean;
+  /** The spread rule (`useReaderSettings().zoomWidePages`). */
+  zoomWidePages: boolean;
   /** Cross-fade override for this page — see ReaderPage's `fadeMs`. */
   fadeMs?: number;
   /** Whether this is the page currently in view; losing focus resets the zoom. */
@@ -76,6 +82,8 @@ export function ZoomablePage({
   width,
   height,
   pageFit,
+  rtl,
+  zoomWidePages,
   fadeMs,
   active,
   onLeft,
@@ -96,15 +104,25 @@ export function ZoomablePage({
   const savedContentTy = useSharedValue(0);
   const [overflowsVertically, setOverflowsVertically] = useState(false);
   const [contentPanning, setContentPanning] = useState(false);
+  // The picture's real dimensions, once loaded — what the page's rest and pan bounds are read from.
+  const [image, setImage] = useState<Size | null>(null);
 
   const onLoadDims = useCallback(
     (w: number, h: number) => {
-      if (w <= 0) return;
+      if (w <= 0 || h <= 0) return;
       const ch = width * (h / w);
       contentHeight.set(ch);
       setOverflowsVertically(ch > height + 1);
+      setImage({ width: w, height: h });
     },
     [width, height, contentHeight],
+  );
+
+  // Only a fit-page picture is centred in the viewport, which is what the hook's content clamp
+  // assumes; a fit-width one is top-aligned and keeps the viewport clamp it always had.
+  const geometry = useMemo(
+    () => pageGeometry(pageFit === 'fit-page' ? image : null, { width, height }, zoomWidePages, rtl),
+    [pageFit, image, width, height, zoomWidePages, rtl],
   );
 
   // Compounding pinch's scale/anchor math with an independent content-pan offset
@@ -125,6 +143,18 @@ export function ZoomablePage({
     },
     [width, onLeft, onRight, onToggleChrome],
   );
+  // The same zones, answered on the UI thread for a zoomed spread, which pans a step that way
+  // before it turns (see useZoomable's `tapPanDirection`).
+  const tapPanDirection = useCallback(
+    (x: number): -1 | 0 | 1 => {
+      'worklet';
+      return x < width * 0.3 ? -1 : x > width * 0.7 ? 1 : 0;
+    },
+    [width],
+  );
+  // A drag off a zoomed page's edge is the swipe the frozen pager can't take — hand it the same
+  // turn the zone there would.
+  const onPanPastEdge = useCallback((dir: -1 | 1) => (dir < 0 ? onLeft() : onRight()), [onLeft, onRight]);
 
   // One-finger vertical scroll of an overflowing fit-width page. A deadzone
   // (`activeOffsetY`) plus `failOffsetX` disambiguate it from the FlatList's own
@@ -155,27 +185,29 @@ export function ZoomablePage({
   // The whole zoom gesture (pinch / double-tap / one-finger pan / the tap zones,
   // all composed) comes from the shared hook; this page just feeds it the tap-zone
   // handler and its content-pan.
-  const { gesture, animatedStyle, zoomed, reset } = useZoomable({
+  //
+  // Swiping to another page (or jumping via the progress pill) puts this one back to rest, so
+  // every page starts from rest — fit-to-screen, or fit-height for a spread. That is only ever
+  // right while `active` is CURRENT, which on a virtualized list is not free: see the pager's
+  // `extraData`, without which a cell kept the value it first rendered with and the reset fired on
+  // the page being zoomed.
+  const { gesture, animatedStyle } = useZoomable({
     width,
     height,
     enabled: zoomEnabled,
+    active,
+    content: pageFit === 'fit-page' ? geometry.content : undefined,
+    restScale: geometry.restScale,
+    restEdge: geometry.restEdge,
     onZoomChange,
     onPinchChange,
     onSingleTap: onTapNav,
     singleTapEnabled: !suspended,
+    tapPanDirection,
+    onPanPastEdge,
     extraSimultaneous: [contentPan],
     simultaneousExternal: scrollGesture,
   });
-
-  // Swiping to another page (or jumping via the progress pill) drops the zoom so
-  // every page starts fit-to-screen.
-  //
-  // This is only ever right while `active` is CURRENT, which on a virtualized list is not free:
-  // see the pager's `extraData`, without which a cell kept the value it first rendered with and
-  // this reset fired on the page being zoomed.
-  useEffect(() => {
-    if (!active && zoomed) reset();
-  }, [active, zoomed, reset]);
 
   // A page that goes away mid-pinch (a mode switch, a window that dropped it) never reaches the
   // gesture's own `onFinalize`, and the pager would be left frozen on a pinch nothing can end.

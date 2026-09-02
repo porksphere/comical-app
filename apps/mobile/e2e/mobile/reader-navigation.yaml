@@ -1,6 +1,6 @@
 # Extends past browse-to-reader.yaml's "reader opened" assertion: paged prev/next tap zones, the
 # backward chapter crossing off page 1, the bottom navigator's page scrubber, and the settings
-# sheet's reading-direction switch.
+# sheet's wide-pages and reading-direction switches.
 #
 # Mobile-only: the tap-zone testIDs (reader.control.*) are NATIVE-only markers
 # (components/reader/zoomable-page.tsx's TapZones — "web has its own gesture pager in
@@ -30,6 +30,11 @@
 #   - reader.settings.direction.ltr / .vertical / .rtl   The 3-way mode+direction row — NOT
 #     ".paged"/".webtoon" (a wrong name already caught and fixed in
 #     swipe-dismiss-webtoon.yaml this same session; DIRECTION_OPTIONS only has ltr/vertical/rtl).
+#   - reader.settings.wide-pages.fill-height / .fit-page   The spread rule ("Wide pages"): whether a
+#     page wider than it is tall rests zoomed to the viewport's height. Only rendered while the
+#     sheet is in paged + fit-page mode, which is the app default and the state this flow is in when
+#     it opens the sheet. The demo chapter has no spread, so only the toggle itself is exercised —
+#     what it does to a page isn't assertable from a testID.
 #   - reader.toolbar.back                   Reused from browse-to-reader.yaml.
 #
 # The settings sheet has no dedicated close button — swipe-dismiss-webtoon.yaml's already-
@@ -120,9 +125,17 @@ appId: com.porksphere.comical
     id: "reader.navigator.page"
     text: "^1$"
 
-# Settings sheet: switch reading direction to Vertical (webtoon) and back to L -> R (paged).
+# Settings sheet: flip the spread rule off and back on (it persists, like the direction — leaving
+# it off would change how every later flow's spreads render), then switch reading direction to
+# Vertical (webtoon) and back to L -> R (paged).
 - tapOn:
     id: "reader.settings.open"
+- assertVisible:
+    id: "reader.settings.wide-pages.fill-height"
+- tapOn:
+    id: "reader.settings.wide-pages.fit-page"
+- tapOn:
+    id: "reader.settings.wide-pages.fill-height"
 - assertVisible:
     id: "reader.settings.direction.vertical"
 - tapOn:

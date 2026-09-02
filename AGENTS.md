@@ -354,6 +354,39 @@ is visibly clipped by the frame that is supposed to hold it. `zoomMaskBox` is de
 of both — one box, read by all three animated styles, so they cannot disagree about where the window
 is.
 
+# Reader zoom: a page has a REST, and a spread's rest is not 1×
+
+Both paged readers (`use-zoomable.ts` on native, `paged-reader.web.tsx` on web) share
+`page-geometry.ts`, which answers two questions about a page from its picture's real dimensions:
+the box the picture occupies at 1× (what every pan is clamped to — a zoomed page stops at its own
+edge, never slides on into its letterbox), and where the page RESTS. Most pages rest at 1×. A
+spread — a picture wider than it is tall — rests scaled to the viewport's height, at the edge
+reading starts from (left for L→R, right for R→L), and reads by panning sideways. That is the
+`zoomWidePages` setting, on by default; it is what Mihon calls "automatically zoom into wide
+images" and Panels "adjust to orientation". Judge "wide" by the PICTURE's aspect, never the
+viewport's: an ordinary portrait page is letterboxed on a tall phone too, and resting that at
+fit-height puts every page behind a sideways pan.
+
+Nothing locks the vertical axis. At fit-height the content's vertical overhang is zero, so the
+clamp is what holds it — the same clamp that stops a 2.5× page drifting into black. Don't add a
+rule for it.
+
+A page resting zoomed still has to be LEFT, and the pager freezes its scroll for any zoomed page,
+so the two ways out are built into the page: a side-zone tap pans a step across the spread
+(`TAP_PAN_FRACTION`) and turns only once there is nothing left that way, and a one-finger drag that
+BEGAN at an edge and was let go heading past it turns (`onPanPastEdge`, judged with
+`releaseCommitted`). Latched from where the finger landed, not where the drag ended, the way a
+nested scroller hands off: one swipe carries you to the edge, the next one leaves.
+
+Double-tap toggles between the rest and a magnification of it (`DOUBLE_TAP_SCALE × rest`, capped
+at `WIDE_ZOOM_HEADROOM × rest` for a spread, whose rest is already above the old `MAX_SCALE`).
+Pinching OUT below a spread's rest is allowed, down to 1×, for a look at the whole thing.
+
+Only the ACTIVE page reports `onZoomChange`. A page leaving the screen is put back to rest
+silently and the page arriving reports its own rest on activation; the old arrangement, where the
+leaving page reported `false`, would race the arriving spread's `true` in the same commit, in tree
+order rather than reading order.
+
 # Press-in warms the destination
 
 Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is

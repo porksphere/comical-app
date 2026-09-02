@@ -73,6 +73,8 @@ type Props = {
   height: number;
   rtl: boolean;
   pageFit: PageFit;
+  /** Rest a spread at the viewport's height — see ZoomablePage. */
+  zoomWidePages: boolean;
   initialPage: number;
   /** The page the scroll SETTLED on — the committed position (progress, chapter
    *  relabel). Fires once per scroll, on momentum end. */
@@ -160,6 +162,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     height,
     rtl,
     pageFit,
+    zoomWidePages,
     initialPage,
     onPageChange,
     onVisiblePageChange,
@@ -518,6 +521,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       activeIndex,
       standby,
       pageFit,
+      rtl,
+      zoomWidePages,
       width,
       height,
       leftAction,
@@ -526,7 +531,20 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       handleZoomChange,
       pageExternals,
     }),
-    [activeIndex, standby, pageFit, width, height, leftAction, rightAction, onToggleChrome, handleZoomChange, pageExternals],
+    [
+      activeIndex,
+      standby,
+      pageFit,
+      rtl,
+      zoomWidePages,
+      width,
+      height,
+      leftAction,
+      rightAction,
+      onToggleChrome,
+      handleZoomChange,
+      pageExternals,
+    ],
   );
 
   return (
@@ -609,6 +627,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               width={width}
               height={height}
               pageFit={pageFit}
+              rtl={rtl}
+              zoomWidePages={zoomWidePages}
               active={index === activeIndex}
               onLeft={leftAction}
               onRight={rightAction}
