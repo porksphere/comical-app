@@ -27,40 +27,48 @@ import { useHover } from '@/hooks/use-hover';
 import { usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
-/** The indicator's box, and the thing every inset below is measured against. */
+/** The check GLYPH. Its slot is wider — see `ROW_ART`. */
 const CHECK_SIZE = 16;
 /** A pointer's row. A touch row is `RowHeight`, which is a target size rather than a chosen one. */
 const POINTER_ROW_HEIGHT = 34;
 /**
- * The highlight's inset, DERIVED rather than picked: half the space a centred indicator leaves in
- * its row, applied to the sides as well.
+ * The size of the row's ART — the leading thumbnail, and the width of the trailing slot the check
+ * sits in. ONE number per row, and everything else is derived from it.
  *
- * A row's height is set by what it has to be — 44 for a thumb, 34 for a pointer — so the vertical
- * gap around a 16pt glyph is already decided, and choosing a side padding independently means the
- * two disagree. They did: on the touch row the check sat 14pt off the top and bottom against 8pt
- * off the right, which reads as a mark shoved into the edge of its own highlight.
+ * This is the layer the geometry belongs at, which took two goes to find. A row holds elements of
+ * different sizes — a 28pt bridge thumbnail and a 16pt check — and a single side padding cannot
+ * frame both evenly, because each one's vertical gap is already fixed by its own height against the
+ * row's. Setting the padding from the check left the thumbnail 14 from the side and 8 from the top;
+ * setting it from the thumbnail puts the check back where it started.
+ *
+ * Giving the trailing slot the ART's width instead resolves it: the inset is `(row - art) / 2`, so
+ * the art is evenly framed by construction, and the check — centred in a slot that wide — picks up
+ * the extra `(art - check) / 2` on its side, which is exactly the difference between their vertical
+ * gaps. Both come out evenly inset, from one number. It lands on 8 for both presentations, which is
+ * why the label inset is back where it began.
  */
-const rowInset = (height: number) => (height - CHECK_SIZE) / 2;
+const ROW_ART = { touch: 28, pointer: 18 } as const;
+const rowInset = (height: number, art: number) => (height - art) / 2;
+const TOUCH_INSET = rowInset(RowHeight, ROW_ART.touch);
+const POINTER_INSET = rowInset(POINTER_ROW_HEIGHT, ROW_ART.pointer);
 /**
- * Optical centring for the label, and it is a real offset rather than a taste call.
+ * Optical centring for the label, and a real offset rather than a taste call.
  *
  * A line box reserves room for a descender whether or not the label has one, so centring the BOX
  * leaves the visible glyphs above the middle. Measured at 3x on a 34pt row: "Recently added" sat 26
  * above / 27 below — balanced, because its `y` fills the reserved space — while "None", identical
- * type, sat 28 / 37. The eye reads the second as high, and it is: both labels share a cap-to-
- * baseline mass, and that mass was 1.5pt above centre in each.
+ * type, sat 28 / 37. Both share a cap-to-baseline mass, and that mass was a point and a half above
+ * centre in each.
  *
  * Padding on a centred box moves its content by HALF what it adds — the box grows, then re-centres
- * — so the correction is twice the error. Applied to the text column, so a two-line row (the
- * collection picker's counts) takes it once rather than per line.
+ * — so the correction is twice the error. It goes on the text column rather than the label, so a
+ * two-line row (the collection picker's counts) takes it once rather than per line.
  *
- * 2 rather than 3, and the difference is a real trade: the residual quantises to a pixel either way
- * at 3x, and 3 pushed "Recently added" to 32 above / 21 below, tightening its descender against the
- * bottom edge to fix a label that has none. 2 leaves both within a point of centre.
+ * 2 rather than 3 is a trade, not a rounding: the residual quantises to a pixel either way at that
+ * scale, and 3 pushed "Recently added" to 32 / 21, tightening its descender against the bottom edge
+ * to fix a label that has none.
  */
 const LABEL_OPTICAL_NUDGE = 2;
-const TOUCH_INSET = rowInset(RowHeight);
-const POINTER_INSET = rowInset(POINTER_ROW_HEIGHT);
 
 export function OptionRow({
   label,
@@ -117,7 +125,7 @@ export function OptionRow({
           rather than carrying it — and a ring per row, drawn whether or not anything is selected,
           was the loudest thing in a menu whose job is its labels. The slot is reserved either way,
           so selecting a row never reflows the labels beside it. */}
-      <View style={styles.check}>
+      <View style={pointer ? styles.checkPointer : styles.checkTouch}>
         {/* `text`, not `accent` — the rail marks its current row with weight and the plain text
             colour, and this is the same list. A blue tick was also the one hue in a menu whose job
             is its labels (the hold menu's material carries the same rule, at more length). */}
@@ -201,8 +209,14 @@ const styles = StyleSheet.create({
   labelSelected: {
     fontWeight: '600',
   },
-  check: {
-    width: CHECK_SIZE,
+  // As wide as the row's ART, not as the glyph — that width is what carries the check to the same
+  // inset the thumbnail has (see ROW_ART).
+  checkTouch: {
+    width: ROW_ART.touch,
+    alignItems: 'center',
+  },
+  checkPointer: {
+    width: ROW_ART.pointer,
     alignItems: 'center',
   },
   sectionLabel: {

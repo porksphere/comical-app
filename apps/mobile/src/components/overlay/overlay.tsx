@@ -372,6 +372,14 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       ref={sheet?.scrollRef as never}
       onScroll={onScroll}
       scrollEventThrottle={16}
+      // A list that FITS is not a scroller. Left enabled, a short menu still took a drag and
+      // rubber-banded against nothing, which reads as content hidden below the fold when there is
+      // none. `needsScroll` is the settle logic's own verdict (see `evaluate`), already measured
+      // against real layout, so this costs no extra work.
+      //
+      // The SHEET keeps it either way: its drag-to-dismiss is handed off from this scroller's
+      // offset (see SheetScroll), so disabling it there would take the sheet's gesture with it.
+      scrollEnabled={presentation === 'sheet' || needsScroll}
       onLayout={(e) => {
         scrollHeightRef.current = e.nativeEvent.layout.height;
         evaluate();
