@@ -4,7 +4,7 @@ import { BridgeThumb } from '@/components/bridge-thumb';
 import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useIsCompact, usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -180,6 +180,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
     paddingHorizontal: Spacing.one,
     paddingVertical: Spacing.half,
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
   },
   // React Native's `flexShrink` defaults to 0 (unlike web CSS's 1), so without

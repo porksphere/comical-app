@@ -5,7 +5,7 @@
 
 import '@/global.css';
 
-import { Platform } from 'react-native';
+import { Platform, type ViewStyle } from 'react-native';
 
 export const Colors = {
   light: {
@@ -154,6 +154,33 @@ export const Fonts = Platform.select({
     mono: 'var(--font-mono)',
   },
 });
+
+/**
+ * iOS's continuous corner curve — the superellipse Apple draws instead of a circular arc, so a
+ * corner leaves the straight edge gradually rather than at a tangent.
+ *
+ * **Web only, on purpose.** The native prop for this is `borderCurve: 'continuous'`, which is
+ * iOS-only (it isn't in Android's view config) and would therefore change how the app looks on
+ * device — out of scope for the tablet/desktop work this was added for. Turning it on there is
+ * adding `ios: { borderCurve: 'continuous' }` below, nothing more.
+ *
+ * `cornerShape` is not a React Native style prop, and doesn't need to be: react-native-web's style
+ * compiler hyphenates any key it doesn't recognise straight into CSS, so this reaches the DOM as
+ * `corner-shape: squircle`. That is a real property in Chromium 139+; Safari and Firefox drop the
+ * declaration and keep the ordinary round corner, which is the whole fallback story — there is
+ * nothing to detect and nothing to polyfill. Unlike the SVG-clip-path trick usually used for those
+ * browsers, it also shapes borders and shadows rather than clipping them, which our popover's
+ * hairline and shadow both need.
+ *
+ * Pair it with a radius that already reads as rounded, and expect it to read SQUARER than the same
+ * radius does circular: the curve keeps more of the corner (measured at 3x, a 16pt corner loses 26
+ * device-px of area against a circular corner's 65). The effect scales with the radius squared, so
+ * it is worth having on a panel and nearly invisible on an 8pt row highlight.
+ */
+export const ContinuousCorner = Platform.select({
+  web: { cornerShape: 'squircle' },
+  default: {},
+}) as ViewStyle;
 
 export const Spacing = {
   half: 2,

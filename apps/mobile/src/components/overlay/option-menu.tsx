@@ -32,7 +32,7 @@ import {
   useOverlayPresentation,
 } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
-import { RowHeight, Spacing } from '@/constants/theme';
+import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -258,6 +258,7 @@ const styles = StyleSheet.create({
     marginBottom: HEADER_TO_LIST_GAP - Spacing.two,
   },
   menuButton: {
+    ...ContinuousCorner,
     padding: Spacing.one,
     borderRadius: Spacing.two,
   },
@@ -268,6 +269,7 @@ const styles = StyleSheet.create({
     // The fill is a selection HIGHLIGHT now, not a button. 8pt hugs the row; the 16 it used to
     // carry made a filled row read as a pill, which is what made a list of them read as a stack of
     // buttons. The rail's own rows use the same corner.
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
   },
   // minHeight rather than height: the target is a floor, and a label that ever wraps should push

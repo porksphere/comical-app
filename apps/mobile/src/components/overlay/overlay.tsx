@@ -28,7 +28,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { RowHeight, Spacing } from '@/constants/theme';
+import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { sharedPushback } from '@/lib/pushback-signal';
@@ -1199,6 +1199,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sheet: {
+    ...ContinuousCorner,
     width: '100%',
     maxWidth: 520,
     borderTopLeftRadius: 24,
@@ -1237,6 +1238,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   popover: {
+    ...ContinuousCorner,
     borderRadius: 16,
     paddingHorizontal: Spacing.four,
     overflow: 'hidden',
