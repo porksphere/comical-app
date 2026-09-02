@@ -7,7 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useKeyboardLift } from '@/hooks/use-keyboard-lift';
 
-const HIDDEN_FAINT = 0.35;
+const HIDDEN_FAINT = 0.6;
 
 /** Bottom-centre "X / Y" pill; tapping reveals a numeric jump input + Go. */
 export function ProgressPill({

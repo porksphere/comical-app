@@ -91,7 +91,7 @@ const BAR_H = 40;
  *  would sit under the indicator itself, which on iPhone draws over whatever is beneath it. */
 const COUNTER_H = 20;
 const COUNTER_BOTTOM = Spacing.one;
-const COUNTER_FAINT = 0.35;
+const COUNTER_FAINT = 0.6;
 const BAR_BOTTOM = COUNTER_BOTTOM + COUNTER_H + Spacing.one;
 /** Where the bottom chrome ENDS, above the safe-area inset — the bar's top edge. Anything stacked
  *  over the bar (the Details hint) measures from here. */

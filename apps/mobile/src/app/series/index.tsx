@@ -4907,11 +4907,13 @@ function DetailsHint({
   return (
     <Animated.View
       pointerEvents={visible ? 'box-none' : 'none'}
-      // Stacked on the bottom chrome's top edge: the navigator's on native, the progress pill's on
-      // web (which has no page counter under it and so sits lower).
+      // A gap above the bottom chrome's top edge: the navigator's on native, the progress pill's
+      // on web (which has no page counter under it and so sits lower). On a direct series the
+      // scrubber pill spans the whole width, straight under this, so the gap is what separates
+      // the two backgrounds.
       style={[
         styles.detailsHintWrap,
-        { bottom: insets.bottom + (IS_WEB ? Spacing.two + 48 : BOTTOM_CHROME_HEIGHT) },
+        { bottom: insets.bottom + (IS_WEB ? Spacing.two + 48 : BOTTOM_CHROME_HEIGHT + Spacing.two) },
         style,
       ]}>
       <Pressable
