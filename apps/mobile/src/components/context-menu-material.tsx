@@ -47,20 +47,6 @@ export const EDGE_PAD = 12;
 export const BACKDROP_BLUR = { preview: 28, plain: 14 } as const;
 export type BackdropBlurMode = keyof typeof BACKDROP_BLUR;
 export const MENU_BLUR = 55;
-/**
- * …and the same material's intensity on WEB, which is a different number for the same look.
- *
- * expo-blur's native path hands `intensity` to a UIVisualEffectView; its web build (BlurView.web)
- * turns it into literal CSS — `blur(intensity * 0.2px)` plus a tint at `intensity/100 * 0.78`. So
- * MENU_BLUR's 55 is an ELEVEN pixel blur on web, against something far heavier on iOS. Eleven
- * pixels does not dissolve a grid of covers: it leaves the cards legible through the panel, which
- * reads as a window onto the page rather than a frost over it — the reported "extreme" one.
- *
- * 100 is the library's ceiling (20px) and is also what brings its own tint up to 0.78, which is the
- * half that actually makes the panel quiet. Judge this number by the RENDERED pixel, not by the
- * constant: `MENU_BLUR` and this are the same material only by eye.
- */
-export const MENU_BLUR_WEB = 100;
 // The scrim follows the theme: light washes the page out pale (what iOS does) so the light menu has
 // something light to blur; dark dims to black.
 export const BACKDROP_TINT = { light: '#ffffff', dark: '#000000' } as const;
