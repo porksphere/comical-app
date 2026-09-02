@@ -19,7 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { SettingsRow } from '@/components/settings/settings-row';
-import { SettingsGutter, Spacing } from '@/constants/theme';
+import { ContinuousCorner, SettingsGutter, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { createTickHaptic, hapticImpactLight, hapticImpactMedium } from '@/lib/haptics';
@@ -691,6 +691,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   rowClip: {
+    // The CURVE for the radius `rowStyle` animates open (see there) — static, because only the
+    // radius moves. A corner that grows circular and a corner that grows continuous take the same
+    // 0→14 ramp; this is which of the two the ramp is drawing.
+    ...ContinuousCorner,
     overflow: 'hidden',
   },
   swipeContainer: {
