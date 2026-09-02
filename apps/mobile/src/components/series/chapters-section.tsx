@@ -650,7 +650,7 @@ export function ChapterScrollList({
           style={[
             styles.expandMiddle,
             // Brighten (not dim) on hover — same treatment as the chapter tab strip.
-            expandMiddleHover.hovered && { backgroundColor: theme.backgroundSelected, borderRadius: 8 },
+            expandMiddleHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 8 },
           ]}>
           <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
             Show {item.hiddenCount} more chapters
@@ -832,7 +832,7 @@ function ChapterRow({
               hitSlop={6}
               style={[
                 styles.versionsBtn,
-                versionsHover.hovered && { backgroundColor: theme.backgroundSelected, borderRadius: 6 },
+                versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
               ]}>
               <ThemedText type="small" style={{ color: theme.accent }}>
                 {group.versions.length} versions {expanded ? '▴' : '▾'}

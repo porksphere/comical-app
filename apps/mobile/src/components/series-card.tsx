@@ -7,7 +7,7 @@ import { CardBadge, UnreadBadge } from '@/components/card-badge';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
 import { useIsCompact } from '@/hooks/use-responsive';
@@ -801,6 +801,7 @@ const styles = StyleSheet.create({
     // clip there). Same aspect box, but it clips + backs the cover directly — one fewer view per card.
     width: '100%',
     position: 'relative',
+    ...ContinuousCorner,
     borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
@@ -819,6 +820,7 @@ const styles = StyleSheet.create({
     // sits inside this, since clipping the SAME element being scaled wouldn't
     // actually contain overflow (the clip rect would scale with the transform).
     flex: 1,
+    ...ContinuousCorner,
     borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
@@ -858,6 +860,7 @@ const styles = StyleSheet.create({
     left: -2,
     right: -2,
     bottom: -2,
+    ...ContinuousCorner,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: '#60a5fa',
@@ -893,6 +896,7 @@ const styles = StyleSheet.create({
     zIndex: 1000,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
+    ...ContinuousCorner,
     borderRadius: 8,
     // Soft lift so it reads as floating over the cards below it.
     boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.25)',

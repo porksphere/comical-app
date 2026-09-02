@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
@@ -168,6 +168,7 @@ const styles = StyleSheet.create({
   thumb: {
     width: THUMB_W,
     aspectRatio: 2 / 3,
+    ...ContinuousCorner,
     borderRadius: 6,
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
@@ -202,6 +203,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   btn: {
+    ...ContinuousCorner,
     borderRadius: Spacing.two,
     overflow: 'hidden',
   },
