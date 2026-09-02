@@ -37,12 +37,6 @@ export const Colors = {
     /** The panel's own edge. Stronger than `barHairline`, which divides two things already on the
      *  same plane; this one has to hold a white panel off a white page. */
     overlayHairline: '#D8D9DF',
-    /**
-     * The rim around a cover — see the dark theme's note, which is where this treatment comes from.
-     * DARK here rather than white: the point is to hold the artwork's edge off the page, and on a
-     * light page the artwork is the darker of the two.
-     */
-    coverEdge: 'rgba(0,0,0,0.14)',
     textSecondary: '#60646C',
     // Shared accent + chrome tokens (mirrored in `dark`). Used by cards, badges,
     // chips and the series action buttons so colors aren't re-hardcoded per file.
@@ -101,19 +95,6 @@ export const Colors = {
     overlayHover: '#3A3A3C',
     overlaySelected: '#47474A',
     overlayHairline: '#404042',
-    /**
-     * The rim around a cover: a hairline of white, INSIDE the corner, so a poster with dark edges
-     * keeps its silhouette instead of dissolving into an OLED-black page — which is what happens to
-     * the rounded corners first.
-     *
-     * 0.3 is measured off Apple TV's own cards, where the same rim is a single device pixel of white
-     * at an alpha that holds within 0.29-0.34 over content ranging from (2,2,3) to (133,105,66) —
-     * i.e. a flat white overlay, not a glow drawn from the artwork, and neutral to within 3/255 per
-     * channel. Theirs also FADES OUT over the last ~10pt before the bottom edge, so the card reads
-     * as lit from above rather than outlined; at hairline width that gradient costs a masked overlay
-     * per card to buy back very little, so this one is uniform.
-     */
-    coverEdge: 'rgba(255,255,255,0.3)',
     textSecondary: '#B0B4BA',
     accent: '#3478F6',
     accentHover: '#5A90FF',

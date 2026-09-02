@@ -618,7 +618,7 @@ export function SeriesCard({
           // Web keeps a non-clipping `coverBox` around the clipping `coverClip` so the active hover
           // ring (negative insets) can extend past the clip without being cut off.
           <View style={[styles.coverBox, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]} onLayout={shrink.onCoverLayout}>
-            <View style={[styles.coverClip, { borderColor: theme.coverEdge }]}>{coverContents}</View>
+            <View style={styles.coverClip}>{coverContents}</View>
             {active && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
           </View>
         ) : (
@@ -629,11 +629,7 @@ export function SeriesCard({
           <View
             // The zoom entrance's source rect is measured off THIS box — see captureZoomOrigin.
             ref={coverRef}
-            style={[
-              styles.coverBoxClip,
-              { aspectRatio: coverAspect, borderColor: theme.coverEdge },
-              coverHidden && styles.coverHidden,
-            ]}
+            style={[styles.coverBoxClip, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]}
             onLayout={shrink.onCoverLayout}>
             {coverContents}
           </View>
@@ -807,8 +803,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     ...ContinuousCorner,
     borderRadius: 10,
-    // The rim (see `coverEdge`). Inside the corner, so it costs no layout and follows the curve.
-    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
@@ -828,7 +822,6 @@ const styles = StyleSheet.create({
     flex: 1,
     ...ContinuousCorner,
     borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
