@@ -60,10 +60,13 @@ function SettingsContent() {
       <Segment
         label="Page fit"
         testIdPrefix="reader.settings.page-fit"
-        value={settings.pageFit}
+        // Webtoon has only the two layouts (one page per screen, or a continuous strip), so it
+        // shows two and reads `smart` as the strip — the same mapping WebtoonReader applies.
+        value={settings.mode === 'webtoon' && settings.pageFit === 'smart' ? 'fit-width' : settings.pageFit}
         options={[
           ['fit-page', 'Fit page'],
           ['fit-width', 'Fit width'],
+          ...(settings.mode === 'paged' ? [['smart', 'Smart'] as [string, string]] : []),
         ]}
         onChange={(v) => set({ pageFit: v as PageFit })}
       />
@@ -84,6 +87,18 @@ function SettingsContent() {
           onChange={(v) => set({ zoomWidePages: v === 'fill-height' })}
         />
       )}
+      <Toggle
+        label="Double-tap to zoom"
+        testIdPrefix="reader.settings.double-tap"
+        value={settings.doubleTapZoom}
+        onChange={(v) => set({ doubleTapZoom: v })}
+      />
+      <Toggle
+        label="Keep screen on"
+        testIdPrefix="reader.settings.keep-awake"
+        value={settings.keepAwake}
+        onChange={(v) => set({ keepAwake: v })}
+      />
       <Segment
         label="Preload ahead"
         testIdPrefix="reader.settings.preload-ahead"
@@ -134,6 +149,32 @@ function DirectionRow({
         })}
       </View>
     </View>
+  );
+}
+
+/** An on/off row, drawn as a two-way segment so it sits with the rest. */
+function Toggle({
+  label,
+  value,
+  onChange,
+  testIdPrefix,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+  testIdPrefix: string;
+}) {
+  return (
+    <Segment
+      label={label}
+      testIdPrefix={testIdPrefix}
+      value={value ? 'on' : 'off'}
+      options={[
+        ['on', 'On'],
+        ['off', 'Off'],
+      ]}
+      onChange={(v) => onChange(v === 'on')}
+    />
   );
 }
 

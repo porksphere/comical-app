@@ -27,6 +27,9 @@ type Props = {
    *  size each row to exactly one screen. */
   height: number;
   pageFit: PageFit;
+  /** Whether a double-tap magnifies. Off, a click toggles chrome at once instead of waiting out a
+   *  second one. */
+  doubleTapZoom: boolean;
   initialPage: number;
   onPageChange: (index: number) => void;
   onToggleChrome: () => void;
@@ -94,7 +97,7 @@ function isDesktopPointer(): boolean {
 }
 
 export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(
-  { pages, width, height, pageFit, initialPage, onPageChange, onToggleChrome, standby },
+  { pages, width, height, pageFit, doubleTapZoom, initialPage, onPageChange, onToggleChrome, standby },
   ref,
 ) {
   const n = pages.length;
@@ -162,7 +165,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   // Double-tap toggles between 1× and a fixed zoom, anchored on the tap point via
   // scrollLeft/Top (same model the pinch uses). Skipped in fit-page mode, where
   // CSS-`zoom` would fight the scroll-snap slots (the pinch is skipped there too).
-  const doubleTapZoom = useCallback(
+  const doubleTapZoomTo = useCallback(
     (clientX: number, clientY: number) => {
       const el = scrollerRef.current;
       if (!el || paged) return;
@@ -197,10 +200,11 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
 
   // Click handler: a lone click toggles chrome after DOUBLE_TAP_MS; a qualifying
   // second click cancels that and zooms. In fit-page mode there's no custom zoom,
-  // so the click toggles chrome immediately.
+  // and with the double-tap switched off there's nothing to wait for, so the
+  // click toggles chrome immediately.
   const onSurfaceClick = useCallback(
     (e: React.MouseEvent) => {
-      if (paged) {
+      if (paged || !doubleTapZoom) {
         onToggleChrome();
         return;
       }
@@ -214,7 +218,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
           pendingTapRef.current = null;
         }
         lastTapRef.current = null;
-        doubleTapZoom(x, y);
+        doubleTapZoomTo(x, y);
         return;
       }
       lastTapRef.current = { t: now, x, y };
@@ -225,7 +229,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
         onToggleChrome();
       }, DOUBLE_TAP_MS);
     },
-    [paged, onToggleChrome, doubleTapZoom],
+    [paged, doubleTapZoom, onToggleChrome, doubleTapZoomTo],
   );
 
   useEffect(() => {

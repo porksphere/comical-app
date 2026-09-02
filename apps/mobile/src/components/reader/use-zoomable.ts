@@ -80,6 +80,7 @@ export function useZoomable({
   active = true,
   tapPanDirection,
   onPanPastEdge,
+  doubleTapEnabled = true,
 }: {
   width: number;
   height: number;
@@ -110,6 +111,10 @@ export function useZoomable({
    *  Judged from where the finger landed, not where the drag ended, the way a nested scroller hands
    *  off — one swipe carries you to the edge, the next one leaves. */
   onPanPastEdge?: (dir: -1 | 1) => void;
+  /** The double-tap magnification (`useReaderSettings().doubleTapZoom`). Off, the double-tap
+   *  leaves the composition altogether rather than merely being disabled, so the single tap has
+   *  nothing to wait out and fires on release — the whole point of turning it off. */
+  doubleTapEnabled?: boolean;
   /** Gates pinch/double-tap/pan off entirely (e.g. a fit-width page that
    *  content-pans instead, or a failed page showing its Retry chip). */
   enabled?: boolean;
@@ -277,7 +282,7 @@ export function useZoomable({
     });
 
   const doubleTap = Gesture.Tap()
-    .enabled(enabled)
+    .enabled(enabled && doubleTapEnabled)
     .numberOfTaps(2)
     .maxDuration(300)
     .maxDistance(DOUBLE_TAP_MAX_DIST)
@@ -398,9 +403,14 @@ export function useZoomable({
   // pinch / double-tap / single-tap are mutually EXCLUSIVE (pinch has priority, so a
   // pinch's two fingers can't be misread as a double-tap and randomly zoom all the
   // way); pan and any extras (a page's content-pan) run Simultaneous alongside.
-  const exclusive = singleTap
-    ? Gesture.Exclusive(pinch, doubleTap, singleTap)
-    : Gesture.Exclusive(pinch, doubleTap);
+  const exclusive =
+    doubleTapEnabled && singleTap
+      ? Gesture.Exclusive(pinch, doubleTap, singleTap)
+      : doubleTapEnabled
+        ? Gesture.Exclusive(pinch, doubleTap)
+        : singleTap
+          ? Gesture.Exclusive(pinch, singleTap)
+          : pinch;
   const gesture = Gesture.Simultaneous(pan, ...(extraSimultaneous ?? []), exclusive);
 
   const animatedStyle = useAnimatedStyle(() => ({

@@ -35,6 +35,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { ChevronUpIcon } from '@/components/icons/ui-icons';
 import { ChapterNavigator } from '@/components/reader/chapter-navigator';
+import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar } from '@/components/reader/reader-toolbar';
@@ -4752,6 +4753,7 @@ const ReaderPane = forwardRef<
 
   return (
     <>
+      {settings.keepAwake && !standby && <KeepScreenAwake />}
       {/* The page subtree. */}
       <Animated.View testID="series-page.page-wrap" style={styles.pageWrap}>
       {settings.mode === 'paged' ? (
@@ -4766,6 +4768,7 @@ const ReaderPane = forwardRef<
           rtl={settings.direction === 'rtl'}
           pageFit={settings.pageFit}
           zoomWidePages={settings.zoomWidePages}
+          doubleTapZoom={settings.doubleTapZoom}
           initialPage={stitched ? prefixLen + startIndex : startIndex}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // Keep the counter live during fast flicks — against the segment the page belongs to
@@ -4789,6 +4792,7 @@ const ReaderPane = forwardRef<
           width={width}
           height={height}
           pageFit={settings.pageFit}
+          doubleTapZoom={settings.doubleTapZoom}
           initialPage={stitched ? prefixLen + startIndex : startIndex}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // The live half, the same one the pager has always had: the chrome counts along with the
@@ -4830,7 +4834,8 @@ const ReaderPane = forwardRef<
                 source={{ uri }}
                 style={StyleSheet.absoluteFill}
                 // Same mapping ZoomablePage applies (fit-page → contain), so the poster and the
-                // page draw alike.
+                // page draw alike. `smart` is fit-width until the picture says otherwise, which
+                // is also what the page it stands in for does.
                 contentFit={settings.pageFit === 'fit-page' ? 'contain' : 'cover'}
                 cachePolicy="memory-disk"
               />

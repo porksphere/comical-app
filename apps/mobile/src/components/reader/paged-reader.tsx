@@ -75,6 +75,8 @@ type Props = {
   pageFit: PageFit;
   /** Rest a spread at the viewport's height — see ZoomablePage. */
   zoomWidePages: boolean;
+  /** Whether a double-tap magnifies — see ZoomablePage. */
+  doubleTapZoom: boolean;
   initialPage: number;
   /** The page the scroll SETTLED on — the committed position (progress, chapter
    *  relabel). Fires once per scroll, on momentum end. */
@@ -163,6 +165,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     rtl,
     pageFit,
     zoomWidePages,
+    doubleTapZoom,
     initialPage,
     onPageChange,
     onVisiblePageChange,
@@ -523,6 +526,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       pageFit,
       rtl,
       zoomWidePages,
+      doubleTapZoom,
       width,
       height,
       leftAction,
@@ -537,6 +541,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       pageFit,
       rtl,
       zoomWidePages,
+      doubleTapZoom,
       width,
       height,
       leftAction,
@@ -629,6 +634,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               pageFit={pageFit}
               rtl={rtl}
               zoomWidePages={zoomWidePages}
+              doubleTapZoom={doubleTapZoom}
               active={index === activeIndex}
               onLeft={leftAction}
               onRight={rightAction}

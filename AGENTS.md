@@ -365,7 +365,10 @@ reading starts from (left for L→R, right for R→L), and reads by panning side
 `zoomWidePages` setting, on by default; it is what Mihon calls "automatically zoom into wide
 images" and Panels "adjust to orientation". Judge "wide" by the PICTURE's aspect, never the
 viewport's: an ordinary portrait page is letterboxed on a tall phone too, and resting that at
-fit-height puts every page behind a sideways pan.
+fit-height puts every page behind a sideways pan. The `smart` page fit is the same judgement
+applied to the LAYOUT (`effectiveFit`): fit-width for a tall page, fit-page with the spread rule
+for a wide one, and fit-width for a page whose shape isn't known yet, since nearly every page is
+tall. Webtoon has only its two layouts and reads `smart` as the continuous strip.
 
 Nothing locks the vertical axis. At fit-height the content's vertical overhang is zero, so the
 clamp is what holds it — the same clamp that stops a 2.5× page drifting into black. Don't add a

@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
-import { pageGeometry, type Size } from '@/components/reader/page-geometry';
+import { effectiveFit, pageGeometry, type Size } from '@/components/reader/page-geometry';
 import { ReaderPage } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
@@ -39,6 +39,8 @@ type Props = {
   rtl: boolean;
   /** The spread rule (`useReaderSettings().zoomWidePages`). */
   zoomWidePages: boolean;
+  /** Whether a double-tap magnifies (`useReaderSettings().doubleTapZoom`). */
+  doubleTapZoom: boolean;
   /** Cross-fade override for this page — see ReaderPage's `fadeMs`. */
   fadeMs?: number;
   /** Whether this is the page currently in view; losing focus resets the zoom. */
@@ -84,6 +86,7 @@ export function ZoomablePage({
   pageFit,
   rtl,
   zoomWidePages,
+  doubleTapZoom,
   fadeMs,
   active,
   onLeft,
@@ -118,18 +121,21 @@ export function ZoomablePage({
     [width, height, contentHeight],
   );
 
+  // The layout this page takes — `smart` decides per page from the picture (see `effectiveFit`),
+  // and a smart-chosen fit-page is always a spread, so the spread rule is on for it regardless.
+  const fit = effectiveFit(pageFit, image);
   // Only a fit-page picture is centred in the viewport, which is what the hook's content clamp
   // assumes; a fit-width one is top-aligned and keeps the viewport clamp it always had.
   const geometry = useMemo(
-    () => pageGeometry(pageFit === 'fit-page' ? image : null, { width, height }, zoomWidePages, rtl),
-    [pageFit, image, width, height, zoomWidePages, rtl],
+    () => pageGeometry(fit === 'fit-page' ? image : null, { width, height }, zoomWidePages || pageFit === 'smart', rtl),
+    [fit, pageFit, image, width, height, zoomWidePages, rtl],
   );
 
   // Compounding pinch's scale/anchor math with an independent content-pan offset
   // is a correctness trap, so the two are made mutually exclusive: zoom is
   // disabled exactly when `contentPan` would be enabled. Zoom is also off while
   // the page shows its failed/Retry state so a tap reaches the Retry chip.
-  const zoomEnabled = !(pageFit === 'fit-width' && overflowsVertically) && !pageFailed;
+  const zoomEnabled = !(fit === 'fit-width' && overflowsVertically) && !pageFailed;
   // The page-turn / chrome tap zones stay live except while zoomed or suspended.
   const suspended = pageFailed || contentPanning;
 
@@ -163,7 +169,7 @@ export function ZoomablePage({
   // an overflowing fit-width page can't zoom in the first place, so `zoomEnabled`
   // is already false and this never coexists with a zoom.)
   const contentPan = Gesture.Pan()
-    .enabled(pageFit === 'fit-width' && overflowsVertically)
+    .enabled(fit === 'fit-width' && overflowsVertically)
     .activeOffsetY([-10, 10])
     .failOffsetX([-15, 15])
     // Alongside whatever the pager mounted on its scroller (see `scrollGesture`). The axes already
@@ -196,7 +202,7 @@ export function ZoomablePage({
     height,
     enabled: zoomEnabled,
     active,
-    content: pageFit === 'fit-page' ? geometry.content : undefined,
+    content: fit === 'fit-page' ? geometry.content : undefined,
     restScale: geometry.restScale,
     restEdge: geometry.restEdge,
     onZoomChange,
@@ -205,6 +211,7 @@ export function ZoomablePage({
     singleTapEnabled: !suspended,
     tapPanDirection,
     onPanPastEdge,
+    doubleTapEnabled: doubleTapZoom,
     extraSimultaneous: [contentPan],
     simultaneousExternal: scrollGesture,
   });
@@ -234,7 +241,7 @@ export function ZoomablePage({
               fadeMs={fadeMs}
               uri={uri}
               page={page}
-              fit={pageFit === 'fit-width' ? 'width' : 'contain'}
+              fit={fit === 'fit-width' ? 'width' : 'contain'}
               width={width}
               height={height}
               onLoadDims={onLoadDims}

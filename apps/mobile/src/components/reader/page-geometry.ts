@@ -1,4 +1,5 @@
 import { ZOOM_EPSILON } from '@/components/reader/reader-zoom';
+import type { PageFit } from '@/hooks/use-reader-settings';
 
 // Where a page's picture sits inside its viewport, and how far it may be pushed around at a given
 // zoom. Pure, and marked `'worklet'` so the native gesture handlers can call it on the UI thread;
@@ -7,6 +8,17 @@ import { ZOOM_EPSILON } from '@/components/reader/reader-zoom';
 
 export type Size = { width: number; height: number };
 export type RestEdge = 'left' | 'right' | 'center';
+/** How one page is actually laid out — the two layouts a page can take, once `smart` has chosen. */
+export type EffectiveFit = 'fit-page' | 'fit-width';
+
+/** The layout a page takes under `pageFit`. `smart` reads the picture: a wide one (a spread) is
+ *  fit-page, where the spread rule rests it at fit-height; anything else — including a page whose
+ *  shape isn't known yet, since nearly every page is tall — is fit-width. */
+export function effectiveFit(pageFit: PageFit, image: Size | null): EffectiveFit {
+  'worklet';
+  if (pageFit !== 'smart') return pageFit;
+  return image != null && image.width > image.height ? 'fit-page' : 'fit-width';
+}
 
 /** Where a page sits when nothing is touching it — 1× for most pages; a SPREAD rests zoomed to the
  *  viewport's height, at the edge reading starts from. `content` is the picture's box at 1×,

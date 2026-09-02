@@ -11,6 +11,7 @@ import {
 
 import {
   edgeOffset,
+  effectiveFit,
   pageGeometry,
   panLimits,
   TAP_PAN_FRACTION,
@@ -52,6 +53,9 @@ type Props = {
   pageFit: PageFit;
   /** Rest a spread at the viewport's height — see page-geometry's `pageGeometry`. */
   zoomWidePages: boolean;
+  /** Whether a double-tap magnifies. Off, a lone tap acts at once instead of waiting out a
+   *  second one. */
+  doubleTapZoom: boolean;
   initialPage: number;
   onPageChange: (logical: number) => void;
   onPrev: () => void;
@@ -131,7 +135,21 @@ const PINCH_COMMIT = 1.2;
 type Mode = 'idle' | 'swipe' | 'pan' | 'pinch' | 'content-pan';
 
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
-  { pages, width, height, rtl, pageFit, zoomWidePages, initialPage, onPageChange, onPrev, onNext, onToggleChrome, standby },
+  {
+    pages,
+    width,
+    height,
+    rtl,
+    pageFit,
+    zoomWidePages,
+    doubleTapZoom,
+    initialPage,
+    onPageChange,
+    onPrev,
+    onNext,
+    onToggleChrome,
+    standby,
+  },
   ref,
 ) {
   const n = pages.length;
@@ -168,13 +186,18 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     });
   }, []);
   const image = dims.get(data[index]?.key ?? '') ?? null;
+  // The layout the current page takes — `smart` decides per page from the picture (see
+  // `effectiveFit`), and a smart-chosen fit-page is always a spread, so the spread rule is on
+  // for it regardless.
+  const fit = effectiveFit(pageFit, image);
+  const fillWide = zoomWidePages || pageFit === 'smart';
 
   // fit-width content that's taller than the viewport: a one-finger vertical drag scrolls it (see
   // the 'content-pan' mode below). Derived from the current page's own dims, so a page whose
   // shape isn't known yet never inherits the previous page's "overflows".
   const contentAspectRef = useRef(1); // current image's width/height ratio
   contentAspectRef.current = image ? image.width / image.height : 1;
-  const contentOverflows = pageFit === 'fit-width' && image != null && width * (image.height / image.width) > height + 1;
+  const contentOverflows = fit === 'fit-width' && image != null && width * (image.height / image.width) > height + 1;
   const contentOverflowsRef = useRef(false);
   contentOverflowsRef.current = contentOverflows;
 
@@ -183,10 +206,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // in the viewport, which is what that clamp assumes; a fit-width one is top-aligned and keeps
   // the viewport clamp it always had.
   const geometry = useMemo(
-    () => pageGeometry(pageFit === 'fit-page' ? image : null, { width, height }, zoomWidePages, rtl),
-    [pageFit, image, width, height, zoomWidePages, rtl],
+    () => pageGeometry(fit === 'fit-page' ? image : null, { width, height }, fillWide, rtl),
+    [fit, image, width, height, fillWide, rtl],
   );
-  const box: Size = pageFit === 'fit-page' ? geometry.content : { width, height };
+  const box: Size = fit === 'fit-page' ? geometry.content : { width, height };
   const { restScale, restEdge } = geometry;
   const maxScale = Math.max(MAX_SCALE, restScale * WIDE_ZOOM_HEADROOM);
   const restTx = edgeOffset(restEdge, panLimits(restScale, box, { width, height }).x);
@@ -358,7 +381,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // Double-tap toggles between the page's rest and a fixed magnification centred on the tap point
   // (clamped into bounds). Unavailable when pinch is (fit-width overflow), matching the native
   // reader.
-  const doubleTapZoom = useCallback(
+  const doubleTapZoomTo = useCallback(
     (x: number, y: number) => {
       cancelInertia();
       const { box: b, restScale: rest, maxScale: max } = restRef.current;
@@ -545,7 +568,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       if (gesture.pointers.size >= 2) {
         // No pinch while an overflowing fit-width page is content-pannable —
         // mirrors the native reader's mutual-exclusion rule (see zoomable-page.tsx).
-        if (!(pageFit === 'fit-width' && contentOverflowsRef.current)) beginPinch();
+        if (!contentOverflowsRef.current) beginPinch();
         return;
       }
       // First finger down: remember it for tap detection.
@@ -565,7 +588,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         gesture.velocity = 0;
       }
     },
-    [beginPan, beginPinch, cancelInertia, gesture, pageFit, posOf],
+    [beginPan, beginPinch, cancelInertia, gesture, posOf],
   );
 
   const onPointerMove = useCallback(
@@ -622,7 +645,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         if (moved > DIR_DEADZONE) {
           gesture.dirDecided = true;
           const vertical = Math.abs(p.y - gesture.downY) > Math.abs(p.x - gesture.downX) * 1.2;
-          if (vertical && pageFit === 'fit-width' && contentOverflowsRef.current && !zoomedRef.current) {
+          if (vertical && contentOverflowsRef.current && !zoomedRef.current) {
             gesture.mode = 'content-pan';
             gesture.panStartY = p.y;
             gesture.panBaseTy = zoom.current.ty;
@@ -657,7 +680,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         writeTrack(dx, false);
       }
     },
-    [firstTwo, gesture, height, n, pageFit, posOf, width, writeTrack, writeZoom, zoom],
+    [firstTwo, gesture, height, n, posOf, width, writeTrack, writeZoom, zoom],
   );
 
   const finalizePinch = useCallback(() => {
@@ -742,9 +765,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // DOUBLE_TAP_MS; a qualifying second tap cancels that and zooms instead.
   const handleTapGesture = useCallback(
     (x: number, y: number) => {
-      // Double-tap zoom is off exactly where pinch is (an overflowing fit-width
-      // page, which content-pans instead) — there, taps stay immediate.
-      const canZoom = !(pageFit === 'fit-width' && contentOverflowsRef.current);
+      // Double-tap zoom is off exactly where pinch is (an overflowing fit-width page, which
+      // content-pans instead), and where the setting turns it off — there, taps stay immediate.
+      const canZoom = doubleTapZoom && !contentOverflowsRef.current;
       const now = performance.now();
       const last = lastTapRef.current;
       if (
@@ -758,7 +781,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           pendingTapRef.current = null;
         }
         lastTapRef.current = null;
-        doubleTapZoom(x, y);
+        doubleTapZoomTo(x, y);
         return;
       }
       if (!canZoom) {
@@ -773,7 +796,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         handleTap(x);
       }, DOUBLE_TAP_MS);
     },
-    [pageFit, doubleTapZoom, handleTap],
+    [doubleTapZoom, doubleTapZoomTo, handleTap],
   );
 
   const finalizeSwipe = useCallback(() => {
@@ -873,13 +896,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
             <div key={item.key} style={cellStyle(width, height)}>
               <div
                 ref={i === index ? zoomRef : undefined}
-                style={zoomWrapperStyle(width, height, i === index && pageFit === 'fit-width' && contentOverflows)}>
+                style={zoomWrapperStyle(width, height, i === index && contentOverflows)}>
                 {near ? (
                   <ReaderPage
                     fadeMs={standby ? STANDBY_FADE_MS : undefined}
                     uri={item.uri}
                     page={item.pageNumber}
-                    fit={pageFit === 'fit-width' ? 'width' : 'contain'}
+                    fit={effectiveFit(pageFit, dims.get(item.key) ?? null) === 'fit-width' ? 'width' : 'contain'}
                     width={width}
                     height={height}
                     onLoadDims={(w, h) => recordDims(item.key, w, h)}

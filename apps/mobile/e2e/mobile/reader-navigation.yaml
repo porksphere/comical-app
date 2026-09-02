@@ -30,6 +30,9 @@
 #   - reader.settings.direction.ltr / .vertical / .rtl   The 3-way mode+direction row — NOT
 #     ".paged"/".webtoon" (a wrong name already caught and fixed in
 #     swipe-dismiss-webtoon.yaml this same session; DIRECTION_OPTIONS only has ltr/vertical/rtl).
+#   - reader.settings.page-fit.fit-page / .fit-width / .smart   Page fit; Smart is paged-only.
+#   - reader.settings.double-tap.on / .off   Whether a double-tap magnifies.
+#   - reader.settings.keep-awake.on / .off   Whether the screen is held awake while reading.
 #   - reader.settings.wide-pages.fill-height / .fit-page   The spread rule ("Wide pages"): whether a
 #     page wider than it is tall rests zoomed to the viewport's height. Only rendered while the
 #     sheet is in paged + fit-page mode, which is the app default and the state this flow is in when
@@ -136,6 +139,25 @@ appId: com.porksphere.comical
     id: "reader.settings.wide-pages.fit-page"
 - tapOn:
     id: "reader.settings.wide-pages.fill-height"
+# Page fit: Smart is a paged-only option; it hides the wide-pages row (a smart-chosen spread always
+# fills the height), and Fit page brings it back. Then the two on/off rows, each flipped and
+# restored — all of these persist, so the sheet is left exactly as the app defaults it.
+- tapOn:
+    id: "reader.settings.page-fit.smart"
+- assertNotVisible:
+    id: "reader.settings.wide-pages.fill-height"
+- tapOn:
+    id: "reader.settings.page-fit.fit-page"
+- assertVisible:
+    id: "reader.settings.wide-pages.fill-height"
+- tapOn:
+    id: "reader.settings.double-tap.off"
+- tapOn:
+    id: "reader.settings.double-tap.on"
+- tapOn:
+    id: "reader.settings.keep-awake.off"
+- tapOn:
+    id: "reader.settings.keep-awake.on"
 - assertVisible:
     id: "reader.settings.direction.vertical"
 - tapOn:

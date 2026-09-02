@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { containedSize, edgeOffset, pageGeometry, panLimits } from './page-geometry';
+import { containedSize, edgeOffset, effectiveFit, pageGeometry, panLimits } from './page-geometry';
 
 const phone = { width: 390, height: 844 };
 const spread = { width: 2000, height: 1000 };
@@ -61,5 +61,19 @@ describe('pageGeometry', () => {
   });
   test('unknown dimensions fill the viewport', () => {
     expect(pageGeometry(null, phone, true, false)).toEqual({ content: phone, restScale: 1, restEdge: 'center' });
+  });
+});
+
+describe('effectiveFit', () => {
+  test('a fixed fit is itself', () => {
+    expect(effectiveFit('fit-page', spread)).toBe('fit-page');
+    expect(effectiveFit('fit-width', spread)).toBe('fit-width');
+  });
+  test('smart is fit-width for a tall page and fit-page for a spread', () => {
+    expect(effectiveFit('smart', portrait)).toBe('fit-width');
+    expect(effectiveFit('smart', spread)).toBe('fit-page');
+  });
+  test('smart assumes tall until the picture says otherwise', () => {
+    expect(effectiveFit('smart', null)).toBe('fit-width');
   });
 });

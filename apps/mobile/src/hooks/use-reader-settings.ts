@@ -8,7 +8,9 @@ import { persisted$ } from '@/lib/observable';
 
 export type ReaderMode = 'paged' | 'webtoon';
 export type ReaderDirection = 'ltr' | 'rtl';
-export type PageFit = 'fit-page' | 'fit-width';
+/** `smart` picks per page from the picture's shape: fit-width for a tall page, the spread rule
+ *  (fit-height, panned sideways) for a wide one. Paged mode only; webtoon reads it as fit-width. */
+export type PageFit = 'fit-page' | 'fit-width' | 'smart';
 export type PrefetchAhead = 1 | 2 | 3 | 4 | 6 | 8;
 export type ReaderSettings = {
   mode: ReaderMode;
@@ -17,6 +19,10 @@ export type ReaderSettings = {
   /** Rest a SPREAD (a page wider than it is tall) at the viewport's height instead of letterboxed
    *  across its middle, so it reads by panning sideways. Paged mode, fit-page only. */
   zoomWidePages: boolean;
+  /** Double-tap magnifies. Off, a single tap acts at once instead of waiting out a second one. */
+  doubleTapZoom: boolean;
+  /** Hold the screen awake while a page is on screen. */
+  keepAwake: boolean;
   prefetchAhead: PrefetchAhead;
 };
 
@@ -26,6 +32,8 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   direction: 'ltr',
   pageFit: 'fit-page',
   zoomWidePages: true,
+  doubleTapZoom: true,
+  keepAwake: true,
   prefetchAhead: 4,
 };
 
