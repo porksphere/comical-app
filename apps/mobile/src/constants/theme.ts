@@ -159,10 +159,16 @@ export const Fonts = Platform.select({
  * iOS's continuous corner curve — the superellipse Apple draws instead of a circular arc, so a
  * corner leaves the straight edge gradually rather than at a tangent.
  *
- * **Web only, on purpose.** The native prop for this is `borderCurve: 'continuous'`, which is
- * iOS-only (it isn't in Android's view config) and would therefore change how the app looks on
- * device — out of scope for the tablet/desktop work this was added for. Turning it on there is
- * adding `ios: { borderCurve: 'continuous' }` below, nothing more.
+ * **iOS gets the real thing; web gets the closest CSS has; Android gets nothing.** `borderCurve`
+ * sets `CALayer.cornerCurve`, so on iOS this is Apple's own curve — a circular arc spliced to
+ * Bezier segments that ramp curvature up from the straight edge. It isn't in Android's view config,
+ * so there it is ignored.
+ *
+ * The web value is NOT that shape. `squircle` is `superellipse(2)`, a true superellipse of exponent
+ * 4, and Apple's corner is not a superellipse at all — the arc-to-edge transition differs, which is
+ * the part that reads as iOS softness. Nothing available on the web is exact (the clip-path
+ * libraries draw Figma's construction, also not Apple's, and clip borders and shadows besides), so
+ * this is the closest analogue rather than a match.
  *
  * `cornerShape` is not a React Native style prop, and doesn't need to be: react-native-web's style
  * compiler hyphenates any key it doesn't recognise straight into CSS, so this reaches the DOM as
@@ -178,6 +184,7 @@ export const Fonts = Platform.select({
  * it is worth having on a panel and nearly invisible on an 8pt row highlight.
  */
 export const ContinuousCorner = Platform.select({
+  ios: { borderCurve: 'continuous' },
   web: { cornerShape: 'squircle' },
   default: {},
 }) as ViewStyle & ImageStyle;
