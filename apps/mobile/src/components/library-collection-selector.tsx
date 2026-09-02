@@ -98,7 +98,6 @@ function CollectionMenu({
         <OptionRow
           testID="library.collection.all"
           label="All"
-          hint="Everything you've saved"
           selected={value === null}
           onPress={() => pick(null)}
         />

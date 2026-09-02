@@ -62,25 +62,24 @@ const POINTER_INSET = rowInset(POINTER_ROW_HEIGHT, ROW_ART.pointer);
  *
  * Padding on a centred box moves its content by HALF what it adds — the box grows, then re-centres
  * — so the correction is twice the error. It goes on the text column rather than the label, so a
- * two-line row (the collection picker's counts) takes it once rather than per line.
+ * a row whose label ever wraps takes it once rather than per line.
  *
- * 2 rather than 3 is a trade, not a rounding: the residual quantises to a pixel either way at that
- * scale, and 3 pushed "Recently added" to 32 / 21, tightening its descender against the bottom edge
- * to fix a label that has none.
+ * The residual quantises — a unit of this moves the ink 6px at 3x, so it lands 3 either side of
+ * centre and cannot land on it. 3 over 2 is decided by the BRIDGE row, which is the case that shows
+ * it: a 28pt thumbnail sits beside the label, perfectly framed, so the eye has a reference line the
+ * other menus don't give it. Measured there, 2 left the label 5px high and 3 leaves it 1px — while
+ * the label-only rows go from 3 high to 3 low, which is the same error the other way.
  */
-const LABEL_OPTICAL_NUDGE = 2;
+const LABEL_OPTICAL_NUDGE = 3;
 
 export function OptionRow({
   label,
-  hint,
   selected,
   leading,
   onPress,
   testID,
 }: {
   label: string;
-  /** A second, quieter line under the label (the collection picker's item counts). */
-  hint?: string;
   selected: boolean;
   /** Rendered before the label — the selector's bridge thumbnail. */
   leading?: React.ReactNode;
@@ -115,11 +114,6 @@ export function OptionRow({
           numberOfLines={1}>
           {label}
         </ThemedText>
-        {hint ? (
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-            {hint}
-          </ThemedText>
-        ) : null}
       </View>
       {/* A CHECK, not a radio. The fill already says which row is current, so the mark confirms it
           rather than carrying it — and a ring per row, drawn whether or not anything is selected,
@@ -201,8 +195,8 @@ const styles = StyleSheet.create({
     // buttons. The rail's own rows use the same corner.
     borderRadius: Spacing.two,
   },
-  // minHeight, not height: a row with a `hint` is two lines, and the collection picker's counts
-  // were being clipped by a fixed one.
+  // minHeight rather than height: the target is a floor, and a label that ever wraps should push
+  // the row rather than be clipped by it.
   touchRow: {
     minHeight: RowHeight,
     paddingHorizontal: TOUCH_INSET,
