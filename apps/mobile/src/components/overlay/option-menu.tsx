@@ -164,9 +164,14 @@ export function OptionRow({
       ]}>
       {leading}
       <View style={styles.text}>
+        {/* Every label at FULL strength, selected or not — the dimming that used to mark an
+            unselected row was a second signal for something the fill and the check already say,
+            and it cost the menu its hierarchy: the section headings are `textSecondary` too, so a
+            heading and the rows under it were the same colour two points apart in size, and read
+            as one list with a small row in it. Both platforms separate them the other way round —
+            items at the full label colour, the heading receding from them. */}
         <ThemedText
           style={selected ? styles.labelSelected : undefined}
-          themeColor={selected ? 'text' : 'textSecondary'}
           numberOfLines={1}>
           {label}
         </ThemedText>
