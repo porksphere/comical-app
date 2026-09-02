@@ -12,11 +12,10 @@ import {
 import {
   edgeOffset,
   effectiveFit,
+  fillRule,
   pageGeometry,
   panLimits,
-  TAP_PAN_FRACTION,
   WIDE_ZOOM_HEADROOM,
-  ZOOMED_EDGE_TURN_FRACTION,
   type Size,
 } from '@/components/reader/page-geometry';
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
@@ -32,8 +31,7 @@ import {
   type Point,
   ZOOM_EPSILON,
 } from '@/components/reader/reader-zoom';
-import type { PageFit } from '@/hooks/use-reader-settings';
-import { releaseCommitted } from '@/lib/gesture-release';
+import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
@@ -53,9 +51,10 @@ type Props = {
   pageFit: PageFit;
   /** Rest a spread at the viewport's height — see page-geometry's `pageGeometry`. */
   zoomWidePages: boolean;
-  /** Whether a double-tap magnifies. Off, a lone tap acts at once instead of waiting out a
-   *  second one. */
-  doubleTapZoom: boolean;
+  /** What a double-tap does. Off, a lone tap acts at once instead of waiting out a second one;
+   *  under fill-height a double-tap on a page at rest asks for the toggle instead of magnifying. */
+  doubleTap: DoubleTapMode;
+  onToggleFillHeight: () => void;
   initialPage: number;
   onPageChange: (logical: number) => void;
   onPrev: () => void;
@@ -142,7 +141,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     rtl,
     pageFit,
     zoomWidePages,
-    doubleTapZoom,
+    doubleTap,
+    onToggleFillHeight,
     initialPage,
     onPageChange,
     onPrev,
@@ -187,10 +187,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   }, []);
   const image = dims.get(data[index]?.key ?? '') ?? null;
   // The layout the current page takes — `smart` decides per page from the picture (see
-  // `effectiveFit`), and a smart-chosen fit-page is always a spread, so the spread rule is on
-  // for it regardless.
+  // `effectiveFit`) — and which pages rest above 1× under it (see `fillRule`).
   const fit = effectiveFit(pageFit, image);
-  const fillWide = zoomWidePages || pageFit === 'smart';
+  const fill = fillRule(pageFit, zoomWidePages);
 
   // fit-width content that's taller than the viewport: a one-finger vertical drag scrolls it (see
   // the 'content-pan' mode below). Derived from the current page's own dims, so a page whose
@@ -206,8 +205,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // in the viewport, which is what that clamp assumes; a fit-width one is top-aligned and keeps
   // the viewport clamp it always had.
   const geometry = useMemo(
-    () => pageGeometry(fit === 'fit-page' ? image : null, { width, height }, fillWide, rtl),
-    [fit, image, width, height, fillWide, rtl],
+    () => pageGeometry(fit === 'fit-page' ? image : null, { width, height }, fill, rtl),
+    [fit, image, width, height, fill, rtl],
   );
   const box: Size = fit === 'fit-page' ? geometry.content : { width, height };
   const { restScale, restEdge } = geometry;
@@ -259,8 +258,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     panStartY: 0,
     panBaseTx: 0,
     panBaseTy: 0,
-    panFromLeftEdge: false,
-    panFromRightEdge: false,
     // pan velocity, for the momentum fling on release
     panLastX: 0,
     panLastY: 0,
@@ -391,6 +388,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         goToRest(true);
         return;
       }
+      // At rest under the fill-height mode: the tap is the toggle, and what rest IS changes.
+      if (doubleTap === 'fill-height') {
+        onToggleFillHeight();
+        return;
+      }
       const cx = width / 2;
       const cy = height / 2;
       const target = Math.min(DOUBLE_TAP_SCALE * rest, max);
@@ -406,7 +408,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       writeZoom(true);
       setZoomedNow(true);
     },
-    [cancelInertia, goToRest, setZoomedNow, width, height, writeZoom, zoom],
+    [cancelInertia, goToRest, setZoomedNow, width, height, writeZoom, zoom, doubleTap, onToggleFillHeight],
   );
 
   // Commit to a page. `animate` slides (swipe settle / pill jump); otherwise the
@@ -529,11 +531,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       gesture.panStartY = p.y;
       gesture.panBaseTx = zoom.current.tx;
       gesture.panBaseTy = zoom.current.ty;
-      // Whether the content already shows its left / right edge — a release heading further past
-      // one is a page turn (see `endPointer`), judged from where the finger LANDED.
-      const limitX = panLimits(zoom.current.scale, restRef.current.box, { width, height }).x;
-      gesture.panFromLeftEdge = zoom.current.tx >= limitX - 1;
-      gesture.panFromRightEdge = zoom.current.tx <= 1 - limitX;
       gesture.panLastX = p.x;
       gesture.panLastY = p.y;
       gesture.panLastT = performance.now();
@@ -548,7 +545,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       gesture.downT = performance.now();
       gesture.moved = false;
     },
-    [gesture, zoom, width, height],
+    [gesture, zoom],
   );
 
   const onPointerDown = useCallback(
@@ -737,27 +734,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
   const handleTap = useCallback(
     (x: number) => {
+      // No tap zones while zoomed (mirrors native) — except on a page that RESTS zoomed, a spread
+      // or a fill-height page, whose taps stay live and turn as they always do: with swiping
+      // frozen under a zoom, the taps are how such a page is left.
+      if (zoomedRef.current && !restRef.current.restZoomed) return;
       const dir: -1 | 0 | 1 = x < width * 0.3 ? -1 : x > width * 0.7 ? 1 : 0;
-      if (zoomedRef.current) {
-        // No tap zones while zoomed (mirrors native) — except on a page that RESTS zoomed, a
-        // spread, where a side zone pans a step across it and only turns once there is nothing
-        // left that way. The left zone asks for what lies to the LEFT: the content moving right.
-        if (!restRef.current.restZoomed || dir === 0) return;
-        const limitX = panLimits(zoom.current.scale, restRef.current.box, { width, height }).x;
-        const target = clamp(zoom.current.tx - dir * width * TAP_PAN_FRACTION, -limitX, limitX);
-        if (Math.abs(target - zoom.current.tx) > 1) {
-          cancelInertia();
-          zoom.current = { ...zoom.current, tx: target };
-          writeZoom(true);
-          return;
-        }
-        turn(dir);
-        return;
-      }
       if (dir === 0) onToggleChrome();
       else turn(dir);
     },
-    [cancelInertia, onToggleChrome, turn, width, height, writeZoom, zoom],
+    [onToggleChrome, turn, width],
   );
 
   // A completed one-finger tap. Double-tap-to-zoom means we can't act on a tap
@@ -767,7 +752,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     (x: number, y: number) => {
       // Double-tap zoom is off exactly where pinch is (an overflowing fit-width page, which
       // content-pans instead), and where the setting turns it off — there, taps stay immediate.
-      const canZoom = doubleTapZoom && !contentOverflowsRef.current;
+      const canZoom = doubleTap !== 'off' && !contentOverflowsRef.current;
       const now = performance.now();
       const last = lastTapRef.current;
       if (
@@ -796,7 +781,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         handleTap(x);
       }, DOUBLE_TAP_MS);
     },
-    [doubleTapZoom, doubleTapZoomTo, handleTap],
+    [doubleTap, doubleTapZoomTo, handleTap],
   );
 
   const finalizeSwipe = useCallback(() => {
@@ -861,21 +846,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         // finger (momentumOk=false) never coasts, so releasing a pinch can't drift.
         const dur = performance.now() - gesture.downT;
         if (!gesture.moved && dur <= TAP_MAX_MS) handleTapGesture(gesture.downX, gesture.downY);
-        else if (gesture.moved && gesture.momentumOk) {
-          // A drag that BEGAN at an edge and was let go heading further past it is the swipe a
-          // zoomed page can't take: turn, the way a nested scroller hands off. Judged on where it
-          // is headed (see lib/gesture-release), so a flick back at the last moment still cancels.
-          const dx = gesture.panLastX - gesture.panStartX;
-          const vx = gesture.panVX * 1000; // px/ms → px/s
-          const threshold = width * ZOOMED_EDGE_TURN_FRACTION;
-          if (gesture.panFromLeftEdge && releaseCommitted(dx, vx, threshold)) turn(-1);
-          else if (gesture.panFromRightEdge && releaseCommitted(-dx, -vx, threshold)) turn(1);
-          else startPanInertia();
-        }
+        else if (gesture.moved && gesture.momentumOk) startPanInertia();
       }
       gesture.mode = 'idle';
     },
-    [beginPan, finalizePinch, finalizeSwipe, handleTapGesture, startPanInertia, turn, width, gesture],
+    [beginPan, finalizePinch, finalizeSwipe, handleTapGesture, startPanInertia, gesture],
   );
 
   return (

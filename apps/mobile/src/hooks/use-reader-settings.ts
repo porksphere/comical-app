@@ -9,8 +9,14 @@ import { persisted$ } from '@/lib/observable';
 export type ReaderMode = 'paged' | 'webtoon';
 export type ReaderDirection = 'ltr' | 'rtl';
 /** `smart` picks per page from the picture's shape: fit-width for a tall page, the spread rule
- *  (fit-height, panned sideways) for a wide one. Paged mode only; webtoon reads it as fit-width. */
-export type PageFit = 'fit-page' | 'fit-width' | 'smart';
+ *  (fit-height, panned sideways) for a wide one. `fill-height` rests EVERY page at the viewport's
+ *  height (where that buys anything — a page near the screen's own shape just fits), panned
+ *  sideways, with the side taps turning. Both paged-only; webtoon reads `smart` as fit-width and
+ *  `fill-height` as fit-page. */
+export type PageFit = 'fit-page' | 'fit-width' | 'fill-height' | 'smart';
+/** What a double-tap does: magnify the page, toggle `pageFit` between fill-height and fit-page, or
+ *  nothing (a lone tap then acts at once instead of waiting out a second one). */
+export type DoubleTapMode = 'magnify' | 'fill-height' | 'off';
 export type PrefetchAhead = 1 | 2 | 3 | 4 | 6 | 8;
 export type ReaderSettings = {
   mode: ReaderMode;
@@ -19,8 +25,7 @@ export type ReaderSettings = {
   /** Rest a SPREAD (a page wider than it is tall) at the viewport's height instead of letterboxed
    *  across its middle, so it reads by panning sideways. Paged mode, fit-page only. */
   zoomWidePages: boolean;
-  /** Double-tap magnifies. Off, a single tap acts at once instead of waiting out a second one. */
-  doubleTapZoom: boolean;
+  doubleTap: DoubleTapMode;
   /** Hold the screen awake while a page is on screen. */
   keepAwake: boolean;
   prefetchAhead: PrefetchAhead;
@@ -32,7 +37,7 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   direction: 'ltr',
   pageFit: 'fit-page',
   zoomWidePages: true,
-  doubleTapZoom: true,
+  doubleTap: 'magnify',
   keepAwake: true,
   prefetchAhead: 4,
 };

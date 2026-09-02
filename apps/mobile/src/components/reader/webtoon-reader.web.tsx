@@ -13,6 +13,7 @@ import {
   type Point,
   ZOOM_EPSILON,
 } from '@/components/reader/reader-zoom';
+import { webtoonFit } from '@/components/reader/settings-panel';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
@@ -101,7 +102,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   ref,
 ) {
   const n = pages.length;
-  const paged = pageFit === 'fit-page';
+  const paged = webtoonFit(pageFit) === 'fit-page';
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const slotsRef = useRef<(HTMLDivElement | null)[]>([]);
@@ -326,7 +327,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   // fight the fixed-size scroll-snap slots that mode relies on.
   useEffect(() => {
     const el = scrollerRef.current;
-    if (!el || pageFit === 'fit-page') return;
+    if (!el || paged) return;
 
     const onStart = (e: TouchEvent) => {
       if (e.touches.length < 2) return;
@@ -415,7 +416,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       el.removeEventListener('gesturechange', preventGesture as EventListener);
       el.removeEventListener('gestureend', preventGesture as EventListener);
     };
-  }, [pageFit]);
+  }, [paged]);
 
   // Smooth continuous vertical scroll while Up/Down (or W/S) is held. The
   // browser's own key-repeat doesn't drive scrollTop at all here (this div

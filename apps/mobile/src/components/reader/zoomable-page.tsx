@@ -3,10 +3,10 @@ import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
-import { effectiveFit, pageGeometry, type Size } from '@/components/reader/page-geometry';
+import { effectiveFit, fillRule, pageGeometry, type Size } from '@/components/reader/page-geometry';
 import { ReaderPage } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
-import type { PageFit } from '@/hooks/use-reader-settings';
+import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 
 // A single paged-reader page (NATIVE only — web has its own gesture pager in
 // paged-reader.web.tsx and never renders this).
@@ -39,8 +39,10 @@ type Props = {
   rtl: boolean;
   /** The spread rule (`useReaderSettings().zoomWidePages`). */
   zoomWidePages: boolean;
-  /** Whether a double-tap magnifies (`useReaderSettings().doubleTapZoom`). */
-  doubleTapZoom: boolean;
+  /** What a double-tap does (`useReaderSettings().doubleTap`). */
+  doubleTap: DoubleTapMode;
+  /** The fill-height toggle a double-tap asks for under that mode. */
+  onToggleFillHeight: () => void;
   /** Cross-fade override for this page — see ReaderPage's `fadeMs`. */
   fadeMs?: number;
   /** Whether this is the page currently in view; losing focus resets the zoom. */
@@ -86,7 +88,8 @@ export function ZoomablePage({
   pageFit,
   rtl,
   zoomWidePages,
-  doubleTapZoom,
+  doubleTap,
+  onToggleFillHeight,
   fadeMs,
   active,
   onLeft,
@@ -121,14 +124,15 @@ export function ZoomablePage({
     [width, height, contentHeight],
   );
 
-  // The layout this page takes — `smart` decides per page from the picture (see `effectiveFit`),
-  // and a smart-chosen fit-page is always a spread, so the spread rule is on for it regardless.
+  // The layout this page takes — `smart` decides per page from the picture (see `effectiveFit`) —
+  // and which pages rest above 1× under it (see `fillRule`).
   const fit = effectiveFit(pageFit, image);
+  const fill = fillRule(pageFit, zoomWidePages);
   // Only a fit-page picture is centred in the viewport, which is what the hook's content clamp
   // assumes; a fit-width one is top-aligned and keeps the viewport clamp it always had.
   const geometry = useMemo(
-    () => pageGeometry(fit === 'fit-page' ? image : null, { width, height }, zoomWidePages || pageFit === 'smart', rtl),
-    [fit, pageFit, image, width, height, zoomWidePages, rtl],
+    () => pageGeometry(fit === 'fit-page' ? image : null, { width, height }, fill, rtl),
+    [fit, fill, image, width, height, rtl],
   );
 
   // Compounding pinch's scale/anchor math with an independent content-pan offset
@@ -149,18 +153,6 @@ export function ZoomablePage({
     },
     [width, onLeft, onRight, onToggleChrome],
   );
-  // The same zones, answered on the UI thread for a zoomed spread, which pans a step that way
-  // before it turns (see useZoomable's `tapPanDirection`).
-  const tapPanDirection = useCallback(
-    (x: number): -1 | 0 | 1 => {
-      'worklet';
-      return x < width * 0.3 ? -1 : x > width * 0.7 ? 1 : 0;
-    },
-    [width],
-  );
-  // A drag off a zoomed page's edge is the swipe the frozen pager can't take — hand it the same
-  // turn the zone there would.
-  const onPanPastEdge = useCallback((dir: -1 | 1) => (dir < 0 ? onLeft() : onRight()), [onLeft, onRight]);
 
   // One-finger vertical scroll of an overflowing fit-width page. A deadzone
   // (`activeOffsetY`) plus `failOffsetX` disambiguate it from the FlatList's own
@@ -209,9 +201,8 @@ export function ZoomablePage({
     onPinchChange,
     onSingleTap: onTapNav,
     singleTapEnabled: !suspended,
-    tapPanDirection,
-    onPanPastEdge,
-    doubleTapEnabled: doubleTapZoom,
+    doubleTapEnabled: doubleTap !== 'off',
+    onDoubleTap: doubleTap === 'fill-height' ? onToggleFillHeight : undefined,
     extraSimultaneous: [contentPan],
     simultaneousExternal: scrollGesture,
   });

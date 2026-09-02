@@ -374,16 +374,22 @@ Nothing locks the vertical axis. At fit-height the content's vertical overhang i
 clamp is what holds it — the same clamp that stops a 2.5× page drifting into black. Don't add a
 rule for it.
 
+`fill-height` is the same rest applied to EVERY page (`fillRule`): the reader's "double-tap fits
+the page to the screen's height, taps turn, the zoom carries across pages". Where fit-height buys
+less than `FILL_HEIGHT_MIN_GAIN` over fit-page — a page near the screen's own shape — the page
+rests whole instead, so nothing is zoomed a few percent for a few points of sideways pan.
+
 A page resting zoomed still has to be LEFT, and the pager freezes its scroll for any zoomed page,
-so the two ways out are built into the page: a side-zone tap pans a step across the spread
-(`TAP_PAN_FRACTION`) and turns only once there is nothing left that way, and a one-finger drag that
-BEGAN at an edge and was let go heading past it turns (`onPanPastEdge`, judged with
-`releaseCommitted`). Latched from where the finger landed, not where the drag ended, the way a
-nested scroller hands off: one swipe carries you to the edge, the next one leaves.
+so its side-zone taps stay live and TURN, exactly as they do at 1× — they never pan a step first
+(that was tried, and is not what a reader tapping "next" asked for), and a drag never turns: it
+only pans. Swiping to turn is a thing a page at 1× does.
 
 Double-tap toggles between the rest and a magnification of it (`DOUBLE_TAP_SCALE × rest`, capped
-at `WIDE_ZOOM_HEADROOM × rest` for a spread, whose rest is already above the old `MAX_SCALE`).
-Pinching OUT below a spread's rest is allowed, down to 1×, for a look at the whole thing.
+at `WIDE_ZOOM_HEADROOM × rest` for a spread, whose rest is already above the old `MAX_SCALE`) —
+or, under the `fill-height` double-tap mode, flips `pageFit` between fill-height and fit-page
+(`onDoubleTap`), the requester's own gesture. Either way a page that is NOT at rest goes back to
+rest first, so the toggle is always read against a settled page. Pinching OUT below a spread's
+rest is allowed, down to 1×, for a look at the whole thing.
 
 Only the ACTIVE page reports `onZoomChange`. A page leaving the screen is put back to rest
 silently and the page arriving reports its own rest on activation; the old arrangement, where the

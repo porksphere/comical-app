@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { containedSize, edgeOffset, effectiveFit, pageGeometry, panLimits } from './page-geometry';
+import { containedSize, edgeOffset, effectiveFit, fillRule, pageGeometry, panLimits } from './page-geometry';
 
 const phone = { width: 390, height: 844 };
 const spread = { width: 2000, height: 1000 };
@@ -39,28 +39,39 @@ describe('panLimits', () => {
 
 describe('pageGeometry', () => {
   test('a spread rests at fit-height, at the left edge for left-to-right', () => {
-    const g = pageGeometry(spread, phone, true, false);
+    const g = pageGeometry(spread, phone, 'wide', false);
     expect(g.restScale).toBeCloseTo(844 / 195, 6);
     expect(g.restEdge).toBe('left');
     expect(edgeOffset(g.restEdge, panLimits(g.restScale, g.content, phone).x)).toBeGreaterThan(0);
   });
   test('and at the right edge for right-to-left', () => {
-    expect(pageGeometry(spread, phone, true, true).restEdge).toBe('right');
+    expect(pageGeometry(spread, phone, 'wide', true).restEdge).toBe('right');
   });
   test('a portrait page rests at 1× however tall the phone', () => {
-    const g = pageGeometry(portrait, phone, true, false);
+    const g = pageGeometry(portrait, phone, 'wide', false);
     expect(g.restScale).toBe(1);
     expect(g.restEdge).toBe('center');
   });
+  test('fill-height rests an ordinary page at the viewport height, at the reading edge', () => {
+    const g = pageGeometry(portrait, phone, 'all', false);
+    expect(g.restScale).toBeCloseTo(844 / (390 / 0.7), 6);
+    expect(g.restEdge).toBe('left');
+  });
+  test('fill-height leaves a page near the screen shape whole', () => {
+    // 5% taller than the viewport's aspect: within FILL_HEIGHT_MIN_GAIN, so no zoom for a
+    // few points of sideways pan.
+    const near = { width: 1000, height: Math.round((1000 * 844) / 390 / 1.05) };
+    expect(pageGeometry(near, phone, 'all', false).restScale).toBe(1);
+  });
   test('the spread rule is a setting', () => {
-    expect(pageGeometry(spread, phone, false, false).restScale).toBe(1);
+    expect(pageGeometry(spread, phone, 'none', false).restScale).toBe(1);
   });
   test('a spread that already stands the full height of a landscape screen rests at 1×', () => {
-    const g = pageGeometry({ width: 1600, height: 1000 }, { width: 1200, height: 600 }, true, false);
+    const g = pageGeometry({ width: 1600, height: 1000 }, { width: 1200, height: 600 }, 'wide', false);
     expect(g.restScale).toBe(1);
   });
   test('unknown dimensions fill the viewport', () => {
-    expect(pageGeometry(null, phone, true, false)).toEqual({ content: phone, restScale: 1, restEdge: 'center' });
+    expect(pageGeometry(null, phone, 'wide', false)).toEqual({ content: phone, restScale: 1, restEdge: 'center' });
   });
 });
 
@@ -75,5 +86,22 @@ describe('effectiveFit', () => {
   });
   test('smart assumes tall until the picture says otherwise', () => {
     expect(effectiveFit('smart', null)).toBe('fit-width');
+  });
+});
+
+describe('fillRule', () => {
+  test('fill-height covers every page', () => {
+    expect(fillRule('fill-height', false)).toBe('all');
+  });
+  test('smart and fit-page-with-spreads cover spreads', () => {
+    expect(fillRule('smart', false)).toBe('wide');
+    expect(fillRule('fit-page', true)).toBe('wide');
+  });
+  test('fit-page without the spread setting, and fit-width, cover nothing', () => {
+    expect(fillRule('fit-page', false)).toBe('none');
+    expect(fillRule('fit-width', true)).toBe('none');
+  });
+  test('fill-height is laid out as fit-page', () => {
+    expect(effectiveFit('fill-height', portrait)).toBe('fit-page');
   });
 });

@@ -4377,7 +4377,14 @@ const ReaderPane = forwardRef<
   const mock = useMockActive();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [settings] = useReaderSettings();
+  const [settings, setSettings] = useReaderSettings();
+  // The double-tap under its fill-height mode — writes the persisted page fit, so the state shows
+  // in the sheet and survives leaving the reader. Out of any other fit it goes to fill-height;
+  // out of fill-height it goes to fit-page, not back to wherever it came from.
+  const toggleFillHeight = useCallback(
+    () => setSettings({ pageFit: settings.pageFit === 'fill-height' ? 'fit-page' : 'fill-height' }),
+    [setSettings, settings.pageFit],
+  );
 
   const startIndex = Math.max(0, Math.min(pages.length - 1, start === 'last' ? pages.length - 1 : start));
   const [currentPage, setCurrentPage] = useState(startIndex);
@@ -4768,7 +4775,8 @@ const ReaderPane = forwardRef<
           rtl={settings.direction === 'rtl'}
           pageFit={settings.pageFit}
           zoomWidePages={settings.zoomWidePages}
-          doubleTapZoom={settings.doubleTapZoom}
+          doubleTap={settings.doubleTap}
+          onToggleFillHeight={toggleFillHeight}
           initialPage={stitched ? prefixLen + startIndex : startIndex}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // Keep the counter live during fast flicks — against the segment the page belongs to
@@ -4792,7 +4800,8 @@ const ReaderPane = forwardRef<
           width={width}
           height={height}
           pageFit={settings.pageFit}
-          doubleTapZoom={settings.doubleTapZoom}
+          // Webtoon has no fill-height, so its double-tap is the magnification or nothing.
+          doubleTapZoom={settings.doubleTap === 'magnify'}
           initialPage={stitched ? prefixLen + startIndex : startIndex}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // The live half, the same one the pager has always had: the chrome counts along with the
@@ -4836,7 +4845,7 @@ const ReaderPane = forwardRef<
                 // Same mapping ZoomablePage applies (fit-page → contain), so the poster and the
                 // page draw alike. `smart` is fit-width until the picture says otherwise, which
                 // is also what the page it stands in for does.
-                contentFit={settings.pageFit === 'fit-page' ? 'contain' : 'cover'}
+                contentFit={settings.pageFit === 'fit-page' || settings.pageFit === 'fill-height' ? 'contain' : 'cover'}
                 cachePolicy="memory-disk"
               />
             </View>

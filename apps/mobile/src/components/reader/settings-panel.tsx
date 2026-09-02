@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import {
   useReaderSettings,
+  type DoubleTapMode,
   type PageFit,
   type PrefetchAhead,
   type ReaderDirection,
@@ -62,12 +63,18 @@ function SettingsContent() {
         label="Page fit"
         testIdPrefix="reader.settings.page-fit"
         // Webtoon has only the two layouts (one page per screen, or a continuous strip), so it
-        // shows two and reads `smart` as the strip — the same mapping WebtoonReader applies.
-        value={settings.mode === 'webtoon' && settings.pageFit === 'smart' ? 'fit-width' : settings.pageFit}
+        // shows two and reads `smart` as the strip and `fill-height` as the page — the same
+        // mapping WebtoonReader applies.
+        value={settings.mode === 'webtoon' ? webtoonFit(settings.pageFit) : settings.pageFit}
         options={[
           ['fit-page', 'Fit page'],
           ['fit-width', 'Fit width'],
-          ...(settings.mode === 'paged' ? [['smart', 'Smart'] as [string, string]] : []),
+          ...(settings.mode === 'paged'
+            ? [
+                ['fill-height', 'Fill height'] as [string, string],
+                ['smart', 'Smart'] as [string, string],
+              ]
+            : []),
         ]}
         onChange={(v) => set({ pageFit: v as PageFit })}
       />
@@ -88,11 +95,16 @@ function SettingsContent() {
           onChange={(v) => set({ zoomWidePages: v === 'fill-height' })}
         />
       )}
-      <ToggleRow
-        label="Double-tap to zoom"
-        testID="reader.settings.double-tap"
-        value={settings.doubleTapZoom}
-        onChange={(v) => set({ doubleTapZoom: v })}
+      <Segment
+        label="Double-tap"
+        testIdPrefix="reader.settings.double-tap"
+        value={settings.doubleTap}
+        options={[
+          ['magnify', 'Magnify'],
+          ['fill-height', 'Fill height'],
+          ['off', 'Off'],
+        ]}
+        onChange={(v) => set({ doubleTap: v as DoubleTapMode })}
       />
       <ToggleRow
         label="Keep screen on"
@@ -109,6 +121,11 @@ function SettingsContent() {
       />
     </View>
   );
+}
+
+/** The layout webtoon gives a paged-only fit — see `PageFit`. */
+export function webtoonFit(fit: PageFit): 'fit-page' | 'fit-width' {
+  return fit === 'fit-page' || fit === 'fill-height' ? 'fit-page' : 'fit-width';
 }
 
 const DIRECTION_OPTIONS: { value: 'ltr' | 'vertical' | 'rtl'; label: string; Icon: ComponentType<IconProps> }[] = [

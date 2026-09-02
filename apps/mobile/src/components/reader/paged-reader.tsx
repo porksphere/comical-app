@@ -25,7 +25,7 @@ import Animated, {
 import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { ScrubBackdrop } from '@/components/reader/scrub-backdrop';
 import { ZoomablePage } from '@/components/reader/zoomable-page';
-import type { PageFit } from '@/hooks/use-reader-settings';
+import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { trace, traceJS } from '@/lib/gesture-trace';
@@ -75,8 +75,9 @@ type Props = {
   pageFit: PageFit;
   /** Rest a spread at the viewport's height — see ZoomablePage. */
   zoomWidePages: boolean;
-  /** Whether a double-tap magnifies — see ZoomablePage. */
-  doubleTapZoom: boolean;
+  /** What a double-tap does, and the fill-height toggle it asks for — see ZoomablePage. */
+  doubleTap: DoubleTapMode;
+  onToggleFillHeight: () => void;
   initialPage: number;
   /** The page the scroll SETTLED on — the committed position (progress, chapter
    *  relabel). Fires once per scroll, on momentum end. */
@@ -165,7 +166,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     rtl,
     pageFit,
     zoomWidePages,
-    doubleTapZoom,
+    doubleTap,
+    onToggleFillHeight,
     initialPage,
     onPageChange,
     onVisiblePageChange,
@@ -526,7 +528,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       pageFit,
       rtl,
       zoomWidePages,
-      doubleTapZoom,
+      doubleTap,
+      onToggleFillHeight,
       width,
       height,
       leftAction,
@@ -541,7 +544,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       pageFit,
       rtl,
       zoomWidePages,
-      doubleTapZoom,
+      doubleTap,
+      onToggleFillHeight,
       width,
       height,
       leftAction,
@@ -634,7 +638,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               pageFit={pageFit}
               rtl={rtl}
               zoomWidePages={zoomWidePages}
-              doubleTapZoom={doubleTapZoom}
+              doubleTap={doubleTap}
+              onToggleFillHeight={onToggleFillHeight}
               active={index === activeIndex}
               onLeft={leftAction}
               onRight={rightAction}
