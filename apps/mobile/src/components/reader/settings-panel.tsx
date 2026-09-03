@@ -2,8 +2,9 @@ import type { ComponentType } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
-import { MinusIcon, PlusIcon, type IconProps } from '@/components/icons/ui-icons';
+import type { IconProps } from '@/components/icons/ui-icons';
 import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
+import { IntStepper } from '@/components/reader/int-stepper';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
@@ -16,7 +17,6 @@ import {
   type ReaderDirection,
   type ReaderSettings,
 } from '@/hooks/use-reader-settings';
-import { hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
 
 /** Gear button that opens reader settings in the app's shared overlay system — a
@@ -77,15 +77,14 @@ function SettingsContent() {
         </ThemedText>
       )}
       {settings.mode === 'paged' && settings.pageFit === 'fit-width' && (
-        <Segment
-          label="Wide pages"
-          testIdPrefix="reader.settings.wide-pages"
-          value={settings.zoomWidePages ? 'fit-height' : 'fit-width'}
-          options={[
-            ['fit-height', 'Fit height'],
-            ['fit-width', 'Fit width'],
-          ]}
-          onChange={(v) => set({ zoomWidePages: v === 'fit-height' })}
+        // The spread rule: a page wider than it is tall would lie as a strip across the middle
+        // under fit-width, so it fits the height instead. Only offered under fit-width — under
+        // fit-height every page already does.
+        <ToggleRow
+          label="Fit spreads to height"
+          testID="reader.settings.wide-pages"
+          value={settings.zoomWidePages}
+          onChange={(v) => set({ zoomWidePages: v })}
         />
       )}
       <Segment
@@ -170,8 +169,8 @@ function DirectionRow({
   );
 }
 
-/** A bounded whole number: label on the left, a −/+ stepper on the right — the same control the
- *  Settings screen gives a numeric field, drawn on the sheet's own dark palette. */
+/** A bounded whole number: label on the left, the platform's integer control on the right (see
+ *  `IntStepper` — a system stepper on iOS, a discrete slider on Android, −/+ on web). */
 function StepperRow({
   label,
   value,
@@ -190,42 +189,8 @@ function StepperRow({
   return (
     <View style={styles.toggleRow}>
       <ThemedText style={styles.segLabel}>{label}</ThemedText>
-      <View style={styles.stepper}>
-        <StepButton
-          icon="minus"
-          testID={testId(testIdPrefix, 'decrement')}
-          disabled={value <= min}
-          onPress={() => onChange(Math.max(min, value - 1))}
-        />
-        <ThemedText testID={testId(testIdPrefix, 'value')} style={styles.stepValue}>
-          {value}
-        </ThemedText>
-        <StepButton
-          icon="plus"
-          testID={testId(testIdPrefix, 'increment')}
-          disabled={value >= max}
-          onPress={() => onChange(Math.min(max, value + 1))}
-        />
-      </View>
+      <IntStepper value={value} min={min} max={max} onChange={onChange} testIdPrefix={testIdPrefix} />
     </View>
-  );
-}
-
-function StepButton({ icon, onPress, disabled, testID }: { icon: 'minus' | 'plus'; onPress: () => void; disabled: boolean; testID: string }) {
-  return (
-    <Pressable
-      testID={testID}
-      onPress={() => {
-        hapticSelection();
-        onPress();
-      }}
-      disabled={disabled}
-      hitSlop={6}
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      style={[styles.stepBtn, disabled && styles.stepBtnDisabled]}>
-      {icon === 'minus' ? <MinusIcon color="#fff" size={16} /> : <PlusIcon color="#fff" size={16} />}
-    </Pressable>
   );
 }
 
@@ -337,30 +302,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.two,
-  },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  stepValue: {
-    minWidth: 24,
-    textAlign: 'center',
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-    fontVariant: ['tabular-nums'],
-  },
-  stepBtn: {
-    width: 30,
-    height: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...ContinuousCorner,
-    borderRadius: Spacing.two,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  stepBtnDisabled: {
-    opacity: 0.4,
   },
 });
