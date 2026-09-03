@@ -17,7 +17,10 @@ export type PageFit = 'fit-width' | 'fit-height';
 /** What a double-tap does: magnify the page, switch `pageFit` to the other axis, or nothing (a
  *  lone tap then acts at once instead of waiting out a second one). */
 export type DoubleTapMode = 'magnify' | 'switch-fit' | 'off';
-export type PrefetchAhead = 1 | 2 | 3 | 4 | 6 | 8;
+/** Pages warmed ahead of the one being read — any whole number from none to PREFETCH_AHEAD_MAX. */
+export type PrefetchAhead = number;
+export const PREFETCH_AHEAD_MIN = 0;
+export const PREFETCH_AHEAD_MAX = 10;
 export type ReaderSettings = {
   mode: ReaderMode;
   direction: ReaderDirection;
@@ -69,5 +72,11 @@ export function useReaderSettings(): [ReaderSettings, (patch: Partial<ReaderSett
   const merged = { ...DEFAULT_SETTINGS, ...value };
   merged.pageFit = LEGACY_PAGE_FIT[merged.pageFit] ?? merged.pageFit;
   merged.doubleTap = LEGACY_DOUBLE_TAP[merged.doubleTap] ?? merged.doubleTap;
+  // A stored count outside the stepper's range (an older build's fixed choices went to 8, and a
+  // blob can hold anything) is brought inside it rather than trusted.
+  merged.prefetchAhead = Math.min(
+    PREFETCH_AHEAD_MAX,
+    Math.max(PREFETCH_AHEAD_MIN, Math.round(Number(merged.prefetchAhead) || 0)),
+  );
   return [merged, setReaderSettings];
 }
