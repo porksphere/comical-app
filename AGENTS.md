@@ -478,11 +478,44 @@ re-decodes when they change — which means `fit="contain"` and never `fit="widt
 a guess (`DEFAULT_ASPECT`) until `onLoad` reports the real aspect. Android needs none of it:
 Glide's `ContentFitDownsampleStrategy` already downsamples during the decode.
 
-Neither half covers a strip NARROWER than the view. `shouldDownscale` requires the image to exceed
-the view on BOTH axes, so an 800x10000 webtoon page is decoded whole on every platform, and on
-Android a bitmap that tall can exceed the max texture size and simply not draw. That is the case
-Mihon splits at download time (`height > width * 3 && height > 2 * screen max`); we don't handle it
-yet.
+Neither half covers a strip NARROWER than the view: `shouldDownscale` requires the image to exceed
+the view on BOTH axes, so an 800x10000 webtoon page is decoded whole on every platform. That one is
+`page-slicing.ts`'s.
+
+# A stitched strip is CUT UP, because Android can't draw one
+
+A bitmap longer than the driver's `GL_MAX_TEXTURE_SIZE` cannot be uploaded as a texture at all:
+hwui logs "Bitmap too large to be uploaded into a texture" and draws NOTHING. No exception, no
+`onError` — a blank page, and the reader has no way to find out. It is the failure behind every
+"black screen on long strip" report a webtoon reader collects.
+
+It is not rare. A survey of the most-followed Long Strip titles on MangaDex (90 pages, 13 titles)
+found a median page 760x5508 and **a third of pages over 8192 tall**, clustered by TITLE rather
+than scattered — 7 of 13 titles had one, and within those most pages did, so an affected series is
+blank *everywhere* while its neighbours are perfect. Eleven pages sat at exactly 10000, which is
+MangaDex's upload ceiling and not a preference: the distribution is censored, and a source without
+that cap goes higher. Official platforms are fine (WEBTOON slices everything to 800x1280); this is
+an aggregator problem.
+
+So `page-slicing.ts` cuts a page that can't be drawn into equal pieces that can, and
+`use-sliced-page.ts` performs the cut. Three things about it are load-bearing:
+
+- **`MAX_DRAWABLE_PX` is 4096, not the 8192 most phones report.** The limit is the driver's and
+  there is no floor to it. A cap that is wrong is worth nothing, because the page it is wrong about
+  is blank and silent.
+- **The strip test (`height > width * 3`) is not redundant with it.** Without it a genuinely huge
+  single page — a spread scanned at 300dpi — would also be cut, putting a seam through artwork
+  drawn to be seen whole. Nothing drawn as one picture is three times taller than it is wide.
+- **It runs off the already-loaded page, and one page at a time app-wide.** Deciding earlier means
+  knowing the picture's shape before it arrives, which costs a decode or a range request on every
+  page in the chapter to serve the few that need it. The queue is because a cut holds the whole
+  picture and its pieces at once, and a reader windows several rows ahead.
+
+The cut is only applied where the picture FILLS its box (`fillsBox`) — a `width` row, or the paged
+reader's strip box — since only there do bands that tile the box add back up to the picture. A
+contained page in a viewport-sized box is excluded and doesn't need it: containing a tall picture
+is the exact shape `shouldDownscale` already decodes down. Web is excluded too — a browser tiles a
+large image itself.
 
 # Testing: new screens need a flow
 

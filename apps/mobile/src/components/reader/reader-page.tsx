@@ -5,6 +5,9 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValu
 
 import { WarnIcon } from '@/components/icons/reader-icons';
 import { useImageProgress } from '@/components/reader/image-progress';
+import type { Size } from '@/components/reader/page-geometry';
+import { sliceBands, sliceCount } from '@/components/reader/page-slicing';
+import { useSlicedPage } from '@/components/reader/use-sliced-page';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -180,6 +183,9 @@ export function ReaderPage({
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [aspect, setAspect] = useState(DEFAULT_ASPECT);
+  // The picture's REAL pixel size, not just its shape — what `page-slicing` needs to decide
+  // whether this page can be drawn at all. Null until the image reports it.
+  const [dims, setDims] = useState<Size | null>(null);
   // `uri` is the bridge's raw (possibly server-relative) page path — resolved lazily below, only once
   // this page has actually mounted (readers window their rows, so pages far off-screen never mount and
   // never resolve). This is what keeps a big gallery from resolving every page up front. `null` until
@@ -240,6 +246,7 @@ export function ReaderPage({
     setFailed(false);
     setAttempt(0);
     setRetrying(false);
+    setDims(null);
   }, [uri]);
 
   useEffect(() => () => {
@@ -407,7 +414,26 @@ export function ReaderPage({
   // stacked at fractional heights put their shared edges between pixels, which the browser (and
   // the native layout's rounding) paints as a hairline of background between one page and the
   // next. Cover fills the half-pixel this costs.
-  const box: StyleProp<ViewStyle> = fit === 'contain' ? { width, height } : { width, height: Math.round(width / aspect) };
+  const boxHeight = fit === 'contain' ? height : Math.round(width / aspect);
+  const box: StyleProp<ViewStyle> = { width, height: boxHeight };
+
+  /**
+   * Whether the picture FILLS this box rather than sitting letterboxed inside it — the condition
+   * under which the box can be cut into bands that add back up to the picture (see `sliceBands`).
+   *
+   * It is a question about the box, not about the fit, because both fits reach it: a `width` row's
+   * height is derived from the picture's own aspect, and so is the paged reader's STRIP box
+   * (`stripGeometry`). What it excludes is an ordinary `contain` page, which is centred in a
+   * viewport-sized box with backdrop above and below — and which is also the case that never needs
+   * slicing, since containing a tall picture in a viewport-sized box is exactly the shape
+   * `shouldDownscale` already decodes down.
+   */
+  const boxAspect = boxHeight && boxHeight > 0 ? width / boxHeight : 0;
+  const imageAspect = dims ? dims.width / dims.height : 0;
+  const fillsBox = imageAspect > 0 && Math.abs(boxAspect - imageAspect) <= imageAspect * 0.02;
+
+  const slices = useSlicedPage(source, dims, fillsBox);
+  const bands = slices && boxHeight ? sliceBands(boxHeight, slices.length) : null;
 
   /**
    * The iOS half of downsampling, and it is not cosmetic: without it SDWebImage decodes the page at
@@ -471,7 +497,20 @@ export function ReaderPage({
 
   return (
     <View style={[styles.box, box]}>
-      {delayPassed && !retrying && source && (
+      {delayPassed && !retrying && source && slices && bands && (
+        // The same picture as the <Image> below, in pieces — see `useSlicedPage` for why, and
+        // `page-slicing` for the cut. `fill` rather than `cover` per band: each band's shape IS its
+        // slice's by construction (the box is split the same way the source was), so there is
+        // nothing to letterbox or crop, and `fill` is the one fit that can't round a sub-pixel gap
+        // into a seam. No transition either — these arrive over a page that is already on screen,
+        // and fading them in one at a time would be a flash, not a reveal.
+        <View style={StyleSheet.absoluteFill}>
+          {slices.map((slice, i) => (
+            <Image key={i} source={slice} style={{ width, height: bands[i] }} contentFit="fill" transition={0} />
+          ))}
+        </View>
+      )}
+      {delayPassed && !retrying && source && !slices && (
         <Image
           key={attempt}
           source={{ uri: source }}
@@ -512,7 +551,18 @@ export function ReaderPage({
             const h = e.source?.height;
             if (w && h) {
               setAspect(w / h);
+              setDims({ width: w, height: h });
+              // Reported at its real size even when it is about to be cut up: the list's row-height
+              // table is built from this, and the slices occupy exactly the space the whole picture
+              // would have.
               onLoadDims?.(w, h);
+              const parts = sliceCount({ width: w, height: h });
+              if (parts > 1) {
+                logDiagnostic('reader-page', `tall page ${w}x${h} needs ${parts} slices`, {
+                  url: uri,
+                  context: `page=${page} box=${width}x${boxHeight ?? 0}`,
+                });
+              }
             }
           }}
           onError={handleError}
