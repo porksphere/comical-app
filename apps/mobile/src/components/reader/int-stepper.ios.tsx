@@ -11,9 +11,9 @@ import { testId } from '@/lib/test-id';
 // drawn beside it as ordinary text, so the number is selectable by testID the same way the web
 // control's is.
 //
-// The host is given the control's size OUTRIGHT rather than asked to match its content: asked,
-// it laid out at nothing and the stepper floated free of the row, over whatever sat above it.
-// A UIStepper is 94×32pt on every iOS, so that is the frame.
+// The host is given the control's size OUTRIGHT rather than asked to match its content, and
+// told to ignore the safe area (see below). A UIStepper is 94×32pt on every iOS, so that is the
+// frame.
 const STEPPER_WIDTH = 94;
 const STEPPER_HEIGHT = 32;
 
@@ -25,7 +25,10 @@ export function IntStepper({ value, min, max, onChange, testIdPrefix, tone = 'th
       <ThemedText testID={testId(testIdPrefix, 'value')} style={[styles.value, { color: tone === 'dark' ? '#fff' : theme.text }]}>
         {value}
       </ThemedText>
-      <Host colorScheme={tone === 'dark' ? 'dark' : scheme} style={styles.host}>
+      {/* `ignoreSafeArea`: SwiftUI keeps its content out of the safe area by default, and a host at
+          the bottom of the sheet was pushed up by the home indicator's inset — the whole control
+          drawn a row above where it belonged. */}
+      <Host colorScheme={tone === 'dark' ? 'dark' : scheme} style={styles.host} ignoreSafeArea="all">
         <Stepper label="" value={value} min={min} max={max} step={1} onValueChange={(v) => onChange(Math.round(v))} />
       </Host>
     </View>

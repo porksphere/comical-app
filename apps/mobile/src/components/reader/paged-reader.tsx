@@ -637,6 +637,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               doubleTap={doubleTap}
               onSwitchFit={onSwitchFit}
               active={index === activeIndex}
+              // Before the page being read, in READING order — physical order is reversed under
+              // RTL, so the comparison is made in logical terms.
+              restAtFarEdge={toLogical(index) < toLogical(activeIndex)}
               standby={standby}
               onLeft={leftAction}
               onRight={rightAction}

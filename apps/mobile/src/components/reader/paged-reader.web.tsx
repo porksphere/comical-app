@@ -328,11 +328,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // Put the current page at rest (see `restRef`): 1× for most pages, fit-height for a spread. A
   // rest asked for by a double-tap is aimed at the tap: the content point under the finger is
   // read back through the old transform and put back under it at the new scale, clamped to the
-  // new rest's bounds. Anything else lands at the reading edge.
+  // new rest's bounds. Anything else lands at the reading edge — or, for a page swiped BACK onto
+  // (`fromFarEdge`), at the far one, where reading left off.
   const goToRest = useCallback(
-    (animate: boolean) => {
+    (animate: boolean, fromFarEdge = false) => {
       cancelInertia();
-      const { box: b, restScale: s, restTx, restZoomed: z } = restRef.current;
+      const { box: b, restScale: s, restTx: readingTx, restZoomed: z } = restRef.current;
+      const restTx = fromFarEdge ? -readingTx : readingTx;
       const tap = tapRef.current;
       tapRef.current = null;
       let tx = restTx;
@@ -364,9 +366,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     const prev = restedRef.current;
     restedRef.current = { index, known: imageKnown };
     const arriving = prev == null || prev.index !== index;
+    // Physical order IS reading order here (`data` is pre-reversed for RTL), so a lower index is
+    // a page swiped back onto: it is entered at its far edge.
+    const fromFarEdge = prev != null && index < prev.index;
     const { scale, tx, ty } = zoom.current;
-    if (Math.abs(scale - restScale) < 0.001 && Math.abs(tx - restTx) < 0.5 && Math.abs(ty) < 0.5) return;
-    goToRest(!arriving && prev.known && imageKnown);
+    const wantTx = fromFarEdge ? -restTx : restTx;
+    if (Math.abs(scale - restScale) < 0.001 && Math.abs(tx - wantTx) < 0.5 && Math.abs(ty) < 0.5) return;
+    goToRest(!arriving && prev.known && imageKnown, fromFarEdge);
   }, [index, restScale, restTx, imageKnown, goToRest, zoom]);
 
   // Momentum after a pan release: keep gliding from the last pan velocity,

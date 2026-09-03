@@ -3,7 +3,15 @@ import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
-import { edgeOffset, fillRule, pageGeometry, panLimits, type EffectiveFit, type Size } from '@/components/reader/page-geometry';
+import {
+  edgeOffset,
+  farEdge,
+  fillRule,
+  pageGeometry,
+  panLimits,
+  type EffectiveFit,
+  type Size,
+} from '@/components/reader/page-geometry';
 import { ReaderPage } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
@@ -52,6 +60,10 @@ type Props = {
    *  is the contain picture, so a page that rested zoomed under it would be revealed mid-jump —
    *  and grows into its rest once the reader is primary. */
   standby?: boolean;
+  /** True for a page BEFORE the one being read: it rests at its far edge, so a backward swipe
+   *  lands where reading left off. Latched while the page is on screen — the pager's answer flips
+   *  the moment the page becomes the one being read, and the edge it arrived on must not. */
+  restAtFarEdge?: boolean;
   onLeft: () => void;
   onRight: () => void;
   onToggleChrome: () => void;
@@ -97,6 +109,7 @@ export function ZoomablePage({
   fadeMs,
   active,
   standby = false,
+  restAtFarEdge = false,
   onLeft,
   onRight,
   onToggleChrome,
@@ -132,6 +145,15 @@ export function ZoomablePage({
 
   // Only a fit-page picture is centred in the viewport, which is what the hook's content clamp
   // assumes; a fit-width one is top-aligned and keeps the viewport clamp it always had.
+  // The edge this page rests at, latched while active (see `restAtFarEdge`). React's own form of
+  // the previous-prop pattern, so a discarded render re-runs the comparison.
+  const [farEdgeLatched, setFarEdgeLatched] = useState(restAtFarEdge);
+  if (!active && farEdgeLatched !== restAtFarEdge) setFarEdgeLatched(restAtFarEdge);
+  const edgeFor = useCallback(
+    (edge: ReturnType<typeof pageGeometry>['restEdge']) => (farEdgeLatched ? farEdge(edge) : edge),
+    [farEdgeLatched],
+  );
+
   const geometry = useMemo(
     () => pageGeometry(fit === 'fit-page' ? image : null, { width, height }, fill, rtl),
     [fit, fill, image, width, height, rtl],
@@ -200,7 +222,7 @@ export function ZoomablePage({
     active,
     content: fit === 'fit-page' ? geometry.content : undefined,
     restScale: geometry.restScale,
-    restEdge: geometry.restEdge,
+    restEdge: edgeFor(geometry.restEdge),
     onZoomChange,
     onPinchChange,
     onSingleTap: onTapNav,
@@ -219,7 +241,7 @@ export function ZoomablePage({
     // (see useZoomable's `settle`), so the page is drawn at rest from its first frame rather
     // than growing into it.
     const g = pageGeometry(layoutFor(overflows) === 'fit-page' ? { width: w, height: h } : null, { width, height }, fill, rtl);
-    settle(g.restScale, edgeOffset(g.restEdge, panLimits(g.restScale, g.content, { width, height }).x));
+    settle(g.restScale, edgeOffset(edgeFor(g.restEdge), panLimits(g.restScale, g.content, { width, height }).x));
     contentHeight.set(ch);
     setOverflowsVertically(overflows);
     setImage({ width: w, height: h });

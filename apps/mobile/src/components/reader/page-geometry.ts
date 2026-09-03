@@ -78,6 +78,14 @@ export function panLimits(scale: number, content: Size, viewport: Size): { x: nu
   };
 }
 
+/** The edge a page is ENTERED from when it is swiped back onto: the far one. A page before the
+ *  one being read rests here, so a backward swipe lands where reading left off — decided from
+ *  where the page sits, never from history, so it holds for a chapter resumed from the middle. */
+export function farEdge(edge: RestEdge): RestEdge {
+  'worklet';
+  return edge === 'left' ? 'right' : edge === 'right' ? 'left' : edge;
+}
+
 /** The translation that brings a given edge of the content to the matching edge of the viewport. */
 export function edgeOffset(edge: RestEdge, limitX: number): number {
   'worklet';
