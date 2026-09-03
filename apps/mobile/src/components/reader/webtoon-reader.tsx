@@ -24,6 +24,7 @@ import Animated, { runOnJS, useSharedValue, type SharedValue } from 'react-nativ
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
+import { webtoonFit } from '@/components/reader/settings-panel';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommitted } from '@/lib/gesture-release';
@@ -46,6 +47,8 @@ type Props = {
    *  size each row to exactly one screen. */
   height: number;
   pageFit: PageFit;
+  /** Whether a double-tap magnifies (`useReaderSettings().doubleTapZoom`). */
+  doubleTapZoom: boolean;
   initialPage: number;
   /** The page the scroll SETTLED on — the committed position (progress, chapter relabel). */
   onPageChange: (index: number) => void;
@@ -238,7 +241,7 @@ function useBackPull({
  * all.
  */
 export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(props, ref) {
-  return props.pageFit === 'fit-page' ? <WebtoonPaged {...props} ref={ref} /> : <WebtoonContinuous {...props} ref={ref} />;
+  return webtoonFit(props.pageFit) === 'fit-page' ? <WebtoonPaged {...props} ref={ref} /> : <WebtoonContinuous {...props} ref={ref} />;
 });
 
 /**
@@ -270,6 +273,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
     onAdvance,
     onGoBack,
     standby,
+    doubleTapZoom,
   },
   ref,
 ) {
@@ -321,6 +325,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
     onSingleTap: onToggleChrome,
     singleTapAllowed: tapNotStoppingMomentum,
     simultaneousExternal: zoomExternals,
+    doubleTapEnabled: doubleTapZoom,
   });
 
   useEffect(() => {
@@ -581,6 +586,7 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
     onEndReached,
     onGoBack,
     standby,
+    doubleTapZoom,
   },
   ref,
 ) {
@@ -724,6 +730,7 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
           height={height}
           onToggleChrome={onToggleChrome}
           onZoomChange={handleZoom}
+          doubleTapZoom={doubleTapZoom}
           fadeMs={standby ? STANDBY_FADE_MS : undefined}
           testID={testId('reader.page.tap', index + 1)}
           externals={rowExternals}
@@ -747,6 +754,7 @@ function WebtoonPagedRow({
   height,
   onToggleChrome,
   onZoomChange,
+  doubleTapZoom,
   fadeMs,
   testID,
   externals,
@@ -759,6 +767,7 @@ function WebtoonPagedRow({
   height: number;
   onToggleChrome: () => void;
   onZoomChange: (zoomed: boolean) => void;
+  doubleTapZoom: boolean;
   fadeMs?: number;
   testID: string;
   /** The gestures the LIST has mounted (its scroll, and the back-pull) — this row lives inside
@@ -776,6 +785,7 @@ function WebtoonPagedRow({
     onSingleTap: onToggleChrome,
     singleTapEnabled: !failed,
     simultaneousExternal: externals,
+    doubleTapEnabled: doubleTapZoom,
   });
 
   return (

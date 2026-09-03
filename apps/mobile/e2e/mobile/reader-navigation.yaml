@@ -1,6 +1,6 @@
 # Extends past browse-to-reader.yaml's "reader opened" assertion: paged prev/next tap zones, the
 # backward chapter crossing off page 1, the bottom navigator's page scrubber, and the settings
-# sheet's reading-direction switch.
+# sheet's controls and reading-direction switch.
 #
 # Mobile-only: the tap-zone testIDs (reader.control.*) are NATIVE-only markers
 # (components/reader/zoomable-page.tsx's TapZones — "web has its own gesture pager in
@@ -21,15 +21,24 @@
 #     position-based name would mean the opposite thing in a right-to-left series.
 #   - reader.settings.open                  settings-panel.tsx's gear button, now in the toolbar's
 #     trailing (top-right) slot rather than floating at the bottom-right.
-#   - reader.navigator.page                 the navigator's current-page number. The page used to be
-#     read off the toolbar subtitle ("Page N of M"), but the toolbar now carries the series and
-#     chapter instead — the count belongs to the bottom bar, which is where it's asserted from.
-#     The navigator renders the page and the total as SEPARATE Text nodes (and a third, invisible,
-#     sizing ghost), so there's no "N / M" string to regex; this testID is on the node holding the
-#     current page alone, which is why the assertions below match a bare number.
+#   - reader.navigator.page                 the current-page number, in the counter chip UNDER the
+#     bar (chapter-navigator.tsx's COUNTER_H). The page used to be read off the toolbar subtitle
+#     ("Page N of M"), then off the slider's flanking numbers; the chip is where it lives now, and
+#     it stays faintly on screen even with the chrome hidden. The chip renders the page and the
+#     total as SEPARATE Text nodes, so there's no "N / M" string to regex; this testID is on the
+#     node holding the current page alone, which is why the assertions below match a bare number.
 #   - reader.settings.direction.ltr / .vertical / .rtl   The 3-way mode+direction row — NOT
 #     ".paged"/".webtoon" (a wrong name already caught and fixed in
 #     swipe-dismiss-webtoon.yaml this same session; DIRECTION_OPTIONS only has ltr/vertical/rtl).
+#   - reader.settings.page-fit.auto / .fit-width / .fit-height   How a page is fitted; Auto is the
+#     default and paged-only.
+#   - reader.settings.double-tap.magnify / .switch-fit / .off   What a double-tap does.
+#   - reader.settings.keep-awake             Switch: whether the screen is held awake while reading.
+#   - reader.settings.page-count             Switch: whether the page count stays faintly on screen
+#     once the chrome has hidden.
+#   - reader.settings.safe-area              Switch: whether the pages stay out of the cutout and
+#     system bars.
+#   - reader.settings.preload-ahead.value    The preload count beside its control (0–10).
 #   - reader.toolbar.back                   Reused from browse-to-reader.yaml.
 #
 # The settings sheet has no dedicated close button — swipe-dismiss-webtoon.yaml's already-
@@ -120,9 +129,36 @@ appId: com.porksphere.comical
     id: "reader.navigator.page"
     text: "^1$"
 
-# Settings sheet: switch reading direction to Vertical (webtoon) and back to L -> R (paged).
+# Settings sheet: every control flipped and restored — all of these persist, so the sheet is left
+# exactly as the app defaults it — then the reading direction switched to Vertical (webtoon) and
+# back to L -> R (paged).
 - tapOn:
     id: "reader.settings.open"
+- tapOn:
+    id: "reader.settings.page-fit.fit-height"
+- tapOn:
+    id: "reader.settings.page-fit.auto"
+- tapOn:
+    id: "reader.settings.double-tap.off"
+- tapOn:
+    id: "reader.settings.double-tap.magnify"
+- tapOn:
+    id: "reader.settings.keep-awake"
+- tapOn:
+    id: "reader.settings.keep-awake"
+- tapOn:
+    id: "reader.settings.page-count"
+- tapOn:
+    id: "reader.settings.page-count"
+- tapOn:
+    id: "reader.settings.safe-area"
+- tapOn:
+    id: "reader.settings.safe-area"
+# Preload ahead (default 4) is the platform's own integer control on native — a SwiftUI stepper, a
+# Compose slider — which Maestro can't drive by id, so only the number beside it is asserted.
+- assertVisible:
+    id: "reader.settings.preload-ahead.value"
+    text: "4"
 - assertVisible:
     id: "reader.settings.direction.vertical"
 - tapOn:

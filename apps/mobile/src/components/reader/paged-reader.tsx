@@ -24,8 +24,9 @@ import Animated, {
 
 import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { ScrubBackdrop } from '@/components/reader/scrub-backdrop';
+import type { Size } from '@/components/reader/page-geometry';
 import { ZoomablePage } from '@/components/reader/zoomable-page';
-import type { PageFit } from '@/hooks/use-reader-settings';
+import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { trace, traceJS } from '@/lib/gesture-trace';
@@ -73,6 +74,9 @@ type Props = {
   height: number;
   rtl: boolean;
   pageFit: PageFit;
+  /** What a double-tap does, and the switch-fit it asks for — see ZoomablePage. */
+  doubleTap: DoubleTapMode;
+  onSwitchFit: (image: Size | null) => void;
   initialPage: number;
   /** The page the scroll SETTLED on — the committed position (progress, chapter
    *  relabel). Fires once per scroll, on momentum end. */
@@ -160,6 +164,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     height,
     rtl,
     pageFit,
+    doubleTap,
+    onSwitchFit,
     initialPage,
     onPageChange,
     onVisiblePageChange,
@@ -518,6 +524,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       activeIndex,
       standby,
       pageFit,
+      rtl,
+      doubleTap,
+      onSwitchFit,
       width,
       height,
       leftAction,
@@ -526,7 +535,21 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       handleZoomChange,
       pageExternals,
     }),
-    [activeIndex, standby, pageFit, width, height, leftAction, rightAction, onToggleChrome, handleZoomChange, pageExternals],
+    [
+      activeIndex,
+      standby,
+      pageFit,
+      rtl,
+      doubleTap,
+      onSwitchFit,
+      width,
+      height,
+      leftAction,
+      rightAction,
+      onToggleChrome,
+      handleZoomChange,
+      pageExternals,
+    ],
   );
 
   return (
@@ -568,9 +591,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         extraData={extraData}
         horizontal
         pagingEnabled
-        // Frozen while a page is zoomed (its own pan owns one-finger drags then) and for the
-        // duration of a pinch (see `pinching`).
-        scrollEnabled={!zoomed && !pinching}
+        // Frozen only for the duration of a pinch (see `pinching`). A zoomed page's own pan
+        // BLOCKS this scroll rather than disabling it, and fails — handing the touch over — for a
+        // drag past the edge the page already shows, so a zoomed page is still swiped between.
+        scrollEnabled={!pinching}
         showsHorizontalScrollIndicator={false}
         initialScrollIndex={initialIndex}
         // THE POINT OF THE WHOLE SWAP: anchor a data change on the ITEM, so a chapter joining at
@@ -609,7 +633,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               width={width}
               height={height}
               pageFit={pageFit}
+              rtl={rtl}
+              doubleTap={doubleTap}
+              onSwitchFit={onSwitchFit}
               active={index === activeIndex}
+              // Before the page being read, in READING order — physical order is reversed under
+              // RTL, so the comparison is made in logical terms.
+              restAtFarEdge={toLogical(index) < toLogical(activeIndex)}
+              standby={standby}
               onLeft={leftAction}
               onRight={rightAction}
               onToggleChrome={onToggleChrome}

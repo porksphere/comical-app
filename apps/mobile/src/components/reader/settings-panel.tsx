@@ -4,16 +4,24 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
 import type { IconProps } from '@/components/icons/ui-icons';
 import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
+import { IntStepper } from '@/components/reader/int-stepper';
+import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import {
+  PREFETCH_AHEAD_MAX,
+  PREFETCH_AHEAD_MIN,
   useReaderSettings,
+  type DoubleTapMode,
   type PageFit,
-  type PrefetchAhead,
   type ReaderDirection,
   type ReaderSettings,
 } from '@/hooks/use-reader-settings';
 import { testId } from '@/lib/test-id';
+
+/** How long the sheet's entrance spring takes to come to rest, generously — the native controls in
+ *  it wait this out before mounting (see IntStepper's `deferMountMs`). */
+const SHEET_SETTLE_MS = 600;
 
 /** Gear button that opens reader settings in the app's shared overlay system — a
  *  near-full-width bottom sheet on mobile/narrow web, an anchored popover
@@ -60,27 +68,65 @@ function SettingsContent() {
       <Segment
         label="Page fit"
         testIdPrefix="reader.settings.page-fit"
-        value={settings.pageFit}
+        // Webtoon has only the two layouts (one page per screen, or a continuous strip), so it
+        // shows two and reads `auto` as the page — the same mapping WebtoonReader applies.
+        value={settings.mode === 'webtoon' ? (webtoonFit(settings.pageFit) === 'fit-page' ? 'fit-height' : 'fit-width') : settings.pageFit}
         options={[
-          ['fit-page', 'Fit page'],
+          ...(settings.mode === 'paged' ? [['auto', 'Auto'] as [string, string]] : []),
           ['fit-width', 'Fit width'],
+          ['fit-height', 'Fit height'],
         ]}
         onChange={(v) => set({ pageFit: v as PageFit })}
       />
       {settings.mode === 'webtoon' && (
         <ThemedText style={styles.hint}>
-          {settings.pageFit === 'fit-page' ? 'One page at a time, like Paged' : 'Continuous scroll'}
+          {webtoonFit(settings.pageFit) === 'fit-page' ? 'One page at a time, like Paged' : 'Continuous scroll'}
         </ThemedText>
       )}
       <Segment
+        label="Double-tap"
+        testIdPrefix="reader.settings.double-tap"
+        value={settings.doubleTap}
+        options={[
+          ['magnify', 'Magnify'],
+          ['switch-fit', 'Switch fit'],
+          ['off', 'Off'],
+        ]}
+        onChange={(v) => set({ doubleTap: v as DoubleTapMode })}
+      />
+      <ToggleRow
+        label="Keep screen on"
+        testID="reader.settings.keep-awake"
+        value={settings.keepAwake}
+        onChange={(v) => set({ keepAwake: v })}
+      />
+      <ToggleRow
+        label="Show page count when hidden"
+        testID="reader.settings.page-count"
+        value={settings.pageCountWhenHidden}
+        onChange={(v) => set({ pageCountWhenHidden: v })}
+      />
+      <ToggleRow
+        label="Respect safe areas"
+        testID="reader.settings.safe-area"
+        value={settings.respectSafeArea}
+        onChange={(v) => set({ respectSafeArea: v })}
+      />
+      <StepperRow
         label="Preload ahead"
         testIdPrefix="reader.settings.preload-ahead"
-        value={String(settings.prefetchAhead)}
-        options={[1, 2, 3, 4, 6, 8].map((n) => [String(n), String(n)] as [string, string])}
-        onChange={(v) => set({ prefetchAhead: Number(v) as PrefetchAhead })}
+        value={settings.prefetchAhead}
+        min={PREFETCH_AHEAD_MIN}
+        max={PREFETCH_AHEAD_MAX}
+        onChange={(v) => set({ prefetchAhead: v })}
       />
     </View>
   );
+}
+
+/** The layout webtoon gives a page fit — see `PageFit`: one page per screen, or the strip. */
+export function webtoonFit(fit: PageFit): 'fit-page' | 'fit-width' {
+  return fit === 'fit-width' ? 'fit-width' : 'fit-page';
 }
 
 const DIRECTION_OPTIONS: { value: 'ltr' | 'vertical' | 'rtl'; label: string; Icon: ComponentType<IconProps> }[] = [
@@ -121,6 +167,62 @@ function DirectionRow({
           );
         })}
       </View>
+    </View>
+  );
+}
+
+/** A bounded whole number: label on the left, the platform's integer control on the right (see
+ *  `IntStepper` — a system stepper on iOS, a discrete slider on Android, −/+ on web). */
+function StepperRow({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+  testIdPrefix,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+  testIdPrefix: string;
+}) {
+  return (
+    <View style={styles.toggleRow}>
+      <ThemedText style={styles.segLabel}>{label}</ThemedText>
+      <IntStepper
+        value={value}
+        min={min}
+        max={max}
+        onChange={onChange}
+        testIdPrefix={testIdPrefix}
+        tone="dark"
+        // The sheet springs up from below the screen; the native control is mounted once it has
+        // arrived — see `deferMountMs`.
+        deferMountMs={SHEET_SETTLE_MS}
+      />
+    </View>
+  );
+}
+
+/** A boolean row: label on the left, the app's switch (the same `ThemedSwitch` every Settings
+ *  toggle uses) on the right — an on/off choice is a switch, not a two-way segment. */
+function ToggleRow({
+  label,
+  value,
+  onChange,
+  testID,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+  testID: string;
+}) {
+  return (
+    <View style={styles.toggleRow}>
+      <ThemedText style={styles.segLabel}>{label}</ThemedText>
+      <ThemedSwitch testID={testID} value={value} onValueChange={onChange} />
     </View>
   );
 }
@@ -172,9 +274,10 @@ const styles = StyleSheet.create({
   seg: {
     gap: Spacing.one,
   },
+  // One label style for every row, segment and switch alike.
   segLabel: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
   },
   segRow: {
     flexDirection: 'row',
@@ -205,5 +308,11 @@ const styles = StyleSheet.create({
   hint: {
     color: 'rgba(255,255,255,0.4)',
     fontSize: 11,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
   },
 });

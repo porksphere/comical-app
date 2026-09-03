@@ -34,7 +34,9 @@ import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { ChevronUpIcon } from '@/components/icons/ui-icons';
-import { ChapterNavigator } from '@/components/reader/chapter-navigator';
+import { BOTTOM_CHROME_HEIGHT, ChapterNavigator, bottomChromeInset } from '@/components/reader/chapter-navigator';
+import { KeepScreenAwake } from '@/components/reader/keep-awake';
+import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar } from '@/components/reader/reader-toolbar';
@@ -60,7 +62,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
-import { useReaderSettings } from '@/hooks/use-reader-settings';
+import { useReaderSettings, setFitOverride, useFitOverride } from '@/hooks/use-reader-settings';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -164,6 +166,13 @@ function useViewport(): { width: number; height: number } {
   );
 }
 const IS_IOS = Platform.OS === 'ios';
+/** A bottom safe-area inset above this is a system BAR the pages should stay out of when asked to
+ *  respect safe areas — Android's three-button navigation, 48dp and drawn over the content with a
+ *  scrim — rather than an INDICATOR the content may run under: the iPhone home indicator is 34pt
+ *  and Android gesture navigation under 30dp, both transparent strips over the page that hide
+ *  nothing worth insetting for. Only the top ever hides pixels outright — the cutout — and that
+ *  is always respected under the setting. */
+const SYSTEM_BAR_MIN_INSET = 40;
 // The reader surface's tone. Pure black, like every other page — it mirrored the reference's
 // `#reader-view { background: #0f0f0f }` until the app's own background stopped doing the same
 // (see `Colors.dark.background`), and a reader a shade lighter than the app it opens out of read
@@ -986,6 +995,7 @@ function SeriesReaderInstance({
   const insets = useSafeAreaInsets();
   const mock = useMockActive();
   const [settings] = useReaderSettings();
+  const fitOverride = useFitOverride();
 
   const {
     id,
@@ -2999,8 +3009,11 @@ function SeriesReaderInstance({
   // the SAME image is drawn twice a few percent apart (a 2:3 cover-crop over an image-aspect
   // contain) — a double exposure that reads as blur. Chapter-mode zooms keep the fixed rect: their
   // copy is the series cover, deliberately a different picture from the page dissolving off it.
-  // fit-width gates the morph off — the page doesn't render at the contain rect there.
-  const copyMorphs = !!sequence && settings.pageFit === 'fit-page';
+  // Only where the page actually RENDERS at the contain rect, which is per image now that the fit
+  // is an axis: a picture whose contain-limiting axis is the fitted one sits at contain (a normal
+  // page under fit-width on a phone, a strip under fit-height); the other kind is scrolled or
+  // rested zoomed, and a copy morphing onto the contain rect would land beside it.
+  const morphFit = sequence ? (fitOverride ?? settings.pageFit) : null;
   const zoomThumbStyle = useAnimatedStyle(() => {
     // Which destination this collapse is aimed at, latched at its first frame — see
     // `zoomBoundOnScreen`. All three are the same shape, so nothing below needs a second path.
@@ -3073,9 +3086,13 @@ function SeriesReaderInstance({
       const w = onScreen / Math.max(s, 0.01);
       const h = w / Math.max(base.width / base.height, 0.01);
       rect = { x: (width - w) / 2, y: (height - h) / 2, width: w, height: h };
-    } else if (copyMorphs && ia > 0) {
-      // The image's fit-page rect (contain, centred) — in PAGE coordinates, which for a
-      // screen-sized page are screen coordinates.
+    } else if (
+      morphFit &&
+      ia > 0 &&
+      (morphFit === 'fit-width' ? ia >= width / height : morphFit === 'fit-height' ? ia <= width / height : ia <= 1)
+    ) {
+      // The image's contain rect, centred — in PAGE coordinates, which for a screen-sized page
+      // are screen coordinates.
       const screenAspect = width / height;
       const fw = ia >= screenAspect ? width : height * ia;
       const fh = ia >= screenAspect ? width / ia : height;
@@ -3113,7 +3130,7 @@ function SeriesReaderInstance({
       // ZOOM_THUMB_FADE_CLOSE_OFFCOVER) settles it without moving anything.
       transform: [{ translateY: -zoomBoundShift(geom, detailsScrollOffset.value) }],
     };
-  }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, copyMorphs, width, height]);
+  }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, morphFit, width, height]);
   // What the flying copy DRAWS. A series open flies the series cover (the route's `cover` param is
   // the tapped card's own URL). A SEQUENCE open grew out of a page TILE, so the copy is that
   // page's image — the MOUNT entry's URI (already latched in sequenceTarget), which is the very
@@ -4377,6 +4394,29 @@ const ReaderPane = forwardRef<
   const router = useRouter();
   const queryClient = useQueryClient();
   const [settings] = useReaderSettings();
+  // The fit the pages are drawn to: the setting, or the axis a `switch-fit` double-tap has put in
+  // its place for the moment (see `fitOverride$`). Cleared with this pane, so leaving the reader
+  // — a chapter crossing the run doesn't cover, or the series page — returns to the setting.
+  const fitOverride = useFitOverride();
+  const pageFit = fitOverride ?? settings.pageFit;
+  useEffect(() => () => setFitOverride(null), []);
+  // The reader draws edge to edge on both platforms — the window runs under the status bar and
+  // any cutout, and under the navigation bar on Android — so a page fitted to the height runs
+  // under the notch. `respectSafeArea` insets the PAGES (never the chrome, which places itself)
+  // by the top inset, and by the bottom one only where that is a real bar — see
+  // SYSTEM_BAR_MIN_INSET. Web has no insets and is unchanged.
+  const insets = useSafeAreaInsets();
+  const insetTop = settings.respectSafeArea ? insets.top : 0;
+  const insetBottom = settings.respectSafeArea && insets.bottom > SYSTEM_BAR_MIN_INSET ? insets.bottom : 0;
+  const pageHeight = height - insetTop - insetBottom;
+  // The double-tap under its switch-fit mode: fit the axis this page does NOT currently fill
+  // (see `otherFit`), for every page until the next double-tap, which clears it. Never written to
+  // the setting: from `auto` there is no single axis to write, and a double-tap is a moment's
+  // choice, not a preference.
+  const switchFit = useCallback(
+    (image: Size | null) => setFitOverride(fitOverride ? null : otherFit(settings.pageFit, image, { width, height: pageHeight })),
+    [fitOverride, settings.pageFit, width, pageHeight],
+  );
 
   const startIndex = Math.max(0, Math.min(pages.length - 1, start === 'last' ? pages.length - 1 : start));
   const [currentPage, setCurrentPage] = useState(startIndex);
@@ -4752,8 +4792,12 @@ const ReaderPane = forwardRef<
 
   return (
     <>
+      {settings.keepAwake && !standby && <KeepScreenAwake />}
       {/* The page subtree. */}
       <Animated.View testID="series-page.page-wrap" style={styles.pageWrap}>
+      {/* The pages' own frame, inset from the screen's when safe areas are respected (see
+          `pageHeight`); the poster sits in this same frame so the two draw alike. */}
+      <View style={{ width, height: pageHeight, marginTop: insetTop }}>
       {settings.mode === 'paged' ? (
         <PagedReader
           ref={pagedRef}
@@ -4762,9 +4806,11 @@ const ReaderPane = forwardRef<
           // per-chapter pages (its pager hands boundary turns to onPrev/onNext itself).
           pages={stitched ? flatItems : items}
           width={width}
-          height={height}
+          height={pageHeight}
           rtl={settings.direction === 'rtl'}
-          pageFit={settings.pageFit}
+          pageFit={pageFit}
+          doubleTap={settings.doubleTap}
+          onSwitchFit={switchFit}
           initialPage={stitched ? prefixLen + startIndex : startIndex}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // Keep the counter live during fast flicks — against the segment the page belongs to
@@ -4786,8 +4832,10 @@ const ReaderPane = forwardRef<
           // scroll rather than arriving after a jump.
           pages={stitched ? flatItems : items}
           width={width}
-          height={height}
+          height={pageHeight}
           pageFit={settings.pageFit}
+          // Webtoon has no axis to switch, so its double-tap is the magnification or nothing.
+          doubleTapZoom={settings.doubleTap === 'magnify'}
           initialPage={stitched ? prefixLen + startIndex : startIndex}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // The live half, the same one the pager has always had: the chrome counts along with the
@@ -4828,14 +4876,20 @@ const ReaderPane = forwardRef<
               <Image
                 source={{ uri }}
                 style={StyleSheet.absoluteFill}
-                // Same mapping ZoomablePage applies (fit-page → contain), so the poster and the
-                // page draw alike.
-                contentFit={settings.pageFit === 'fit-page' ? 'contain' : 'cover'}
+                // Contain, whichever axis the fit is: a page under the poster stands at 1× (see
+                // ZoomablePage's `standby`), and at 1× both fits draw the contain picture — a
+                // fit-width page shorter than the screen sits centred, exactly where contain puts
+                // it. `cover` here (the old fit-width mapping) crops the page to the frame and then
+                // hands over to the letterboxed one: the page visibly shifts as the poster leaves.
+                // The one page this doesn't match is a strip taller than the screen under fit-width,
+                // which is drawn from its top rather than whole.
+                contentFit="contain"
                 cachePolicy="memory-disk"
               />
             </View>
           );
         })()}
+      </View>
       </Animated.View>
 
       {/* Tint/fade layers over the pages, under the chrome below. */}
@@ -4848,6 +4902,7 @@ const ReaderPane = forwardRef<
           current={currentPage}
           total={pages.length}
           visible={chromeVisible}
+          countWhenHidden={settings.pageCountWhenHidden}
           onJump={(i) => {
             goTo(i);
             onShowChrome();
@@ -4862,6 +4917,7 @@ const ReaderPane = forwardRef<
           total={shown.total}
           rtl={settings.mode === 'paged' && settings.direction === 'rtl'}
           visible={chromeVisible}
+          countWhenHidden={settings.pageCountWhenHidden}
           chaptered={chaptered}
           hasPrevChapter={hasPrevChapter}
           hasNextChapter={hasNextChapter}
@@ -4901,7 +4957,19 @@ function DetailsHint({
   return (
     <Animated.View
       pointerEvents={visible ? 'box-none' : 'none'}
-      style={[styles.detailsHintWrap, { bottom: insets.bottom + Spacing.two + 48 }, style]}>
+      // A gap above the bottom chrome's top edge: the navigator's on native, the progress pill's
+      // on web (which has no page counter under it and so sits lower). On a direct series the
+      // scrubber pill spans the whole width, straight under this, so the gap is what separates
+      // the two backgrounds.
+      style={[
+        styles.detailsHintWrap,
+        {
+          bottom: IS_WEB
+            ? insets.bottom + Spacing.two + 48
+            : bottomChromeInset(insets.bottom) + BOTTOM_CHROME_HEIGHT + Spacing.two,
+        },
+        style,
+      ]}>
       <Pressable
         testID="series-page.details"
         onPress={onPress}

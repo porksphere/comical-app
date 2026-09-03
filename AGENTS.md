@@ -354,6 +354,80 @@ is visibly clipped by the frame that is supposed to hold it. `zoomMaskBox` is de
 of both — one box, read by all three animated styles, so they cannot disagree about where the window
 is.
 
+# Reader zoom: a page has a REST, and the box it is drawn in never changes
+
+Both paged readers (`use-zoomable.ts` on native, `paged-reader.web.tsx` on web) share
+`page-geometry.ts`, which answers two questions about a page from its picture's real dimensions:
+the box the picture occupies at 1× (what every pan is clamped to — a zoomed page stops at its own
+edge, never slides on into its letterbox), and where the page RESTS. The page fit is `auto`, or
+an AXIS — `fit-width` or `fit-height` — where the other axis is whatever the picture's shape makes
+it. There is no "fit page": on any screen that is just whichever of the two is smaller, so
+fit-width already shows an ordinary page whole on a phone and fit-height shows it whole on a
+landscape tablet. `auto`, the default, is the device-independent one: every page whole, and a
+SPREAD alone — a picture wider than it is tall — lifted to fit-height and panned sideways, since
+it would otherwise lie as a strip. An ordinary page is never scrolled under it on any screen.
+
+**A page that fits is drawn in the contain box, under either axis, and that box is the viewport's
+size and never changes.** That is the whole reason the reader doesn't shift: a box sized from the
+picture's aspect is sized from a GUESS until the picture arrives, and re-centring it then moves
+the page (that was built, as the fit-width default, and was the "page shifting around"). Only a
+page that overflows the height under fit-width — a strip — is drawn in a box its own height
+(`stripGeometry`), centred like every other box and panned DOWN by the same gesture that pans a
+zoomed page, from its top, with the same momentum and the same hand-off to the pager for a
+sideways drag. (It used to have a gesture of its own, composed alongside the pager's swipe rather
+than blocking it and with no momentum: a thumb drag that started slightly diagonal turned the
+page, and one that didn't stopped dead on release.)
+
+The fit itself is a TRANSFORM over that box, the rest. Most pages rest at 1×. Under `fit-height`
+every page whose height fit buys more than `FILL_HEIGHT_MIN_GAIN` over contain rests scaled to the
+viewport's height, at the edge reading starts from (left for L→R, right for R→L), and reads by
+panning sideways; a page near the screen's own shape rests whole, so nothing is zoomed a few
+percent for a few points of pan. Under `fit-width` nothing rests zoomed: a spread lies as a strip
+across the middle there, and the `switch-fit` double-tap is how it is read. (Laying the page out
+at its fit size instead, with the transform at 1×, was built and pulled back out: the box then
+changes on load and on every fit switch, the transform lands a frame after the layout, and each
+of those is a pop. A `smart` fit — an axis chosen per page from its shape — was pulled too.)
+
+**A rest that follows from the picture's shape is applied BEFORE the render that carries it**
+(`settle`, called from `onLoadDims` ahead of the state update), so a page is drawn at rest from
+its first frame; a rest that moves under a picture already on screen — a fit switched, the
+entrance settling — is animated, and that zoom IS the `switch-fit` double-tap: one gesture that
+fits the axis the page does NOT currently fill (`otherFit` — from `auto` that depends on the
+page), a zoom in where the other axis has room and a zoom out where it overflows. It is aimed at
+the TAP: the content under the finger stays under the finger, clamped to the new rest's bounds,
+rather than the page landing at its reading edge. And it is an OVERRIDE (`fitOverride$`), never a
+write to the setting — from `auto` there is no single axis to write, and a double-tap is a
+moment's choice: it holds across page turns, and the next double-tap, choosing a fit in the sheet,
+or leaving the reader clears it.
+
+Nothing locks the vertical axis. At fit-height the content's vertical overhang is zero, so the
+clamp is what holds it — the same clamp that stops a 2.5× page drifting into black. Don't add a
+rule for it.
+
+A page resting zoomed still has to be LEFT. Its side-zone taps stay live and TURN, exactly as
+they do at 1× — they never pan a step first (that was tried, and is not what a reader tapping
+"next" asked for). And it is still SWIPED between, the way every native reader does it: the
+pager's scroll is never frozen for a zoom but BLOCKED behind the page's pan, which decides on the
+UI thread (manual activation, after a short deadzone) whether the drag has anywhere to go. A drag
+that can pan activates and cancels the scroll; a drag past the edge the page already shows, or on
+an axis it doesn't overflow, FAILS, and the scroll takes the same touch and slides to the next
+page. So a spread is read by dragging to its far edge, and the next drag turns. (The first cut
+froze the scroll and let a release past the edge JUMP the page; the slide is what the hand-off
+should look like.)
+
+Double-tap toggles between the rest and a magnification of it (`DOUBLE_TAP_SCALE × rest`, capped
+at `WIDE_ZOOM_HEADROOM × rest` for a page whose rest is already above the old `MAX_SCALE`) — or,
+under the `switch-fit` double-tap mode, flips `pageFit` to the other axis (`onDoubleTap`). Either
+way a page that is NOT at rest goes back to rest first, so the toggle is always read against a
+settled page. Pinching OUT below a spread's rest is allowed, down to 1×, for a look at the whole
+thing.
+
+Only the ACTIVE page reports `onZoomChange`. A page leaving the screen is put back to rest
+silently and the page arriving reports its own rest on activation; the old arrangement, where the
+leaving page reported `false`, would race the arriving spread's `true` in the same commit, in tree
+order rather than reading order. A page under the pager's `standby` (the entrance, the collapsed
+strip) rests at 1×, to match the poster over it, and zooms to its rest once primary.
+
 # Press-in warms the destination
 
 Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is

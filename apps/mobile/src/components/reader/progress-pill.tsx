@@ -7,17 +7,23 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useKeyboardLift } from '@/hooks/use-keyboard-lift';
 
+const HIDDEN_FAINT = 0.6;
+
 /** Bottom-centre "X / Y" pill; tapping reveals a numeric jump input + Go. */
 export function ProgressPill({
   current,
   total,
   visible,
+  countWhenHidden = true,
   onJump,
   onEditingChange,
 }: {
   current: number;
   total: number;
   visible: boolean;
+  /** Whether the pill stays faintly on screen with the chrome hidden
+   *  (`useReaderSettings().pageCountWhenHidden`); off, it fades with the rest. */
+  countWhenHidden?: boolean;
   onJump: (index: number) => void;
   /** Fires at each editing-state transition — lets a caller (the reader's
    *  chrome auto-hide timer) suspend itself while the page-jump input is open,
@@ -32,8 +38,10 @@ export function ProgressPill({
   // `Keyboard.addListener` version silently did nothing on Android.
   const keyboardLift = useKeyboardLift(editing);
 
+  // Faint rather than gone with the chrome — the page count is the one thing worth a glance while
+  // reading, the same as the native navigator's counter chip. Still inert while hidden.
   const style = useAnimatedStyle(() => ({
-    opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
+    opacity: withTiming(visible ? 1 : countWhenHidden ? HIDDEN_FAINT : 0, { duration: 200 }),
     transform: [{ translateY: -keyboardLift.value }],
   }));
 
