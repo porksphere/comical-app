@@ -648,6 +648,29 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         return;
       }
 
+      // A pan decides once, after a short deadzone, whether it has anywhere to go: a sideways drag
+      // past the edge the page already shows (or on a page with no sideways overflow) is handed
+      // to the SWIPE, which slides to the next page from here — the hand-off every native reader
+      // has, a zoomed page dragged to its edge and then on.
+      if (gesture.mode === 'pan' && !gesture.dirDecided) {
+        const dx = p.x - gesture.panStartX;
+        const dy = p.y - gesture.panStartY;
+        if (Math.hypot(dx, dy) > DIR_DEADZONE) {
+          gesture.dirDecided = true;
+          const limit = panLimits(zoom.current.scale, restRef.current.box, { width, height });
+          const outward = (dx > 0 && zoom.current.tx >= limit.x - 1) || (dx < 0 && zoom.current.tx <= 1 - limit.x);
+          if (Math.abs(dx) >= Math.abs(dy) && (limit.x <= 0 || outward)) {
+            gesture.mode = 'swipe';
+            gesture.startX = p.x;
+            gesture.dx = 0;
+            gesture.lastX = p.x;
+            gesture.lastT = now;
+            gesture.velocity = 0;
+            gesture.moved = true;
+          }
+        }
+      }
+
       if (gesture.mode === 'pan') {
         const s = zoom.current.scale;
         const limit = panLimits(s, restRef.current.box, { width, height });

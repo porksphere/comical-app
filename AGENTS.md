@@ -400,10 +400,16 @@ Nothing locks the vertical axis. At fit-height the content's vertical overhang i
 clamp is what holds it — the same clamp that stops a 2.5× page drifting into black. Don't add a
 rule for it.
 
-A page resting zoomed still has to be LEFT, and the pager freezes its scroll for any zoomed page,
-so its side-zone taps stay live and TURN, exactly as they do at 1× — they never pan a step first
-(that was tried, and is not what a reader tapping "next" asked for), and a drag never turns: it
-only pans. Swiping to turn is a thing a page at 1× does.
+A page resting zoomed still has to be LEFT. Its side-zone taps stay live and TURN, exactly as
+they do at 1× — they never pan a step first (that was tried, and is not what a reader tapping
+"next" asked for). And it is still SWIPED between, the way every native reader does it: the
+pager's scroll is never frozen for a zoom but BLOCKED behind the page's pan, which decides on the
+UI thread (manual activation, after a short deadzone) whether the drag has anywhere to go. A drag
+that can pan activates and cancels the scroll; a drag past the edge the page already shows, or on
+an axis it doesn't overflow, FAILS, and the scroll takes the same touch and slides to the next
+page. So a spread is read by dragging to its far edge, and the next drag turns. (The first cut
+froze the scroll and let a release past the edge JUMP the page; the slide is what the hand-off
+should look like.)
 
 Double-tap toggles between the rest and a magnification of it (`DOUBLE_TAP_SCALE × rest`, capped
 at `WIDE_ZOOM_HEADROOM × rest` for a page whose rest is already above the old `MAX_SCALE`) — or,

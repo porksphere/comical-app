@@ -591,9 +591,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         extraData={extraData}
         horizontal
         pagingEnabled
-        // Frozen while a page is zoomed (its own pan owns one-finger drags then) and for the
-        // duration of a pinch (see `pinching`).
-        scrollEnabled={!zoomed && !pinching}
+        // Frozen only for the duration of a pinch (see `pinching`). A zoomed page's own pan
+        // BLOCKS this scroll rather than disabling it, and fails — handing the touch over — for a
+        // drag past the edge the page already shows, so a zoomed page is still swiped between.
+        scrollEnabled={!pinching}
         showsHorizontalScrollIndicator={false}
         initialScrollIndex={initialIndex}
         // THE POINT OF THE WHOLE SWAP: anchor a data change on the ITEM, so a chapter joining at

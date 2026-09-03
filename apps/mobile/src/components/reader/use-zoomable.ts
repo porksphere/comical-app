@@ -12,8 +12,9 @@ import { edgeOffset, panLimits, WIDE_ZOOM_HEADROOM, type RestEdge, type Size } f
 //     jump/rubber-band on release;
 //   - double-tap to toggle between the page's REST and a fixed magnification, centred on the tap —
 //     or, for a consumer that asks (`onDoubleTap`), to hand the tap over instead;
-//   - one-finger pan (only while zoomed) that flings with momentum on release — and never turns
-//     the page: a zoomed page is left by its taps, or by leaving the zoom;
+//   - one-finger pan (only while zoomed) that flings with momentum on release, and that hands a
+//     drag it has nothing to do with — past the edge the page already shows — to the pager's own
+//     scroll, so a zoomed page is still swiped between (see the pan's manual activation);
 //   - a rest that isn't always 1×: a spread, or every page under fill-height, rests at fit-height
 //     at the edge reading starts from, and keeps its side-zone taps live (see `restScale`);
 //   - an optional single tap (page-turn zones / chrome toggle), and the mutually
@@ -49,6 +50,9 @@ const SINGLE_TAP_MAX_DIST = 16;
 // one exists, and it failed on iOS at `reader.control.next` — chrome still up, page still 1/26 —
 // while Android (tapped via `adb shell input tap`, ~50ms) sailed through the same step.
 const SINGLE_TAP_MAX_DURATION = 800;
+// How far a touch on a zoomed page travels before the pan decides whether it is a pan at all —
+// see `onTouchesMove`.
+const PAN_DEADZONE = 8;
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -343,17 +347,64 @@ export function useZoomable({
   // One-finger pan, only while zoomed (so it never steals a swipe at 1×). Capped at
   // a single pointer so a two-finger pinch never registers as a pan and flings on
   // release — momentum belongs to a deliberate one-finger drag, not to zooming.
+  //
+  // The pan decides for itself, on the UI thread, whether a touch is its to take — MANUAL
+  // activation — and that decision is what lets a zoomed page still be swiped between. The pager's
+  // scroll is never frozen for a zoom; it is BLOCKED behind this pan (`blocksExternalGesture`),
+  // and waits for its verdict. A drag that has somewhere to pan activates, and the scroll is
+  // cancelled. A drag that doesn't — sideways past the edge the page already shows, or on an axis
+  // the page doesn't overflow — FAILS, and the scroll takes the same touch and slides to the next
+  // page: the hand-off every native reader has, a zoomed page dragged to its edge and then on.
+  // Decided once per touch, after a short deadzone, from the drag's dominant axis.
+  const panDownX = useSharedValue(0);
+  const panDownY = useSharedValue(0);
+  const panDecided = useSharedValue(false);
+  // The translation at activation, subtracted out: the deadzone's travel is not a pan.
+  const panOriginX = useSharedValue(0);
+  const panOriginY = useSharedValue(0);
   const pan = Gesture.Pan()
     .enabled(zoomed && enabled)
     .maxPointers(1)
-    .onStart(() => {
+    .manualActivation(true)
+    .onTouchesDown((e) => {
+      const t = e.allTouches[0];
+      if (!t) return;
+      panDownX.set(t.x);
+      panDownY.set(t.y);
+      panDecided.set(false);
+    })
+    .onTouchesMove((e, state) => {
+      if (panDecided.value) return;
+      const t = e.allTouches[0];
+      if (!t) return;
+      const dx = t.x - panDownX.value;
+      const dy = t.y - panDownY.value;
+      if (Math.hypot(dx, dy) < PAN_DEADZONE) return;
+      panDecided.set(true);
+      const limit = panLimits(scale.value, box, viewport);
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        // Finger moving right shows what lies to the LEFT: nothing more, at the left edge.
+        const outward = (dx > 0 && tx.value >= limit.x - 1) || (dx < 0 && tx.value <= 1 - limit.x);
+        if (limit.x <= 0 || outward) {
+          state.fail();
+          return;
+        }
+      } else if (limit.y <= 0) {
+        state.fail();
+        return;
+      }
+      state.activate();
+    })
+    .onStart((e) => {
       savedTx.set(tx.value);
       savedTy.set(ty.value);
+      panOriginX.set(e.translationX);
+      panOriginY.set(e.translationY);
     })
     .onUpdate((e) => {
       const limit = panLimits(scale.value, box, viewport);
-      tx.set(clamp(savedTx.value + e.translationX, -limit.x, limit.x));
-      ty.set(clamp(savedTy.value + e.translationY, -limit.y, limit.y));
+      tx.set(clamp(savedTx.value + e.translationX - panOriginX.value, -limit.x, limit.x));
+      ty.set(clamp(savedTy.value + e.translationY - panOriginY.value, -limit.y, limit.y));
     })
     // Fling the zoomed image: keep gliding on release, decelerating and stopping at
     // the pan bounds (`clamp`). The next pan's onStart re-captures tx/ty as its base,
@@ -366,8 +417,8 @@ export function useZoomable({
 
   // Optional single tap — page-turn zones (x-based) or a chrome toggle (ignores x).
   // Off while zoomed (a tap there does nothing) — except on a page that RESTS zoomed, a spread or
-  // a fill-height page, whose taps stay live and turn as they always do: with the pager's scroll
-  // frozen under a zoom, the taps are how such a page is left — and per the consumer's own gate.
+  // a fit-height page, whose taps stay live and turn as they always do — and per the consumer's
+  // own gate.
   // `singleTapArmed` carries the touch-down verdict (see `singleTapAllowed`) through to the
   // release; with no gate supplied every touch arms it, which is the old behaviour exactly.
   const singleTap = onSingleTap
@@ -386,7 +437,9 @@ export function useZoomable({
     : null;
 
   // Anything mounted on the scroller (passed in) would otherwise swallow the pinch/taps — let them
-  // run alongside all of it.
+  // run alongside all of it. The pan is the exception: it BLOCKS the scroller, which waits for the
+  // pan to activate (and is cancelled) or fail (and takes the touch) — see the pan above. A pan
+  // that isn't enabled blocks nothing, so a page at 1× swipes as it always did.
   const externals = simultaneousExternal
     ? Array.isArray(simultaneousExternal)
       ? simultaneousExternal
@@ -394,7 +447,7 @@ export function useZoomable({
     : [];
   if (externals.length) {
     pinch.simultaneousWithExternalGesture(...externals);
-    pan.simultaneousWithExternalGesture(...externals);
+    pan.blocksExternalGesture(...externals);
     doubleTap.simultaneousWithExternalGesture(...externals);
     singleTap?.simultaneousWithExternalGesture(...externals);
   }
