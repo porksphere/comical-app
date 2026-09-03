@@ -188,7 +188,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const image = dims.get(data[index]?.key ?? '') ?? null;
   // The layout the pages take, and which of them rest above 1× under it (see `fillRule`).
   const fit = effectiveFit(pageFit);
-  const fill = fillRule(pageFit, zoomWidePages);
+  // Held at 1× while parked or still entering — the poster over it is the contain picture, and a
+  // page resting zoomed under it would be revealed mid-jump. It grows into its rest once primary.
+  const fill = standby ? 'none' : fillRule(pageFit, zoomWidePages);
 
   // fit-width content that's taller than the viewport: a one-finger vertical drag scrolls it (see
   // the 'content-pan' mode below). Derived from the current page's own dims, so a page whose

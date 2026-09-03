@@ -4844,9 +4844,14 @@ const ReaderPane = forwardRef<
               <Image
                 source={{ uri }}
                 style={StyleSheet.absoluteFill}
-                // Same mapping ZoomablePage applies (fit-page → contain), so the poster and the
-                // page draw alike.
-                contentFit={settings.pageFit === 'fit-height' ? 'contain' : 'cover'}
+                // Contain, whichever axis the fit is: a page under the poster stands at 1× (see
+                // ZoomablePage's `standby`), and at 1× both fits draw the contain picture — a
+                // fit-width page shorter than the screen sits centred, exactly where contain puts
+                // it. `cover` here (the old fit-width mapping) crops the page to the frame and then
+                // hands over to the letterboxed one: the page visibly shifts as the poster leaves.
+                // The one page this doesn't match is a strip taller than the screen under fit-width,
+                // which is drawn from its top rather than whole.
+                contentFit="contain"
                 cachePolicy="memory-disk"
               />
             </View>

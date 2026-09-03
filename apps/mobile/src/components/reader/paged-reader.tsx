@@ -641,6 +641,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               doubleTap={doubleTap}
               onToggleFillHeight={onToggleFillHeight}
               active={index === activeIndex}
+              standby={standby}
               onLeft={leftAction}
               onRight={rightAction}
               onToggleChrome={onToggleChrome}

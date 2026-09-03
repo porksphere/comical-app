@@ -49,6 +49,11 @@ type Props = {
   fadeMs?: number;
   /** Whether this is the page currently in view; losing focus resets the zoom. */
   active: boolean;
+  /** True while the reader is parked as a decorative strip or still playing its entrance (the
+   *  pager's own `standby`). The page holds at 1× for the duration — the entrance poster over it
+   *  is the contain picture, so a page that rested zoomed under it would be revealed mid-jump —
+   *  and grows into its rest once the reader is primary. */
+  standby?: boolean;
   onLeft: () => void;
   onRight: () => void;
   onToggleChrome: () => void;
@@ -94,6 +99,7 @@ export function ZoomablePage({
   onToggleFillHeight,
   fadeMs,
   active,
+  standby = false,
   onLeft,
   onRight,
   onToggleChrome,
@@ -128,7 +134,7 @@ export function ZoomablePage({
 
   // The layout this page takes, and which pages rest above 1× under it (see `fillRule`).
   const fit = effectiveFit(pageFit);
-  const fill = fillRule(pageFit, zoomWidePages);
+  const fill = standby ? 'none' : fillRule(pageFit, zoomWidePages);
   // Only a fit-page picture is centred in the viewport, which is what the hook's content clamp
   // assumes; a fit-width one is top-aligned and keeps the viewport clamp it always had.
   const geometry = useMemo(
