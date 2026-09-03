@@ -1,3 +1,4 @@
+import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import { persisted$ } from '@/lib/observable';
 
@@ -8,12 +9,15 @@ import { persisted$ } from '@/lib/observable';
 
 export type ReaderMode = 'paged' | 'webtoon';
 export type ReaderDirection = 'ltr' | 'rtl';
-/** Which axis a page is fitted to. The other axis is whatever the picture's shape makes it: on a
- *  phone, fit-width shows an ordinary page whole and scrolls a tall strip, while fit-height fills
- *  the screen's height with an ordinary page (panned sideways) and shows a strip whole. There is
- *  no "fit page" — on any screen that is just whichever of the two is smaller. Webtoon reads
- *  fit-height as one page per screen and fit-width as the continuous strip. */
-export type PageFit = 'fit-width' | 'fit-height';
+/** How a page is fitted. `auto` shows every page whole and fills the height with a SPREAD alone —
+ *  a picture wider than it is tall, which would otherwise lie as a strip — panned sideways; it is
+ *  device-independent, an ordinary page is never scrolled on any screen. The other two fit an
+ *  AXIS, and the other axis is whatever the picture's shape makes it: on a phone, fit-width shows
+ *  an ordinary page whole and scrolls a tall strip, while fit-height fills the screen's height
+ *  with an ordinary page (panned sideways) and shows a strip whole. There is no "fit page" — on
+ *  any screen that is just whichever of the two is smaller. Webtoon reads auto and fit-height as
+ *  one page per screen and fit-width as the continuous strip. */
+export type PageFit = 'auto' | 'fit-width' | 'fit-height';
 /** What a double-tap does: magnify the page, switch `pageFit` to the other axis, or nothing (a
  *  lone tap then acts at once instead of waiting out a second one). */
 export type DoubleTapMode = 'magnify' | 'switch-fit' | 'off';
@@ -40,7 +44,7 @@ const STORAGE_KEY = 'comical:readerSettings';
 const DEFAULT_SETTINGS: ReaderSettings = {
   mode: 'paged',
   direction: 'ltr',
-  pageFit: 'fit-width',
+  pageFit: 'auto',
   doubleTap: 'magnify',
   keepAwake: true,
   pageCountWhenHidden: true,
@@ -55,13 +59,26 @@ const settings$ = persisted$<ReaderSettings>(STORAGE_KEY, DEFAULT_SETTINGS);
 
 /** `patch` merges into the stored settings; the observable persists and notifies readers. */
 export function setReaderSettings(patch: Partial<ReaderSettings>): void {
+  if (patch.pageFit !== undefined) fitOverride$.set(null);
   settings$.assign(patch);
 }
 
-/** Values a blob may still hold from before the page fit became an axis: `fit-page` was the
- *  contain fit, which on a phone is fit-width for nearly every page, and `fill-height` was
- *  fit-height under another name. Mapped on read; the next write stores the current value. */
-const LEGACY_PAGE_FIT: Record<string, PageFit> = { 'fit-page': 'fit-width', 'fill-height': 'fit-height' };
+/** Values a blob may still hold from before: `fit-page` was the contain fit with the spread
+ *  rule, which is `auto`, and `fill-height` was fit-height under another name. Mapped on read;
+ *  the next write stores the current value. */
+const LEGACY_PAGE_FIT: Record<string, PageFit> = { 'fit-page': 'auto', 'fill-height': 'fit-height' };
+
+/** The fit a `switch-fit` double-tap has put in place of the setting — the other axis of the page
+ *  it was tapped on — or null. In memory only: it carries across page turns, which is the point,
+ *  and is cleared by the next double-tap, by leaving the reader, and by choosing a fit in the
+ *  sheet, so the sheet never shows a value the pages aren't drawn to for long. */
+export const fitOverride$ = observable<PageFit | null>(null);
+export function useFitOverride(): PageFit | null {
+  return use$(fitOverride$);
+}
+export function setFitOverride(fit: PageFit | null): void {
+  fitOverride$.set(fit);
+}
 const LEGACY_DOUBLE_TAP: Record<string, DoubleTapMode> = { 'fill-height': 'switch-fit' };
 
 /** `[settings, patch]`. Reads spread over the defaults so a blob persisted before a

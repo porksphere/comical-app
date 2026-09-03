@@ -64,8 +64,11 @@ function SettingsContent() {
       <Segment
         label="Page fit"
         testIdPrefix="reader.settings.page-fit"
-        value={settings.pageFit}
+        // Webtoon has only the two layouts (one page per screen, or a continuous strip), so it
+        // shows two and reads `auto` as the page — the same mapping WebtoonReader applies.
+        value={settings.mode === 'webtoon' ? (webtoonFit(settings.pageFit) === 'fit-page' ? 'fit-height' : 'fit-width') : settings.pageFit}
         options={[
+          ...(settings.mode === 'paged' ? [['auto', 'Auto'] as [string, string]] : []),
           ['fit-width', 'Fit width'],
           ['fit-height', 'Fit height'],
         ]}
@@ -73,7 +76,7 @@ function SettingsContent() {
       />
       {settings.mode === 'webtoon' && (
         <ThemedText style={styles.hint}>
-          {settings.pageFit === 'fit-height' ? 'One page at a time, like Paged' : 'Continuous scroll'}
+          {webtoonFit(settings.pageFit) === 'fit-page' ? 'One page at a time, like Paged' : 'Continuous scroll'}
         </ThemedText>
       )}
       <Segment
@@ -119,7 +122,7 @@ function SettingsContent() {
 
 /** The layout webtoon gives a page fit — see `PageFit`: one page per screen, or the strip. */
 export function webtoonFit(fit: PageFit): 'fit-page' | 'fit-width' {
-  return fit === 'fit-height' ? 'fit-page' : 'fit-width';
+  return fit === 'fit-width' ? 'fit-width' : 'fit-page';
 }
 
 const DIRECTION_OPTIONS: { value: 'ltr' | 'vertical' | 'rtl'; label: string; Icon: ComponentType<IconProps> }[] = [

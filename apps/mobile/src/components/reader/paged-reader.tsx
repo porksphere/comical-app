@@ -24,6 +24,7 @@ import Animated, {
 
 import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { ScrubBackdrop } from '@/components/reader/scrub-backdrop';
+import type { Size } from '@/components/reader/page-geometry';
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
@@ -73,9 +74,9 @@ type Props = {
   height: number;
   rtl: boolean;
   pageFit: PageFit;
-  /** What a double-tap does, and the fill-height toggle it asks for — see ZoomablePage. */
+  /** What a double-tap does, and the switch-fit it asks for — see ZoomablePage. */
   doubleTap: DoubleTapMode;
-  onToggleFillHeight: () => void;
+  onSwitchFit: (image: Size | null) => void;
   initialPage: number;
   /** The page the scroll SETTLED on — the committed position (progress, chapter
    *  relabel). Fires once per scroll, on momentum end. */
@@ -164,7 +165,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     rtl,
     pageFit,
     doubleTap,
-    onToggleFillHeight,
+    onSwitchFit,
     initialPage,
     onPageChange,
     onVisiblePageChange,
@@ -525,7 +526,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       pageFit,
       rtl,
       doubleTap,
-      onToggleFillHeight,
+      onSwitchFit,
       width,
       height,
       leftAction,
@@ -540,7 +541,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       pageFit,
       rtl,
       doubleTap,
-      onToggleFillHeight,
+      onSwitchFit,
       width,
       height,
       leftAction,
@@ -633,7 +634,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               pageFit={pageFit}
               rtl={rtl}
               doubleTap={doubleTap}
-              onToggleFillHeight={onToggleFillHeight}
+              onSwitchFit={onSwitchFit}
               active={index === activeIndex}
               standby={standby}
               onLeft={leftAction}

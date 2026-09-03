@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { containedSize, edgeOffset, effectiveFit, fillRule, pageGeometry, panLimits } from './page-geometry';
+import { containedSize, edgeOffset, effectiveFit, fillRule, otherFit, pageGeometry, panLimits } from './page-geometry';
 
 const phone = { width: 390, height: 844 };
 const spread = { width: 2000, height: 1000 };
@@ -66,6 +66,10 @@ describe('pageGeometry', () => {
   test('nothing rests zoomed under no rule', () => {
     expect(pageGeometry(spread, phone, 'none', false).restScale).toBe(1);
   });
+  test('the spread rule lifts a spread and leaves an ordinary page alone', () => {
+    expect(pageGeometry(spread, phone, 'wide', false).restScale).toBeCloseTo(844 / 195, 6);
+    expect(pageGeometry(portrait, phone, 'wide', false).restScale).toBe(1);
+  });
   test('a spread that already stands the full height of a landscape screen rests at 1×', () => {
     const g = pageGeometry({ width: 1600, height: 1000 }, { width: 1200, height: 600 }, 'all', false);
     expect(g.restScale).toBe(1);
@@ -90,5 +94,33 @@ describe('fillRule', () => {
   });
   test('fit-width covers nothing', () => {
     expect(fillRule('fit-width')).toBe('none');
+  });
+  test('auto covers spreads alone', () => {
+    expect(fillRule('auto')).toBe('wide');
+  });
+  test('auto is drawn as the contain layout', () => {
+    expect(effectiveFit('auto')).toBe('fit-page');
+  });
+});
+
+describe('otherFit', () => {
+  test('a fixed axis goes to the other', () => {
+    expect(otherFit('fit-width', portrait, phone)).toBe('fit-height');
+    expect(otherFit('fit-height', portrait, phone)).toBe('fit-width');
+  });
+  test('from auto, an ordinary page on a phone fills the width, so it goes to the height', () => {
+    expect(otherFit('auto', portrait, phone)).toBe('fit-height');
+  });
+  test('from auto, a spread already fills the height, so it goes to the width', () => {
+    expect(otherFit('auto', spread, phone)).toBe('fit-width');
+  });
+  test('from auto, a strip is height-limited, so it goes to the width', () => {
+    expect(otherFit('auto', { width: 800, height: 8000 }, phone)).toBe('fit-width');
+  });
+  test('from auto, an ordinary page on a landscape tablet is height-limited, so it goes to the width', () => {
+    expect(otherFit('auto', portrait, { width: 1200, height: 600 })).toBe('fit-width');
+  });
+  test('an unknown shape is taken for an ordinary page', () => {
+    expect(otherFit('auto', null, phone)).toBe('fit-height');
   });
 });

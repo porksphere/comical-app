@@ -51,7 +51,9 @@ type Props = {
   /** What a double-tap does. Off, a lone tap acts at once instead of waiting out a second one;
    *  under fill-height a double-tap on a page at rest asks for the toggle instead of magnifying. */
   doubleTap: DoubleTapMode;
-  onToggleFillHeight: () => void;
+  /** The switch-fit a double-tap asks for under that mode, given the page's picture (or null
+   *  before it has loaded) — which axis it goes to depends on the page's shape. */
+  onSwitchFit: (image: Size | null) => void;
   initialPage: number;
   onPageChange: (logical: number) => void;
   onPrev: () => void;
@@ -138,7 +140,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     rtl,
     pageFit,
     doubleTap,
-    onToggleFillHeight,
+    onSwitchFit,
     initialPage,
     onPageChange,
     onPrev,
@@ -319,16 +321,32 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     setZoomed(next);
   }, []);
 
-  // Put the current page at rest (see `restRef`): 1× for most pages, fit-height for a spread.
+  // Where the double-tap that asked for a new rest landed (null: none pending) — see
+  // `doubleTapZoomTo`.
+  const tapRef = useRef<Point | null>(null);
+
+  // Put the current page at rest (see `restRef`): 1× for most pages, fit-height for a spread. A
+  // rest asked for by a double-tap is aimed at the tap: the content point under the finger is
+  // read back through the old transform and put back under it at the new scale, clamped to the
+  // new rest's bounds. Anything else lands at the reading edge.
   const goToRest = useCallback(
     (animate: boolean) => {
       cancelInertia();
-      const { restScale: s, restTx: tx, restZoomed: z } = restRef.current;
+      const { box: b, restScale: s, restTx, restZoomed: z } = restRef.current;
+      const tap = tapRef.current;
+      tapRef.current = null;
+      let tx = restTx;
+      if (tap && animate) {
+        const cx = width / 2;
+        const limit = panLimits(s, b, { width, height });
+        const contentX = (tap.x - cx - zoom.current.tx) / zoom.current.scale;
+        tx = clamp(tap.x - cx - s * contentX, -limit.x, limit.x);
+      }
       zoom.current = { scale: s, tx, ty: 0 };
       writeZoom(animate);
       setZoomedNow(z);
     },
-    [cancelInertia, setZoomedNow, writeZoom, zoom],
+    [cancelInertia, setZoomedNow, writeZoom, zoom, width, height],
   );
   // A page ARRIVING starts from rest, instantly — the native pager rests a neighbour before it is
   // ever seen, and this is the closest a single transform slot can get: `zoomRef` only points at
@@ -401,9 +419,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         goToRest(true);
         return;
       }
-      // At rest under the switch-fit mode: the tap fits the other axis, and what rest IS changes.
+      // At rest under the switch-fit mode: the tap fits the other axis, and what rest IS changes —
+      // aimed at this tap (see `goToRest`).
       if (doubleTap === 'switch-fit') {
-        onToggleFillHeight();
+        tapRef.current = { x, y };
+        onSwitchFit(image);
         return;
       }
       const cx = width / 2;
@@ -421,7 +441,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       writeZoom(true);
       setZoomedNow(true);
     },
-    [cancelInertia, goToRest, setZoomedNow, width, height, writeZoom, zoom, doubleTap, onToggleFillHeight],
+    [cancelInertia, goToRest, setZoomedNow, width, height, writeZoom, zoom, doubleTap, onSwitchFit, image],
   );
 
   // Commit to a page. `animate` slides (swipe settle / pill jump); otherwise the

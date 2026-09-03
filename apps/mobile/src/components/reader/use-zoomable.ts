@@ -97,9 +97,11 @@ export function useZoomable({
    *  tap has nothing to wait out and fires on release — the whole point of turning it off. */
   doubleTapEnabled?: boolean;
   /** When given, a double-tap on a page AT REST is handed here instead of magnifying — the
-   *  fill-height toggle, which changes what rest IS. A page that isn't at rest (magnified, or
-   *  pinched out below a spread's rest) still goes back to rest first, so the toggle is always
-   *  read against a settled page. */
+   *  switch-fit toggle, which changes what rest IS. The tap's position is kept, and the rest that
+   *  follows is aimed at it: the content under the finger stays under the finger, as near as the
+   *  new rest's bounds allow, rather than the page landing at its reading edge. A page that isn't
+   *  at rest (magnified, or pinched out below a spread's rest) still goes back to rest first, so
+   *  the toggle is always read against a settled page. */
   onDoubleTap?: () => void;
   /** Gates pinch/double-tap/pan off entirely (e.g. a fit-width page that
    *  content-pans instead, or a failed page showing its Retry chip). */
@@ -159,6 +161,9 @@ export function useZoomable({
   // Whether a pinch is in flight, so `onFinalize` only reports an end for a pinch it reported the
   // start of (it runs for every outcome, including one that never activated).
   const pinching = useSharedValue(false);
+  // Where the double-tap that asked for a new rest landed (NaN: no tap pending) — see `onDoubleTap`.
+  const tapX = useSharedValue(NaN);
+  const tapY = useSharedValue(NaN);
 
   const [zoomed, setZoomed] = useState(false);
 
@@ -178,6 +183,9 @@ export function useZoomable({
 
   const viewport: Size = { width, height };
   const box: Size = content ?? viewport;
+  // As primitives, for the rest effect's deps: the objects above are rebuilt every render.
+  const boxWidth = box.width;
+  const boxHeight = box.height;
   // Put the page at a rest INSTANTLY, ahead of the render that will carry it as props — for a
   // rest that follows from the picture's dimensions, which the consumer learns in the same
   // callback that sets them. Setting the values here, before the state update, means the
@@ -207,22 +215,35 @@ export function useZoomable({
     const settled =
       Math.abs(scale.value - restScale) < 0.001 && Math.abs(tx.value - restTx) < 0.5 && Math.abs(ty.value) < 0.5;
     if (!settled) {
+      // A rest asked for by a double-tap is aimed at the tap: the content point under the finger
+      // is read back through the old transform and put back under it at the new scale, clamped
+      // to the new rest's bounds. Anything else — a fit chosen in the sheet, the entrance
+      // settling — lands at the reading edge.
+      let targetX = restTx;
+      if (active && Number.isFinite(tapX.value)) {
+        const cx = width / 2;
+        const limit = panLimits(restScale, { width: boxWidth, height: boxHeight }, { width, height });
+        const contentX = (tapX.value - cx - tx.value) / scale.value;
+        targetX = clamp(tapX.value - cx - restScale * contentX, -limit.x, limit.x);
+      }
       if (active) {
         scale.set(withTiming(restScale));
-        tx.set(withTiming(restTx));
+        tx.set(withTiming(targetX));
         ty.set(withTiming(0));
       } else {
         scale.set(restScale);
-        tx.set(restTx);
+        tx.set(targetX);
         ty.set(0);
       }
-      savedTx.set(restTx);
+      savedTx.set(targetX);
       savedTy.set(0);
     }
+    tapX.set(NaN);
+    tapY.set(NaN);
     // The local `zoomed` flag is left alone off screen: it only gates gestures, and an inactive
     // page receives none. It is set again, with the report, the moment the page is active.
     if (active) reportZoomRef.current(restZoomed);
-  }, [active, restScale, restTx, restZoomed, scale, tx, ty, savedTx, savedTy]);
+  }, [active, restScale, restTx, restZoomed, scale, tx, ty, savedTx, savedTy, tapX, tapY, boxWidth, boxHeight, width, height]);
 
   const pinch = Gesture.Pinch()
     .enabled(enabled)
@@ -295,6 +316,8 @@ export function useZoomable({
         return;
       }
       if (onDoubleTap) {
+        tapX.set(e.x);
+        tapY.set(e.y);
         runOnJS(onDoubleTap)();
         return;
       }

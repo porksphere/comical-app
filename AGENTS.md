@@ -359,10 +359,13 @@ is.
 Both paged readers (`use-zoomable.ts` on native, `paged-reader.web.tsx` on web) share
 `page-geometry.ts`, which answers two questions about a page from its picture's real dimensions:
 the box the picture occupies at 1× (what every pan is clamped to — a zoomed page stops at its own
-edge, never slides on into its letterbox), and where the page RESTS. The page fit is an AXIS —
-`fit-width` or `fit-height` — and the other axis is whatever the picture's shape makes it. There
-is no "fit page": on any screen that is just whichever of the two is smaller, so fit-width already
-shows an ordinary page whole on a phone and fit-height shows it whole on a landscape tablet.
+edge, never slides on into its letterbox), and where the page RESTS. The page fit is `auto`, or
+an AXIS — `fit-width` or `fit-height` — where the other axis is whatever the picture's shape makes
+it. There is no "fit page": on any screen that is just whichever of the two is smaller, so
+fit-width already shows an ordinary page whole on a phone and fit-height shows it whole on a
+landscape tablet. `auto`, the default, is the device-independent one: every page whole, and a
+SPREAD alone — a picture wider than it is tall — lifted to fit-height and panned sideways, since
+it would otherwise lie as a strip. An ordinary page is never scrolled under it on any screen.
 
 **A page that fits is drawn in the contain box, under either axis, and that box is the viewport's
 size and never changes.** That is the whole reason the reader doesn't shift: a box sized from the
@@ -376,9 +379,7 @@ every page whose height fit buys more than `FILL_HEIGHT_MIN_GAIN` over contain r
 viewport's height, at the edge reading starts from (left for L→R, right for R→L), and reads by
 panning sideways; a page near the screen's own shape rests whole, so nothing is zoomed a few
 percent for a few points of pan. Under `fit-width` nothing rests zoomed: a spread lies as a strip
-across the middle there, and the `switch-fit` double-tap is how it is read. (A spread rule that
-lifted spreads alone to fit-height under fit-width was built and pulled: the double-tap covers
-it. Laying the page out
+across the middle there, and the `switch-fit` double-tap is how it is read. (Laying the page out
 at its fit size instead, with the transform at 1×, was built and pulled back out: the box then
 changes on load and on every fit switch, the transform lands a frame after the layout, and each
 of those is a pop. A `smart` fit — an axis chosen per page from its shape — was pulled too.)
@@ -387,8 +388,13 @@ of those is a pop. A `smart` fit — an axis chosen per page from its shape — 
 (`settle`, called from `onLoadDims` ahead of the state update), so a page is drawn at rest from
 its first frame; a rest that moves under a picture already on screen — a fit switched, the
 entrance settling — is animated, and that zoom IS the `switch-fit` double-tap: one gesture that
-fits a strip to the width from fit-height and a page to the height from fit-width, a zoom in
-where the other axis has room and a zoom out where it overflows.
+fits the axis the page does NOT currently fill (`otherFit` — from `auto` that depends on the
+page), a zoom in where the other axis has room and a zoom out where it overflows. It is aimed at
+the TAP: the content under the finger stays under the finger, clamped to the new rest's bounds,
+rather than the page landing at its reading edge. And it is an OVERRIDE (`fitOverride$`), never a
+write to the setting — from `auto` there is no single axis to write, and a double-tap is a
+moment's choice: it holds across page turns, and the next double-tap, choosing a fit in the sheet,
+or leaving the reader clears it.
 
 Nothing locks the vertical axis. At fit-height the content's vertical overhang is zero, so the
 clamp is what holds it — the same clamp that stops a 2.5× page drifting into black. Don't add a

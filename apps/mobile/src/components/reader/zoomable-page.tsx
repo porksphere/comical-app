@@ -40,8 +40,9 @@ type Props = {
   rtl: boolean;
   /** What a double-tap does (`useReaderSettings().doubleTap`). */
   doubleTap: DoubleTapMode;
-  /** The fill-height toggle a double-tap asks for under that mode. */
-  onToggleFillHeight: () => void;
+  /** The switch-fit a double-tap asks for under that mode, given the page's picture (or null
+   *  before it has loaded) — which axis it goes to depends on the page's shape. */
+  onSwitchFit: (image: Size | null) => void;
   /** Cross-fade override for this page — see ReaderPage's `fadeMs`. */
   fadeMs?: number;
   /** Whether this is the page currently in view; losing focus resets the zoom. */
@@ -92,7 +93,7 @@ export function ZoomablePage({
   pageFit,
   rtl,
   doubleTap,
-  onToggleFillHeight,
+  onSwitchFit,
   fadeMs,
   active,
   standby = false,
@@ -181,6 +182,8 @@ export function ZoomablePage({
       runOnJS(setContentPanning)(false);
     });
 
+  const switchFit = useCallback(() => onSwitchFit(image), [onSwitchFit, image]);
+
   // The whole zoom gesture (pinch / double-tap / one-finger pan / the tap zones,
   // all composed) comes from the shared hook; this page just feeds it the tap-zone
   // handler and its content-pan.
@@ -203,7 +206,7 @@ export function ZoomablePage({
     onSingleTap: onTapNav,
     singleTapEnabled: !suspended,
     doubleTapEnabled: doubleTap !== 'off',
-    onDoubleTap: doubleTap === 'switch-fit' ? onToggleFillHeight : undefined,
+    onDoubleTap: doubleTap === 'switch-fit' ? switchFit : undefined,
     extraSimultaneous: [contentPan],
     simultaneousExternal: scrollGesture,
   });

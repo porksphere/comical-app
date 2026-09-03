@@ -30,7 +30,8 @@
 #   - reader.settings.direction.ltr / .vertical / .rtl   The 3-way mode+direction row — NOT
 #     ".paged"/".webtoon" (a wrong name already caught and fixed in
 #     swipe-dismiss-webtoon.yaml this same session; DIRECTION_OPTIONS only has ltr/vertical/rtl).
-#   - reader.settings.page-fit.fit-width / .fit-height   Which axis a page is fitted to.
+#   - reader.settings.page-fit.auto / .fit-width / .fit-height   How a page is fitted; Auto is the
+#     default and paged-only.
 #   - reader.settings.double-tap.magnify / .switch-fit / .off   What a double-tap does.
 #   - reader.settings.keep-awake             Switch: whether the screen is held awake while reading.
 #   - reader.settings.page-count             Switch: whether the page count stays faintly on screen
@@ -136,7 +137,7 @@ appId: com.porksphere.comical
 - tapOn:
     id: "reader.settings.page-fit.fit-height"
 - tapOn:
-    id: "reader.settings.page-fit.fit-width"
+    id: "reader.settings.page-fit.auto"
 - tapOn:
     id: "reader.settings.double-tap.off"
 - tapOn:

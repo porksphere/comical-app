@@ -36,6 +36,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronUpIcon } from '@/components/icons/ui-icons';
 import { BOTTOM_CHROME_HEIGHT, ChapterNavigator } from '@/components/reader/chapter-navigator';
 import { KeepScreenAwake } from '@/components/reader/keep-awake';
+import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar } from '@/components/reader/reader-toolbar';
@@ -61,7 +62,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
-import { useReaderSettings } from '@/hooks/use-reader-settings';
+import { useReaderSettings, setFitOverride, useFitOverride } from '@/hooks/use-reader-settings';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -994,6 +995,7 @@ function SeriesReaderInstance({
   const insets = useSafeAreaInsets();
   const mock = useMockActive();
   const [settings] = useReaderSettings();
+  const fitOverride = useFitOverride();
 
   const {
     id,
@@ -3011,7 +3013,7 @@ function SeriesReaderInstance({
   // is an axis: a picture whose contain-limiting axis is the fitted one sits at contain (a normal
   // page under fit-width on a phone, a strip under fit-height); the other kind is scrolled or
   // rested zoomed, and a copy morphing onto the contain rect would land beside it.
-  const morphFit = sequence ? settings.pageFit : null;
+  const morphFit = sequence ? (fitOverride ?? settings.pageFit) : null;
   const zoomThumbStyle = useAnimatedStyle(() => {
     // Which destination this collapse is aimed at, latched at its first frame — see
     // `zoomBoundOnScreen`. All three are the same shape, so nothing below needs a second path.
@@ -3084,7 +3086,11 @@ function SeriesReaderInstance({
       const w = onScreen / Math.max(s, 0.01);
       const h = w / Math.max(base.width / base.height, 0.01);
       rect = { x: (width - w) / 2, y: (height - h) / 2, width: w, height: h };
-    } else if (morphFit && ia > 0 && (morphFit === 'fit-width' ? ia >= width / height : ia <= width / height)) {
+    } else if (
+      morphFit &&
+      ia > 0 &&
+      (morphFit === 'fit-width' ? ia >= width / height : morphFit === 'fit-height' ? ia <= width / height : ia <= 1)
+    ) {
       // The image's contain rect, centred — in PAGE coordinates, which for a screen-sized page
       // are screen coordinates.
       const screenAspect = width / height;
@@ -4387,7 +4393,13 @@ const ReaderPane = forwardRef<
   const mock = useMockActive();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [settings, setSettings] = useReaderSettings();
+  const [settings] = useReaderSettings();
+  // The fit the pages are drawn to: the setting, or the axis a `switch-fit` double-tap has put in
+  // its place for the moment (see `fitOverride$`). Cleared with this pane, so leaving the reader
+  // — a chapter crossing the run doesn't cover, or the series page — returns to the setting.
+  const fitOverride = useFitOverride();
+  const pageFit = fitOverride ?? settings.pageFit;
+  useEffect(() => () => setFitOverride(null), []);
   // The reader draws edge to edge on both platforms — the window runs under the status bar and
   // any cutout, and under the navigation bar on Android — so a page fitted to the height runs
   // under the notch. `respectSafeArea` insets the PAGES (never the chrome, which places itself)
@@ -4397,11 +4409,13 @@ const ReaderPane = forwardRef<
   const insetTop = settings.respectSafeArea ? insets.top : 0;
   const insetBottom = settings.respectSafeArea && insets.bottom > SYSTEM_BAR_MIN_INSET ? insets.bottom : 0;
   const pageHeight = height - insetTop - insetBottom;
-  // The double-tap under its switch-fit mode: fit the OTHER axis. Writes the persisted page fit,
-  // so the state shows in the sheet and carries across pages and sessions alike.
-  const toggleFillHeight = useCallback(
-    () => setSettings({ pageFit: settings.pageFit === 'fit-height' ? 'fit-width' : 'fit-height' }),
-    [setSettings, settings.pageFit],
+  // The double-tap under its switch-fit mode: fit the axis this page does NOT currently fill
+  // (see `otherFit`), for every page until the next double-tap, which clears it. Never written to
+  // the setting: from `auto` there is no single axis to write, and a double-tap is a moment's
+  // choice, not a preference.
+  const switchFit = useCallback(
+    (image: Size | null) => setFitOverride(fitOverride ? null : otherFit(settings.pageFit, image, { width, height: pageHeight })),
+    [fitOverride, settings.pageFit, width, pageHeight],
   );
 
   const startIndex = Math.max(0, Math.min(pages.length - 1, start === 'last' ? pages.length - 1 : start));
@@ -4794,9 +4808,9 @@ const ReaderPane = forwardRef<
           width={width}
           height={pageHeight}
           rtl={settings.direction === 'rtl'}
-          pageFit={settings.pageFit}
+          pageFit={pageFit}
           doubleTap={settings.doubleTap}
-          onToggleFillHeight={toggleFillHeight}
+          onSwitchFit={switchFit}
           initialPage={stitched ? prefixLen + startIndex : startIndex}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // Keep the counter live during fast flicks — against the segment the page belongs to
