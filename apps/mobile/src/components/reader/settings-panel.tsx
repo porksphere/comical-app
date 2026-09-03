@@ -19,6 +19,10 @@ import {
 } from '@/hooks/use-reader-settings';
 import { testId } from '@/lib/test-id';
 
+/** How long the sheet's entrance spring takes to come to rest, generously — the native controls in
+ *  it wait this out before mounting (see IntStepper's `deferMountMs`). */
+const SHEET_SETTLE_MS = 600;
+
 /** Gear button that opens reader settings in the app's shared overlay system — a
  *  near-full-width bottom sheet on mobile/narrow web, an anchored popover
  *  (matching Browse's filter buttons) on wide desktop web.
@@ -187,7 +191,17 @@ function StepperRow({
   return (
     <View style={styles.toggleRow}>
       <ThemedText style={styles.segLabel}>{label}</ThemedText>
-      <IntStepper value={value} min={min} max={max} onChange={onChange} testIdPrefix={testIdPrefix} tone="dark" />
+      <IntStepper
+        value={value}
+        min={min}
+        max={max}
+        onChange={onChange}
+        testIdPrefix={testIdPrefix}
+        tone="dark"
+        // The sheet springs up from below the screen; the native control is mounted once it has
+        // arrived — see `deferMountMs`.
+        deferMountMs={SHEET_SETTLE_MS}
+      />
     </View>
   );
 }

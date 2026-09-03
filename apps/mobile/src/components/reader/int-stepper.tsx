@@ -22,6 +22,13 @@ export type IntStepperProps = {
   testIdPrefix: string;
   /** `'theme'` follows the app theme; `'dark'` is the reader sheet's own always-dark palette. */
   tone?: 'theme' | 'dark';
+  /** Mount the native control only after this many ms, holding its space meanwhile. For a host
+   *  inside a view that is still animating into place — the reader sheet springs up from below
+   *  the screen — since the platform view lays its content out from where the host IS at mount
+   *  and does not follow the transform that carries it the rest of the way (the control sat a row
+   *  above its own until something forced a relayout, such as backgrounding the app). Ignored on
+   *  web, which has no native control. */
+  deferMountMs?: number;
 };
 
 export function IntStepper({ value, min, max, onChange, testIdPrefix, tone = 'theme' }: IntStepperProps) {

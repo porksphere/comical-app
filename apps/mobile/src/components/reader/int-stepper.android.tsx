@@ -1,4 +1,5 @@
 import { Host, Slider } from '@expo/ui/jetpack-compose';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type { IntStepperProps } from '@/components/reader/int-stepper';
@@ -14,15 +15,18 @@ import { testId } from '@/lib/test-id';
 const TRACK_WIDTH = 160;
 const TRACK_HEIGHT = 44;
 
-export function IntStepper({ value, min, max, onChange, testIdPrefix, tone = 'theme' }: IntStepperProps) {
+export function IntStepper({ value, min, max, onChange, testIdPrefix, tone = 'theme', deferMountMs = 0 }: IntStepperProps) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
   const dark = tone === 'dark';
+  const mounted = useDeferredMount(deferMountMs);
   return (
     <View style={styles.row}>
       <ThemedText testID={testId(testIdPrefix, 'value')} style={[styles.value, { color: dark ? '#fff' : theme.text }]}>
         {value}
       </ThemedText>
+      {!mounted && <View style={styles.host} />}
+      {mounted && (
       <Host colorScheme={dark ? 'dark' : scheme} style={styles.host}>
         <Slider
           value={value}
@@ -38,8 +42,20 @@ export function IntStepper({ value, min, max, onChange, testIdPrefix, tone = 'th
           onValueChange={(v) => onChange(Math.round(v))}
         />
       </Host>
+      )}
     </View>
   );
+}
+
+/** True once `ms` have passed since mount (at once for 0) — see `deferMountMs`. */
+function useDeferredMount(ms: number): boolean {
+  const [mounted, setMounted] = useState(ms <= 0);
+  useEffect(() => {
+    if (ms <= 0) return;
+    const id = setTimeout(() => setMounted(true), ms);
+    return () => clearTimeout(id);
+  }, [ms]);
+  return mounted;
 }
 
 const styles = StyleSheet.create({
