@@ -13,6 +13,17 @@ what the app shows under Settings → About → What's new. Keep the `## X.Y.Z �
 the extractor matches on the version field, and a section it can't find silently degrades to the
 release's title.
 
+## 0.3.0 — 2026-09-03
+
+- Rest a spread at fit-height in the paged reader (#141) (d67b14d8)
+- Add desktop sidebar navigation and series pane (#138) (c5b02f82)
+- fix(sentry): isolate the `use$` read in `useSearchSort` (#139) (dab49ac0)
+- Take `shown` out of the sticky ride's transform (#137) (a6838072)
+- Give the off-screen cover a fade long enough to see (c1451ef7)
+- Make the off-screen dismissal actually cross-fade (a094b7a5)
+- Size the off-screen cover copy to the window it is arriving in (ace73bfb)
+- Loosen the collapse spring for the reader's dismiss only (7cc5b99b)
+
 ## 0.2.2 — 2026-08-29
 
 - Swipe the page away when its cover has scrolled off, and build a dev-client per PR (#133) (42d643af)
