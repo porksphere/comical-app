@@ -33,6 +33,8 @@
 #   - reader.settings.page-fit.fit-width / .fit-height   Which axis a page is fitted to.
 #   - reader.settings.double-tap.magnify / .switch-fit / .off   What a double-tap does.
 #   - reader.settings.keep-awake             Switch: whether the screen is held awake while reading.
+#   - reader.settings.page-count             Switch: whether the page count stays faintly on screen
+#     once the chrome has hidden.
 #   - reader.settings.wide-pages.fit-height / .fit-width   The spread rule ("Wide pages"): whether a
 #     page wider than it is tall rests zoomed to the viewport's height. Only rendered while the
 #     sheet is in paged + fit-width mode, which is the app default and the state this flow is in
@@ -140,7 +142,7 @@ appId: com.porksphere.comical
 - tapOn:
     id: "reader.settings.wide-pages.fit-height"
 # Page fit: Fit height hides the wide-pages row (every page already fills the height), and Fit
-# width brings it back. Then the double-tap segment and the keep-awake switch, each flipped and
+# width brings it back. Then the double-tap segment and the two switches, each flipped and
 # restored — all of these persist, so the sheet is left exactly as the app defaults it.
 - tapOn:
     id: "reader.settings.page-fit.fit-height"
@@ -158,6 +160,10 @@ appId: com.porksphere.comical
     id: "reader.settings.keep-awake"
 - tapOn:
     id: "reader.settings.keep-awake"
+- tapOn:
+    id: "reader.settings.page-count"
+- tapOn:
+    id: "reader.settings.page-count"
 - assertVisible:
     id: "reader.settings.direction.vertical"
 - tapOn:

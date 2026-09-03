@@ -4869,6 +4869,7 @@ const ReaderPane = forwardRef<
           current={currentPage}
           total={pages.length}
           visible={chromeVisible}
+          countWhenHidden={settings.pageCountWhenHidden}
           onJump={(i) => {
             goTo(i);
             onShowChrome();
@@ -4883,6 +4884,7 @@ const ReaderPane = forwardRef<
           total={shown.total}
           rtl={settings.mode === 'paged' && settings.direction === 'rtl'}
           visible={chromeVisible}
+          countWhenHidden={settings.pageCountWhenHidden}
           chaptered={chaptered}
           hasPrevChapter={hasPrevChapter}
           hasNextChapter={hasNextChapter}

@@ -14,12 +14,16 @@ export function ProgressPill({
   current,
   total,
   visible,
+  countWhenHidden = true,
   onJump,
   onEditingChange,
 }: {
   current: number;
   total: number;
   visible: boolean;
+  /** Whether the pill stays faintly on screen with the chrome hidden
+   *  (`useReaderSettings().pageCountWhenHidden`); off, it fades with the rest. */
+  countWhenHidden?: boolean;
   onJump: (index: number) => void;
   /** Fires at each editing-state transition — lets a caller (the reader's
    *  chrome auto-hide timer) suspend itself while the page-jump input is open,
@@ -37,7 +41,7 @@ export function ProgressPill({
   // Faint rather than gone with the chrome — the page count is the one thing worth a glance while
   // reading, the same as the native navigator's counter chip. Still inert while hidden.
   const style = useAnimatedStyle(() => ({
-    opacity: withTiming(visible ? 1 : HIDDEN_FAINT, { duration: 200 }),
+    opacity: withTiming(visible ? 1 : countWhenHidden ? HIDDEN_FAINT : 0, { duration: 200 }),
     transform: [{ translateY: -keyboardLift.value }],
   }));
 

@@ -29,6 +29,8 @@ export type ReaderSettings = {
   doubleTap: DoubleTapMode;
   /** Hold the screen awake while a page is on screen. */
   keepAwake: boolean;
+  /** Keep the page count faintly on screen after the rest of the chrome has hidden. */
+  pageCountWhenHidden: boolean;
   prefetchAhead: PrefetchAhead;
 };
 
@@ -40,6 +42,7 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   zoomWidePages: true,
   doubleTap: 'magnify',
   keepAwake: true,
+  pageCountWhenHidden: true,
   prefetchAhead: 4,
 };
 

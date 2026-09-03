@@ -103,6 +103,12 @@ function SettingsContent() {
         value={settings.keepAwake}
         onChange={(v) => set({ keepAwake: v })}
       />
+      <ToggleRow
+        label="Page count when hidden"
+        testID="reader.settings.page-count"
+        value={settings.pageCountWhenHidden}
+        onChange={(v) => set({ pageCountWhenHidden: v })}
+      />
       <Segment
         label="Preload ahead"
         testIdPrefix="reader.settings.preload-ahead"

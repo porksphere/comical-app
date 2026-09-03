@@ -83,8 +83,9 @@ function nowMs() {
  *  either side of it are one continuous row of the same weight. */
 const BAR_H = 40;
 /** The page counter under the bar — "12 / 26" in a small chip that sits just above the home
- *  indicator (its bottom edge on the safe-area inset) and, unlike the bar, never fully leaves:
- *  with the chrome hidden it stays at `COUNTER_FAINT` so a glance still says where you are. It is
+ *  indicator (its bottom edge on the safe-area inset) and, unlike the bar, needn't fully leave:
+ *  with the chrome hidden it stays at `COUNTER_FAINT` (a setting) so a glance still says where
+ *  you are. It is
  *  never interactive, so it has no business being under a finger — and a chip INSIDE the inset
  *  would sit under the indicator itself, which on iPhone draws over whatever is beneath it. */
 const COUNTER_H = 20;
@@ -104,6 +105,9 @@ type Props = {
   /** Reading right-to-left — flips the slider and what the skip buttons do. */
   rtl: boolean;
   visible: boolean;
+  /** Whether the page counter stays faintly on screen with the chrome hidden
+   *  (`useReaderSettings().pageCountWhenHidden`); off, it fades with the rest. */
+  countWhenHidden?: boolean;
   /** False for a chapterless ("direct") series: the skip buttons are omitted
    *  entirely rather than rendered dead, and the scrubber flexes into the space
    *  they'd have taken. Defaults true — every chaptered reader keeps them. */
@@ -159,6 +163,7 @@ export function ChapterNavigator({
   total,
   rtl,
   visible,
+  countWhenHidden = true,
   chaptered = true,
   hasPrevChapter,
   hasNextChapter,
@@ -177,7 +182,7 @@ export function ChapterNavigator({
     opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
   }));
   const counterStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(visible ? 1 : COUNTER_FAINT, { duration: 200 }),
+    opacity: withTiming(visible ? 1 : countWhenHidden ? COUNTER_FAINT : 0, { duration: 200 }),
   }));
 
   // The TRACK's domain — see `scrubTotal`. Never `total`, unless they are the same chapter.
