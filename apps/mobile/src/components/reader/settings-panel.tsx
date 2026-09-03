@@ -187,7 +187,7 @@ function StepperRow({
   return (
     <View style={styles.toggleRow}>
       <ThemedText style={styles.segLabel}>{label}</ThemedText>
-      <IntStepper value={value} min={min} max={max} onChange={onChange} testIdPrefix={testIdPrefix} />
+      <IntStepper value={value} min={min} max={max} onChange={onChange} testIdPrefix={testIdPrefix} tone="dark" />
     </View>
   );
 }

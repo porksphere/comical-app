@@ -4,29 +4,37 @@ import { StyleSheet, View } from 'react-native';
 import type { IntStepperProps } from '@/components/reader/int-stepper';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
 // Android: a discrete Material slider, hosted from Jetpack Compose — Material has no stepper, and
 // a slider with one stop per value is its control for a small bounded number. The value is drawn
 // beside it as ordinary text, so the number is selectable by testID the same way the web
-// control's is. Dark, on the app's accent, like the sheet it sits in.
-const ACCENT = '#3478F6';
+// control's is. The host is given its frame outright (see the iOS sibling for why).
 const TRACK_WIDTH = 160;
+const TRACK_HEIGHT = 44;
 
-export function IntStepper({ value, min, max, onChange, testIdPrefix }: IntStepperProps) {
+export function IntStepper({ value, min, max, onChange, testIdPrefix, tone = 'theme' }: IntStepperProps) {
+  const theme = useTheme();
+  const scheme = useActiveColorScheme();
+  const dark = tone === 'dark';
   return (
     <View style={styles.row}>
-      <ThemedText testID={testId(testIdPrefix, 'value')} style={styles.value}>
+      <ThemedText testID={testId(testIdPrefix, 'value')} style={[styles.value, { color: dark ? '#fff' : theme.text }]}>
         {value}
       </ThemedText>
-      <Host matchContents={{ vertical: true }} colorScheme="dark" style={styles.host}>
+      <Host colorScheme={dark ? 'dark' : scheme} style={styles.host}>
         <Slider
           value={value}
           min={min}
           max={max}
           // Material counts the stops BETWEEN the ends.
           steps={Math.max(0, max - min - 1)}
-          colors={{ thumbColor: ACCENT, activeTrackColor: ACCENT, inactiveTrackColor: 'rgba(255,255,255,0.25)' }}
+          colors={{
+            thumbColor: theme.accent,
+            activeTrackColor: theme.accent,
+            inactiveTrackColor: dark ? 'rgba(255,255,255,0.25)' : theme.backgroundSelected,
+          }}
           onValueChange={(v) => onChange(Math.round(v))}
         />
       </Host>
@@ -42,11 +50,11 @@ const styles = StyleSheet.create({
   },
   host: {
     width: TRACK_WIDTH,
+    height: TRACK_HEIGHT,
   },
   value: {
     minWidth: 24,
     textAlign: 'center',
-    color: '#fff',
     fontSize: 13,
     fontWeight: '600',
     fontVariant: ['tabular-nums'],

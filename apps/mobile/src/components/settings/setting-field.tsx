@@ -4,11 +4,12 @@ import { openAuthSessionAsync, openBrowserAsync } from 'expo-web-browser';
 import { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 
-import { ChevronRightIcon, MinusIcon, PlusIcon } from '@/components/icons/ui-icons';
+import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { MeasuredHeader, OptionList, OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { SettingsSelectRow, SettingsTextRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { settingsRowFrame, SettingsRow } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
+import { IntStepper } from '@/components/reader/int-stepper';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { completeOAuthCallback, getApiBase, type SettingDescriptor, type SettingValue } from '@/data/api';
@@ -396,7 +397,8 @@ function OAuthPinRow({
   );
 }
 
-/** A bounded number as a settings row: label on the left, a −/+ stepper on the right. */
+/** A bounded number as a settings row: label on the left, the platform's integer control on the
+ *  right (see `IntStepper` — a system stepper on iOS, a discrete slider on Android, −/+ on web). */
 function StepperRow({
   descriptor,
   value,
@@ -409,7 +411,6 @@ function StepperRow({
   const min = descriptor.min!;
   const max = descriptor.max!;
   const n = value ?? descriptor.default ?? min;
-  const base = testId('settings.stepper', fieldLabel(descriptor));
   return (
     <View style={[settingsRowFrame.row, settingsRowFrame.escape]}>
       <View style={settingsRowFrame.text}>
@@ -422,33 +423,8 @@ function StepperRow({
           </ThemedText>
         )}
       </View>
-      <View style={styles.stepper}>
-        <StepperButton icon="minus" testID={testId(base, 'decrement')} disabled={n <= min} onPress={() => onChange(Math.max(min, n - 1))} />
-        <ThemedText type="smallBold" style={styles.stepperValue}>
-          {n}
-        </ThemedText>
-        <StepperButton icon="plus" testID={testId(base, 'increment')} disabled={n >= max} onPress={() => onChange(Math.min(max, n + 1))} />
-      </View>
+      <IntStepper value={n} min={min} max={max} onChange={onChange} testIdPrefix={testId('settings.stepper', fieldLabel(descriptor))} />
     </View>
-  );
-}
-
-function StepperButton({ icon, onPress, disabled, testID }: { icon: 'minus' | 'plus'; onPress: () => void; disabled?: boolean; testID: string }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      testID={testID}
-      onPress={() => {
-        hapticSelection();
-        onPress();
-      }}
-      disabled={disabled}
-      android_ripple={{ color: theme.backgroundElement, borderless: true }}
-      style={[styles.pressableCursor, disabled && styles.stepBtnDisabled]}>
-      <ThemedView type="backgroundSelected" style={styles.stepBtn}>
-        {icon === 'minus' ? <MinusIcon color={theme.text} size={18} /> : <PlusIcon color={theme.text} size={18} />}
-      </ThemedView>
-    </Pressable>
   );
 }
 
@@ -578,25 +554,6 @@ function EnumOption({ label, on, onPress, testID }: { label: string; on: boolean
 }
 
 const styles = StyleSheet.create({
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  stepperValue: {
-    minWidth: 28,
-    textAlign: 'center',
-  },
-  stepBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepBtnDisabled: {
-    opacity: 0.4,
-  },
   rowValue: {
     flexDirection: 'row',
     alignItems: 'center',
