@@ -12,22 +12,23 @@ export type RestEdge = 'left' | 'right' | 'center';
 export type EffectiveFit = 'fit-page' | 'fit-width';
 
 /** Which pages rest at fit-height under a page fit: none, spreads only (the spread rule), or
- *  every page (`fill-height`). */
+ *  every page (`fit-height`). */
 export type FillRule = 'none' | 'wide' | 'all';
 
-/** The layout a page takes under `pageFit`: `fill-height` is the fit-page layout with a rest
- *  above 1× (see `fillRule`). */
+/** The layout a page takes under `pageFit`. `fit-height` is drawn as the contain layout
+ *  (`'fit-page'`) with a rest above 1× wherever the height is the bigger fit (see `fillRule`);
+ *  `fit-width` is its own top-aligned layout, scrolled where the page is taller than the screen. */
 export function effectiveFit(pageFit: PageFit): EffectiveFit {
   'worklet';
-  return pageFit === 'fill-height' ? 'fit-page' : pageFit;
+  return pageFit === 'fit-height' ? 'fit-page' : 'fit-width';
 }
 
-/** Which pages a page fit rests at fit-height: all of them under `fill-height`, spreads under
- *  fit-page with the spread setting on, none otherwise. */
+/** Which pages a page fit rests at fit-height: all of them under `fit-height`, spreads under
+ *  fit-width with the spread setting on, none otherwise. */
 export function fillRule(pageFit: PageFit, zoomWidePages: boolean): FillRule {
   'worklet';
-  if (pageFit === 'fill-height') return 'all';
-  return pageFit === 'fit-page' && zoomWidePages ? 'wide' : 'none';
+  if (pageFit === 'fit-height') return 'all';
+  return zoomWidePages ? 'wide' : 'none';
 }
 
 /** Where a page sits when nothing is touching it — 1× for most pages; a SPREAD rests zoomed to the
@@ -39,8 +40,8 @@ export type PageGeometry = { content: Size; restScale: number; restEdge: RestEdg
  *  rest already sits above it — 4× of a strip contained in a phone is barely the strip at full
  *  height, so the old cap would have left nothing to zoom into. */
 export const WIDE_ZOOM_HEADROOM = 2;
-/** The least fit-height has to buy, as a scale over fit-page, for an ORDINARY page to rest there
- *  under `fill-height`. A page within this of the screen's own shape just fits whole: a few
+/** The least fit-height has to buy, as a scale over the contain fit, for an ORDINARY page to rest
+ *  there under `fit-height`. A page within this of the screen's own shape just fits whole: a few
  *  percent of zoom for a few points of sideways pan is a nuisance, not a bigger page. Spreads keep
  *  the plain epsilon — the rule exists for them. */
 export const FILL_HEIGHT_MIN_GAIN = 1.08;
@@ -77,7 +78,7 @@ export function edgeOffset(edge: RestEdge, limitX: number): number {
  *  for right-to-left. Under `'wide'` that is the spread rule, judged by the PICTURE's aspect, not
  *  the viewport's: an ordinary portrait page is letterboxed on a tall phone too, and resting that
  *  at fit-height would put every page behind a sideways pan. Under `'all'` it is every page —
- *  `fill-height` — but only where it buys more than FILL_HEIGHT_MIN_GAIN; a page near the screen's
+ *  `fit-height` — but only where it buys more than FILL_HEIGHT_MIN_GAIN; a page near the screen's
  *  shape fits whole. A page that already stands the full height (a spread on a landscape screen)
  *  has nowhere to go and rests at 1× like anything else. */
 export function pageGeometry(image: Size | null, viewport: Size, fill: FillRule, rtl: boolean): PageGeometry {

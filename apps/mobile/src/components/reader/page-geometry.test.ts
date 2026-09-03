@@ -52,12 +52,12 @@ describe('pageGeometry', () => {
     expect(g.restScale).toBe(1);
     expect(g.restEdge).toBe('center');
   });
-  test('fill-height rests an ordinary page at the viewport height, at the reading edge', () => {
+  test('fit-height rests an ordinary page at the viewport height, at the reading edge', () => {
     const g = pageGeometry(portrait, phone, 'all', false);
     expect(g.restScale).toBeCloseTo(844 / (390 / 0.7), 6);
     expect(g.restEdge).toBe('left');
   });
-  test('fill-height leaves a page near the screen shape whole', () => {
+  test('fit-height leaves a page near the screen shape whole', () => {
     // 5% taller than the viewport's aspect: within FILL_HEIGHT_MIN_GAIN, so no zoom for a
     // few points of sideways pan.
     const near = { width: 1000, height: Math.round((1000 * 844) / 390 / 1.05) };
@@ -76,24 +76,22 @@ describe('pageGeometry', () => {
 });
 
 describe('effectiveFit', () => {
-  test('a fixed fit is itself', () => {
-    expect(effectiveFit('fit-page')).toBe('fit-page');
+  test('fit-width is its own layout', () => {
     expect(effectiveFit('fit-width')).toBe('fit-width');
   });
-  test('fill-height is laid out as fit-page', () => {
-    expect(effectiveFit('fill-height')).toBe('fit-page');
+  test('fit-height is drawn as the contain layout, with the rest doing the fitting', () => {
+    expect(effectiveFit('fit-height')).toBe('fit-page');
   });
 });
 
 describe('fillRule', () => {
-  test('fill-height covers every page', () => {
-    expect(fillRule('fill-height', false)).toBe('all');
+  test('fit-height covers every page', () => {
+    expect(fillRule('fit-height', false)).toBe('all');
   });
-  test('fit-page with the spread setting covers spreads', () => {
-    expect(fillRule('fit-page', true)).toBe('wide');
+  test('fit-width with the spread setting covers spreads', () => {
+    expect(fillRule('fit-width', true)).toBe('wide');
   });
-  test('fit-page without the spread setting, and fit-width, cover nothing', () => {
-    expect(fillRule('fit-page', false)).toBe('none');
-    expect(fillRule('fit-width', true)).toBe('none');
+  test('fit-width without the spread setting covers nothing', () => {
+    expect(fillRule('fit-width', false)).toBe('none');
   });
 });

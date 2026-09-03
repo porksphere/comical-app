@@ -62,31 +62,28 @@ function SettingsContent() {
       <Segment
         label="Page fit"
         testIdPrefix="reader.settings.page-fit"
-        // Webtoon has only the two layouts (one page per screen, or a continuous strip), so it
-        // shows two and reads `fill-height` as the page — the same mapping WebtoonReader applies.
-        value={settings.mode === 'webtoon' ? webtoonFit(settings.pageFit) : settings.pageFit}
+        value={settings.pageFit}
         options={[
-          ['fit-page', 'Fit page'],
           ['fit-width', 'Fit width'],
-          ...(settings.mode === 'paged' ? [['fill-height', 'Fill height'] as [string, string]] : []),
+          ['fit-height', 'Fit height'],
         ]}
         onChange={(v) => set({ pageFit: v as PageFit })}
       />
       {settings.mode === 'webtoon' && (
         <ThemedText style={styles.hint}>
-          {settings.pageFit === 'fit-page' ? 'One page at a time, like Paged' : 'Continuous scroll'}
+          {settings.pageFit === 'fit-height' ? 'One page at a time, like Paged' : 'Continuous scroll'}
         </ThemedText>
       )}
-      {settings.mode === 'paged' && settings.pageFit === 'fit-page' && (
+      {settings.mode === 'paged' && settings.pageFit === 'fit-width' && (
         <Segment
           label="Wide pages"
           testIdPrefix="reader.settings.wide-pages"
-          value={settings.zoomWidePages ? 'fill-height' : 'fit-page'}
+          value={settings.zoomWidePages ? 'fit-height' : 'fit-width'}
           options={[
-            ['fill-height', 'Fill height'],
-            ['fit-page', 'Fit page'],
+            ['fit-height', 'Fit height'],
+            ['fit-width', 'Fit width'],
           ]}
-          onChange={(v) => set({ zoomWidePages: v === 'fill-height' })}
+          onChange={(v) => set({ zoomWidePages: v === 'fit-height' })}
         />
       )}
       <Segment
@@ -95,7 +92,7 @@ function SettingsContent() {
         value={settings.doubleTap}
         options={[
           ['magnify', 'Magnify'],
-          ['fill-height', 'Fill height'],
+          ['switch-fit', 'Switch fit'],
           ['off', 'Off'],
         ]}
         onChange={(v) => set({ doubleTap: v as DoubleTapMode })}
@@ -117,9 +114,9 @@ function SettingsContent() {
   );
 }
 
-/** The layout webtoon gives a paged-only fit — see `PageFit`. */
+/** The layout webtoon gives a page fit — see `PageFit`: one page per screen, or the strip. */
 export function webtoonFit(fit: PageFit): 'fit-page' | 'fit-width' {
-  return fit === 'fit-page' || fit === 'fill-height' ? 'fit-page' : 'fit-width';
+  return fit === 'fit-height' ? 'fit-page' : 'fit-width';
 }
 
 const DIRECTION_OPTIONS: { value: 'ltr' | 'vertical' | 'rtl'; label: string; Icon: ComponentType<IconProps> }[] = [

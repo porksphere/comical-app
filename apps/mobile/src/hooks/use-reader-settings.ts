@@ -8,20 +8,23 @@ import { persisted$ } from '@/lib/observable';
 
 export type ReaderMode = 'paged' | 'webtoon';
 export type ReaderDirection = 'ltr' | 'rtl';
-/** `fill-height` rests EVERY page at the viewport's height (where that buys anything — a page
- *  near the screen's own shape just fits), panned sideways, with the side taps turning.
- *  Paged-only; webtoon reads it as fit-page. */
-export type PageFit = 'fit-page' | 'fit-width' | 'fill-height';
-/** What a double-tap does: magnify the page, toggle `pageFit` between fill-height and fit-page, or
- *  nothing (a lone tap then acts at once instead of waiting out a second one). */
-export type DoubleTapMode = 'magnify' | 'fill-height' | 'off';
+/** Which axis a page is fitted to. The other axis is whatever the picture's shape makes it: on a
+ *  phone, fit-width shows an ordinary page whole and scrolls a tall strip, while fit-height fills
+ *  the screen's height with an ordinary page (panned sideways) and shows a strip whole. There is
+ *  no "fit page" — on any screen that is just whichever of the two is smaller. Webtoon reads
+ *  fit-height as one page per screen and fit-width as the continuous strip. */
+export type PageFit = 'fit-width' | 'fit-height';
+/** What a double-tap does: magnify the page, switch `pageFit` to the other axis, or nothing (a
+ *  lone tap then acts at once instead of waiting out a second one). */
+export type DoubleTapMode = 'magnify' | 'switch-fit' | 'off';
 export type PrefetchAhead = 1 | 2 | 3 | 4 | 6 | 8;
 export type ReaderSettings = {
   mode: ReaderMode;
   direction: ReaderDirection;
   pageFit: PageFit;
-  /** Rest a SPREAD (a page wider than it is tall) at the viewport's height instead of letterboxed
-   *  across its middle, so it reads by panning sideways. Paged mode, fit-page only. */
+  /** Rest a SPREAD (a page wider than it is tall) at the viewport's height instead of a strip
+   *  across its middle, so it reads by panning sideways. Paged mode, fit-width only — fit-height
+   *  already does this to every page. */
   zoomWidePages: boolean;
   doubleTap: DoubleTapMode;
   /** Hold the screen awake while a page is on screen. */
@@ -33,7 +36,7 @@ const STORAGE_KEY = 'comical:readerSettings';
 const DEFAULT_SETTINGS: ReaderSettings = {
   mode: 'paged',
   direction: 'ltr',
-  pageFit: 'fit-page',
+  pageFit: 'fit-width',
   zoomWidePages: true,
   doubleTap: 'magnify',
   keepAwake: true,
@@ -50,9 +53,18 @@ export function setReaderSettings(patch: Partial<ReaderSettings>): void {
   settings$.assign(patch);
 }
 
+/** Values a blob may still hold from before the page fit became an axis: `fit-page` was the
+ *  contain fit, which on a phone is fit-width for nearly every page, and `fill-height` was
+ *  fit-height under another name. Mapped on read; the next write stores the current value. */
+const LEGACY_PAGE_FIT: Record<string, PageFit> = { 'fit-page': 'fit-width', 'fill-height': 'fit-height' };
+const LEGACY_DOUBLE_TAP: Record<string, DoubleTapMode> = { 'fill-height': 'switch-fit' };
+
 /** `[settings, patch]`. Reads spread over the defaults so a blob persisted before a
  *  field existed still surfaces every key. */
 export function useReaderSettings(): [ReaderSettings, (patch: Partial<ReaderSettings>) => void] {
   const value = use$(settings$);
-  return [{ ...DEFAULT_SETTINGS, ...value }, setReaderSettings];
+  const merged = { ...DEFAULT_SETTINGS, ...value };
+  merged.pageFit = LEGACY_PAGE_FIT[merged.pageFit] ?? merged.pageFit;
+  merged.doubleTap = LEGACY_DOUBLE_TAP[merged.doubleTap] ?? merged.doubleTap;
+  return [merged, setReaderSettings];
 }

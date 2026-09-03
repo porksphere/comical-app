@@ -362,7 +362,7 @@ the box the picture occupies at 1× (what every pan is clamped to — a zoomed p
 edge, never slides on into its letterbox), and where the page RESTS. Most pages rest at 1×. A
 spread — a picture wider than it is tall — rests scaled to the viewport's height, at the edge
 reading starts from (left for L→R, right for R→L), and reads by panning sideways. That is the
-`zoomWidePages` setting, on by default; it is what Mihon calls "automatically zoom into wide
+`zoomWidePages` setting, on by default under fit-width; it is what Mihon calls "automatically zoom into wide
 images" and Panels "adjust to orientation". Judge "wide" by the PICTURE's aspect, never the
 viewport's: an ordinary portrait page is letterboxed on a tall phone too, and resting that at
 fit-height puts every page behind a sideways pan. (A `smart` fit — fit-width for tall pages,
@@ -373,10 +373,17 @@ Nothing locks the vertical axis. At fit-height the content's vertical overhang i
 clamp is what holds it — the same clamp that stops a 2.5× page drifting into black. Don't add a
 rule for it.
 
-`fill-height` is the same rest applied to EVERY page (`fillRule`): the reader's "double-tap fits
-the page to the screen's height, taps turn, the zoom carries across pages". Where fit-height buys
-less than `FILL_HEIGHT_MIN_GAIN` over fit-page — a page near the screen's own shape — the page
-rests whole instead, so nothing is zoomed a few percent for a few points of sideways pan.
+The page fit is an AXIS — `fit-width` or `fit-height` — and the other axis is whatever the picture's
+shape makes it. There is no "fit page": on any screen that is just whichever of the two is
+smaller, so fit-width already shows an ordinary page whole on a phone and fit-height shows it
+whole on a landscape tablet. `fit-height` is the same rest applied to EVERY page (`fillRule`), the
+reader's "double-tap fits the page to the screen's height, taps turn, the zoom carries across
+pages" — and the `switch-fit` double-tap flips the axis, which is a zoom in where the other axis
+has room and a zoom out where it overflows: one gesture that fits a strip to the width from
+fit-height and a page to the height from fit-width. Where fit-height buys less than
+`FILL_HEIGHT_MIN_GAIN` over the contain fit — a page near the screen's own shape — the page rests
+whole instead, so nothing is zoomed a few percent for a few points of sideways pan. The spread
+rule (`zoomWidePages`) belongs to fit-width, where a spread is otherwise a strip.
 
 A page resting zoomed still has to be LEFT, and the pager freezes its scroll for any zoomed page,
 so its side-zone taps stay live and TURN, exactly as they do at 1× — they never pan a step first
@@ -385,8 +392,8 @@ only pans. Swiping to turn is a thing a page at 1× does.
 
 Double-tap toggles between the rest and a magnification of it (`DOUBLE_TAP_SCALE × rest`, capped
 at `WIDE_ZOOM_HEADROOM × rest` for a spread, whose rest is already above the old `MAX_SCALE`) —
-or, under the `fill-height` double-tap mode, flips `pageFit` between fill-height and fit-page
-(`onDoubleTap`), the requester's own gesture. Either way a page that is NOT at rest goes back to
+or, under the `switch-fit` double-tap mode, flips `pageFit` to the other axis (`onDoubleTap`),
+the requester's own gesture. Either way a page that is NOT at rest goes back to
 rest first, so the toggle is always read against a settled page. Pinching OUT below a spread's
 rest is allowed, down to 1×, for a look at the whole thing.
 

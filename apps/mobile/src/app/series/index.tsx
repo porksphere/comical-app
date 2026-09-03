@@ -3000,8 +3000,11 @@ function SeriesReaderInstance({
   // the SAME image is drawn twice a few percent apart (a 2:3 cover-crop over an image-aspect
   // contain) — a double exposure that reads as blur. Chapter-mode zooms keep the fixed rect: their
   // copy is the series cover, deliberately a different picture from the page dissolving off it.
-  // fit-width gates the morph off — the page doesn't render at the contain rect there.
-  const copyMorphs = !!sequence && settings.pageFit === 'fit-page';
+  // Only where the page actually RENDERS at the contain rect, which is per image now that the fit
+  // is an axis: a picture whose contain-limiting axis is the fitted one sits at contain (a normal
+  // page under fit-width on a phone, a strip under fit-height); the other kind is scrolled or
+  // rested zoomed, and a copy morphing onto the contain rect would land beside it.
+  const morphFit = sequence ? settings.pageFit : null;
   const zoomThumbStyle = useAnimatedStyle(() => {
     // Which destination this collapse is aimed at, latched at its first frame — see
     // `zoomBoundOnScreen`. All three are the same shape, so nothing below needs a second path.
@@ -3074,9 +3077,9 @@ function SeriesReaderInstance({
       const w = onScreen / Math.max(s, 0.01);
       const h = w / Math.max(base.width / base.height, 0.01);
       rect = { x: (width - w) / 2, y: (height - h) / 2, width: w, height: h };
-    } else if (copyMorphs && ia > 0) {
-      // The image's fit-page rect (contain, centred) — in PAGE coordinates, which for a
-      // screen-sized page are screen coordinates.
+    } else if (morphFit && ia > 0 && (morphFit === 'fit-width' ? ia >= width / height : ia <= width / height)) {
+      // The image's contain rect, centred — in PAGE coordinates, which for a screen-sized page
+      // are screen coordinates.
       const screenAspect = width / height;
       const fw = ia >= screenAspect ? width : height * ia;
       const fh = ia >= screenAspect ? width / ia : height;
@@ -3114,7 +3117,7 @@ function SeriesReaderInstance({
       // ZOOM_THUMB_FADE_CLOSE_OFFCOVER) settles it without moving anything.
       transform: [{ translateY: -zoomBoundShift(geom, detailsScrollOffset.value) }],
     };
-  }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, copyMorphs, width, height]);
+  }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, morphFit, width, height]);
   // What the flying copy DRAWS. A series open flies the series cover (the route's `cover` param is
   // the tapped card's own URL). A SEQUENCE open grew out of a page TILE, so the copy is that
   // page's image — the MOUNT entry's URI (already latched in sequenceTarget), which is the very
@@ -4378,11 +4381,10 @@ const ReaderPane = forwardRef<
   const router = useRouter();
   const queryClient = useQueryClient();
   const [settings, setSettings] = useReaderSettings();
-  // The double-tap under its fill-height mode — writes the persisted page fit, so the state shows
-  // in the sheet and survives leaving the reader. Out of any other fit it goes to fill-height;
-  // out of fill-height it goes to fit-page, not back to wherever it came from.
+  // The double-tap under its switch-fit mode: fit the OTHER axis. Writes the persisted page fit,
+  // so the state shows in the sheet and carries across pages and sessions alike.
   const toggleFillHeight = useCallback(
-    () => setSettings({ pageFit: settings.pageFit === 'fill-height' ? 'fit-page' : 'fill-height' }),
+    () => setSettings({ pageFit: settings.pageFit === 'fit-height' ? 'fit-width' : 'fit-height' }),
     [setSettings, settings.pageFit],
   );
 
@@ -4800,7 +4802,7 @@ const ReaderPane = forwardRef<
           width={width}
           height={height}
           pageFit={settings.pageFit}
-          // Webtoon has no fill-height, so its double-tap is the magnification or nothing.
+          // Webtoon has no axis to switch, so its double-tap is the magnification or nothing.
           doubleTapZoom={settings.doubleTap === 'magnify'}
           initialPage={stitched ? prefixLen + startIndex : startIndex}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
@@ -4844,7 +4846,7 @@ const ReaderPane = forwardRef<
                 style={StyleSheet.absoluteFill}
                 // Same mapping ZoomablePage applies (fit-page → contain), so the poster and the
                 // page draw alike.
-                contentFit={settings.pageFit === 'fit-page' || settings.pageFit === 'fill-height' ? 'contain' : 'cover'}
+                contentFit={settings.pageFit === 'fit-height' ? 'contain' : 'cover'}
                 cachePolicy="memory-disk"
               />
             </View>

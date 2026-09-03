@@ -387,8 +387,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         goToRest(true);
         return;
       }
-      // At rest under the fill-height mode: the tap is the toggle, and what rest IS changes.
-      if (doubleTap === 'fill-height') {
+      // At rest under the switch-fit mode: the tap fits the other axis, and what rest IS changes.
+      if (doubleTap === 'switch-fit') {
         onToggleFillHeight();
         return;
       }
@@ -927,7 +927,18 @@ function zoomWrapperStyle(width: number, height: number, tall: boolean): React.C
   // `translateY` (written via `writeZoom`) shifts which part is visible.
   // Pinch never runs while this is true (mutually exclusive, see
   // `contentOverflowsRef` usage above), so `transformOrigin` is moot here.
+  // A page SHORTER than the viewport (a fit-width page on a phone, say) is centred in it, like a
+  // contain-fit one; only the overflowing page is top-aligned, so its content-pan starts from the
+  // top.
   return tall
     ? { width, willChange: 'transform' }
-    : { width, height, transformOrigin: 'center center', willChange: 'transform' };
+    : {
+        width,
+        height,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        transformOrigin: 'center center',
+        willChange: 'transform',
+      };
 }

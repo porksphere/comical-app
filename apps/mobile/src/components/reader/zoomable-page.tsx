@@ -20,9 +20,11 @@ import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 // double-tap so it waits out a possible second tap. `pageFit === 'fit-width'`
 // fills the width edge to edge; if that makes the page taller than the viewport,
 // a one-finger vertical drag scrolls that content instead (mutually exclusive
-// with pinch-zoom — see `contentPan`). `pageFit === 'fit-page'` shows the whole
-// page, letterboxed, still pinch-zoomable — and, with `zoomWidePages`, rests a
-// SPREAD at the viewport's height instead, panned sideways (see page-geometry).
+// with pinch-zoom — see `contentPan`); a page SHORTER than the viewport sits
+// centred in it. `pageFit === 'fit-height'` draws the contain layout and rests
+// the page at the viewport's height wherever that is the bigger fit, panned
+// sideways (see page-geometry) — which, with `zoomWidePages`, fit-width also
+// does to a SPREAD.
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -201,7 +203,7 @@ export function ZoomablePage({
     onSingleTap: onTapNav,
     singleTapEnabled: !suspended,
     doubleTapEnabled: doubleTap !== 'off',
-    onDoubleTap: doubleTap === 'fill-height' ? onToggleFillHeight : undefined,
+    onDoubleTap: doubleTap === 'switch-fit' ? onToggleFillHeight : undefined,
     extraSimultaneous: [contentPan],
     simultaneousExternal: scrollGesture,
   });
@@ -225,7 +227,9 @@ export function ZoomablePage({
   return (
     <GestureDetector gesture={gesture}>
       <View style={[styles.page, { width, height }]}>
-        <Animated.View style={[{ width, height }, animatedStyle]}>
+        {/* A fit-width page shorter than the viewport is centred, like a contain-fit one; a
+            taller one is top-aligned so the content-pan starts from its top. */}
+        <Animated.View style={[{ width, height }, !overflowsVertically && styles.centred, animatedStyle]}>
           <Animated.View style={[{ width }, contentPanStyle]}>
             <ReaderPage
               fadeMs={fadeMs}
@@ -249,6 +253,9 @@ export function ZoomablePage({
 const styles = StyleSheet.create({
   page: {
     overflow: 'hidden',
+  },
+  centred: {
+    justifyContent: 'center',
   },
   zones: {
     flexDirection: 'row',
