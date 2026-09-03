@@ -12,7 +12,9 @@ import {
 import {
   edgeOffset,
   fillRule,
+  isStrip,
   pageGeometry,
+  stripGeometry,
   panLimits,
   WIDE_ZOOM_HEADROOM,
   type Size,
@@ -82,10 +84,10 @@ type Props = {
  *   - swipe       (1 finger, not zoomed)        → track follows the finger, settles on release
  *   - tap         (1 finger, no movement)       → instant page turn / chrome toggle, no animation
  *   - pinch       (2 fingers)                   → scales only the current page; chrome stays put
- *   - pan         (1 finger, zoomed)            → moves the zoomed image within bounds
- *   - content-pan (1 finger, fit-width overflow) → scrolls the overflowing page vertically instead
- *                                                  of turning it (see the direction-disambiguation
- *                                                  logic in `onPointerMove`'s 'swipe' branch)
+ *   - pan         (1 finger, page overflows)    → moves a magnified page, or a box bigger than the
+ *                                                  viewport at 1× (a spread, a strip), within its
+ *                                                  bounds; a drag past the edge it already shows is
+ *                                                  handed to the swipe
  *
  * Pages live in an absolutely-positioned flex row translated via a CSS
  * transform; zoom is a transform on the current page's inner wrapper, so the
@@ -116,9 +118,8 @@ const SETTLE_EASING = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
 // its full width and the translateX math stays exact, but only ~(2R+1) images
 // are ever in memory. Rendering all N at once OOM-crashes the tab on iOS Chrome.
 const RENDER_RADIUS = 2;
-// A 'swipe' drag under this many px hasn't committed to a direction yet — past
-// it, a vertical-dominant drag becomes 'content-pan' (fit-width overflow only),
-// a horizontal-dominant one stays 'swipe'.
+// A drag under this many px hasn't committed to a direction yet — a pan decides past it whether
+// it has anywhere to go (see the 'pan' branch of `onPointerMove`).
 const DIR_DEADZONE = 8; // px
 // Pan-fling friction: velocity is multiplied by this each 16ms frame, and the
 // glide stops once it drops below MIN_FLING_V (px/ms). (Double-tap tuning lives
@@ -130,7 +131,7 @@ const MIN_FLING_V = 0.02;
 // commits the zoom instead of rubber-banding to 1×.
 const PINCH_COMMIT = 1.2;
 
-type Mode = 'idle' | 'swipe' | 'pan' | 'pinch' | 'content-pan';
+type Mode = 'idle' | 'swipe' | 'pan' | 'pinch';
 
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
   {
@@ -187,44 +188,34 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // Held at 1× while parked or still entering — the poster over it is the contain picture, and a
   // page resting zoomed under it would be revealed mid-jump. It grows into its rest once primary.
   const fill = standby ? 'none' : fillRule(pageFit);
-  // The layout a page takes: the contain box for everything that FITS — under either axis, a
-  // page that fits is drawn the same way, in a box that never changes size, which is what keeps
-  // it from shifting as its picture arrives — and the top-aligned, vertically scrolled `width`
-  // layout only for a page that overflows the height under fit-width, a strip. Before a picture's
-  // shape is known it is contain.
-  const fitOf = useCallback(
+  // Every page is drawn in the contain box, under either axis — a box the viewport's size that
+  // never changes, which is what keeps a page from shifting as its picture arrives — except a
+  // STRIP under fit-width, a page taller than the viewport at its width, which gets a box that
+  // tall (see `stripGeometry`) and is panned down it. Before a picture's shape is known it is
+  // contain.
+  const geometryOf = useCallback(
     (key: string) => {
-      const img = dims.get(key);
-      return pageFit === 'fit-width' && img != null && width * (img.height / img.width) > height + 1 ? 'fit-width' : 'fit-page';
+      const img = dims.get(key) ?? null;
+      return pageFit === 'fit-width' && img && isStrip(img, { width, height })
+        ? stripGeometry(img, { width, height })
+        : pageGeometry(img, { width, height }, fill, rtl);
     },
-    [dims, pageFit, width, height],
+    [dims, pageFit, width, height, fill, rtl],
   );
-  const fit = fitOf(data[index]?.key ?? '');
 
-  // fit-width content that's taller than the viewport: a one-finger vertical drag scrolls it (see
-  // the 'content-pan' mode below). Derived from the current page's own dims, so a page whose
-  // shape isn't known yet never inherits the previous page's "overflows".
-  const contentAspectRef = useRef(1); // current image's width/height ratio
-  contentAspectRef.current = image ? image.width / image.height : 1;
-  const contentOverflows = fit === 'fit-width';
-  const contentOverflowsRef = useRef(false);
-  contentOverflowsRef.current = contentOverflows;
-
-  // Where the current page RESTS — 1× for most pages, fit-height at the reading edge for a spread
-  // — and the box its pan is clamped to (see page-geometry). Only a fit-page picture is centred
-  // in the viewport, which is what that clamp assumes; a fit-width one is top-aligned and keeps
-  // the viewport clamp it always had.
-  const geometry = useMemo(
-    () => pageGeometry(fit === 'fit-page' ? image : null, { width, height }, fill, rtl),
-    [fit, image, width, height, fill, rtl],
-  );
-  const box: Size = fit === 'fit-page' ? geometry.content : { width, height };
+  // Where the current page RESTS — 1× for most pages, fit-height at the reading edge for a spread,
+  // the top of a strip — and the box its pan is clamped to (see page-geometry).
+  const geometry = useMemo(() => geometryOf(data[index]?.key ?? ''), [geometryOf, data, index]);
+  const box: Size = geometry.content;
   const { restScale, restEdge } = geometry;
   const maxScale = Math.max(MAX_SCALE, restScale * WIDE_ZOOM_HEADROOM);
-  const restTx = edgeOffset(restEdge, panLimits(restScale, box, { width, height }).x);
+  const restLimit = panLimits(restScale, box, { width, height });
+  const { x: restTx, y: restTy } = edgeOffset(restEdge, restLimit);
   const restZoomed = restScale > ZOOM_EPSILON;
-  const restRef = useRef({ box, restScale, restTx, restZoomed, maxScale });
-  restRef.current = { box, restScale, restTx, restZoomed, maxScale };
+  // A box that overflows the viewport at rest is panned without any zoom — a strip.
+  const overflowsAtRest = restLimit.x > 0.5 || restLimit.y > 0.5;
+  const restRef = useRef({ box, restScale, restTx, restTy, restZoomed, maxScale, overflowsAtRest });
+  restRef.current = { box, restScale, restTx, restTy, restZoomed, maxScale, overflowsAtRest };
 
   // DOM handles for imperative transform writes (gesture frames bypass React).
   const surfaceRef = useRef<HTMLDivElement>(null);
@@ -261,9 +252,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     downY: 0,
     downT: 0,
     moved: false,
-    // direction disambiguation ('swipe' vs 'content-pan')
+    // direction disambiguation ('swipe' vs 'pan')
     dirDecided: false,
-    // pan (zoomed, or content-pan when fit-width overflows)
+    // pan (zoomed, or a page that overflows at rest)
     panStartX: 0,
     panStartY: 0,
     panBaseTx: 0,
@@ -333,8 +324,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const goToRest = useCallback(
     (animate: boolean, fromFarEdge = false) => {
       cancelInertia();
-      const { box: b, restScale: s, restTx: readingTx, restZoomed: z } = restRef.current;
+      const { box: b, restScale: s, restTx: readingTx, restTy: readingTy, restZoomed: z } = restRef.current;
       const restTx = fromFarEdge ? -readingTx : readingTx;
+      const restTy = fromFarEdge ? -readingTy : readingTy;
       const tap = tapRef.current;
       tapRef.current = null;
       let tx = restTx;
@@ -344,7 +336,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         const contentX = (tap.x - cx - zoom.current.tx) / zoom.current.scale;
         tx = clamp(tap.x - cx - s * contentX, -limit.x, limit.x);
       }
-      zoom.current = { scale: s, tx, ty: 0 };
+      zoom.current = { scale: s, tx, ty: restTy };
       writeZoom(animate);
       setZoomedNow(z);
     },
@@ -371,9 +363,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     const fromFarEdge = prev != null && index < prev.index;
     const { scale, tx, ty } = zoom.current;
     const wantTx = fromFarEdge ? -restTx : restTx;
-    if (Math.abs(scale - restScale) < 0.001 && Math.abs(tx - wantTx) < 0.5 && Math.abs(ty) < 0.5) return;
+    const wantTy = fromFarEdge ? -restTy : restTy;
+    if (Math.abs(scale - restScale) < 0.001 && Math.abs(tx - wantTx) < 0.5 && Math.abs(ty - wantTy) < 0.5) return;
     goToRest(!arriving && prev.known && imageKnown, fromFarEdge);
-  }, [index, restScale, restTx, imageKnown, goToRest, zoom]);
+  }, [index, restScale, restTx, restTy, imageKnown, goToRest, zoom]);
 
   // Momentum after a pan release: keep gliding from the last pan velocity,
   // decelerating each frame and stopping dead at the pan bounds. Grabbing again
@@ -602,9 +595,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       gesture.pointers.set(e.pointerId, p);
 
       if (gesture.pointers.size >= 2) {
-        // No pinch while an overflowing fit-width page is content-pannable —
-        // mirrors the native reader's mutual-exclusion rule (see zoomable-page.tsx).
-        if (!contentOverflowsRef.current) beginPinch();
+        beginPinch();
         return;
       }
       // First finger down: remember it for tap detection.
@@ -613,8 +604,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       gesture.downT = performance.now();
       gesture.moved = false;
       gesture.dirDecided = false;
-      if (zoomedRef.current) {
-        beginPan(p, true); // standalone pan on a zoomed page — momentum allowed
+      if (zoomedRef.current || restRef.current.overflowsAtRest) {
+        beginPan(p, true); // standalone pan on a page with somewhere to go — momentum allowed
       } else {
         gesture.mode = 'swipe';
         gesture.startX = p.x;
@@ -699,29 +690,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         return;
       }
 
-      if (gesture.mode === 'swipe' && !gesture.dirDecided) {
-        const moved = Math.hypot(p.x - gesture.downX, p.y - gesture.downY);
-        if (moved > DIR_DEADZONE) {
-          gesture.dirDecided = true;
-          const vertical = Math.abs(p.y - gesture.downY) > Math.abs(p.x - gesture.downX) * 1.2;
-          if (vertical && contentOverflowsRef.current && !zoomedRef.current) {
-            gesture.mode = 'content-pan';
-            gesture.panStartY = p.y;
-            gesture.panBaseTy = zoom.current.ty;
-            writeTrack(0, false); // undo any stray horizontal nudge picked up during the deadzone
-          }
-        }
-      }
-
-      if (gesture.mode === 'content-pan') {
-        const contentHeight = width * (1 / contentAspectRef.current);
-        const maxNeg = -Math.max(0, contentHeight - height);
-        zoom.current = { scale: 1, tx: 0, ty: clamp(gesture.panBaseTy + (p.y - gesture.panStartY), maxNeg, 0) };
-        writeZoom(false);
-        gesture.moved = true;
-        return;
-      }
-
       if (gesture.mode === 'swipe') {
         let dx = p.x - gesture.startX;
         // Rubber-band against the ends so there's nowhere past the first/last page.
@@ -765,10 +733,17 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       setZoomedNow(true);
       return;
     }
-    // Pinched all the way out. On a spread that is BELOW rest, and stays there — a look at the
-    // whole thing — until the next double-tap or page turn; the page is simply unzoomed meanwhile.
+    // Pinched all the way out. Back at 1× the box keeps whatever offset the pinch left it — still
+    // within its own limits, which for a strip is somewhere down its length — rather than snapping
+    // to the middle under the fingers. On a spread that is BELOW rest, and stays there — a look at
+    // the whole thing — until the next double-tap or page turn.
     cancelInertia();
-    zoom.current = { scale: 1, tx: 0, ty: 0 };
+    const limit1 = panLimits(1, restRef.current.box, { width, height });
+    zoom.current = {
+      scale: 1,
+      tx: clamp(zoom.current.tx, -limit1.x, limit1.x),
+      ty: clamp(zoom.current.ty, -limit1.y, limit1.y),
+    };
     writeZoom(true);
     setZoomedNow(false);
   }, [cancelInertia, setZoomedNow, zoom, gesture, width, height, writeZoom]);
@@ -812,9 +787,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // DOUBLE_TAP_MS; a qualifying second tap cancels that and zooms instead.
   const handleTapGesture = useCallback(
     (x: number, y: number) => {
-      // Double-tap zoom is off exactly where pinch is (an overflowing fit-width page, which
-      // content-pans instead), and where the setting turns it off — there, taps stay immediate.
-      const canZoom = doubleTap !== 'off' && !contentOverflowsRef.current;
+      // With the double-tap switched off there is nothing to wait for: taps stay immediate.
+      const canZoom = doubleTap !== 'off';
       const now = performance.now();
       const last = lastTapRef.current;
       if (
@@ -915,6 +889,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     [beginPan, finalizePinch, finalizeSwipe, handleTapGesture, startPanInertia, gesture],
   );
 
+  // The box a page is DRAWN in: the viewport for everything but a strip, whose box is as tall as
+  // the strip (see `geometryOf`) and is centred in the cell, overflowing it equally top and
+  // bottom.
+  const boxHeightOf = (key: string) => {
+    const g = geometryOf(key);
+    return g.restEdge === 'top' || g.restEdge === 'bottom' ? g.content.height : height;
+  };
+
   return (
     <div ref={surfaceRef} style={surfaceStyle(width, height)}
       onPointerDown={onPointerDown}
@@ -931,17 +913,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           const near = Math.abs(i - index) <= (standby ? 0 : RENDER_RADIUS);
           return (
             <div key={item.key} style={cellStyle(width, height)}>
-              <div
-                ref={i === index ? zoomRef : undefined}
-                style={zoomWrapperStyle(width, height, i === index && contentOverflows)}>
+              <div ref={i === index ? zoomRef : undefined} style={zoomWrapperStyle(width, boxHeightOf(item.key))}>
                 {near ? (
                   <ReaderPage
                     fadeMs={standby ? STANDBY_FADE_MS : undefined}
                     uri={item.uri}
                     page={item.pageNumber}
-                    fit={fitOf(item.key) === 'fit-width' ? 'width' : 'contain'}
+                    fit="contain"
                     width={width}
-                    height={height}
+                    height={boxHeightOf(item.key)}
                     onLoadDims={(w, h) => recordDims(item.key, w, h)}
                     onFailedChange={i === index ? setCurrentFailed : undefined}
                   />
@@ -981,16 +961,18 @@ function trackStyle(n: number, width: number, height: number): React.CSSProperti
   };
 }
 function cellStyle(width: number, height: number): React.CSSProperties {
-  return { width, height, overflow: 'hidden', flexShrink: 0 };
+  // Centres its box (see `boxHeightOf`), which for a strip is taller than the cell and overflows
+  // it equally top and bottom, clipped here; the pan and pinch math assumes a centred box.
+  return {
+    width,
+    height,
+    overflow: 'hidden',
+    flexShrink: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+  };
 }
-function zoomWrapperStyle(width: number, height: number, tall: boolean): React.CSSProperties {
-  // `tall`: an overflowing fit-width page — drop the fixed height so the
-  // child's own aspectRatio box can be taller than the viewport; the ancestor
-  // `cellStyle`'s `overflow:hidden` still clips it, and content-pan's
-  // `translateY` (written via `writeZoom`) shifts which part is visible.
-  // Pinch never runs while this is true (mutually exclusive, see
-  // `contentOverflowsRef` usage above), so `transformOrigin` is moot here.
-  return tall
-    ? { width, willChange: 'transform' }
-    : { width, height, transformOrigin: 'center center', willChange: 'transform' };
+function zoomWrapperStyle(width: number, boxHeight: number): React.CSSProperties {
+  return { width, height: boxHeight, flexShrink: 0, transformOrigin: 'center center', willChange: 'transform' };
 }

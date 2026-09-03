@@ -391,7 +391,11 @@ export function ReaderPage({
   }, [loaded, loadKey, transitionMs]);
 
   const ready = delayPassed && loaded && fadedKey === loadKey;
-  const box: StyleProp<ViewStyle> = fit === 'contain' ? { width, height } : { width, aspectRatio: aspect };
+  // A width-fit box is given its height as a whole number rather than as an aspect ratio: boxes
+  // stacked at fractional heights put their shared edges between pixels, which the browser (and
+  // the native layout's rounding) paints as a hairline of background between one page and the
+  // next. Cover fills the half-pixel this costs.
+  const box: StyleProp<ViewStyle> = fit === 'contain' ? { width, height } : { width, height: Math.round(width / aspect) };
 
   // What the skeleton says while it's up. Nothing at all in the common case (a page that loads
   // promptly on the first try shouldn't flash a "0%"), a percentage once bytes are moving, and the

@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
+import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import {
   edgeOffset,
   farEdge,
   fillRule,
+  isStrip,
   pageGeometry,
   panLimits,
-  type EffectiveFit,
+  stripGeometry,
+  type RestEdge,
   type Size,
 } from '@/components/reader/page-geometry';
 import { ReaderPage } from '@/components/reader/reader-page';
@@ -19,24 +21,15 @@ import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 // A single paged-reader page (NATIVE only — web has its own gesture pager in
 // paged-reader.web.tsx and never renders this).
 //
-// Pinch / double-tap / pan-while-zoomed all come from the shared `useZoomable`
-// primitive (also used by the webtoon reader). This file adds only the things
-// that are page-specific: the tap-zone navigation (left/right turn, centre
-// toggles chrome) and the fit-width vertical content-pan.
+// Pinch / double-tap / pan all come from the shared `useZoomable` primitive (also used by the
+// webtoon reader). This file adds only the things that are page-specific: the tap-zone
+// navigation (left/right turn, centre toggles chrome) and the page's box and rest (see
+// page-geometry) — a strip under fit-width is a box taller than the viewport, panned down by the
+// same gesture that pans a zoomed page, with the same momentum and the same hand-off to the
+// pager for a sideways drag.
 //
 // Navigation is handled by a single-tap gesture composed Exclusive with the
-// double-tap so it waits out a possible second tap. `pageFit === 'fit-width'`
-// fills the width edge to edge; if that makes the page taller than the viewport,
-// a one-finger vertical drag scrolls that content instead (mutually exclusive
-// with pinch-zoom — see `contentPan`); a page SHORTER than the viewport sits
-// centred in it. `pageFit === 'fit-height'` draws the contain layout and rests
-// the page at the viewport's height wherever that is the bigger fit, panned
-// sideways (see page-geometry).
-
-function clamp(value: number, min: number, max: number) {
-  'worklet';
-  return Math.min(Math.max(value, min), max);
-}
+// double-tap so it waits out a possible second tap.
 
 type Props = {
   uri: string;
@@ -119,53 +112,30 @@ export function ZoomablePage({
   scrollGesture,
 }: Props) {
   const [pageFailed, setPageFailed] = useState(false);
-
-  // fit-width content that's taller than the viewport: a one-finger vertical
-  // drag scrolls it (see `contentPan` below). `contentHeight` is only known
-  // once the real image dims load — see `onLoadDims`.
-  const contentHeight = useSharedValue(height);
-  const contentTy = useSharedValue(0);
-  const savedContentTy = useSharedValue(0);
-  const [overflowsVertically, setOverflowsVertically] = useState(false);
-  const [contentPanning, setContentPanning] = useState(false);
-  // The picture's real dimensions, once loaded — what the page's rest and pan bounds are read from.
+  // The picture's real dimensions, once loaded — what the page's box and rest are read from.
   const [image, setImage] = useState<Size | null>(null);
 
-  // Which pages rest above 1× under the fit (see `fillRule`), and the layout: the contain box
-  // for everything that FITS — under either axis, a page that fits is drawn the same way, in a
-  // box that never changes size, which is what keeps it from shifting as its picture arrives —
-  // and the top-aligned, vertically scrolled `width` layout only for a page that overflows the
-  // height under fit-width, a strip. Before the picture's shape is known every page is contain.
+  // Which pages rest above 1× under the fit (see `fillRule`). Every page is drawn in the contain
+  // box, under either axis — a box the viewport's size that never changes, which is what keeps a
+  // page from shifting as its picture arrives — except a STRIP under fit-width, a page taller than
+  // the viewport at its width, which gets a box that tall (see `stripGeometry`) and is panned
+  // down it. Before the picture's shape is known every page is contain.
   const fill = standby ? 'none' : fillRule(pageFit);
-  const layoutFor = useCallback(
-    (overflows: boolean): EffectiveFit => (pageFit === 'fit-width' && overflows ? 'fit-width' : 'fit-page'),
-    [pageFit],
-  );
-  const fit = layoutFor(overflowsVertically);
+  const strip = pageFit === 'fit-width' && isStrip(image, { width, height });
 
-  // Only a fit-page picture is centred in the viewport, which is what the hook's content clamp
-  // assumes; a fit-width one is top-aligned and keeps the viewport clamp it always had.
   // The edge this page rests at, latched while active (see `restAtFarEdge`). React's own form of
   // the previous-prop pattern, so a discarded render re-runs the comparison.
   const [farEdgeLatched, setFarEdgeLatched] = useState(restAtFarEdge);
   if (!active && farEdgeLatched !== restAtFarEdge) setFarEdgeLatched(restAtFarEdge);
   const edgeFor = useCallback(
-    (edge: ReturnType<typeof pageGeometry>['restEdge']) => (farEdgeLatched ? farEdge(edge) : edge),
+    (edge: RestEdge) => (farEdgeLatched ? farEdge(edge) : edge),
     [farEdgeLatched],
   );
 
   const geometry = useMemo(
-    () => pageGeometry(fit === 'fit-page' ? image : null, { width, height }, fill, rtl),
-    [fit, fill, image, width, height, rtl],
+    () => (strip && image ? stripGeometry(image, { width, height }) : pageGeometry(image, { width, height }, fill, rtl)),
+    [strip, fill, image, width, height, rtl],
   );
-
-  // Compounding pinch's scale/anchor math with an independent content-pan offset
-  // is a correctness trap, so the two are made mutually exclusive: zoom is
-  // disabled exactly when `contentPan` would be enabled. Zoom is also off while
-  // the page shows its failed/Retry state so a tap reaches the Retry chip.
-  const zoomEnabled = !(fit === 'fit-width' && overflowsVertically) && !pageFailed;
-  // The page-turn / chrome tap zones stay live except while zoomed or suspended.
-  const suspended = pageFailed || contentPanning;
 
   // Navigation for a single tap, by the tap's x within the page — the same three
   // zones the `TapZones` markers cover (~30% / ~40% / ~30%).
@@ -178,37 +148,12 @@ export function ZoomablePage({
     [width, onLeft, onRight, onToggleChrome],
   );
 
-  // One-finger vertical scroll of an overflowing fit-width page. A deadzone
-  // (`activeOffsetY`) plus `failOffsetX` disambiguate it from the FlatList's own
-  // horizontal swipe: a mostly-vertical drag wins here, a mostly-horizontal one
-  // bails out and lets the page-turn swipe handle it. (No `!zoomed` guard needed —
-  // an overflowing fit-width page can't zoom in the first place, so `zoomEnabled`
-  // is already false and this never coexists with a zoom.)
-  const contentPan = Gesture.Pan()
-    .enabled(fit === 'fit-width' && overflowsVertically)
-    .activeOffsetY([-10, 10])
-    .failOffsetX([-15, 15])
-    // Alongside whatever the pager mounted on its scroller (see `scrollGesture`). The axes already
-    // separate these — this is only about being allowed to run at all.
-    .simultaneousWithExternalGesture(...(scrollGesture ?? []))
-    .onStart(() => {
-      savedContentTy.set(contentTy.value);
-      runOnJS(setContentPanning)(true);
-    })
-    .onUpdate((e) => {
-      const maxOffset = Math.max(0, contentHeight.value - height);
-      contentTy.set(clamp(savedContentTy.value + e.translationY, -maxOffset, 0));
-    })
-    .onEnd(() => {
-      savedContentTy.set(contentTy.value);
-      runOnJS(setContentPanning)(false);
-    });
-
   const switchFit = useCallback(() => onSwitchFit(image), [onSwitchFit, image]);
 
   // The whole zoom gesture (pinch / double-tap / one-finger pan / the tap zones,
-  // all composed) comes from the shared hook; this page just feeds it the tap-zone
-  // handler and its content-pan.
+  // all composed) comes from the shared hook; this page just feeds it the box, the rest and the
+  // tap-zone handler. Zoom is off while the page shows its failed/Retry state so a tap reaches
+  // the chip.
   //
   // Swiping to another page (or jumping via the progress pill) puts this one back to rest, so
   // every page starts from rest — fit-to-screen, or fit-height for a spread. That is only ever
@@ -218,68 +163,57 @@ export function ZoomablePage({
   const { gesture, animatedStyle, settle } = useZoomable({
     width,
     height,
-    enabled: zoomEnabled,
+    enabled: !pageFailed,
     active,
-    content: fit === 'fit-page' ? geometry.content : undefined,
+    content: geometry.content,
     restScale: geometry.restScale,
     restEdge: edgeFor(geometry.restEdge),
     onZoomChange,
     onPinchChange,
     onSingleTap: onTapNav,
-    singleTapEnabled: !suspended,
+    singleTapEnabled: !pageFailed,
     doubleTapEnabled: doubleTap !== 'off',
     onDoubleTap: doubleTap === 'switch-fit' ? switchFit : undefined,
-    extraSimultaneous: [contentPan],
     simultaneousExternal: scrollGesture,
   });
 
   const onLoadDims = (w: number, h: number) => {
     if (w <= 0 || h <= 0) return;
-    const ch = width * (h / w);
-    const overflows = ch > height + 1;
+    const img = { width: w, height: h };
     // The rest this picture's shape gives the page, applied BEFORE the render that carries it
     // (see useZoomable's `settle`), so the page is drawn at rest from its first frame rather
-    // than growing into it.
-    const g = pageGeometry(layoutFor(overflows) === 'fit-page' ? { width: w, height: h } : null, { width, height }, fill, rtl);
-    settle(g.restScale, edgeOffset(edgeFor(g.restEdge), panLimits(g.restScale, g.content, { width, height }).x));
-    contentHeight.set(ch);
-    setOverflowsVertically(overflows);
-    setImage({ width: w, height: h });
+    // than growing into it — a strip from its top.
+    const g =
+      pageFit === 'fit-width' && isStrip(img, { width, height })
+        ? stripGeometry(img, { width, height })
+        : pageGeometry(img, { width, height }, fill, rtl);
+    const off = edgeOffset(edgeFor(g.restEdge), panLimits(g.restScale, g.content, { width, height }));
+    settle(g.restScale, off.x, off.y);
+    setImage(img);
   };
 
   // A page that goes away mid-pinch (a mode switch, a window that dropped it) never reaches the
   // gesture's own `onFinalize`, and the pager would be left frozen on a pinch nothing can end.
   useEffect(() => () => onPinchChange?.(false), [onPinchChange]);
 
-  // Same for content-pan: a page left behind always comes back scrolled to the top.
-  useEffect(() => {
-    if (!active) {
-      contentTy.set(0);
-      savedContentTy.set(0);
-    }
-  }, [active, contentTy, savedContentTy]);
-
-  const contentPanStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: contentTy.value }],
-  }));
-
   return (
     <GestureDetector gesture={gesture}>
       <View style={[styles.page, { width, height }]}>
-        <Animated.View style={[{ width, height }, animatedStyle]}>
-          <Animated.View style={[{ width }, contentPanStyle]}>
-            <ReaderPage
-              fadeMs={fadeMs}
-              uri={uri}
-              page={page}
-              fit={fit === 'fit-width' ? 'width' : 'contain'}
-              width={width}
-              height={height}
-              onLoadDims={onLoadDims}
-              onFailedChange={setPageFailed}
-              scrubbing={scrubbing}
-            />
-          </Animated.View>
+        {/* The transformed view is the viewport's size and centres its box: the viewport-sized
+            contain box for most pages, a taller one for a strip, which overflows it equally top
+            and bottom and is clipped by `styles.page`. */}
+        <Animated.View style={[{ width, height }, styles.centred, animatedStyle]}>
+          <ReaderPage
+            fadeMs={fadeMs}
+            uri={uri}
+            page={page}
+            fit="contain"
+            width={width}
+            height={strip ? geometry.content.height : height}
+            onLoadDims={onLoadDims}
+            onFailedChange={setPageFailed}
+            scrubbing={scrubbing}
+          />
         </Animated.View>
         <TapZones />
       </View>
@@ -290,6 +224,10 @@ export function ZoomablePage({
 const styles = StyleSheet.create({
   page: {
     overflow: 'hidden',
+  },
+  centred: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   zones: {
     flexDirection: 'row',

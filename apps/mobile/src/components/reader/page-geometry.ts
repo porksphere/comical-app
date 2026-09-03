@@ -7,7 +7,9 @@ import type { PageFit } from '@/hooks/use-reader-settings';
 // disagree about a page's shape.
 
 export type Size = { width: number; height: number };
-export type RestEdge = 'left' | 'right' | 'center';
+/** Which edge of an overflowing box sits against the viewport's at rest: the reading edge for a
+ *  sideways overflow, the top for a vertical one (a strip), nothing for a box that fits. */
+export type RestEdge = 'left' | 'right' | 'top' | 'bottom' | 'center';
 /** How one page is actually laid out — the two layouts a page can take. */
 export type EffectiveFit = 'fit-page' | 'fit-width';
 
@@ -83,13 +85,36 @@ export function panLimits(scale: number, content: Size, viewport: Size): { x: nu
  *  where the page sits, never from history, so it holds for a chapter resumed from the middle. */
 export function farEdge(edge: RestEdge): RestEdge {
   'worklet';
-  return edge === 'left' ? 'right' : edge === 'right' ? 'left' : edge;
+  return edge === 'left' ? 'right' : edge === 'right' ? 'left' : edge === 'top' ? 'bottom' : edge === 'bottom' ? 'top' : edge;
 }
 
 /** The translation that brings a given edge of the content to the matching edge of the viewport. */
-export function edgeOffset(edge: RestEdge, limitX: number): number {
+export function edgeOffset(edge: RestEdge, limit: { x: number; y: number }): { x: number; y: number } {
   'worklet';
-  return edge === 'left' ? limitX : edge === 'right' ? -limitX : 0;
+  return {
+    x: edge === 'left' ? limit.x : edge === 'right' ? -limit.x : 0,
+    y: edge === 'top' ? limit.y : edge === 'bottom' ? -limit.y : 0,
+  };
+}
+
+/** A STRIP under fit-width — a page taller than the viewport at the viewport's width: a box of
+ *  that size, centred like every other, resting at 1× with its top against the viewport's, read
+ *  by panning down. Not a zoom over the contain box: drawn that way the strip would be decoded
+ *  for its thin contain size and scaled up several times over. The box is integer-high so its
+ *  edges land on the pixel grid. */
+export function stripGeometry(image: Size, viewport: Size): PageGeometry {
+  'worklet';
+  return {
+    content: { width: viewport.width, height: Math.round((viewport.width * image.height) / image.width) },
+    restScale: 1,
+    restEdge: 'top',
+  };
+}
+
+/** Whether a page is a strip under fit-width: taller than the viewport at the viewport's width. */
+export function isStrip(image: Size | null, viewport: Size): boolean {
+  'worklet';
+  return image != null && image.width > 0 && (viewport.width * image.height) / image.width > viewport.height + 1;
 }
 
 /** A page's geometry from its picture's real dimensions (`null` until they load — a page whose

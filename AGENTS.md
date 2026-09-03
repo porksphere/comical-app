@@ -371,8 +371,12 @@ it would otherwise lie as a strip. An ordinary page is never scrolled under it o
 size and never changes.** That is the whole reason the reader doesn't shift: a box sized from the
 picture's aspect is sized from a GUESS until the picture arrives, and re-centring it then moves
 the page (that was built, as the fit-width default, and was the "page shifting around"). Only a
-page that overflows the height under fit-width — a strip — takes the top-aligned, vertically
-scrolled `width` layout, decided once its shape is known.
+page that overflows the height under fit-width — a strip — is drawn in a box its own height
+(`stripGeometry`), centred like every other box and panned DOWN by the same gesture that pans a
+zoomed page, from its top, with the same momentum and the same hand-off to the pager for a
+sideways drag. (It used to have a gesture of its own, composed alongside the pager's swipe rather
+than blocking it and with no momentum: a thumb drag that started slightly diagonal turned the
+page, and one that didn't stopped dead on release.)
 
 The fit itself is a TRANSFORM over that box, the rest. Most pages rest at 1×. Under `fit-height`
 every page whose height fit buys more than `FILL_HEIGHT_MIN_GAIN` over contain rests scaled to the

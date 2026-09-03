@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { containedSize, edgeOffset, effectiveFit, fillRule, otherFit, pageGeometry, panLimits } from './page-geometry';
+import { containedSize, edgeOffset, effectiveFit, farEdge, fillRule, isStrip, otherFit, pageGeometry, panLimits, stripGeometry } from './page-geometry';
 
 const phone = { width: 390, height: 844 };
 const spread = { width: 2000, height: 1000 };
@@ -42,7 +42,7 @@ describe('pageGeometry', () => {
     const g = pageGeometry(spread, phone, 'all', false);
     expect(g.restScale).toBeCloseTo(844 / 195, 6);
     expect(g.restEdge).toBe('left');
-    expect(edgeOffset(g.restEdge, panLimits(g.restScale, g.content, phone).x)).toBeGreaterThan(0);
+    expect(edgeOffset(g.restEdge, panLimits(g.restScale, g.content, phone)).x).toBeGreaterThan(0);
   });
   test('and at the right edge for right-to-left', () => {
     expect(pageGeometry(spread, phone, 'all', true).restEdge).toBe('right');
@@ -122,5 +122,26 @@ describe('otherFit', () => {
   });
   test('an unknown shape is taken for an ordinary page', () => {
     expect(otherFit('auto', null, phone)).toBe('fit-height');
+  });
+});
+
+describe('strips', () => {
+  const strip = { width: 800, height: 8000 };
+  test('a strip is a page taller than the viewport at its width', () => {
+    expect(isStrip(strip, phone)).toBe(true);
+    expect(isStrip(portrait, phone)).toBe(false);
+    expect(isStrip(null, phone)).toBe(false);
+  });
+  test('its box is the viewport wide, integer-high, resting at the top', () => {
+    const g = stripGeometry(strip, phone);
+    expect(g.content).toEqual({ width: 390, height: 3900 });
+    expect(g.restScale).toBe(1);
+    expect(g.restEdge).toBe('top');
+    const off = edgeOffset(g.restEdge, panLimits(1, g.content, phone));
+    expect(off).toEqual({ x: 0, y: (3900 - 844) / 2 });
+  });
+  test('its far edge is the bottom', () => {
+    expect(farEdge('top')).toBe('bottom');
+    expect(edgeOffset('bottom', { x: 0, y: 100 })).toEqual({ x: 0, y: -100 });
   });
 });
