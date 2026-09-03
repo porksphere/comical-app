@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
-import { runOnJS, useAnimatedStyle, useSharedValue, withDecay, withTiming } from 'react-native-reanimated';
+import { Easing, runOnJS, useAnimatedStyle, useSharedValue, withDecay, withTiming } from 'react-native-reanimated';
 
 import { edgeOffset, panLimits, type PageEdge, type Size } from '@/components/reader/page-geometry';
 
@@ -29,6 +29,10 @@ const MAX_SCALE = 4;
 const ZOOM_EPSILON = 1.01;
 // Scale a double-tap magnifies to (and back out of).
 const DOUBLE_TAP_SCALE = 2.5;
+// One curve for every zoom that runs on its own — the double-tap in and out, and a box change
+// zoomed between its two layouts (see `animateLayout`). Eased OUT, the way a native zoom lands:
+// fast off the tap, settling into place.
+const ZOOM_TIMING = { duration: 320, easing: Easing.out(Easing.cubic) };
 // Movement caps that make the tap recognizers FAIL once the finger travels —
 // they must be explicit: RNGH's iOS tap handler has no default distance bound,
 // and when the taps run `simultaneousWithExternalGesture` a scroll (the
@@ -73,6 +77,7 @@ export function useZoomable({
   content,
   edge = 'center',
   active = true,
+  animateLayout = false,
   doubleTapEnabled = true,
   onDoubleTap,
 }: {
@@ -86,6 +91,14 @@ export function useZoomable({
   /** Which of the box's edges sits against the viewport's at rest — where an overflowing page is
    *  first seen. */
   edge?: PageEdge;
+  /** Whether a change of `content` on the ACTIVE page is a change the reader should SEE — a fit
+   *  switched, the entrance settling — rather than the picture's shape arriving under its
+   *  placeholder. True, the new box is laid out at once and the transform starts where the old
+   *  layout was and zooms to identity, one smooth motion from the one fit to the other (FLIP: the
+   *  picture is the same at both ends and both boxes are centred, so the start is just the ratio
+   *  of the widths). Judged on BOTH sides of the change: a box that only just became real is
+   *  still applied instantly, so a page never zooms out of its skeleton. */
+  animateLayout?: boolean;
   /** Whether this is the page on screen. A page that leaves it is put back to rest SILENTLY: the
    *  pager's zoomed flag is the visible page's, and the page arriving reports its own on becoming
    *  active. Two pages reporting in one commit would race, and the order they commit in is the
@@ -158,7 +171,9 @@ export function useZoomable({
   const pinching = useSharedValue(false);
 
   const viewport: Size = { width, height };
-  const box: Size = content ?? viewport;
+  // Memoized, since the rest effect keys on it: a fresh fallback object per render would reset
+  // the page on every render.
+  const box: Size = useMemo(() => content ?? { width, height }, [content, width, height]);
   const restLimit = panLimits(1, box, viewport);
   const rest = edgeOffset(edge, restLimit);
   const overflowX = restLimit.x > 0.5;
@@ -185,18 +200,33 @@ export function useZoomable({
 
   // Put the page at rest: on mount, whenever its box moves (the picture's dimensions arriving, a
   // fit switched, a rotation), and when it leaves the screen so its next arrival starts from
-  // rest. INSTANTLY, never animated — a change of box is a change of LAYOUT, and the picture has
-  // already been re-laid out under it; animating the transform on top only makes the page slide
-  // about. Only the active page reports; `magnified` is left as it was off screen (it only gates
-  // gestures, and an inactive page receives none) and is set again with the report on arrival.
+  // rest. The picture has already been re-laid out under this; what the transform does is either
+  // nothing — instant, for a neighbour off screen or a shape arriving under a placeholder — or,
+  // for a change the reader is looking at (`animateLayout`), the FLIP: start where the old box
+  // was drawn and zoom to where the new one is. Only the active page reports; `magnified` is left
+  // as it was off screen (it only gates gestures, and an inactive page receives none) and is set
+  // again with the report on arrival.
+  const prevLayoutRef = useRef<{ box: Size; animate: boolean } | null>(null);
   useEffect(() => {
-    scale.set(1);
-    tx.set(rest.x);
-    ty.set(rest.y);
+    const prev = prevLayoutRef.current;
+    prevLayoutRef.current = { box, animate: animateLayout };
+    const boxChanged = prev != null && (prev.box.width !== box.width || prev.box.height !== box.height);
+    if (active && boxChanged && prev.animate && animateLayout) {
+      // The old box, at whatever transform it had, reproduced on the new one: same centre, so
+      // only the scale needs the ratio of the widths (the boxes share the picture's aspect).
+      scale.set(scale.value * (prev.box.width / box.width));
+      scale.set(withTiming(1, ZOOM_TIMING));
+      tx.set(withTiming(rest.x, ZOOM_TIMING));
+      ty.set(withTiming(rest.y, ZOOM_TIMING));
+    } else {
+      scale.set(1);
+      tx.set(rest.x);
+      ty.set(rest.y);
+    }
     savedTx.set(rest.x);
     savedTy.set(rest.y);
     if (active) reportRef.current(false);
-  }, [active, rest.x, rest.y, scale, tx, ty, savedTx, savedTy]);
+  }, [active, animateLayout, box, rest.x, rest.y, scale, tx, ty, savedTx, savedTy]);
 
   const pinch = Gesture.Pinch()
     .enabled(enabled)
@@ -263,9 +293,9 @@ export function useZoomable({
       const s0 = scale.value;
       // Magnified: back to rest.
       if (s0 > ZOOM_EPSILON) {
-        scale.set(withTiming(1));
-        tx.set(withTiming(rest.x));
-        ty.set(withTiming(rest.y));
+        scale.set(withTiming(1, ZOOM_TIMING));
+        tx.set(withTiming(rest.x, ZOOM_TIMING));
+        ty.set(withTiming(rest.y, ZOOM_TIMING));
         savedTx.set(rest.x);
         savedTy.set(rest.y);
         runOnJS(report)(false);
@@ -286,9 +316,9 @@ export function useZoomable({
       const anchorY = (e.y - cy - ty.value) / s0;
       const nx = clamp(e.x - cx - target * anchorX, -limit.x, limit.x);
       const ny = clamp(e.y - cy - target * anchorY, -limit.y, limit.y);
-      scale.set(withTiming(target));
-      tx.set(withTiming(nx));
-      ty.set(withTiming(ny));
+      scale.set(withTiming(target, ZOOM_TIMING));
+      tx.set(withTiming(nx, ZOOM_TIMING));
+      ty.set(withTiming(ny, ZOOM_TIMING));
       savedTx.set(nx);
       savedTy.set(ny);
       runOnJS(report)(true);

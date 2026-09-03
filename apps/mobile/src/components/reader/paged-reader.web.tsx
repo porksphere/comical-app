@@ -310,15 +310,36 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     [cancelInertia, setMagnifiedNow, writeZoom, zoom],
   );
   // A page arriving starts from rest, and a box that MOVES under the current page (its picture's
-  // dimensions arriving, the fit switched, a rotation) puts it back there. INSTANTLY, never
-  // animated: a change of box is a change of LAYOUT, and the picture has already been re-laid
-  // out under it; animating the transform on top only makes the page slide about. Keyed on the
-  // rest and the page, never on anything the reader's own zooming moves. `zoomRef` only points at
-  // a new page's wrapper once its render has committed, which is why this is an effect and not
-  // part of `settleTo`.
+  // dimensions arriving, the fit switched, a rotation) puts it back there. The picture has already
+  // been re-laid out under this; the transform either does nothing — instant, for a page arriving
+  // or a shape arriving under its placeholder — or, for a change the reader is looking at (a real
+  // picture's box on both sides), the FLIP: written at the value that reproduces the old box on
+  // the new one, reflowed, then transitioned to rest — one smooth zoom from the one fit to the
+  // other. Keyed on the box and the page, never on anything the reader's own zooming moves.
+  // `zoomRef` only points at a new page's wrapper once its render has committed, which is why this
+  // is an effect and not part of `settleTo`.
+  const imageKnown = dims.has(data[index]?.key ?? '');
+  const prevLayoutRef = useRef<{ index: number; box: Size; known: boolean } | null>(null);
   useEffect(() => {
+    const prev = prevLayoutRef.current;
+    prevLayoutRef.current = { index, box, known: imageKnown };
+    const samePage = prev != null && prev.index === index;
+    const boxChanged = samePage && (prev.box.width !== box.width || prev.box.height !== box.height);
+    if (boxChanged && prev.known && imageKnown) {
+      cancelInertia();
+      const el = zoomRef.current;
+      zoom.current = { ...zoom.current, scale: zoom.current.scale * (prev.box.width / box.width) };
+      writeZoom(false);
+      // Commit the start frame before the transition is asked for, or the browser coalesces the
+      // two writes and nothing moves.
+      void el?.getBoundingClientRect();
+      zoom.current = { scale: 1, tx: rest.x, ty: rest.y };
+      writeZoom(true);
+      setMagnifiedNow(false);
+      return;
+    }
     goToRest(false);
-  }, [index, rest.x, rest.y, goToRest]);
+  }, [index, box, rest.x, rest.y, imageKnown, goToRest, cancelInertia, writeZoom, zoom, setMagnifiedNow]);
 
   // Momentum after a pan release: keep gliding from the last pan velocity,
   // decelerating each frame and stopping dead at the pan bounds. Grabbing again

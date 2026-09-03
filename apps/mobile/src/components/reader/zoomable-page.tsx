@@ -139,6 +139,10 @@ export function ZoomablePage({
     active,
     content: layout.box,
     edge: layout.edge,
+    // A box that comes from a real picture changes for a reason the reader can see (a fit
+    // switched, the entrance settling), and zooms between its two layouts; the change from the
+    // placeholder's box to the picture's is applied instantly.
+    animateLayout: image != null,
     onZoomChange,
     onPinchChange,
     onSingleTap: onTapNav,
