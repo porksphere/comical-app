@@ -4776,7 +4776,6 @@ const ReaderPane = forwardRef<
           height={height}
           rtl={settings.direction === 'rtl'}
           pageFit={settings.pageFit}
-          zoomWidePages={settings.zoomWidePages}
           doubleTap={settings.doubleTap}
           onToggleFillHeight={toggleFillHeight}
           initialPage={stitched ? prefixLen + startIndex : startIndex}

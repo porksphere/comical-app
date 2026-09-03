@@ -73,8 +73,6 @@ type Props = {
   height: number;
   rtl: boolean;
   pageFit: PageFit;
-  /** Rest a spread at the viewport's height — see ZoomablePage. */
-  zoomWidePages: boolean;
   /** What a double-tap does, and the fill-height toggle it asks for — see ZoomablePage. */
   doubleTap: DoubleTapMode;
   onToggleFillHeight: () => void;
@@ -165,7 +163,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     height,
     rtl,
     pageFit,
-    zoomWidePages,
     doubleTap,
     onToggleFillHeight,
     initialPage,
@@ -527,7 +524,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       standby,
       pageFit,
       rtl,
-      zoomWidePages,
       doubleTap,
       onToggleFillHeight,
       width,
@@ -543,7 +539,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       standby,
       pageFit,
       rtl,
-      zoomWidePages,
       doubleTap,
       onToggleFillHeight,
       width,
@@ -637,7 +632,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               height={height}
               pageFit={pageFit}
               rtl={rtl}
-              zoomWidePages={zoomWidePages}
               doubleTap={doubleTap}
               onToggleFillHeight={onToggleFillHeight}
               active={index === activeIndex}

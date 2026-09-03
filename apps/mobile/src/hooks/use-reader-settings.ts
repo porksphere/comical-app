@@ -25,10 +25,6 @@ export type ReaderSettings = {
   mode: ReaderMode;
   direction: ReaderDirection;
   pageFit: PageFit;
-  /** Rest a SPREAD (a page wider than it is tall) at the viewport's height instead of a strip
-   *  across its middle, so it reads by panning sideways. Paged mode, fit-width only — fit-height
-   *  already does this to every page. */
-  zoomWidePages: boolean;
   doubleTap: DoubleTapMode;
   /** Hold the screen awake while a page is on screen. */
   keepAwake: boolean;
@@ -42,7 +38,6 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   mode: 'paged',
   direction: 'ltr',
   pageFit: 'fit-width',
-  zoomWidePages: true,
   doubleTap: 'magnify',
   keepAwake: true,
   pageCountWhenHidden: true,

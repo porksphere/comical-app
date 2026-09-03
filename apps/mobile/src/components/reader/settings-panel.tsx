@@ -76,17 +76,6 @@ function SettingsContent() {
           {settings.pageFit === 'fit-height' ? 'One page at a time, like Paged' : 'Continuous scroll'}
         </ThemedText>
       )}
-      {settings.mode === 'paged' && settings.pageFit === 'fit-width' && (
-        // The spread rule: a page wider than it is tall would lie as a strip across the middle
-        // under fit-width, so it fits the height instead. Only offered under fit-width — under
-        // fit-height every page already does.
-        <ToggleRow
-          label="Fit spreads to height"
-          testID="reader.settings.wide-pages"
-          value={settings.zoomWidePages}
-          onChange={(v) => set({ zoomWidePages: v })}
-        />
-      )}
       <Segment
         label="Double-tap"
         testIdPrefix="reader.settings.double-tap"

@@ -39,16 +39,16 @@ describe('panLimits', () => {
 
 describe('pageGeometry', () => {
   test('a spread rests at fit-height, at the left edge for left-to-right', () => {
-    const g = pageGeometry(spread, phone, 'wide', false);
+    const g = pageGeometry(spread, phone, 'all', false);
     expect(g.restScale).toBeCloseTo(844 / 195, 6);
     expect(g.restEdge).toBe('left');
     expect(edgeOffset(g.restEdge, panLimits(g.restScale, g.content, phone).x)).toBeGreaterThan(0);
   });
   test('and at the right edge for right-to-left', () => {
-    expect(pageGeometry(spread, phone, 'wide', true).restEdge).toBe('right');
+    expect(pageGeometry(spread, phone, 'all', true).restEdge).toBe('right');
   });
-  test('a portrait page rests at 1× however tall the phone', () => {
-    const g = pageGeometry(portrait, phone, 'wide', false);
+  test('a portrait page rests at 1× under no rule, however tall the phone', () => {
+    const g = pageGeometry(portrait, phone, 'none', false);
     expect(g.restScale).toBe(1);
     expect(g.restEdge).toBe('center');
   });
@@ -63,15 +63,15 @@ describe('pageGeometry', () => {
     const near = { width: 1000, height: Math.round((1000 * 844) / 390 / 1.05) };
     expect(pageGeometry(near, phone, 'all', false).restScale).toBe(1);
   });
-  test('the spread rule is a setting', () => {
+  test('nothing rests zoomed under no rule', () => {
     expect(pageGeometry(spread, phone, 'none', false).restScale).toBe(1);
   });
   test('a spread that already stands the full height of a landscape screen rests at 1×', () => {
-    const g = pageGeometry({ width: 1600, height: 1000 }, { width: 1200, height: 600 }, 'wide', false);
+    const g = pageGeometry({ width: 1600, height: 1000 }, { width: 1200, height: 600 }, 'all', false);
     expect(g.restScale).toBe(1);
   });
   test('unknown dimensions fill the viewport', () => {
-    expect(pageGeometry(null, phone, 'wide', false)).toEqual({ content: phone, restScale: 1, restEdge: 'center' });
+    expect(pageGeometry(null, phone, 'all', false)).toEqual({ content: phone, restScale: 1, restEdge: 'center' });
   });
 });
 
@@ -86,12 +86,9 @@ describe('effectiveFit', () => {
 
 describe('fillRule', () => {
   test('fit-height covers every page', () => {
-    expect(fillRule('fit-height', false)).toBe('all');
+    expect(fillRule('fit-height')).toBe('all');
   });
-  test('fit-width with the spread setting covers spreads', () => {
-    expect(fillRule('fit-width', true)).toBe('wide');
-  });
-  test('fit-width without the spread setting covers nothing', () => {
-    expect(fillRule('fit-width', false)).toBe('none');
+  test('fit-width covers nothing', () => {
+    expect(fillRule('fit-width')).toBe('none');
   });
 });

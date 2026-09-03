@@ -23,8 +23,7 @@ import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 // with pinch-zoom — see `contentPan`); a page SHORTER than the viewport sits
 // centred in it. `pageFit === 'fit-height'` draws the contain layout and rests
 // the page at the viewport's height wherever that is the bigger fit, panned
-// sideways (see page-geometry) — which, with `zoomWidePages`, fit-width also
-// does to a SPREAD.
+// sideways (see page-geometry).
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -39,8 +38,6 @@ type Props = {
   pageFit: PageFit;
   /** Reading direction — which edge of a spread it rests at. */
   rtl: boolean;
-  /** The spread rule (`useReaderSettings().zoomWidePages`). */
-  zoomWidePages: boolean;
   /** What a double-tap does (`useReaderSettings().doubleTap`). */
   doubleTap: DoubleTapMode;
   /** The fill-height toggle a double-tap asks for under that mode. */
@@ -94,7 +91,6 @@ export function ZoomablePage({
   height,
   pageFit,
   rtl,
-  zoomWidePages,
   doubleTap,
   onToggleFillHeight,
   fadeMs,
@@ -126,7 +122,7 @@ export function ZoomablePage({
   // box that never changes size, which is what keeps it from shifting as its picture arrives —
   // and the top-aligned, vertically scrolled `width` layout only for a page that overflows the
   // height under fit-width, a strip. Before the picture's shape is known every page is contain.
-  const fill = standby ? 'none' : fillRule(pageFit, zoomWidePages);
+  const fill = standby ? 'none' : fillRule(pageFit);
   const layoutFor = useCallback(
     (overflows: boolean): EffectiveFit => (pageFit === 'fit-width' && overflows ? 'fit-width' : 'fit-page'),
     [pageFit],

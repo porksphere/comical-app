@@ -375,9 +375,10 @@ The fit itself is a TRANSFORM over that box, the rest. Most pages rest at 1×. U
 every page whose height fit buys more than `FILL_HEIGHT_MIN_GAIN` over contain rests scaled to the
 viewport's height, at the edge reading starts from (left for L→R, right for R→L), and reads by
 panning sideways; a page near the screen's own shape rests whole, so nothing is zoomed a few
-percent for a few points of pan. Under `fit-width` the same rest applies to a SPREAD alone — a
-picture wider than it is tall, judged by the PICTURE's aspect, never the viewport's — when
-`zoomWidePages` is on, since a spread is otherwise a strip across the middle. (Laying the page out
+percent for a few points of pan. Under `fit-width` nothing rests zoomed: a spread lies as a strip
+across the middle there, and the `switch-fit` double-tap is how it is read. (A spread rule that
+lifted spreads alone to fit-height under fit-width was built and pulled: the double-tap covers
+it. Laying the page out
 at its fit size instead, with the transform at 1×, was built and pulled back out: the box then
 changes on load and on every fit switch, the transform lands a frame after the layout, and each
 of those is a pop. A `smart` fit — an axis chosen per page from its shape — was pulled too.)

@@ -48,8 +48,6 @@ type Props = {
   height: number;
   rtl: boolean;
   pageFit: PageFit;
-  /** Rest a spread at the viewport's height — see page-geometry's `pageGeometry`. */
-  zoomWidePages: boolean;
   /** What a double-tap does. Off, a lone tap acts at once instead of waiting out a second one;
    *  under fill-height a double-tap on a page at rest asks for the toggle instead of magnifying. */
   doubleTap: DoubleTapMode;
@@ -139,7 +137,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     height,
     rtl,
     pageFit,
-    zoomWidePages,
     doubleTap,
     onToggleFillHeight,
     initialPage,
@@ -187,7 +184,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const image = dims.get(data[index]?.key ?? '') ?? null;
   // Held at 1× while parked or still entering — the poster over it is the contain picture, and a
   // page resting zoomed under it would be revealed mid-jump. It grows into its rest once primary.
-  const fill = standby ? 'none' : fillRule(pageFit, zoomWidePages);
+  const fill = standby ? 'none' : fillRule(pageFit);
   // The layout a page takes: the contain box for everything that FITS — under either axis, a
   // page that fits is drawn the same way, in a box that never changes size, which is what keeps
   // it from shifting as its picture arrives — and the top-aligned, vertically scrolled `width`
