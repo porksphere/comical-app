@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { ImageManipulator, type ImageRef } from 'expo-image-manipulator';
+import type { ImageRef } from 'expo-image-manipulator';
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
@@ -17,6 +17,25 @@ import { logDiagnostic } from '@/lib/diagnostics';
  * here is latency-sensitive enough to be worth that: the page is already on screen, whole, on any
  * device that can draw it.
  */
+/**
+ * The manipulator is loaded ON FIRST USE, never at import.
+ *
+ * `expo-image-manipulator` binds its native counterpart while its own module is being evaluated
+ * (`requireNativeModule('ExpoImageManipulator')` at the top level), so a plain import throws in any
+ * build whose native shell predates the dependency — and since `reader-page` imports this file,
+ * that throw lands on OPENING THE READER, not on meeting a page that needs cutting. A blank strip
+ * is the bug this feature exists to fix; a reader that won't open is a worse one.
+ *
+ * Behind the deferred load it is an ordinary slicing failure: caught, logged, and the page is drawn
+ * whole, which is precisely the behaviour from before any of this existed. The promise is cached
+ * including its rejection, so a shell that can't provide the module is asked exactly once.
+ */
+let manipulator: Promise<typeof import('expo-image-manipulator')> | null = null;
+function loadManipulator() {
+  manipulator ??= import('expo-image-manipulator');
+  return manipulator;
+}
+
 let queue: Promise<unknown> = Promise.resolve();
 function enqueue<T>(work: () => Promise<T>): Promise<T> {
   const next = queue.then(work, work);
@@ -65,6 +84,7 @@ export function useSlicedPage(source: string | null, image: Size | null, enabled
       const startedAt = Date.now();
       let whole: Awaited<ReturnType<typeof Image.loadAsync>> | null = null;
       try {
+        const { ImageManipulator } = await loadManipulator();
         whole = await Image.loadAsync(source);
         const out: ImageRef[] = [];
         for (const rect of sliceRects({ width, height })) {
