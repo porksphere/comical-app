@@ -38,6 +38,8 @@
 #     once the chrome has hidden.
 #   - reader.settings.safe-area              Switch: whether the pages stay out of the cutout and
 #     system bars.
+#   - reader.settings.downsample             Switch: whether pages are decoded at screen size or at
+#                                            full resolution (settings-panel.tsx's ToggleRow).
 #   - reader.settings.preload-ahead.value    The preload count beside its control (0–10).
 #   - reader.toolbar.back                   Reused from browse-to-reader.yaml.
 #
@@ -154,6 +156,10 @@ appId: com.porksphere.comical
     id: "reader.settings.safe-area"
 - tapOn:
     id: "reader.settings.safe-area"
+- tapOn:
+    id: "reader.settings.downsample"
+- tapOn:
+    id: "reader.settings.downsample"
 # Preload ahead (default 4) is the platform's own integer control on native — a SwiftUI stepper, a
 # Compose slider — which Maestro can't drive by id, so only the number beside it is asserted.
 - assertVisible:

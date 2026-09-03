@@ -112,6 +112,15 @@ function SettingsContent() {
         value={settings.respectSafeArea}
         onChange={(v) => set({ respectSafeArea: v })}
       />
+      <ToggleRow
+        label="Downsample images"
+        testID="reader.settings.downsample"
+        value={settings.downsample}
+        onChange={(v) => set({ downsample: v })}
+      />
+      <ThemedText style={styles.hint}>
+        {settings.downsample ? 'Pages decode at screen size' : 'Full resolution — sharper zoomed, more memory'}
+      </ThemedText>
       <StepperRow
         label="Preload ahead"
         testIdPrefix="reader.settings.preload-ahead"

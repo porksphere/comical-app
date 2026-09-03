@@ -792,7 +792,8 @@ function WebtoonPagedRow({
     <GestureDetector gesture={gesture}>
       <View style={{ width, height, overflow: 'hidden' }}>
         <Animated.View style={[{ width, height }, animatedStyle]}>
-          <ReaderPage uri={uri} page={page} fit="contain" width={width} height={height} fadeMs={fadeMs} onFailedChange={setFailed} />
+          {/* One row is exactly one viewport, so its box is final before the picture arrives. */}
+          <ReaderPage uri={uri} page={page} fit="contain" width={width} height={height} boxIsFinal fadeMs={fadeMs} onFailedChange={setFailed} />
         </Animated.View>
         {/* Inert marker for the reader.page.tap.* testID (asserted by Maestro). */}
         {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}

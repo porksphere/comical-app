@@ -460,6 +460,30 @@ Which generator fills a channel is set by whether it is TAGGED: `changelog-secti
 `CHANGELOG.md`, `rolling-changelog.sh` lists the commits since the channel's last publish. See
 `docs/DEVELOPMENT.md` → "Release notes reach four places" for the full table.
 
+# Downsampling is the reader's choice, not expo-image's default
+
+`allowDownscaling` defaults to TRUE, so every page was already being decoded at the size of its box
+before anything here said so. That default is right for a cover and only half right for a reader,
+because a reader magnifies: zoom is a TRANSFORM on an ancestor (`useZoomable`), so the `<Image>`'s
+bounds never change and nothing re-decodes — a page pinched to 4x is a box-sized bitmap blown up,
+and a spread resting at `restScale > 1` is soft before you have touched it. Mihon escapes this by
+tiling (`SubsamplingScaleImageView` re-decodes tiles as you zoom in); we can't, so it is a reader
+setting instead — `downsample`, on by default, which is where Suwatte lands too.
+
+`enforceEarlyResizing` is the iOS half and is not cosmetic. Without it SDWebImage decodes the page
+at full size and expo-image redraws it smaller AFTERWARDS, so the peak never drops and the
+full-size copy stays in the memory cache beside the one being drawn. It is passed ONLY where the
+box is exact at request time — it reads the view's bounds when the load starts and never
+re-decodes when they change — which means `fit="contain"` and never `fit="width"`, whose height is
+a guess (`DEFAULT_ASPECT`) until `onLoad` reports the real aspect. Android needs none of it:
+Glide's `ContentFitDownsampleStrategy` already downsamples during the decode.
+
+Neither half covers a strip NARROWER than the view. `shouldDownscale` requires the image to exceed
+the view on BOTH axes, so an 800x10000 webtoon page is decoded whole on every platform, and on
+Android a bitmap that tall can exceed the max texture size and simply not draw. That is the case
+Mihon splits at download time (`height > width * 3 && height > 2 * screen max`); we don't handle it
+yet.
+
 # Testing: new screens need a flow
 
 A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.
