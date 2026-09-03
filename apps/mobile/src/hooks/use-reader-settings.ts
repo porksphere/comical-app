@@ -8,12 +8,10 @@ import { persisted$ } from '@/lib/observable';
 
 export type ReaderMode = 'paged' | 'webtoon';
 export type ReaderDirection = 'ltr' | 'rtl';
-/** `smart` picks per page from the picture's shape: fit-width for a tall page, the spread rule
- *  (fit-height, panned sideways) for a wide one. `fill-height` rests EVERY page at the viewport's
- *  height (where that buys anything — a page near the screen's own shape just fits), panned
- *  sideways, with the side taps turning. Both paged-only; webtoon reads `smart` as fit-width and
- *  `fill-height` as fit-page. */
-export type PageFit = 'fit-page' | 'fit-width' | 'fill-height' | 'smart';
+/** `fill-height` rests EVERY page at the viewport's height (where that buys anything — a page
+ *  near the screen's own shape just fits), panned sideways, with the side taps turning.
+ *  Paged-only; webtoon reads it as fit-page. */
+export type PageFit = 'fit-page' | 'fit-width' | 'fill-height';
 /** What a double-tap does: magnify the page, toggle `pageFit` between fill-height and fit-page, or
  *  nothing (a lone tap then acts at once instead of waiting out a second one). */
 export type DoubleTapMode = 'magnify' | 'fill-height' | 'off';

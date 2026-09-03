@@ -186,9 +186,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     });
   }, []);
   const image = dims.get(data[index]?.key ?? '') ?? null;
-  // The layout the current page takes — `smart` decides per page from the picture (see
-  // `effectiveFit`) — and which pages rest above 1× under it (see `fillRule`).
-  const fit = effectiveFit(pageFit, image);
+  // The layout the pages take, and which of them rest above 1× under it (see `fillRule`).
+  const fit = effectiveFit(pageFit);
   const fill = fillRule(pageFit, zoomWidePages);
 
   // fit-width content that's taller than the viewport: a one-finger vertical drag scrolls it (see
@@ -877,7 +876,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
                     fadeMs={standby ? STANDBY_FADE_MS : undefined}
                     uri={item.uri}
                     page={item.pageNumber}
-                    fit={effectiveFit(pageFit, dims.get(item.key) ?? null) === 'fit-width' ? 'width' : 'contain'}
+                    fit={fit === 'fit-width' ? 'width' : 'contain'}
                     width={width}
                     height={height}
                     onLoadDims={(w, h) => recordDims(item.key, w, h)}

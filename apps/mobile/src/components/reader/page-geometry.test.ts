@@ -77,15 +77,11 @@ describe('pageGeometry', () => {
 
 describe('effectiveFit', () => {
   test('a fixed fit is itself', () => {
-    expect(effectiveFit('fit-page', spread)).toBe('fit-page');
-    expect(effectiveFit('fit-width', spread)).toBe('fit-width');
+    expect(effectiveFit('fit-page')).toBe('fit-page');
+    expect(effectiveFit('fit-width')).toBe('fit-width');
   });
-  test('smart is fit-width for a tall page and fit-page for a spread', () => {
-    expect(effectiveFit('smart', portrait)).toBe('fit-width');
-    expect(effectiveFit('smart', spread)).toBe('fit-page');
-  });
-  test('smart assumes tall until the picture says otherwise', () => {
-    expect(effectiveFit('smart', null)).toBe('fit-width');
+  test('fill-height is laid out as fit-page', () => {
+    expect(effectiveFit('fill-height')).toBe('fit-page');
   });
 });
 
@@ -93,15 +89,11 @@ describe('fillRule', () => {
   test('fill-height covers every page', () => {
     expect(fillRule('fill-height', false)).toBe('all');
   });
-  test('smart and fit-page-with-spreads cover spreads', () => {
-    expect(fillRule('smart', false)).toBe('wide');
+  test('fit-page with the spread setting covers spreads', () => {
     expect(fillRule('fit-page', true)).toBe('wide');
   });
   test('fit-page without the spread setting, and fit-width, cover nothing', () => {
     expect(fillRule('fit-page', false)).toBe('none');
     expect(fillRule('fit-width', true)).toBe('none');
-  });
-  test('fill-height is laid out as fit-page', () => {
-    expect(effectiveFit('fill-height', portrait)).toBe('fit-page');
   });
 });

@@ -4843,8 +4843,7 @@ const ReaderPane = forwardRef<
                 source={{ uri }}
                 style={StyleSheet.absoluteFill}
                 // Same mapping ZoomablePage applies (fit-page → contain), so the poster and the
-                // page draw alike. `smart` is fit-width until the picture says otherwise, which
-                // is also what the page it stands in for does.
+                // page draw alike.
                 contentFit={settings.pageFit === 'fit-page' || settings.pageFit === 'fill-height' ? 'contain' : 'cover'}
                 cachePolicy="memory-disk"
               />

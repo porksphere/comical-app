@@ -124,9 +124,8 @@ export function ZoomablePage({
     [width, height, contentHeight],
   );
 
-  // The layout this page takes — `smart` decides per page from the picture (see `effectiveFit`) —
-  // and which pages rest above 1× under it (see `fillRule`).
-  const fit = effectiveFit(pageFit, image);
+  // The layout this page takes, and which pages rest above 1× under it (see `fillRule`).
+  const fit = effectiveFit(pageFit);
   const fill = fillRule(pageFit, zoomWidePages);
   // Only a fit-page picture is centred in the viewport, which is what the hook's content clamp
   // assumes; a fit-width one is top-aligned and keeps the viewport clamp it always had.

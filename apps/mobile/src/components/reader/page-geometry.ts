@@ -8,32 +8,26 @@ import type { PageFit } from '@/hooks/use-reader-settings';
 
 export type Size = { width: number; height: number };
 export type RestEdge = 'left' | 'right' | 'center';
-/** How one page is actually laid out — the two layouts a page can take, once `smart` has chosen. */
+/** How one page is actually laid out — the two layouts a page can take. */
 export type EffectiveFit = 'fit-page' | 'fit-width';
 
 /** Which pages rest at fit-height under a page fit: none, spreads only (the spread rule), or
  *  every page (`fill-height`). */
 export type FillRule = 'none' | 'wide' | 'all';
 
-/** The layout a page takes under `pageFit`. `smart` reads the picture: a wide one (a spread) is
- *  fit-page, where the spread rule rests it at fit-height; anything else — including a page whose
- *  shape isn't known yet, since nearly every page is tall — is fit-width. `fill-height` is the
- *  fit-page layout with a rest above 1× (see `fillRule`). */
-export function effectiveFit(pageFit: PageFit, image: Size | null): EffectiveFit {
+/** The layout a page takes under `pageFit`: `fill-height` is the fit-page layout with a rest
+ *  above 1× (see `fillRule`). */
+export function effectiveFit(pageFit: PageFit): EffectiveFit {
   'worklet';
-  if (pageFit === 'fill-height') return 'fit-page';
-  if (pageFit !== 'smart') return pageFit;
-  return image != null && image.width > image.height ? 'fit-page' : 'fit-width';
+  return pageFit === 'fill-height' ? 'fit-page' : pageFit;
 }
 
 /** Which pages a page fit rests at fit-height: all of them under `fill-height`, spreads under
- *  `smart` (a smart-chosen fit-page is always a spread) and under fit-page with the spread setting
- *  on, none otherwise. */
+ *  fit-page with the spread setting on, none otherwise. */
 export function fillRule(pageFit: PageFit, zoomWidePages: boolean): FillRule {
   'worklet';
   if (pageFit === 'fill-height') return 'all';
-  if (pageFit === 'smart' || (pageFit === 'fit-page' && zoomWidePages)) return 'wide';
-  return 'none';
+  return pageFit === 'fit-page' && zoomWidePages ? 'wide' : 'none';
 }
 
 /** Where a page sits when nothing is touching it — 1× for most pages; a SPREAD rests zoomed to the

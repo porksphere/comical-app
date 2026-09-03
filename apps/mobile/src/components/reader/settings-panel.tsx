@@ -63,18 +63,12 @@ function SettingsContent() {
         label="Page fit"
         testIdPrefix="reader.settings.page-fit"
         // Webtoon has only the two layouts (one page per screen, or a continuous strip), so it
-        // shows two and reads `smart` as the strip and `fill-height` as the page — the same
-        // mapping WebtoonReader applies.
+        // shows two and reads `fill-height` as the page — the same mapping WebtoonReader applies.
         value={settings.mode === 'webtoon' ? webtoonFit(settings.pageFit) : settings.pageFit}
         options={[
           ['fit-page', 'Fit page'],
           ['fit-width', 'Fit width'],
-          ...(settings.mode === 'paged'
-            ? [
-                ['fill-height', 'Fill height'] as [string, string],
-                ['smart', 'Smart'] as [string, string],
-              ]
-            : []),
+          ...(settings.mode === 'paged' ? [['fill-height', 'Fill height'] as [string, string]] : []),
         ]}
         onChange={(v) => set({ pageFit: v as PageFit })}
       />
@@ -185,7 +179,7 @@ function ToggleRow({
 }) {
   return (
     <View style={styles.toggleRow}>
-      <ThemedText style={styles.toggleLabel}>{label}</ThemedText>
+      <ThemedText style={styles.segLabel}>{label}</ThemedText>
       <ThemedSwitch testID={testID} value={value} onValueChange={onChange} />
     </View>
   );
@@ -238,9 +232,10 @@ const styles = StyleSheet.create({
   seg: {
     gap: Spacing.one,
   },
+  // One label style for every row, segment and switch alike.
   segLabel: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
   },
   segRow: {
     flexDirection: 'row',
@@ -277,9 +272,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.two,
-  },
-  toggleLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 13,
   },
 });

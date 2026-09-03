@@ -30,8 +30,8 @@
 #   - reader.settings.direction.ltr / .vertical / .rtl   The 3-way mode+direction row — NOT
 #     ".paged"/".webtoon" (a wrong name already caught and fixed in
 #     swipe-dismiss-webtoon.yaml this same session; DIRECTION_OPTIONS only has ltr/vertical/rtl).
-#   - reader.settings.page-fit.fit-page / .fit-width / .fill-height / .smart   Page fit; Fill height
-#     and Smart are paged-only.
+#   - reader.settings.page-fit.fit-page / .fit-width / .fill-height   Page fit; Fill height is
+#     paged-only.
 #   - reader.settings.double-tap.magnify / .fill-height / .off   What a double-tap does.
 #   - reader.settings.keep-awake             Switch: whether the screen is held awake while reading.
 #   - reader.settings.wide-pages.fill-height / .fit-page   The spread rule ("Wide pages"): whether a
@@ -140,24 +140,18 @@ appId: com.porksphere.comical
     id: "reader.settings.wide-pages.fit-page"
 - tapOn:
     id: "reader.settings.wide-pages.fill-height"
-# Page fit: Smart and Fill height are paged-only options; each hides the wide-pages row (every
-# page they zoom already fills the height), and Fit page brings it back. Then the double-tap
-# segment and the keep-awake switch, each flipped and restored — all of these persist, so the
-# sheet is left exactly as the app defaults it.
-- tapOn:
-    id: "reader.settings.page-fit.smart"
-- assertNotVisible:
-    id: "reader.settings.wide-pages.fill-height"
-- tapOn:
-    id: "reader.settings.page-fit.fit-page"
-- assertVisible:
-    id: "reader.settings.wide-pages.fill-height"
+# Page fit: Fill height is a paged-only option; it hides the wide-pages row (every page already
+# fills the height), and Fit page brings it back. Then the double-tap segment and the keep-awake
+# switch, each flipped and restored — all of these persist, so the sheet is left exactly as the
+# app defaults it.
 - tapOn:
     id: "reader.settings.page-fit.fill-height"
 - assertNotVisible:
     id: "reader.settings.wide-pages.fill-height"
 - tapOn:
     id: "reader.settings.page-fit.fit-page"
+- assertVisible:
+    id: "reader.settings.wide-pages.fill-height"
 - tapOn:
     id: "reader.settings.double-tap.off"
 - tapOn:
