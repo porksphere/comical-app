@@ -514,8 +514,15 @@ So `page-slicing.ts` cuts a page that can't be drawn into equal pieces that can,
 The cut is only applied where the picture FILLS its box (`fillsBox`) — a `width` row, or the paged
 reader's strip box — since only there do bands that tile the box add back up to the picture. A
 contained page in a viewport-sized box is excluded and doesn't need it: containing a tall picture
-is the exact shape `shouldDownscale` already decodes down. Web is excluded too — a browser tiles a
-large image itself.
+is the exact shape `shouldDownscale` already decodes down.
+
+**ANDROID ONLY, because Android is the only platform that can't draw one.** A browser tiles a large
+image itself and iOS renders a 10000px page correctly. Running it everywhere was tried and crashed
+the reader on Dungeon Reset: a cut costs a SECOND full decode of the biggest picture in the chapter
+plus its pieces, alive together, on top of the copy the view holds and the full-size one in
+expo-image's memory cache — so on a platform with nothing to gain it only raised the peak. The
+"it also bounds per-slice memory" argument for doing it on iOS was simply wrong, in the direction
+that matters. Where the page draws, leave it alone.
 
 # Testing: new screens need a flow
 

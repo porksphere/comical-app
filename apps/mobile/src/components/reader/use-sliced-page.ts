@@ -49,8 +49,14 @@ function enqueue<T>(work: () => Promise<T>): Promise<T> {
  * Cuts a stitched webtoon strip into pieces small enough to actually draw — see `page-slicing.ts`
  * for the rule, and for what happens on a device that can't draw one.
  *
- * NATIVE ONLY. A browser has no texture ceiling to hit: it tiles a large image itself, so on web
- * the whole thing draws correctly and slicing would buy a decode for nothing.
+ * ANDROID ONLY, and that is the correction of an earlier mistake rather than a platform quirk.
+ * Android is the only platform that CANNOT DRAW a strip: a browser tiles a large image itself, and
+ * iOS renders a 10000px page correctly today. The first cut of this ran on iOS too, on the theory
+ * that it would bound per-slice memory — which is backwards. Slicing costs a SECOND full decode of
+ * the largest picture in the chapter (`Image.loadAsync`) plus the pieces, held at the same time, on
+ * top of the copy the view already has and the full-size one in expo-image's memory cache. It
+ * raises the peak on a platform that had nothing to gain, and it crashed the reader on a real
+ * webtoon. Where the page draws, leave it alone.
  *
  * It runs OFF THE ALREADY-LOADED PAGE rather than ahead of it. Deciding before the first render
  * would mean knowing the picture's shape before it has arrived, which costs either a decode of
@@ -71,7 +77,7 @@ export function useSlicedPage(source: string | null, image: Size | null, enabled
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect IS an async load, and dropping the previous page's pieces is its first step; leaving them set would draw one page's slices over another's.
     setSlices(null);
-    if (Platform.OS === 'web' || !enabled || !source || !(width > 0) || !(height > 0)) return;
+    if (Platform.OS !== 'android' || !enabled || !source || !(width > 0) || !(height > 0)) return;
 
     const count = sliceCount({ width, height });
     if (count < 2) return;
@@ -82,10 +88,15 @@ export function useSlicedPage(source: string | null, image: Size | null, enabled
       // long enough for its own to be scrolled past, and the work is then nobody's.
       if (cancelled) return;
       const startedAt = Date.now();
-      let whole: Awaited<ReturnType<typeof Image.loadAsync>> | null = null;
       try {
         const { ImageManipulator } = await loadManipulator();
-        whole = await Image.loadAsync(source);
+        // NOT released by hand when the crops are done, however tempting: a context keeps the
+        // picture it was made from — that is what its own `reset()` goes back to — and the contexts
+        // made here are unreferenced but not necessarily collected. `release` detaches a shared
+        // object's native half, and its own documentation asks you to be sure nothing else will use
+        // it; several live contexts holding this one is not that. It is ordinary garbage instead,
+        // like the pieces.
+        const whole = await Image.loadAsync(source);
         const out: ImageRef[] = [];
         for (const rect of sliceRects({ width, height })) {
           const piece = await ImageManipulator.manipulate(whole).crop(rect).renderAsync();
@@ -107,16 +118,6 @@ export function useSlicedPage(source: string | null, image: Size | null, enabled
             context: `${width}x${height} into ${count}`,
           });
         }
-      } finally {
-        // The full-size bitmap is the whole reason this page was a problem, and nothing draws it —
-        // it exists only to be cut up. `release` is documented for exactly this (a native object
-        // exclusively retaining an image bitmap); waiting for the JS collector to get to it would
-        // leave every sliced page holding its original as well as its pieces.
-        //
-        // The PIECES are not released by hand, and mustn't be: they are mounted in `<Image>`s, and
-        // an effect's cleanup runs a commit before the views that hold them come down. Detaching
-        // one that is still on screen turns the next draw into an error. They are ordinary garbage.
-        whole?.release();
       }
     });
 

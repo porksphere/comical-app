@@ -14,9 +14,6 @@ import type { Size } from '@/components/reader/page-geometry';
  * blank, and the reader has no way to find out. The cost of being conservative is one extra
  * background decode on a page that was already the heaviest thing in the chapter, so this is the
  * knob to raise if slicing ever shows up in a profile, and the reason to leave it alone otherwise.
- *
- * It also bounds a slice at ~13MB decoded (800 x 4096 x 4), which is what keeps a screenful of
- * webtoon rows from being tens of megabytes each on iOS, where there is no texture wall to hit.
  */
 export const MAX_DRAWABLE_PX = 4096;
 
