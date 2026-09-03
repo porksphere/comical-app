@@ -18,18 +18,16 @@ import { useScrubHaptics } from '@/lib/scrub-haptics';
 
 /**
  * The reader's bottom bar (NATIVE only — web keeps the tap-to-jump progress pill):
- * a page scrubber flanked by chapter-skip buttons, modelled on Mihon's
- * `ChapterNavigator` (`presentation/reader/components/ChapterNavigator.kt`) for
- * its layout and on Suwatte for how the drag itself feels — with the page count
- * moved out of the pill into a chip beneath it (see COUNTER_H), which is the one
- * piece of the chrome that stays faintly on screen when the rest has hidden.
+ * a page scrubber flanked by chapter-skip buttons, with the page count in a chip
+ * beneath it (see COUNTER_H) — the one piece of the chrome that stays faintly on
+ * screen when the rest has hidden.
  *
- * Behaviour taken from Mihon:
+ * Layout rules:
  *   - The outer row stays LTR whatever the reading direction, so the ⏮ button is
  *     always on the left and ⏭ always on the right. What flips under RTL is which
  *     CHAPTER each one goes to (left = next chapter when reading right-to-left)
- *     and the slider's own fill/thumb direction — Mihon does exactly this, one
- *     `LocalLayoutDirection` for the row and another for the slider pill.
+ *     and the slider's own fill/thumb direction — one layout direction for the
+ *     row and another for the slider pill.
  *   - The buttons are DISABLED (dimmed), never hidden, when there's no chapter
  *     that way, so the slider never shifts around as you move through a series.
  *     A CHAPTERLESS ("direct") series is the one exception — there's no chapter
@@ -42,9 +40,9 @@ import { useScrubHaptics } from '@/lib/scrub-haptics';
  *
  * The drag is CONTINUOUS, not stepped. The thumb sits exactly under the finger
  * and reports a FRACTIONAL page position, which becomes a raw scroll offset — so
- * dragging pulls the pages through the chapter's whole scroll space 1:1, the way
- * Suwatte's slider does, instead of animating a page turn per stop (which lagged
- * behind the finger and felt stepped). Only the RELEASE settles, via `onSeek`,
+ * dragging pulls the pages through the chapter's whole scroll space 1:1, instead
+ * of animating a page turn per stop (which lagged behind the finger and felt
+ * stepped). Only the RELEASE settles, via `onSeek`,
  * onto the nearest page.
  *
  * That position goes out through `scrubTarget`, a shared value the pager reacts

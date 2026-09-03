@@ -362,8 +362,7 @@ the box the picture occupies at 1× (what every pan is clamped to — a zoomed p
 edge, never slides on into its letterbox), and where the page RESTS. Most pages rest at 1×. A
 spread — a picture wider than it is tall — rests scaled to the viewport's height, at the edge
 reading starts from (left for L→R, right for R→L), and reads by panning sideways. That is the
-`zoomWidePages` setting, on by default under fit-width; it is what Mihon calls "automatically zoom into wide
-images" and Panels "adjust to orientation". Judge "wide" by the PICTURE's aspect, never the
+`zoomWidePages` setting, on by default under fit-width. Judge "wide" by the PICTURE's aspect, never the
 viewport's: an ordinary portrait page is letterboxed on a tall phone too, and resting that at
 fit-height puts every page behind a sideways pan. (A `smart` fit — fit-width for tall pages,
 the spread rule for wide ones, chosen per page — was built and pulled back out: choosing a layout
