@@ -35,6 +35,8 @@
 #   - reader.settings.keep-awake             Switch: whether the screen is held awake while reading.
 #   - reader.settings.page-count             Switch: whether the page count stays faintly on screen
 #     once the chrome has hidden.
+#   - reader.settings.safe-area              Switch: whether the pages stay out of the cutout and
+#     system bars.
 #   - reader.settings.preload-ahead.value    The preload count beside its control (0–10).
 #   - reader.toolbar.back                   Reused from browse-to-reader.yaml.
 #
@@ -147,6 +149,10 @@ appId: com.porksphere.comical
     id: "reader.settings.page-count"
 - tapOn:
     id: "reader.settings.page-count"
+- tapOn:
+    id: "reader.settings.safe-area"
+- tapOn:
+    id: "reader.settings.safe-area"
 # Preload ahead (default 4) is the platform's own integer control on native — a SwiftUI stepper, a
 # Compose slider — which Maestro can't drive by id, so only the number beside it is asserted.
 - assertVisible:

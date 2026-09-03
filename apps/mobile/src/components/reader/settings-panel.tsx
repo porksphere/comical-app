@@ -99,6 +99,12 @@ function SettingsContent() {
         value={settings.pageCountWhenHidden}
         onChange={(v) => set({ pageCountWhenHidden: v })}
       />
+      <ToggleRow
+        label="Respect safe areas"
+        testID="reader.settings.safe-area"
+        value={settings.respectSafeArea}
+        onChange={(v) => set({ respectSafeArea: v })}
+      />
       <StepperRow
         label="Preload ahead"
         testIdPrefix="reader.settings.preload-ahead"

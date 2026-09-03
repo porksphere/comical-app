@@ -30,6 +30,9 @@ export type ReaderSettings = {
   keepAwake: boolean;
   /** Keep the page count faintly on screen after the rest of the chrome has hidden. */
   pageCountWhenHidden: boolean;
+  /** Keep the pages out of the screen's cutout and system bars, instead of drawing edge to edge
+   *  under them — a page fitted to the height otherwise runs under the notch. */
+  respectSafeArea: boolean;
   prefetchAhead: PrefetchAhead;
 };
 
@@ -41,6 +44,7 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   doubleTap: 'magnify',
   keepAwake: true,
   pageCountWhenHidden: true,
+  respectSafeArea: false,
   prefetchAhead: 4,
 };
 

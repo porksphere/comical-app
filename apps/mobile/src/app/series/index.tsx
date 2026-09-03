@@ -165,6 +165,13 @@ function useViewport(): { width: number; height: number } {
   );
 }
 const IS_IOS = Platform.OS === 'ios';
+/** A bottom safe-area inset above this is a system BAR the pages should stay out of when asked to
+ *  respect safe areas — Android's three-button navigation, 48dp and drawn over the content with a
+ *  scrim — rather than an INDICATOR the content may run under: the iPhone home indicator is 34pt
+ *  and Android gesture navigation under 30dp, both transparent strips over the page that hide
+ *  nothing worth insetting for. Only the top ever hides pixels outright — the cutout — and that
+ *  is always respected under the setting. */
+const SYSTEM_BAR_MIN_INSET = 40;
 // The reader surface's tone. Pure black, like every other page — it mirrored the reference's
 // `#reader-view { background: #0f0f0f }` until the app's own background stopped doing the same
 // (see `Colors.dark.background`), and a reader a shade lighter than the app it opens out of read
@@ -4381,6 +4388,15 @@ const ReaderPane = forwardRef<
   const router = useRouter();
   const queryClient = useQueryClient();
   const [settings, setSettings] = useReaderSettings();
+  // The reader draws edge to edge on both platforms — the window runs under the status bar and
+  // any cutout, and under the navigation bar on Android — so a page fitted to the height runs
+  // under the notch. `respectSafeArea` insets the PAGES (never the chrome, which places itself)
+  // by the top inset, and by the bottom one only where that is a real bar — see
+  // SYSTEM_BAR_MIN_INSET. Web has no insets and is unchanged.
+  const insets = useSafeAreaInsets();
+  const insetTop = settings.respectSafeArea ? insets.top : 0;
+  const insetBottom = settings.respectSafeArea && insets.bottom > SYSTEM_BAR_MIN_INSET ? insets.bottom : 0;
+  const pageHeight = height - insetTop - insetBottom;
   // The double-tap under its switch-fit mode: fit the OTHER axis. Writes the persisted page fit,
   // so the state shows in the sheet and carries across pages and sessions alike.
   const toggleFillHeight = useCallback(
@@ -4765,6 +4781,9 @@ const ReaderPane = forwardRef<
       {settings.keepAwake && !standby && <KeepScreenAwake />}
       {/* The page subtree. */}
       <Animated.View testID="series-page.page-wrap" style={styles.pageWrap}>
+      {/* The pages' own frame, inset from the screen's when safe areas are respected (see
+          `pageHeight`); the poster sits in this same frame so the two draw alike. */}
+      <View style={{ width, height: pageHeight, marginTop: insetTop }}>
       {settings.mode === 'paged' ? (
         <PagedReader
           ref={pagedRef}
@@ -4773,7 +4792,7 @@ const ReaderPane = forwardRef<
           // per-chapter pages (its pager hands boundary turns to onPrev/onNext itself).
           pages={stitched ? flatItems : items}
           width={width}
-          height={height}
+          height={pageHeight}
           rtl={settings.direction === 'rtl'}
           pageFit={settings.pageFit}
           doubleTap={settings.doubleTap}
@@ -4799,7 +4818,7 @@ const ReaderPane = forwardRef<
           // scroll rather than arriving after a jump.
           pages={stitched ? flatItems : items}
           width={width}
-          height={height}
+          height={pageHeight}
           pageFit={settings.pageFit}
           // Webtoon has no axis to switch, so its double-tap is the magnification or nothing.
           doubleTapZoom={settings.doubleTap === 'magnify'}
@@ -4856,6 +4875,7 @@ const ReaderPane = forwardRef<
             </View>
           );
         })()}
+      </View>
       </Animated.View>
 
       {/* Tint/fade layers over the pages, under the chrome below. */}
