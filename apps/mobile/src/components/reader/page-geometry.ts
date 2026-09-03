@@ -1,50 +1,30 @@
 import { ZOOM_EPSILON } from '@/components/reader/reader-zoom';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
-// Where a page's picture sits inside its viewport, and how far it may be pushed around at a given
-// zoom. Pure, and marked `'worklet'` so the native gesture handlers can call it on the UI thread;
-// the web pager calls the same functions from its pointer handlers, so the two readers cannot
-// disagree about a page's shape.
+// How a page is LAID OUT in its viewport, from its picture's real dimensions — the box the
+// picture is drawn in, and which of its edges sits against the viewport's when it overflows —
+// and how far a box may be pushed around at a given zoom. Pure, and marked `'worklet'` so the
+// native gesture handlers can call it on the UI thread; the web pager calls the same functions
+// from its pointer handlers, so the two readers cannot disagree about a page's shape.
+//
+// The fit is a LAYOUT, not a zoom: a fit-height page on a phone is a box wider than the screen,
+// drawn at that width, with the transform left at 1× for pinch and magnify. Drawing it at the
+// contain size and scaling it up instead was tried first, and it does three things wrong at once:
+// the picture is decoded for the smaller box and upscaled on screen, every change of fit becomes
+// an animation of scale and offset rather than a relayout, and every fit-height page counts as
+// "zoomed" for the pager and the dismiss.
 
 export type Size = { width: number; height: number };
-export type RestEdge = 'left' | 'right' | 'center';
-/** How one page is actually laid out — the two layouts a page can take. */
-export type EffectiveFit = 'fit-page' | 'fit-width';
+/** Which edge of an overflowing box sits against the viewport's at rest: the reading edge for a
+ *  sideways overflow, the top for a vertical one, nothing for a box that fits. */
+export type PageEdge = 'left' | 'right' | 'top' | 'center';
+export type PageLayout = { box: Size; edge: PageEdge };
 
-/** Which pages rest at fit-height under a page fit: none, spreads only (the spread rule), or
- *  every page (`fit-height`). */
-export type FillRule = 'none' | 'wide' | 'all';
-
-/** The layout a page takes under `pageFit`. `fit-height` is drawn as the contain layout
- *  (`'fit-page'`) with a rest above 1× wherever the height is the bigger fit (see `fillRule`);
- *  `fit-width` is its own top-aligned layout, scrolled where the page is taller than the screen. */
-export function effectiveFit(pageFit: PageFit): EffectiveFit {
-  'worklet';
-  return pageFit === 'fit-height' ? 'fit-page' : 'fit-width';
-}
-
-/** Which pages a page fit rests at fit-height: all of them under `fit-height`, spreads under
- *  fit-width with the spread setting on, none otherwise. */
-export function fillRule(pageFit: PageFit, zoomWidePages: boolean): FillRule {
-  'worklet';
-  if (pageFit === 'fit-height') return 'all';
-  return zoomWidePages ? 'wide' : 'none';
-}
-
-/** Where a page sits when nothing is touching it — 1× for most pages; a SPREAD rests zoomed to the
- *  viewport's height, at the edge reading starts from. `content` is the picture's box at 1×,
- *  centred in the viewport, which is what any pan is clamped to. */
-export type PageGeometry = { content: Size; restScale: number; restEdge: RestEdge };
-
-/** How much further than fit-height a spread may be magnified. Replaces MAX_SCALE for a page whose
- *  rest already sits above it — 4× of a strip contained in a phone is barely the strip at full
- *  height, so the old cap would have left nothing to zoom into. */
-export const WIDE_ZOOM_HEADROOM = 2;
-/** The least fit-height has to buy, as a scale over the contain fit, for an ORDINARY page to rest
- *  there under `fit-height`. A page within this of the screen's own shape just fits whole: a few
- *  percent of zoom for a few points of sideways pan is a nuisance, not a bigger page. Spreads keep
- *  the plain epsilon — the rule exists for them. */
-export const FILL_HEIGHT_MIN_GAIN = 1.08;
+/** The least a fit has to buy, as a scale over the contain fit, for an ORDINARY page to overflow
+ *  rather than fit whole. A page within this of the screen's own shape just fits: a few percent
+ *  of overflow for a few points of pan is a nuisance, not a bigger page. Spreads keep the plain
+ *  epsilon — the spread rule exists for them. */
+export const FIT_MIN_GAIN = 1.08;
 
 /** The box a `contain`-fit picture occupies at 1×. */
 export function containedSize(image: Size, viewport: Size): Size {
@@ -53,42 +33,55 @@ export function containedSize(image: Size, viewport: Size): Size {
   return { width: image.width * scale, height: image.height * scale };
 }
 
-/** The furthest the centred content may be translated either way, per axis, at `scale`, without
- *  showing what lies beyond it. Zero on an axis the content fits within — which is what locks a
- *  spread at fit-height to sideways travel, with no rule saying so. */
-export function panLimits(scale: number, content: Size, viewport: Size): { x: number; y: number } {
+/** The furthest a centred box may be translated either way, per axis, at `scale`, without
+ *  showing what lies beyond it. Zero on an axis the box fits within — which is what holds a
+ *  fit-height page to sideways travel, with no rule saying so. */
+export function panLimits(scale: number, box: Size, viewport: Size): { x: number; y: number } {
   'worklet';
   return {
-    x: Math.max(0, (content.width * scale - viewport.width) / 2),
-    y: Math.max(0, (content.height * scale - viewport.height) / 2),
+    x: Math.max(0, (box.width * scale - viewport.width) / 2),
+    y: Math.max(0, (box.height * scale - viewport.height) / 2),
   };
 }
 
-/** The translation that brings a given edge of the content to the matching edge of the viewport. */
-export function edgeOffset(edge: RestEdge, limitX: number): number {
+/** The translation that brings a given edge of a centred box to the matching edge of the viewport. */
+export function edgeOffset(edge: PageEdge, limit: { x: number; y: number }): { x: number; y: number } {
   'worklet';
-  return edge === 'left' ? limitX : edge === 'right' ? -limitX : 0;
+  return {
+    x: edge === 'left' ? limit.x : edge === 'right' ? -limit.x : 0,
+    y: edge === 'top' ? limit.y : 0,
+  };
 }
 
-/** A page's geometry from its picture's real dimensions (`null` until they load — a page whose
- *  shape is unknown is taken to fill the viewport, which is what its placeholder does).
+/** A page's layout from its picture's real dimensions (`null` until they load — a page whose
+ *  shape is unknown fills the viewport, which is what its placeholder does).
  *
- *  A page the `fill` rule covers rests scaled to the viewport's height rather than letterboxed
- *  across its middle, and at the edge reading starts from — the left for left-to-right, the right
- *  for right-to-left. Under `'wide'` that is the spread rule, judged by the PICTURE's aspect, not
- *  the viewport's: an ordinary portrait page is letterboxed on a tall phone too, and resting that
- *  at fit-height would put every page behind a sideways pan. Under `'all'` it is every page —
- *  `fit-height` — but only where it buys more than FILL_HEIGHT_MIN_GAIN; a page near the screen's
- *  shape fits whole. A page that already stands the full height (a spread on a landscape screen)
- *  has nowhere to go and rests at 1× like anything else. */
-export function pageGeometry(image: Size | null, viewport: Size, fill: FillRule, rtl: boolean): PageGeometry {
+ *  `pageFit` is the axis the picture is fitted to; the other axis is whatever its shape makes it,
+ *  and where that overflows the viewport the box sits at its reading edge — the left for
+ *  left-to-right, the right for right-to-left, the top for a vertical overflow. `'contain'` fits
+ *  both, for a page that has to match a contain-drawn stand-in. `zoomWidePages` is the spread
+ *  rule under fit-width: a picture wider than it is tall — judged by the PICTURE's aspect, never
+ *  the viewport's, since an ordinary portrait page is letterboxed on a tall phone too — fits the
+ *  height instead of lying as a strip across the middle. */
+export function pageLayout(
+  image: Size | null,
+  viewport: Size,
+  pageFit: PageFit | 'contain',
+  zoomWidePages: boolean,
+  rtl: boolean,
+): PageLayout {
   'worklet';
-  const content = image && image.width > 0 && image.height > 0 ? containedSize(image, viewport) : viewport;
-  const wide = image != null && image.width > image.height;
-  const fills = image != null && (fill === 'all' || (fill === 'wide' && wide));
-  const restScale = fills && content.height > 0 ? viewport.height / content.height : 1;
-  const minGain = wide ? ZOOM_EPSILON : FILL_HEIGHT_MIN_GAIN;
-  return restScale > minGain
-    ? { content, restScale, restEdge: rtl ? 'right' : 'left' }
-    : { content, restScale: 1, restEdge: 'center' };
+  if (image == null || image.width <= 0 || image.height <= 0) return { box: viewport, edge: 'center' };
+  const contain = containedSize(image, viewport);
+  if (pageFit === 'contain') return { box: contain, edge: 'center' };
+  const wide = image.width > image.height;
+  const aspect = image.width / image.height;
+  const axis = pageFit === 'fit-height' || (zoomWidePages && wide) ? 'height' : 'width';
+  const fitted: Size =
+    axis === 'height'
+      ? { width: viewport.height * aspect, height: viewport.height }
+      : { width: viewport.width, height: viewport.width / aspect };
+  const gain = fitted.width / contain.width;
+  if (gain <= (wide ? ZOOM_EPSILON : FIT_MIN_GAIN)) return { box: contain, edge: 'center' };
+  return { box: fitted, edge: axis === 'height' ? (rtl ? 'right' : 'left') : 'top' };
 }
