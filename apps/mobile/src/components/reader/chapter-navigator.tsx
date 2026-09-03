@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -83,18 +83,28 @@ function nowMs() {
  *  either side of it are one continuous row of the same weight. */
 const BAR_H = 40;
 /** The page counter under the bar — "12 / 26" in a small chip that sits just above the home
- *  indicator (its bottom edge on the safe-area inset) and, unlike the bar, needn't fully leave:
- *  with the chrome hidden it stays at `COUNTER_FAINT` (a setting) so a glance still says where
- *  you are. It is
- *  never interactive, so it has no business being under a finger — and a chip INSIDE the inset
- *  would sit under the indicator itself, which on iPhone draws over whatever is beneath it. */
+ *  indicator and, unlike the bar, needn't fully leave: with the chrome hidden it stays at
+ *  `COUNTER_FAINT` (a setting) so a glance still says where you are. It is never interactive, so
+ *  it has no business being under a finger. */
 const COUNTER_H = 20;
 const COUNTER_BOTTOM = Spacing.one;
 const COUNTER_FAINT = 0.6;
 const BAR_BOTTOM = COUNTER_BOTTOM + COUNTER_H + Spacing.one;
-/** Where the bottom chrome ENDS, above the safe-area inset — the bar's top edge. Anything stacked
+/** Where the bottom chrome ENDS, above `bottomChromeInset` — the bar's top edge. Anything stacked
  *  over the bar (the Details hint) measures from here. */
 export const BOTTOM_CHROME_HEIGHT = BAR_BOTTOM + BAR_H;
+/** How far into the iPhone's 34pt home-indicator inset the chrome reaches. The indicator glyph is
+ *  the bottom ~13pt of that inset; the rest is clearance iOS keeps for its own toolbars, which
+ *  fill the inset with a background. A 20pt chip floating over black does not, so stood on the
+ *  full inset it hung 25pt above the indicator with the scrubber another 20pt above THAT — the
+ *  whole stack visibly high. Overlapping this much lands the chip just clear of the glyph. */
+const INDICATOR_OVERLAP = 14;
+/** The edge the bottom chrome stands on. Android's inset is either a three-button bar, which
+ *  draws a solid strip the chrome must clear entirely, or a gesture strip already short enough
+ *  to stand on; only the iPhone's is generous enough to reach into. */
+export function bottomChromeInset(bottom: number): number {
+  return Platform.OS === 'ios' ? Math.max(bottom - INDICATOR_OVERLAP, Spacing.one) : bottom;
+}
 
 type Props = {
   /** 0-based page within the chapter, and how many that chapter has. Only what's
@@ -178,6 +188,7 @@ export function ChapterNavigator({
   onScrubPage,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const chromeBottom = bottomChromeInset(insets.bottom);
   const style = useAnimatedStyle(() => ({
     opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
   }));
@@ -393,7 +404,7 @@ export function ChapterNavigator({
     <>
       <Animated.View
         pointerEvents={visible ? 'box-none' : 'none'}
-        style={[styles.wrap, { bottom: insets.bottom + BAR_BOTTOM }, style]}>
+        style={[styles.wrap, { bottom: chromeBottom + BAR_BOTTOM }, style]}>
         <View style={styles.row}>
           {chaptered && <SkipButton {...left} Icon={SkipBackIcon} />}
           {total > 1 ? (
@@ -416,7 +427,7 @@ export function ChapterNavigator({
           position while a finger is down (`scrubPage`), for the same reason the pill used to. */}
       <Animated.View
         pointerEvents="none"
-        style={[styles.counterWrap, { bottom: insets.bottom + COUNTER_BOTTOM }, counterStyle]}>
+        style={[styles.counterWrap, { bottom: chromeBottom + COUNTER_BOTTOM }, counterStyle]}>
         <View style={styles.counter}>
           {/* The one node holding the current page as its own text — e2e reads a page number off
               the bar by this id, so the total stays a separate node. */}

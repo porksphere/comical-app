@@ -34,7 +34,7 @@ import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { ChevronUpIcon } from '@/components/icons/ui-icons';
-import { BOTTOM_CHROME_HEIGHT, ChapterNavigator } from '@/components/reader/chapter-navigator';
+import { BOTTOM_CHROME_HEIGHT, ChapterNavigator, bottomChromeInset } from '@/components/reader/chapter-navigator';
 import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
@@ -4963,7 +4963,11 @@ function DetailsHint({
       // the two backgrounds.
       style={[
         styles.detailsHintWrap,
-        { bottom: insets.bottom + (IS_WEB ? Spacing.two + 48 : BOTTOM_CHROME_HEIGHT + Spacing.two) },
+        {
+          bottom: IS_WEB
+            ? insets.bottom + Spacing.two + 48
+            : bottomChromeInset(insets.bottom) + BOTTOM_CHROME_HEIGHT + Spacing.two,
+        },
         style,
       ]}>
       <Pressable
