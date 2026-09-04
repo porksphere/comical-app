@@ -85,12 +85,17 @@ const TABS: { id: Tab; label: string }[] = [
 // to the other. Two highlighted-arrow segments used to stand for this, and read as two mystery
 // buttons: an arrow alone doesn't say whether it's the order you have or the one you'd get.
 const SORT_LABEL = { desc: 'Newest first', asc: 'Oldest first' } as const;
-// How a chapter row is drawn. `flat` is the look every other list in the app has — full-width rows
-// parted by a hairline inset to the text gutter (History, Downloads, Settings); `bubble` is the
-// bordered, rounded card each row was before, kept for a while so the two can be tried against each
-// other on a device. Flip this, nothing else.
-const CHAPTER_ROWS: 'flat' | 'bubble' = 'flat';
+// How a chapter row is drawn, kept flippable while the three are tried against each other on a
+// device. `bubble` is the filled, bordered, rounded card each row was originally; `outline` is that
+// card with the plate removed — the hairline alone draws it on the page background, which is the
+// quieter form of the same shape; `flat` is the look every other list in the app has — full-width
+// rows parted by a hairline inset to the text gutter (History, Downloads, Settings). Flip this,
+// nothing else.
+const CHAPTER_ROWS: 'flat' | 'bubble' | 'outline' = 'outline';
 const FLAT_ROWS = CHAPTER_ROWS === 'flat';
+// The plate is the bubble's alone; a read row dims as a whole under the other two (a bubble keeps
+// its greyed title instead, since a dimmed plate reads as disabled rather than as read).
+const PLATED_ROWS = CHAPTER_ROWS === 'bubble';
 // A long tab collapses to a configurable number of chapters from the start and the
 // end, with an expand button between them for the hidden middle.
 const COLLAPSED_HEAD_COUNT = 5;
@@ -868,7 +873,7 @@ function ChapterRow({
       {({ onLongPress }) => (
     // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
     // list you still have to get through, so they are the ones drawn at full strength.
-    <View style={dimmed ? styles.rowDimmed : read && FLAT_ROWS ? styles.rowRead : undefined}>
+    <View style={dimmed ? styles.rowDimmed : read && !PLATED_ROWS ? styles.rowRead : undefined}>
       <Pressable
         testID={testId('series.chapter', group.key)}
         onPress={() => onOpen(def)}
@@ -878,7 +883,7 @@ function ChapterRow({
         onHoverOut={rowHover.onHoverOut}
         style={({ pressed }) => pressed && styles.rowPressed}>
         <ThemedView
-          type={FLAT_ROWS ? 'background' : 'backgroundElement'}
+          type={PLATED_ROWS ? 'backgroundElement' : 'background'}
           style={[
             styles.row,
             FLAT_ROWS ? styles.rowFlat : { borderColor: theme.hairline },
@@ -888,7 +893,7 @@ function ChapterRow({
           <ThemedText
             type="small"
             numberOfLines={1}
-            style={[styles.rowName, read && !FLAT_ROWS && { color: theme.textSecondary }]}>
+            style={[styles.rowName, read && PLATED_ROWS && { color: theme.textSecondary }]}>
             {group.name}
           </ThemedText>
           {dlState && (
@@ -2155,8 +2160,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '600',
   },
+  // A fixed column, right-aligned: the widest relative time the row can carry ("11 months ago")
+  // fits, so the "N versions" toggle to its left lands in the same place on every row instead of
+  // drifting with the length of the date beside it.
   rowTime: {
     fontSize: 12,
+    width: 88,
+    textAlign: 'right',
   },
   // Trailing per-chapter download indicator — sits between the name and the time.
   rowDownload: {
