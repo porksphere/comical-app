@@ -83,6 +83,12 @@ const TABS: { id: Tab; label: string }[] = [
 // to the other. Two highlighted-arrow segments used to stand for this, and read as two mystery
 // buttons: an arrow alone doesn't say whether it's the order you have or the one you'd get.
 const SORT_LABEL = { desc: 'Newest first', asc: 'Oldest first' } as const;
+// How a chapter row is drawn. `flat` is the look every other list in the app has — full-width rows
+// parted by a hairline inset to the text gutter (History, Downloads, Settings); `bubble` is the
+// bordered, rounded card each row was before, kept for a while so the two can be tried against each
+// other on a device. Flip this, nothing else.
+const CHAPTER_ROWS: 'flat' | 'bubble' = 'flat';
+const FLAT_ROWS = CHAPTER_ROWS === 'flat';
 // A long tab collapses to a configurable number of chapters from the start and the
 // end, with an expand button between them for the hidden middle.
 const COLLAPSED_HEAD_COUNT = 5;
@@ -681,7 +687,7 @@ export function ChapterScrollList({
       );
     }
     // Row gap: there's no list container to carry a `gap`, so each row supplies its own spacing.
-    return <View style={styles.chapterRowGap}>{renderRow(item.group)}</View>;
+    return <View style={FLAT_ROWS ? undefined : styles.chapterRowGap}>{renderRow(item.group)}</View>;
   };
 
   // The list header (virtualized path): the series title, the hero/meta (from series.tsx), then the
@@ -817,7 +823,9 @@ function ChapterRow({
       enabled={!!onMenu && !dimmed}
       onOpen={(pt) => onMenu?.(group, { x: pt.x, y: pt.y, width: 0, height: 0 })}>
       {({ onLongPress }) => (
-    <View style={dimmed && styles.rowDimmed}>
+    // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
+    // list you still have to get through, so they are the ones drawn at full strength.
+    <View style={dimmed ? styles.rowDimmed : read && FLAT_ROWS ? styles.rowRead : undefined}>
       <Pressable
         testID={testId('series.chapter', group.key)}
         onPress={() => onOpen(def)}
@@ -827,17 +835,17 @@ function ChapterRow({
         onHoverOut={rowHover.onHoverOut}
         style={({ pressed }) => pressed && styles.rowPressed}>
         <ThemedView
-          type="backgroundElement"
+          type={FLAT_ROWS ? 'background' : 'backgroundElement'}
           style={[
             styles.row,
-            { borderColor: theme.hairline },
+            FLAT_ROWS ? styles.rowFlat : { borderColor: theme.hairline },
             // Brighten (not dim) on hover — same treatment as the chapter tab strip.
             rowHover.hovered && { backgroundColor: theme.backgroundSelected },
           ]}>
           <ThemedText
             type="small"
             numberOfLines={1}
-            style={[styles.rowName, read && { color: theme.textSecondary }]}>
+            style={[styles.rowName, read && !FLAT_ROWS && { color: theme.textSecondary }]}>
             {group.name}
           </ThemedText>
           {dlState && (
@@ -873,6 +881,7 @@ function ChapterRow({
           ))}
         </View>
       )}
+      {FLAT_ROWS && <View style={[styles.rowDivider, { backgroundColor: theme.hairline }]} />}
     </View>
       )}
     </ContextMenuHold>
@@ -2078,6 +2087,20 @@ const styles = StyleSheet.create({
     ...ContinuousCorner,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  // The flat look: no plate, no border, no corner — the divider below is the row's only edge.
+  rowFlat: {
+    borderWidth: 0,
+    borderRadius: 0,
+  },
+  // Starts at the text gutter and runs to the right edge — the inset divider every other list uses.
+  rowDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: Spacing.three,
+  },
+  // The same 55% a read History row settles to.
+  rowRead: {
+    opacity: 0.55,
   },
   rowPressed: {
     opacity: 0.7,

@@ -512,7 +512,7 @@ export function SeriesBody({
           testID="series.action.favorite"
           label={favorited ? 'Favorited' : 'Favorite'}
           leading={
-            <StarIcon color={favorited ? theme.accent : theme.text} size={ACTION_ICON_SIZE} filled={!!favorited} />
+            <StarIcon color={favorited ? theme.badgeNew : theme.text} size={ACTION_ICON_SIZE} filled={!!favorited} />
           }
           onPress={toggleFavorite}
         />
