@@ -1,10 +1,13 @@
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { WarnIcon } from '@/components/icons/reader-icons';
 import { useImageProgress } from '@/components/reader/image-progress';
+import type { Size } from '@/components/reader/page-geometry';
+import { sliceBands, sliceCount } from '@/components/reader/page-slicing';
+import { useSlicedPage } from '@/components/reader/use-sliced-page';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -16,6 +19,7 @@ import {
   resolveAssetSourceCached,
 } from '@/data/api';
 import { coverDelayMs } from '@/data/mock';
+import { useDownsampleImages } from '@/hooks/use-reader-settings';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { traceJS } from '@/lib/gesture-trace';
 import { testId } from '@/lib/test-id';
@@ -128,6 +132,7 @@ export function ReaderPage({
   fit,
   width,
   height,
+  boxIsFinal = false,
   onLoadDims,
   onFailedChange,
   fadeMs,
@@ -142,6 +147,15 @@ export function ReaderPage({
    *  standing page with no turns to keep instant, so the rule below doesn't apply to it and a page
    *  that simply appears there reads as a pop next to the details settling in around it. */
   fadeMs?: number;
+  /** Whether this box is already its FINAL size before the picture has arrived — a box the
+   *  viewport fixes, not one derived from the picture. Only such a box may be decoded against; see
+   *  `earlyResizeProps`. Default false, because a box nobody has vouched for hasn't been.
+   *
+   *  Answer it from what is known AT MOUNT, never from the picture: the paged reader's strip box is
+   *  re-sized from the picture on load (`stripGeometry`), but nothing knows a page is a strip until
+   *  it has arrived, so the honest answer there is the FIT — under `fit-width` any page might turn
+   *  out to be one. That is why this is the caller's to give rather than something derived here. */
+  boxIsFinal?: boolean;
   /** Fires with the image's real pixel dimensions once it loads — lets a caller
    *  (webtoon mode's scroll-to-index estimate) refine its height guess for
    *  still-unloaded pages instead of relying solely on `DEFAULT_ASPECT`. */
@@ -163,11 +177,15 @@ export function ReaderPage({
    *  strip exists to fill. */
   scrubbing?: SharedValue<number>;
 }) {
+  const downsample = useDownsampleImages();
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [aspect, setAspect] = useState(DEFAULT_ASPECT);
+  // The picture's REAL pixel size, not just its shape — what `page-slicing` needs to decide
+  // whether this page can be drawn at all. Null until the image reports it.
+  const [dims, setDims] = useState<Size | null>(null);
   // `uri` is the bridge's raw (possibly server-relative) page path — resolved lazily below, only once
   // this page has actually mounted (readers window their rows, so pages far off-screen never mount and
   // never resolve). This is what keeps a big gallery from resolving every page up front. `null` until
@@ -228,6 +246,7 @@ export function ReaderPage({
     setFailed(false);
     setAttempt(0);
     setRetrying(false);
+    setDims(null);
   }, [uri]);
 
   useEffect(() => () => {
@@ -395,7 +414,51 @@ export function ReaderPage({
   // stacked at fractional heights put their shared edges between pixels, which the browser (and
   // the native layout's rounding) paints as a hairline of background between one page and the
   // next. Cover fills the half-pixel this costs.
-  const box: StyleProp<ViewStyle> = fit === 'contain' ? { width, height } : { width, height: Math.round(width / aspect) };
+  const boxHeight = fit === 'contain' ? height : Math.round(width / aspect);
+  const box: StyleProp<ViewStyle> = { width, height: boxHeight };
+
+  /**
+   * Whether the picture FILLS this box rather than sitting letterboxed inside it — the condition
+   * under which the box can be cut into bands that add back up to the picture (see `sliceBands`).
+   *
+   * It is a question about the box, not about the fit, because both fits reach it: a `width` row's
+   * height is derived from the picture's own aspect, and so is the paged reader's STRIP box
+   * (`stripGeometry`). What it excludes is an ordinary `contain` page, which is centred in a
+   * viewport-sized box with backdrop above and below — and which is also the case that never needs
+   * slicing, since containing a tall picture in a viewport-sized box is exactly the shape
+   * `shouldDownscale` already decodes down.
+   */
+  const boxAspect = boxHeight && boxHeight > 0 ? width / boxHeight : 0;
+  const imageAspect = dims ? dims.width / dims.height : 0;
+  const fillsBox = imageAspect > 0 && Math.abs(boxAspect - imageAspect) <= imageAspect * 0.02;
+
+  const slices = useSlicedPage(source, dims, fillsBox);
+  const bands = slices && boxHeight ? sliceBands(boxHeight, slices.length) : null;
+
+  /**
+   * The iOS half of downsampling, and it is not cosmetic: without it SDWebImage decodes the page at
+   * full size and expo-image redraws it smaller AFTERWARDS, so the peak never drops and the
+   * full-size copy stays in the memory cache next to the one being drawn. `enforceEarlyResizing`
+   * hands the target into the decode instead (SDWebImage's thumbnail context), which is what makes
+   * the saving real. Android needs none of it: Glide's ContentFitDownsampleStrategy already
+   * downsamples during the decode, and expo-image defines the prop on iOS alone.
+   *
+   * ONLY WHERE THE BOX IS EXACT AT REQUEST TIME — that is what `boxIsFinal` is asserting. It reads
+   * this view's bounds when the load starts and never re-decodes when they change, so a box that
+   * grows once the picture's shape is known keeps the decode it was given against the guess. A
+   * `width` row can never qualify (its height is `width / aspect`, and `aspect` is DEFAULT_ASPECT
+   * until `onLoad`), and neither can the paged reader's strip box. Both fail the same way and it is
+   * not subtle: an 800x10000 webtoon page against a viewport-tall guess decodes ~200px wide and is
+   * then drawn across the full width, blurred, for as long as the page is open.
+   *
+   * That half is FROZEN AT MOUNT, like `transitionMs` above and for the same reason: expo-image
+   * reloads the image on any prop update at all (`OnViewDidUpdateProps { view.reload() }`), and it
+   * only ever describes the box the request went out against, so it can say nothing once that
+   * request has started. `downsample` stays live — a page reloading when the setting is switched is
+   * the point of switching it.
+   */
+  const [earlyResizable] = useState(() => Platform.OS === 'ios' && fit === 'contain' && boxIsFinal);
+  const earlyResizeProps = Platform.OS === 'ios' ? { enforceEarlyResizing: earlyResizable && downsample } : null;
 
   // What the skeleton says while it's up. Nothing at all in the common case (a page that loads
   // promptly on the first try shouldn't flash a "0%"), a percentage once bytes are moving, and the
@@ -434,13 +497,38 @@ export function ReaderPage({
 
   return (
     <View style={[styles.box, box]}>
-      {delayPassed && !retrying && source && (
+      {delayPassed && !retrying && source && slices && bands && (
+        // The same picture as the <Image> below, in pieces — see `useSlicedPage` for why, and
+        // `page-slicing` for the cut. `fill` rather than `cover` per band: each band's shape IS its
+        // slice's by construction (the box is split the same way the source was), so there is
+        // nothing to letterbox or crop, and `fill` is the one fit that can't round a sub-pixel gap
+        // into a seam. No transition either — these arrive over a page that is already on screen,
+        // and fading them in one at a time would be a flash, not a reveal.
+        <View style={StyleSheet.absoluteFill}>
+          {slices.map((slice, i) => (
+            <Image key={i} source={slice} style={{ width, height: bands[i] }} contentFit="fill" transition={0} />
+          ))}
+        </View>
+      )}
+      {delayPassed && !retrying && source && !slices && (
         <Image
           key={attempt}
           source={{ uri: source }}
           style={StyleSheet.absoluteFill}
           contentFit={fit === 'contain' ? 'contain' : 'cover'}
           cachePolicy="memory-disk"
+          /**
+           * DOWNSAMPLING — on by default, and the default is expo-image's own (`allowDownscaling`),
+           * so pages were already being decoded at the size of their box before this prop said so.
+           *
+           * That default is right for a cover and only half right here, because a reader magnifies:
+           * zoom is a TRANSFORM on an ancestor (see `useZoomable`), so this view's bounds never
+           * change and nothing re-decodes — a page pinched to 4x is a box-sized bitmap blown up,
+           * and a spread resting at `restScale > 1` is soft before you have touched it. Mihon
+           * escapes this by tiling (SubsamplingScaleImageView re-decodes tiles as you zoom); we
+           * can't, so it is the reader's own setting instead, which is where Suwatte lands too.
+           */
+          allowDownscaling={downsample}
           // No cross-fade in paged mode. The page it fades UP FROM is the placeholder, so a page
           // that was actually ready still spent 150ms looking like one — the exact impression this
           // pass is trying to remove. Webtoon keeps it: rows arrive under a continuously moving
@@ -463,10 +551,22 @@ export function ReaderPage({
             const h = e.source?.height;
             if (w && h) {
               setAspect(w / h);
+              setDims({ width: w, height: h });
+              // Reported at its real size even when it is about to be cut up: the list's row-height
+              // table is built from this, and the slices occupy exactly the space the whole picture
+              // would have.
               onLoadDims?.(w, h);
+              const parts = sliceCount({ width: w, height: h });
+              if (parts > 1) {
+                logDiagnostic('reader-page', `tall page ${w}x${h} needs ${parts} slices`, {
+                  url: uri,
+                  context: `page=${page} box=${width}x${boxHeight ?? 0}`,
+                });
+              }
             }
           }}
           onError={handleError}
+          {...earlyResizeProps}
           {...imageProps}
         />
       )}

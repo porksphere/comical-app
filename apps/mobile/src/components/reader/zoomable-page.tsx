@@ -210,6 +210,11 @@ export function ZoomablePage({
             fit="contain"
             width={width}
             height={strip ? geometry.content.height : height}
+            // Answered by the FIT, not by `strip` — see ReaderPage's `boxIsFinal`. Under any other
+            // fit the box is the viewport's and never moves; under fit-width a page that turns out
+            // to be a strip gets a box its own height, and nothing knows which pages those are
+            // until they have loaded, which is exactly too late.
+            boxIsFinal={pageFit !== 'fit-width'}
             onLoadDims={onLoadDims}
             onFailedChange={setPageFailed}
             scrubbing={scrubbing}

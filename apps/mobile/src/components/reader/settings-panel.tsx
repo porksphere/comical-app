@@ -112,6 +112,12 @@ function SettingsContent() {
         value={settings.respectSafeArea}
         onChange={(v) => set({ respectSafeArea: v })}
       />
+      <ToggleRow
+        label="Downsample images"
+        testID="reader.settings.downsample"
+        value={settings.downsample}
+        onChange={(v) => set({ downsample: v })}
+      />
       <StepperRow
         label="Preload ahead"
         testIdPrefix="reader.settings.preload-ahead"

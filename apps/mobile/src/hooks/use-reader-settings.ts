@@ -37,6 +37,10 @@ export type ReaderSettings = {
   /** Keep the pages out of the screen's cutout and system bars, instead of drawing edge to edge
    *  under them — a page fitted to the height otherwise runs under the notch. */
   respectSafeArea: boolean;
+  /** Decode each page at the size it is drawn at, rather than at the size it was published at.
+   *  On costs detail the moment a page is magnified past its box — see `reader-page.tsx` — and off
+   *  costs memory on every page whether or not you ever zoom one. On, like every other reader. */
+  downsample: boolean;
   prefetchAhead: PrefetchAhead;
 };
 
@@ -49,6 +53,7 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   keepAwake: true,
   pageCountWhenHidden: true,
   respectSafeArea: false,
+  downsample: true,
   prefetchAhead: 4,
 };
 
@@ -80,6 +85,14 @@ export function setFitOverride(fit: PageFit | null): void {
   fitOverride$.set(fit);
 }
 const LEGACY_DOUBLE_TAP: Record<string, DoubleTapMode> = { 'fill-height': 'switch-fit' };
+
+/** Just the downsample flag. Read this rather than `useReaderSettings` in a PAGE: every page image
+ *  on screen subscribes to it, and none of them has any business re-rendering because the preload
+ *  count or the reading direction changed. Falls back to the default for a blob persisted before
+ *  the field existed, the same way the merge below does. */
+export function useDownsampleImages(): boolean {
+  return use$(settings$.downsample) ?? DEFAULT_SETTINGS.downsample;
+}
 
 /** `[settings, patch]`. Reads spread over the defaults so a blob persisted before a
  *  field existed still surfaces every key. */
