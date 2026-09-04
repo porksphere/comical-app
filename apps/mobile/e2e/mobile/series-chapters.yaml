@@ -3,7 +3,8 @@
 # download menu. Selectors (confirmed against source — see ../web/series-chapters.yaml
 # for why the web copy anchors differently):
 #   - series.chapters.tab.<all|read|unread>   (components/series/chapters-section.tsx)
-#   - series.chapters.sort.<desc|asc>          (same file)
+#   - series.chapters.sort.<desc|asc>          (same file) — ONE toggle whose id names the order a
+#     tap switches TO, so `.asc` exists while newest-first is in force and `.desc` after tapping it
 #   - series.chapters.expand-middle            (same file — only rendered once a tab
 #     has more chapters than the collapsed head+tail count; every mocked chaptered
 #     series has 40-200 chapters, well over that threshold)

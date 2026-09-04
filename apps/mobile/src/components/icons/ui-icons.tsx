@@ -26,6 +26,7 @@ import {
   GripVertical,
   LayoutGrid,
   ListPlus,
+  LogIn,
   Minus,
   MoreVertical,
   PanelLeftClose,
@@ -68,6 +69,8 @@ export const MinusIcon = ({ color, size = 16 }: IconProps) => <Minus color={colo
 export const StarIcon = ({ color, size = 16, filled }: IconProps) => (
   <Star color={color} size={size} fill={filled ? color : 'none'} />
 );
+/** "This needs an account" — the favorite control's face when the bridge isn't logged in. */
+export const LogInIcon = ({ color, size = 16 }: IconProps) => <LogIn color={color} size={size} />;
 export const CheckIcon = ({ color, size = 16 }: IconProps) => <Check color={color} size={size} />;
 /** A double check — "everything up to here", as distinct from `CheckIcon`'s single item. */
 export const CheckAllIcon = ({ color, size = 16 }: IconProps) => <CheckCheck color={color} size={size} />;

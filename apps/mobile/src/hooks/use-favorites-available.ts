@@ -1,28 +1,29 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
+import type { BridgeSummary } from '@/data/api';
+import { favoritesStatusOf, type FavoritesStatus } from '@/data/favorites-status';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import type { Bridge } from '@/data/types';
 
 /**
  * "Can this bridge do favorites right now?" — the one place the app decides whether a bridge's
- * favorites are usable, so every surface (the star button, the per-bridge Favorites page, and the
- * consolidated Comical Favorites page) gates on the same rule.
+ * favorites are usable, so every surface (the star button, the card menus' Favorite row, the per-bridge
+ * Favorites page, and the consolidated Comical Favorites page) gates on the same rule.
  *
- * A bridge's favorites need an account, and an account is its `secret` login settings. The host-server
- * already computes `missingRequired` per bridge and ships it FREE in the `GET /bridges` summary, so the
- * signal is: the bridge advertises the `favorites` capability AND has no required setting still unset
- * (`missingRequired.length === 0`) — i.e. it's logged in. No per-bridge settings fetch, no contract
- * change: `missingRequired` is already there. Centralised here so if a bridge ever needs
- * public-browse-with-optional-login-favorites, this becomes the single spot to swap in a contract-level
- * "favoritesAvailable" flag instead.
+ * The rule itself is `favoritesStatusOf` (data/favorites-status.ts); this hook only feeds it the
+ * `GET /bridges` summaries, which already carry everything it reads.
  */
 export function useFavoritesAvailability(): {
-  /** True once the summaries have loaded and the bridge is favorites-capable AND logged in. False
-   *  (not "unknown") while loading, so a star greys out until we KNOW it's usable rather than flashing
-   *  enabled and allowing a toggle that would fail. */
+  /** The status for one bridge — see `FavoritesStatus`. `loading` until the summaries have resolved,
+   *  so a star is withheld until we KNOW it's usable rather than flashing enabled and allowing a
+   *  toggle that would fail. */
+  statusOf: (bridgeId: string | undefined) => FavoritesStatus;
+  /** `statusOf(bridgeId) === 'available'`. */
   isAvailable: (bridgeId: string | undefined) => boolean;
+  /** The bridge's summary, for a surface that needs to route to its settings (the `source` param). */
+  summaryOf: (bridgeId: string | undefined) => BridgeSummary | undefined;
   /** The favorites-available bridges, in `GET /bridges` order — the consolidated Comical Favorites
    *  page fans out over exactly these. */
   availableBridges: Bridge[];
@@ -38,20 +39,25 @@ export function useFavoritesAvailability(): {
     queryFn: ({ signal }) => ds.getBridgeSummaries(signal),
   });
 
-  const availableIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of data ?? []) {
-      if (s.info.capabilities.includes('favorites') && s.missingRequired.length === 0) set.add(s.info.id);
-    }
-    return set;
-  }, [data]);
+  const byId = useMemo(() => new Map((data ?? []).map((s) => [s.info.id, s])), [data]);
 
-  const availableBridges = useMemo(
-    () => (data ?? []).filter((s) => availableIds.has(s.info.id)).map((s) => s.info as Bridge),
-    [data, availableIds],
+  const statusOf = useCallback(
+    (bridgeId: string | undefined): FavoritesStatus => {
+      if (!isSuccess) return 'loading';
+      const summary = bridgeId ? byId.get(bridgeId) : undefined;
+      if (!summary) return 'unsupported';
+      return favoritesStatusOf(summary);
+    },
+    [isSuccess, byId],
   );
 
-  const isAvailable = useCallback((bridgeId: string | undefined) => !!bridgeId && availableIds.has(bridgeId), [availableIds]);
+  const availableBridges = useMemo(
+    () => (data ?? []).filter((s) => favoritesStatusOf(s) === 'available').map((s) => s.info as Bridge),
+    [data],
+  );
 
-  return { isAvailable, availableBridges, loaded: isSuccess };
+  const isAvailable = useCallback((bridgeId: string | undefined) => statusOf(bridgeId) === 'available', [statusOf]);
+  const summaryOf = useCallback((bridgeId: string | undefined) => (bridgeId ? byId.get(bridgeId) : undefined), [byId]);
+
+  return { statusOf, isAvailable, summaryOf, availableBridges, loaded: isSuccess };
 }

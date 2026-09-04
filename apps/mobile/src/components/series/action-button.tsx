@@ -13,14 +13,20 @@ import { useTheme } from '@/hooks/use-theme';
 
 export function ActionButton({
   label,
+  sublabel,
   variant = 'default',
   caret,
   leading,
   onPress,
   disabled,
+  accessibilityLabel,
   testID,
 }: {
   label: string;
+  /** A second, quieter line under the label — the chapter a Resume lands on. The label stays a
+   *  short verb so it always fits; the part that can run long gets its own line to be cut on,
+   *  instead of the verb being clipped along with it in a column 40% of a phone's width. */
+  sublabel?: string;
   variant?: 'primary' | 'default';
   /** Show a trailing ▾ (Sources / Trackers menus). */
   caret?: boolean;
@@ -29,12 +35,15 @@ export function ActionButton({
   onPress?: () => void;
   /** Dim and ignore presses (e.g. Read while a chaptered series' list still loads). */
   disabled?: boolean;
+  /** Read out instead of the label(s) — when the visible text alone is ambiguous. */
+  accessibilityLabel?: string;
   /** Automation selector — required so every action button is reachable (see src/lib/test-id.ts). */
   testID: string;
 }) {
   const theme = useTheme();
   const primary = variant === 'primary';
   const { hovered, onHoverIn, onHoverOut } = useHovered();
+  const onColor = primary ? { color: theme.accentOn } : undefined;
   return (
     <Pressable
       testID={testID}
@@ -43,6 +52,7 @@ export function ActionButton({
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => [styles.btn, disabled && styles.disabled, pressed && styles.pressed]}>
       <ThemedView
@@ -55,13 +65,17 @@ export function ActionButton({
           !primary && hovered && { backgroundColor: theme.backgroundSelected },
         ]}>
         {leading}
-        <ThemedText
-          type="smallBold"
-          numberOfLines={1}
-          style={[primary ? { color: theme.accentOn } : undefined, leading ? styles.labelWithLeading : undefined]}>
-          {label}
-          {caret ? '  ▾' : ''}
-        </ThemedText>
+        <View style={[styles.text, leading ? styles.textWithLeading : undefined]}>
+          <ThemedText type="smallBold" numberOfLines={1} style={onColor}>
+            {label}
+            {caret ? '  ▾' : ''}
+          </ThemedText>
+          {sublabel ? (
+            <ThemedText type="small" numberOfLines={1} style={[styles.sublabel, onColor]}>
+              {sublabel}
+            </ThemedText>
+          ) : null}
+        </View>
       </ThemedView>
     </Pressable>
   );
@@ -98,8 +112,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  labelWithLeading: {
+  // The text column shrinks (never the glyph beside it), and centres its lines like the single-line
+  // button always did; `minWidth: 0` is what lets a long sublabel ellipsize on web instead of
+  // widening the button past its column.
+  text: {
+    flexShrink: 1,
+    minWidth: 0,
+    alignItems: 'center',
+  },
+  textWithLeading: {
     marginLeft: Spacing.two,
+  },
+  sublabel: {
+    fontSize: 12,
+    lineHeight: 16,
+    opacity: 0.85,
   },
   newBadge: {
     alignSelf: 'flex-start',
