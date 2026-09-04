@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { ChevronDownIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
@@ -13,7 +14,6 @@ import { useTheme } from '@/hooks/use-theme';
 
 export function ActionButton({
   label,
-  sublabel,
   variant = 'default',
   caret,
   leading,
@@ -23,19 +23,17 @@ export function ActionButton({
   testID,
 }: {
   label: string;
-  /** A second, quieter line under the label — the chapter a Resume lands on. The label stays a
-   *  short verb so it always fits; the part that can run long gets its own line to be cut on,
-   *  instead of the verb being clipped along with it in a column 40% of a phone's width. */
-  sublabel?: string;
   variant?: 'primary' | 'default';
-  /** Show a trailing ▾ (Sources / Trackers menus). */
+  /** Show a trailing chevron (Sources / Trackers menus). */
   caret?: boolean;
-  /** Optional glyph before the label (e.g. a download progress radial). */
+  /** The glyph in the button's icon slot — a lucide icon, or a download progress radial. Every
+   *  button in the column fills it, so the glyphs line up down the column and the labels start
+   *  from one edge; an empty slot is kept, not collapsed, for the same reason. */
   leading?: ReactNode;
   onPress?: () => void;
   /** Dim and ignore presses (e.g. Read while a chaptered series' list still loads). */
   disabled?: boolean;
-  /** Read out instead of the label(s) — when the visible text alone is ambiguous. */
+  /** Read out instead of the label — when the visible text alone is ambiguous. */
   accessibilityLabel?: string;
   /** Automation selector — required so every action button is reachable (see src/lib/test-id.ts). */
   testID: string;
@@ -43,7 +41,7 @@ export function ActionButton({
   const theme = useTheme();
   const primary = variant === 'primary';
   const { hovered, onHoverIn, onHoverOut } = useHovered();
-  const onColor = primary ? { color: theme.accentOn } : undefined;
+  const onColor = primary ? theme.accentOn : theme.text;
   return (
     <Pressable
       testID={testID}
@@ -64,22 +62,18 @@ export function ActionButton({
           // chapter-tab strip, so hover reads consistently across the screen.
           !primary && hovered && { backgroundColor: theme.backgroundSelected },
         ]}>
-        {leading}
-        <View style={[styles.text, leading ? styles.textWithLeading : undefined]}>
-          <ThemedText type="smallBold" numberOfLines={1} style={onColor}>
-            {label}
-            {caret ? '  ▾' : ''}
-          </ThemedText>
-          {sublabel ? (
-            <ThemedText type="small" numberOfLines={1} style={[styles.sublabel, onColor]}>
-              {sublabel}
-            </ThemedText>
-          ) : null}
-        </View>
+        <View style={styles.iconSlot}>{leading}</View>
+        <ThemedText type="smallBold" numberOfLines={1} style={[styles.label, { color: onColor }]}>
+          {label}
+        </ThemedText>
+        {caret && <ChevronDownIcon color={theme.textSecondary} size={14} />}
       </ThemedView>
     </Pressable>
   );
 }
+
+/** The size every icon in the slot is drawn at, so a play glyph and a star sit on one baseline. */
+export const ACTION_ICON_SIZE = 15;
 
 /** The amber "N new" pill shown in the actions column. */
 export function NewBadge({ count }: { count: number }) {
@@ -110,23 +104,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing.two,
+  },
+  iconSlot: {
+    width: 18,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  // The text column shrinks (never the glyph beside it), and centres its lines like the single-line
-  // button always did; `minWidth: 0` is what lets a long sublabel ellipsize on web instead of
-  // widening the button past its column.
-  text: {
-    flexShrink: 1,
+  label: {
+    flex: 1,
     minWidth: 0,
-    alignItems: 'center',
-  },
-  textWithLeading: {
-    marginLeft: Spacing.two,
-  },
-  sublabel: {
-    fontSize: 12,
-    lineHeight: 16,
-    opacity: 0.85,
   },
   newBadge: {
     alignSelf: 'flex-start',

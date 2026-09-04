@@ -35,7 +35,6 @@ import type { MenuRowSpec } from '@/components/context-menu-material';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
 import {
   ArrowDownIcon,
-  ArrowUpIcon,
   CheckAllIcon,
   CheckIcon,
   DownloadsIcon,
@@ -255,15 +254,21 @@ function SegmentButton({
   );
 }
 
-/** The chapter order toggle: one neutral pill naming the order in force, with the arrow the list
- *  runs in. Same surface and hover as the actions column's buttons, so it reads as a control of the
- *  page rather than a second tab strip. Its testID and accessibility label name the order a tap
- *  SWITCHES TO — that is what pressing it does, and it is what the e2e flows select by. */
+/** The chapter order toggle: a square button beside the tab strip, at the strip's height, holding
+ *  ONE arrow that turns over to point the way the list now runs — down for newest-first, up for
+ *  oldest-first. (Two side-by-side arrows with one highlighted were the previous form; an arrow
+ *  alone never said whether it was the order you had or the one you would get, and the highlight
+ *  made it worse.) Its testID and accessibility label name the order a tap SWITCHES TO — that is
+ *  what pressing it does, and it is what the e2e flows select by. */
 function SortToggle({ asc, onToggle }: { asc: boolean; onToggle: () => void }) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const next = asc ? 'desc' : 'asc';
-  const Arrow = asc ? ArrowUpIcon : ArrowDownIcon;
+  const turn = useSharedValue(asc ? 180 : 0);
+  useEffect(() => {
+    turn.set(withTiming(asc ? 180 : 0, { duration: 220, easing: Easing.out(Easing.cubic) }));
+  }, [asc, turn]);
+  const arrowStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value}deg` }] }));
   return (
     <Pressable
       testID={testId('series.chapters.sort', next)}
@@ -277,10 +282,9 @@ function SortToggle({ asc, onToggle }: { asc: boolean; onToggle: () => void }) {
       <ThemedView
         type="backgroundElement"
         style={[styles.sortToggle, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        <Arrow color={theme.textSecondary} size={14} />
-        <ThemedText type="small" themeColor="textSecondary" style={styles.sortToggleLabel}>
-          {SORT_LABEL[asc ? 'asc' : 'desc']}
-        </ThemedText>
+        <Animated.View style={arrowStyle}>
+          <ArrowDownIcon color={theme.textSecondary} size={16} />
+        </Animated.View>
       </ThemedView>
     </Pressable>
   );
@@ -614,47 +618,37 @@ export function ChapterScrollList({
   // The "Chapters" heading + tab/sort controls — or the loading skeleton where the rows will land
   // while the deferred fetch runs. Shared by the small-screen list header and the large-web right
   // column.
-  // The section head is the same shape as every other list heading in the app — a title with its
-  // count beside it and the one trailing control on the same line — and the filter strip sits
-  // UNDER it on its own row. It used to share that row with the sort toggle, which on a phone
-  // squeezed three tabs and two arrows into one strip that overran the content margin; with the
-  // sort promoted to the head, the strip has the full width to itself.
   const chapterControls = loading ? (
     <ChapterListSkeleton />
   ) : hasChapters ? (
     <View style={[styles.head, styles.chapterControlsHead]}>
-      <View style={styles.headRow}>
-        <View style={styles.headTitleRow}>
-          <ThemedText type="subtitle" style={styles.headTitle}>
-            Chapters
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.headCount}>
-            {grouped.length}
-          </ThemedText>
-        </View>
+      <ThemedText type="subtitle" style={styles.headTitle}>
+        Chapters
+      </ThemedText>
+      <View style={styles.controls}>
+        <Segmented
+          options={TABS.map((t) => ({
+            id: t.id,
+            accessibilityLabel: t.label,
+            testID: testId('series.chapters.tab', t.id),
+            render: (active) => (
+              <ThemedText
+                type="small"
+                numberOfLines={1}
+                style={[styles.tabLabel, active ? { color: theme.accentOn } : { color: theme.textSecondary }]}>
+                {t.label}
+              </ThemedText>
+            ),
+          }))}
+          active={tab}
+          onChange={(id) => {
+            setTab(id);
+            setMiddleExpanded(false);
+          }}
+          {...(fillTabs && { containerStyle: styles.tabsFill, itemStyle: styles.tabFill })}
+        />
         <SortToggle asc={asc} onToggle={() => setAsc((v) => !v)} />
       </View>
-      <Segmented
-        options={TABS.map((t) => ({
-          id: t.id,
-          accessibilityLabel: t.label,
-          testID: testId('series.chapters.tab', t.id),
-          render: (active) => (
-            <ThemedText
-              type="small"
-              numberOfLines={1}
-              style={[styles.tabLabel, active ? { color: theme.accentOn } : { color: theme.textSecondary }]}>
-              {t.label}
-            </ThemedText>
-          ),
-        }))}
-        active={tab}
-        onChange={(id) => {
-          setTab(id);
-          setMiddleExpanded(false);
-        }}
-        {...(fillTabs && { containerStyle: styles.tabsFill, itemStyle: styles.tabFill })}
-      />
     </View>
   ) : null;
 
@@ -1973,40 +1967,19 @@ const styles = StyleSheet.create({
   head: {
     gap: Spacing.two,
   },
-  headRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.two,
-  },
-  headTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: Spacing.two,
-    flexShrink: 1,
-  },
   headTitle: {
     // Reference .chapters-head h3: 1.15rem (~18px).
     fontSize: 18,
     lineHeight: 24,
   },
-  // The count sits beside the title the way a section header's does, muted so the title stays the
-  // title.
-  headCount: {
-    fontSize: 14,
-  },
+  // Square, at the strip's height and radius, so the row reads as one control.
   sortToggle: {
     height: CONTROLS_HEIGHT,
-    flexDirection: 'row',
+    width: CONTROLS_HEIGHT,
     alignItems: 'center',
-    gap: Spacing.one,
-    paddingLeft: Spacing.two,
-    paddingRight: Spacing.three,
+    justifyContent: 'center',
     ...ContinuousCorner,
     borderRadius: 10,
-  },
-  sortToggleLabel: {
-    fontSize: 13,
   },
   skelRows: {
     gap: Spacing.two,
@@ -2027,16 +2000,19 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     overflow: 'hidden',
   },
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
   tabs: {
     // Content-sized (not `flex: 1` on each child, and not `flex: 1` on the
     // strip itself) — a tab's width follows its own label, so "All" and
     // "Unread" don't get forced to the same width, and the whole strip
-    // doesn't stretch to the row's full width leaving a big dead-space pill.
-    // Fixed height (matching the sort toggle in the head) rather than letting
-    // padding drive it, so the two controls read as one consistent height.
-    // `flex-start`: the strip is a column child now (the head stacks it under the
-    // title row), which would otherwise stretch it to the full width.
-    alignSelf: 'flex-start',
+    // doesn't stretch to the row's full width leaving a big dead-space pill
+    // before the sort button. Fixed height (matching the sort button) rather
+    // than letting padding drive it, so the whole controls row reads as one
+    // consistent height.
     height: CONTROLS_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2045,11 +2021,11 @@ const styles = StyleSheet.create({
     padding: TAB_PAD,
     gap: TAB_GAP,
   },
-  // Narrow-screen override: the strip fills the row instead of being content-sized, so the three
-  // tabs always sit within the content margin. `minWidth: 0` lets it shrink on react-native-web
-  // (default `min-width: auto` would overflow).
+  // Narrow-screen override: the strip fills the row (up to the sort toggle) instead of being
+  // content-sized, so the three tabs + the sort button always sit within the content margin.
+  // `minWidth: 0` lets it shrink on react-native-web (default `min-width: auto` would overflow).
   tabsFill: {
-    alignSelf: 'stretch',
+    flex: 1,
     minWidth: 0,
   },
   // A fill-strip tab: shares the strip width equally with its siblings (each 1/3) with tighter

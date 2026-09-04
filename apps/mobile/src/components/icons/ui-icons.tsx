@@ -23,6 +23,7 @@ import {
   RefreshCw,
   RotateCcw,
   TriangleAlert,
+  Globe,
   GripVertical,
   LayoutGrid,
   ListPlus,
@@ -69,6 +70,8 @@ export const MinusIcon = ({ color, size = 16 }: IconProps) => <Minus color={colo
 export const StarIcon = ({ color, size = 16, filled }: IconProps) => (
   <Star color={color} size={size} fill={filled ? color : 'none'} />
 );
+/** The series page's Sources button. */
+export const SourcesIcon = ({ color, size = 16 }: IconProps) => <Globe color={color} size={size} />;
 /** "This needs an account" — the favorite control's face when the bridge isn't logged in. */
 export const LogInIcon = ({ color, size = 16 }: IconProps) => <LogIn color={color} size={size} />;
 export const CheckIcon = ({ color, size = 16 }: IconProps) => <Check color={color} size={size} />;

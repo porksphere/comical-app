@@ -21,9 +21,9 @@ import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { TagGroupRow } from '@/components/chip';
-import { LogInIcon, PlayIcon, StarIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton } from '@/components/rail';
-import { ActionButton, NewBadge } from '@/components/series/action-button';
+import { ACTION_ICON_SIZE, ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChapterScrollList, PageThumbList } from '@/components/series/chapters-section';
 import { SeriesDownloadButton } from '@/components/series/download-button';
 import { TrackerButton } from '@/components/series/tracker-panel';
@@ -378,12 +378,7 @@ export function SeriesBody({
     readLabel
   });
   const startReading = onStartReading;
-  // Two lines: the verb, then the chapter it lands on. "Resume Chapter 176 — The Coast Road" on one
-  // line was clipped in the phone column with the chapter name taking the cut, so what survived was
-  // "Resume Chapter 1…" — the wrong chapter, confidently. A bridge's own readLabel is shown as it
-  // comes; the play glyph leads every form.
-  const primaryLabel = resumeEntry ? 'Resume' : (readLabel ?? 'Read');
-  const primarySublabel = resumeEntry?.chapterName;
+  const primaryLabel = readingLabel;
 
   // Some bridges hand back a Referer-gated, server-relative `/img-proxy?…` cover that
   // `<Image>` can't load raw — resolve it the same way the browse card and the loading
@@ -399,7 +394,7 @@ export function SeriesBody({
       style={isLarge ? styles.coverWrapLarge : styles.coverWrap}
       onPress={startReading}
       accessibilityRole="button"
-      accessibilityLabel={readingLabel}>
+      accessibilityLabel={primaryLabel}>
       <SeriesCoverBox aspect={coverAspect} onRect={onHeroCoverRect}>
         {resolvedCover ? (
           <Image
@@ -462,10 +457,8 @@ export function SeriesBody({
       <ActionButton
         testID="series.action.read"
         label={primaryLabel}
-        sublabel={primarySublabel}
-        leading={<PlayIcon color={theme.accentOn} size={14} />}
+        leading={<PlayIcon color={theme.accentOn} size={ACTION_ICON_SIZE} />}
         variant="primary"
-        accessibilityLabel={readingLabel}
         onPress={startReading}
       />
       {/* ONE control: a tap saves into the last-used collection and the label then names it; once
@@ -473,7 +466,14 @@ export function SeriesBody({
           reads as "there is more here" rather than as a dead end. See useSeriesSave. */}
       <ActionButton
         testID="series.action.save"
-        label={save.saved ? `✓  ${save.label}` : `＋  ${save.label}`}
+        label={save.label}
+        leading={
+          save.saved ? (
+            <CheckIcon color={theme.text} size={ACTION_ICON_SIZE} />
+          ) : (
+            <PlusIcon color={theme.text} size={ACTION_ICON_SIZE} />
+          )
+        }
         caret
         onPress={save.onPress}
       />
@@ -495,8 +495,9 @@ export function SeriesBody({
       {favoriteStatus === 'login' && loginSettings ? (
         <ActionButton
           testID="series.action.favorite"
-          label="Log in to favorite"
-          leading={<LogInIcon color={theme.text} size={15} />}
+          label="Log in"
+          accessibilityLabel="Log in to favorite"
+          leading={<LogInIcon color={theme.text} size={ACTION_ICON_SIZE} />}
           onPress={() => router.push({ pathname: '/bridge-settings', params: loginSettings })}
         />
       ) : favoriteStatus === 'loading' || favoriteStatus === 'checking' ? (
@@ -510,11 +511,20 @@ export function SeriesBody({
         <ActionButton
           testID="series.action.favorite"
           label={favorited ? 'Favorited' : 'Favorite'}
-          leading={<StarIcon color={favorited ? theme.badgeNew : theme.text} size={15} filled={!!favorited} />}
+          leading={
+            <StarIcon color={favorited ? theme.badgeNew : theme.text} size={ACTION_ICON_SIZE} filled={!!favorited} />
+          }
           onPress={toggleFavorite}
         />
       ) : null}
-      {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
+      {series.hasSources && (
+        <ActionButton
+          testID="series.action.sources"
+          label="Sources"
+          leading={<SourcesIcon color={theme.text} size={ACTION_ICON_SIZE} />}
+          caret
+        />
+      )}
       {/* Tracker sits at the bottom of the column: it's the "where does this series belong"
           action, below the ones that act on the series itself. The old "Add to collection" button
           stood beside it and is gone — it was the Save button above with extra steps. */}
@@ -921,8 +931,8 @@ const styles = StyleSheet.create({
   },
   // Sized to the star it stands in for, so the label doesn't shift when the answer lands.
   favoriteSpinner: {
-    width: 15,
-    height: 15
+    width: ACTION_ICON_SIZE,
+    height: ACTION_ICON_SIZE
   },
   metaLabel: {
     fontSize: 11,
