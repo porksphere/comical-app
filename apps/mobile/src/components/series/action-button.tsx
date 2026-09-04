@@ -111,9 +111,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Centred in whatever the icon slot (and a caret) leave: the glyphs stay in one column down the
+  // buttons, and the labels sit in the middle of the rest rather than hugging the slot.
   label: {
     flex: 1,
     minWidth: 0,
+    textAlign: 'center',
   },
   newBadge: {
     alignSelf: 'flex-start',
