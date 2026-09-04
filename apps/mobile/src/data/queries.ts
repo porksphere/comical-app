@@ -202,6 +202,10 @@ export const queryKeys = {
     ['downloads', 'series', bridgeId, seriesId] as const,
   /** The library's host-side storage footprint (the Storage screen's breakdown segment). */
   libraryUsage: () => ['libraryUsage'] as const,
+  /** This device's reclaimable-cache footprint (the Storage screen's image-cache segment) — a
+   *  synchronous directory walk, so it's cached and persisted like a fetch rather than re-walked on
+   *  every open (see `measureCacheUsage`). */
+  cacheUsage: () => ['cacheUsage'] as const,
 
   // Invalidation target that prefix-matches the library grid (`['library', mock, q, sort]`), so
   // invalidating this refreshes the Library tab regardless of its current search/sort.
