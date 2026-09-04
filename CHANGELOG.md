@@ -13,6 +13,14 @@ what the app shows under Settings → About → What's new. Keep the `## X.Y.Z �
 the extractor matches on the version field, and a section it can't find silently degrades to the
 release's title.
 
+## 0.3.1 — 2026-09-04
+
+- Slice on Android only, and stop releasing the source bitmap (f0bcf148)
+- Load the image manipulator on first use, not at import (0b0a4689)
+- Drop the subtitle under the downsample toggle (e3591d44)
+- Cut a stitched strip into pieces Android can actually draw (6952646f)
+- Make reader downsampling the reader's own choice, and pay for it on iOS (c5559c6d)
+
 ## 0.3.0 — 2026-09-03
 
 - Rest a spread at fit-height in the paged reader (#141) (d67b14d8)
