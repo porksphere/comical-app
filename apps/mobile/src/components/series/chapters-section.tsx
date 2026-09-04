@@ -91,7 +91,7 @@ const SORT_LABEL = { desc: 'Newest first', asc: 'Oldest first' } as const;
 // quieter form of the same shape; `flat` is the look every other list in the app has — full-width
 // rows parted by a hairline inset to the text gutter (History, Downloads, Settings). Flip this,
 // nothing else.
-const CHAPTER_ROWS: 'flat' | 'bubble' | 'outline' = 'outline';
+const CHAPTER_ROWS = 'outline' as 'flat' | 'bubble' | 'outline';
 const FLAT_ROWS = CHAPTER_ROWS === 'flat';
 // The plate is the bubble's alone; a read row dims as a whole under the other two (a bubble keeps
 // its greyed title instead, since a dimmed plate reads as disabled rather than as read).
