@@ -37,6 +37,7 @@ import {
   ArrowDownIcon,
   CheckAllIcon,
   CheckIcon,
+  ChevronDownIcon,
   DownloadsIcon,
   EyeOffIcon,
   PlusIcon,
@@ -65,6 +66,7 @@ import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/
 import { applyReadState, groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
+import { DISCLOSE_TIMING } from '@/lib/disclose';
 import { testId } from '@/lib/test-id';
 
 // The series chapters block: tab filter (All / Read / Unread) + sort toggle
@@ -293,6 +295,47 @@ function SortToggle({ asc, onToggle }: { asc: boolean; onToggle: () => void }) {
         </Animated.View>
       </ThemedView>
     </Pressable>
+  );
+}
+
+/** The "N versions" toggle's chevron, turning over as the list opens — the sidebar groups' chevron,
+ *  at the sidebar's timing. */
+function TurningChevron({ open, color }: { open: boolean; color: string }) {
+  const turn = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    turn.set(withTiming(open ? 1 : 0, DISCLOSE_TIMING));
+  }, [open, turn]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 180}deg` }] }));
+  return (
+    <Animated.View style={style}>
+      <ChevronDownIcon color={color} size={14} />
+    </Animated.View>
+  );
+}
+
+/**
+ * A chapter's version list opening and closing — the sidebar groups' disclosure (see
+ * `SidebarGroup`), for the same reasons: the height is MEASURED from the mounted rows rather than
+ * guessed, and the rows stay mounted while closed so the first open has something to measure and
+ * animates instead of snapping. Pointer events are cut while closed, so a fully-collapsed list can't
+ * be tapped through the hairline it has shrunk to.
+ */
+function Disclosure({ open, children }: { open: boolean; children: ReactNode }) {
+  const [height, setHeight] = useState(0);
+  const progress = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    progress.set(withTiming(open ? 1 : 0, DISCLOSE_TIMING));
+  }, [open, progress]);
+  const style = useAnimatedStyle(() => ({
+    height: progress.value * height,
+    // Gone over the first half of the travel, so a closing list is invisible before it has finished
+    // shrinking and the rows below slide up past empty space rather than through legible text.
+    opacity: Math.min(1, progress.value * 2),
+  }));
+  return (
+    <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[styles.disclosure, style]}>
+      <View onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>{children}</View>
+    </Animated.View>
   );
 }
 
@@ -865,8 +908,9 @@ function ChapterRow({
                 versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
               ]}>
               <ThemedText type="small" style={{ color: theme.accent }}>
-                {group.versions.length} versions {expanded ? '▴' : '▾'}
+                {group.versions.length} versions
               </ThemedText>
+              <TurningChevron open={expanded} color={theme.accent} />
             </Pressable>
           )}
           <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
@@ -874,12 +918,14 @@ function ChapterRow({
           </ThemedText>
         </ThemedView>
       </Pressable>
-      {multi && expanded && (
-        <View style={styles.versionList}>
-          {group.versions.map((v) => (
-            <VersionRow key={v.id} v={v} active={v.id === def.id} onPress={() => onOpen(v)} />
-          ))}
-        </View>
+      {multi && (
+        <Disclosure open={expanded}>
+          <View style={styles.versionList}>
+            {group.versions.map((v) => (
+              <VersionRow key={v.id} v={v} active={v.id === def.id} onPress={() => onOpen(v)} />
+            ))}
+          </View>
+        </Disclosure>
       )}
       {FLAT_ROWS && <View style={[styles.rowDivider, { backgroundColor: theme.hairline }]} />}
     </View>
@@ -2124,9 +2170,16 @@ const styles = StyleSheet.create({
   rowDimmed: {
     opacity: 0.4,
   },
-  // The "N versions ▾" toggle inside a row — sits between the name and the time.
+  // The "N versions" toggle inside a row — sits between the name and the time.
   versionsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.half,
     paddingHorizontal: Spacing.one,
+  },
+  // Clips the measured version rows to the animated fraction of their height.
+  disclosure: {
+    overflow: 'hidden',
   },
   // The expanded per-version list, indented under its logical-chapter row.
   versionList: {

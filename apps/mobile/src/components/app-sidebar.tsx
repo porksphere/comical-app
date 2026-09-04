@@ -13,7 +13,7 @@ import { type LucideIcon } from 'lucide-react-native';
 
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type PressableProps } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChevronRightIcon, PanelCollapseIcon, PanelExpandIcon } from '@/components/icons/ui-icons';
 
@@ -22,11 +22,11 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useSectionOpen } from '@/hooks/use-sidebar-sections';
 import { toggleSidebarCollapsed } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
+import { DISCLOSE_TIMING } from '@/lib/disclose';
 import { ContinuousCorner, Fonts, Spacing } from '@/constants/theme';
 
 /** Short, and eased out: a disclosure is an acknowledgement of a tap, not a transition between
  *  places. Long enough to read as movement, short enough that a second tap never queues behind it. */
-const DISCLOSE_TIMING = { duration: 180, easing: Easing.out(Easing.cubic) };
 
 /** A destination row's height. Named because the rail's top padding is derived from it — see
  *  `AppSidebar` — rather than picked to look about right. */
