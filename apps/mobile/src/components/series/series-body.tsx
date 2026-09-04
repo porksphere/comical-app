@@ -370,7 +370,7 @@ export function SeriesBody({
   //
   // Read never waits on the deferred chapter list: with no resume point the reader is handed an
   // unspecified chapter and picks the first one itself, so the button is live immediately.
-  const { label: readingLabel, resume: resumeEntry } = useStartReading({
+  const { label: readingLabel } = useStartReading({
     bridgeId,
     seriesId: series.id,
     title: series.title,
