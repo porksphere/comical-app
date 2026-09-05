@@ -15,7 +15,9 @@ import { useQuery } from '@tanstack/react-query';
 import { View } from 'react-native';
 
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
-import { ActionButton } from '@/components/series/action-button';
+import { CheckIcon, DownloadsIcon } from '@/components/icons/ui-icons';
+import { ACTION_ICON_SIZE, ActionButton } from '@/components/series/action-button';
+import { useTheme } from '@/hooks/use-theme';
 import { dlGetSeries } from '@/data/api';
 import { deriveSeriesState, seriesFraction } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
@@ -45,6 +47,7 @@ export function SeriesDownloadButton({
   chapters?: Chapter[];
 }) {
   const router = useRouter();
+  const theme = useTheme();
 
   const { data } = useQuery({
     queryKey: queryKeys.seriesDownloads(bridgeId, seriesId),
@@ -96,6 +99,8 @@ export function SeriesDownloadButton({
   };
   const openSelect = () => openSeriesDownloads(true);
 
+  const check = <CheckIcon color={theme.text} size={ACTION_ICON_SIZE} />;
+  const download = <DownloadsIcon color={theme.text} size={ACTION_ICON_SIZE} />;
   let button;
   if (inProgress) {
     // Keep the label short — a per-chapter count overflows the button; the radial shows progress.
@@ -109,10 +114,15 @@ export function SeriesDownloadButton({
       />
     );
   } else if (state === 'complete' && !partial) {
-    button = <ActionButton testID="series.action.download" label="✓  Downloaded" onPress={openDownloads} />;
+    button = <ActionButton testID="series.action.download" label="Downloaded" leading={check} onPress={openDownloads} />;
   } else if (partial) {
     button = (
-      <ActionButton testID="series.action.download" label={`⤓  ${completeGroups} / ${totalGroups}`} onPress={openSelect} />
+      <ActionButton
+        testID="series.action.download"
+        label={`${completeGroups} / ${totalGroups}`}
+        leading={download}
+        onPress={openSelect}
+      />
     );
   } else if (direct) {
     // A direct series is one unit — no selection to offer; enqueue immediately as before.
@@ -126,9 +136,9 @@ export function SeriesDownloadButton({
         ...(cover && { thumbnailUrl: cover }),
         ...(author && { author }),
       });
-    button = <ActionButton testID="series.action.download" label="⤓  Download" onPress={enqueueDirect} />;
+    button = <ActionButton testID="series.action.download" label="Download" leading={download} onPress={enqueueDirect} />;
   } else {
-    button = <ActionButton testID="series.action.download" label="⤓  Download" onPress={openSelect} />;
+    button = <ActionButton testID="series.action.download" label="Download" leading={download} onPress={openSelect} />;
   }
 
   return <View collapsable={false}>{button}</View>;

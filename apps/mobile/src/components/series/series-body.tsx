@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   View,
@@ -20,8 +21,9 @@ import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { TagGroupRow } from '@/components/chip';
+import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton } from '@/components/rail';
-import { ActionButton, NewBadge } from '@/components/series/action-button';
+import { ACTION_ICON_SIZE, ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChapterScrollList, PageThumbList } from '@/components/series/chapters-section';
 import { SeriesDownloadButton } from '@/components/series/download-button';
 import { TrackerButton } from '@/components/series/tracker-panel';
@@ -32,7 +34,7 @@ import { ContinuousCorner, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { queryKeys, relatedGroupsQuery, seriesListQuery } from '@/data/queries';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
-import { type Chapter, type SeriesDetail, type TagGroup } from '@/data/types';
+import { type Chapter, type MetaCredit, type SeriesDetail, type TagGroup } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useFavorite } from '@/hooks/use-favorite';
@@ -146,6 +148,60 @@ function MetaCell({
   );
 }
 
+/** An Author/Artist cell whose bridge supplied the people SEPARATELY (the contract's `authors` /
+ *  `artists` arrays): each name is its own link, comma-joined inline, so a co-written series can be
+ *  searched by either person rather than by the whole "A, B" line, which no filter matches. Same
+ *  text-link hover as `MetaCell`, per name. */
+function CreditsCell({
+  metaLabel,
+  credits,
+  onPress,
+  testIDBase
+}: {
+  metaLabel: string;
+  credits: MetaCredit[];
+  onPress: (credit: MetaCredit) => void;
+  testIDBase: string;
+}) {
+  return (
+    <View style={styles.metaCell}>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
+        {metaLabel}
+      </ThemedText>
+      {/* A wrapping row of pressables, not one Text with nested links: a Pressable can't sit inline
+          in native Text, and a Text-only link has no hover. Names break between people first and
+          only within a name when one alone overflows the cell. */}
+      <View style={styles.credits}>
+        {credits.map((c, i) => (
+          <View key={c.id ?? c.name} style={styles.credit}>
+            {i > 0 && <ThemedText type="small">, </ThemedText>}
+            <CreditLink credit={c} onPress={() => onPress(c)} testID={testId(testIDBase, c.id ?? c.name)} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function CreditLink({ credit, onPress, testID }: { credit: MetaCredit; onPress: () => void; testID: string }) {
+  const theme = useTheme();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <Pressable
+      testID={testID}
+      onPress={onPress}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      accessibilityRole="button"
+      accessibilityLabel={`Search ${credit.name}`}
+      style={({ pressed }) => [styles.creditPressable, pressed && styles.metaCellPressed]}>
+      <ThemedText type="small" style={hovered && { color: theme.accent }}>
+        {credit.name}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 /** Two-column (large) / stacked (small) series detail — only rendered once the real (or mock)
  *  fetch has resolved, so it never has to handle a null series.
  *
@@ -245,7 +301,7 @@ export function SeriesBody({
   // Favorite state + optimistic toggle — shared hook so the Series screen and the reader's settings
   // panel stay in lockstep (see useFavorite). `favorited` is null while loading (button disabled),
   // false on an unsupported/errored check (the star stays unfilled).
-  const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, series.id);
+  const { favorited, toggle: toggleFavorite, status: favoriteStatus, loginSettings } = useFavorite(bridgeId, series.id);
 
   // Related-series rails: the main query leaves `relatedGroups` unset and flags
   // `relatedGroupsDeferred` when the bridge only serves them via a separate,
@@ -314,7 +370,7 @@ export function SeriesBody({
   //
   // Read never waits on the deferred chapter list: with no resume point the reader is handed an
   // unspecified chapter and picks the first one itself, so the button is live immediately.
-  const { label: readingLabel, resume: resumeEntry } = useStartReading({
+  const { label: readingLabel } = useStartReading({
     bridgeId,
     seriesId: series.id,
     title: series.title,
@@ -322,9 +378,7 @@ export function SeriesBody({
     readLabel
   });
   const startReading = onStartReading;
-  // The play glyph leads a RESUME (and the bare "Read" fallback); a bridge's own readLabel is shown
-  // as it comes.
-  const primaryLabel = !resumeEntry && readLabel ? readLabel : `▶  ${readingLabel}`;
+  const primaryLabel = readingLabel;
 
   // Some bridges hand back a Referer-gated, server-relative `/img-proxy?…` cover that
   // `<Image>` can't load raw — resolve it the same way the browse card and the loading
@@ -403,6 +457,7 @@ export function SeriesBody({
       <ActionButton
         testID="series.action.read"
         label={primaryLabel}
+        leading={<PlayIcon color={theme.accentOn} size={ACTION_ICON_SIZE} />}
         variant="primary"
         onPress={startReading}
       />
@@ -411,7 +466,14 @@ export function SeriesBody({
           reads as "there is more here" rather than as a dead end. See useSeriesSave. */}
       <ActionButton
         testID="series.action.save"
-        label={save.saved ? `✓  ${save.label}` : `＋  ${save.label}`}
+        label={save.label}
+        leading={
+          save.saved ? (
+            <CheckIcon color={theme.text} size={ACTION_ICON_SIZE} />
+          ) : (
+            <PlusIcon color={theme.text} size={ACTION_ICON_SIZE} />
+          )
+        }
         caret
         onPress={save.onPress}
       />
@@ -425,15 +487,44 @@ export function SeriesBody({
           {...(chapters !== undefined && { chapters })}
         />
       )}
-      <ActionButton
-        testID="series.action.favorite"
-        label={favorited ? '★  Favorited' : '☆  Favorite'}
-        onPress={toggleFavorite}
-        // Greyed when the bridge's favorites need a login the user hasn't set (see useFavorite) — as
-        // well as while the initial status check loads.
-        disabled={!favoritesAvailable || favorited === null}
-      />
-      {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
+      {/* One control, four faces (see useFavorite's `status`). ABSENT for a bridge without favorites —
+          a greyed star there promised a feature that would never arrive. A bridge that has favorites
+          but no account yet gets the way IN rather than a dead button: the same slot reads "Log in to
+          favorite" and opens the bridge's settings, where the login fields are. And the two waits are
+          told apart from both of those by a spinner, since a dimmed star could mean any of them. */}
+      {favoriteStatus === 'login' && loginSettings ? (
+        <ActionButton
+          testID="series.action.favorite"
+          label="Log in"
+          accessibilityLabel="Log in to favorite"
+          leading={<LogInIcon color={theme.text} size={ACTION_ICON_SIZE} />}
+          onPress={() => router.push({ pathname: '/bridge-settings', params: loginSettings })}
+        />
+      ) : favoriteStatus === 'loading' || favoriteStatus === 'checking' ? (
+        <ActionButton
+          testID="series.action.favorite"
+          label="Favorite"
+          leading={<ActivityIndicator size="small" color={theme.textSecondary} style={styles.favoriteSpinner} />}
+          disabled
+        />
+      ) : favoriteStatus === 'ready' ? (
+        <ActionButton
+          testID="series.action.favorite"
+          label={favorited ? 'Favorited' : 'Favorite'}
+          leading={
+            <StarIcon color={favorited ? theme.badgeNew : theme.text} size={ACTION_ICON_SIZE} filled={!!favorited} />
+          }
+          onPress={toggleFavorite}
+        />
+      ) : null}
+      {series.hasSources && (
+        <ActionButton
+          testID="series.action.sources"
+          label="Sources"
+          leading={<SourcesIcon color={theme.text} size={ACTION_ICON_SIZE} />}
+          caret
+        />
+      )}
       {/* Tracker sits at the bottom of the column: it's the "where does this series belong"
           action, below the ones that act on the series itself. The old "Add to collection" button
           stood beside it and is gone — it was the Save button above with extra steps. */}
@@ -515,6 +606,17 @@ export function SeriesBody({
                 <ThemedText type="small">{m.value}</ThemedText>
               </>
             );
+            if (metaKey && bridgeId && m.credits) {
+              return (
+                <CreditsCell
+                  key={m.label}
+                  metaLabel={m.label}
+                  credits={m.credits}
+                  onPress={(c) => onMetaPress(metaKey, c.name)}
+                  testIDBase={testId('series.meta', m.label)}
+                />
+              );
+            }
             return metaKey && bridgeId ? (
               <MetaCell
                 key={m.label}
@@ -813,6 +915,24 @@ const styles = StyleSheet.create({
   },
   metaCellPressed: {
     opacity: 0.6
+  },
+  credits: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start'
+  },
+  credit: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flexShrink: 1
+  },
+  creditPressable: {
+    flexShrink: 1
+  },
+  // Sized to the star it stands in for, so the label doesn't shift when the answer lands.
+  favoriteSpinner: {
+    width: ACTION_ICON_SIZE,
+    height: ACTION_ICON_SIZE
   },
   metaLabel: {
     fontSize: 11,

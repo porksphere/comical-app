@@ -38,6 +38,7 @@ import type {
   LibraryItem,
   Collection,
   MetaCell,
+  MetaCredit,
   PageThumbSource,
   RailKind,
   RailSection,
@@ -446,12 +447,26 @@ export const isRailLayout = (layout: BridgeList['layout']) =>
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/** An AUTHOR/ARTIST cell. The contract's multi-credit array wins when the bridge filled it — each
+ *  person is then their own tap target — and the single string is the whole cell otherwise. The
+ *  string is never split here: only the bridge knows its site's separator, and a client guessing
+ *  at commas would cut a surname-first name in two (see the contract's `creditSchema`). */
+function creditCell(label: string, single: string | undefined, many: MetaCredit[] | undefined): MetaCell | null {
+  const credits = many?.filter((c) => c.name.trim().length > 0) ?? [];
+  if (credits.length > 0) {
+    return { label, value: credits.map((c) => c.name).join(', '), ...(credits.length > 1 && { credits }) };
+  }
+  return single ? { label, value: single } : null;
+}
+
 function buildMeta(info: api.ApiSeriesInfo): MetaCell[] {
   const meta: MetaCell[] = [];
   if (info.status && info.status !== 'unknown') meta.push({ label: 'STATUS', value: capitalize(info.status) });
   if (info.type) meta.push({ label: 'TYPE', value: info.type });
-  if (info.author) meta.push({ label: 'AUTHOR', value: info.author });
-  if (info.artist) meta.push({ label: 'ARTIST', value: info.artist });
+  const author = creditCell('AUTHOR', info.author, info.authors);
+  if (author) meta.push(author);
+  const artist = creditCell('ARTIST', info.artist, info.artists);
+  if (artist) meta.push(artist);
   return meta;
 }
 

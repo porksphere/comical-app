@@ -5,9 +5,9 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View, ty
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
-import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
+import { ClearIcon, SearchIcon, TrackersIcon } from '@/components/icons/ui-icons';
 import { useKeyboardAvoidingInput, useOverlay, useSheetScroll } from '@/components/overlay/overlay';
-import { ActionButton } from '@/components/series/action-button';
+import { ACTION_ICON_SIZE, ActionButton } from '@/components/series/action-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
@@ -32,10 +32,12 @@ import { testId } from '@/lib/test-id';
 
 export function TrackerButton({ bridgeId, seriesId }: { bridgeId: string; seriesId: string }) {
   const { open } = useOverlay();
+  const theme = useTheme();
   return (
     <ActionButton
       testID="series.action.trackers"
       label="Trackers"
+      leading={<TrackersIcon color={theme.text} size={ACTION_ICON_SIZE} />}
       caret
       onPress={() => open(() => <TrackerMenu bridgeId={bridgeId} seriesId={seriesId} />)}
     />

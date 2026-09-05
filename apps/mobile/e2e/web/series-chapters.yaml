@@ -6,8 +6,9 @@
 #   - series.chapters.tab.<id> sets accessibilityLabel=t.label ("All"/"Read"/"Unread") — select by
 #     that label text (chapters-section.tsx's Segmented/SegmentButton sets both testID and
 #     accessibilityLabel on the same Pressable).
-#   - series.chapters.sort.<id> sets accessibilityLabel=s.label ("Newest first"/"Oldest first") —
-#     same reason, select by label text.
+#   - series.chapters.sort.<id> is ONE toggle (chapters-section.tsx's SortToggle) whose
+#     accessibilityLabel names the order a tap switches TO ("Oldest first" while newest-first is in
+#     force, then "Newest first") — same aria-label quirk, select by that label text.
 # series.chapter.*, series.chapters.expand-middle, series.action.save and
 # series.chapter-menu.collect files THIS chapter into a collection — the only place a chapter can be
 # filed, since the reader's settings sheet is settings only.

@@ -46,7 +46,7 @@ import {
   type MenuRowSpec,
   type SubmenuSpec,
 } from '@/components/context-menu-material';
-import { CheckIcon, DownloadsIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, DownloadsIcon, LogInIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -192,7 +192,7 @@ const MENU_HOLD_MS = 220;
 const SUBMENU_DWELL_MS = 320;
 // Read + Save + Favorite + Download + Reset progress. Keep in step with the rows rendered
 // below — the menu's height is computed from this (it's what the panel's resize range budgets for),
-// not measured.
+// not measured. Favorite is the one row that can be absent (a bridge without the capability).
 const MENU_ROWS = 5;
 // DEV ONLY: pad the menu out with dummy rows, to exercise the case the pan gesture exists for — a
 // group too tall for the screen, where the panel has to give up height for the menu to be reachable.
@@ -314,7 +314,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     if (detailLoaded && !detail.data?.description) lastDescHeight = 0;
   }, [detailLoaded, detail.data?.description]);
 
-  const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
+  const { favorited, toggle: toggleFavorite, status: favoriteStatus, loginSettings } = useFavorite(bridgeId, entry.id);
   const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
   // Collections for the Save row's submenu: the set itself (the expanded rows) + this series'
   // live memberships (the checkmarks, optimistic). Both queries run
@@ -438,7 +438,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const panelLeft = EDGE_PAD;
 
   const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
-  const menuRowCount = MENU_ROWS + DEBUG_EXTRA_MENU_ROWS;
+  const menuRowCount = MENU_ROWS - (favoriteStatus === 'unsupported' ? 1 : 0) + DEBUG_EXTRA_MENU_ROWS;
   const rowCount = menuRowCount;
   const menuH = ROW_HEIGHT * menuRowCount + MENU_PAD_V * 2;
   // The MENU centres on the card you pressed — as close to it as the screen edges allow. It's much
@@ -1160,17 +1160,34 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             () => openSubmenu(SAVE_ROW_INDEX, collectionsSubmenu())
           : () => act(save.onPress),
     },
-    {
-      label: favorited ? 'Unfavorite' : 'Favorite',
-      Icon: StarIcon,
-      iconFilled: !!favorited,
-      loading: favorited === null,
-      // Greyed + inert when this bridge's favorites need a login that isn't set (see useFavorite).
-      disabled: !favoritesAvailable,
-      active: !!favorited,
-      testID: 'series.card-menu.favorite',
-      onPress: () => act(toggleFavorite),
-    },
+    // Same faces as the series page's star (see there): absent without the capability, a way into
+    // the bridge's settings when it needs a login, dimmed only while genuinely unknown.
+    ...(favoriteStatus === 'login' && loginSettings
+      ? [
+          {
+            label: 'Log in to favorite',
+            Icon: LogInIcon,
+            loading: false,
+            testID: 'series.card-menu.favorite',
+            onPress: () => {
+              dismiss();
+              router.push({ pathname: '/bridge-settings', params: loginSettings });
+            },
+          } satisfies MenuRowSpec,
+        ]
+      : favoriteStatus !== 'unsupported'
+        ? [
+            {
+              label: favorited ? 'Unfavorite' : 'Favorite',
+              Icon: StarIcon,
+              iconFilled: !!favorited,
+              loading: favoriteStatus !== 'ready',
+              active: !!favorited,
+              testID: 'series.card-menu.favorite',
+              onPress: () => act(toggleFavorite),
+            } satisfies MenuRowSpec,
+          ]
+        : []),
     {
       label: download.label,
       Icon: DownloadsIcon,

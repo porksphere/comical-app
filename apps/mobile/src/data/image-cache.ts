@@ -67,6 +67,24 @@ export function cacheBreakdown(): CacheEntry[] {
   }
 }
 
+/** The two probes above as one measurement. */
+export interface CacheUsage {
+  bytes: number;
+  breakdown: CacheEntry[];
+}
+
+/**
+ * The Storage screen's measurement, shaped for TanStack Query: the walk is synchronous and can be
+ * chunky on a multi-GB cache, so it yields to the event loop first (the screen paints, then the
+ * walk runs) and the result is cached under `queryKeys.cacheUsage()` — persisted, so a re-open
+ * within the stale window shows the last number instantly instead of walking the disk again.
+ * Clearing the cache invalidates it.
+ */
+export async function measureCacheUsage(): Promise<CacheUsage> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  return { bytes: cacheDiskUsage(), breakdown: cacheBreakdown() };
+}
+
 /** Clear the image cache (disk + in-memory). */
 export async function clearImageCache(): Promise<void> {
   try {

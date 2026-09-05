@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import type { SettingDescriptor, SettingValue } from '@/data/api';
+import type { BridgeSettingsInfo, SettingDescriptor, SettingValue } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
@@ -43,6 +43,17 @@ function buildSettingsBody(
     else if (d.key in values) body[d.key] = values[d.key];
   }
   return body;
+}
+
+/** The login fields a favorites bridge still needs, named for the user, or null once any is set —
+ *  the same "which secrets hold a value" rule the star button gates on (see favorites-status.ts). A
+ *  required field is already announced by the banner above, so only the OPTIONAL-login case is
+ *  spoken to here. */
+function favoritesLoginPending(data: BridgeSettingsInfo): string | null {
+  if (data.missingRequired.length > 0) return null;
+  const secrets = data.settings.filter((d) => (d.type === 'string' && !!d.secret) || d.type === 'oauth-pin' || d.type === 'oauth-callback');
+  if (secrets.length === 0 || secrets.some((d) => data.secretsSet.includes(d.key))) return null;
+  return secrets.map((d) => d.label).join(' or ');
 }
 
 export default function BridgeSettingsScreen() {
@@ -197,6 +208,11 @@ export default function BridgeSettingsScreen() {
                 names the fields sitting right above this row. */}
             {data.info.capabilities?.includes('favorites') && (
               <SettingsSection title="Favorites">
+                {favoritesLoginPending(data) && (
+                  <ThemedText type="small" themeColor="textSecondary" style={styles.favoritesNote}>
+                    Favorites need an account — fill in {favoritesLoginPending(data)} above.
+                  </ThemedText>
+                )}
                 <SettingsRow
                   testID="settings.bridge.import-favorites"
                   label="Import favorites into library"
@@ -252,6 +268,10 @@ export default function BridgeSettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  favoritesNote: {
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.two,
   },
   content: {
     // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
