@@ -85,17 +85,18 @@ const TABS: { id: Tab; label: string }[] = [
 // to the other. Two highlighted-arrow segments used to stand for this, and read as two mystery
 // buttons: an arrow alone doesn't say whether it's the order you have or the one you'd get.
 const SORT_LABEL = { desc: 'Newest first', asc: 'Oldest first' } as const;
-// How a chapter row is drawn, kept flippable while the three are tried against each other on a
-// device. `bubble` is the filled, bordered, rounded card each row was originally; `outline` is that
-// card with the plate removed — the hairline alone draws it on the page background, which is the
-// quieter form of the same shape; `flat` is the look every other list in the app has — full-width
+// How a chapter row is drawn, kept flippable while the forms are tried against each other on a
+// device. `bubble` is the filled, bordered, rounded card each row was originally; `plate` is that
+// card without its hairline — the fill alone, the grouped-cell look; `outline` is the hairline
+// alone on the page background; `flat` is the look every other list in the app has — full-width
 // rows parted by a hairline inset to the text gutter (History, Downloads, Settings). Flip this,
 // nothing else.
-const CHAPTER_ROWS = 'outline' as 'flat' | 'bubble' | 'outline';
+const CHAPTER_ROWS = 'plate' as 'flat' | 'bubble' | 'plate' | 'outline';
 const FLAT_ROWS = CHAPTER_ROWS === 'flat';
-// The plate is the bubble's alone; a read row dims as a whole under the other two (a bubble keeps
-// its greyed title instead, since a dimmed plate reads as disabled rather than as read).
-const PLATED_ROWS = CHAPTER_ROWS === 'bubble';
+// A filled row keeps its greyed title for read state, since a dimmed plate reads as disabled rather
+// than as read; the unfilled forms dim as a whole instead.
+const PLATED_ROWS = CHAPTER_ROWS === 'bubble' || CHAPTER_ROWS === 'plate';
+const BORDERED_ROWS = CHAPTER_ROWS === 'bubble' || CHAPTER_ROWS === 'outline';
 // A long tab collapses to a configurable number of chapters from the start and the
 // end, with an expand button between them for the hidden middle.
 const COLLAPSED_HEAD_COUNT = 5;
@@ -886,7 +887,7 @@ function ChapterRow({
           type={PLATED_ROWS ? 'backgroundElement' : 'background'}
           style={[
             styles.row,
-            FLAT_ROWS ? styles.rowFlat : { borderColor: theme.hairline },
+            FLAT_ROWS ? styles.rowFlat : BORDERED_ROWS ? { borderColor: theme.hairline } : styles.rowUnbordered,
             // Brighten (not dim) on hover — same treatment as the chapter tab strip.
             rowHover.hovered && { backgroundColor: theme.backgroundSelected },
           ]}>
@@ -2143,6 +2144,9 @@ const styles = StyleSheet.create({
   rowFlat: {
     borderWidth: 0,
     borderRadius: 0,
+  },
+  rowUnbordered: {
+    borderWidth: 0,
   },
   // Starts at the text gutter and runs to the right edge — the inset divider every other list uses.
   rowDivider: {
