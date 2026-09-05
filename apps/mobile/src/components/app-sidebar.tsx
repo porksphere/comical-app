@@ -11,7 +11,7 @@
  */
 import { type LucideIcon } from 'lucide-react-native';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type PressableProps } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -385,13 +385,15 @@ function Chevron({ open, color }: { open?: boolean; color: string }) {
  */
 export function SidebarGroup({ name, testID, children }: { name: string; testID: string; children: React.ReactNode }) {
   const open = useSectionOpen(name);
-  const [height, setHeight] = useState(0);
+  // A shared value rather than state: read through the worklet's closure, a height captured at 0
+  // can stay 0 for the animation's whole life (see the chapter list's Disclosure).
+  const measured = useSharedValue(0);
   const progress = useSharedValue(open ? 1 : 0);
   useEffect(() => {
     progress.value = withTiming(open ? 1 : 0, DISCLOSE_TIMING);
   }, [open, progress]);
   const style = useAnimatedStyle(() => ({
-    height: progress.value * height,
+    height: progress.value * measured.value,
     // Fades over the FIRST half of the travel, so a group on its way out is gone before it has
     // finished shrinking — the rows below it then slide up past empty space rather than through
     // text that is still legible.
@@ -402,7 +404,7 @@ export function SidebarGroup({ name, testID, children }: { name: string; testID:
       {/* The gap lives HERE, not on the rail: the rail's own gap only separates its direct children
           (the rows and the groups), so without this the sub-item highlights were flush against each
           other — a selected row and the one you were hovering below it read as a single block. */}
-      <View style={styles.groupRows} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
+      <View style={styles.groupRows} onLayout={(e) => measured.set(e.nativeEvent.layout.height)}>
         {children}
       </View>
     </Animated.View>

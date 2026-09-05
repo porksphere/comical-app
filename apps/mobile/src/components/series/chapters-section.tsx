@@ -304,8 +304,8 @@ function SortToggle({ asc, onToggle }: { asc: boolean; onToggle: () => void }) {
   );
 }
 
-/** The "N versions" toggle's chevron, turning over as the list opens — the sidebar groups' chevron,
- *  at the sidebar's timing. */
+/** The versions toggle's chevron, turning over as the list opens — the sidebar groups' chevron, at
+ *  the sidebar's timing. */
 function TurningChevron({ open, color }: { open: boolean; color: string }) {
   const turn = useSharedValue(open ? 1 : 0);
   useEffect(() => {
@@ -327,20 +327,23 @@ function TurningChevron({ open, color }: { open: boolean; color: string }) {
  * be tapped through the hairline it has shrunk to.
  */
 function Disclosure({ open, children }: { open: boolean; children: ReactNode }) {
-  const [height, setHeight] = useState(0);
+  // The measured height is a SHARED value, not React state read through the worklet's closure: a
+  // closure captured with the height still 0 is what the animation kept reading on native, so the
+  // list animated to nothing. Read live, the worklet always has the latest measurement.
+  const measured = useSharedValue(0);
   const progress = useSharedValue(open ? 1 : 0);
   useEffect(() => {
     progress.set(withTiming(open ? 1 : 0, DISCLOSE_TIMING));
   }, [open, progress]);
   const style = useAnimatedStyle(() => ({
-    height: progress.value * height,
+    height: progress.value * measured.value,
     // Gone over the first half of the travel, so a closing list is invisible before it has finished
     // shrinking and the rows below slide up past empty space rather than through legible text.
     opacity: Math.min(1, progress.value * 2),
   }));
   return (
     <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[styles.disclosure, style]}>
-      <View onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>{children}</View>
+      <View onLayout={(e) => measured.set(e.nativeEvent.layout.height)}>{children}</View>
     </Animated.View>
   );
 }
@@ -902,26 +905,29 @@ function ChapterRow({
               <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
             </View>
           )}
-          {multi && (
-            <Pressable
-              testID={testId('series.chapter', group.key, 'versions')}
-              onPress={() => setExpanded((v) => !v)}
-              onHoverIn={versionsHover.onHoverIn}
-              onHoverOut={versionsHover.onHoverOut}
-              hitSlop={6}
-              style={[
-                styles.versionsBtn,
-                versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
-              ]}>
-              <ThemedText type="small" style={{ color: theme.accent }}>
-                {group.versions.length} versions
-              </ThemedText>
-              <TurningChevron open={expanded} color={theme.accent} />
-            </Pressable>
-          )}
           <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
             {relativeTime(def.date)}
           </ThemedText>
+          {/* The slot is reserved on every row, chevron or not, so the dates stay in one column. */}
+          <View style={styles.versionsSlot}>
+            {multi && (
+              <Pressable
+                testID={testId('series.chapter', group.key, 'versions')}
+                onPress={() => setExpanded((v) => !v)}
+                onHoverIn={versionsHover.onHoverIn}
+                onHoverOut={versionsHover.onHoverOut}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={`${group.versions.length} versions`}
+                accessibilityState={{ expanded }}
+                style={[
+                  styles.versionsBtn,
+                  versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
+                ]}>
+                <TurningChevron open={expanded} color={theme.textSecondary} />
+              </Pressable>
+            )}
+          </View>
         </ThemedView>
       </Pressable>
       {multi && (
@@ -2184,12 +2190,17 @@ const styles = StyleSheet.create({
   rowDimmed: {
     opacity: 0.4,
   },
-  // The "N versions" toggle inside a row — sits between the name and the time.
-  versionsBtn: {
-    flexDirection: 'row',
+  // The versions toggle's column at the row's trailing edge, past the date.
+  versionsSlot: {
+    width: 20,
     alignItems: 'center',
-    gap: Spacing.half,
-    paddingHorizontal: Spacing.one,
+    justifyContent: 'center',
+  },
+  versionsBtn: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // Clips the measured version rows to the animated fraction of their height.
   disclosure: {
