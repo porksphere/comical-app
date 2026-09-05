@@ -2190,9 +2190,12 @@ const styles = StyleSheet.create({
   rowDimmed: {
     opacity: 0.4,
   },
-  // The versions toggle's column at the row's trailing edge, past the date.
+  // The versions toggle's column at the row's trailing edge, past the date. Pulled into the row's
+  // side padding so its box sits the same distance from the right edge as from the top and bottom
+  // — the row's vertical padding, not its wider horizontal one.
   versionsSlot: {
     width: 20,
+    marginRight: Spacing.two - Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',
   },
