@@ -1,5 +1,6 @@
 {
-  "commit": "0d086d8",
-  "version": "0.2.0.49",
-  "publishedAt": "2026-08-25T06:35:11Z"
+  "commit": "dc1487c",
+  "version": "0.3.1.15",
+  "notes": "• Revert the temporary trigger, and name the matrix jobs\n• TEMPORARY: run the desktop lane for the Linux matrix entry\n• Desktop README: restore the install section, add Linux packaging\n• Desktop: Linux packaging, and matrix the lane over both platforms\n• Revert the temporary branch trigger (size measured: 83.5 MB)\n• Desktop: installer only, and English-only Chromium locales\n• Revert the temporary branch trigger on the desktop lane\n• Desktop CI: build the bridge bundles before smoke-testing\n• Desktop README: cut it to what the code can't say\n• TEMPORARY: run the desktop lane on the spike branch\n• Desktop CI: fold the duplicated comment on the version-stamp step\n• Desktop: package it, and build Windows installers in CI\n• Desktop README: correct the macOS install story\n• Desktop spike: the web UI in Electron, with the host in-process\n• release: 0.3.1\n• Slice on Android only, and stop releasing the source bitmap\n• Load the image manipulator on first use, not at import\n• Drop the subtitle under the downsample toggle\n• Cut a stitched strip into pieces Android can actually draw\n• Make reader downsampling the reader's own choice, and pay for it on iOS",
+  "publishedAt": "2026-09-07T00:47:36Z"
 }
