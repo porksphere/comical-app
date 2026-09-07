@@ -3212,10 +3212,14 @@ function SeriesReaderInstance({
     // Travel far enough to clear the screen from wherever the page's TOPMOST visible artifact
     // currently sits. At rest that's the seam gradient's upper edge (bandH - SHEET_FADE_H — the
     // title reaches up into the seam, so clearing only the background's top would leave the title
-    // and half the gradient peeking at the bottom of the expanded reader); when scrolled, the
-    // seam parks at the screen top and the travel saturates at the full height.
+    // and half the gradient peeking at the bottom of the expanded reader). Scrolling moves the
+    // sheet up by `min(off, bandH)` (headerSheetBgStyle), and the seam rides ABOVE its top edge, so
+    // the seam's upper edge keeps rising until the sheet's own travel stops at `bandH` — past the
+    // point where it crosses the screen top. Capping this term where the seam merely REACHES the
+    // top (bandH - SHEET_FADE_H, as it did) left up to SHEET_FADE_H of gradient at the bottom of
+    // the reader for any tap below the first screen of details — every page thumbnail.
     const seamTopRest = bandH - SHEET_FADE_H;
-    const travel = height - seamTopRest + Math.min(Math.max(off, 0), seamTopRest);
+    const travel = height - seamTopRest + Math.min(Math.max(off, 0), bandH);
     // The `min(off, 0)` term cancels the layer's share of an ACTIVE iOS pull: while the native
     // rubber-band is moving the content (and headerSheetBgStyle the seam) down 1:1 already, the
     // pull-driven progress must not ALSO move the layer — only the commit animation (progress

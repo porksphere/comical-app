@@ -1,7 +1,7 @@
 import { View, StyleSheet } from 'react-native';
 
 import { MenuActionRow, MenuHeader } from '@/components/context-menu';
-import { CheckIcon, DownloadsIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, DownloadsIcon, LogInIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
 import { OptionList, useOverlay } from '@/components/overlay/overlay';
 import { Spacing } from '@/constants/theme';
 import type { SeriesEntry } from '@/data/types';
@@ -9,6 +9,7 @@ import { useFavorite } from '@/hooks/use-favorite';
 import { useResetReadProgress } from '@/hooks/use-reset-read-progress';
 import { useSeriesSave } from '@/hooks/use-series-save';
 import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
+import { useRouter } from '@/lib/nav';
 
 /**
  * The per-series quick-actions menu content, shared by the native long-press menu and the web 3-dot
@@ -34,7 +35,8 @@ export function SeriesActionsMenu({
   coverAspect?: number;
 }) {
   const { closeTop } = useOverlay();
-  const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
+  const router = useRouter();
+  const { favorited, toggle: toggleFavorite, status: favoriteStatus, loginSettings } = useFavorite(bridgeId, entry.id);
   const save = useSeriesSave(
     bridgeId,
     entry.id,
@@ -93,19 +95,31 @@ export function SeriesActionsMenu({
             resetProgress();
           }}
         />
-        <MenuActionRow
-          testID="series.card-menu.favorite"
-          label={favorited ? 'Unfavorite' : 'Favorite'}
-          Icon={StarIcon}
-          loading={favorited === null}
-          // Greyed + inert when this bridge's favorites need a login that isn't set (see useFavorite).
-          disabled={!favoritesAvailable}
-          active={!!favorited}
-          onPress={() => {
-            toggleFavorite();
-            closeTop();
-          }}
-        />
+        {/* Same faces as the series page's star (see there): absent without the capability, a way
+            into the bridge's settings when it needs a login, dimmed only while genuinely unknown. */}
+        {favoriteStatus === 'login' && loginSettings ? (
+          <MenuActionRow
+            testID="series.card-menu.favorite"
+            label="Log in to favorite"
+            Icon={LogInIcon}
+            onPress={() => {
+              closeTop();
+              router.push({ pathname: '/bridge-settings', params: loginSettings });
+            }}
+          />
+        ) : favoriteStatus !== 'unsupported' ? (
+          <MenuActionRow
+            testID="series.card-menu.favorite"
+            label={favorited ? 'Unfavorite' : 'Favorite'}
+            Icon={StarIcon}
+            loading={favoriteStatus !== 'ready'}
+            active={!!favorited}
+            onPress={() => {
+              toggleFavorite();
+              closeTop();
+            }}
+          />
+        ) : null}
       </OptionList>
     </View>
   );

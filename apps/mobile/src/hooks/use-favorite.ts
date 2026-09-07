@@ -5,6 +5,14 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { useFavoritesAvailability } from '@/hooks/use-favorites-available';
 
 /**
+ * What a favorite control should show. The first three are the bridge's (see `FavoritesStatus`);
+ * `checking` is this series' own status request still in flight, and `ready` is a star that can be
+ * toggled. A surface that can't tell `login` from `checking` shows a dead button for both, which is
+ * exactly the ambiguity this exists to remove.
+ */
+export type FavoriteStatus = 'unsupported' | 'loading' | 'login' | 'checking' | 'ready';
+
+/**
  * Per-series favorite state + optimistic toggle, shared by the Series screen and the reader's
  * settings panel so both stay in exact lockstep — same cache key, same optimistic-update /
  * rollback / list-invalidation flow — instead of two hand-kept copies that could drift.
@@ -13,9 +21,10 @@ import { useFavoritesAvailability } from '@/hooks/use-favorites-available';
  * unsupported check (a bridge without "favorites", or one needing auth) reads as `false` so the
  * star stays usable but empty rather than surfacing an error for a peripheral action.
  *
- * `available` is the gate (see `useFavoritesAvailability`): a bridge whose favorites need login the
- * user hasn't provided. When false the status check is skipped and `toggle` is a no-op — callers grey
- * the star out. It's false while the bridge summaries load, so the star greys until we KNOW it's usable.
+ * `status` is what a control renders from (see `FavoriteStatus`); `available` is the gate behind it
+ * (see `useFavoritesAvailability`). When not available the status check is skipped and `toggle` is a
+ * no-op. `loginSettings` are the route params that open the bridge's settings — where the login
+ * fields are — for a `login` status; the control makes itself the way in rather than a dead end.
  */
 export function useFavorite(
   bridgeId: string | undefined,
@@ -25,8 +34,9 @@ export function useFavorite(
   const ds = useDataSource();
   const mock = useMockActive();
   const queryClient = useQueryClient();
-  const { isAvailable } = useFavoritesAvailability();
-  const available = isAvailable(bridgeId);
+  const { statusOf, summaryOf } = useFavoritesAvailability();
+  const bridgeStatus = statusOf(bridgeId);
+  const available = bridgeStatus === 'available';
   const key = queryKeys.isFavorite(mock, bridgeId ?? '', seriesId);
   // retry:false — an unsupported/unauthed check should read as "not favorited", not spin a retry.
   // `enabled` lets a caller defer the check until it's actually needed (e.g. a per-card context menu
@@ -68,5 +78,8 @@ export function useFavorite(
     if (!available || !bridgeId || favorited === null) return;
     mutation.mutate(!favorited);
   };
-  return { favorited, toggle, available };
+  const status: FavoriteStatus = available ? (favorited === null ? 'checking' : 'ready') : bridgeStatus;
+  const summary = summaryOf(bridgeId);
+  const loginSettings = bridgeId && summary ? { bridgeId, source: summary.source } : undefined;
+  return { favorited, toggle, available, status, loginSettings };
 }

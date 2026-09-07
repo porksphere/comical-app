@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { historyQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
+import { shortChapterName } from '@/lib/chapter-label';
 import { useRouter } from '@/lib/nav';
 import { drillSeriesFromOverlay, encodeSeriesParam } from '@/lib/series-nav';
 
@@ -59,7 +60,7 @@ export function useStartReading(opts: {
 
   // The bridge's readLabel only ever names the FIRST chapter — it has no notion of this device's
   // local reading history, so a resumed series names its own chapter instead (free: it's in `resume`).
-  const label = resume ? (resume.chapterName ? `Resume ${resume.chapterName}` : 'Resume') : (readLabel ?? 'Read');
+  const label = resume ? (resume.chapterName ? `Resume ${shortChapterName(resume.chapterName)}` : 'Resume') : (readLabel ?? 'Read');
 
   const start = () => {
     const params: Record<string, string> = { id: seriesId, title, reader: '1', start: '0' };

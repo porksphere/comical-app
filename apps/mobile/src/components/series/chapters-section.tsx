@@ -35,9 +35,9 @@ import type { MenuRowSpec } from '@/components/context-menu-material';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
 import {
   ArrowDownIcon,
-  ArrowUpIcon,
   CheckAllIcon,
   CheckIcon,
+  ChevronDownIcon,
   DownloadsIcon,
   EyeOffIcon,
   PlusIcon,
@@ -66,6 +66,7 @@ import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/
 import { applyReadState, groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
+import { DISCLOSE_TIMING } from '@/lib/disclose';
 import { testId } from '@/lib/test-id';
 
 // The series chapters block: tab filter (All / Read / Unread) + sort toggle
@@ -80,11 +81,22 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'read', label: 'Read' },
   { id: 'unread', label: 'Unread' },
 ];
-// The sort-direction toggle, in the same segmented-control chrome as TABS.
-const SORT_OPTIONS: { id: 'desc' | 'asc'; label: string; Icon: typeof ArrowDownIcon }[] = [
-  { id: 'desc', label: 'Newest first', Icon: ArrowDownIcon },
-  { id: 'asc', label: 'Oldest first', Icon: ArrowUpIcon },
-];
+// The sort order, by what each one is CALLED — the toggle shows the order in force, and a tap flips
+// to the other. Two highlighted-arrow segments used to stand for this, and read as two mystery
+// buttons: an arrow alone doesn't say whether it's the order you have or the one you'd get.
+const SORT_LABEL = { desc: 'Newest first', asc: 'Oldest first' } as const;
+// How a chapter row is drawn, kept flippable while the forms are tried against each other on a
+// device. `bubble` is the filled, bordered, rounded card each row was originally; `plate` is that
+// card without its hairline — the fill alone, the grouped-cell look; `outline` is the hairline
+// alone on the page background; `flat` is the look every other list in the app has — full-width
+// rows parted by a hairline inset to the text gutter (History, Downloads, Settings). Flip this,
+// nothing else.
+const CHAPTER_ROWS = 'plate' as 'flat' | 'bubble' | 'plate' | 'outline';
+const FLAT_ROWS = CHAPTER_ROWS === 'flat';
+// A filled row keeps its greyed title for read state, since a dimmed plate reads as disabled rather
+// than as read; the unfilled forms dim as a whole instead.
+const PLATED_ROWS = CHAPTER_ROWS === 'bubble' || CHAPTER_ROWS === 'plate';
+const BORDERED_ROWS = CHAPTER_ROWS === 'bubble' || CHAPTER_ROWS === 'outline';
 // A long tab collapses to a configurable number of chapters from the start and the
 // end, with an expand button between them for the hidden middle.
 const COLLAPSED_HEAD_COUNT = 5;
@@ -253,6 +265,86 @@ function SegmentButton({
       ]}>
       {children}
     </Pressable>
+  );
+}
+
+/** The chapter order toggle: a square button beside the tab strip, at the strip's height, holding
+ *  ONE arrow that turns over to point the way the list now runs — down for newest-first, up for
+ *  oldest-first. (Two side-by-side arrows with one highlighted were the previous form; an arrow
+ *  alone never said whether it was the order you had or the one you would get, and the highlight
+ *  made it worse.) Its testID and accessibility label name the order a tap SWITCHES TO — that is
+ *  what pressing it does, and it is what the e2e flows select by. */
+function SortToggle({ asc, onToggle }: { asc: boolean; onToggle: () => void }) {
+  const theme = useTheme();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  const next = asc ? 'desc' : 'asc';
+  const turn = useSharedValue(asc ? 180 : 0);
+  useEffect(() => {
+    turn.set(withTiming(asc ? 180 : 0, { duration: 220, easing: Easing.out(Easing.cubic) }));
+  }, [asc, turn]);
+  const arrowStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value}deg` }] }));
+  return (
+    <Pressable
+      testID={testId('series.chapters.sort', next)}
+      onPress={onToggle}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={SORT_LABEL[next]}
+      style={({ pressed }) => pressed && styles.rowPressed}>
+      <ThemedView
+        type="backgroundElement"
+        style={[styles.sortToggle, hovered && { backgroundColor: theme.backgroundSelected }]}>
+        <Animated.View style={arrowStyle}>
+          <ArrowDownIcon color={theme.textSecondary} size={16} />
+        </Animated.View>
+      </ThemedView>
+    </Pressable>
+  );
+}
+
+/** The versions toggle's chevron, turning over as the list opens — the sidebar groups' chevron, at
+ *  the sidebar's timing. */
+function TurningChevron({ open, color }: { open: boolean; color: string }) {
+  const turn = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    turn.set(withTiming(open ? 1 : 0, DISCLOSE_TIMING));
+  }, [open, turn]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 180}deg` }] }));
+  return (
+    <Animated.View style={style}>
+      <ChevronDownIcon color={color} size={14} />
+    </Animated.View>
+  );
+}
+
+/**
+ * A chapter's version list opening and closing — the sidebar groups' disclosure (see
+ * `SidebarGroup`), for the same reasons: the height is MEASURED from the mounted rows rather than
+ * guessed, and the rows stay mounted while closed so the first open has something to measure and
+ * animates instead of snapping. Pointer events are cut while closed, so a fully-collapsed list can't
+ * be tapped through the hairline it has shrunk to.
+ */
+function Disclosure({ open, children }: { open: boolean; children: ReactNode }) {
+  // The measured height is a SHARED value, not React state read through the worklet's closure: a
+  // closure captured with the height still 0 is what the animation kept reading on native, so the
+  // list animated to nothing. Read live, the worklet always has the latest measurement.
+  const measured = useSharedValue(0);
+  const progress = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    progress.set(withTiming(open ? 1 : 0, DISCLOSE_TIMING));
+  }, [open, progress]);
+  const style = useAnimatedStyle(() => ({
+    height: progress.value * measured.value,
+    // Gone over the first half of the travel, so a closing list is invisible before it has finished
+    // shrinking and the rows below slide up past empty space rather than through legible text.
+    opacity: Math.min(1, progress.value * 2),
+  }));
+  return (
+    <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[styles.disclosure, style]}>
+      <View onLayout={(e) => measured.set(e.nativeEvent.layout.height)}>{children}</View>
+    </Animated.View>
   );
 }
 
@@ -613,19 +705,7 @@ export function ChapterScrollList({
           }}
           {...(fillTabs && { containerStyle: styles.tabsFill, itemStyle: styles.tabFill })}
         />
-        <Segmented
-          options={SORT_OPTIONS.map((s) => ({
-            id: s.id,
-            accessibilityLabel: s.label,
-            testID: testId('series.chapters.sort', s.id),
-            render: (active) => (
-              <s.Icon color={active ? theme.accentOn : theme.textSecondary} size={16} />
-            ),
-          }))}
-          active={asc ? 'asc' : 'desc'}
-          onChange={(id) => setAsc(id === 'asc')}
-          itemStyle={styles.sortTab}
-        />
+        <SortToggle asc={asc} onToggle={() => setAsc((v) => !v)} />
       </View>
     </View>
   ) : null;
@@ -659,7 +739,7 @@ export function ChapterScrollList({
       );
     }
     // Row gap: there's no list container to carry a `gap`, so each row supplies its own spacing.
-    return <View style={styles.chapterRowGap}>{renderRow(item.group)}</View>;
+    return <View style={FLAT_ROWS ? undefined : styles.chapterRowGap}>{renderRow(item.group)}</View>;
   };
 
   // The list header (virtualized path): the series title, the hero/meta (from series.tsx), then the
@@ -795,7 +875,9 @@ function ChapterRow({
       enabled={!!onMenu && !dimmed}
       onOpen={(pt) => onMenu?.(group, { x: pt.x, y: pt.y, width: 0, height: 0 })}>
       {({ onLongPress }) => (
-    <View style={dimmed && styles.rowDimmed}>
+    // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
+    // list you still have to get through, so they are the ones drawn at full strength.
+    <View style={dimmed ? styles.rowDimmed : read && !PLATED_ROWS ? styles.rowRead : undefined}>
       <Pressable
         testID={testId('series.chapter', group.key)}
         onPress={() => onOpen(def)}
@@ -805,17 +887,17 @@ function ChapterRow({
         onHoverOut={rowHover.onHoverOut}
         style={({ pressed }) => pressed && styles.rowPressed}>
         <ThemedView
-          type="backgroundElement"
+          type={PLATED_ROWS ? 'backgroundElement' : 'background'}
           style={[
             styles.row,
-            { borderColor: theme.hairline },
+            FLAT_ROWS ? styles.rowFlat : BORDERED_ROWS ? { borderColor: theme.hairline } : styles.rowUnbordered,
             // Brighten (not dim) on hover — same treatment as the chapter tab strip.
             rowHover.hovered && { backgroundColor: theme.backgroundSelected },
           ]}>
           <ThemedText
             type="small"
             numberOfLines={1}
-            style={[styles.rowName, read && { color: theme.textSecondary }]}>
+            style={[styles.rowName, read && PLATED_ROWS && { color: theme.textSecondary }]}>
             {group.name}
           </ThemedText>
           {dlState && (
@@ -823,34 +905,41 @@ function ChapterRow({
               <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
             </View>
           )}
-          {multi && (
-            <Pressable
-              testID={testId('series.chapter', group.key, 'versions')}
-              onPress={() => setExpanded((v) => !v)}
-              onHoverIn={versionsHover.onHoverIn}
-              onHoverOut={versionsHover.onHoverOut}
-              hitSlop={6}
-              style={[
-                styles.versionsBtn,
-                versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
-              ]}>
-              <ThemedText type="small" style={{ color: theme.accent }}>
-                {group.versions.length} versions {expanded ? '▴' : '▾'}
-              </ThemedText>
-            </Pressable>
-          )}
           <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
             {relativeTime(def.date)}
           </ThemedText>
+          {/* The slot is reserved on every row, chevron or not, so the dates stay in one column. */}
+          <View style={styles.versionsSlot}>
+            {multi && (
+              <Pressable
+                testID={testId('series.chapter', group.key, 'versions')}
+                onPress={() => setExpanded((v) => !v)}
+                onHoverIn={versionsHover.onHoverIn}
+                onHoverOut={versionsHover.onHoverOut}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={`${group.versions.length} versions`}
+                accessibilityState={{ expanded }}
+                style={[
+                  styles.versionsBtn,
+                  versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
+                ]}>
+                <TurningChevron open={expanded} color={theme.textSecondary} />
+              </Pressable>
+            )}
+          </View>
         </ThemedView>
       </Pressable>
-      {multi && expanded && (
-        <View style={styles.versionList}>
-          {group.versions.map((v) => (
-            <VersionRow key={v.id} v={v} active={v.id === def.id} onPress={() => onOpen(v)} />
-          ))}
-        </View>
+      {multi && (
+        <Disclosure open={expanded}>
+          <View style={styles.versionList}>
+            {group.versions.map((v) => (
+              <VersionRow key={v.id} v={v} active={v.id === def.id} onPress={() => onOpen(v)} />
+            ))}
+          </View>
+        </Disclosure>
       )}
+      {FLAT_ROWS && <View style={[styles.rowDivider, { backgroundColor: theme.hairline }]} />}
     </View>
       )}
     </ContextMenuHold>
@@ -1950,6 +2039,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 24,
   },
+  // Square, at the strip's height and radius, so the row reads as one control.
+  sortToggle: {
+    height: CONTROLS_HEIGHT,
+    width: CONTROLS_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...ContinuousCorner,
+    borderRadius: 10,
+  },
   skelRows: {
     gap: Spacing.two,
   },
@@ -2010,7 +2108,7 @@ const styles = StyleSheet.create({
   },
   // Sliding highlight behind the active option (see `Segmented`) — sized to
   // exactly overlay the active option's own rect (same top/bottom inset from
-  // the strip's padding, same radius as `tab`/`sortTab`), so the selected
+  // the strip's padding, same radius as `tab`), so the selected
   // state reads as the same shape as the hover highlight, just filled with
   // the accent color instead of `backgroundSelected`. x/width come from the
   // active option's own measured layout, and transition via the `layout` prop
@@ -2037,16 +2135,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
-  // The sort toggle's own segmented items: square icon buttons rather than
-  // label-width text tabs.
-  sortTab: {
-    height: CONTROLS_HEIGHT - TAB_PAD * 2,
-    width: CONTROLS_HEIGHT - TAB_PAD * 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...ContinuousCorner,
-    borderRadius: 8,
-  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2058,6 +2146,23 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
   },
+  // The flat look: no plate, no border, no corner — the divider below is the row's only edge.
+  rowFlat: {
+    borderWidth: 0,
+    borderRadius: 0,
+  },
+  rowUnbordered: {
+    borderWidth: 0,
+  },
+  // Starts at the text gutter and runs to the right edge — the inset divider every other list uses.
+  rowDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: Spacing.three,
+  },
+  // The same 55% a read History row settles to.
+  rowRead: {
+    opacity: 0.55,
+  },
   rowPressed: {
     opacity: 0.7,
   },
@@ -2065,8 +2170,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '600',
   },
+  // A fixed column, right-aligned: the widest relative time the row can carry ("11 months ago")
+  // fits, so the "N versions" toggle to its left lands in the same place on every row instead of
+  // drifting with the length of the date beside it.
   rowTime: {
     fontSize: 12,
+    width: 88,
+    textAlign: 'right',
   },
   // Trailing per-chapter download indicator — sits between the name and the time.
   rowDownload: {
@@ -2080,9 +2190,24 @@ const styles = StyleSheet.create({
   rowDimmed: {
     opacity: 0.4,
   },
-  // The "N versions ▾" toggle inside a row — sits between the name and the time.
+  // The versions toggle's column at the row's trailing edge, past the date. Pulled into the row's
+  // side padding so its box sits the same distance from the right edge as from the top and bottom
+  // — the row's vertical padding, not its wider horizontal one.
+  versionsSlot: {
+    width: 20,
+    marginRight: Spacing.two - Spacing.three,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   versionsBtn: {
-    paddingHorizontal: Spacing.one,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Clips the measured version rows to the animated fraction of their height.
+  disclosure: {
+    overflow: 'hidden',
   },
   // The expanded per-version list, indented under its logical-chapter row.
   versionList: {

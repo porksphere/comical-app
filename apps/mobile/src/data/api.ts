@@ -472,8 +472,16 @@ export async function getBridges(signal?: AbortSignal): Promise<Bridge[]> {
  *  for `source === "registry"`), without an extra per-bridge fetch. */
 export interface BridgeSummary {
   info: Bridge & { iconUrl?: string };
+  /** The bridge's setting descriptors (secrets redacted). Present on every current host; optional
+   *  only because the field is read alongside `secretsSet`, and both are absent from the same
+   *  older servers. */
+  settings?: SettingDescriptor[];
   configured: boolean;
   missingRequired: string[];
+  /** Secret setting keys that hold a value — how a favorites bridge, whose login is OPTIONAL
+   *  settings, reports whether it's logged in. Absent from a host-server older than the field, and
+   *  an absent value must read as "unknown", never as "logged out" (see useFavoritesAvailability). */
+  secretsSet?: string[];
   source: 'local' | 'registry';
   availableVersion?: string;
   /** Installed but no longer offered by its registry (dropped from the index) — kept working from

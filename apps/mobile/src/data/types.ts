@@ -52,7 +52,11 @@ export type TagGroup = {
    *  practice. */
   tagQueries?: string[];
 };
-export type MetaCell = { label: string; value: string };
+/** One named credit in an AUTHOR/ARTIST cell (mirrors the contract's `Credit`). */
+export type MetaCredit = { name: string; id?: string };
+/** A meta-grid cell. `value` is always the whole display string; `credits` splits it into the
+ *  individually tappable people when the bridge supplied them as separate credits. */
+export type MetaCell = { label: string; value: string; credits?: MetaCredit[] };
 
 export type Chapter = {
   id: string;

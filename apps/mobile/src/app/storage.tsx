@@ -14,8 +14,7 @@
  * The cumulative download-progress radial lives on the Downloads screen, not here — this page is about
  * space occupied, not work in flight.
  */
-import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { StorageBreakdownBar, STORAGE_PALETTE } from '@/components/downloads/storage-breakdown-bar';
@@ -31,19 +30,32 @@ import { EMPTY_STORAGE_USAGE } from '@/data/downloads/derive';
 import { formatBytes } from '@/data/downloads/format';
 import { getResolvedModeSync } from '@/data/embedded/preference';
 import { queryKeys } from '@/data/queries';
-import { applyImageCacheConfig, cacheBreakdown, cacheDiskUsage, cachePrefs$, clearImageCache, useCachePrefs, type CacheEntry } from '@/data/image-cache';
+import { applyImageCacheConfig, cachePrefs$, clearImageCache, measureCacheUsage, useCachePrefs } from '@/data/image-cache';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useRouter } from '@/lib/nav';
 
-const GB = 1024 * 1024 * 1024;
+const MB = 1024 * 1024;
+const GB = 1024 * MB;
 /** Max image-cache size, as byte-count strings (0 = unlimited) for the select row. The native cache
- *  LRU-evicts to stay under whichever cap is chosen (see the row's own description). */
+ *  LRU-evicts to stay under whichever cap is chosen (see the row's own description). Steps are
+ *  roughly ×1.5 apart: close enough that a phone with a few GB free can land near what it can
+ *  actually spare, rather than choosing between halving and doubling. */
 const CACHE_MAX_OPTIONS: SettingsOption<string>[] = [
   { value: '0', label: 'Unlimited' },
-  { value: String(0.5 * GB), label: '512 MB' },
-  { value: String(GB), label: '1 GB' },
-  { value: String(2 * GB), label: '2 GB' },
-  { value: String(4 * GB), label: '4 GB' },
+  ...[
+    [256 * MB, '256 MB'],
+    [512 * MB, '512 MB'],
+    [768 * MB, '768 MB'],
+    [GB, '1 GB'],
+    [1.5 * GB, '1.5 GB'],
+    [2 * GB, '2 GB'],
+    [3 * GB, '3 GB'],
+    [4 * GB, '4 GB'],
+    [6 * GB, '6 GB'],
+    [8 * GB, '8 GB'],
+    [12 * GB, '12 GB'],
+    [16 * GB, '16 GB'],
+  ].map(([bytes, label]) => ({ value: String(bytes), label: label as string })),
 ];
 
 /** Friendly names for the Caches subfolders we can recognise; anything else shows its raw name. */
@@ -57,6 +69,7 @@ function cacheEntryLabel(name: string): string {
 export default function StorageScreen() {
   const contentPadding = useSettingsScrollPadding();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const cacheMax = useCachePrefs().maxBytes;
   const embedded = getResolvedModeSync() === 'embedded';
 
@@ -72,24 +85,22 @@ export default function StorageScreen() {
     queryFn: () => libraryUsage().catch(() => null),
   });
 
-  // True on-disk cache bytes (native only; 0 on web where the probe can't read disk).
-  const [cacheSize, setCacheSize] = useState<number | null>(null);
-  // Per-entry split of the Caches dir — surfaces what shares the dir beyond expo-image's images
-  // (bridge bundles, NSURLCache, framework caches), which is why the total can exceed the max cap.
-  const [breakdown, setBreakdown] = useState<CacheEntry[]>([]);
-  const measure = useCallback(() => {
-    setCacheSize(cacheDiskUsage());
-    setBreakdown(cacheBreakdown());
-  }, []);
-  // Measure after paint — the directory walk is synchronous and can be chunky on a large cache.
-  useEffect(() => {
-    const t = setTimeout(measure, 0);
-    return () => clearTimeout(t);
-  }, [measure]);
+  // True on-disk cache bytes (native only; 0 on web where the probe can't read disk), with the
+  // per-entry split of the Caches dir — what shares it beyond expo-image's images (bridge bundles,
+  // NSURLCache, framework caches), which is why the total can exceed the max cap. A cached query,
+  // not a per-open walk: within the stale window a re-open shows the last measurement at once, and
+  // a cold start shows the persisted one while the walk refreshes it. The row re-measures on tap.
+  const {
+    data: cacheUsage,
+    isFetching: measuring,
+    refetch: remeasure,
+  } = useQuery({ queryKey: queryKeys.cacheUsage(), queryFn: measureCacheUsage });
+  const cacheSize = cacheUsage?.bytes ?? null;
+  const breakdown = cacheUsage?.breakdown ?? [];
 
   const clearCache = async () => {
     await clearImageCache();
-    measure();
+    await queryClient.invalidateQueries({ queryKey: queryKeys.cacheUsage() });
   };
 
   // The breakdown segments: downloads and library come from whichever HOST owns them (this device
@@ -143,7 +154,12 @@ export default function StorageScreen() {
         <SettingsSection title="Image cache">
           <SettingsRow
             label="Cached images"
-            description={cacheSize === null ? 'Measuring…' : `${formatBytes(cacheSize)} — covers & pages you've viewed`}
+            description={
+              cacheSize === null
+                ? 'Measuring…'
+                : `${formatBytes(cacheSize)} — covers & pages you've viewed${measuring ? ' · re-measuring…' : ' · tap to re-measure'}`
+            }
+            onPress={() => void remeasure()}
           />
           {breakdown.length > 0 && (
             <View style={styles.breakdown}>

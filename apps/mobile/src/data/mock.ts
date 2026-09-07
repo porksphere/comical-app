@@ -371,7 +371,7 @@ const MANY_TAGS = [
 const META: MetaCell[] = [
   { label: 'STATUS', value: 'Ongoing' },
   { label: 'TYPE', value: 'Manhwa' },
-  { label: 'AUTHOR', value: 'Halden Reyes, coldpress' },
+  { label: 'AUTHOR', value: 'Halden Reyes, coldpress', credits: [{ name: 'Halden Reyes' }, { name: 'coldpress' }] },
   { label: 'ARTIST', value: 'Junia Marlow' },
 ];
 // Long enough to exercise the clamp-and-expand control on the series page.
@@ -1647,8 +1647,10 @@ export async function mockGetBridgeSummaries(): Promise<BridgeSummary[]> {
     const loggedOut = MOCK_LOGGED_OUT_BRIDGES.has(b.name);
     return {
       info: b,
+      settings: [{ type: 'string', key: 'apiKey', label: 'API key', required: true, secret: true }],
       configured: !loggedOut,
       missingRequired: loggedOut ? ['apiKey'] : [],
+      secretsSet: loggedOut ? [] : ['apiKey'],
       source: 'local' as const,
     };
   });
