@@ -22,11 +22,6 @@ on:
   push:
     branches:
       - main
-      # TEMPORARY: this workflow still isn't on main, so it has no workflow_dispatch entry (GitHub
-      # registers those from the default branch only) and nothing else triggers it. Removed once
-      # the run is green — `publish` is gated to main regardless, so a branch run only uploads
-      # artifacts.
-      - claude/desktop-app-electron-i92uby
     paths:
       - 'apps/desktop/**'
       # The renderer IS apps/mobile's web export, so a screen change changes the desktop build.
