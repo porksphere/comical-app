@@ -180,10 +180,11 @@ jobs:
       # electron-builder reads the version from apps/desktop/package.json (it names the installer
       # and fills the Windows file-version resource). Git carries 0.0.0; only CI stamps it, and it
       # is never committed back.
-      # Emits the semver-normalised string it actually stamped: compute-build-version.sh produces
-      # `X.Y.Z.N` for a rolling build, which electron-builder rejects as invalid semver, so the
-      # script rewrites it to `X.Y.Z-N`. Downstream (artifact names, the Release notes) uses this
-      # output rather than the raw one, so every name agrees.
+      #
+      # The step outputs the semver-normalised string it actually stamped: compute-build-version.sh
+      # produces `X.Y.Z.N` for a rolling build, which electron-builder rejects as invalid semver, so
+      # stamp-version.ts rewrites it to `X.Y.Z-N`. Everything downstream (artifact names, the
+      # Release notes) reads this output rather than the raw one, so every name agrees.
       - name: Stamp the build version
         id: ver
         shell: bash
