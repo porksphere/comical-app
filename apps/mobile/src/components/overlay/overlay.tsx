@@ -31,6 +31,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { presentsAsPopover, topUsesWebOutsideClick } from '@/lib/overlay-presentation';
 import { sharedPushback } from '@/lib/pushback-signal';
 import { armSettleCheck, cancelSettleCheck, notePushback, reportStuck } from '@/lib/pushback-watchdog';
 
@@ -545,19 +546,27 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
 
   // Desktop shows anchored popovers; the mobile sheet's scale-the-app-back and
   // heavy dim are skipped there. On web, a popover's outside-click dismissal
-  // is handled by the `pointerdown` listener below rather than the shared
+  // is handled by the `mousedown` listener below rather than the shared
   // backdrop, so the very click that closes the popover also lands on
   // whatever it actually hit underneath (another control, a series card, …)
   // instead of being swallowed by an invisible full-screen catcher — no
   // separate second click needed. Native large-screen (tablet) popovers still
   // fall back to the backdrop below, since there's no DOM to listen on there.
   const isLargeScreen = useIsLargeScreen();
-  const isWebPopover = Platform.OS === 'web' && isLargeScreen;
+
+  // Whether an item presents as a popover (desktop with an anchor, or explicitly forced — a phone
+  // context menu). Only SHEETS push the app back and dim heavily; a floating context menu gets a
+  // light dim with no scale, so it reads as a popup over the page rather than a modal takeover.
+  const isPopoverItem = useCallback(
+    (it: Item) => presentsAsPopover(it, isLargeScreen),
+    [isLargeScreen],
+  );
 
   const depth = items.length;
+  const topIsWebPopover = topUsesWebOutsideClick(items, isLargeScreen, Platform.OS === 'web');
 
   useEffect(() => {
-    if (!isWebPopover || depth === 0) return;
+    if (!topIsWebPopover) return;
     const handler = (e: MouseEvent) => {
       const insideAny = Array.from(popoverRects.current.values()).some(
         (r) => e.clientX >= r.left && e.clientX <= r.left + r.width && e.clientY >= r.top && e.clientY <= r.top + r.height,
@@ -569,15 +578,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     // its real target normally.
     document.addEventListener('mousedown', handler, true);
     return () => document.removeEventListener('mousedown', handler, true);
-  }, [isWebPopover, depth, closeTop]);
-
-  // Whether an item presents as a popover (desktop with an anchor, or explicitly forced — a phone
-  // context menu). Only SHEETS push the app back and dim heavily; a floating context menu gets a
-  // light dim with no scale, so it reads as a popup over the page rather than a modal takeover.
-  const isPopoverItem = useCallback(
-    (it: Item) => !!it.anchor && (isLargeScreen || !!it.popover),
-    [isLargeScreen],
-  );
+  }, [topIsWebPopover, closeTop]);
   const sheetDepth = items.filter((it) => !isPopoverItem(it)).length;
 
   const appProgress = useSharedValue(0);
@@ -655,7 +656,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
             already fixed this way in the reader's toolbar/pill/settings control. */}
         <AnimatedPressable
           style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]}
-          pointerEvents={depth > 0 && !isWebPopover ? 'auto' : 'none'}
+          pointerEvents={depth > 0 && !topIsWebPopover ? 'auto' : 'none'}
           onPress={closeTop}
         />
 
