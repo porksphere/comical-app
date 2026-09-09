@@ -22,11 +22,6 @@ on:
   push:
     branches:
       - main
-      # TEMPORARY: this workflow doesn't exist on main yet, so it has no workflow_dispatch button
-      # (GitHub registers those from the default branch only) and no PR is open. Listing the spike
-      # branch here is the only way to exercise the lane before it lands. Remove once merged — the
-      # `publish` job is gated to main regardless, so a branch run only uploads artifacts.
-      - claude/desktop-app-electron-i92uby
     paths:
       - 'apps/desktop/**'
       # The renderer IS apps/mobile's web export, so a screen change changes the desktop build.
