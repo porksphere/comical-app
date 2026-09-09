@@ -27,7 +27,13 @@ async function main(): Promise<void> {
   // execution. `test-sprites` needs no network and no credentials — it renders synthetic pages out
   // of two SVG sprite sheets the router itself serves — which makes it the one bridge that proves
   // the whole chain (discover → node:vm evaluate → call → route) with nothing external involved.
-  const EXAMPLE_BRIDGES = join(__dirname, "..", "..", "..", "external", "comical", "bridges");
+  // Honours COMICAL_BRIDGES_DIR like main.ts does, so CI and a local run point at one place.
+  // These are SOURCE dirs until `bun run build` in the submodule compiles each to dist/bridge.js —
+  // the pre-compiled CJS the node:vm evaluator actually loads. Without that the three
+  // bridge-execution checks below have no fixture and fail with "not found in .../bridges".
+  const EXAMPLE_BRIDGES =
+    process.env.COMICAL_BRIDGES_DIR ??
+    join(__dirname, "..", "..", "..", "external", "comical", "bridges");
   const server = await startLoopbackServer({ getHost: () => host, webRoot: WEB_ROOT });
   host = createDesktopHost({ dataDir, bridgesDir: EXAMPLE_BRIDGES, baseUrl: `${server.origin}/api` });
   console.log(`origin:  ${server.origin}\n`);

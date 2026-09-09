@@ -176,6 +176,14 @@ jobs:
         run: bun install --linker hoisted
         working-directory: external/comical
 
+      # Bridges are pre-compiled CJS — one bundle per bridge, which is what the node:vm evaluator
+      # loads. `bun run build` turns bridges/*/src into bridges/*/dist/bridge.js. Without it the
+      # smoke test's bridge-execution assertions have no fixture to run ("not found in …/bridges").
+      # NOT `build:native`, which is the Android QuickJS harness and irrelevant here.
+      - name: Build the example bridge bundles
+        run: bun run build
+        working-directory: external/comical
+
       - uses: actions/download-artifact@v4
         with:
           name: desktop-web-export
@@ -210,6 +218,8 @@ jobs:
       - name: Smoke-test the host (node, no Electron)
         run: bun run smoke
         working-directory: apps/desktop
+        env:
+          COMICAL_BRIDGES_DIR: ${{ github.workspace }}/external/comical/bridges
 
       # windows-latest has an interactive desktop session, so Electron can open a real window here
       # with no virtual display. Tightly timed out: a hung window shouldn't burn the job's budget.
