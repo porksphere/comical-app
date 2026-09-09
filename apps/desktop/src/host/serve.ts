@@ -15,7 +15,9 @@
  * Bound to 127.0.0.1 on an ephemeral port, and every request must carry a per-launch bearer token
  * that Electron injects into the renderer's own requests (`main.ts`'s `onBeforeSendHeaders`). That
  * keeps other local processes — and any browser pointed at the port — out. The token is a stopgap
- * for the port existing at all; see README's "Milestone 2" for the IPC transport that removes it.
+ * for the port existing at all. The fix is to drop the socket entirely: `ipcMain.handle` →
+ * `host.fetch(path, init)` plus a `startup.electron.ts` calling the app's own `setTransport()` —
+ * the shape `@comical/host-rn` already uses on device.
  */
 import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";

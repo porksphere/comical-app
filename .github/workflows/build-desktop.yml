@@ -14,9 +14,8 @@ name: Build desktop (Windows)
 # cross-building it from Linux needs wine.
 #
 # NOT CODE-SIGNED. There's no EV certificate here, so first launch shows SmartScreen
-# ("More info" → "Run anyway"). CSC_IDENTITY_AUTO_DISCOVERY=false stops electron-builder hunting
-# for an identity and failing when it finds none. See apps/desktop/README.md → "Getting it
-# installed".
+# ("More info" → "Run anyway"), once per install. CSC_IDENTITY_AUTO_DISCOVERY=false stops
+# electron-builder hunting for an identity and failing when it finds none.
 
 on:
   workflow_dispatch:

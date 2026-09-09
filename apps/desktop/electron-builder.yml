@@ -5,10 +5,12 @@
 # in — the bundle inlined hono/cheerio/zod/@noble and `@hono/node-server` with them. Electron itself
 # is added by the packager.
 #
-# NOT SIGNED. There's no Developer ID or EV certificate in this project, so a first launch shows
-# SmartScreen on Windows and needs Privacy & Security → Open Anyway on macOS — see README's
-# "Getting it installed". CI sets CSC_IDENTITY_AUTO_DISCOVERY=false so electron-builder doesn't
-# hunt for a keychain identity and fail when it finds none.
+# NOT SIGNED. No Developer ID, no EV certificate — a first launch shows SmartScreen on Windows and
+# needs System Settings → Privacy & Security → Open Anyway on macOS (Sequoia removed the old
+# Control-click bypass). Both are one-time, per install. Signing properly means $99/yr: a Developer
+# ID cert and notarization are paid-only, with no free tier. Ad-hoc signing, which electron-builder
+# does by default and which Apple Silicon requires to run at all, needs no account. CI sets
+# CSC_IDENTITY_AUTO_DISCOVERY=false so electron-builder doesn't hunt for an identity and fail.
 #
 # `version` comes from package.json, which scripts/stamp-version.ts rewrites in CI so the installer
 # carries the same `<base>.<N>` string the mobile lanes stamp.
