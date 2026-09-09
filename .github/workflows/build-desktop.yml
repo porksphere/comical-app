@@ -22,9 +22,6 @@ on:
   push:
     branches:
       - main
-      # TEMPORARY: exercising the new Linux matrix entry (AppImage + .deb). Removed once green —
-      # `publish` is gated to main regardless, so a branch run only uploads artifacts.
-      - claude/desktop-app-electron-i92uby
     paths:
       - 'apps/desktop/**'
       # The renderer IS apps/mobile's web export, so a screen change changes the desktop build.
@@ -143,6 +140,7 @@ jobs:
   # Linux needs wine). Linux doesn't need one for its own sake, but packaging next to the platform
   # you're targeting keeps the two lanes identical instead of special-casing a cross-build.
   package:
+    name: package (${{ matrix.platform }})
     needs: web
     runs-on: ${{ matrix.os }}
     strategy:
