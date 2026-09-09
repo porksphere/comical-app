@@ -12,15 +12,26 @@
     "start": "bun run build && electron build/main.cjs",
     "smoke": "bun build scripts/smoke.ts --target=node --format=cjs --outfile build/smoke.cjs && node build/smoke.cjs",
     "typecheck": "tsc --noEmit",
-    "launch-check": "bun run scripts/launch-check.ts"
+    "launch-check": "bun run scripts/launch-check.ts",
+    "stamp-version": "bun run scripts/stamp-version.ts",
+    "dist:win": "bun run build && electron-builder --win --publish never",
+    "dist:linux": "bun run build && electron-builder --linux --publish never",
+    "dist:mac": "bun run build && electron-builder --mac --publish never"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",
     "@types/node": "^22.10.0",
-    "electron": "^40.0.0",
+    "electron": "40.10.6",
+    "electron-builder": "^26.15.3",
     "typescript": "~6.0.3"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0"
-  }
+  },
+  "author": "porksphere",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/porksphere/comical-app.git"
+  },
+  "desktopName": "comical.desktop"
 }

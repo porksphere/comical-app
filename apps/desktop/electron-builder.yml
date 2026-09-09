@@ -1,0 +1,70 @@
+# electron-builder config for the desktop spike.
+#
+# What ships is deliberately tiny: `build/main.cjs` (the whole `@comical/*` stack already bundled
+# for Node by `scripts/build-main.ts`) plus `build/web` (the Expo web export). No `node_modules` go
+# in — the bundle inlined hono/cheerio/zod/@noble and `@hono/node-server` with them. Electron itself
+# is added by the packager.
+#
+# NOT SIGNED. There's no Developer ID or EV certificate in this project, so a first launch shows
+# SmartScreen on Windows and needs Privacy & Security → Open Anyway on macOS — see README's
+# "Getting it installed". CI sets CSC_IDENTITY_AUTO_DISCOVERY=false so electron-builder doesn't
+# hunt for a keychain identity and fail when it finds none.
+#
+# `version` comes from package.json, which scripts/stamp-version.ts rewrites in CI so the installer
+# carries the same `<base>.<N>` string the mobile lanes stamp.
+
+appId: com.porksphere.comical
+productName: Comical
+# Without this the binary is named after package.json's `name` ("desktop"), which is the workspace
+# folder, not the app. Windows takes its .exe name from productName; this fixes Linux/macOS.
+executableName: comical
+copyright: Comical
+
+# No update feed yet — without this electron-builder tries to compute release-channel names for a
+# publish target that doesn't exist and dies with "Cannot read properties of null (reading
+# 'channel')". Auto-update (a `github` provider + electron-updater) is Milestone 4.
+publish: null
+
+directories:
+  output: dist
+
+files:
+  - build/main.cjs
+  - build/web/**/*
+  - package.json
+
+# electron-builder derives every size it needs — including the Windows .ico — from this one PNG,
+# so there's no committed per-platform icon set to drift from the app's own.
+icon: ../mobile/assets/images/icon.png
+
+win:
+  target:
+    - nsis
+    - zip
+  artifactName: comical-desktop-${version}-${arch}.${ext}
+
+nsis:
+  # A real installer UI rather than electron-builder's default one-click: users pick the install
+  # dir, and it's per-user so no UAC elevation prompt on top of the SmartScreen one.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Comical
+
+linux:
+  target:
+    - AppImage
+  category: Graphics
+  # Lets desktop environments associate the running window with the .desktop entry
+  # (`desktopName` itself lives in package.json — electron-builder reads it from there).
+  syncDesktopName: true
+  artifactName: comical-desktop-${version}-${arch}.${ext}
+
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.entertainment
+  artifactName: comical-desktop-${version}-${arch}.${ext}

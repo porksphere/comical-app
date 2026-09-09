@@ -19,6 +19,14 @@ bun run launch-check         # launches Electron, asserts the app actually mount
                              # headless: xvfb-run -a bun run launch-check
 ```
 
+Packaged installers, via `electron-builder` (config in `electron-builder.yml`):
+
+```bash
+bun run dist:win             # NSIS installer + portable zip  (NSIS needs Windows or wine)
+bun run dist:linux           # AppImage
+bun run dist:mac             # dmg + zip
+```
+
 To have something on the home screen before you've added a registry, point the local-bridge scan
 at the submodule's examples — `test-sprites` needs no network:
 
@@ -106,12 +114,19 @@ Verified (`bun run smoke`, under **plain node**, not Bun — Electron's main pro
 Verified (`bun run launch-check`, Electron under Xvfb): the window loads, React mounts (155 nodes),
 and the app chrome plus a bridge-backed home row render.
 
+Verified (packaging, on this Linux box): `electron-builder` produces an AppImage and a Windows
+`comical.exe` + zip (the `.ico` generated from `apps/mobile/assets/images/icon.png`), and the
+**packaged** app runs — `app.getAppPath()` resolves the web export inside `app.asar`, the loopback
+serves it from there, bridges execute, the UI renders. The NSIS installer is the one piece that
+can't be built here (it needs wine, or Windows — which is what CI uses).
+
 Not addressed — this is a spike:
 
-- **Packaging.** No electron-builder/Forge config, no icons, no installers, no signing or
-  notarization. `bun run start` runs from source.
-- **Auto-update.** Nothing. The mobile channels (`android-latest`, `ios-main`) have no desktop
-  counterpart yet.
+- **Signing.** No Developer ID, no EV certificate, no notarization. See "Getting it installed".
+- **Auto-update.** Nothing. `publish: null` in `electron-builder.yml`; `electron-updater` and a
+  `github` provider are Milestone 4.
+- **macOS / Linux in CI.** The targets are configured and the AppImage builds locally, but only
+  Windows has a workflow.
 - **Desktop chrome.** No app menu, no keyboard shortcuts, no tray, no window-state persistence,
   no deep links. `titleBarStyle: hiddenInset` on macOS is the only concession made.
 - **The open port.** Loopback + a per-launch bearer token injected by Electron's session
@@ -143,11 +158,13 @@ fullscreen), a desktop-width library grid, drag-and-drop import, "open in browse
 links (the spike already routes external navigation to `shell.openExternal`), and a real tray /
 background-download story now that downloads run in a process that outlives no window.
 
-**Milestone 4 — CI and a release channel.** A `build-desktop.yml` matrixed over
-`macos-14` / `windows-latest` / `ubuntu-latest`, publishing to a rolling `desktop-latest` Release
-plus versioned `vX.Y.Z` assets — mirroring the Android channel split, which already has the exact
-"rolling vs release, never the same tag" lesson baked into it. Then `electron-updater` pointed at
-those Releases.
+**Milestone 4 — CI and a release channel.** *Windows is done* — `.github/workflows/build-desktop.yml`
+builds the installer on every push to main and PR, and refreshes a rolling `desktop-latest` Release
+(main only), mirroring the Android channel split and its "rolling vs release, never the same tag"
+lesson. macOS and Linux are a matrix entry away: `electron-builder.yml` already carries both
+targets and the Linux AppImage is verified locally. Still open: versioned `vX.Y.Z` desktop assets
+cut by `release.yml`, and `electron-updater` pointed at those Releases (which needs the `publish:
+null` in `electron-builder.yml` replaced by a `github` provider).
 
 **Ongoing cost to be honest about:** a third shell to keep working (Metro/Expo, nginx/Docker, and
 now Electron), Chromium security updates that force a rebuild whether or not the app changed, and
@@ -208,3 +225,6 @@ Developer ID distribution.
 | `scripts/build-main.ts` | `bun build --target=node --format=cjs` → `build/main.cjs` |
 | `scripts/smoke.ts` | headless host checks, run under `node` |
 | `scripts/launch-check.ts` | launches Electron and asserts the app mounted |
+| `scripts/stamp-version.ts` | writes the CI build version into `package.json` for electron-builder |
+| `electron-builder.yml` | packaging: what ships, the NSIS options, per-OS targets |
+| `../../.github/workflows/build-desktop.yml` | the Windows CI lane |
