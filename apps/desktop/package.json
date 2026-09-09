@@ -1,5 +1,5 @@
 {
-  "name": "desktop",
+  "name": "comical-desktop",
   "version": "0.0.0",
   "private": true,
   "description": "Comical desktop — the web UI in Electron, with the Comical host running in-process.",
@@ -28,7 +28,10 @@
   "dependencies": {
     "@hono/node-server": "^1.14.0"
   },
-  "author": "porksphere",
+  "author": {
+    "name": "porksphere",
+    "email": "porksphere@users.noreply.github.com"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/porksphere/comical-app.git"
