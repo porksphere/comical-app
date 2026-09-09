@@ -22,9 +22,6 @@ on:
   push:
     branches:
       - main
-      # TEMPORARY (again): measuring the installer after dropping the zip target and Chromium's
-      # 55 locales. Removed once the run reports a size — `publish` is gated to main regardless.
-      - claude/desktop-app-electron-i92uby
     paths:
       - 'apps/desktop/**'
       # The renderer IS apps/mobile's web export, so a screen change changes the desktop build.
