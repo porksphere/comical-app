@@ -11,12 +11,13 @@ selectable fallback on native — it talks to a remote `@comical/host-server`.
 ```
 comical/
 ├── apps/
-│   └── mobile/                 # Expo app (expo-router, New Architecture)
-│       ├── src/app/            # screens (Browse/Library/History/Activity/Settings + the series page)
-│       ├── src/data/           # data layer: api.ts (transport seam), source.ts, embedded/ (on-device wiring)
-│       ├── modules/comical-runtime/  # local Expo native module wrapping comical's ComicalBridgeContext
-│       ├── app.json            # Expo config (bundleId: com.porksphere.comical)
-│       └── eas.json            # build profiles (optional `eas build --local` path)
+│   ├── mobile/                 # Expo app (expo-router, New Architecture)
+│   │   ├── src/app/            # screens (Browse/Library/History/Activity/Settings + the series page)
+│   │   ├── src/data/           # data layer: api.ts (transport seam), source.ts, embedded/ (on-device wiring)
+│   │   ├── modules/comical-runtime/  # local Expo native module wrapping comical's ComicalBridgeContext
+│   │   ├── app.json            # Expo config (bundleId: com.porksphere.comical)
+│   │   └── eas.json            # build profiles (optional `eas build --local` path)
+│   └── desktop/                # Electron SPIKE (not shipped) — the web export + the host in-process
 ├── external/comical/           # git SUBMODULE — the Comical runtime (@comical/*), source of on-device bridges
 └── .github/workflows/          # Android + iOS + web build pipelines
 ```
@@ -44,6 +45,12 @@ goes through a swappable transport in `src/data/api.ts`:
   (`startup.ts`, `preference.ts`, `settings-store.ts`) plus the native module.
 - **Remote:** a plain `fetch` against `EXPO_PUBLIC_COMICAL_SERVER`. Used on web, and selectable on
   native via the Settings toggle **"Run bridges on this device."**
+
+**Desktop (spike, not shipped).** `apps/desktop/` reaches the same "no server required" place a
+third way: Electron's main process is a full Node, so it runs the real `@comical/host-server`
+in-process with `node:vm` as the bridge evaluator — no JavaScriptCore or QuickJS harness, and no
+change to `apps/mobile`, which it serves as its own unmodified web export. Rationale, what it
+proves, and what shipping it would take: [apps/desktop/README.md](../apps/desktop/README.md).
 
 The `@comical/*` packages come from the **`comical` git submodule** at `external/comical` —
 `metro.config.js` (`extraNodeModules` + `unstable_enablePackageExports`) and `tsconfig.json`
