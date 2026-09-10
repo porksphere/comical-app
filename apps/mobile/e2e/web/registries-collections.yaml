@@ -1,20 +1,14 @@
-# Web copy of ../mobile/registries-collections.yaml -- but only its THIRD sub-flow ("Add to collection" via
-# series.action.collections). The other two (registries.add, manage-collections.add) are DELIBERATELY OMITTED
-# here, not just untested: both open their form via useOverlay()'s plain `open()`, which always
-# renders as an OverlaySheet (`Gesture.Pan().activeOffsetY(12)`, see ../README.md's "Web-only
-# gesture quirk" section, which is what scoped series-trackers.yaml mobile-only). This is the first
-# EMPIRICAL confirmation of that risk, not just the prior "untested, matches precedent" call:
+# Web copy of ../mobile/registries-collections.yaml for registry add and "Add to collection". Registry
+# add uses `openDialog`: a centered dialog on desktop-width web and a sheet on compact web. The old
+# failure where tapping its input closed the overlay was not the sheet gesture quirk below; the
+# desktop-wide outside-click listener had been enabled by viewport width alone and treated every
+# mousedown as outside when the unanchored sheet had no popover rect. The provider now keys that
+# listener to the top item's actual presentation, and this flow keeps the text-input path covered.
 #
-#   A local headless run against a served static export showed the sheet closes the moment its
-#   TextInput is tapped -- a screenshot taken right after `tapOn: registries.add.url-input`
-#   (before any typing) already shows the plain Registries screen with no sheet at all. The most
-#   likely cause: `useKeyboardAvoidingInput`'s onFocus handler repositions the sheet (to dodge
-#   where a keyboard would be) the instant the input focuses, and that programmatic translateY
-#   shift, arriving mid-gesture, reads to `contentPan`'s Pan responder as motion past its 12px
-#   activation threshold -- so the tap gets reinterpreted as a drag-to-dismiss. Not a Maestro
-#   quirk: a real user tapping that field on web would very likely hit the same thing.
+# manage-collections.add remains omitted because it is still a plain OverlaySheet; Maestro-web's
+# synthetic pointer movement can trip that sheet's pan gesture (see ../README.md).
 #
-# series.action.collections's route is DIFFERENT and empirically CONFIRMED SAFE the same way: it opens
+# series.action.collections's route is empirically confirmed safe: it opens
 # via openCollectionPicker, which renders collection-picker.tsx's own HostPopup -- no Gesture.Pan/GestureDetector
 # anywhere in that component (confirmed against source), dismissed only by a plain Pressable
 # backdrop or the Done button. A local run tapping straight through collection-picker.new ->
@@ -32,6 +26,24 @@ url: http://localhost:4000/comical-app
 ---
 - launchApp
 
+# --- Registries: Settings -> Registries -> Add ---
+- tapOn:
+    id: "Settings"
+- tapOn:
+    id: "Registries"
+- tapOn:
+    id: "Add registry"
+- tapOn:
+    id: "registries.add.url-input"
+- inputText: "https://example.com/test-registry"
+- tapOn:
+    id: "registries.add.submit"
+- assertVisible:
+    text: "https://example.com/test-registry"
+- tapOn:
+    id: "Go back"
+
+# --- "Add to collection" picker from a series detail page: New list, filed and checked ---
 - tapOn:
     id: "Browse"
 - tapOn:

@@ -31,16 +31,17 @@ import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-import { presentsAsPopover, topUsesWebOutsideClick } from '@/lib/overlay-presentation';
+import {
+  overlayPresentation,
+  topUsesWebOutsideClick,
+  type OverlayPresentation,
+} from '@/lib/overlay-presentation';
 import { sharedPushback } from '@/lib/pushback-signal';
 import { armSettleCheck, cancelSettleCheck, notePushback, reportStuck } from '@/lib/pushback-watchdog';
 
-// A small stacked-overlay system. On phones (and mobile web / iOS) each overlay
-// is a bottom sheet with a drag handle (swipe down to dismiss); opening a new
-// one pushes the one below it back (scale + lift + dim). On wide desktop
-// viewports (≥768px) the same content is instead presented as an anchored
-// popover that drops in next to the trigger that opened it. Works on iOS,
-// Android and web (reanimated + gesture-handler).
+// A small stacked-overlay system. On phones, task surfaces are bottom sheets
+// with drag-to-dismiss; desktop presents anchored choices as popovers and
+// explicit task surfaces as centered dialogs. Works on iOS, Android and web.
 
 /** On-screen rectangle of the trigger that opened an overlay, in window
  *  coordinates (from `measureInWindow`). Used to position the desktop popover. */
@@ -53,6 +54,9 @@ type OverlayApi = {
    *  (context menus float at the press point instead of rising as a sheet);
    *  it needs an `anchor` to mean anything. */
   open: (render: () => ReactNode, anchor?: AnchorRect | null, opts?: { popover?: boolean }) => number;
+  /** Opens a modal task surface: a centered dialog on desktop web and the
+   *  existing bottom sheet everywhere else. */
+  openDialog: (render: () => ReactNode, opts?: { accessibilityLabel?: string }) => number;
   closeTop: () => void;
   /** Id of the topmost open item, or null when the stack is empty. */
   topId: number | null;
@@ -156,13 +160,12 @@ export function useKeyboardAvoidingInput() {
   );
 }
 
-// How the current overlay content is being presented: the mobile bottom sheet or
-// the desktop anchored popover. Lets shared interior bits (e.g. the heading)
-// adapt without each call site knowing which container wraps it.
-type OverlayPresentation = 'sheet' | 'popover';
+// How the current overlay content is being presented: the mobile bottom sheet,
+// a desktop anchored popover, or a desktop task dialog. Lets shared interior
+// bits adapt without each call site knowing which container wraps it.
 const OverlayPresentationContext = createContext<OverlayPresentation>('sheet');
 
-/** Whether overlay content is shown as the mobile sheet or the desktop popover. */
+/** How the current overlay content is presented. */
 export function useOverlayPresentation(): OverlayPresentation {
   return useContext(OverlayPresentationContext);
 }
@@ -457,7 +460,15 @@ const listStyles = StyleSheet.create({
 // whenever a second overlay opens on top), needlessly re-rendering overlays
 // that aren't even changing. Keeping the same `ReactNode` reference across
 // renders lets React bail out of re-rendering that subtree entirely.
-type Item = { id: number; node: ReactNode; anchor?: AnchorRect | null; popover?: boolean };
+type Item = {
+  id: number;
+  node: ReactNode;
+  anchor?: AnchorRect | null;
+  popover?: boolean;
+  dialog?: boolean;
+  accessibilityLabel?: string;
+  returnFocus?: HTMLElement | null;
+};
 
 /** What the stack still holds, for a watchdog entry. The first question anyone asks of one of
  *  those is whether the app was pushed back by an overlay that never left (items listed) or by a
@@ -465,7 +476,7 @@ type Item = { id: number; node: ReactNode; anchor?: AnchorRect | null; popover?:
  *  with the same symptom, told apart by this one line. */
 function describeItems(items: readonly Item[]): string {
   if (items.length === 0) return 'items=0 (stack empty — the progress value itself never settled)';
-  return `items=${items.length} [${items.map((it) => `#${it.id}${it.popover ? ' popover' : ''}${it.anchor ? ' anchored' : ''}`).join(', ')}]`;
+  return `items=${items.length} [${items.map((it) => `#${it.id}${it.popover ? ' popover' : ''}${it.dialog ? ' dialog' : ''}${it.anchor ? ' anchored' : ''}`).join(', ')}]`;
 }
 
 const SPRING = { damping: 22, stiffness: 240, mass: 0.7 } as const;
@@ -513,15 +524,37 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     itemsRef.current = items;
   }, [items]);
 
-  const open = useCallback((render: () => ReactNode, anchor?: AnchorRect | null, opts?: { popover?: boolean }) => {
+  const append = useCallback((render: () => ReactNode, item: Omit<Item, 'id' | 'node'>) => {
     const id = idRef.current++;
     // Traced (in memory, one line per open — not per frame) because a stuck pushback is a question
     // about WHICH overlay never left, and by the time anyone notices, the app has been used for
     // minutes since. See lib/pushback-watchdog.
-    notePushback('overlay open', `id=${id}${anchor ? ' anchored' : ''}${opts?.popover ? ' popover' : ''}`);
-    setItems((prev) => [...prev, { id, node: render(), anchor, ...(opts?.popover ? { popover: true } : {}) }]);
+    notePushback(
+      'overlay open',
+      `id=${id}${item.anchor ? ' anchored' : ''}${item.popover ? ' popover' : ''}${item.dialog ? ' dialog' : ''}`,
+    );
+    setItems((prev) => [...prev, { id, node: render(), ...item }]);
     return id;
   }, []);
+
+  const open = useCallback(
+    (render: () => ReactNode, anchor?: AnchorRect | null, opts?: { popover?: boolean }) =>
+      append(render, { anchor, ...(opts?.popover ? { popover: true } : {}) }),
+    [append],
+  );
+
+  const openDialog = useCallback(
+    (render: () => ReactNode, opts?: { accessibilityLabel?: string }) =>
+      append(render, {
+        dialog: true,
+        accessibilityLabel: opts?.accessibilityLabel,
+        returnFocus:
+          Platform.OS === 'web' && typeof document !== 'undefined'
+            ? (document.activeElement as HTMLElement | null)
+            : null,
+      }),
+    [append],
+  );
 
   // Idempotent by construction (`filter` on an id that's already gone is a no-op), which is what
   // lets every exit path below — the curve's own callback, the wall-clock backstop, a second close
@@ -542,7 +575,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const topId = items.length ? items[items.length - 1].id : null;
-  const api = useMemo(() => ({ open, closeTop, topId }), [open, closeTop, topId]);
+  const api = useMemo(() => ({ open, openDialog, closeTop, topId }), [open, openDialog, closeTop, topId]);
 
   // Desktop shows anchored popovers; the mobile sheet's scale-the-app-back and
   // heavy dim are skipped there. On web, a popover's outside-click dismissal
@@ -554,11 +587,10 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   // fall back to the backdrop below, since there's no DOM to listen on there.
   const isLargeScreen = useIsLargeScreen();
 
-  // Whether an item presents as a popover (desktop with an anchor, or explicitly forced — a phone
-  // context menu). Only SHEETS push the app back and dim heavily; a floating context menu gets a
-  // light dim with no scale, so it reads as a popup over the page rather than a modal takeover.
-  const isPopoverItem = useCallback(
-    (it: Item) => presentsAsPopover(it, isLargeScreen),
+  // Resolve explicit intent plus the current platform/viewport once for all stack behavior. A
+  // dialog stays a sheet on compact web and native; anchored items become desktop popovers.
+  const presentationFor = useCallback(
+    (it: Item) => overlayPresentation(it, isLargeScreen, Platform.OS === 'web'),
     [isLargeScreen],
   );
 
@@ -579,10 +611,12 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     document.addEventListener('mousedown', handler, true);
     return () => document.removeEventListener('mousedown', handler, true);
   }, [topIsWebPopover, closeTop]);
-  const sheetDepth = items.filter((it) => !isPopoverItem(it)).length;
+  const sheetDepth = items.filter((it) => presentationFor(it) === 'sheet').length;
+  const dialogDepth = items.filter((it) => presentationFor(it) === 'dialog').length;
 
   const appProgress = useSharedValue(0);
   const anyProgress = useSharedValue(0);
+  const dialogProgress = useSharedValue(0);
   // Both effects arm a watchdog on the way back down. These two values ARE the reported bug when
   // they strand — the app left scaled down and dimmed with nothing on top of it, for the rest of
   // the process, because `OverlayProvider` outlives every screen and no navigation resets it. The
@@ -618,6 +652,9 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
       () => itemsRef.current.length === 0,
     );
   }, [depth, anyProgress]);
+  useEffect(() => {
+    dialogProgress.set(withTiming(dialogDepth > 0 ? 1 : 0, { duration: 160 }));
+  }, [dialogDepth, dialogProgress]);
 
   const appStyle = useAnimatedStyle(() =>
     isLargeScreen
@@ -629,7 +666,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   );
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: isLargeScreen
-      ? 0
+      ? interpolate(dialogProgress.value, [0, 1], [0, 0.42])
       : Math.max(
           interpolate(appProgress.value, [0, 1], [0, 0.5]),
           interpolate(anyProgress.value, [0, 1], [0, 0.18]),
@@ -661,7 +698,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
         />
 
         {items.map((it, i) =>
-          isPopoverItem(it) && it.anchor ? (
+          presentationFor(it) === 'popover' && it.anchor ? (
             <OverlayPopover
               key={it.id}
               id={it.id}
@@ -674,6 +711,17 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
               }}>
               {it.node}
             </OverlayPopover>
+          ) : presentationFor(it) === 'dialog' ? (
+            <OverlayDialog
+              key={it.id}
+              id={it.id}
+              isTop={i === items.length - 1}
+              accessibilityLabel={it.accessibilityLabel}
+              returnFocus={it.returnFocus}
+              onClosed={() => remove(it.id)}
+              register={register}>
+              {it.node}
+            </OverlayDialog>
           ) : (
             <OverlaySheet
               key={it.id}
@@ -1007,6 +1055,151 @@ function OverlaySheet({
   );
 }
 
+const DIALOG_WIDTH = 440;
+const DIALOG_VIEWPORT_GUTTER = Spacing.five;
+
+function OverlayDialog({
+  id,
+  isTop,
+  accessibilityLabel,
+  returnFocus,
+  onClosed,
+  register,
+  children,
+}: {
+  id: number;
+  isTop: boolean;
+  accessibilityLabel?: string;
+  returnFocus?: HTMLElement | null;
+  onClosed: () => void;
+  register: (id: number, fn: () => void) => void;
+  children: ReactNode;
+}) {
+  const { width, height } = useWindowDimensions();
+  const theme = useTheme();
+  const progress = useSharedValue(0);
+  const dialogRef = useRef<View>(null);
+  const isTopRef = useRef(isTop);
+  const closingRef = useRef(false);
+  const backstopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const finishClose = useCallback(() => {
+    if (backstopRef.current !== null) {
+      clearTimeout(backstopRef.current);
+      backstopRef.current = null;
+    }
+    onClosed();
+  }, [onClosed]);
+
+  const close = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    notePushback('overlay dialog close', `id=${id}`);
+    backstopRef.current = setTimeout(() => {
+      backstopRef.current = null;
+      reportStuck(
+        'overlay-dialog',
+        `exit curve never reported back after ${CLOSE_BACKSTOP_MS}ms (id ${id}) — removed by the backstop`,
+      );
+      onClosed();
+    }, CLOSE_BACKSTOP_MS);
+    progress.set(
+      withTiming(0, { duration: 120 }, () => {
+        runOnJS(finishClose)();
+      }),
+    );
+  }, [finishClose, id, onClosed, progress]);
+
+  const closeRef = useRef(close);
+  useEffect(() => {
+    closeRef.current = close;
+  }, [close]);
+
+  useEffect(() => {
+    isTopRef.current = isTop;
+  }, [isTop]);
+
+  useEffect(() => {
+    register(id, () => closeRef.current());
+    progress.set(withTiming(1, { duration: 160 }));
+    return () => {
+      if (backstopRef.current !== null) clearTimeout(backstopRef.current);
+      if (isTopRef.current) returnFocus?.focus();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!isTop || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const root = dialogRef.current as unknown as HTMLElement | null;
+      if (!root) return;
+      const focusable = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.getAttribute('aria-hidden') !== 'true');
+      if (focusable.length === 0) {
+        event.preventDefault();
+        root.focus();
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [isTop]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [
+      { translateY: interpolate(progress.value, [0, 1], [8, 0]) },
+      { scale: interpolate(progress.value, [0, 1], [0.97, 1]) },
+    ],
+  }));
+
+  return (
+    <View style={styles.dialogWrap} pointerEvents="box-none">
+      <Animated.View
+        ref={dialogRef}
+        role="dialog"
+        aria-modal
+        aria-label={accessibilityLabel}
+        tabIndex={-1}
+        style={[
+          styles.floatingEdge,
+          styles.dialog,
+          {
+            width: Math.min(DIALOG_WIDTH, width - DIALOG_VIEWPORT_GUTTER * 2),
+            maxHeight: height - DIALOG_VIEWPORT_GUTTER * 2,
+            backgroundColor: theme.overlaySurface,
+            borderColor: theme.overlayHairline,
+          },
+          animStyle,
+        ]}>
+        <OverlayPresentationContext.Provider value="dialog">{children}</OverlayPresentationContext.Provider>
+      </Animated.View>
+    </View>
+  );
+}
+
 // Desktop presentation: a card anchored next to its trigger. Drops in below the
 // anchor by default, flips above when it would overflow the bottom, clamps
 // horizontally to stay on-screen, and fades + scales in. No drag handle or pan
@@ -1164,6 +1357,7 @@ function OverlayPopover({
           // edge and fills its width, so its boundary is never in question and it takes none; a
           // panel floating over content is the only one that has to declare where it ends, and it
           // has to do that on a phone for the same reason it does on a desktop.
+          styles.floatingEdge,
           styles.popoverEdge,
           { borderColor: theme.overlayHairline },
         ]}
@@ -1238,6 +1432,22 @@ const styles = StyleSheet.create({
   popoverWrap: {
     position: 'absolute',
   },
+  dialogWrap: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: DIALOG_VIEWPORT_GUTTER,
+  },
+  dialog: {
+    ...ContinuousCorner,
+    borderRadius: Spacing.three,
+    padding: Spacing.four,
+    overflow: 'hidden',
+  },
   popover: {
     ...ContinuousCorner,
     borderRadius: 16,
@@ -1256,6 +1466,13 @@ const styles = StyleSheet.create({
    * took, for the same reported symptom. `overflow: hidden` on the panel clips its own children,
    * not its shadow, so the two coexist.
    */
+  floatingEdge: {
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+  },
   popoverEdge: {
     // 24pt of side padding is a bottom sheet's — it exists so a thumb has margin. A pointer needs
     // none, and the rows inside no longer carry a fill of their own (see selector.tsx), so that
@@ -1264,11 +1481,6 @@ const styles = StyleSheet.create({
     // first row flush into a rounded corner while every other edge is padded.
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.two,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#000',
-    shadowOpacity: 0.28,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
   },
   heading: {
     marginBottom: Spacing.one,
