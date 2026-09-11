@@ -146,22 +146,18 @@ the pointer travel is enough to cross that 12px threshold, so the pan gesture wi
 the Pressable's own `onPress` and the sheet just dismisses. Not reproducible as a real bug: an
 actual user's tap doesn't travel that far.
 
-**Any web flow that taps content inside an `OverlaySheet` body (Trackers, Sources, registries.add,
+**Any web flow that taps content inside an `OverlaySheet` body (Trackers, Sources,
 manage-collections.add, filter sheets, …) is at risk of this** — not just multi-step swipe/pinch
 gestures, which were already known to be unreliable on Maestro-web. Treat that class of flow as
-mobile-only. Confirmed a second time and a second way while writing `registries-collections.yaml`:
-tapping `registries.add.url-input` (a plain `TextInput`, no gesture of its own) inside the "Add
-registry" sheet closed it before any text was even typed — a screenshot taken immediately after
-the tap already shows the plain Registries screen underneath, sheet gone. That timing rules out
-the original pointer-travel theory as the *only* cause: this sheet's `TextInput` sits right where
-it was tapped from, no distant-target travel involved. The likelier trigger here is
-`useKeyboardAvoidingInput`'s `onFocus` handler, which repositions the sheet (dodging where a
-keyboard would go) the instant the input focuses — that programmatic `translateY` shift, landing
-mid-gesture, reads to `contentPan`'s Pan responder as motion past its 12px activation threshold,
-same net effect (dismiss) as the pointer-travel case, different mechanism. Both are plausible
-instances of the same underlying fragility (a Pan responder wrapping the whole sheet body reacting
-to *any* motion signal, real or programmatic, that arrives while a tap is in flight) rather than
-one root cause — don't assume a fix for one variant covers the other.
+mobile-only unless it has been confirmed independently.
+
+An earlier run appeared to confirm the same quirk for `registries.add.url-input`, but that was a
+different, real bug: the web outside-click listener was enabled from viewport width rather than the
+top overlay's actual presentation. An unanchored sheet had no registered popover rectangle, so every
+mousedown — including one on its input — counted as outside and closed it. The provider now derives
+outside-click behavior from the top item's presentation, and registry add uses `openDialog`, which is
+a centered dialog on desktop-width web and the existing sheet on compact web/native. The web
+`registries-collections.yaml` flow covers the input and submission path again.
 
 **Not every overlay is an `OverlaySheet`, though — `collection-picker.tsx`'s "Add to collection" popup is a
 false alarm for this quirk, not a match for it.** It's a screen-specific floating card
@@ -169,9 +165,9 @@ false alarm for this quirk, not a match for it.** It's a screen-specific floatin
 a plain `Pressable` backdrop or its Done button — confirmed both by reading the source and by a
 real local web run tapping straight through `collection-picker.new` → `collection-picker.new-name` → typing →
 Enter, which stayed open and created the list correctly. `registries-collections.yaml`'s web copy
-exercises exactly this path while staying mobile-only for the sheet-based `registries.add` /
-`manage-collections.add` sub-flows in the same source screen. Check what a given overlay actually renders
-with (`useOverlay()`'s `open`/`openAt` → `OverlaySheet`/`OverlayPopover`, vs. a bespoke component
+exercises both this path and the dialog-based `registries.add`, while `manage-collections.add`
+remains mobile-only. Check what a given overlay actually renders with (`useOverlay()`'s
+`open`/`openAt`/`openDialog` → `OverlaySheet`/`OverlayPopover`/`OverlayDialog`, vs. a bespoke component
 like `collection-picker.tsx`) before assuming either way.
 
 ## Running locally

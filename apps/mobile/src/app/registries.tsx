@@ -24,6 +24,7 @@ import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-orde
 import { queryKeys } from '@/data/queries';
 import { type DataSource, useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
 import { hapticSelection } from '@/lib/haptics';
@@ -39,7 +40,7 @@ export default function RegistriesScreen() {
   const contentPadding = useSettingsScrollPadding();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const { open } = useOverlay();
+  const { openDialog } = useOverlay();
   // Web-only reorder mode (▲/▼). Native reorders in place via long-press drag.
   const [editing, setEditing] = useState(false);
 
@@ -280,7 +281,7 @@ export default function RegistriesScreen() {
       {/* The + add affordance: a floating FAB in normal mode, hidden while selecting/reordering. */}
       {Array.isArray(ordered) && !selecting && !editing && (
         <AddFab
-          onPress={() => open(() => <AddRegistryForm />)}
+          onPress={() => openDialog(() => <AddRegistryForm />, { accessibilityLabel: 'Add registry' })}
           testID="registries.add"
           label="Add registry"
           right={SettingsGutter}
@@ -359,6 +360,7 @@ function AddRegistryForm() {
   const queryClient = useQueryClient();
   const { closeTop } = useOverlay();
   const keyboardAvoiding = useKeyboardAvoidingInput();
+  const isLargeScreen = useIsLargeScreen();
   const inputRef = useRef<TextInput>(null);
   const [url, setUrl] = useState('');
   const [requireSignature, setRequireSignature] = useState(false);
@@ -398,6 +400,7 @@ function AddRegistryForm() {
         onBlur={keyboardAvoiding.onBlur}
         placeholder="https://example.com/registry"
         placeholderTextColor={theme.textSecondary}
+        autoFocus={IS_WEB && isLargeScreen}
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
