@@ -6,6 +6,7 @@ app: unsigned, no auto-update, no desktop chrome.
 ```bash
 bun run setup       # once, from the repo root
 cd apps/desktop
+bun run dev         # on a live Metro: UI hot-reloads, main-process edits relaunch
 bun run start       # build + launch
 bun run smoke       # the host under plain node — 22 assertions, no Electron
 bun run launch-check

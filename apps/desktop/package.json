@@ -9,6 +9,7 @@
     "build:web": "bun run scripts/build-web.ts",
     "build:main": "bun run scripts/build-main.ts",
     "build": "bun run build:web && bun run build:main",
+    "dev": "bun run scripts/dev.ts",
     "start": "bun run build && electron build/main.cjs",
     "smoke": "bun build scripts/smoke.ts --target=node --format=cjs --outfile build/smoke.cjs && node build/smoke.cjs",
     "typecheck": "tsc --noEmit",

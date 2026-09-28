@@ -21,6 +21,9 @@
  */
 import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
+import type { IncomingMessage, Server } from "node:http";
+import { connect, type AddressInfo } from "node:net";
+import type { Duplex } from "node:stream";
 import { stat, readFile } from "node:fs/promises";
 import { join, normalize, extname, sep } from "node:path";
 import { Readable } from "node:stream";
@@ -62,6 +65,14 @@ export interface ServeOptions {
   getHost: () => DesktopHost | null;
   /** Directory holding the Expo web export (`apps/mobile/dist`). */
   webRoot: string;
+  /** Dev only: a Metro dev server (`http://localhost:8081`) to proxy the renderer from instead of
+   *  `webRoot`, so the window hot-reloads. Proxied rather than loaded directly so the renderer keeps
+   *  the one origin it has when packaged — `/api` stays same-origin and the bearer injection is
+   *  unchanged. */
+  devServer?: string;
+  /** Fixed port instead of an ephemeral one. The origin keys the renderer's localStorage, so a
+   *  port that changes every launch starts every launch with empty preferences. */
+  port?: number;
 }
 
 export async function startLoopbackServer(opts: ServeOptions): Promise<LoopbackServer> {
@@ -81,28 +92,45 @@ export async function startLoopbackServer(opts: ServeOptions): Promise<LoopbackS
       return host.router.fetch(new Request(`${origin}${rest}${url.search}`, req));
     }
 
+    if (opts.devServer) return proxyToDevServer(opts.devServer, req, url, origin);
     return serveStaticFile(opts.webRoot, url.pathname, origin);
   };
 
-  const server = serve({ fetch: handler, hostname: "127.0.0.1", port: 0 });
-  const address = await new Promise<{ port: number }>((resolve) => {
-    // @hono/node-server returns the underlying http.Server; it may already be listening.
-    const addr = (server as unknown as { address(): { port: number } | null }).address();
-    if (addr) return resolve(addr);
-    (server as unknown as { once(e: string, cb: () => void): void }).once("listening", () =>
-      resolve((server as unknown as { address(): { port: number } }).address()),
-    );
-  });
-  origin = `http://127.0.0.1:${address.port}`;
+  let server: Server;
+  try {
+    server = await listen(handler, opts.port ?? 0);
+  } catch (err) {
+    // Windows can refuse a port nothing visible is listening on (WSL and Hyper-V hold ports that
+    // netstat never shows), so a fixed port is a preference, not a requirement.
+    if (!opts.port || (err as NodeJS.ErrnoException).code !== "EADDRINUSE") throw err;
+    console.warn(`[serve] port ${opts.port} is taken; falling back to an ephemeral one`);
+    server = await listen(handler, 0);
+  }
+  if (opts.devServer) forwardUpgrades(server, opts.devServer);
+  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
     origin,
     token,
     close: () =>
       new Promise<void>((resolve) =>
-        (server as unknown as { close(cb: () => void): void }).close(() => resolve()),
+        server.close(() => resolve()),
       ),
   };
+}
+
+/** A bind failure has to reject here: left as an unhandled 'error' event it becomes Electron's modal
+ *  "JavaScript error in the main process" dialog, and the process hangs on it instead of exiting. */
+function listen(handler: (req: Request) => Promise<Response>, port: number): Promise<Server> {
+  return new Promise((resolve, reject) => {
+    const server = serve({ fetch: handler, hostname: "127.0.0.1", port }) as unknown as Server;
+    if (server.listening) return resolve(server);
+    server.once("error", reject);
+    server.once("listening", () => {
+      server.off("error", reject);
+      resolve(server);
+    });
+  });
 }
 
 /** Serve one file out of the export, refusing anything that escapes the root. */
@@ -138,6 +166,58 @@ async function serveStaticFile(root: string, pathname: string, origin: string): 
 
   return new Response(Readable.toWeb(createReadStream(target)) as unknown as ReadableStream, {
     headers: { "content-type": type, "content-length": String(info.size) },
+  });
+}
+
+async function proxyToDevServer(devServer: string, req: Request, url: URL, origin: string): Promise<Response> {
+  const headers = new Headers(req.headers);
+  headers.delete("authorization");
+  headers.delete("host");
+  // undici decompresses the body but passes `content-encoding` through, so the renderer would decode
+  // it a second time. Asking for none is simpler than reconciling the two.
+  headers.set("accept-encoding", "identity");
+  const upstream = await fetch(new URL(url.pathname + url.search, devServer), {
+    method: req.method,
+    headers,
+    body: req.method === "GET" || req.method === "HEAD" ? undefined : req.body,
+    redirect: "manual",
+    duplex: "half",
+  } as RequestInit);
+
+  const out = new Headers(upstream.headers);
+  out.delete("content-encoding");
+  out.delete("content-length");
+  if ((upstream.headers.get("content-type") ?? "").startsWith("text/html")) {
+    out.set("cache-control", "no-store");
+    return new Response(injectServerUrl(await upstream.text(), `${origin}/api`), { status: upstream.status, headers: out });
+  }
+  return new Response(upstream.body, { status: upstream.status, headers: out });
+}
+
+/** Metro's HMR and dev-menu channels are WebSockets opened against the page's own origin, which here
+ *  is the loopback listener, so they have to be tunnelled through to Metro as raw sockets. */
+function forwardUpgrades(server: Server, devServer: string): void {
+  const target = new URL(devServer);
+  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    const upstream = connect(Number(target.port || 80), target.hostname, () => {
+      const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
+      for (let i = 0; i < req.rawHeaders.length; i += 2) {
+        const name = req.rawHeaders[i]!;
+        const lower = name.toLowerCase();
+        const value = lower === "host" ? target.host : lower === "origin" ? target.origin : req.rawHeaders[i + 1];
+        lines.push(`${name}: ${value}`);
+      }
+      upstream.write(`${lines.join("\r\n")}\r\n\r\n`);
+      if (head.length) upstream.write(head);
+      upstream.pipe(socket);
+      socket.pipe(upstream);
+    });
+    const drop = () => {
+      upstream.destroy();
+      socket.destroy();
+    };
+    upstream.on("error", drop);
+    socket.on("error", drop);
   });
 }
 

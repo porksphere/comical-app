@@ -33,7 +33,13 @@ async function boot(): Promise<void> {
   // Bind the listener first: the host wants its own base URL (bridges get it as `hostUrl`, OAuth
   // uses it as the redirect target) and that URL only exists once the ephemeral port is bound.
   let host: ReturnType<typeof createDesktopHost> | null = null;
-  server = await startLoopbackServer({ getHost: () => host, webRoot: webRoot() });
+  server = await startLoopbackServer({
+    getHost: () => host,
+    webRoot: webRoot(),
+    // Set by `scripts/dev.ts`.
+    devServer: process.env.COMICAL_DEV_SERVER,
+    port: process.env.COMICAL_PORT ? Number(process.env.COMICAL_PORT) : undefined,
+  });
   host = createDesktopHost({
     dataDir,
     // Registry-installed bridges land in {dataDir}/bridge-cache regardless. This extra scan dir is
