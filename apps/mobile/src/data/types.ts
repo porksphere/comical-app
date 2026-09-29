@@ -79,11 +79,9 @@ export type Chapter = {
 };
 
 /**
- * Persisted read-state for one chapter of a *library* series (`@comical/library`'s
- * `ChapterProgress`). Kept separate from `Chapter` on purpose: chapters come from the bridge and
+ * Persisted read-state for one chapter of a series (`@comical/library`'s `ChapterProgress`). Kept separate from `Chapter` on purpose: chapters come from the bridge and
  * are cached per series, read state is local library data that changes independently — so it gets
  * its own query and can be invalidated without re-fetching the chapter list over the network.
- * A series that isn't in the library simply has none.
  */
 export type ChapterProgress = {
   chapterId: string;
@@ -229,6 +227,8 @@ export type HistoryEntry = {
   lastPage?: number;
   pageCount?: number;
   lastReadAt: number;
+  /** Swiped out of the History tab; still the series' resume point. */
+  hidden?: boolean;
 };
 
 /** One row in the activity feed (a newly-detected chapter across the library). */

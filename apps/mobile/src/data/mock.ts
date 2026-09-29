@@ -864,7 +864,7 @@ export async function mockRemoveFavorite(seriesId: string): Promise<void> {
 // the real series item: a collected series always has one.
 type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; author?: string; unread: number; collectedAt: number; lastReadAt?: number };
 type MockCollection = { id: string; name: string; order: number };
-type MockHist = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; chapterId?: string; chapterName?: string; lastPage?: number; pageCount?: number; lastReadAt: number };
+type MockHist = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; chapterId?: string; chapterName?: string; lastPage?: number; pageCount?: number; lastReadAt: number; hidden?: boolean };
 type MockActivity = { bridgeId: string; seriesId: string; chapterId: string; title: string; thumbnailUrl: string; chapterName?: string; number?: number; detectedAt: number; read: boolean };
 
 const libKey = (bridgeId: string, seriesId: string) => `${bridgeId}:${seriesId}`;
@@ -1587,7 +1587,11 @@ export async function mockGetHistory(): Promise<MockHist[]> {
 }
 
 export async function mockRemoveHistoryEntry(bridgeId: string, seriesId: string): Promise<void> {
-  mockHistory.delete(libKey(bridgeId, seriesId));
+  const key = libKey(bridgeId, seriesId);
+  const row = mockHistory.get(key);
+  if (!row) return;
+  if (mockLibrary.has(key)) mockHistory.delete(key);
+  else mockHistory.set(key, { ...row, hidden: true });
 }
 
 export async function mockGetActivity(): Promise<MockActivity[]> {
