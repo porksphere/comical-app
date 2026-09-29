@@ -78,7 +78,8 @@ export default function HistoryScreen() {
     }, [focusedOnce, refetch]),
   );
 
-  // Optimistic remove: drop the row immediately, roll back on error.
+  // Optimistic remove: hide the row immediately, roll back on error. Hidden rather than dropped from
+  // the cache, since it may still be the series' resume point.
   const removeMutation = useMutation({
     mutationFn: (h: HistoryEntry) => ds.removeHistoryEntry(h.bridgeId, h.seriesId),
     onMutate: async (h: HistoryEntry) => {
@@ -86,7 +87,7 @@ export default function HistoryScreen() {
       await queryClient.cancelQueries({ queryKey: key });
       const prev = queryClient.getQueryData<HistoryEntry[]>(key);
       queryClient.setQueryData<HistoryEntry[]>(key, (cur) =>
-        (cur ?? []).filter((x) => !(x.bridgeId === h.bridgeId && x.seriesId === h.seriesId)),
+        (cur ?? []).map((x) => (x.bridgeId === h.bridgeId && x.seriesId === h.seriesId ? { ...x, hidden: true } : x)),
       );
       return { prev };
     },
@@ -98,7 +99,7 @@ export default function HistoryScreen() {
   // Memoized so the identity only changes when the ORDER can have: a fresh array every render
   // would tell every collapse in flight that the list moved (see the notice below).
   const visible = useMemo(() => {
-    const shown = items && hideNsfw ? items.filter((h) => !byId.get(h.bridgeId)?.nsfw) : items;
+    const shown = items?.filter((h) => !h.hidden && !(hideNsfw && byId.get(h.bridgeId)?.nsfw));
     // A filter over rows already loaded, not a query: this list is fetched whole, so narrowing it
     // costs nothing and needs no server support.
     const q = query.trim().toLowerCase();

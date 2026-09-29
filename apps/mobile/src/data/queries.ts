@@ -344,8 +344,7 @@ export function seriesListQuery(
   };
 }
 
-/** `useQuery` options for a series' chapter read state. Safe for any series — one that isn't in the
- *  library has nowhere to store progress and simply resolves empty. */
+/** `useQuery` options for a series' chapter read state, in the library or not. */
 export function chapterProgressQuery(
   ds: DataSource,
   mock: boolean,
