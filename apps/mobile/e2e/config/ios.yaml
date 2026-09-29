@@ -19,6 +19,7 @@ executionOrder:
     - library
     - series-chapters
     - settings-walkthrough
+    - library-sync
     - history-activity
     - reader-navigation
     - collect-page

@@ -20,6 +20,7 @@ import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } fr
 import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
+import { setSyncEnabled, syncLibraryNow, useSyncStatus, type SyncStatus } from '@/data/sync';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
@@ -60,6 +61,13 @@ const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
   { value: 'dark', label: 'Dark', description: 'Always use the dark theme.' },
 ];
 
+function syncDescription(sync: SyncStatus): string {
+  if (sync.running) return 'Syncing…';
+  if (sync.lastError) return `Couldn't sync: ${sync.lastError}`;
+  if (sync.lastSyncAt) return `Last synced ${new Date(sync.lastSyncAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  return 'Not synced yet';
+}
+
 export default function GeneralSettingsScreen() {
   const contentPadding = useSettingsScrollPadding();
   const [nsfwMode, setNsfwMode] = useNsfwMode();
@@ -77,6 +85,7 @@ export default function GeneralSettingsScreen() {
   // see getResolvedModeSync in embedded/preference.ts). The remote-server row is meaningless while
   // this is true, so it's hidden rather than just disabled.
   const embeddedActive = onDevice && embeddedAvailable;
+  const sync = useSyncStatus();
 
   const toggleOnDevice = (enabled: boolean) => {
     setOnDevice(enabled);
@@ -89,6 +98,8 @@ export default function GeneralSettingsScreen() {
     bumpDataEpoch(); // refetch useDataSource-backed screens against the new server
     installDownloadProgress(); // the SSE stream targets the new server
     void hydrateDownloadIndex(); // remote /file URLs embed the server base — rebuild them
+    // A different hub has never seen this device's changes, so pair with it from scratch.
+    if (embeddedActive && sync.enabled) void setSyncEnabled(false).then(() => setSyncEnabled(true));
   };
 
   return (
@@ -136,9 +147,27 @@ export default function GeneralSettingsScreen() {
               onChange={toggleOnDevice}
             />
           )}
-          {!embeddedActive && (
+          {/* Only an on-device library needs syncing — a remote server's library is already shared by
+              every client reading it. The hub is the same server the remote mode would use. */}
+          {embeddedActive && (
+            <SettingsToggleRow
+              label="Sync library"
+              description="Keep your library in step with your server."
+              value={sync.enabled}
+              onChange={(v) => void setSyncEnabled(v)}
+            />
+          )}
+          {embeddedActive && sync.enabled && (
             <SettingsRow
-              label="Remote server"
+              testID="settings.general.sync-now"
+              label="Sync now"
+              description={syncDescription(sync)}
+              onPress={() => void syncLibraryNow()}
+            />
+          )}
+          {(!embeddedActive || sync.enabled) && (
+            <SettingsRow
+              label={embeddedActive ? 'Sync server' : 'Remote server'}
               description={apiBase}
               descriptionSelectable
               onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}

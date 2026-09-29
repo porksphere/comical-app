@@ -50,6 +50,9 @@ config.resolver.extraNodeModules = {
   // on-device store); Node-free. Never imported on web (startup.web.ts is a no-op).
   '@comical/runtime': path.resolve(comicalRoot, 'packages/runtime'),
   '@comical/contract': path.resolve(comicalRoot, 'packages/contract'),
+  // Library sync (change logs + version vectors) — platform-agnostic; the device engine runs it
+  // over the on-device store and reaches the hub with the app's own `fetch`.
+  '@comical/sync': path.resolve(comicalRoot, 'packages/sync'),
 };
 
 // DEV-ONLY: on-device Hermes profiler upload sink (see src/components/dev-profiler.tsx).
