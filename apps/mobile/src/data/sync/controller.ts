@@ -14,9 +14,18 @@
 import type { LibraryStore } from '@comical/library';
 import {
   adoptLibrary,
+  adoptRegistry,
+  composeSyncStores,
+  LIBRARY_TABLES,
   librarySyncStore,
+  REGISTRY_TABLES,
+  registrySyncStore,
   SyncEngine,
   wrapLibraryStore,
+  wrapRegistryProvider,
+  type RegistryLists,
+  type RegistryMutations,
+  type RegistrySyncStore,
   type SyncBackend,
   type SyncStateSnapshot,
   type SyncStats,
@@ -38,6 +47,11 @@ export type SyncStatus = {
 
 export type LibrarySyncOptions = {
   raw: LibraryStore;
+  /**
+   * What this device has installed, read from its own stores. The provider that performs an
+   * install arrives later, through `decorateRegistry`; a record that lands before it is retried.
+   */
+  registry: RegistryLists;
   load: () => Promise<SyncDoc | null>;
   save: (doc: SyncDoc | null) => Promise<void>;
   backend: () => SyncBackend;
@@ -55,6 +69,12 @@ export type LibrarySyncOptions = {
 export type LibrarySync = {
   /** The store to hand the router: writes through it are recorded while sync is on. */
   store: LibraryStore;
+  /**
+   * Wraps the registry provider the router installs through, so an add or install from a screen
+   * is recorded while sync is on — and makes it the provider that performs what other devices
+   * installed.
+   */
+  decorateRegistry<P extends RegistryMutations>(provider: P): P;
   /** Resolves once the saved state has loaded (or failed to). */
   loaded: Promise<void>;
   enable(): Promise<void>;
@@ -67,7 +87,21 @@ export type LibrarySync = {
 };
 
 export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
-  let active: { engine: SyncEngine; store: LibraryStore; adopted: boolean } | null = null;
+  let active: { engine: SyncEngine; store: LibraryStore; registry: RegistrySyncStore; adopted: boolean } | null = null;
+  let provider: RegistryMutations | null = null;
+  // Installs from other devices go through whatever provider is bound by the time they arrive.
+  const lateProvider: RegistryMutations = {
+    add: (url, o) => bound().add(url, o),
+    remove: (url) => bound().remove(url),
+    install: (url, id) => bound().install(url, id),
+    uninstall: (id) => bound().uninstall(id),
+    installTracker: (url, id) => bound().installTracker(url, id),
+    uninstallTracker: (id) => bound().uninstallTracker(id),
+  };
+  function bound(): RegistryMutations {
+    if (!provider) throw new Error('registry not available yet');
+    return provider;
+  }
   let status: SyncStatus = { enabled: false, running: false };
   let timer: ReturnType<typeof setTimeout> | undefined;
   // Serialises enable / disable / rounds, so a toggle never lands halfway through a round.
@@ -88,8 +122,15 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
   };
 
   function start(doc: SyncDoc | null): void {
+    const registry = registrySyncStore(
+      { ...opts.registry, ...lateProvider },
+      { log: { error: (message: string, err?: unknown) => opts.log(`${message}${err === undefined ? '' : `: ${String(err)}`}`) } },
+    );
     const engine = new SyncEngine({
-      store: librarySyncStore(opts.raw),
+      store: composeSyncStores([
+        [LIBRARY_TABLES, librarySyncStore(opts.raw)],
+        [REGISTRY_TABLES, registry],
+      ]),
       backend: {
         push: (s) => opts.backend().push(s),
         pull: (have, limit) => opts.backend().pull(have, limit),
@@ -101,7 +142,7 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
       },
       onTouch: () => schedule(),
     });
-    active = { engine, store: wrapLibraryStore(opts.raw, engine), adopted: doc?.adopted ?? false };
+    active = { engine, store: wrapLibraryStore(opts.raw, engine), registry, adopted: doc?.adopted ?? false };
     setStatus({ enabled: true });
   }
 
@@ -130,9 +171,11 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
       let applied = stats.applied;
       if (!a.adopted) {
         await adoptLibrary(opts.raw, a.engine);
+        await adoptRegistry(opts.registry, a.engine);
         a.adopted = true;
         applied += (await a.engine.sync()).applied;
       }
+      await a.registry.retry();
       await save();
       if (applied > 0) opts.onApplied();
       setStatus({ running: false, lastSyncAt: Date.now(), lastError: undefined });
@@ -169,6 +212,24 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
         };
       },
     }),
+    decorateRegistry: (real) => {
+      provider = real;
+      // Rebuilt per pairing, since the recording wrapper is bound to an engine.
+      let wrapped: { engine: SyncEngine; provider: typeof real } | undefined;
+      return new Proxy(real, {
+        get(target, prop, receiver) {
+          const value: unknown = Reflect.get(target, prop, receiver);
+          if (typeof value !== 'function') return value;
+          return async (...args: unknown[]) => {
+            await loaded;
+            const engine = active?.engine;
+            if (!engine) return (value as (...a: unknown[]) => unknown).apply(target, args);
+            if (wrapped?.engine !== engine) wrapped = { engine, provider: wrapRegistryProvider(real, opts.registry, engine) };
+            return (wrapped.provider as unknown as Record<PropertyKey, (...a: unknown[]) => unknown>)[prop]!(...args);
+          };
+        },
+      });
+    },
     loaded,
     enable: () =>
       serial(async () => {

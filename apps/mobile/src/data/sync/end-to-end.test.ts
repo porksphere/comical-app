@@ -6,11 +6,12 @@
  * the browser client sees.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { entryKey, InMemoryLibraryStore, Library } from '@comical/library';
-import { HttpBackend } from '@comical/sync';
+import { HttpBackend, type SyncedRegistry } from '@comical/sync';
 
 // Not one of the app's mapped packages: the server is the dev backend, only a test reaches it.
 import { createServer } from '../../../../../external/comical/packages/host-server/src/server.ts';
@@ -20,8 +21,10 @@ type Server = ReturnType<typeof createServer>;
 
 const dirs: string[] = [];
 const servers: Server[] = [];
+const listeners: ReturnType<typeof Bun.serve>[] = [];
 afterEach(async () => {
   for (const s of servers.splice(0)) s.stop(true);
+  for (const l of listeners.splice(0)) l.stop(true);
   // Stopping the listener doesn't stop a server's in-flight sync round (a real server exits with
   // the process); give it a moment before its data dir goes away under it.
   await new Promise((r) => setTimeout(r, 400));
@@ -52,13 +55,72 @@ function startServer(dir = dataDir()) {
 
 let ids = 0;
 
+/**
+ * A phone's registry stores and provider, over maps: the intent is what syncs, so the phone only
+ * has to remember what it was told to install — the server is the one that really downloads.
+ */
+function fakeRegistry() {
+  const registries = new Map<string, { url: string; requireSignature: boolean }>();
+  const installed = new Map<string, { id: string; registryUrl: string }>();
+  const trackers = new Map<string, { id: string; registryUrl: string }>();
+  const reg: SyncedRegistry = {
+    registries: async () => [...registries.values()],
+    installed: async () => [...installed.values()],
+    installedTrackers: async () => [...trackers.values()],
+    add: async (url, o) => void registries.set(url, { url, requireSignature: o?.requireSignature ?? false }),
+    remove: async (url) => void registries.delete(url),
+    install: async (url, id) => void installed.set(id, { id, registryUrl: url }),
+    uninstall: async (id) => void installed.delete(id),
+    installTracker: async (url, id) => void trackers.set(id, { id, registryUrl: url }),
+    uninstallTracker: async (id) => void trackers.delete(id),
+  };
+  return reg;
+}
+
+/** A registry the server can really install from: an index and one bundle, on a free port. */
+function fakeRegistryServer() {
+  const bundle = 'export default {};';
+  const sha256 = createHash('sha256').update(bundle).digest('hex');
+  let indexJson = '';
+  const srv = Bun.serve({
+    port: 0,
+    fetch(req) {
+      const path = new URL(req.url).pathname;
+      if (path === '/index.json') return new Response(indexJson, { headers: { 'content-type': 'application/json' } });
+      if (path === '/bridge.js') return new Response(bundle);
+      return new Response('not found', { status: 404 });
+    },
+  });
+  listeners.push(srv);
+  indexJson = JSON.stringify({
+    registryVersion: '1',
+    updated: new Date().toISOString(),
+    bridges: [
+      {
+        id: 'example',
+        name: 'Example',
+        version: '0.1.0',
+        contractVersion: '2.0.0',
+        languages: ['en'],
+        nsfw: false,
+        capabilities: ['search'],
+        url: `http://localhost:${srv.port}/bridge.js`,
+        sha256,
+      },
+    ],
+  });
+  return `http://localhost:${srv.port}/index.json`;
+}
+
 /** A phone: the app's controller over an in-memory library, pointed at whatever `url()` says now. */
 function phone(url: () => string) {
   const raw = new InMemoryLibraryStore();
+  const held = fakeRegistry();
   let saved: SyncDoc | null = null;
   let lastError: string | undefined;
   const sync = createLibrarySync({
     raw,
+    registry: held,
     load: async () => saved,
     save: async (doc) => {
       saved = doc;
@@ -73,7 +135,15 @@ function phone(url: () => string) {
     log: () => {},
     debounceMs: 60_000, // rounds only when a test asks, so ordering is deterministic
   });
-  return { raw, sync, library: new Library(sync.store), lastError: () => lastError, saved: () => saved };
+  return {
+    raw,
+    sync,
+    library: new Library(sync.store),
+    held,
+    registry: sync.decorateRegistry(held),
+    lastError: () => lastError,
+    saved: () => saved,
+  };
 }
 
 const collectionNames = async (lib: Library) => (await lib.getCollections()).map((c) => c.name).sort();
@@ -202,6 +272,46 @@ describe('library sync, phone ↔ host-server ↔ phone', () => {
     // Nothing was applied blindly: the phone still has all three, the server its own two.
     expect(await collectionNames(a.library)).toEqual(['One', 'Three', 'Two']);
     expect((await server.api<unknown[]>('GET', '/library/collections')).length).toBe(2);
+  });
+
+  test("a bridge installed on a phone is downloaded by the server and reaches a second phone", async () => {
+    const server = startServer();
+    const registryUrl = fakeRegistryServer();
+    const a = phone(() => server.url);
+    await a.sync.enable();
+    await a.registry.add(registryUrl);
+    await a.registry.install(registryUrl, 'example');
+    await a.sync.syncNow();
+
+    // The server performs its own add and install: it fetches the index and the bundle itself.
+    type Available = { entry: { id: string }; installedVersion: string | null };
+    await until(async () => (await server.api<Available[]>('GET', '/registry/bridges')).some((b) => b.installedVersion === '0.1.0'));
+    expect((await server.api<{ url: string }[]>('GET', '/registries')).map((r) => r.url)).toEqual([registryUrl]);
+
+    const b = phone(() => server.url);
+    await b.sync.enable();
+    expect(await b.held.installed()).toEqual([{ id: 'example', registryUrl }]);
+
+    // An uninstall from the browser (the server's route) reaches both phones.
+    await server.api('DELETE', '/bridges/example');
+    await until(async () => {
+      await a.sync.syncNow();
+      return (await a.held.installed()).length === 0;
+    });
+    await b.sync.syncNow();
+    expect(await b.held.installed()).toEqual([]);
+  });
+
+  test("a registry the server can't reach is retried, and the library still syncs meanwhile", async () => {
+    const server = startServer();
+    const a = phone(() => server.url);
+    await a.sync.enable();
+    await a.registry.add('http://localhost:1/index.json'); // nothing listens there
+    await a.library.createCollection('Still arrives');
+    await a.sync.syncNow();
+
+    await until(async () => (await server.api<unknown[]>('GET', '/library/collections')).length === 1);
+    expect(await server.api<unknown[]>('GET', '/registries')).toEqual([]);
   });
 
   test('pairing a phone that already holds a large library', async () => {

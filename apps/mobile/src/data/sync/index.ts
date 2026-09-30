@@ -8,7 +8,7 @@ import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { LibraryStore } from '@comical/library';
-import { HttpBackend, type SyncStats } from '@comical/sync';
+import { HttpBackend, type RegistryLists, type RegistryMutations, type SyncStats } from '@comical/sync';
 import { AppState } from 'react-native';
 
 import { logDiagnostic } from '@/lib/diagnostics';
@@ -28,10 +28,11 @@ const status$ = observable<SyncStatus>({ enabled: false, running: false });
 let sync: LibrarySync | null = null;
 
 /** Wraps the on-device library store so its writes are recorded, and starts syncing if paired. */
-export function initLibrarySync(raw: LibraryStore): LibraryStore {
+export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): LibraryStore {
   if (sync) return sync.store;
   const s = createLibrarySync({
     raw,
+    registry,
     load: async () => {
       const text = await AsyncStorage.getItem(STATE_KEY);
       return text ? (JSON.parse(text) as SyncDoc) : null;
@@ -57,6 +58,11 @@ export function initLibrarySync(raw: LibraryStore): LibraryStore {
     else void s.flush().catch((e: unknown) => logDiagnostic('sync', `Sync state not saved: ${String(e)}`));
   });
   return s.store;
+}
+
+/** For host-rn's `decorateRegistry`: the router's registry provider, recording while paired. */
+export function decorateRegistryForSync<P extends RegistryMutations>(provider: P): P {
+  return sync ? sync.decorateRegistry(provider) : provider;
 }
 
 export function useSyncStatus(): SyncStatus {

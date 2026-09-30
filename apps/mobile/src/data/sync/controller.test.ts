@@ -4,17 +4,48 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { InMemoryLibraryStore, Library } from '@comical/library';
-import { MemorySegmentStore, SyncHub, type SyncBackend } from '@comical/sync';
+import { MemorySegmentStore, SyncHub, type SyncBackend, type SyncedRegistry } from '@comical/sync';
 
 import { createLibrarySync, type LibrarySyncOptions, type SyncDoc } from './controller';
 
 let ids = 0;
 
+const REG = 'https://example.test/index.json';
+
+/** The app's registry stores and provider, over maps: an install is a record of where it came from. */
+function fakeRegistry() {
+  const registries = new Map<string, { url: string; requireSignature: boolean }>();
+  const installed = new Map<string, { id: string; registryUrl: string }>();
+  const trackers = new Map<string, { id: string; registryUrl: string }>();
+  const calls: string[] = [];
+  const reg: SyncedRegistry & { calls: string[] } = {
+    calls,
+    registries: async () => [...registries.values()],
+    installed: async () => [...installed.values()],
+    installedTrackers: async () => [...trackers.values()],
+    add: async (url, o) => {
+      calls.push(`add ${url}`);
+      registries.set(url, { url, requireSignature: o?.requireSignature ?? false });
+    },
+    remove: async (url) => void registries.delete(url),
+    install: async (url, id) => {
+      calls.push(`install ${id}`);
+      installed.set(id, { id, registryUrl: url });
+    },
+    uninstall: async (id) => void installed.delete(id),
+    installTracker: async (url, id) => void trackers.set(id, { id, registryUrl: url }),
+    uninstallTracker: async (id) => void trackers.delete(id),
+  };
+  return reg;
+}
+
 function device(hub: SyncBackend, overrides: Partial<LibrarySyncOptions> = {}) {
   const raw = new InMemoryLibraryStore();
+  const held = fakeRegistry();
   let saved: SyncDoc | null = null;
   const sync = createLibrarySync({
     raw,
+    registry: held,
     load: async () => saved,
     save: async (doc) => {
       saved = doc;
@@ -28,7 +59,7 @@ function device(hub: SyncBackend, overrides: Partial<LibrarySyncOptions> = {}) {
     debounceMs: 60_000,
     ...overrides,
   });
-  return { raw, sync, library: new Library(sync.store), saved: () => saved };
+  return { raw, sync, library: new Library(sync.store), saved: () => saved, held, registry: sync.decorateRegistry(held) };
 }
 
 const names = async (lib: Library) => (await lib.getCollections()).map((c) => c.name).sort();
@@ -139,5 +170,85 @@ describe('createLibrarySync', () => {
 
     embedded = true;
     expect((await a.sync.syncNow())?.pushed).toBeGreaterThan(0);
+  });
+
+  test('a registry added and a bridge installed on one device are installed on another', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    await a.sync.enable();
+    await a.registry.add(REG, { requireSignature: true });
+    await a.registry.install(REG, 'bridge-one');
+    await a.sync.syncNow();
+
+    const b = device(hub);
+    await b.sync.enable();
+    expect(await b.held.registries()).toEqual([{ url: REG, requireSignature: true }]);
+    expect(await b.held.installed()).toEqual([{ id: 'bridge-one', registryUrl: REG }]);
+    expect(b.held.calls).toEqual([`add ${REG}`, 'install bridge-one']);
+
+    await b.registry.uninstall('bridge-one');
+    await b.sync.syncNow();
+    await a.sync.syncNow();
+    expect(await a.held.installed()).toEqual([]);
+  });
+
+  test("pairing sends what this device already has installed, and doesn't reinstall what it holds", async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    await a.held.add(REG);
+    await a.held.install(REG, 'bridge-one');
+    a.held.calls.length = 0;
+    await a.sync.enable();
+    expect(a.held.calls).toEqual([]);
+
+    const b = device(hub);
+    await b.held.add(REG);
+    await b.held.install(REG, 'bridge-one');
+    b.held.calls.length = 0;
+    await b.sync.enable();
+    expect(b.held.calls).toEqual([]);
+    expect((await b.held.installed()).map((x) => x.id)).toEqual(['bridge-one']);
+  });
+
+  test('an install that arrives before the provider is bound is performed once it is', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    await a.sync.enable();
+    await a.registry.add(REG);
+    await a.registry.install(REG, 'bridge-one');
+    await a.sync.syncNow();
+
+    // b's runtime hasn't started: its stores are readable but nothing can install yet.
+    const raw = new InMemoryLibraryStore();
+    const held = fakeRegistry();
+    const sync = createLibrarySync({
+      raw,
+      registry: held,
+      load: async () => null,
+      save: async () => {},
+      backend: () => hub,
+      canSync: () => true,
+      newDeviceId: () => `dev-${++ids}`,
+      onApplied: () => {},
+      onStatus: () => {},
+      log: () => {},
+      debounceMs: 60_000,
+    });
+    await sync.enable();
+    expect(sync.status().lastError).toBeUndefined();
+    expect(await held.installed()).toEqual([]);
+
+    sync.decorateRegistry(held);
+    await sync.syncNow();
+    expect(await held.installed()).toEqual([{ id: 'bridge-one', registryUrl: REG }]);
+  });
+
+  test('installs made while sync is off are not recorded, and go through the plain provider', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    await a.registry.add(REG);
+    await a.registry.install(REG, 'bridge-one');
+    expect(a.held.calls).toEqual([`add ${REG}`, 'install bridge-one']);
+    expect((await hub.pull({})).segments).toHaveLength(0);
   });
 });
