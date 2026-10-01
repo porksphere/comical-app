@@ -45,6 +45,7 @@ import { relTime } from '@/lib/rel-time';
 import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
 import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 /**
  * One coalesced feed row: a single library series with its newly-detected chapters folded together
@@ -295,7 +296,7 @@ export default function ActivityScreen() {
           <AnimatedLegendList
             ref={listRef}
             // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
-            style={styles.list}
+            style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
             data={rows}
             keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
             recycleItems={false}

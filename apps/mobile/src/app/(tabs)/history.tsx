@@ -41,6 +41,7 @@ import { relTime } from '@/lib/rel-time';
 import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
 import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { scrollPhaseHandlers } from '@/lib/scroll-release';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 export default function HistoryScreen() {
   const ds = useDataSource();
@@ -183,7 +184,7 @@ export default function HistoryScreen() {
         <AnimatedLegendList
           ref={listRef}
           // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
-          style={styles.list}
+          style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
           data={visible}
           keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
           recycleItems={false}

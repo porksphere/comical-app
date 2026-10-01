@@ -7,6 +7,7 @@ import { TopBar } from '@/components/top-bar';
 
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { clearDiagnostics, getDiagnostics, subscribeDiagnostics, type DiagnosticEntry } from '@/lib/diagnostics';
 import { useRouter } from '@/lib/nav';
@@ -36,6 +37,7 @@ export default function DiagnosticsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title="Diagnostics" />
       <ScrollView
+        style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[styles.content, contentPadding]}>
         <ThemedText type="small" themeColor="textSecondary">
           Failures that would otherwise be invisible — bridge scrapes, writes (favorites, settings),

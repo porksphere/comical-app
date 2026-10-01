@@ -26,6 +26,7 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { noteLines, type ReleaseNote } from '@/data/release-notes';
 import { useAppUpdateCheck } from '@/data/use-app-update';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { APP_VERSION } from '@/lib/build-info';
 
@@ -71,7 +72,7 @@ export default function WhatsNewScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="What's new" />
-      <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
+      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {pending.length > 0 && (
           <SettingsSection title={pending.length > 1 ? 'Available now' : 'Available'}>
             {pending.map((note) => (

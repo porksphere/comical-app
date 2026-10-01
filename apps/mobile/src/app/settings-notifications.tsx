@@ -14,6 +14,7 @@ import { notifyPrefs$, useNotifyPrefs } from '@/data/activity/prefs';
 import { queryKeys } from '@/data/queries';
 import { useMockActive } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 const isNative = Platform.OS !== 'web';
 
@@ -81,7 +82,7 @@ export default function NotificationsSettingsScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Notifications" />
-      <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
+      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
           <SettingsToggleRow
             label="Check for new chapters"

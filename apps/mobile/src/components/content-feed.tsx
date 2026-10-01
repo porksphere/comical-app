@@ -310,6 +310,12 @@ export function ContentFeed({
       header={header}
       footer={footer}
       paddingTop={paddingTop}
+      // Below the pinned heading too, which covers the track just as the bar does.
+      scrollbarInsetTop={
+        stickyHeaderTop === undefined
+          ? paddingTop
+          : Math.max(paddingTop, stickyHeaderTop + sectionHeadHeight(compact) + HEADING_GAP * 2)
+      }
       paddingBottom={paddingBottom ?? BottomTabInset + Spacing.five}
       sidePad={centerPad}
       sharedValues={sharedValues}

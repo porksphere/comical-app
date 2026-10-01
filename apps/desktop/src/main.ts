@@ -27,10 +27,12 @@ const webRoot = (): string => process.env.COMICAL_WEB_ROOT ?? join(app.getAppPat
  *  and phones show. Injected here rather than shipped in the web bundle so browsers keep their own.
  *  Only the `::-webkit-scrollbar` form: setting the standard `scrollbar-color` / `scrollbar-width`
  *  as well makes Chromium ignore all of it. A transparent border, clipped out, is what makes the
- *  thumb narrower than the gutter it sits in. */
+ *  thumb narrower than the gutter it sits in. The app's lists run under an overlaid top bar and
+ *  publish how tall it is as `--scrollbar-inset-top`, so the track starts below it. */
 const SCROLLBAR_CSS = `
   ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
   ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-track:vertical { margin-top: var(--scrollbar-inset-top, 0px); }
   ::-webkit-scrollbar-button { display: none; }
   ::-webkit-scrollbar-thumb {
     background: rgba(128, 128, 128, 0.35);

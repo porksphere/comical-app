@@ -6,6 +6,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useApiBase } from '@/data/api';
 import { useMockDataToggle } from '@/data/source';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
@@ -24,6 +25,7 @@ export default function DeveloperSettingsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title="Developer" />
       <ScrollView
+        style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
           <SettingsRow

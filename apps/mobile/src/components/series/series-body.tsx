@@ -714,6 +714,7 @@ export function SeriesBody({
     return (
       <PageThumbList
         topInset={topBarInset}
+        scrollbarInsetTop={defaultTopInset}
         thumbs={pageThumbs ?? []}
         loading={loading || listLoading || !listReady}
         seed={series.id}
@@ -766,6 +767,7 @@ export function SeriesBody({
       footer={relatedRailsEl}
       isLarge={isLarge}
       topInset={topBarInset}
+      scrollbarInsetTop={defaultTopInset}
       onOpenChapter={onOpenChapter}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}

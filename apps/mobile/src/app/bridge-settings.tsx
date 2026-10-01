@@ -21,6 +21,7 @@ import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
 import {useLocalSearchParams, useRouter} from '@/lib/nav';
 
@@ -139,6 +140,7 @@ export default function BridgeSettingsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title={data?.info.name ?? 'Bridge settings'} />
       <ScrollView
+        style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[styles.content, contentPadding]}>
         {isLoading ? (
           <ActivityIndicator />

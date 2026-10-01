@@ -6,6 +6,7 @@ import { GestureDetector, type ComposedGesture } from 'react-native-gesture-hand
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { ZoomSurfaceContext, useZoomSurfaceKey } from '@/lib/series-zoom';
 
 /**
@@ -37,6 +38,7 @@ export function RecyclerList<T>({
   header,
   footer,
   paddingTop,
+  scrollbarInsetTop = paddingTop,
   paddingBottom,
   sidePad,
   sharedValues,
@@ -87,6 +89,9 @@ export function RecyclerList<T>({
   footer?: ReactElement | null;
   /** Space above the first row — typically the top bar's resting height (content scrolls behind it). */
   paddingTop: number;
+  /** See `scrollbarInset`. Defaults to `paddingTop`, which already clears the top bar; a list with a
+   *  pinned heading under the bar passes more. */
+  scrollbarInsetTop?: number;
   /** Space below the last row. */
   paddingBottom: number;
   /** Symmetric horizontal content padding (centres content in the full-width scroller). */
@@ -135,7 +140,7 @@ export function RecyclerList<T>({
         // four components' prop types.
         refScrollView={scrollRef as unknown as ComponentProps<typeof AnimatedLegendList>['refScrollView']}
         key={listKey}
-        style={styles.list}
+        style={[styles.list, scrollbarInset(scrollbarInsetTop)]}
         data={data}
         keyExtractor={keyExtractor}
         renderItem={renderItem}

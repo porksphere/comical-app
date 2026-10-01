@@ -59,6 +59,7 @@ import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
 import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { hapticImpactMedium } from '@/lib/haptics';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { chapterProgressQuery, collectionItemsQuery, inLibraryQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive, type DataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
@@ -450,6 +451,7 @@ export function ChapterScrollList({
   footer,
   isLarge,
   topInset = 0,
+  scrollbarInsetTop = topInset + BarContentGap,
   onOpenChapter,
   sharedValues,
   onScrollEndDrag,
@@ -474,6 +476,9 @@ export function ChapterScrollList({
   isLarge: boolean;
   /** Height of the overlaying top bar, so the first content clears it (and scrolls behind it). */
   topInset?: number;
+  /** See `scrollbarInset`. Defaults to where the content starts; a `topInset` that is not a bar
+   *  (the series page's hero strip, which scrolls away) passes the bar's own height instead. */
+  scrollbarInsetTop?: number;
   /** Opening a chapter version is handed HERE — the preferred-group side effect applies first.
    *  There is no route to push instead: the series page's details panel and its in-place reader
    *  are one screen, and this is how the one hands a chapter to the other. */
@@ -754,7 +759,7 @@ export function ChapterScrollList({
 
   const list = (
     <AnimatedLegendList
-      style={styles.chapterList}
+      style={[styles.chapterList, scrollbarInset(scrollbarInsetTop)]}
       scrollEnabled={scrollEnabled}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
@@ -1288,6 +1293,7 @@ export function PageThumbList({
   header,
   footer,
   topInset = 0,
+  scrollbarInsetTop = topInset + BarContentGap,
   onOpenPage,
   sharedValues,
   onScrollEndDrag,
@@ -1304,6 +1310,8 @@ export function PageThumbList({
   header?: ReactElement | null;
   /** Height of an overlaying top bar, so the first row clears it (and scrolls behind it). */
   topInset?: number;
+  /** See `ChapterScrollList`. */
+  scrollbarInsetTop?: number;
   /** Related-series rails — the list footer, below the grid and the "Show all"
    *  button (while collapsed). */
   footer?: ReactElement | null;
@@ -1355,7 +1363,7 @@ export function PageThumbList({
 
   const list = (
     <AnimatedLegendList
-      style={styles.pageList}
+      style={[styles.pageList, scrollbarInset(scrollbarInsetTop)]}
       scrollEnabled={scrollEnabled}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}

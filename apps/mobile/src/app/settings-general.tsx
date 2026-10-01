@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useApiBase } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
@@ -94,7 +95,7 @@ export default function GeneralSettingsScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="General" />
-      <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
+      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {/* One unheadered list. "APPEARANCE" over a row already called Appearance, and "CONTENT"
             over one called NSFW content, said nothing the row didn't — every row here carries its
             own title and a line explaining it. */}
