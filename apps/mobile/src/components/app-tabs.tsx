@@ -19,6 +19,7 @@ import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
 import { SettingsModal } from '@/components/settings/settings-modal';
 import { SeriesPane } from '@/components/series-pane';
+import { SearchPane, SidebarSearchField } from '@/components/sidebar-search';
 import { SidebarResizer } from '@/components/sidebar-resizer';
 import { COMICAL_BRIDGE_ID, setSelectedBridge } from '@/data/selected-bridge';
 import { setSelectedCollection } from '@/data/selected-collection';
@@ -32,8 +33,9 @@ import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
 import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
-import { openSettingsModal } from '@/lib/settings-modal';
+import { closeSettingsModal, openSettingsModal } from '@/lib/settings-modal';
 import { closeSeriesPane, setSeriesPaneAvailable, useSeriesPane } from '@/lib/series-pane';
+import { closeSidebarSearch, focusSidebarSearch, useSidebarSearchOpen } from '@/lib/sidebar-search';
 import { setSidebarDragWidth, sidebarDragWidth } from '@/lib/sidebar-drag';
 import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
@@ -111,6 +113,15 @@ const SETTINGS_AS_MODAL = Platform.OS === 'web';
 /** Same gate as the settings modal, and for the same reason: the pane is a web layout, not a wide
  *  one. A landscape iPad shows the rail and still opens a series full-screen — see lib/series-pane. */
 const SERIES_AS_PANE = Platform.OS === 'web';
+/** And search's field moves into the rail, with its results in a pane of their own. */
+const SEARCH_IN_RAIL = Platform.OS === 'web';
+
+/** Both panes over the content region — what a destination pressed in the rail has to clear (see
+ *  TabButton's press). */
+function closeContentPanes(): void {
+  closeSeriesPane();
+  closeSidebarSearch();
+}
 
 const SEARCH_HINT =
   Platform.OS === 'web' && typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘K' : 'Ctrl K';
@@ -405,21 +416,37 @@ export default function AppTabs() {
   // on a pushed screen over the tabs nothing in the rail is current.
   const activeTab = TABS.find((t) => t.href === pathname)?.name;
   const openSearch = useOpenComicalSearch();
-  useKeyboardShortcut('k', openSearch);
+  // The rail's field only where it is drawn and on top: collapsed it is an icon, and over a pushed
+  // screen (a reader, Settings on native) the rail is covered, so the shortcut opens the screen.
+  const railSearch = SEARCH_IN_RAIL && sidebar && !collapsed;
+  const searchPaneOpen = useSidebarSearchOpen() && railSearch;
+  useEffect(() => {
+    if (!railSearch) closeSidebarSearch();
+  }, [railSearch]);
+  useKeyboardShortcut('k', () => {
+    if (!railSearch || !activeTab) return openSearch();
+    closeSettingsModal();
+    focusSidebarSearch();
+  });
   const sidebarChildren = useMemo(
     () => [
-      // First, and not a tab: Search is a screen pushed over the rail, not a place in it, so it is
-      // never the selected row. It searches every bridge, wherever you open it from.
-      <SidebarItem
-        key="search"
-        testID="sidebar.search"
-        Icon={Search}
-        label="Search"
-        hint={collapsed ? undefined : SEARCH_HINT}
-        compact={collapsed}
-        accessibilityRole="button"
-        onPress={openSearch}
-      />,
+      // First, and not a tab: Search searches every bridge, wherever you are, so it is never the
+      // selected row. Expanded it is a field whose results cover the content region beside it (see
+      // lib/sidebar-search); collapsed, an icon that opens the Search screen over everything.
+      railSearch ? (
+        <SidebarSearchField key="search" hint={SEARCH_HINT} />
+      ) : (
+        <SidebarItem
+          key="search"
+          testID="sidebar.search"
+          Icon={Search}
+          label="Search"
+          hint={collapsed ? undefined : SEARCH_HINT}
+          compact={collapsed}
+          accessibilityRole="button"
+          onPress={openSearch}
+        />
+      ),
       ...TABS.flatMap((tab, i) => {
         // Settings is a footer BUTTON in the rail on web (it opens a modal, it isn't a place), so its
         // row is dropped here. The registration TabList below still lists it — the route has to keep
@@ -434,12 +461,12 @@ export default function AppTabs() {
           <SidebarGroup key={`${tab.name}-scope`} name={tab.name} testID={`sidebar.group.${tab.name}`}>
             {/* Same reason as the destination rows above: a scope picked in the rail changes what
                 the covered screen shows, so the pane has to get out of its way. */}
-            <tab.Scope active={activeTab === tab.name} onNavigate={closeSeriesPane} />
+            <tab.Scope active={activeTab === tab.name} onNavigate={closeContentPanes} />
           </SidebarGroup>,
         ];
       }),
     ],
-    [triggers, activeTab, collapsed, openSearch],
+    [triggers, activeTab, collapsed, openSearch, railSearch],
   );
 
   // The rail's own width, read straight off the shared value so a drag moves it without a render.
@@ -545,6 +572,7 @@ export default function AppTabs() {
           an overlay opened from within it (a chapter menu, a selector) still paints over it.
           It covers the CONTENT REGION and nothing else: the rail stays lit and usable beside it, so
           the series is over the grid you opened it from rather than over the whole app. */}
+      {searchPaneOpen ? <SearchPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {seriesPaneOpen ? <SeriesPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
@@ -602,10 +630,10 @@ function TabButton({
     if (isFocused) scrollToTopFor(routeName);
     // Only where the rail is showing the scope this resets — see `selectDefault` on the tab table.
     if (sidebar) selectDefault?.();
-    // The rail is the one surface still visible beside an open series pane, so a destination
+    // The rail is the one surface still visible beside an open pane, so a destination
     // pressed there has to reveal itself: the pane covers the content region, and a tab switch
     // under it would look like the click did nothing. Free when no pane is open.
-    closeSeriesPane();
+    closeContentPanes();
     onPress?.(e);
   };
 

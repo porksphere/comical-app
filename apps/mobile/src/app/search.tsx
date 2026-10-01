@@ -13,6 +13,7 @@ import { filterValueToApi } from '@/components/filters/filter-types';
 import { ContentFeed } from '@/components/content-feed';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
+import { ClearIcon } from '@/components/icons/ui-icons';
 import { BarSurface } from '@/components/bar-surface';
 import { PullIndicator } from '@/components/pull-indicator';
 import { SeriesGrid } from '@/components/series-grid';
@@ -82,7 +83,11 @@ export type SearchEmbedded = {
   scrollEnabled?: boolean;
 };
 
-export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded } = {}) {
+/** The rail's search on desktop (see lib/sidebar-search). The field is in the rail, so this shows only
+ *  the results: always across every bridge, and deaf to search intents, which belong to the screen. */
+export type SearchDocked = { query: string; typed: string; onClose: () => void };
+
+export default function SearchScreen({ embedded, docked }: { embedded?: SearchEmbedded; docked?: SearchDocked } = {}) {
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
@@ -97,7 +102,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   // Take the one-shot Series→Search intent exactly once (lazy initializer), before the first render
   // reads it. `query` seeds directly from a `query` intent; `tag`/`meta` are stashed and applied
   // once this bridge's filter defs settle (below), mirroring the old Browse focus-effect flow.
-  const [initialIntent] = useState(() => peekSearchIntent());
+  const [initialIntent] = useState(() => (docked ? null : peekSearchIntent()));
   // Consume it AFTER mount: a consuming read in the initializer loses the intent under
   // StrictMode's double invocation (see peekSearchIntent).
   useEffect(() => {
@@ -115,7 +120,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     bridges,
     visibleBridges,
     refetchBridges,
-  } = useInheritedBridge();
+  } = useInheritedBridge(docked ? COMICAL_BRIDGE_ID : undefined);
 
   // Cross-bridge mode: when the synthetic "Comical" bridge is selected, search fans out over every
   // real bridge and shows one rail of results per bridge (no filters/sort — Comical has no capabilities,
@@ -136,7 +141,8 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [query, setQuery] = useState(initialIntent?.kind === 'query' ? initialIntent.query : '');
+  const [ownQuery, setQuery] = useState(initialIntent?.kind === 'query' ? initialIntent.query : '');
+  const query = docked ? docked.query : ownQuery;
 
   // The cross-bridge search rows (one rail per bridge). Runs zero queries in single-bridge mode.
   const comicalSearch = useCrossBridgeRails(isComical ? realBridges : NO_BRIDGES, { mode: 'search', query });
@@ -145,12 +151,13 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   // from it as you type — it is one local lookup, where a bridge search is a request to every source
   // you have, so those wait for Enter. Reset whenever the committed query moves on its own (an intent,
   // the clear button), which the field itself does in the same render.
-  const [typed, setTyped] = useState(query);
+  const [ownTyped, setTyped] = useState(query);
   const [prevQuery, setPrevQuery] = useState(query);
   if (prevQuery !== query) {
     setPrevQuery(query);
     setTyped(query);
   }
+  const typed = docked ? docked.typed : ownTyped;
   const libraryTerm = useDebouncedValue(typed.trim(), 150);
   const libraryMatches = useQuery({
     ...libraryQuery(ds, mock, libraryTerm, 'lastRead', null),
@@ -246,11 +253,12 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     topRef.current = embedded ? !!embedded.isTop : true;
   });
   const isEmbedded = !!embedded;
+  const isDocked = !!docked;
   const [focusRequest, setFocusRequest] = useState(0);
   useEffect(
     () =>
       subscribeSearchIntent(() => {
-        if (!focusedRef.current || !topRef.current) return;
+        if (isDocked || !focusedRef.current || !topRef.current) return;
         // The desktop's Search entry opens the app's Search screen. A layer in the series pane is
         // still mounted while the pane closes, and would otherwise take it from the screen it pushes.
         if (isEmbedded && peekSearchIntent()?.kind === 'open') return;
@@ -270,7 +278,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
           intent.kind === 'meta' ? { bridgeId: intent.bridgeId, metaKey: intent.metaKey, value: intent.value } : null,
         );
       }),
-    [setBridge, setFilterValues, isEmbedded],
+    [setBridge, setFilterValues, isEmbedded, isDocked],
   );
 
   useEffect(() => {
@@ -446,7 +454,8 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
 
   const goBack = () => {
     hapticImpactLight();
-    if (embedded) embedded.onBack();
+    if (docked) docked.onClose();
+    else if (embedded) embedded.onBack();
     else router.back();
   };
 
@@ -514,6 +523,23 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
           Opaque, like every other bar (BarSurface): the results scroll behind it. */}
       <BarSurface style={[styles.topBar, topBarRuleStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
+          {docked ? (
+            <>
+              <ThemedText testID="search.pane-title" numberOfLines={1} style={styles.paneTitle}>
+                {docked.query ? `Results for “${docked.query}”` : 'Search'}
+              </ThemedText>
+              <Pressable
+                testID="search.pane-close"
+                onPress={goBack}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Close search"
+                style={styles.backButton}>
+                <ClearIcon color={theme.text} size={20} />
+              </Pressable>
+            </>
+          ) : (
+            <>
           <Pressable
             testID="search.back"
             onPress={goBack}
@@ -540,6 +566,8 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
           </View>
           {sortOptions.length > 0 && (
             <SortControl sortOptions={sortOptions} sort={sortValue} onSortChange={setSortValue} />
+          )}
+            </>
           )}
         </View>
       </BarSurface>
@@ -649,6 +677,14 @@ const styles = StyleSheet.create({
   },
   searchWrap: {
     flex: 1,
+  },
+  // TabTitleBar's title, since the docked bar sits where every tab's does.
+  paneTitle: {
+    flex: 1,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+    paddingHorizontal: Spacing.two,
   },
   listHost: {
     flex: 1,

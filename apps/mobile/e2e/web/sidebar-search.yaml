@@ -1,0 +1,28 @@
+# Web only: the rail's search field exists only on web at rail widths (lib/sidebar-search), which is
+# the layout Maestro's web/Chromium viewport renders. There is no mobile copy because there is no
+# mobile surface. Selectors that hit the web-only aria-label quirk (see ../README.md):
+#   - the rail's field sets accessibilityLabel="Search all bridges" (sidebar-search.tsx) — distinct
+#     from the "Search" pill search.yaml taps, so neither flow lands in the other's field.
+#   - search.pane-close sets accessibilityLabel="Close search" (app/search.tsx).
+# search.pane has no competing accessibilityLabel — selected by its testID.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Search all bridges"
+- inputText: "one piece"
+- assertVisible:
+    id: "search.pane"
+- assertVisible:
+    text: "Press Enter to search every bridge"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      text: "Results for.*one piece.*"
+    timeout: 10000
+
+- tapOn:
+    id: "Close search"
+- assertNotVisible:
+    id: "search.pane"
