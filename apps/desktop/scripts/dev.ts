@@ -24,6 +24,7 @@ const ROOT = join(DESKTOP, "..", "..");
 const MOBILE = join(ROOT, "apps", "mobile");
 const METRO_PORT = Number(process.env.METRO_PORT ?? 8081);
 const METRO = `http://localhost:${METRO_PORT}`;
+const DEBUG_PORT = Number(process.env.COMICAL_DEBUG_PORT ?? 9223);
 const isWindows = process.platform === "win32";
 
 function killTree(pid: number): void {
@@ -75,7 +76,8 @@ let restarting = false;
 
 function launch(): void {
   app = spawn({
-    cmd: [electron as unknown as string, DESKTOP],
+    // DevTools protocol on localhost, for driving or inspecting the window from a script.
+    cmd: [electron as unknown as string, `--remote-debugging-port=${DEBUG_PORT}`, DESKTOP],
     cwd: DESKTOP,
     env: {
       ...process.env,
