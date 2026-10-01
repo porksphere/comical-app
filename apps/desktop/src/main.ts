@@ -9,7 +9,7 @@
  * spike: the desktop app is the shipped web UI plus a private, per-user backend, so nothing in
  * `apps/mobile` has to know desktop exists.
  */
-import { app, BrowserWindow, ipcMain, shell, session } from "electron";
+import { app, BrowserWindow, ipcMain, screen, shell, session } from "electron";
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
 import { createDesktopHost } from "./host/create-host.ts";
@@ -187,6 +187,44 @@ async function openWindow(): Promise<void> {
       win.setTitleBarOverlay({ ...colors, height });
     });
   }
+
+  // The page can't watch the top of the window itself: a drag region takes the mouse as the title
+  // bar's, so over it the page receives nothing, not even the pointer arriving. Polled, because
+  // the OS reports no hover over a title bar either.
+  let edgeWatch: ReturnType<typeof setInterval> | null = null;
+  const stopEdgeWatch = () => {
+    if (edgeWatch) clearInterval(edgeWatch);
+    edgeWatch = null;
+  };
+  const onEdgeWatch = (e: Electron.IpcMainEvent, edge: unknown) => {
+    if (e.sender !== win.webContents) return;
+    stopEdgeWatch();
+    if (typeof edge !== "number" || !(edge > 0)) return;
+    let inside: boolean | null = null;
+    edgeWatch = setInterval(() => {
+      if (win.isDestroyed()) return stopEdgeWatch();
+      const at = screen.getCursorScreenPoint();
+      const box = win.getContentBounds();
+      const now =
+        win.isVisible() &&
+        !win.isMinimized() &&
+        at.x >= box.x &&
+        at.x < box.x + box.width &&
+        at.y >= box.y &&
+        at.y < box.y + edge;
+      if (now === inside) return;
+      inside = now;
+      win.webContents.send("top-edge", now);
+    }, 50);
+  };
+  ipcMain.on("top-edge-watch", onEdgeWatch);
+  win.on("closed", () => {
+    stopEdgeWatch();
+    ipcMain.off("top-edge-watch", onEdgeWatch);
+  });
+  win.webContents.on("did-start-navigation", (details) => {
+    if (details.isMainFrame && !details.isSameDocument) stopEdgeWatch();
+  });
 
   // Renderer diagnostics on stdout — the spike's only debugging channel, since there's no devtools
   // in a headless run. Off unless asked for.

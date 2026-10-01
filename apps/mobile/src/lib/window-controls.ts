@@ -112,11 +112,30 @@ export function useWindowThemeColor(color: string | null, layer = 0): void {
  */
 export function useDimWindowControls(dim: boolean): void {
   useEffect(() => {
-    if (!dim || Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const shell = (window as Window & { comicalDesktop?: { dimCaptionButtons(dim: boolean): void } }).comicalDesktop;
+    if (!dim) return;
+    const shell = desktopShell();
     shell?.dimCaptionButtons(true);
     return () => shell?.dimCaptionButtons(false);
   }, [dim]);
+}
+
+/**
+ * Calls `onChange` as the mouse enters and leaves the top `edge` px of the window, where the desktop
+ * shell can see it — over a drag region the page receives no pointer events at all. Returns the
+ * unsubscribe, or null where there is no shell to ask and the page's own pointer events will do.
+ */
+export function watchWindowTopEdge(edge: number, onChange: (inside: boolean) => void): (() => void) | null {
+  return desktopShell()?.watchTopEdge(edge, onChange) ?? null;
+}
+
+type DesktopShell = {
+  dimCaptionButtons(dim: boolean): void;
+  watchTopEdge(edge: number, onChange: (inside: boolean) => void): () => void;
+};
+
+function desktopShell(): DesktopShell | undefined {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+  return (window as Window & { comicalDesktop?: DesktopShell }).comicalDesktop;
 }
 
 const claims = new Set<{ color: string; layer: number }>();

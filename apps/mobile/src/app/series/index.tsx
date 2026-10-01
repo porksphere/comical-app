@@ -79,7 +79,7 @@ import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } f
 import { closeSeriesPane } from '@/lib/series-pane';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
-import { useDimWindowControls, useWindowThemeColor } from '@/lib/window-controls';
+import { useDimWindowControls, useWindowThemeColor, watchWindowTopEdge } from '@/lib/window-controls';
 import {
   holdZoomingSeries,
   onZoomSurfaceChange,
@@ -135,9 +135,8 @@ const CHROME_HIDE_MS = 3000;
 // accessibility tree.
 const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
 /** A mouse this close to the top of the reader brings the toolbar up, the way a video player's
- *  controls come up under the pointer. A little deeper than the toolbar itself: on desktop the
- *  toolbar's strip is the window's drag handle, which the page receives no pointer events over, so
- *  the reveal has to happen on the way into it. */
+ *  controls come up under the pointer. A little deeper than the toolbar itself, so the reveal starts
+ *  on the way into it. */
 const CHROME_HOVER_EDGE = 80;
 /** How long a toolbar brought up by hovering outlasts the pointer leaving it. */
 const CHROME_HOVER_HIDE_MS = 500;
@@ -1560,22 +1559,21 @@ function SeriesReaderInstance({
         setChromeVisible(false);
       }, CHROME_HOVER_HIDE_MS);
     };
+    const onEdge = (inside: boolean) => (inside ? near() : away());
+    const unwatch = watchWindowTopEdge(CHROME_HOVER_EDGE, onEdge);
+    if (unwatch) {
+      return () => {
+        cancelLeave();
+        unwatch();
+      };
+    }
     const onMove = (e: PointerEvent) => {
-      if (e.pointerType !== 'mouse' || e.buttons !== 0) return;
-      if (e.clientY < CHROME_HOVER_EDGE) near();
-      else away();
+      if (e.pointerType === 'mouse' && e.buttons === 0) onEdge(e.clientY < CHROME_HOVER_EDGE);
     };
-    // Where the pointer goes into the drag handle, all the page sees is the pointer leaving it.
-    const onLeave = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse' && e.clientY < CHROME_HOVER_EDGE) near();
-    };
-    const root = document.documentElement;
     window.addEventListener('pointermove', onMove, true);
-    root.addEventListener('pointerleave', onLeave);
     return () => {
       cancelLeave();
       window.removeEventListener('pointermove', onMove, true);
-      root.removeEventListener('pointerleave', onLeave);
     };
   }, [detailsActive]);
 
