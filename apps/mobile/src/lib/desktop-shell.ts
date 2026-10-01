@@ -9,7 +9,10 @@ import { Platform } from 'react-native';
 type DesktopShell = {
   platform: string;
   runInTray: boolean;
+  openAtLogin: boolean;
+  loginItems: boolean;
   setRunInTray(on: boolean): void;
+  setOpenAtLogin(on: boolean): void;
   dimCaptionButtons(dim: boolean): void;
   watchTopEdge(edge: number, onChange: (inside: boolean) => void): () => void;
 };
@@ -19,16 +22,29 @@ export function desktopShell(): DesktopShell | undefined {
   return (window as Window & { comicalDesktop?: DesktopShell }).comicalDesktop;
 }
 
-/** Seeded from the shell's own saved copy, which is what it acts on when the window closes. */
-const runInTray$ = observable(desktopShell()?.runInTray ?? false);
+/** Seeded from the shell's own saved copies, which are what it acts on when the window closes or
+ *  the session starts. */
+const shell$ = observable({
+  runInTray: desktopShell()?.runInTray ?? false,
+  openAtLogin: desktopShell()?.openAtLogin ?? false,
+});
 
 export function useRunInTray(): [boolean, (on: boolean) => void] {
-  return [use$(runInTray$), setRunInTray];
+  return [use$(shell$.runInTray), setRunInTray];
 }
 
 function setRunInTray(on: boolean): void {
-  runInTray$.set(on);
+  shell$.runInTray.set(on);
   desktopShell()?.setRunInTray(on);
+}
+
+export function useOpenAtLogin(): [boolean, (on: boolean) => void] {
+  return [use$(shell$.openAtLogin), setOpenAtLogin];
+}
+
+function setOpenAtLogin(on: boolean): void {
+  shell$.openAtLogin.set(on);
+  desktopShell()?.setOpenAtLogin(on);
 }
 
 /** What the platform calls the place a background app's icon lives. */

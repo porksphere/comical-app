@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
 import { createDesktopHost } from "./host/create-host.ts";
 import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
+import { canOpenAtLogin, launchedAtLogin, setOpenAtLogin } from "./login-item.ts";
 import { shellSettings, updateShellSettings } from "./shell-settings.ts";
 import { setTray, trayNotice } from "./tray.ts";
 
@@ -90,6 +91,8 @@ function captionColors(background: string, dimmed = false): { color: string; sym
 let server: LoopbackServer | null = null;
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
+/** A session start with the tray on opens no window: being there is the whole point of it. */
+let startInTray = false;
 
 /** Bring the window back from the tray, the taskbar or behind other windows. */
 function showWindow(): void {
@@ -160,7 +163,11 @@ async function openWindow(): Promise<void> {
     },
   });
 
-  win.once("ready-to-show", () => win.show());
+  const hidden = startInTray;
+  startInTray = false;
+  win.once("ready-to-show", () => {
+    if (!hidden) win.show();
+  });
   mainWindow = win;
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
@@ -303,11 +310,16 @@ app.on("second-instance", showWindow);
 
 // The renderer reads these synchronously from its preload, before the page's first render.
 ipcMain.on("shell-settings", (e) => {
-  e.returnValue = { runInTray: shellSettings().runInTray };
+  const { runInTray, openAtLogin } = shellSettings();
+  e.returnValue = { runInTray, openAtLogin, loginItems: canOpenAtLogin() };
 });
 ipcMain.on("run-in-tray", (_e, on: unknown) => {
   updateShellSettings({ runInTray: on === true });
   setTray(on === true, showWindow);
+});
+ipcMain.on("open-at-login", (_e, on: unknown) => {
+  updateShellSettings({ openAtLogin: on === true });
+  setOpenAtLogin(on === true).catch((err: unknown) => console.error("[login-item] failed:", err));
 });
 
 if (primary) {
@@ -316,7 +328,13 @@ if (primary) {
     .then(() => {
       // Without it Windows attributes the tray's notice to Electron itself in dev.
       if (process.platform === "win32") app.setAppUserModelId("com.porksphere.comical");
-      setTray(shellSettings().runInTray, showWindow);
+      const settings = shellSettings();
+      setTray(settings.runInTray, showWindow);
+      startInTray = settings.runInTray && launchedAtLogin();
+      // Re-registered every launch, so the entry follows the app to wherever an update put it.
+      if (settings.openAtLogin) {
+        setOpenAtLogin(true).catch((err: unknown) => console.error("[login-item] failed:", err));
+      }
       return boot();
     })
     .catch((err: unknown) => {

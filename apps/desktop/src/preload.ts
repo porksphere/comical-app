@@ -4,13 +4,21 @@
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
-const settings = ipcRenderer.sendSync("shell-settings") as { runInTray: boolean };
+const settings = ipcRenderer.sendSync("shell-settings") as {
+  runInTray: boolean;
+  openAtLogin: boolean;
+  loginItems: boolean;
+};
 
 contextBridge.exposeInMainWorld("comicalDesktop", {
   platform: process.platform,
-  /** As saved when the page loaded; the page owns it from there, through `setRunInTray`. */
+  /** As saved when the page loaded; the page owns them from there, through the setters. */
   runInTray: settings.runInTray,
+  openAtLogin: settings.openAtLogin,
+  /** False in a dev run, which has nothing a login launch could start. */
+  loginItems: settings.loginItems,
   setRunInTray: (on: boolean) => ipcRenderer.send("run-in-tray", on === true),
+  setOpenAtLogin: (on: boolean) => ipcRenderer.send("open-at-login", on === true),
   /** Fade the caption buttons' glyphs back, for a screen that has hidden its own chrome. */
   dimCaptionButtons: (dim: boolean) => ipcRenderer.send("caption-dim", dim === true),
   /** Reports the pointer entering and leaving the top `edge` px of the window — over a drag

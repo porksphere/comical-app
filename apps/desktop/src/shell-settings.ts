@@ -11,6 +11,8 @@ import { dirname, join } from "node:path";
 export type ShellSettings = {
   /** Closing the window hides it, and the app carries on from a tray icon until quit from there. */
   runInTray: boolean;
+  /** Start with the user's session — into the tray, when `runInTray` is on too. */
+  openAtLogin: boolean;
   /** The one-time "still running" notice has been shown. */
   trayNoticeShown: boolean;
 };
@@ -27,7 +29,11 @@ export function shellSettings(): ShellSettings {
   } catch {
     // No file yet, or one that doesn't parse: every setting at its default.
   }
-  current = { runInTray: raw.runInTray === true, trayNoticeShown: raw.trayNoticeShown === true };
+  current = {
+    runInTray: raw.runInTray === true,
+    openAtLogin: raw.openAtLogin === true,
+    trayNoticeShown: raw.trayNoticeShown === true,
+  };
   return current;
 }
 

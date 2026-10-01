@@ -23,7 +23,7 @@ import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-a
 import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
-import { desktopShell, trayName, useRunInTray } from '@/lib/desktop-shell';
+import { desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -72,6 +72,7 @@ export default function GeneralSettingsScreen() {
   const [apiBase, setApiBaseOverride] = useApiBase();
   const lightCards = useLightCards();
   const [runInTray, setRunInTray] = useRunInTray();
+  const [openAtLogin, setOpenAtLogin] = useOpenAtLogin();
   // Gated on hydration: the static web render has no shell, so the row would otherwise appear only
   // after it and mismatch.
   const desktop = useHydrated() && !!desktopShell();
@@ -157,6 +158,20 @@ export default function GeneralSettingsScreen() {
               description="Closing the window leaves Comical running, so downloads carry on."
               value={runInTray}
               onChange={setRunInTray}
+            />
+          )}
+          {desktop && (
+            <SettingsToggleRow
+              label="Open at login"
+              description={
+                !desktopShell()?.loginItems
+                  ? 'Takes effect in an installed build.'
+                  : runInTray
+                    ? `Start Comical in the ${trayName()} when you sign in.`
+                    : 'Start Comical when you sign in.'
+              }
+              value={openAtLogin}
+              onChange={setOpenAtLogin}
             />
           )}
           {/* The download policies gate the DEVICE engine — meaningless when a remote server owns
