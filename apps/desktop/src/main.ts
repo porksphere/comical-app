@@ -64,8 +64,9 @@ const DRAG_REGION_CSS = `
 `;
 
 /** The caption buttons are as tall as the bar they sit in — `useTopBarHeight` in the app: the
- *  desktop bar from 768px of window width (`LARGE_SCREEN_BREAKPOINT`), the compact one below. */
-const captionHeight = (win: BrowserWindow): number => (win.getContentBounds().width >= 768 ? 64 : 60);
+ *  desktop bar from 768px of window width (`LARGE_SCREEN_BREAKPOINT`), the compact one below — less
+ *  the bar's 1px bottom rule, which the strip would otherwise paint over beneath the buttons. */
+const captionHeight = (win: BrowserWindow): number => (win.getContentBounds().width >= 768 ? 64 : 60) - 1;
 
 /** The page says what is behind the buttons with `<meta name="theme-color">`; the glyphs take
  *  whichever of black and white reads on it. */
@@ -128,7 +129,7 @@ async function openWindow(): Promise<void> {
     minHeight: 480,
     backgroundColor: "#000000",
     titleBarStyle: CAPTION_OVERLAY ? "hidden" : "hiddenInset",
-    ...(CAPTION_OVERLAY ? { titleBarOverlay: { ...captionColors("#000000"), height: 64 } } : {}),
+    ...(CAPTION_OVERLAY ? { titleBarOverlay: { ...captionColors("#000000"), height: 63 } } : {}),
     show: false,
     webPreferences: {
       contextIsolation: true,
