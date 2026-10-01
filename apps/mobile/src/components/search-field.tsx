@@ -26,11 +26,17 @@ export function SearchField({
   placeholder = 'Search…',
   autoFocus = false,
   immediateFocus = false,
+  focusRequest = 0,
+  onChangeText,
   testID,
 }: {
   value: string;
   onSubmit: (q: string) => void;
   onClear: () => void;
+  /** Every keystroke, for a caller that answers as you type rather than on submit. */
+  onChangeText?: (text: string) => void;
+  /** Bump to focus the field again — a shortcut asking for it while the screen is already up. */
+  focusRequest?: number;
   placeholder?: string;
   /** Focus the field (and raise the keyboard) on mount — used by the Search screen. */
   autoFocus?: boolean;
@@ -99,6 +105,15 @@ export function SearchField({
     };
   }, [autoFocus, immediateFocus, navigation]);
 
+  useEffect(() => {
+    if (focusRequest > 0) inputRef.current?.focus();
+  }, [focusRequest]);
+
+  const change = (t: string) => {
+    setText(t);
+    onChangeText?.(t);
+  };
+
   // On mobile web the soft keyboard can be dismissed without the input firing a
   // blur (e.g. Android's "hide keyboard" button keeps DOM focus). Previously this
   // just set `focused` to false directly, which desynced app state from the real
@@ -128,7 +143,7 @@ export function SearchField({
         testID={`${testID}.input`}
         ref={inputRef}
         value={text}
-        onChangeText={setText}
+        onChangeText={change}
         onSubmitEditing={() => onSubmit(text)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
@@ -143,7 +158,7 @@ export function SearchField({
         <Pressable
           testID={`${testID}.clear`}
           onPress={() => {
-            setText('');
+            change('');
             onClear();
           }}
           hitSlop={8}

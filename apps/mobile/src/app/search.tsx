@@ -218,12 +218,18 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   useEffect(() => {
     topRef.current = embedded ? !!embedded.isTop : true;
   });
+  const isEmbedded = !!embedded;
+  const [focusRequest, setFocusRequest] = useState(0);
   useEffect(
     () =>
       subscribeSearchIntent(() => {
         if (!focusedRef.current || !topRef.current) return;
+        // The desktop's Search entry opens the app's Search screen. A layer in the series pane is
+        // still mounted while the pane closes, and would otherwise take it from the screen it pushes.
+        if (isEmbedded && peekSearchIntent()?.kind === 'open') return;
         const intent = takeSearchIntent();
         if (!intent) return;
+        if (intent.kind === 'open') setFocusRequest((n) => n + 1);
         setBridge(intent.bridgeId);
         setFilterValues({});
         setQuery(intent.kind === 'query' ? intent.query : '');
@@ -236,7 +242,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
           intent.kind === 'meta' ? { bridgeId: intent.bridgeId, metaKey: intent.metaKey, value: intent.value } : null,
         );
       }),
-    [setBridge, setFilterValues],
+    [setBridge, setFilterValues, isEmbedded],
   );
 
   useEffect(() => {
@@ -484,7 +490,8 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
               value={query}
               onSubmit={(q) => setQuery(q.trim())}
               onClear={() => setQuery('')}
-              autoFocus={!initialIntent}
+              autoFocus={!initialIntent || initialIntent.kind === 'open'}
+              focusRequest={focusRequest}
             />
           </View>
           {sortOptions.length > 0 && (

@@ -1,6 +1,6 @@
 import { usePathname } from 'expo-router';
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
-import { Bell, Compass, History, Library, Settings, type LucideIcon } from 'lucide-react-native';
+import { Bell, Compass, History, Library, Search, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
@@ -28,7 +28,9 @@ import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
 import { SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
+import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
+import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { openSettingsModal } from '@/lib/settings-modal';
 import { closeSeriesPane, setSeriesPaneAvailable, useSeriesPane } from '@/lib/series-pane';
@@ -109,6 +111,9 @@ const SETTINGS_AS_MODAL = Platform.OS === 'web';
 /** Same gate as the settings modal, and for the same reason: the pane is a web layout, not a wide
  *  one. A landscape iPad shows the rail and still opens a series full-screen — see lib/series-pane. */
 const SERIES_AS_PANE = Platform.OS === 'web';
+
+const SEARCH_HINT =
+  Platform.OS === 'web' && typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘K' : 'Ctrl K';
 
 // Rounding slack for "is this offset at the content end?" — see the bounce guard in the scroll
 // listener below.
@@ -399,9 +404,23 @@ export default function AppTabs() {
   // selection puts two (or three) filled rows on screen at once. Exact pathname match, no fallback —
   // on a pushed screen over the tabs nothing in the rail is current.
   const activeTab = TABS.find((t) => t.href === pathname)?.name;
+  const openSearch = useOpenComicalSearch();
+  useKeyboardShortcut('k', openSearch);
   const sidebarChildren = useMemo(
-    () =>
-      TABS.flatMap((tab, i) => {
+    () => [
+      // First, and not a tab: Search is a screen pushed over the rail, not a place in it, so it is
+      // never the selected row. It searches every bridge, wherever you open it from.
+      <SidebarItem
+        key="search"
+        testID="sidebar.search"
+        Icon={Search}
+        label="Search"
+        hint={collapsed ? undefined : SEARCH_HINT}
+        compact={collapsed}
+        accessibilityRole="button"
+        onPress={openSearch}
+      />,
+      ...TABS.flatMap((tab, i) => {
         // Settings is a footer BUTTON in the rail on web (it opens a modal, it isn't a place), so its
         // row is dropped here. The registration TabList below still lists it — the route has to keep
         // existing, and on native it is still an ordinary destination.
@@ -419,7 +438,8 @@ export default function AppTabs() {
           </SidebarGroup>,
         ];
       }),
-    [triggers, activeTab, collapsed],
+    ],
+    [triggers, activeTab, collapsed, openSearch],
   );
 
   // The rail's own width, read straight off the shared value so a drag moves it without a render.

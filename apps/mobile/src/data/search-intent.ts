@@ -13,7 +13,9 @@
  * (keyed "tag" for the tag-multiselect, "genre" for the genre filter); a `meta`
  * intent comes from tapping an Author/Artist/Type meta cell — Search routes it
  * into the matching filter field (if the bridge has one) and otherwise falls back
- * to a plain free-text search, same as `query`.
+ * to a plain free-text search, same as `query`. An `open` intent is a blank search
+ * on its bridge — the desktop's Search entry, which starts on the Comical aggregate
+ * rather than inheriting whatever Browse is showing.
  */
 import type { TagGroup } from '@/data/mock';
 
@@ -25,6 +27,7 @@ export type SearchIntent = {
   | { kind: 'query'; query: string }
   | { kind: 'tag'; filterKey: string; tagId: string; label: string }
   | { kind: 'meta'; metaKey: 'author' | 'artist' | 'type'; value: string }
+  | { kind: 'open' }
 );
 
 /**

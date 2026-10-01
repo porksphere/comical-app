@@ -49,6 +49,8 @@ type SidebarItemProps = PressableProps & {
    *  the chevron discloses, and neither implies the other. */
   expanded?: boolean;
   onToggleScope?: () => void;
+  /** A keyboard shortcut, printed at the trailing edge. */
+  hint?: string;
 };
 
 export function SidebarItem({
@@ -60,8 +62,10 @@ export function SidebarItem({
   scope,
   expanded,
   onToggleScope,
+  hint,
   onPress,
   testID,
+  accessibilityRole = 'tab',
   ...props
 }: SidebarItemProps) {
   const theme = useTheme();
@@ -94,7 +98,7 @@ export function SidebarItem({
         testID={testID}
         onPress={onPress}
         accessibilityLabel={label}
-        accessibilityRole="tab"
+        accessibilityRole={accessibilityRole}
         accessibilityState={{ selected: active }}
         style={({ pressed }) => [
           styles.item,
@@ -113,6 +117,9 @@ export function SidebarItem({
             {label}
           </Text>
         )}
+        {hint && !compact ? (
+          <Text style={[styles.hint, { color: theme.textSecondary }]}>{hint}</Text>
+        ) : null}
       </Pressable>
       {scope && !compact ? (
         <Pressable
@@ -315,6 +322,12 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.sans,
     fontSize: 15,
     flexShrink: 1,
+  },
+  hint: {
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    marginLeft: 'auto',
+    opacity: 0.7,
   },
   subItem: {
     flexDirection: 'row',
