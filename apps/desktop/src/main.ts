@@ -14,6 +14,8 @@ import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
 import { createDesktopHost } from "./host/create-host.ts";
 import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
+import { shellSettings, updateShellSettings } from "./shell-settings.ts";
+import { setTray, trayNotice } from "./tray.ts";
 
 /** The web export, which `scripts/build-web.ts` writes to `build/web` beside the bundled main.
  *
@@ -86,6 +88,18 @@ function captionColors(background: string, dimmed = false): { color: string; sym
 }
 
 let server: LoopbackServer | null = null;
+let mainWindow: BrowserWindow | null = null;
+let quitting = false;
+
+/** Bring the window back from the tray, the taskbar or behind other windows. */
+function showWindow(): void {
+  const win = mainWindow;
+  // Before the listener is up the boot in progress is about to open one anyway.
+  if (!win) return void (server && openWindow());
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
 
 /** Start the host + its listener. Runs once per process; `openWindow` can then be called freely. */
 async function boot(): Promise<void> {
@@ -147,6 +161,18 @@ async function openWindow(): Promise<void> {
   });
 
   win.once("ready-to-show", () => win.show());
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+  win.on("close", (e) => {
+    if (quitting || !shellSettings().runInTray) return;
+    e.preventDefault();
+    win.hide();
+    if (shellSettings().trayNoticeShown) return;
+    updateShellSettings({ trayNoticeShown: true });
+    trayNotice();
+  });
 
   // Every load (a reload included) starts without it, and `insertCSS` lasts only until the next one.
   win.webContents.on("dom-ready", () => {
@@ -269,16 +295,42 @@ async function openWindow(): Promise<void> {
   }
 }
 
-app.whenReady().then(boot).catch((err: unknown) => {
-  console.error("comical-desktop failed to start:", err);
-  app.exit(1);
+// A second launch — the shortcut clicked while the app sits in the tray — would boot a second host
+// against the same data dir. It hands over to the running one instead.
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
+app.on("second-instance", showWindow);
+
+// The renderer reads these synchronously from its preload, before the page's first render.
+ipcMain.on("shell-settings", (e) => {
+  e.returnValue = { runInTray: shellSettings().runInTray };
 });
+ipcMain.on("run-in-tray", (_e, on: unknown) => {
+  updateShellSettings({ runInTray: on === true });
+  setTray(on === true, showWindow);
+});
+
+if (primary) {
+  app
+    .whenReady()
+    .then(() => {
+      // Without it Windows attributes the tray's notice to Electron itself in dev.
+      if (process.platform === "win32") app.setAppUserModelId("com.porksphere.comical");
+      setTray(shellSettings().runInTray, showWindow);
+      return boot();
+    })
+    .catch((err: unknown) => {
+      console.error("comical-desktop failed to start:", err);
+      app.exit(1);
+    });
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
 app.on("activate", () => {
+  if (mainWindow) return showWindow();
   if (BrowserWindow.getAllWindows().length > 0) return;
   // The host and its listener outlive every window (downloads keep draining), so reopening is just
   // a window — booting a second host would fight the first over the same data dir.
@@ -286,5 +338,6 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+  quitting = true;
   void server?.close();
 });

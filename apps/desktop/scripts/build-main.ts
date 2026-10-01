@@ -12,7 +12,7 @@
  * Uses the `Bun.build()` API rather than shelling out to `bun build`: this runs on a Windows CI
  * runner too, and the API sidesteps the shell quoting and line-continuation differences entirely.
  */
-import { rm } from "node:fs/promises";
+import { copyFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 const DESKTOP = join(import.meta.dir, "..");
@@ -40,3 +40,6 @@ for (const name of ["main", "preload"]) {
 
   console.log(`${name} → ${outfile}`);
 }
+
+// The tray's icon, read at runtime from beside the bundles — the same mark the web build uses.
+await copyFile(join(DESKTOP, "..", "mobile", "assets", "images", "favicon.png"), join(OUT, "tray.png"));

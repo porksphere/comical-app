@@ -4,7 +4,13 @@
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
+const settings = ipcRenderer.sendSync("shell-settings") as { runInTray: boolean };
+
 contextBridge.exposeInMainWorld("comicalDesktop", {
+  platform: process.platform,
+  /** As saved when the page loaded; the page owns it from there, through `setRunInTray`. */
+  runInTray: settings.runInTray,
+  setRunInTray: (on: boolean) => ipcRenderer.send("run-in-tray", on === true),
   /** Fade the caption buttons' glyphs back, for a screen that has hidden its own chrome. */
   dimCaptionButtons: (dim: boolean) => ipcRenderer.send("caption-dim", dim === true),
   /** Reports the pointer entering and leaving the top `edge` px of the window — over a drag

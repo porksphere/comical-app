@@ -11,6 +11,7 @@ import { Platform } from 'react-native';
 
 import { useContentWidth } from '@/hooks/use-content-width';
 import { useHydrated } from '@/hooks/use-responsive';
+import { desktopShell } from '@/lib/desktop-shell';
 
 /** Not in TypeScript's DOM lib yet. */
 type WindowControlsOverlay = EventTarget & {
@@ -126,16 +127,6 @@ export function useDimWindowControls(dim: boolean): void {
  */
 export function watchWindowTopEdge(edge: number, onChange: (inside: boolean) => void): (() => void) | null {
   return desktopShell()?.watchTopEdge(edge, onChange) ?? null;
-}
-
-type DesktopShell = {
-  dimCaptionButtons(dim: boolean): void;
-  watchTopEdge(edge: number, onChange: (inside: boolean) => void): () => void;
-};
-
-function desktopShell(): DesktopShell | undefined {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
-  return (window as Window & { comicalDesktop?: DesktopShell }).comicalDesktop;
 }
 
 const claims = new Set<{ color: string; layer: number }>();

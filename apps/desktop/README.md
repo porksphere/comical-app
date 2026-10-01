@@ -72,7 +72,8 @@ require FUSE to run`. Either `apt install libfuse2` or run it with `--appimage-e
   requests keeps other local processes out, but the port exists. The fix is IPC: `ipcMain.handle` →
   `host.fetch(path, init)` and a `startup.electron.ts` calling the existing `setTransport()` — the
   shape `@comical/host-rn` already uses on device, and the only item here touching `apps/mobile`.
-- **Desktop chrome.** No app menu, shortcuts, tray, window-state persistence, or deep links.
+- **Desktop chrome.** No app menu, shortcuts, window-state persistence, or deep links. (The tray is
+  opt-in, from Settings → General: closing the window then leaves the app running behind it.)
 - **Desktop-shaped UI.** It's the responsive *web* layout. Usable at 1280×860, not designed for it.
 - **macOS in CI.** `build-desktop.yml` matrixes Windows and Linux only.
 - **The `publish` job has never run.** Gated to `main`, so every branch run skips it. The rolling

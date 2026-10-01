@@ -21,7 +21,9 @@ import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } fr
 import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
+import { useHydrated } from '@/hooks/use-responsive';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
+import { desktopShell, trayName, useRunInTray } from '@/lib/desktop-shell';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -69,6 +71,10 @@ export default function GeneralSettingsScreen() {
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
   const lightCards = useLightCards();
+  const [runInTray, setRunInTray] = useRunInTray();
+  // Gated on hydration: the static web render has no shell, so the row would otherwise appear only
+  // after it and mismatch.
+  const desktop = useHydrated() && !!desktopShell();
   const { wifiOnly, background } = useDownloadPrefs();
   const { open } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
@@ -143,6 +149,14 @@ export default function GeneralSettingsScreen() {
               description={apiBase}
               descriptionSelectable
               onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
+            />
+          )}
+          {desktop && (
+            <SettingsToggleRow
+              label={`Keep running in the ${trayName()}`}
+              description="Closing the window leaves Comical running, so downloads carry on."
+              value={runInTray}
+              onChange={setRunInTray}
             />
           )}
           {/* The download policies gate the DEVICE engine — meaningless when a remote server owns
