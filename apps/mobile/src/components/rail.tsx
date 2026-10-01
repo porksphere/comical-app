@@ -92,8 +92,8 @@ function gridCardWidth(viewport: number, gap: number): number {
 // Rendered height of a `SectionHead` on the WIDE breakpoint, and the real thing rather than an
 // estimate: every head claims it as a `minHeight` (see `HEAD_HEIGHT_WIDE` and `headWide`), so the
 // height reserved here is the height the row gets — and a drillable head is exactly as tall as a
-// plain one regardless of how the chevron inside it is currently sized. Comfortably clears the
-// title's own line box (30px wide / 25px compact — see `headTitleWide`/`headTitleCompact`). A rail's
+// plain one regardless of how the chevron inside it is currently sized. It is also the title's
+// line box (see `headTitleWide`/`headTitleCompact`). A rail's
 // `styles.section` puts a `Spacing.two` gap between the head and the strip/grid below it.
 export const SECTION_HEAD_HEIGHT = 32;
 
@@ -677,13 +677,16 @@ const styles = StyleSheet.create({
   headTitle: {
     flexShrink: 1,
   },
+  // The line box is the whole head. `numberOfLines` clips to it, and Segoe UI's font box is 4/3 of
+  // its size (32px at 24), so a 30px box cut the descenders off on Windows. The title is centred in
+  // the head either way, so filling it moves no glyph.
   headTitleCompact: {
     fontSize: 19.2,
-    lineHeight: 25,
+    lineHeight: HEAD_HEIGHT_COMPACT,
   },
   headTitleWide: {
     fontSize: 24,
-    lineHeight: 30,
+    lineHeight: HEAD_HEIGHT_WIDE,
   },
   // Title + chevron as one drill-down target. Hugs its content (`flexShrink` so a long title
   // ellipsizes instead of pushing the chevron off-screen) — the tap area is the heading, not the
