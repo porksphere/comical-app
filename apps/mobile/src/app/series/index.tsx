@@ -3834,6 +3834,7 @@ export default function SeriesReaderScreen() {
   const params = useLocalSearchParams<SeriesReaderParams & ReaderSequenceParams>();
   const router = useRouter();
   const { width } = useViewport();
+  const inPane = useSeriesPaneWidth() !== null;
   const [drills, setDrills] = useState<DrillEntry[]>([]);
 
   // ── Sequence mode (`seq=1`): the reader pages over a COLLECTION's saved pages ──
@@ -3928,7 +3929,9 @@ export default function SeriesReaderScreen() {
   // is exactly where it was left. Without this gate the layers beneath would SNAP sideways the
   // moment a series was drilled from search results, riding a value the search layer had parked
   // at 1 and the series would never move again.
-  const pushed = top >= 0 && drills[top].kind === 'search' ? layerParallax : null;
+  // Nor in the desktop pane, where the search arrives without a slide to drift against (see
+  // SearchLayer) — and the pane doesn't clip, so the page would be shoved out over the rail.
+  const pushed = !inPane && top >= 0 && drills[top].kind === 'search' ? layerParallax : null;
   return (
     <View style={styles.container}>
       <Animated.View
@@ -3988,13 +3991,17 @@ function SearchLayer({
 }) {
   const { width } = useViewport();
   const theme = useTheme();
-  const edgeX = useSharedValue(width);
+  // In the desktop pane a tag's search simply replaces the page, the way the pane's own navigation
+  // does: a push sliding in from the edge is a phone's idiom, and there it is a sideways ride
+  // across most of the window for every chip clicked.
+  const inPane = useSeriesPaneWidth() !== null;
+  const edgeX = useSharedValue(inPane ? 0 : width);
   const edgeCommitting = useSharedValue(false);
   // Set the moment the back-swipe activates: the results list stops scrolling for as long as this
   // layer is being dragged out. See the note in the pan's onStart.
   const [swipeLocked, setSwipeLocked] = useState(false);
   useEffect(() => {
-    edgeX.set(withSpring(0, IOS_CARD_SPRING));
+    if (!inPane) edgeX.set(withSpring(0, IOS_CARD_SPRING));
     // Mount-only entrance — edgeX is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -4036,8 +4043,11 @@ function SearchLayer({
     [edgeX, edgeCommitting, width, onPopLayer],
   );
   const closeLayer = useCallback(() => {
-    runOnUI(slideOut)(0);
-  }, [slideOut]);
+    if (!inPane) return runOnUI(slideOut)(0);
+    if (edgeCommitting.get()) return;
+    edgeCommitting.set(true);
+    onPopLayer();
+  }, [slideOut, inPane, edgeCommitting, onPopLayer]);
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
