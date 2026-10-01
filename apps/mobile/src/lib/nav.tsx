@@ -8,6 +8,7 @@ import {
 } from 'expo-router';
 import { useMemo, type ComponentProps } from 'react';
 
+import { openBridgeSearchPane } from '@/lib/bridge-search-pane';
 import { usePaneNav, usePaneParams, type PaneParams } from '@/lib/pane';
 import { openResultsPane } from '@/lib/results-pane';
 import { openSeriesPane } from '@/lib/series-pane';
@@ -107,7 +108,7 @@ export function useRouter(): Router {
 }
 
 /**
- * Hands a `/series` or `/results` navigation to its pane over the content region when one is up,
+ * Hands a `/series`, `/results` or `/search` navigation to its pane over the content region when one is up,
  * and reports that it did.
  *
  * Here rather than at the call sites because there are eleven of them across cards, rows, menus and
@@ -119,6 +120,7 @@ function takeContentPane(href: unknown): boolean {
   const { pathname, params } = splitHref(href);
   if (pathname === '/series') return openSeriesPane(params);
   if (pathname === '/results') return openResultsPane(params);
+  if (pathname === '/search') return openBridgeSearchPane();
   return false;
 }
 

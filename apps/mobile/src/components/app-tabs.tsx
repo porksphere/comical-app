@@ -18,6 +18,7 @@ import { AppSidebar, SidebarGroup, SidebarItem } from '@/components/app-sidebar'
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
 import { SettingsModal } from '@/components/settings/settings-modal';
+import { BridgeSearchPane } from '@/components/bridge-search-pane';
 import { ResultsPane } from '@/components/results-pane';
 import { SeriesPane } from '@/components/series-pane';
 import { SearchPane, SidebarSearchField } from '@/components/sidebar-search';
@@ -32,6 +33,7 @@ import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
 import { expandSidebar, SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
+import { closeBridgeSearchPane, setBridgeSearchPaneAvailable, useBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
 import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { closeSettingsModal, openSettingsModal } from '@/lib/settings-modal';
@@ -124,6 +126,7 @@ function closeContentPanes(): void {
   closeSeriesPane();
   closeResultsPane();
   closeSidebarSearch();
+  closeBridgeSearchPane();
 }
 
 const SEARCH_HINT =
@@ -354,9 +357,11 @@ export default function AppTabs() {
   useEffect(() => {
     setSeriesPaneAvailable(paneAvailable);
     setResultsPaneAvailable(paneAvailable);
+    setBridgeSearchPaneAvailable(paneAvailable);
   }, [paneAvailable]);
   const seriesPaneOpen = useSeriesPaneOpen();
   const resultsPaneOpen = useResultsPaneOpen();
+  const bridgeSearchPaneOpen = useBridgeSearchPaneOpen();
   // The rail's edge follows the pointer on the UI thread; the content's inset can't (see
   // `sidebar-drag`), so it is committed at column boundaries instead. At rest the two are the same
   // number, and this is what keeps them that way — after a release, after a collapse, after a
@@ -586,6 +591,9 @@ export default function AppTabs() {
           It covers the CONTENT REGION and nothing else: the rail stays lit and usable beside it, so
           the series is over the grid you opened it from rather than over the whole app. */}
       {searchPaneOpen ? <SearchPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
+      {bridgeSearchPaneOpen ? (
+        <BridgeSearchPane left={contentInset} width={width - contentInset} top={insets.top} />
+      ) : null}
       {resultsPaneOpen ? <ResultsPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {seriesPaneOpen ? <SeriesPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}

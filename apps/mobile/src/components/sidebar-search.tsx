@@ -6,6 +6,7 @@ import { Fonts, Spacing } from '@/constants/theme';
 import SearchScreen from '@/app/search';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useTheme } from '@/hooks/use-theme';
+import { closeBridgeSearchPane } from '@/lib/bridge-search-pane';
 import { closeResultsPane } from '@/lib/results-pane';
 import { closeSeriesPane } from '@/lib/series-pane';
 import {
@@ -34,18 +35,20 @@ export function SidebarSearchField({ hint }: { hint: string }) {
     sidebarSearchFocused();
   }, [focusPending]);
 
-  // Both reveal the results: the pane covers the content region, and so do an open series and a
-  // rail's "See all", which would otherwise sit over the results the field just asked for.
+  // Both reveal the results: the pane covers the content region, and so do an open series, a rail's
+  // "See all" and Browse's own Search, which would otherwise sit over the results the field asked for.
   const change = (text: string) => {
     setSidebarSearchTyped(text);
     if (!text.trim()) return;
     closeSeriesPane();
     closeResultsPane();
+    closeBridgeSearchPane();
   };
   const submit = () => {
     submitSidebarSearch(typed);
     closeSeriesPane();
     closeResultsPane();
+    closeBridgeSearchPane();
   };
 
   return (
