@@ -8,7 +8,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  useWindowDimensions,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -60,6 +59,7 @@ import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { hapticImpactMedium } from '@/lib/haptics';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
+import { useSeriesPageWidth } from '@/lib/series-pane-context';
 import { chapterProgressQuery, collectionItemsQuery, inLibraryQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive, type DataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
@@ -132,7 +132,7 @@ function ChapterListSkeleton() {
 /** Page-grid placeholder shown while the deferred page fetch is in flight — one
  *  row of tiles at the grid's column count, matching the thumbnail aspect. */
 function PageGridSkeleton() {
-  const { width } = useWindowDimensions();
+  const width = useSeriesPageWidth();
   const cols = width >= 900 ? 5 : width >= 600 ? 3 : 2;
   return (
     <View style={styles.section}>
@@ -486,7 +486,7 @@ export function ChapterScrollList({
 } & PullListWiring) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const width = useSeriesPageWidth();
   // Large screens cap + centre the whole list (hero, chapter rows, rails) at MaxTopLevelWidth, the
   // same width the top-level views use, so the related rails line up with them. Below the breakpoint
   // the cap never binds and the list just insets by Spacing.four.
@@ -1320,7 +1320,7 @@ export function PageThumbList({
   onOpenPage: (pageIndex: number) => void;
 } & PullListWiring) {
   const theme = useTheme();
-  const { width: screenW } = useWindowDimensions();
+  const screenW = useSeriesPageWidth();
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
   const showMoreHover = useHovered();

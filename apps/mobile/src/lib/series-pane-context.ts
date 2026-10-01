@@ -10,8 +10,15 @@
  * `lib/nav` imports — that would close a cycle through the router the page also uses.
  */
 import { createContext, useContext } from 'react';
+import { useWindowDimensions } from 'react-native';
 
 export const SeriesPaneWidthContext = createContext<number | null>(null);
 
 /** The pane's width, or null when the page is a full-screen route (native, and narrow web). */
 export const useSeriesPaneWidth = (): number | null => useContext(SeriesPaneWidthContext);
+
+/** The width the series page is laid out in: the pane's, else the window's. */
+export function useSeriesPageWidth(): number {
+  const { width } = useWindowDimensions();
+  return useSeriesPaneWidth() ?? width;
+}
