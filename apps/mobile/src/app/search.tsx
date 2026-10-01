@@ -1,8 +1,8 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,15 +22,19 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useComicalExcludedIds } from '@/data/comical-home';
+import type { ContentRow } from '@/data/content-rows';
 import { useDedupedPages } from '@/data/grid-pages';
-import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
+import { toLibraryCard } from '@/data/library-card';
+import { fetchBrowseScope, libraryQuery, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
 import { clearSearchIntent, peekSearchIntent, subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
 import { COMICAL_BRIDGE_ID, isComicalBridge, useInheritedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Bridge } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { useBridgeFilters } from '@/hooks/use-bridge-filters';
+import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -38,6 +42,7 @@ import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 
@@ -45,6 +50,9 @@ import { useRouter } from '@/lib/nav';
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;
 // Stable empty array so `useCrossBridgeRails` runs zero queries in single-bridge mode.
 const NO_BRIDGES: Bridge[] = [];
+const LIBRARY_ROWS = 2;
+const SUBMIT_HINT =
+  Platform.OS === 'web' ? 'Press Enter to search every bridge' : 'Tap search to look across every bridge';
 
 /**
  * The dedicated Search screen, pushed over the tabs. Its top bar holds the search
@@ -132,6 +140,25 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
 
   // The cross-bridge search rows (one rail per bridge). Runs zero queries in single-bridge mode.
   const comicalSearch = useCrossBridgeRails(isComical ? realBridges : NO_BRIDGES, { mode: 'search', query });
+
+  // What is in the field right now, ahead of `query`, which only moves on submit. The library answers
+  // from it as you type — it is one local lookup, where a bridge search is a request to every source
+  // you have, so those wait for Enter. Reset whenever the committed query moves on its own (an intent,
+  // the clear button), which the field itself does in the same render.
+  const [typed, setTyped] = useState(query);
+  const [prevQuery, setPrevQuery] = useState(query);
+  if (prevQuery !== query) {
+    setPrevQuery(query);
+    setTyped(query);
+  }
+  const libraryTerm = useDebouncedValue(typed.trim(), 150);
+  const libraryMatches = useQuery({
+    ...libraryQuery(ds, mock, libraryTerm, 'lastRead', null),
+    enabled: isComical && !!libraryTerm,
+    placeholderData: keepPreviousData,
+  });
+  const visibleLibrary = useVisibleByBridge(libraryTerm ? (libraryMatches.data ?? undefined) : undefined);
+  const { byId: bridgeById } = useBridgeMap();
 
   const {
     filterDefs,
@@ -233,6 +260,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
         setBridge(intent.bridgeId);
         setFilterValues({});
         setQuery(intent.kind === 'query' ? intent.query : '');
+        setTyped(intent.kind === 'query' ? intent.query : '');
         setPendingTag(
           intent.kind === 'tag'
             ? { bridgeId: intent.bridgeId, filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label }
@@ -335,6 +363,18 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
 
   // Column count for the loading skeleton below; the grid itself derives its own layout.
   const { numColumns } = useGridLayout();
+
+  // Grid rows rather than a rail: a rail belongs to one bridge, and a library spans all of them.
+  const comicalRows = useMemo<ContentRow[]>(() => {
+    const cards = visibleLibrary.slice(0, numColumns * LIBRARY_ROWS).map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
+    if (cards.length === 0) return comicalSearch.rows;
+    const rows: ContentRow[] = [{ type: 'sectionHead', key: 'head:library', title: 'In your library' }];
+    for (let i = 0; i < cards.length; i += numColumns) {
+      rows.push({ type: 'gridRow', key: `library:${i}`, items: cards.slice(i, i + numColumns) });
+    }
+    return [...rows, ...comicalSearch.rows];
+  }, [visibleLibrary, numColumns, bridgeById, comicalSearch.rows]);
+  const typedTerm = typed.trim();
 
   // Identifies the current search. SeriesGrid folds it into the list key and the cards' recycle
   // cohort, so a new search resets recycled card state rather than flashing the previous result's cover.
@@ -486,10 +526,14 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
           </Pressable>
           <View style={styles.searchWrap}>
             <SearchField
+              // Remounted per open request: the field holds unsubmitted text of its own, which a
+              // committed query that was already empty has no way to clear.
+              key={focusRequest}
               testID="search.field"
               value={query}
               onSubmit={(q) => setQuery(q.trim())}
               onClear={() => setQuery('')}
+              onChangeText={setTyped}
               autoFocus={!initialIntent || initialIntent.kind === 'open'}
               focusRequest={focusRequest}
             />
@@ -512,11 +556,17 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
               // cards open the right bridge). No filters, no single-bridge pagination — page 1 per rail;
               // a rail's "See all" (ContentFeed → /results) is where you infinite-scroll one bridge.
               <ContentFeed
-                rows={comicalSearch.rows}
+                rows={comicalRows}
                 scopeKey={query || 'blank'}
                 listRef={listRef}
                 header={
-                  query.trim() && comicalSearch.rows.length === 0 && !comicalSearch.anyLoading ? (
+                  typedTerm && typedTerm !== query ? (
+                    <View style={styles.submitHint}>
+                      <ThemedText type="small" themeColor="textSecondary" style={styles.hintText}>
+                        {SUBMIT_HINT}
+                      </ThemedText>
+                    </View>
+                  ) : query.trim() && comicalRows.length === 0 && !comicalSearch.anyLoading ? (
                     <View style={styles.hint}>
                       <ThemedText type="small" themeColor="textSecondary" style={styles.hintText}>
                         No results
@@ -644,5 +694,9 @@ const styles = StyleSheet.create({
   },
   hintText: {
     textAlign: 'center',
+  },
+  submitHint: {
+    alignItems: 'center',
+    paddingBottom: Spacing.three,
   },
 });
