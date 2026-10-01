@@ -57,7 +57,7 @@ import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useSeriesPageWidth } from '@/lib/series-pane-context';
-import { chapterProgressQuery, collectionItemsQuery, inLibraryQuery, queryKeys } from '@/data/queries';
+import { chapterProgressQuery, collectionItemsQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive, type DataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
@@ -516,18 +516,10 @@ export function ChapterScrollList({
   // Read state. A bridge has no idea what the user has read — it lives in the local library as
   // per-chapter progress rows, fetched on its own key so marking a chapter read re-reads THIS and
   // not the (networked) chapter list. `applyReadState` merges it onto the incoming chapters, which
-  // is what lights up the Read/Unread tabs and the dimmed row title. A series that isn't in the
-  // library has no progress at all and just resolves empty.
+  // is what lights up the Read/Unread tabs and the dimmed row title.
   const ds = useDataSource();
   const mock = useMockActive();
   const { data: progress } = useQuery(chapterProgressQuery(ds, mock, bridgeId ?? '', seed, !!bridgeId));
-  // Read state is library-only (the host 404s a progress write for a series it isn't storing), so
-  // the mark-read rows only make sense — and only appear — once the series is in the library. Same
-  // key the series screen's Library button already populates, so it's cached by the time a menu opens.
-  const { data: inLibrary } = useQuery({
-    ...inLibraryQuery(ds, mock, bridgeId ?? '', seed),
-    enabled: !!bridgeId && !!seed,
-  });
   // Which chapters are filed in a collection, for the long-press menu's row. ONE query for the
   // roster rather than a membership check per chapter: `getCollectedItems` is already scoped to a
   // series, and the menu is built fresh on every open, so it reads a set that is already warm.
@@ -602,13 +594,8 @@ export function ChapterScrollList({
   const manifest = useMemo(() => dl?.chapters ?? [], [dl]);
   const openChapterMenu = (g: ChapterGroup, at: { x: number; y: number }) => {
     if (!bridgeId) return;
-    // Read state has nowhere to live for a series that isn't in the library, so those rows are
-    // simply absent there (like "Delete download" on a chapter that isn't downloaded) rather than
-    // present-but-dead. Built per open, so the "Mark as read/unread" label reflects current state.
-    const readArgs =
-      inLibrary === true
-        ? { ds, bridgeId, seriesId: seed, chapters, group: g, onChanged: invalidateReadState }
-        : undefined;
+    // Built per open, so the "Mark as read/unread" label reflects current state.
+    const readArgs = { ds, bridgeId, seriesId: seed, chapters, group: g, onChanged: invalidateReadState };
     openContextMenu({
       // No title line — the pressed row is right there naming the chapter; rows only, like the
       // series popup's own menu.
@@ -623,7 +610,7 @@ export function ChapterScrollList({
         group: g,
         preferredGroup,
         collected: collectedChapterIds,
-        ...(readArgs && { read: readArgs }),
+        read: readArgs,
       }),
     });
   };
@@ -1028,37 +1015,34 @@ function chapterMenuActions(args: {
  * The long-press chapter menu: quick per-chapter read + download actions without leaving the list.
  * "Mark read up to here" and "Download from here" are the two one-gesture range answers (everything
  * below this chapter in reading order / this chapter through the end, skipping what's already
- * done); a fully-downloaded chapter offers Delete too. The read rows only appear for a series in
- * the library, which is the only place read state can be stored (see `chapterReadActions`). Counts
- * ride in the labels; per the shared menu's rule, nothing is coloured.
+ * done); a fully-downloaded chapter offers Delete too. Counts ride in the labels; per the shared
+ * menu's rule, nothing is coloured.
  */
 function chapterMenuRows(
-  args: Parameters<typeof chapterMenuActions>[0] & { read?: Parameters<typeof chapterReadActions>[0] },
+  args: Parameters<typeof chapterMenuActions>[0] & { read: Parameters<typeof chapterReadActions>[0] },
 ): MenuRowSpec[] {
   const { entry, span, downloadedVersions, collected, collect, downloadThis, downloadFromHere, deleteDownload } =
     chapterMenuActions(args);
   const rows: MenuRowSpec[] = [];
-  if (args.read) {
-    const { read, pending, setRead, markUpTo } = chapterReadActions(args.read);
-    rows.push(
-      {
-        label: read ? 'Mark as unread' : 'Mark as read',
-        Icon: read ? EyeOffIcon : CheckIcon,
-        loading: false,
-        testID: testId('series.chapter-menu', 'read'),
-        onPress: () => void setRead(!read),
-      },
-      {
-        label: pending > 1 ? `Mark read up to here (${pending})` : 'Mark read up to here',
-        Icon: CheckAllIcon,
-        loading: false,
-        // Nothing left below this chapter to mark — the row above already covers this one alone.
-        disabled: pending <= 1,
-        testID: testId('series.chapter-menu', 'read-up-to'),
-        onPress: () => void markUpTo(),
-      },
-    );
-  }
+  const { read, pending, setRead, markUpTo } = chapterReadActions(args.read);
+  rows.push(
+    {
+      label: read ? 'Mark as unread' : 'Mark as read',
+      Icon: read ? EyeOffIcon : CheckIcon,
+      loading: false,
+      testID: testId('series.chapter-menu', 'read'),
+      onPress: () => void setRead(!read),
+    },
+    {
+      label: pending > 1 ? `Mark read up to here (${pending})` : 'Mark read up to here',
+      Icon: CheckAllIcon,
+      loading: false,
+      // Nothing left below this chapter to mark — the row above already covers this one alone.
+      disabled: pending <= 1,
+      testID: testId('series.chapter-menu', 'read-up-to'),
+      onPress: () => void markUpTo(),
+    },
+  );
   rows.push(
     {
       // The one place a chapter can be filed, now that the reader's settings sheet is settings only.

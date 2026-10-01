@@ -9,7 +9,7 @@
 #   - series.chapters.sort.<id> is ONE toggle (chapters-section.tsx's SortToggle) whose
 #     accessibilityLabel names the order a tap switches TO ("Oldest first" while newest-first is in
 #     force, then "Newest first") — same aria-label quirk, select by that label text.
-# series.chapter.*, series.chapters.expand-middle, series.action.save and
+# series.chapter.*, series.chapters.expand-middle and
 # series.chapter-menu.collect files THIS chapter into a collection — the only place a chapter can be
 # filed, since the reader's settings sheet is settings only.
 # series.chapter-menu.<this|from-here|read|read-up-to> have no competing accessibilityLabel — same
@@ -32,15 +32,6 @@ url: http://localhost:4000/comical-app
     id: "series-card\\..*"
 - assertVisible:
     id: "series.action.read"
-
-# Put the series in the library so the menu's read rows exist further down. Always an ADD,
-# never a remove: the seeded library entries are `lib-0..7` (mock.ts's `seedLibrary`), which
-# the browse grid never serves.
-#
-# One tap: the button says Library and files into the `Library` collection, creating it if this is
-# the first save (see useSeriesSave). No picker step — that only opens for a series already saved.
-- tapOn:
-    id: "series.action.save"
 
 # Nothing in the chapters section is on screen on arrival — not the tab/sort controls either, which
 # an earlier version of this flow assumed. On the ~945x917 viewport Maestro's Chrome gives it, the

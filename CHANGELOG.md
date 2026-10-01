@@ -13,6 +13,10 @@ what the app shows under Settings → About → What's new. Keep the `## X.Y.Z �
 the extractor matches on the version field, and a section it can't find silently degrades to the
 release's title.
 
+## 0.3.2 — 2026-09-11
+
+- Series page: two-line Resume, an honest favorite button, a sort toggle, per-person credits (#145) (e32eb618)
+
 ## 0.3.1 — 2026-09-04
 
 - Slice on Android only, and stop releasing the source bitmap (f0bcf148)

@@ -489,11 +489,11 @@ hwui logs "Bitmap too large to be uploaded into a texture" and draws NOTHING. No
 `onError` — a blank page, and the reader has no way to find out. It is the failure behind every
 "black screen on long strip" report a webtoon reader collects.
 
-It is not rare. A survey of the most-followed Long Strip titles on MangaDex (90 pages, 13 titles)
+It is not rare. A survey of the most-followed Long Strip titles on a large aggregator (90 pages, 13 titles)
 found a median page 760x5508 and **a third of pages over 8192 tall**, clustered by TITLE rather
 than scattered — 7 of 13 titles had one, and within those most pages did, so an affected series is
 blank *everywhere* while its neighbours are perfect. Eleven pages sat at exactly 10000, which is
-MangaDex's upload ceiling and not a preference: the distribution is censored, and a source without
+that site's upload ceiling and not a preference: the distribution is censored, and a source without
 that cap goes higher. Official platforms are fine (WEBTOON slices everything to 800x1280); this is
 an aggregator problem.
 

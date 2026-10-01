@@ -1440,9 +1440,8 @@ export async function getSeriesCollections(
   return items?.[0]?.collectionIds ?? [];
 }
 
-/** GET /library/collected/series/{b}/{s}/progress → persisted read state for one series' chapters.
- *  Safe to call for any series: one that isn't collected just has no progress rows (`[]`), unlike
- *  the write routes below, which 404 without a series item. */
+/** GET /library/collected/series/{b}/{s}/progress → persisted read state for one series' chapters,
+ *  collected or not. */
 export function getChapterProgress(
   bridgeId: string,
   seriesId: string,
@@ -1473,8 +1472,8 @@ export function resetReadProgress(bridgeId: string, seriesId: string, signal?: A
   );
 }
 
-/** PUT /library/collected/series/{b}/{s}/progress/{chapterId} → record read progress for a library series
- *  (also updates its last-read resume cache). No-op-safe: the caller fires-and-forgets.
+/** PUT /library/collected/series/{b}/{s}/progress/{chapterId} → record read progress for any series
+ *  (also moves its resume point). No-op-safe: the caller fires-and-forgets.
  *
  *  The route branches on `lastPage`: supplying it records a reading POSITION (which auto-marks the
  *  chapter read on the last page), while omitting it sets the read FLAG outright — that's the
@@ -1512,10 +1511,10 @@ export function postReadUpTo(
   );
 }
 
-/** GET /library/history → recently-read series, newest first (empty when no store). */
+/** GET /library/history → recently-read series, newest first (empty when no store), including rows
+ *  swiped out of history — flagged `hidden` — since they still carry a resume point. */
 export function getHistory(limit?: number, signal?: AbortSignal): Promise<ApiHistoryItem[]> {
-  const qs = limit ? `?limit=${limit}` : '';
-  return fetchJson(`/library/history${qs}`, signal);
+  return fetchJson(`/library/history?includeHidden=1${limit ? `&limit=${limit}` : ''}`, signal);
 }
 
 /** DELETE /library/history/{b}/{s} → drop a series from reading history. */
@@ -1523,7 +1522,8 @@ export function deleteHistoryEntry(bridgeId: string, seriesId: string, signal?: 
   return fetchOk(`/library/history/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`, 'DELETE', signal);
 }
 
-/** POST /reading-history → record a non-library read into the reading log (with resume page). */
+/** POST /reading-history → create or refresh a non-library series' reading-log row (its history entry
+ *  and resume point). Ignored for a library series. */
 export function recordReadingHistory(
   entry: {
     bridgeId: string;

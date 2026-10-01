@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { MAX_DRAWABLE_PX, sliceBands, sliceCount, sliceRects } from './page-slicing';
 
-// Real measurements, from a survey of the most-followed Long Strip titles on MangaDex.
+// Real measurements, from a survey of the most-followed Long Strip titles on a large aggregator.
 const strip10k = { width: 800, height: 10000 }; // the platform's upload ceiling; 6 of 13 titles hit it
 const stripMedian = { width: 760, height: 5508 };
 const shortSlice = { width: 800, height: 1280 }; // what WEBTOON itself slices everything down to

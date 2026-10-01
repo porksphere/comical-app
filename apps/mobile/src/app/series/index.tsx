@@ -1073,8 +1073,8 @@ function SeriesReaderInstance({
   );
   const chapters = listData?.chapters;
 
-  // Library membership — picks the reader pane's progress-recording path (library series →
-  // chapter progress, everything else → the reading log). The query lives HERE, not in the pane:
+  // Library membership — tells the reader pane whether a read also has to keep the reading log's row
+  // up to date (see its `record`). The query lives HERE, not in the pane:
   // the pane re-renders on every page sweep, and useQuery's per-render subscription work (query
   // key hashing) is measurable at that cadence.
   const { data: inLibrary } = useQuery({
@@ -4789,12 +4789,14 @@ const ReaderPane = forwardRef<
     if (!standby && pages.length) warmSoon(currentPage);
   }, [standby, pages, currentPage, warmSoon]);
 
-  // ── Progress recording: a library series (inLibrary, queried by the screen) records chapter
-  // progress; anything else (including a direct series) goes to the reading log under the
-  // DIRECT_CHAPTER_ID sentinel. ──
+  // ── Progress recording: every chaptered read records chapter progress. Outside the library the
+  // reading log is written FIRST: its row is the series' history entry and resume point, and only
+  // this call carries the title and cover to create it. A direct series goes to the log alone,
+  // under the DIRECT_CHAPTER_ID sentinel. Unknown membership writes both — the host ignores a log
+  // write for a library series, and waiting on the answer dropped reads whenever the check failed. ──
   const record = useCallback(() => {
     if (!recordProgress) return;
-    if (!bridgeId || !seriesId || !pages.length || inLibrary === undefined) return;
+    if (!bridgeId || !seriesId || !pages.length) return;
     const lastPage = currentRef.current;
     const pageCount = pages.length;
     const invalidateHistory = () => {
@@ -4803,15 +4805,14 @@ const ReaderPane = forwardRef<
       void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.chapterProgress(mock, bridgeId, seriesId) });
     };
+    const recordChapter = (id: string) =>
+      ds.recordChapterProgress(bridgeId, seriesId, id, {
+        lastPage,
+        pageCount,
+        ...(chapterName ? { chapterName } : {}),
+      });
     if (chapterId && inLibrary) {
-      void ds
-        .recordChapterProgress(bridgeId, seriesId, chapterId, {
-          lastPage,
-          pageCount,
-          ...(chapterName ? { chapterName } : {}),
-        })
-        .then(invalidateHistory)
-        .catch(() => {});
+      void recordChapter(chapterId).then(invalidateHistory).catch(() => {});
       return;
     }
     void ds
@@ -4825,6 +4826,8 @@ const ReaderPane = forwardRef<
         lastPage,
         pageCount,
       })
+      .catch(() => {})
+      .then(() => (chapterId ? recordChapter(chapterId) : undefined))
       .then(invalidateHistory)
       .catch(() => {});
   }, [recordProgress, bridgeId, seriesId, pages, inLibrary, chapterId, chapterName, seriesTitle, seriesCover, ds, mock, queryClient]);

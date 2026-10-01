@@ -180,7 +180,8 @@ export interface DataSource {
   /** Wipe a series' read state — every chapter's read flag and the resume point. The only call that
    *  destroys it, and it works on an uncollected series so orphaned progress can be reclaimed. */
   resetReadProgress(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
-  /** Record read progress for a *library* series (updates its resume cache). */
+  /** Record a reading position in a chapter (moves the series' resume point). Works for any series;
+   *  one outside the library needs its reading-log row from `recordReadingHistory` first. */
   recordChapterProgress(
     bridgeId: string,
     seriesId: string,
@@ -188,12 +189,10 @@ export interface DataSource {
     update: { lastPage?: number; pageCount?: number; chapterName?: string },
     signal?: AbortSignal,
   ): Promise<void>;
-  /** Persisted read state for one series' chapters. Empty for a series that isn't in the library
-   *  (it has nowhere to store progress), so this is safe to call for any series. */
+  /** Persisted read state for one series' chapters, whether or not it is in the library. */
   getChapterProgress(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<ChapterProgress[]>;
   /** Set the read flag on specific chapters (the chapter row's "Mark as read"/"unread"). Pass every
-   *  copy of the logical chapter so a multi-scanlator row flips as a whole. Library-only: the host
-   *  404s a series that isn't in the library. */
+   *  copy of the logical chapter so a multi-scanlator row flips as a whole. */
   setChaptersRead(
     bridgeId: string,
     seriesId: string,
@@ -202,7 +201,7 @@ export interface DataSource {
     signal?: AbortSignal,
   ): Promise<void>;
   /** Mark everything up to and including `chapterId` read, in reading order. The host derives that
-   *  order (and the language lane) from `chapters`, so pass the series' full list. Library-only. */
+   *  order (and the language lane) from `chapters`, so pass the series' full list. */
   markReadUpTo(
     bridgeId: string,
     seriesId: string,
@@ -210,7 +209,8 @@ export interface DataSource {
     chapterId: string,
     signal?: AbortSignal,
   ): Promise<void>;
-  /** Record a *non-library* read into the reading log (library reads persist via progress instead). */
+  /** Create or refresh a *non-library* series' reading-log row — its history entry and resume point.
+   *  Ignored for a library series. */
   recordReadingHistory(
     entry: {
       bridgeId: string;
@@ -225,7 +225,10 @@ export interface DataSource {
     signal?: AbortSignal,
   ): Promise<void>;
 
+  /** Every series with a resume point, newest first — including `hidden` rows, which the History tab
+   *  leaves out but a Resume still reads. */
   getHistory(signal?: AbortSignal): Promise<HistoryEntry[]>;
+  /** Swipe a series out of history. Outside the library the row stays, `hidden`, as its resume point. */
   removeHistoryEntry(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
 
   getActivity(signal?: AbortSignal): Promise<ActivityEntry[]>;
@@ -397,6 +400,7 @@ function toHistoryEntry(h: api.ApiHistoryItem): HistoryEntry {
     ...(h.lastPage !== undefined && { lastPage: h.lastPage }),
     ...(h.pageCount !== undefined && { pageCount: h.pageCount }),
     lastReadAt: h.lastReadAt,
+    ...(h.hidden && { hidden: true }),
   };
 }
 
