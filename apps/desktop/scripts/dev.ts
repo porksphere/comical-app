@@ -15,7 +15,7 @@
  * ephemeral port would start every relaunch with empty preferences.
  */
 import { spawn, spawnSync, type Subprocess } from "bun";
-import { watch } from "node:fs";
+import { statSync, watch } from "node:fs";
 import { join } from "node:path";
 import electron from "electron";
 
@@ -58,7 +58,10 @@ if (await metroUp()) {
   }
 }
 
+let builtAt = 0;
+
 function buildMain(): boolean {
+  builtAt = Date.now();
   const { exitCode } = spawnSync(["bun", "run", "scripts/build-main.ts"], {
     cwd: DESKTOP,
     stdout: "inherit",
@@ -99,20 +102,31 @@ async function relaunch(): Promise<void> {
   restarting = false;
 }
 
+/** Windows reports a file being READ as a change too (libuv watches last-access time), and bundling
+ *  the main process reads every file under both roots — so without the mtime test each build would
+ *  schedule the next. A deleted file has nothing to stat, and is a real change. */
+function editedSinceBuild(path: string): boolean {
+  try {
+    return statSync(path).mtimeMs > builtAt;
+  } catch {
+    return true;
+  }
+}
+
 let pending: ReturnType<typeof setTimeout> | null = null;
-function onChange(_event: string, file: string | null): void {
+const onChange = (root: string) => (_event: string, file: string | null): void => {
   if (file && (!/\.tsx?$/.test(file) || file.includes("node_modules"))) return;
+  if (file && !editedSinceBuild(join(root, file))) return;
   if (pending) clearTimeout(pending);
   pending = setTimeout(() => {
     console.log(`\n==> ${file ?? "main process"} changed — rebuilding and relaunching`);
     void relaunch();
   }, 200);
-}
+};
 
-const watchers = [
-  watch(join(DESKTOP, "src"), { recursive: true }, onChange),
-  watch(join(ROOT, "external", "comical", "packages"), { recursive: true }, onChange),
-];
+const watchers = [join(DESKTOP, "src"), join(ROOT, "external", "comical", "packages")].map((root) =>
+  watch(root, { recursive: true }, onChange(root)),
+);
 
 let shuttingDown = false;
 function shutdown(): void {
