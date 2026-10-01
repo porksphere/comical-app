@@ -134,6 +134,13 @@ const CHROME_HIDE_MS = 3000;
 // CI-speed override: Maestro steps can outlast the auto-hide, and hidden chrome drops out of the
 // accessibility tree.
 const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
+/** A mouse this close to the top of the reader brings the toolbar up, the way a video player's
+ *  controls come up under the pointer. A little deeper than the toolbar itself: on desktop the
+ *  toolbar's strip is the window's drag handle, which the page receives no pointer events over, so
+ *  the reveal has to happen on the way into it. */
+const CHROME_HOVER_EDGE = 80;
+/** How long a toolbar brought up by hovering outlasts the pointer leaving it. */
+const CHROME_HOVER_HIDE_MS = 500;
 const WARM_BEHIND = 2;
 /**
  * The longest a NEW stitched window will wait for the previous chapter's page list before being
@@ -1496,12 +1503,17 @@ function SeriesReaderInstance({
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
   }, [scheduleHide]);
+  // Set while the toolbar is up only because a mouse is near it; anything that shows the toolbar
+  // on purpose clears it, and with it the quick hide.
+  const hoverShownRef = useRef(false);
   const showChrome = useCallback(() => {
+    hoverShownRef.current = false;
     setChromeVisible(true);
     scheduleHide();
   }, [scheduleHide]);
   const holdChrome = useCallback(
     (hold: boolean) => {
+      hoverShownRef.current = false;
       chromeHeldRef.current = hold;
       if (hold) {
         if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -1514,6 +1526,7 @@ function SeriesReaderInstance({
   );
   useDimWindowControls(!chromeVisible && !detailsActive);
   const toggleChrome = useCallback(() => {
+    hoverShownRef.current = false;
     setChromeVisible((v) => {
       const nextVisible = !v;
       if (nextVisible) scheduleHide();
@@ -1521,6 +1534,50 @@ function SeriesReaderInstance({
       return nextVisible;
     });
   }, [scheduleHide]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || detailsActive || typeof document === 'undefined') return;
+    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+    const cancelLeave = () => {
+      if (leaveTimer) clearTimeout(leaveTimer);
+      leaveTimer = null;
+    };
+    const near = () => {
+      cancelLeave();
+      setChromeVisible((visible) => {
+        if (visible && !hoverShownRef.current) return visible;
+        hoverShownRef.current = true;
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+        return true;
+      });
+    };
+    const away = () => {
+      if (!hoverShownRef.current || leaveTimer) return;
+      leaveTimer = setTimeout(() => {
+        leaveTimer = null;
+        if (!hoverShownRef.current) return;
+        hoverShownRef.current = false;
+        setChromeVisible(false);
+      }, CHROME_HOVER_HIDE_MS);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' || e.buttons !== 0) return;
+      if (e.clientY < CHROME_HOVER_EDGE) near();
+      else away();
+    };
+    // Where the pointer goes into the drag handle, all the page sees is the pointer leaving it.
+    const onLeave = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.clientY < CHROME_HOVER_EDGE) near();
+    };
+    const root = document.documentElement;
+    window.addEventListener('pointermove', onMove, true);
+    root.addEventListener('pointerleave', onLeave);
+    return () => {
+      cancelLeave();
+      window.removeEventListener('pointermove', onMove, true);
+      root.removeEventListener('pointerleave', onLeave);
+    };
+  }, [detailsActive]);
 
   // Pinch-zoom / an active scrub both suspend the reveal pan (a one-finger drag pans the zoomed
   // page; a scrub owns the finger).
