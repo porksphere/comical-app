@@ -38,6 +38,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
+import { windowModalLayer } from '@/lib/window-controls';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 const OPEN_SPRING = { damping: 18, stiffness: 320, mass: 0.7 } as const;
@@ -175,7 +176,7 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
   }));
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="auto">
+    <View {...windowModalLayer} style={StyleSheet.absoluteFill} pointerEvents="auto">
       {/* Frosted backdrop; tapping ANYWHERE on it is the cancel. */}
       <AnimatedBlurView
         tint={scheme}

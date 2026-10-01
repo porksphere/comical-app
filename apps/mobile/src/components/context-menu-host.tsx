@@ -58,6 +58,7 @@ import {
 } from '@/components/context-menu-material';
 import { HOLD_ARM_DISTANCE } from '@/lib/series-card-menu';
 import { useActiveColorScheme } from '@/hooks/use-theme';
+import { windowModalLayer } from '@/lib/window-controls';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 // The menu's entrance/exit — quick springs in the card popup's family.
@@ -374,7 +375,7 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
   );
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <View {...windowModalLayer} style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <GestureDetector gesture={tapDismiss}>
         <View style={StyleSheet.absoluteFill}>
           {backdrop === 'none' ? null : (

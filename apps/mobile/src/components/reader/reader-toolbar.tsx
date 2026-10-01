@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { useWindowControlsInset, windowDragRegion } from '@/lib/window-controls';
 
 /** Width of the trailing control slot — TWO 32×32 buttons (collect + settings) plus the gap
  *  between them. The leading spacer matches it exactly, which is the only thing keeping the titles
@@ -37,6 +38,7 @@ export function ReaderToolbar({
   hideBack?: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  const controls = useWindowControlsInset();
   const style = useAnimatedStyle(() => ({
     opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
     transform: [{ translateY: withTiming(visible ? 0 : -8, { duration: 200 }) }],
@@ -47,7 +49,15 @@ export function ReaderToolbar({
         colors={['rgba(0,0,0,0.78)', 'transparent']}
         style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
       />
-      <View style={[styles.bar, { paddingTop: insets.top + Spacing.two }]}>
+      <View
+        // A handle only while it is shown: hidden, the top of the page is a tap that brings it back.
+        {...(visible ? windowDragRegion : {})}
+        style={[
+          styles.bar,
+          { paddingTop: insets.top + Spacing.two },
+          // Both sides, so the titles stay centred between the slots.
+          controls > 0 && { paddingHorizontal: Spacing.three + controls },
+        ]}>
         {/* Always the same width as the trailing slot, with or without a back button in it —
             that symmetry is what centres the titles. */}
         <View style={styles.leading}>

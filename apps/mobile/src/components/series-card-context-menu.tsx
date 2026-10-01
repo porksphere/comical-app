@@ -85,6 +85,7 @@ import {
 } from '@/lib/series-card-menu';
 import { getTabBarHideOffset, getTabBarProgress } from '@/lib/tab-bar-slide';
 import { getTopBarHidden } from '@/lib/top-bar-visibility';
+import { windowModalLayer } from '@/lib/window-controls';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 /**
@@ -1509,7 +1510,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     // finger has travelled vertically (see activeOffsetY), so taps still reach the menu rows and the
     // backdrop, and a horizontal drag still belongs to the page rail.
     <GestureDetector gesture={pan}>
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <View {...windowModalLayer} style={StyleSheet.absoluteFill} pointerEvents="box-none">
         {/* Blurred, tap-to-dismiss backdrop. */}
         <GestureDetector gesture={tapDismiss}>
           <View style={StyleSheet.absoluteFill}>

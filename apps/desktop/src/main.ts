@@ -43,6 +43,40 @@ const SCROLLBAR_CSS = `
   ::-webkit-scrollbar-thumb:hover { background-color: rgba(128, 128, 128, 0.6); }
 `;
 
+/** Windows and Linux lose their title bar (and the File/Edit menu row under it; its accelerators
+ *  still work) and draw only the caption buttons, over the page. macOS keeps its inset traffic
+ *  lights, which already sit inside the window. */
+const CAPTION_OVERLAY = process.platform !== "darwin";
+
+/** The app's top bars are the window's handle now. They carry a `data-app-region` marker and this is
+ *  what makes it mean something; a browser never sees it. A control inside a bar is cut back out —
+ *  `app-region` is the OS's hit test, decided before the page sees the click. A bar faded out of
+ *  use (`data-window-drag="off"`) stops being one, and while a menu or dialog is up nothing is,
+ *  since those are drawn over the bars and a handle under them would swallow their clicks. */
+const DRAG_REGION_CSS = `
+  [data-app-region="drag"]:not([data-window-drag="off"] *) { app-region: drag; }
+  [data-app-region]:not([data-window-drag="off"] *) :is(
+    a, button, input, textarea, select, [tabindex]:not([tabindex="-1"]),
+    [role="button"], [role="link"], [role="switch"], [role="tab"], [role="checkbox"],
+    [role="combobox"], [role="menuitem"], [role="textbox"], [role="searchbox"]
+  ) { app-region: no-drag; }
+  body:has([data-window-layer]) [data-app-region="drag"] { app-region: no-drag; }
+`;
+
+/** The caption buttons are as tall as the bar they sit in — `useTopBarHeight` in the app: the
+ *  desktop bar from 768px of window width (`LARGE_SCREEN_BREAKPOINT`), the compact one below. */
+const captionHeight = (win: BrowserWindow): number => (win.getContentBounds().width >= 768 ? 64 : 60);
+
+/** The page says what is behind the buttons with `<meta name="theme-color">`; the glyphs take
+ *  whichever of black and white reads on it. */
+function captionColors(background: string): { color: string; symbolColor: string } {
+  const hex = /^#([0-9a-f]{6})$/i.exec(background)?.[1];
+  if (!hex) return { color: "#000000", symbolColor: "#ffffff" };
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const light = 0.299 * r! + 0.587 * g! + 0.114 * b! > 150;
+  return { color: `#${hex}`, symbolColor: light ? "#000000" : "#ffffff" };
+}
+
 let server: LoopbackServer | null = null;
 
 /** Start the host + its listener. Runs once per process; `openWindow` can then be called freely. */
@@ -93,7 +127,8 @@ async function openWindow(): Promise<void> {
     minWidth: 480,
     minHeight: 480,
     backgroundColor: "#000000",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    titleBarStyle: CAPTION_OVERLAY ? "hidden" : "hiddenInset",
+    ...(CAPTION_OVERLAY ? { titleBarOverlay: { ...captionColors("#000000"), height: 64 } } : {}),
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -105,7 +140,26 @@ async function openWindow(): Promise<void> {
   win.once("ready-to-show", () => win.show());
 
   // Every load (a reload included) starts without it, and `insertCSS` lasts only until the next one.
-  win.webContents.on("dom-ready", () => void win.webContents.insertCSS(SCROLLBAR_CSS));
+  win.webContents.on("dom-ready", () => {
+    void win.webContents.insertCSS(SCROLLBAR_CSS);
+    if (CAPTION_OVERLAY) void win.webContents.insertCSS(DRAG_REGION_CSS);
+  });
+
+  if (CAPTION_OVERLAY) {
+    let colors = captionColors("#000000");
+    let height = captionHeight(win);
+    win.setTitleBarOverlay({ ...colors, height });
+    win.webContents.on("did-change-theme-color", (_e, color) => {
+      colors = captionColors(color ?? "#000000");
+      win.setTitleBarOverlay({ ...colors, height });
+    });
+    win.on("resize", () => {
+      const next = captionHeight(win);
+      if (next === height) return;
+      height = next;
+      win.setTitleBarOverlay({ ...colors, height });
+    });
+  }
 
   // Renderer diagnostics on stdout — the spike's only debugging channel, since there's no devtools
   // in a headless run. Off unless asked for.

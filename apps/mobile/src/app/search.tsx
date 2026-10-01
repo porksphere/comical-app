@@ -46,6 +46,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
+import { useWindowControlsClearance } from '@/lib/window-controls';
 
 // Stable, never-fetched key for the results infinite query while it's disabled (no active search).
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;
@@ -94,6 +95,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
+  const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   const listRef = useRef<LegendListRef>(null);
   // Paint the top/filter bars first, then mount the heavy grid `runAfterInteractions` so the push
   // transition plays immediately instead of stuttering behind the list's first render (native only).
@@ -522,7 +524,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
       {/* Overlaid top bar: back button + search field (autofocused after the push settles) + sort.
           Opaque, like every other bar (BarSurface): the results scroll behind it. */}
       <BarSurface style={[styles.topBar, topBarRuleStyle]}>
-        <View style={[styles.topBarRow, { height: barHeight }]}>
+        <View style={[styles.topBarRow, { height: barHeight }, clearance > 0 && { paddingRight: Spacing.three + clearance }]}>
           {docked ? (
             <>
               <ThemedText testID="search.pane-title" numberOfLines={1} style={styles.paneTitle}>

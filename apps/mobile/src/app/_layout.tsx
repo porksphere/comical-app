@@ -45,8 +45,10 @@ import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { installAppUpdateAutoCheck } from '@/data/use-app-update';
 import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
+import { useWindowThemeColor } from '@/lib/window-controls';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
 import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
+import { Colors } from '@/constants/theme';
 /* eslint-enable import/first */
 
 // Install the on-device transport per the persisted preference before any screen queries fire
@@ -103,6 +105,7 @@ function RootNavigation() {
   // navigation theme + status bar match the app content and re-theme live when the
   // preference changes.
   const scheme = useActiveColorScheme();
+  useWindowThemeColor(Colors[scheme].background);
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       {/* Status-bar contents follow the active scheme (light glyphs on the dark

@@ -79,6 +79,7 @@ import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } f
 import { closeSeriesPane } from '@/lib/series-pane';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
+import { useWindowThemeColor } from '@/lib/window-controls';
 import {
   holdZoomingSeries,
   onZoomSurfaceChange,
@@ -1231,6 +1232,7 @@ function SeriesReaderInstance({
   // The committed side of the reveal (declared up here — the stitching queries below gate on
   // it). The screen opens ON the details; see the reveal section further down.
   const [detailsActive, setDetailsActive] = useState(!readerFirst);
+  useWindowThemeColor(detailsActive ? null : READER_BACKDROP, 1);
   // True while a horizontal details gesture (back-swipe or webtoon reveal) is ACTIVE. The pans
   // ride the details scroller's own detector, simultaneous with it — that's the only way they
   // activate over a UIScrollView at all (see makeBackSwipePan) — but simultaneous means the list

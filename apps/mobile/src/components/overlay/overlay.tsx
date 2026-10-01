@@ -38,6 +38,7 @@ import {
 } from '@/lib/overlay-presentation';
 import { sharedPushback } from '@/lib/pushback-signal';
 import { armSettleCheck, cancelSettleCheck, notePushback, reportStuck } from '@/lib/pushback-watchdog';
+import { windowModalLayer } from '@/lib/window-controls';
 
 // A small stacked-overlay system. On phones, task surfaces are bottom sheets
 // with drag-to-dismiss; desktop presents anchored choices as popovers and
@@ -692,6 +693,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
             clicks, or a live one stops accepting the tap that would close it. Exactly the bug
             already fixed this way in the reader's toolbar/pill/settings control. */}
         <AnimatedPressable
+          {...(depth > 0 ? windowModalLayer : {})}
           style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]}
           pointerEvents={depth > 0 && !topIsWebPopover ? 'auto' : 'none'}
           onPress={closeTop}
