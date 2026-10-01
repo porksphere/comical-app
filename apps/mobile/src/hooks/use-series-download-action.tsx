@@ -1,6 +1,6 @@
 /**
  * The download action for a series' quick-actions menu (the long-press popover / web 3-dot menu),
- * shared by the native host and the web `SeriesActionsMenu`. The download-status query is gated on
+ * shared by the native popup and the web `SeriesCardMenuRows`. The download-status query is gated on
  * `enabled` so it runs ONLY while a menu is actually open — never once per card in the grid (the whole
  * point of the lazy, open-only menu). Reports a label/active state for the row and an `onPress` that:
  *   - not downloaded, chaptered → opens the chapter-selection screen (`/download-select`, which

@@ -27,7 +27,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
-import { MenuActionRow, MenuHeader } from '@/components/context-menu';
 import { openCollectionPicker } from '@/components/collection-picker';
 import { ContextMenuHold, openContextMenu } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
@@ -42,7 +41,6 @@ import {
   PlusIcon,
   TrashIcon,
 } from '@/components/icons/ui-icons';
-import { OptionList, useOverlay, type AnchorRect } from '@/components/overlay/overlay';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -57,7 +55,6 @@ import { forgetChapter } from '@/data/downloads/index-cache';
 import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
 import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
-import { hapticImpactMedium } from '@/lib/haptics';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useSeriesPageWidth } from '@/lib/series-pane-context';
 import { chapterProgressQuery, collectionItemsQuery, inLibraryQuery, queryKeys } from '@/data/queries';
@@ -600,13 +597,10 @@ export function ChapterScrollList({
     return out;
   }, [loading, hasChapters, groups, collapsible, hiddenCount]);
 
-  // Long-press a row → the per-chapter download menu. NATIVE: the generic hold-menu host — the
-  // series card popup's menu system (frosted point-anchored menu, peek-and-commit, open thump),
-  // generalized in context-menu-host.tsx. WEB: the overlay popover with the shared MenuActionRow
-  // chrome, matching how web series cards use the overlay for their 3-dot menu.
-  const { open } = useOverlay();
+  // Long-press a row → the per-chapter download menu, in the series card popup's menu system
+  // (frosted point-anchored menu, peek-and-commit) on every platform.
   const manifest = useMemo(() => dl?.chapters ?? [], [dl]);
-  const openChapterMenu = (g: ChapterGroup, anchor?: AnchorRect) => {
+  const openChapterMenu = (g: ChapterGroup, at: { x: number; y: number }) => {
     if (!bridgeId) return;
     // Read state has nowhere to live for a series that isn't in the library, so those rows are
     // simply absent there (like "Delete download" on a chapter that isn't downloaded) rather than
@@ -615,44 +609,23 @@ export function ChapterScrollList({
       inLibrary === true
         ? { ds, bridgeId, seriesId: seed, chapters, group: g, onChanged: invalidateReadState }
         : undefined;
-    if (Platform.OS !== 'web' && anchor) {
-      openContextMenu({
-        // No title line — the pressed row is right there naming the chapter; rows only, like the
-        // series popup's own menu.
-        x: anchor.x,
-        y: anchor.y,
-        rows: chapterMenuRows({
-          bridgeId,
-          seriesId: seed,
-          title,
-          chapters,
-          manifest,
-          group: g,
-          preferredGroup,
-          collected: collectedChapterIds,
-          ...(readArgs && { read: readArgs }),
-        }),
-      });
-      return;
-    }
-    hapticImpactMedium();
-    open(
-      () => (
-        <ChapterDownloadMenu
-          bridgeId={bridgeId}
-          seriesId={seed}
-          title={title}
-          chapters={chapters}
-          manifest={manifest}
-          group={g}
-          preferredGroup={preferredGroup}
-          collected={collectedChapterIds}
-          {...(readArgs && { read: readArgs })}
-        />
-      ),
-      anchor ?? null,
-      { popover: !!anchor },
-    );
+    openContextMenu({
+      // No title line — the pressed row is right there naming the chapter; rows only, like the
+      // series popup's own menu.
+      x: at.x,
+      y: at.y,
+      rows: chapterMenuRows({
+        bridgeId,
+        seriesId: seed,
+        title,
+        chapters,
+        manifest,
+        group: g,
+        preferredGroup,
+        collected: collectedChapterIds,
+        ...(readArgs && { read: readArgs }),
+      }),
+    });
   };
 
   const renderRow = (g: ChapterGroup) => {
@@ -860,7 +833,7 @@ function ChapterRow({
   preferredGroup?: string;
   onOpen: (v: Chapter) => void;
   /** Long-press: the per-chapter download menu (download this / from here / delete). */
-  onMenu?: (group: ChapterGroup, anchor?: AnchorRect) => void;
+  onMenu?: (group: ChapterGroup, at: { x: number; y: number }) => void;
   /** Download indicator for this logical chapter (best state across versions), if any. */
   dlState?: { state: DownloadState; fraction: number } | null;
   /** Rendering offline and not downloaded — unreadable, so the row dims and its press disables. */
@@ -878,7 +851,7 @@ function ChapterRow({
   return (
     <ContextMenuHold
       enabled={!!onMenu && !dimmed}
-      onOpen={(pt) => onMenu?.(group, { x: pt.x, y: pt.y, width: 0, height: 0 })}>
+      onOpen={(pt) => onMenu?.(group, pt)}>
       {({ onLongPress }) => (
     // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
     // list you still have to get through, so they are the ones drawn at full strength.
@@ -1051,8 +1024,14 @@ function chapterMenuActions(args: {
   };
 }
 
-/** The NATIVE hold menu's rows (`MenuRowSpec` — the series-popup menu system's row shape). Counts
- *  ride in the labels; per the shared menu's rule, nothing is coloured. */
+/**
+ * The long-press chapter menu: quick per-chapter read + download actions without leaving the list.
+ * "Mark read up to here" and "Download from here" are the two one-gesture range answers (everything
+ * below this chapter in reading order / this chapter through the end, skipping what's already
+ * done); a fully-downloaded chapter offers Delete too. The read rows only appear for a series in
+ * the library, which is the only place read state can be stored (see `chapterReadActions`). Counts
+ * ride in the labels; per the shared menu's rule, nothing is coloured.
+ */
 function chapterMenuRows(
   args: Parameters<typeof chapterMenuActions>[0] & { read?: Parameters<typeof chapterReadActions>[0] },
 ): MenuRowSpec[] {
@@ -1116,140 +1095,6 @@ function chapterMenuRows(
     });
   }
   return rows;
-}
-
-/**
- * The long-press chapter menu: quick per-chapter read + download actions without leaving the list.
- * "Mark read up to here" and "Download from here" are the two one-gesture range answers (everything
- * below this chapter in reading order / this chapter through the end, skipping what's already
- * done); a fully-downloaded chapter offers Delete too. The read rows only appear for a series in
- * the library, which is the only place read state can be stored (see `chapterReadActions`).
- * Rendered with the shared context-menu chrome (`MenuHeader` + `MenuActionRow`), so it reads as the
- * same kind of object as the series card's long-press menu. WEB ONLY — native uses the hold-menu
- * host (see `openChapterMenu`).
- */
-function ChapterDownloadMenu({
-  bridgeId,
-  seriesId,
-  title,
-  chapters,
-  manifest,
-  group,
-  preferredGroup,
-  collected,
-  read,
-}: {
-  bridgeId: string;
-  seriesId: string;
-  title: string;
-  chapters: Chapter[];
-  manifest: DownloadedChapter[];
-  group: ChapterGroup;
-  preferredGroup?: string;
-  /** The series' collected chapter ids — see `collectedChapterIds`. */
-  collected: Set<string>;
-  /** Read-state actions — omitted when the series isn't in the library. */
-  read?: Parameters<typeof chapterReadActions>[0];
-}) {
-  const { closeTop } = useOverlay();
-  const {
-    entry,
-    span,
-    downloadedVersions,
-    collected: isCollected,
-    collect,
-    downloadThis,
-    downloadFromHere,
-    deleteDownload,
-  } = chapterMenuActions({
-    bridgeId,
-    seriesId,
-    title,
-    chapters,
-    manifest,
-    group,
-    collected,
-    ...(preferredGroup !== undefined && { preferredGroup }),
-  });
-  const readActions = read ? chapterReadActions(read) : null;
-
-  return (
-    <View style={styles.menuBody}>
-      <MenuHeader title={group.name} textOnly />
-      <OptionList>
-        {readActions && (
-          <>
-            <MenuActionRow
-              testID={testId('series.chapter-menu', 'read')}
-              label={readActions.read ? 'Mark as unread' : 'Mark as read'}
-              Icon={readActions.read ? EyeOffIcon : CheckIcon}
-              detail={readActions.read ? 'clear read state' : '1 chapter'}
-              onPress={() => {
-                void readActions.setRead(!readActions.read);
-                closeTop();
-              }}
-            />
-            <MenuActionRow
-              testID={testId('series.chapter-menu', 'read-up-to')}
-              label="Mark read up to here"
-              Icon={CheckAllIcon}
-              // Nothing left below this chapter to mark — the row above already covers it alone.
-              disabled={readActions.pending <= 1}
-              detail={readActions.pending > 1 ? `${readActions.pending} chapters` : 'nothing to mark'}
-              onPress={() => {
-                void readActions.markUpTo();
-                closeTop();
-              }}
-            />
-          </>
-        )}
-        <MenuActionRow
-          testID={testId('series.chapter-menu', 'collect')}
-          label={isCollected ? 'In collections' : 'Add to collection'}
-          Icon={isCollected ? CheckIcon : PlusIcon}
-          detail={isCollected ? 'change collections' : 'pick a collection'}
-          onPress={() => {
-            collect();
-            closeTop();
-          }}
-        />
-        <MenuActionRow
-          testID={testId('series.chapter-menu', 'this')}
-          label="Download this chapter"
-          Icon={DownloadsIcon}
-          disabled={!entry || entry.settled}
-          detail={entry?.settled ? 'already saved' : '1 chapter'}
-          onPress={() => {
-            downloadThis();
-            closeTop();
-          }}
-        />
-        <MenuActionRow
-          testID={testId('series.chapter-menu', 'from-here')}
-          label="Download from here"
-          Icon={ArrowDownIcon}
-          disabled={span.length === 0}
-          detail={span.length === 1 ? '1 chapter' : `${span.length} chapters`}
-          onPress={() => {
-            downloadFromHere();
-            closeTop();
-          }}
-        />
-        {downloadedVersions.length > 0 && (
-          <MenuActionRow
-            testID={testId('series.chapter-menu', 'delete')}
-            label="Delete download"
-            Icon={TrashIcon}
-            detail="free the space"
-            onPress={() => {
-              void deleteDownload();
-              closeTop();
-            }}
-          />
-        )}
-      </OptionList>
-    </View>
-  );
 }
 
 // Rows of tiles shown before a long page set collapses behind "Show all".
@@ -2189,10 +2034,6 @@ const styles = StyleSheet.create({
   // Trailing per-chapter download indicator — sits between the name and the time.
   rowDownload: {
     marginRight: Spacing.one,
-  },
-  // The long-press chapter menu (ChapterDownloadMenu).
-  menuBody: {
-    gap: Spacing.three,
   },
   // Offline + not downloaded: the chapter can't be read, so the whole row reads as unavailable.
   rowDimmed: {
