@@ -116,8 +116,7 @@ export default function BrowseScreen() {
   // below all gate off for it (`!isComical`), and ContentFeed is fed `comicalRails.rows` directly.
   const isComical = isComicalBridge(bridgeId);
   const realBridges = useMemo(() => visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID), [visibleBridges]);
-  // Drop bridges the user excluded from the Comical home (per-bridge setting). Cross-bridge SEARCH is
-  // unaffected — this only trims the home rails.
+  // Drop bridges the user excluded from Comical (per-bridge setting) — Search drops the same ones.
   const comicalExcluded = useComicalExcludedIds();
   const comicalRailBridges = useMemo(
     () => realBridges.filter((b) => !comicalExcluded[b.id]),

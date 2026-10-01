@@ -21,6 +21,7 @@ import { SearchField } from '@/components/search-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { useComicalExcludedIds } from '@/data/comical-home';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
 import { clearSearchIntent, peekSearchIntent, subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
@@ -112,7 +113,11 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   // real bridge and shows one rail of results per bridge (no filters/sort — Comical has no capabilities,
   // so useBridgeFilters below yields empty defs and the filter bar auto-hides).
   const isComical = isComicalBridge(bridgeId);
-  const realBridges = useMemo(() => visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID), [visibleBridges]);
+  const comicalExcluded = useComicalExcludedIds();
+  const realBridges = useMemo(
+    () => visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID && !comicalExcluded[b.id]),
+    [visibleBridges, comicalExcluded],
+  );
 
   // Point Search at the intent's bridge (may differ from the one inherited from Browse) on mount.
   // `setBridge` moves THIS screen's selection only — see useInheritedBridge for what writing the
