@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View, type TextStyle } from 'react-native';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
-import { ContinuousCorner, Fonts, Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import SearchScreen from '@/app/search';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useTheme } from '@/hooks/use-theme';
@@ -112,8 +112,7 @@ const styles = StyleSheet.create({
     height: FIELD_HEIGHT,
     marginVertical: 2,
     paddingHorizontal: Spacing.three,
-    ...ContinuousCorner,
-    borderRadius: Spacing.two,
+    borderRadius: FIELD_HEIGHT / 2,
     borderWidth: 1,
   },
   input: {
