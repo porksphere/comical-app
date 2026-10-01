@@ -904,6 +904,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       onPointerUp={endPointer}
       onPointerCancel={endPointer}
       onContextMenu={(e) => e.preventDefault()}
+      // A mouse drag on the page's <img> otherwise starts the browser's own image drag-and-drop,
+      // which takes the pointer stream after one frame and leaves the page sitting still.
+      onDragStart={(e) => e.preventDefault()}
     >
       <div ref={trackRef} style={trackStyle(n, width, height)}>
         {data.map((item, i) => {
