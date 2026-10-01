@@ -20,7 +20,7 @@ import { ChevronRightIcon, PanelCollapseIcon, PanelExpandIcon } from '@/componen
 import { useHover } from '@/hooks/use-hover';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useSectionOpen } from '@/hooks/use-sidebar-sections';
-import { toggleSidebarCollapsed } from '@/hooks/use-sidebar-width';
+import { SidebarCollapsedWidth, toggleSidebarCollapsed } from '@/hooks/use-sidebar-width';
 import { useTheme } from '@/hooks/use-theme';
 import { DISCLOSE_TIMING } from '@/lib/disclose';
 import { ContinuousCorner, Fonts, Spacing } from '@/constants/theme';
@@ -31,6 +31,7 @@ import { ContinuousCorner, Fonts, Spacing } from '@/constants/theme';
 /** A destination row's height. Named because the rail's top padding is derived from it — see
  *  `AppSidebar` — rather than picked to look about right. */
 const ITEM_HEIGHT = 44;
+const FOOTER_BUTTON = 36;
 
 /** A row in the sidebar. `active` drives the pill; the icon and label come from the tab table. */
 /** Extends `PressableProps` so a `TabTrigger`'s injected props (onPress, testID, accessibility)
@@ -181,7 +182,7 @@ export function AppSidebar({
       {/* Pinned BELOW the scroller, not inside it: collapsed is the state you need this control to
           get out of, so it must never be the thing that scrolled off. Settings sits with it because
           it is the same kind of thing — a way to open something, not a place in the list above. */}
-      <View style={[styles.footer, collapsed && styles.footerCompact]}>
+      <View style={styles.footer}>
         {settingsButton ? <FooterButton {...settingsButton} /> : null}
         <CollapseToggle collapsed={collapsed} />
       </View>
@@ -225,10 +226,9 @@ function CollapseToggle({ collapsed }: { collapsed: boolean }) {
   const { hovered, handlers } = useHover();
   const Icon = collapsed ? PanelExpandIcon : PanelCollapseIcon;
   return (
-    // The button is a SQUARE in a row that aligns it, rather than a full-width row: it isn't a
-    // destination, and a hover that lit the whole rail made it look like one.
-    <View style={[styles.collapseRow, collapsed && styles.collapseRowCompact]}>
-      <Pressable
+    // A SQUARE, not a full-width row: it isn't a destination, and a hover that lit the whole rail
+    // made it look like one.
+    <Pressable
         {...handlers}
         testID="sidebar.collapse-toggle"
         onPress={toggleSidebarCollapsed}
@@ -240,9 +240,8 @@ function CollapseToggle({ collapsed }: { collapsed: boolean }) {
           { backgroundColor: hovered ? theme.backgroundElement : 'transparent' },
           pressed && styles.pressed,
         ]}>
-        <Icon color={theme.textSecondary} size={20} />
-      </Pressable>
-    </View>
+      <Icon color={theme.textSecondary} size={20} />
+    </Pressable>
   );
 }
 
@@ -271,26 +270,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 0,
   },
-  // Settings on the left, collapse on the right — the two ends of the row, so neither reads as
-  // belonging to the other.
+  // Inset as if centred in the COLLAPSED rail, at every width: the toggle then never moves under the
+  // pointer that just pressed it, so expanding and collapsing again is two clicks in one place.
   footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.two,
-    paddingBottom: Spacing.two,
-  },
-  footerCompact: {
-    flexDirection: 'column',
+    alignItems: 'flex-start',
     gap: Spacing.one,
-    paddingHorizontal: Spacing.one,
-  },
-  collapseRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  collapseRowCompact: {
-    justifyContent: 'center',
+    paddingLeft: (SidebarCollapsedWidth - FOOTER_BUTTON) / 2,
+    paddingBottom: Spacing.two,
   },
   // Deliberately NOT `styles.item` plus an override: that style carries `flex: 1` for the row it
   // shares with the chevron, and react-native-web maps a `flex` shorthand to a flex-BASIS, which in
@@ -298,8 +284,8 @@ const styles = StyleSheet.create({
   collapseToggle: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 36,
-    height: 36,
+    width: FOOTER_BUTTON,
+    height: FOOTER_BUTTON,
     ...ContinuousCorner,
     borderRadius: Spacing.two,
     ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
