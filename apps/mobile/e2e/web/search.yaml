@@ -4,6 +4,8 @@
 #   - search entry: both the narrow-layout icon (`browse.search-icon`) and the wide-layout pill
 #     (`browse.search-pill`, app/(tabs)/index.tsx — Maestro's web/Chromium viewport renders the
 #     wide layout) share the same accessibilityLabel="Search", so one selector covers either.
+#     So does the sidebar's Search row (`sidebar.search`, app-tabs.tsx), which the wide layout also
+#     renders — it opens the same screen on the Comical aggregate, and the field is the same either way.
 #   - clear button: `search.field.clear` sets accessibilityLabel="Clear search"
 #     (components/search-field.tsx) — select by that label text instead of the testID.
 # `search.field.input` has no competing accessibilityLabel — same selector as mobile.

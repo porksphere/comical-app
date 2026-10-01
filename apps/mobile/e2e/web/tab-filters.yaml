@@ -1,0 +1,51 @@
+# Same journey as ../mobile/tab-filters.yaml, kept in sync by hand. Web renders the wide layout,
+# where the trigger is the bar's pill rather than the icon, and several selectors hit the web-only
+# aria-label quirk (see ../README.md):
+#   - tab bar: "History"/"Activity", not tab.history/tab.activity (same as smoke.yaml).
+#   - <tab>.search-pill sets accessibilityLabel to its placeholder, "Filter history…" /
+#     "Filter activity…" (search-pill.tsx) — matched by regex to sidestep the ellipsis.
+#   - <tab>.search-close sets accessibilityLabel="Close filter" (tab-filter.tsx).
+# <tab>.search.input and history-row.* have no competing accessibilityLabel — same as mobile.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+# ── History ──────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "History"
+- tapOn:
+    id: "Filter history.*"
+- extendedWaitUntil:
+    visible:
+      id: "history.search.input"
+    timeout: 10000
+- inputText: "silent"
+- assertVisible:
+    id: "history-row.the-silent-sea"
+- inputText: "zzqx"
+- assertVisible:
+    text: "No matches"
+- tapOn:
+    id: "Close filter"
+- assertVisible:
+    id: "history-row.the-silent-sea"
+
+# ── Activity ─────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "Activity"
+- tapOn:
+    id: "Filter activity.*"
+- extendedWaitUntil:
+    visible:
+      id: "activity.search.input"
+    timeout: 10000
+- inputText: "crimson"
+- assertVisible:
+    id: "history-row.crimson-harbor"
+- inputText: "zzqx"
+- assertVisible:
+    text: "No matches"
+- tapOn:
+    id: "Close filter"
+- assertVisible:
+    id: "history-row.crimson-harbor"

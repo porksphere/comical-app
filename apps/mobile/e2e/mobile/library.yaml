@@ -1,4 +1,4 @@
-# Library tab: inline search, sort, and collection-scope navigation (Manage Collections + back).
+# Library tab: inline filter, sort, and collection-scope navigation (Manage Collections + back).
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -8,7 +8,7 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "series-card\\..*"
 
-# Inline search
+# Inline filter
 - tapOn:
     id: "library.search-icon"
 - extendedWaitUntil:
