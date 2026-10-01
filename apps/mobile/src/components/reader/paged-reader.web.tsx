@@ -482,19 +482,23 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // but the screen's own `currentPage` briefly starts at 0 before its
   // pages-loaded effect corrects it to the real requested start index, and
   // this component mounts in that same
-  // window (gated behind `!pages`). Re-sync whenever `initialPage` changes and
-  // no longer matches our own index — a mismatch only really happens from that
-  // external correction (or an imperative `goToPage`, which already keeps
-  // `indexRef` current itself), since ordinary in-component navigation updates
-  // `indexRef.current` before reporting back up via `onPageChange`, so this is
-  // a no-op once the two are in sync and won't fight normal page turns.
+  // window (gated behind `!pages`). Re-sync when the requested start itself
+  // moves (or stops being clamped by a short `n`). Keyed on that value rather
+  // than on the effect re-running: `writeTrack` is rebuilt on every resize, and
+  // a re-run that compared against the start sent the reader back to it.
+  // A direction flip mirrors the index instead, so the same page stays up.
+  const synced = useRef({ start: clampIndex(initialPage), rtl });
   useEffect(() => {
-    const target = toPhysical(clampIndex(initialPage));
+    const start = clampIndex(initialPage);
+    const prev = synced.current;
+    if (start === prev.start && rtl === prev.rtl) return;
+    synced.current = { start, rtl };
+    const target = start !== prev.start ? toPhysical(start) : n - 1 - indexRef.current;
     if (target === indexRef.current) return;
     indexRef.current = target;
     setIndex(target);
     writeTrack(0, false);
-  }, [initialPage, toPhysical, clampIndex, writeTrack]);
+  }, [initialPage, rtl, n, toPhysical, clampIndex, writeTrack]);
 
   // Position the track on mount and whenever the viewport (width) changes.
   useEffect(() => {
