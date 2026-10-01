@@ -1,10 +1,9 @@
 # Same journey as ../mobile/tab-filters.yaml, kept in sync by hand. Web renders the wide layout,
-# where the trigger is the bar's pill rather than the icon, and several selectors hit the web-only
-# aria-label quirk (see ../README.md):
+# where the filter is a field always in the bar (tab-filter.tsx): there is no icon to open it and
+# no chevron to close it, so the flow types straight into the field and empties it with its ✕.
+# Selectors that hit the web-only aria-label quirk (see ../README.md):
 #   - tab bar: "History"/"Activity", not tab.history/tab.activity (same as smoke.yaml).
-#   - <tab>.search-pill sets accessibilityLabel to its placeholder, "Filter history…" /
-#     "Filter activity…" (search-pill.tsx) — matched by regex to sidestep the ellipsis.
-#   - <tab>.search-close sets accessibilityLabel="Close filter" (tab-filter.tsx).
+#   - <tab>.search.clear sets accessibilityLabel="Clear search" (search-field.tsx).
 # <tab>.search.input and history-row.* have no competing accessibilityLabel — same as mobile.
 url: http://localhost:4000/comical-app
 ---
@@ -13,12 +12,12 @@ url: http://localhost:4000/comical-app
 # ── History ──────────────────────────────────────────────────────────────────
 - tapOn:
     id: "History"
-- tapOn:
-    id: "Filter history.*"
 - extendedWaitUntil:
     visible:
       id: "history.search.input"
     timeout: 10000
+- tapOn:
+    id: "history.search.input"
 - inputText: "silent"
 - assertVisible:
     id: "history-row.the-silent-sea"
@@ -26,19 +25,19 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     text: "No matches"
 - tapOn:
-    id: "Close filter"
+    id: "Clear search"
 - assertVisible:
     id: "history-row.the-silent-sea"
 
 # ── Activity ─────────────────────────────────────────────────────────────────
 - tapOn:
     id: "Activity"
-- tapOn:
-    id: "Filter activity.*"
 - extendedWaitUntil:
     visible:
       id: "activity.search.input"
     timeout: 10000
+- tapOn:
+    id: "activity.search.input"
 - inputText: "crimson"
 - assertVisible:
     id: "history-row.crimson-harbor"
@@ -46,6 +45,6 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     text: "No matches"
 - tapOn:
-    id: "Close filter"
+    id: "Clear search"
 - assertVisible:
     id: "history-row.crimson-harbor"
