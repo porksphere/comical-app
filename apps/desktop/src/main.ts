@@ -23,6 +23,24 @@ import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
  *  packaged — so it survives bundling either way. */
 const webRoot = (): string => process.env.COMICAL_WEB_ROOT ?? join(app.getAppPath(), "build", "web");
 
+/** Windows Chromium draws a grey track with arrow buttons; this is the thin overlay-style thumb macOS
+ *  and phones show. Injected here rather than shipped in the web bundle so browsers keep their own.
+ *  Only the `::-webkit-scrollbar` form: setting the standard `scrollbar-color` / `scrollbar-width`
+ *  as well makes Chromium ignore all of it. A transparent border, clipped out, is what makes the
+ *  thumb narrower than the gutter it sits in. */
+const SCROLLBAR_CSS = `
+  ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-button { display: none; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, 0.35);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background-color: rgba(128, 128, 128, 0.6); }
+`;
+
 let server: LoopbackServer | null = null;
 
 /** Start the host + its listener. Runs once per process; `openWindow` can then be called freely. */
@@ -83,6 +101,9 @@ async function openWindow(): Promise<void> {
   });
 
   win.once("ready-to-show", () => win.show());
+
+  // Every load (a reload included) starts without it, and `insertCSS` lasts only until the next one.
+  win.webContents.on("dom-ready", () => void win.webContents.insertCSS(SCROLLBAR_CSS));
 
   // Renderer diagnostics on stdout — the spike's only debugging channel, since there's no devtools
   // in a headless run. Off unless asked for.
