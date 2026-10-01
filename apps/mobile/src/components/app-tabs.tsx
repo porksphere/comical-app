@@ -18,6 +18,7 @@ import { AppSidebar, SidebarGroup, SidebarItem } from '@/components/app-sidebar'
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
 import { SettingsModal } from '@/components/settings/settings-modal';
+import { ResultsPane } from '@/components/results-pane';
 import { SeriesPane } from '@/components/series-pane';
 import { SearchPane, SidebarSearchField } from '@/components/sidebar-search';
 import { SidebarResizer } from '@/components/sidebar-resizer';
@@ -34,6 +35,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { closeSettingsModal, openSettingsModal } from '@/lib/settings-modal';
+import { closeResultsPane, setResultsPaneAvailable, useResultsPaneOpen } from '@/lib/results-pane';
 import { closeSeriesPane, setSeriesPaneAvailable, useSeriesPane } from '@/lib/series-pane';
 import { closeSidebarSearch, focusSidebarSearch, useSidebarSearchOpen } from '@/lib/sidebar-search';
 import { setSidebarDragWidth, sidebarDragWidth } from '@/lib/sidebar-drag';
@@ -116,10 +118,11 @@ const SERIES_AS_PANE = Platform.OS === 'web';
 /** And search's field moves into the rail, with its results in a pane of their own. */
 const SEARCH_IN_RAIL = Platform.OS === 'web';
 
-/** Both panes over the content region — what a destination pressed in the rail has to clear (see
+/** Every pane over the content region — what a destination pressed in the rail has to clear (see
  *  TabButton's press). */
 function closeContentPanes(): void {
   closeSeriesPane();
+  closeResultsPane();
   closeSidebarSearch();
 }
 
@@ -348,8 +351,12 @@ export default function AppTabs() {
   // what the full-screen route already is. Published rather than derived at the call sites, because
   // the router guard that hands `/series` over runs outside React (see lib/series-pane).
   const paneAvailable = SERIES_AS_PANE && sidebar;
-  useEffect(() => setSeriesPaneAvailable(paneAvailable), [paneAvailable]);
+  useEffect(() => {
+    setSeriesPaneAvailable(paneAvailable);
+    setResultsPaneAvailable(paneAvailable);
+  }, [paneAvailable]);
   const seriesPaneOpen = useSeriesPaneOpen();
+  const resultsPaneOpen = useResultsPaneOpen();
   // The rail's edge follows the pointer on the UI thread; the content's inset can't (see
   // `sidebar-drag`), so it is committed at column boundaries instead. At rest the two are the same
   // number, and this is what keeps them that way — after a release, after a collapse, after a
@@ -579,6 +586,7 @@ export default function AppTabs() {
           It covers the CONTENT REGION and nothing else: the rail stays lit and usable beside it, so
           the series is over the grid you opened it from rather than over the whole app. */}
       {searchPaneOpen ? <SearchPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
+      {resultsPaneOpen ? <ResultsPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {seriesPaneOpen ? <SeriesPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
