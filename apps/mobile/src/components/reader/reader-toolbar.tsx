@@ -50,8 +50,9 @@ export function ReaderToolbar({
         style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
       />
       <View
-        // A handle only while it is shown: hidden, the top of the page is a tap that brings it back.
-        {...(visible ? windowDragRegion : {})}
+        // Still the handle while hidden: the reader is otherwise wall to wall, so the window would
+        // have nothing to be moved by. It costs that strip its tap to bring the toolbar back.
+        {...windowDragRegion}
         style={[
           styles.bar,
           { paddingTop: insets.top + Spacing.two },
