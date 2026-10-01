@@ -9,13 +9,15 @@ import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { estimatedCardHeight, SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
-import { MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
+import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { GRID_COLUMN_GAP, GRID_ROW_GAP, gridGeometry } from '@/hooks/use-grid-layout';
 import { useHovered } from '@/hooks/use-hovered';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
 import { ZoomSurfaceContext, useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
+import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { testId } from '@/lib/test-id';
 
 // Card cover aspect is 2:3, so a card of width W has a cover of height W·3/2;
@@ -27,8 +29,8 @@ const CARD_GAP = Spacing.two;
 
 // A rail: section header (a title that doubles as the drill-down link, chevron inline) above its
 // cards. Mobile/narrow desktop keeps a snap-scrolling horizontal strip (mirrors the reference's
-// `.carousel`); wide desktop instead wraps the first two rows into a static 6-column grid (no
-// horizontal scroll) — the heading's drill-down reaches the rest.
+// `.carousel`); wide desktop instead lays the first two rows out as a static grid (no horizontal
+// scroll) — the heading's drill-down reaches the rest.
 
 const CARD_SIZE: Record<RailSection['kind'], CardSize> = {
   hero: 'hero',
@@ -36,11 +38,7 @@ const CARD_SIZE: Record<RailSection['kind'], CardSize> = {
   regular: 'rail',
 };
 
-// Desktop grid layout: two rows of six columns, capped — matches the main
-// browse grid's max column count at wide viewports.
-const GRID_COLUMNS = 6;
 const GRID_ROWS = 2;
-const GRID_ITEMS = GRID_COLUMNS * GRID_ROWS;
 
 // Strip left/right inset — matches the reference's body padding (1.5rem = 24px
 // = Spacing.four) on every width, so a rail's first card lines up with the
@@ -81,12 +79,14 @@ function cardWidthFor(kind: RailSection['kind'], viewport: number): number {
   return peekWidth(viewport, 3, gap);
 }
 
-/** Card width for the wide-desktop 6-column grid: fills the (capped) content
- *  width evenly across `GRID_COLUMNS`, same width for every rail kind so a row
- *  of six cards lines up regardless of the section's card size. */
-function gridCardWidth(viewport: number, gap: number): number {
-  const containerWidth = Math.min(viewport, MaxTopLevelWidth) - STRIP_PAD * 2;
-  return Math.floor((containerWidth - (GRID_COLUMNS - 1) * gap) / GRID_COLUMNS);
+/**
+ * The wide grid is the "See all" grid's first two rows: its columns, its card width and its gaps
+ * (`gridGeometry`), for every rail kind. It used to be its own six columns at a strip's 16pt gap,
+ * which put two different sizes of the same card one click apart.
+ */
+function wideGrid(viewport: number, gutter: number): { columns: number; cardWidth: number } {
+  const { numColumns, cardWidth } = gridGeometry(viewport, true, gutter);
+  return { columns: numColumns, cardWidth };
 }
 
 // Rendered height of a `SectionHead` on the WIDE breakpoint, and the real thing rather than an
@@ -139,24 +139,34 @@ const CHEVRON_NUDGE = -4;
  * can't drift (the same discipline `series-grid.tsx`'s `cellHeight` follows). An estimate — rails are
  * few and each reserves its own `minHeight` internally, so small drift only nudges the scroll anchor.
  */
-export function railStripHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean, hasSub: boolean): number {
-  const stripGap = stripGapFor(viewportWidth);
-  const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor(kind, viewportWidth);
+export function railStripHeight(
+  kind: RailSection['kind'],
+  viewportWidth: number,
+  wide: boolean,
+  hasSub: boolean,
+  gutter: number,
+): number {
   if (wide) {
-    // Static GRID_ROWS×GRID_COLUMNS grid: rows of `estimatedCardHeight` cards + inter-row gaps + the
-    // grid wrapper's own `Spacing.one` vertical padding (styles.grid).
-    const cardH = estimatedCardHeight(cardWidth, hasSub);
-    return Spacing.one * 2 + GRID_ROWS * cardH + (GRID_ROWS - 1) * stripGap;
+    // Static GRID_ROWS-row grid: rows of `estimatedCardHeight` cards + inter-row gaps + the grid
+    // wrapper's own `Spacing.one` vertical padding (styles.grid).
+    const cardH = estimatedCardHeight(wideGrid(viewportWidth, gutter).cardWidth, hasSub);
+    return Spacing.one * 2 + GRID_ROWS * cardH + (GRID_ROWS - 1) * GRID_ROW_GAP;
   }
   // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
-  return estimatedCardHeight(cardWidth, hasSub) + STRIP_PAD_V * 2;
+  return estimatedCardHeight(cardWidthFor(kind, viewportWidth), hasSub) + STRIP_PAD_V * 2;
 }
 
 /** Whole rail row INCLUDING its own heading — for callers where the rail renders its own head (a
  *  self-headed `RailSkeleton`, or series.tsx's related rail). ContentFeed's loaded rails are headless (a
  *  shared `sectionHead` row precedes them), so it sizes those with `railStripHeight` instead. */
-export function railRowHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean, hasSub: boolean): number {
-  return SECTION_HEAD_HEIGHT + Spacing.two + railStripHeight(kind, viewportWidth, wide, hasSub);
+export function railRowHeight(
+  kind: RailSection['kind'],
+  viewportWidth: number,
+  wide: boolean,
+  hasSub: boolean,
+  gutter: number,
+): number {
+  return SECTION_HEAD_HEIGHT + Spacing.two + railStripHeight(kind, viewportWidth, wide, hasSub, gutter);
 }
 
 // Per-rail resting card index, remembered for the session so a rail that unmounts and remounts —
@@ -205,7 +215,9 @@ export function Rail({
   // which hard-clips anything past the item box — with the old right-only separator the
   // card sat flush against its box's left edge, so the ring's left stroke was cut off.
   const stripHalfGap = stripGap / 2;
-  const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor(section.kind, viewportWidth);
+  const gutter = useScrollbarGutter();
+  const grid = wideGrid(viewportWidth, gutter);
+  const cardWidth = wide ? grid.cardWidth : cardWidthFor(section.kind, viewportWidth);
   // One card's scroll "slot" (card width + inter-card gap). The strip snaps to multiples of this and
   // the resting card index is derived from it, so it's the single value shared by getFixedItemSize,
   // snapToInterval, and the rest-index persist/restore below — they can't disagree.
@@ -337,9 +349,9 @@ export function Rail({
   // Static (scroll-independent) base position of the peeked card; only changes
   // when a different card is peeked, not per scroll frame. On the wide grid the
   // peeked card sits in one of GRID_ROWS rows instead of a single scrolling row.
-  const peekCol = peekIndex == null ? 0 : wide ? peekIndex % GRID_COLUMNS : peekIndex;
-  const peekRow = peekIndex == null ? 0 : wide ? Math.floor(peekIndex / GRID_COLUMNS) : 0;
-  const peekBase = peekIndex == null ? 0 : STRIP_PAD + peekCol * (cardWidth + stripGap);
+  const peekCol = peekIndex == null ? 0 : wide ? peekIndex % grid.columns : peekIndex;
+  const peekRow = peekIndex == null ? 0 : wide ? Math.floor(peekIndex / grid.columns) : 0;
+  const peekBase = peekIndex == null ? 0 : STRIP_PAD + peekCol * (cardWidth + (wide ? GRID_COLUMN_GAP : stripGap));
   const rowTop = wide ? (rowTops[peekRow] ?? 0) : stripTop;
   const titleTop = rowTop + STRIP_PAD_V + cardWidth * COVER_RATIO + CARD_GAP;
 
@@ -357,9 +369,9 @@ export function Rail({
     zoomSurface,
     useCallback((seriesId: string) => section.items.some((i) => String(i.id) === seriesId), [section.items]),
   );
-  const gridItems = section.items.slice(0, GRID_ITEMS);
+  const gridItems = section.items.slice(0, grid.columns * GRID_ROWS);
   const gridRows: SeriesEntry[][] = [];
-  for (let i = 0; i < gridItems.length; i += GRID_COLUMNS) gridRows.push(gridItems.slice(i, i + GRID_COLUMNS));
+  for (let i = 0; i < gridItems.length; i += grid.columns) gridRows.push(gridItems.slice(i, i + grid.columns));
 
   return (
     // One zoom source key for this rail's cards — a rail recycles card instances (`recycleItems`
@@ -376,17 +388,19 @@ export function Rail({
         />
       )}
       {wide ? (
-        <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: stripGap }]}>
+        <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: GRID_ROW_GAP }]}>
           {gridRows.map((row, r) => (
             <View
               key={r}
-              style={[styles.gridRow, { gap: stripGap }]}
+              // The results grid's fixed cell height, so its rows sit at the same pitch as the grid's
+              // instead of closing up under a short title.
+              style={[styles.gridRow, { gap: GRID_COLUMN_GAP, height: estimatedCardHeight(cardWidth, hasSub) }]}
               onLayout={(e) => {
                 const y = e.nativeEvent.layout.y;
                 setRowTops((prev) => (prev[r] === y ? prev : [...prev.slice(0, r), y, ...prev.slice(r + 1)]));
               }}>
               {row.map((item, c) => {
-                const index = r * GRID_COLUMNS + c;
+                const index = r * grid.columns + c;
                 return (
                   <SeriesCard
                     key={item.id}
@@ -534,9 +548,11 @@ export function Rail({
  *  series content it hasn't fetched yet. */
 export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; title?: string }) {
   const wide = useIsLargeScreen();
-  const stripGap = stripGapFor(viewportWidth);
-  const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor('regular', viewportWidth);
-  const count = wide ? GRID_COLUMNS : 4;
+  const gutter = useScrollbarGutter();
+  const grid = wideGrid(viewportWidth, gutter);
+  const stripGap = wide ? GRID_COLUMN_GAP : stripGapFor(viewportWidth);
+  const cardWidth = wide ? grid.cardWidth : cardWidthFor('regular', viewportWidth);
+  const count = wide ? grid.columns : 4;
   return (
     <View style={styles.section}>
       {/* A known title (the Home skeleton, which already has it from the bridge's list

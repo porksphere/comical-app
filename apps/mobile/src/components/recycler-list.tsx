@@ -6,6 +6,7 @@ import { GestureDetector, type ComposedGesture } from 'react-native-gesture-hand
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
+import { stableScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { ZoomSurfaceContext, useZoomSurfaceKey } from '@/lib/series-zoom';
 
@@ -140,7 +141,7 @@ export function RecyclerList<T>({
         // four components' prop types.
         refScrollView={scrollRef as unknown as ComponentProps<typeof AnimatedLegendList>['refScrollView']}
         key={listKey}
-        style={[styles.list, scrollbarInset(scrollbarInsetTop)]}
+        style={[styles.list, stableScrollbarGutter, scrollbarInset(scrollbarInsetTop)]}
         data={data}
         keyExtractor={keyExtractor}
         renderItem={renderItem}

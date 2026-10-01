@@ -11,7 +11,7 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 import { buildGroupedRows } from '@/data/grouped-rows';
 import type { SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
+import { GRID_COLUMN_GAP, GRID_ROW_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 
 // A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are absolutely
@@ -21,9 +21,9 @@ import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 // Deliberately TIGHT (4px total, down from the original 16): the cards' own title/author block
 // already gives each row visual separation, so the old gap read as dead air. Split evenly — the
 // top half doubles as the web hover-lift clip guard (see above).
-const CELL_PAD_TOP = Spacing.half;
-const CELL_PAD_BOTTOM = Spacing.half;
-const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
+const CELL_PAD_TOP = GRID_ROW_GAP / 2;
+const CELL_PAD_BOTTOM = GRID_ROW_GAP / 2;
+const CELL_ROW_GAP = GRID_ROW_GAP;
 
 /**
  * A cell in a series grid. Every item is a REAL series — the grid never injects placeholder entries.
