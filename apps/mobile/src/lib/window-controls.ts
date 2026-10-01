@@ -106,6 +106,19 @@ export function useWindowThemeColor(color: string | null, layer = 0): void {
   }, [color, layer]);
 }
 
+/**
+ * Fades the caption buttons back while `dim`, for a screen that hides its own chrome (the reader) —
+ * the desktop shell can't hide them short of fullscreen. Only the desktop shell understands it.
+ */
+export function useDimWindowControls(dim: boolean): void {
+  useEffect(() => {
+    if (!dim || Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const shell = (window as Window & { comicalDesktop?: { dimCaptionButtons(dim: boolean): void } }).comicalDesktop;
+    shell?.dimCaptionButtons(true);
+    return () => shell?.dimCaptionButtons(false);
+  }, [dim]);
+}
+
 const claims = new Set<{ color: string; layer: number }>();
 
 function publishThemeColor(): void {

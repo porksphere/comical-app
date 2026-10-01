@@ -32,6 +32,7 @@ directories:
 
 files:
   - build/main.cjs
+  - build/preload.cjs
   - build/web/**/*
   - package.json
 

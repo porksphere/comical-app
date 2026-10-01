@@ -9,7 +9,7 @@
  * spike: the desktop app is the shipped web UI plus a private, per-user backend, so nothing in
  * `apps/mobile` has to know desktop exists.
  */
-import { app, BrowserWindow, shell, session } from "electron";
+import { app, BrowserWindow, ipcMain, shell, session } from "electron";
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
 import { createDesktopHost } from "./host/create-host.ts";
@@ -68,14 +68,20 @@ const DRAG_REGION_CSS = `
  *  the bar's 1px bottom rule, which the strip would otherwise paint over beneath the buttons. */
 const captionHeight = (win: BrowserWindow): number => (win.getContentBounds().width >= 768 ? 64 : 60) - 1;
 
+/** How much of the glyphs' contrast survives while the page has its own chrome hidden: Windows
+ *  can't hide the buttons short of fullscreen, so they recede instead. */
+const DIMMED_GLYPH = 0.3;
+
 /** The page says what is behind the buttons with `<meta name="theme-color">`; the glyphs take
  *  whichever of black and white reads on it. */
-function captionColors(background: string): { color: string; symbolColor: string } {
-  const hex = /^#([0-9a-f]{6})$/i.exec(background)?.[1];
-  if (!hex) return { color: "#000000", symbolColor: "#ffffff" };
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
-  const light = 0.299 * r! + 0.587 * g! + 0.114 * b! > 150;
-  return { color: `#${hex}`, symbolColor: light ? "#000000" : "#ffffff" };
+function captionColors(background: string, dimmed = false): { color: string; symbolColor: string } {
+  const hex = /^#([0-9a-f]{6})$/i.exec(background)?.[1] ?? "000000";
+  const bg = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const light = 0.299 * bg[0]! + 0.587 * bg[1]! + 0.114 * bg[2]! > 150;
+  const glyph = light ? 0 : 255;
+  const mix = dimmed ? DIMMED_GLYPH : 1;
+  const symbolColor = `#${bg.map((c) => Math.round(c + (glyph - c) * mix).toString(16).padStart(2, "0")).join("")}`;
+  return { color: `#${hex}`, symbolColor };
 }
 
 let server: LoopbackServer | null = null;
@@ -135,6 +141,7 @@ async function openWindow(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: join(app.getAppPath(), "build", "preload.cjs"),
     },
   });
 
@@ -147,12 +154,31 @@ async function openWindow(): Promise<void> {
   });
 
   if (CAPTION_OVERLAY) {
-    let colors = captionColors("#000000");
+    let background = "#000000";
+    let dimmed = false;
+    let colors = captionColors(background);
     let height = captionHeight(win);
-    win.setTitleBarOverlay({ ...colors, height });
-    win.webContents.on("did-change-theme-color", (_e, color) => {
-      colors = captionColors(color ?? "#000000");
+    const paint = () => {
+      colors = captionColors(background, dimmed);
       win.setTitleBarOverlay({ ...colors, height });
+    };
+    paint();
+    win.webContents.on("did-change-theme-color", (_e, color) => {
+      background = color ?? "#000000";
+      paint();
+    });
+    const onDim = (e: Electron.IpcMainEvent, dim: unknown) => {
+      if (e.sender !== win.webContents || dimmed === (dim === true)) return;
+      dimmed = dim === true;
+      paint();
+    };
+    ipcMain.on("caption-dim", onDim);
+    win.on("closed", () => ipcMain.off("caption-dim", onDim));
+    // A reload drops whatever screen asked for it without that screen ever saying so.
+    win.webContents.on("did-start-navigation", (details) => {
+      if (!details.isMainFrame || details.isSameDocument || !dimmed) return;
+      dimmed = false;
+      paint();
     });
     win.on("resize", () => {
       const next = captionHeight(win);

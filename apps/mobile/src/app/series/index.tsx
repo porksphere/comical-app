@@ -79,7 +79,7 @@ import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } f
 import { closeSeriesPane } from '@/lib/series-pane';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
-import { useWindowThemeColor } from '@/lib/window-controls';
+import { useDimWindowControls, useWindowThemeColor } from '@/lib/window-controls';
 import {
   holdZoomingSeries,
   onZoomSurfaceChange,
@@ -1512,6 +1512,7 @@ function SeriesReaderInstance({
     },
     [scheduleHide],
   );
+  useDimWindowControls(!chromeVisible && !detailsActive);
   const toggleChrome = useCallback(() => {
     setChromeVisible((v) => {
       const nextVisible = !v;
