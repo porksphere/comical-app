@@ -69,7 +69,8 @@ const DRAG_REGION_CSS = `
 const captionHeight = (win: BrowserWindow): number => (win.getContentBounds().width >= 768 ? 64 : 60) - 1;
 
 /** How much of the glyphs' contrast survives while the page has its own chrome hidden: Windows
- *  can't hide the buttons short of fullscreen, so they recede instead. */
+ *  can't hide the buttons short of fullscreen, so they recede instead — the strip goes clear, so
+ *  the page runs on under them, and the glyphs fade to a grey that still reads on a white page. */
 const DIMMED_GLYPH = 0.3;
 
 /** The page says what is behind the buttons with `<meta name="theme-color">`; the glyphs take
@@ -81,7 +82,7 @@ function captionColors(background: string, dimmed = false): { color: string; sym
   const glyph = light ? 0 : 255;
   const mix = dimmed ? DIMMED_GLYPH : 1;
   const symbolColor = `#${bg.map((c) => Math.round(c + (glyph - c) * mix).toString(16).padStart(2, "0")).join("")}`;
-  return { color: `#${hex}`, symbolColor };
+  return { color: dimmed ? "#00000000" : `#${hex}`, symbolColor };
 }
 
 let server: LoopbackServer | null = null;
