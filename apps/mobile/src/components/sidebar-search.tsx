@@ -10,6 +10,7 @@ import { closeSeriesPane } from '@/lib/series-pane';
 import {
   closeSidebarSearch,
   setSidebarSearchTyped,
+  sidebarSearchFocused,
   submitSidebarSearch,
   useSidebarSearch,
 } from '@/lib/sidebar-search';
@@ -22,13 +23,15 @@ const FIELD_HEIGHT = 40;
 /** The rail's search field, in place of its Search row while the rail is expanded. */
 export function SidebarSearchField({ hint }: { hint: string }) {
   const theme = useTheme();
-  const { typed, focusRequest } = useSidebarSearch();
+  const { typed, focusPending } = useSidebarSearch();
   const inputRef = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
 
   useEffect(() => {
-    if (focusRequest > 0) inputRef.current?.focus();
-  }, [focusRequest]);
+    if (!focusPending) return;
+    inputRef.current?.focus();
+    sidebarSearchFocused();
+  }, [focusPending]);
 
   // Both reveal the results: the pane covers the content region, and so does an open series, which
   // would otherwise sit over the results the field just asked for.

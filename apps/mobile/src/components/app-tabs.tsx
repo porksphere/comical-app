@@ -28,7 +28,7 @@ import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
-import { SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
+import { expandSidebar, SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
 import { useOpenComicalSearch } from '@/lib/open-search';
@@ -416,23 +416,29 @@ export default function AppTabs() {
   // on a pushed screen over the tabs nothing in the rail is current.
   const activeTab = TABS.find((t) => t.href === pathname)?.name;
   const openSearch = useOpenComicalSearch();
-  // The rail's field only where it is drawn and on top: collapsed it is an icon, and over a pushed
-  // screen (a reader, Settings on native) the rail is covered, so the shortcut opens the screen.
-  const railSearch = SEARCH_IN_RAIL && sidebar && !collapsed;
+  // The rail's field only where it is drawn: collapsed it is an icon that expands the rail to reach
+  // it, and over a pushed screen (a reader, Settings on native) the rail is covered, so the shortcut
+  // opens the screen.
+  const searchCapable = SEARCH_IN_RAIL && sidebar;
+  const railSearch = searchCapable && !collapsed;
   const searchPaneOpen = useSidebarSearchOpen() && railSearch;
   useEffect(() => {
     if (!railSearch) closeSidebarSearch();
   }, [railSearch]);
-  useKeyboardShortcut('k', () => {
-    if (!railSearch || !activeTab) return openSearch();
+  const revealSearchField = useCallback(() => {
     closeSettingsModal();
+    expandSidebar();
     focusSidebarSearch();
+  }, []);
+  useKeyboardShortcut('k', () => {
+    if (!searchCapable || !activeTab) return openSearch();
+    revealSearchField();
   });
   const sidebarChildren = useMemo(
     () => [
       // First, and not a tab: Search searches every bridge, wherever you are, so it is never the
       // selected row. Expanded it is a field whose results cover the content region beside it (see
-      // lib/sidebar-search); collapsed, an icon that opens the Search screen over everything.
+      // lib/sidebar-search); collapsed, an icon that expands the rail onto that field.
       railSearch ? (
         <SidebarSearchField key="search" hint={SEARCH_HINT} />
       ) : (
@@ -444,7 +450,7 @@ export default function AppTabs() {
           hint={collapsed ? undefined : SEARCH_HINT}
           compact={collapsed}
           accessibilityRole="button"
-          onPress={openSearch}
+          onPress={searchCapable ? revealSearchField : openSearch}
         />
       ),
       ...TABS.flatMap((tab, i) => {
@@ -466,7 +472,7 @@ export default function AppTabs() {
         ];
       }),
     ],
-    [triggers, activeTab, collapsed, openSearch, railSearch],
+    [triggers, activeTab, collapsed, openSearch, railSearch, searchCapable, revealSearchField],
   );
 
   // The rail's own width, read straight off the shared value so a drag moves it without a render.
