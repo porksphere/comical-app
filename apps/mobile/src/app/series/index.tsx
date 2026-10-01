@@ -3551,7 +3551,9 @@ function SeriesReaderInstance({
                         sourceUrl={pageAction?.sourceUrl}
                         onPress={showChrome}
                       />
-                      <SettingsControl />
+                      {/* Held up while the menu is open: it is anchored to the gear, and the
+                          toolbar fading out from under it would leave it pointing at nothing. */}
+                      <SettingsControl onOpenChange={holdChrome} />
                     </>
                   }
                 />
