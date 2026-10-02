@@ -1,6 +1,7 @@
 /**
  * Whether a newer build exists than the one running, for the channels that ship an artifact a
- * user actually follows (ios-release, android-release, web-pages). Every other channel — the
+ * user actually follows (ios-release, android-release, desktop-release, web-pages). Every other
+ * channel — the
  * nightly, per-branch and dev lanes (*-nightly, ios-pr, ios-devclient, android-pr, *-e2e,
  * local-dev) — is `'unsupported'` and triggers no network request at all (`enabled: false`
  * below).
@@ -9,9 +10,10 @@
  *  - ios-release: compare the AltStore/SideStore source's `apps[0].version` against APP_VERSION via
  *    `compareVersions`. The source carries the same string the build baked into APP_VERSION — the
  *    git tag's `X.Y.Z` (build-ios-reusable.yml's "Compute full version").
- *  - android-release: compare `version.json`'s `commit` against BUILD_COMMIT, on the channel's
- *    Release. Commit equality, not version ordering: ANY mismatch means "there's a newer build",
- *    since the URL is always rebuilt from the newest tag.
+ *  - android-release / desktop-release: compare `version.json`'s `commit` against BUILD_COMMIT, on
+ *    the channel's Release. Commit equality, not version ordering: ANY mismatch means "there's a
+ *    newer build", since the URL is always rebuilt from the newest tag. Desktop's Update button
+ *    opens the Release page rather than one installer, since the user picks theirs by OS.
  *  - web-pages: same commit-equality check, against a `version.json` written into `dist/` by
  *    deploy-web.yml, fetched with `cache: 'no-store'` so a stale CDN/browser cache can't mask it.
  *
@@ -50,7 +52,8 @@ export type AppUpdateCheck = {
    *  nothing to show (up-to-date/unsupported/error) or the channel doesn't carry one. */
   latestVersionLabel?: string;
   /** Where the Update button should send the user. Undefined on web-pages — that row's action is
-   *  `window.location.reload()`, not a URL. */
+   *  `window.location.reload()`, not a URL. Desktop is web too, so callers test this, not the
+   *  platform. */
   downloadUrl?: string;
   /** Versions newer than the running build, newest first — what "What's new" offers. Only
    *  ios-release can hold more than one: its source lists every tag, while the rolling channels
@@ -68,10 +71,12 @@ const IOS_RELEASE_APPS_JSON_URL = 'https://github.com/porksphere/comical-app/rel
 const ANDROID_CHANNEL_TAG: Record<string, string> = {
   'android-release': 'android-release',
 };
-const androidVersionJsonUrl = (tag: string) =>
+const channelVersionJsonUrl = (tag: string) =>
   `https://github.com/porksphere/comical-app/releases/download/${tag}/version.json`;
 const androidApkUrl = (tag: string) =>
   `https://github.com/porksphere/comical-app/releases/download/${tag}/comical-android.apk`;
+const DESKTOP_RELEASE_TAG = 'desktop-release';
+const DESKTOP_RELEASE_PAGE_URL = `https://github.com/porksphere/comical-app/releases/tag/${DESKTOP_RELEASE_TAG}`;
 
 /** Derived, not re-listed: the Android entries come from the map above, so adding a channel there
  *  can't leave this Set behind. A channel that's "supported" here but unrouted in
@@ -79,6 +84,7 @@ const androidApkUrl = (tag: string) =>
 const SUPPORTED_CHANNELS = new Set([
   'ios-release',
   ...Object.keys(ANDROID_CHANNEL_TAG),
+  'desktop-release',
   'web-pages',
 ]);
 
@@ -99,10 +105,10 @@ async function checkIosSource(url: string, signal?: AbortSignal): Promise<AppUpd
   return toCheck(readIosSource((await res.json()) as IosSourceJson, APP_VERSION));
 }
 
-async function checkAndroidChannel(tag: string, signal?: AbortSignal): Promise<AppUpdateCheck> {
-  const res = await fetch(androidVersionJsonUrl(tag), { signal });
+async function checkChannelRelease(tag: string, downloadUrl: string, signal?: AbortSignal): Promise<AppUpdateCheck> {
+  const res = await fetch(channelVersionJsonUrl(tag), { signal });
   if (!res.ok) throw new Error(`version.json fetch failed: ${res.status}`);
-  return toCheck(readChannelVersion((await res.json()) as ChannelVersionJson, BUILD_COMMIT, androidApkUrl(tag)));
+  return toCheck(readChannelVersion((await res.json()) as ChannelVersionJson, BUILD_COMMIT, downloadUrl));
 }
 
 async function checkWebPages(signal?: AbortSignal): Promise<AppUpdateCheck> {
@@ -129,7 +135,10 @@ function toCheck(read: ChannelRead): AppUpdateCheck {
 async function fetchAppUpdateCheck(signal?: AbortSignal): Promise<AppUpdateCheck> {
   if (BUILD_CHANNEL === 'ios-release') return checkIosSource(IOS_RELEASE_APPS_JSON_URL, signal);
   const androidTag = ANDROID_CHANNEL_TAG[BUILD_CHANNEL];
-  if (androidTag) return checkAndroidChannel(androidTag, signal);
+  if (androidTag) return checkChannelRelease(androidTag, androidApkUrl(androidTag), signal);
+  if (BUILD_CHANNEL === 'desktop-release') {
+    return checkChannelRelease(DESKTOP_RELEASE_TAG, DESKTOP_RELEASE_PAGE_URL, signal);
+  }
   if (BUILD_CHANNEL === 'web-pages') return checkWebPages(signal);
   return { status: 'unsupported' };
 }

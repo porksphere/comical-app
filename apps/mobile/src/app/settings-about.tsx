@@ -85,11 +85,8 @@ export default function AboutScreen() {
   const mockActive = useMockActive();
   const appUpdate = useAppUpdateCheck();
   const handleUpdatePress = () => {
-    if (Platform.OS === 'web') {
-      window.location.reload();
-      return;
-    }
     if (appUpdate.downloadUrl) void openBrowserAsync(appUpdate.downloadUrl);
+    else if (Platform.OS === 'web') window.location.reload();
   };
   // The mode actually in force right now, not the stored preference — the toggle only takes effect
   // where the native runtime exists (see embedded/preference.ts).

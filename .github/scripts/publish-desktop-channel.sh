@@ -5,8 +5,8 @@
 # vX.Y.Z Release.
 #
 # Same shape as publish-android-channel.sh — delete-and-recreate so the asset URLs stay
-# byte-identical, plus a version.json carrying the commit and the CHANGELOG section for a future
-# in-app update check to read.
+# byte-identical, plus a version.json carrying the commit and the CHANGELOG section, which a
+# desktop-release build's in-app update check (apps/mobile/src/data/use-app-update.ts) reads.
 #
 # Usage: publish-desktop-channel.sh <dir> <version> <commit>
 #   <dir> holds the installers under their fixed names (collect-desktop-installers.sh).

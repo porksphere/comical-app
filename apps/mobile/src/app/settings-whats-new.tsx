@@ -80,7 +80,7 @@ export default function WhatsNewScreen() {
             ))}
             <SettingsRow
               testID="whatsNew.update"
-              label={Platform.OS === 'web' ? 'Reload to update' : 'Download update'}
+              label={update.downloadUrl ? 'Download update' : 'Reload to update'}
               onPress={handleUpdatePress}
             />
           </SettingsSection>

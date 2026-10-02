@@ -284,7 +284,9 @@ release series.
 fixed names (`.github/scripts/collect-desktop-installers.sh`), then refreshes the rolling
 **`desktop-release`** Release with the same three plus a `version.json`
 (`.github/scripts/publish-desktop-channel.sh`). Its stable URLs are what the README links. PR builds
-stop at the run artifacts. The desktop app has no in-app update check yet.
+stop at the run artifacts. A `desktop-release` build checks that `version.json` the way Android
+does (commit equality, in `src/data/use-app-update.ts`) and its Update button opens the Release page
+in the system browser. It doesn't update itself: there is no `electron-updater` yet.
 
 ### Dev-client builds — iterate on a device from any OS (incl. Windows)
 
