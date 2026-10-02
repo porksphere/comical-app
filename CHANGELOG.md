@@ -13,6 +13,12 @@ what the app shows under Settings → About → What's new. Keep the `## X.Y.Z �
 the extractor matches on the version field, and a section it can't find silently degrades to the
 release's title.
 
+## 0.4.0 — 2026-10-02
+
+- Add Electron desktop app (#146) (367a02d2)
+- Drop a source name from the long-strip page survey notes (b45d9b4b)
+- Record chapter progress for series outside the library (#148) (c91befce)
+
 ## 0.3.2 — 2026-09-11
 
 - Series page: two-line Resume, an honest favorite button, a sort toggle, per-person credits (#145) (e32eb618)
