@@ -20,6 +20,7 @@ import {
   librarySyncStore,
   REGISTRY_TABLES,
   registrySyncStore,
+  SeqGapError,
   SyncEngine,
   wrapLibraryStore,
   wrapRegistryProvider,
@@ -43,6 +44,8 @@ export type SyncStatus = {
   running: boolean;
   lastSyncAt?: number;
   lastError?: string;
+  /** Set by a round that found the hub reset and paired again; cleared by the next round. */
+  repairedAt?: number;
 };
 
 export type LibrarySyncOptions = {
@@ -60,6 +63,8 @@ export type LibrarySyncOptions = {
   newDeviceId: () => string;
   /** A round brought in changes — the screens reading the library should refetch. */
   onApplied: () => void;
+  /** The hub had lost this device's history, and the device paired with it again (see `round`). */
+  onRepaired?: () => void;
   onStatus: (status: SyncStatus) => void;
   log: (message: string) => void;
   /** How long a burst of local writes is gathered before they're saved and sent. */
@@ -162,7 +167,7 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
     }, opts.debounceMs ?? 2000);
   }
 
-  async function round(): Promise<SyncStats | undefined> {
+  async function round(repaired = false): Promise<SyncStats | undefined> {
     const a = active;
     if (!a || !opts.canSync()) return undefined;
     setStatus({ running: true });
@@ -178,9 +183,23 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
       await a.registry.retry();
       await save();
       if (applied > 0) opts.onApplied();
-      setStatus({ running: false, lastSyncAt: Date.now(), lastError: undefined });
+      setStatus({ running: false, lastSyncAt: Date.now(), lastError: undefined, repairedAt: repaired ? Date.now() : undefined });
       return { ...stats, applied };
     } catch (e) {
+      // The hub no longer holds this device's earlier segments — it was wiped, or restored from an
+      // older backup — so its numbering can't continue there. (A device that is itself the older
+      // copy is the engine's own case: it moves to a new id by itself.) Pair again as if sync had
+      // just been turned on: pull what the hub still has, then adopt this whole library over it,
+      // record by record on timestamp — exactly what the toggle does, with nothing lost on either
+      // side. A fresh id starts at seq 1, so this can't gap again.
+      if (e instanceof SeqGapError && e.device === a.engine.deviceId && !repaired) {
+        opts.log(`Sync re-pairing, the hub had been reset: ${e.message}`);
+        start(null);
+        await save();
+        const stats = await round(true);
+        if (stats) opts.onRepaired?.();
+        return stats;
+      }
       const message = e instanceof Error ? e.message : String(e);
       opts.log(`Sync failed: ${message}`);
       setStatus({ running: false, lastError: message });

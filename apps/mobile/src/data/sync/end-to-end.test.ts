@@ -118,6 +118,7 @@ function phone(url: () => string) {
   const held = fakeRegistry();
   let saved: SyncDoc | null = null;
   let lastError: string | undefined;
+  let repaired = 0;
   const sync = createLibrarySync({
     raw,
     registry: held,
@@ -129,6 +130,7 @@ function phone(url: () => string) {
     canSync: () => true,
     newDeviceId: () => `app-${++ids}`,
     onApplied: () => {},
+    onRepaired: () => repaired++,
     onStatus: (s) => {
       lastError = s.lastError;
     },
@@ -142,6 +144,7 @@ function phone(url: () => string) {
     held,
     registry: sync.decorateRegistry(held),
     lastError: () => lastError,
+    repaired: () => repaired,
     saved: () => saved,
   };
 }
@@ -255,7 +258,7 @@ describe('library sync, phone ↔ host-server ↔ phone', () => {
     expect(hub.segments.map((s) => [s.device, s.seq])).toEqual([[phoneDevice, 1], [phoneDevice, 2]]);
   });
 
-  test("a hub that lost its log refuses the phone's next push, and the phone reports it", async () => {
+  test("a hub that lost its log refuses the phone's next push, and the phone pairs again with nothing lost", async () => {
     let server = startServer();
     const a = phone(() => server.url);
     await a.sync.enable();
@@ -264,17 +267,29 @@ describe('library sync, phone ↔ host-server ↔ phone', () => {
     await a.library.createCollection('Two');
     await a.sync.syncNow();
     await until(async () => (await server.api<unknown[]>('GET', '/library/collections')).length === 2);
+    const device = a.saved()!.state.device;
 
     server.srv.stop(true);
     rmSync(join(server.dir, 'sync'), { recursive: true, force: true });
     server = startServer(server.dir); // a fresh hub, seeded from the server's own library
+    // Meanwhile the server's own library moved on, under a stamp the phone has never seen.
+    await server.api('POST', '/library/collections', { name: 'Server side' });
+    await until(async () => (await server.api<unknown[]>('GET', '/library/collections')).length === 3);
 
     await a.library.createCollection('Three');
-    await expect(a.sync.syncNow()).resolves.toBeUndefined();
-    expect(a.lastError()).toMatch(/pushed seq 3 but the log is at 0/);
-    // Nothing was applied blindly: the phone still has all three, the server its own two.
-    expect(await collectionNames(a.library)).toEqual(['One', 'Three', 'Two']);
-    expect((await server.api<unknown[]>('GET', '/library/collections')).length).toBe(2);
+    const stats = await a.sync.syncNow();
+    expect(stats).toBeDefined();
+    expect(a.lastError()).toBeUndefined();
+    expect(a.repaired()).toBe(1);
+    // A new device, carrying the whole library over: both sides end up with everything.
+    expect(a.saved()!.state.device).not.toBe(device);
+    expect(await collectionNames(a.library)).toEqual(['One', 'Server side', 'Three', 'Two']);
+    await until(async () => (await server.api<unknown[]>('GET', '/library/collections')).length === 4);
+    // And the rounds after it are ordinary ones.
+    await a.library.createCollection('Four');
+    await a.sync.syncNow();
+    expect(a.repaired()).toBe(1);
+    await until(async () => (await server.api<unknown[]>('GET', '/library/collections')).length === 5);
   });
 
   test("a bridge installed on a phone is downloaded by the server and reaches a second phone", async () => {

@@ -719,15 +719,15 @@ one that decides whether it can be trusted.
 - [x] **Pairing UI.** The desktop's "Sync server for your phone" row opens a QR code; the phone's
       *Sync server* → *Scan a code* reads it (`app/scan-sync-server.tsx`, expo-camera — a new
       native module, so it needs a fresh build). Not yet run on a device.
-- [ ] **Recover from a sequence gap.** A hub that refuses a push with `seq-gap` or `seq-conflict`
-      fails that round and every round after it; the phone only shows "Couldn't sync". Turning
-      *Sync library* off and on pairs from scratch, and nothing offers to.
+- [x] **Recover from a sequence gap.** A `seq-gap` for the phone's own device (the hub was wiped or
+      restored from an older backup) now pairs again in place — same as the toggle, nothing lost on
+      either side — with a toast and a "Paired again" line in Settings (2026-10-02). `seq-conflict`
+      was already the engine's own case.
 - [ ] **Sync while the app stays open.** Rounds run on launch, on return to the foreground and
       after a burst of local writes (`data/sync/index.ts`). A phone left open never hears about a
       change made elsewhere until one of those, or *Sync now*.
-- [ ] **Cancel the hub's debounce on shutdown.** `createSyncHost` (comical, `host-server`) has no
-      way to stop its pending round, so a host shutting down inside the 250ms window still starts
-      one.
+- [x] **Cancel the hub's debounce on shutdown.** `createSyncHost` has `stop()`; the desktop's
+      `before-quit` calls it through `DesktopHost.close()` (2026-10-02).
 - [ ] **Maestro flow for the desktop-only settings rows** ("Sync with your phone", the sync
       address, tray, open at login). They only render inside the desktop shell, which the flows
       don't run in.

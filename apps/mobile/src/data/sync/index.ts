@@ -11,6 +11,7 @@ import type { LibraryStore } from '@comical/library';
 import { HttpBackend, type RegistryLists, type RegistryMutations, type SyncStats } from '@comical/sync';
 import { AppState } from 'react-native';
 
+import { showToast } from '@/components/toast';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { getApiBase } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
@@ -48,6 +49,7 @@ export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): Lib
       bumpDataEpoch();
       void queryClient.invalidateQueries();
     },
+    onRepaired: () => showToast('Sync paired again — the computer had been reset.'),
     onStatus: (next) => status$.set(next),
     log: (message) => logDiagnostic('sync', message),
   });

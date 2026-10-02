@@ -88,10 +88,13 @@ const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
   { value: 'dark', label: 'Dark', description: 'Always use the dark theme.' },
 ];
 
+const timeOf = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
 function syncDescription(sync: SyncStatus): string {
   if (sync.running) return 'Syncing…';
   if (sync.lastError) return `Couldn't sync: ${sync.lastError}`;
-  if (sync.lastSyncAt) return `Last synced ${new Date(sync.lastSyncAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  if (sync.repairedAt) return `Paired again ${timeOf(sync.repairedAt)} — the computer had been reset`;
+  if (sync.lastSyncAt) return `Last synced ${timeOf(sync.lastSyncAt)}`;
   return 'Not synced yet';
 }
 
