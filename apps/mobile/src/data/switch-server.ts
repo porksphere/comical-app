@@ -11,9 +11,9 @@ import { getResolvedModeSync } from '@/data/embedded/preference';
 import { queryClient } from '@/data/query-client';
 import { isSyncEnabled, setSyncEnabled } from '@/data/sync';
 
-/** `null` goes back to the build's default server. */
-export function switchServer(url: string | null): void {
-  setApiBaseOverride(url);
+/** `null` goes back to the build's default server. `secret` is a desktop hub's pairing key. */
+export function switchServer(url: string | null, secret?: string): void {
+  setApiBaseOverride(url, secret);
   queryClient.clear(); // a different server's cached data can't be trusted (mirrors PERSIST_BUSTER)
   bumpDataEpoch(); // refetch useDataSource-backed screens against the new server
   installDownloadProgress(); // the SSE stream targets the new server

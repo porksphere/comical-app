@@ -13,11 +13,10 @@ import { AppState } from 'react-native';
 
 import { showToast } from '@/components/toast';
 import { logDiagnostic } from '@/lib/diagnostics';
-import { getApiBase } from '../api';
+import { getApiBase, getSyncSecret } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
 import { getResolvedModeSync } from '../embedded/preference';
 import { queryClient } from '../query-client';
-import { splitSyncAddress } from '../sync-address';
 import { createLibrarySync, type LibrarySync, type SyncDoc, type SyncStatus } from './controller';
 
 export type { SyncStatus } from './controller';
@@ -44,8 +43,8 @@ export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): Lib
       else await AsyncStorage.removeItem(STATE_KEY);
     },
     backend: () => {
-      const { baseUrl, secret } = splitSyncAddress(getApiBase());
-      return new HttpBackend({ baseUrl, fetch: (url, init) => fetch(url, init), ...(secret && { secret }) });
+      const secret = getSyncSecret();
+      return new HttpBackend({ baseUrl: getApiBase(), fetch: (url, init) => fetch(url, init), ...(secret && { secret }) });
     },
     canSync: () => getResolvedModeSync() === 'embedded',
     newDeviceId: () => `app-${crypto.randomUUID()}`,

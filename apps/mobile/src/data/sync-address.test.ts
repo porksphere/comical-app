@@ -1,15 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 
-import { displaySyncAddress, parseSyncAddress, splitSyncAddress } from './sync-address';
+import { displaySyncAddress, parseSyncAddress } from './sync-address';
 
 describe('parseSyncAddress', () => {
-  test('takes the address the desktop shows, as it shows it', () => {
-    expect(parseSyncAddress('http://10.0.0.5:3130/abcdefghjkmn')).toBe('http://10.0.0.5:3130/abcdefghjkmn');
+  test('splits the code the desktop shows into the server and the secret', () => {
+    expect(parseSyncAddress('http://10.0.0.5:3130/abcdefghjkmn')).toEqual({
+      url: 'http://10.0.0.5:3130',
+      secret: 'abcdefghjkmn',
+    });
   });
 
-  test('takes a plain server too, and drops a trailing slash either way', () => {
-    expect(parseSyncAddress('http://10.0.0.5:3100/')).toBe('http://10.0.0.5:3100');
-    expect(parseSyncAddress(' https://comical.example/key/ \n')).toBe('https://comical.example/key');
+  test('takes a plain server with no secret, and drops a trailing slash', () => {
+    expect(parseSyncAddress('http://10.0.0.5:3100/')).toEqual({ url: 'http://10.0.0.5:3100' });
+    expect(parseSyncAddress(' https://comical.example/api/ \n')).toEqual({ url: 'https://comical.example/api' });
   });
 
   test('refuses what is not a server address', () => {
@@ -24,21 +27,6 @@ describe('parseSyncAddress', () => {
       'http://user:pw@10.0.0.5:3130/key',
     ]) {
       expect(parseSyncAddress(text)).toBeNull();
-    }
-  });
-});
-
-describe('splitSyncAddress', () => {
-  test('takes the key off the address as the secret', () => {
-    expect(splitSyncAddress('http://10.0.0.5:3130/abcdefghjkmn')).toEqual({
-      baseUrl: 'http://10.0.0.5:3130',
-      secret: 'abcdefghjkmn',
-    });
-  });
-
-  test('keeps a server without one whole, prefix and all', () => {
-    for (const address of ['http://localhost:3100', 'https://comical.example/api', 'not a url']) {
-      expect(splitSyncAddress(address)).toEqual({ baseUrl: address });
     }
   });
 });

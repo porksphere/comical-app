@@ -32,7 +32,7 @@ import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { switchServer } from '@/data/switch-server';
-import { displaySyncAddress } from '@/data/sync-address';
+import { displaySyncAddress, parseSyncAddress } from '@/data/sync-address';
 import { setSyncEnabled, syncLibraryNow, useSyncStatus, type SyncStatus } from '@/data/sync';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
@@ -199,7 +199,7 @@ export default function GeneralSettingsScreen() {
             <SettingsRow
               testID="settings.general.remote-server"
               label={embeddedActive ? 'Sync server' : 'Remote server'}
-              description={displaySyncAddress(apiBase)}
+              description={apiBase}
               onPress={() =>
                 open(() => (
                   <RemoteServerForm
@@ -434,7 +434,7 @@ function RemoteServerForm({
   onScan,
 }: {
   currentUrl: string;
-  onSave: (url: string | null) => void;
+  onSave: (url: string | null, secret?: string) => void;
   /** Open the pairing-code scanner; absent where there is no camera. */
   onScan?: () => void;
 }) {
@@ -488,10 +488,14 @@ function RemoteServerForm({
         <Pressable
           testID="settings.general.remote-server.save"
           onPress={() => {
-            onSave(url);
+            // A pairing code typed from the desktop's sheet carries its key; anything else is
+            // saved as typed, as a server that speaks in the clear.
+            const address = parseSyncAddress(url);
+            onSave(address?.url ?? url, address?.secret);
             closeTop();
           }}
-          disabled={!url.trim()}
+          // Saving the server shown would re-save it without its key.
+          disabled={!url.trim() || url.trim() === currentUrl}
           style={styles.confirmBtn}>
           <ThemedText type="smallBold" style={{ color: theme.accent }}>
             Save

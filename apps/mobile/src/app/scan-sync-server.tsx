@@ -31,14 +31,14 @@ export default function ScanSyncServerScreen() {
 
   const onScanned = ({ data }: { data: string }) => {
     if (paired) return;
-    const url = parseSyncAddress(data);
-    if (!url) {
+    const address = parseSyncAddress(data);
+    if (!address) {
       if (refused.current !== data) showToast("That isn't a Comical pairing code.");
       refused.current = data;
       return;
     }
     setPaired(true);
-    switchServer(url);
+    switchServer(address.url, address.secret);
     showToast('Paired. Syncing with your computer.');
     router.back();
   };
