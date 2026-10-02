@@ -60,6 +60,15 @@ appId: com.porksphere.comical
 - takeScreenshot: general
 - assertVisible:
     id: "settings.select.appearance"
+# Library backup sits under the settings list. Only its presence is checked: both rows hand off to
+# a system file dialog, which is outside what a flow can drive.
+- scrollUntilVisible:
+    element:
+      id: "settings.general.backup-restore"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "settings.general.backup-export"
 - tapOn:
     id: "top-bar.back"
 

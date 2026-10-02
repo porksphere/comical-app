@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
+import { openConfirm } from '@/components/confirm-popup';
 import { OverlayHeading, useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
-import { useApiBase } from '@/data/api';
+import { exportLibraryBackup, restoreLibraryBackup, useApiBase, type LibraryRestoreResult } from '@/data/api';
+import { pickBackupFile, saveBackupFile } from '@/data/backup-file';
+import { backupFileName, describeBackup, describeRestore, parseBackupFile } from '@/data/backup-summary';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
 import { kickDownloads } from '@/data/downloads/engine';
@@ -34,6 +38,7 @@ import {
   useOpenAtLogin,
   useRunInTray,
 } from '@/lib/desktop-shell';
+import { friendlyError } from '@/lib/friendly-error';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -260,8 +265,102 @@ export default function GeneralSettingsScreen() {
             />
           )}
         </SettingsSection>
+        <LibraryBackupSection />
       </ScrollView>
     </ThemedView>
+  );
+}
+
+/** Headered, unlike the list above: these two are things to do, not settings to leave on. */
+function LibraryBackupSection() {
+  const { open } = useOverlay();
+  const [exporting, setExporting] = useState(false);
+
+  const exportLibrary = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const backup = await exportLibraryBackup();
+      const outcome = await saveBackupFile(backupFileName(backup.exportedAt), JSON.stringify(backup));
+      if (outcome === 'saved') showToast('Library exported');
+    } catch (err) {
+      showToast(friendlyError(err, "Couldn't export your library."));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const restoreLibrary = async () => {
+    let picked: ReturnType<typeof parseBackupFile>;
+    try {
+      const text = await pickBackupFile();
+      if (text === null) return;
+      picked = parseBackupFile(text);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Couldn't read that file.");
+      return;
+    }
+    openConfirm({
+      title: 'Restore this backup?',
+      message:
+        'Everything in it is added to your library, and anything that differs goes back to how the backup has it. ' +
+        'Nothing is removed. Registries and bridges it used are added if they are missing.',
+      detail: describeBackup(picked.backup),
+      confirmLabel: 'Restore',
+      pendingLabel: 'Restoring…',
+      tone: 'primary',
+      errorFallback: "Couldn't restore this backup.",
+      onConfirm: async () => {
+        const result = await restoreLibraryBackup(picked.raw);
+        bumpDataEpoch();
+        void queryClient.invalidateQueries();
+        showToast(describeRestore(result), { durationMs: 6000 });
+        if (result.failed.length > 0) open(() => <RestoreFailures failed={result.failed} />);
+      },
+    });
+  };
+
+  return (
+    <SettingsSection title="Library backup">
+      <SettingsRow
+        testID="settings.general.backup-export"
+        label="Export library"
+        description={exporting ? 'Exporting…' : 'Save your collections, history and reading progress to a file.'}
+        onPress={() => void exportLibrary()}
+      />
+      <SettingsRow
+        testID="settings.general.backup-restore"
+        label="Restore from a backup"
+        description="Add back what a backup file holds. Nothing is removed."
+        onPress={() => void restoreLibrary()}
+      />
+    </SettingsSection>
+  );
+}
+
+function RestoreFailures({ failed }: { failed: LibraryRestoreResult['failed'] }) {
+  const { closeTop } = useOverlay();
+  return (
+    <View testID="settings.general.backup-failures" style={styles.confirmBody}>
+      <OverlayHeading>Not everything came back</OverlayHeading>
+      <ThemedText type="small" themeColor="textSecondary">
+        Your library was restored, but these couldn’t be added again. Series that need them won’t open until
+        they are installed.
+      </ThemedText>
+      {failed.map((f) => (
+        <View key={`${f.kind}:${f.id}`}>
+          <ThemedText type="smallBold">{f.id}</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {f.kind[0].toUpperCase() + f.kind.slice(1)} · {f.error}
+          </ThemedText>
+        </View>
+      ))}
+      <View style={styles.confirmActions}>
+        <Pressable testID="settings.general.backup-failures.done" onPress={closeTop} style={styles.confirmBtn}>
+          <ThemedText type="smallBold">Done</ThemedText>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 

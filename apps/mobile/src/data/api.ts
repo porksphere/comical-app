@@ -868,6 +868,8 @@ import type {
   CollectionPageItem as ApiCollectionPageItem,
   CollectionChapterItem as ApiCollectionChapterItem,
   CollectionSeriesItem as ApiCollectionSeriesItem,
+  LibraryBackup,
+  LibraryRestoreCounts,
 } from '@comical/library';
 
 export type {
@@ -1573,6 +1575,23 @@ export function deleteActivityEntry(bridgeId: string, seriesId: string, signal?:
  *  cover blobs). Null when the host has no library module. */
 export function libraryUsage(signal?: AbortSignal): Promise<{ diskBytes: number } | null> {
   return fetchJsonOptional('/library/usage', signal);
+}
+
+export interface LibraryRestoreResult {
+  /** Records the restore wrote — one already identical to the backup's isn't counted. */
+  restored: LibraryRestoreCounts;
+  /** Records in the file that weren't usable and were left out. */
+  skipped: number;
+  /** Registries, bridges and trackers the backup named that couldn't be brought back. */
+  failed: { kind: 'registry' | 'bridge' | 'tracker'; id: string; error: string }[];
+}
+
+export function exportLibraryBackup(signal?: AbortSignal): Promise<LibraryBackup> {
+  return fetchJson('/library/backup', signal);
+}
+
+export function restoreLibraryBackup(backup: unknown, signal?: AbortSignal): Promise<LibraryRestoreResult> {
+  return fetchPost('/library/backup/restore', backup, signal);
 }
 
 // ─── Importing a bridge's favorites into the library ─────────────────────────
