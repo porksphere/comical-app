@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { entryKey, InMemoryLibraryStore, Library } from '@comical/library';
@@ -228,7 +228,10 @@ describe('library sync, phone ↔ host-server ↔ phone', () => {
     await a.sync.syncNow();
     await until(async () => (await server.api<unknown[]>('GET', '/library/collections')).length === 1);
 
-    const serverDevice = () => (JSON.parse(readFileSync(join(server.dir, 'sync', 'state.json'), 'utf8')) as { device: string }).device;
+    const statePath = () => join(server.dir, 'sync', 'state.json');
+    const serverDevice = () => (JSON.parse(readFileSync(statePath(), 'utf8')) as { device: string }).device;
+    // The server saves its state at the end of the round that applied the collection.
+    await until(async () => existsSync(statePath()));
     const device = serverDevice();
 
     server.srv.stop(true);
