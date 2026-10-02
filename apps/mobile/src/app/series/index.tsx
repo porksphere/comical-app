@@ -4855,6 +4855,8 @@ const ReaderPane = forwardRef<
         e.preventDefault();
         return;
       }
+      // Alt+Left is the desktop shell's Back, not a page turn.
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
       const isRight = e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D';
       const isLeft = e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A';
       if (!isRight && !isLeft) return;

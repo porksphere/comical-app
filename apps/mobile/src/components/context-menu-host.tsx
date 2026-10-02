@@ -269,7 +269,9 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
     progress.set(withSpring(1, OPEN_SPRING));
     if (Platform.OS === 'web') {
       const onKey = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') dismiss();
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        dismiss();
       };
       document.addEventListener('keydown', onKey);
       return () => document.removeEventListener('keydown', onKey);

@@ -20,6 +20,7 @@ import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import * as api from '../api';
 import { isMockActive } from '../mock';
 import { syncAppBadge } from './app-badge';
+import { NEW_CHAPTERS_TITLE, newChaptersBody } from './notice';
 import { getNotifyPrefsSync } from './prefs';
 
 export const CHAPTER_CHECK_TASK = 'comical.chapters.check';
@@ -88,35 +89,14 @@ async function notifyNewChapters(count: number): Promise<void> {
         importance: Notifications.AndroidImportance.DEFAULT,
       });
     }
-    const chapters = `${count} new chapter${count === 1 ? '' : 's'}`;
     await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'New chapters',
-        body: (await seriesSummary()) ?? `${chapters} in your library`,
-      },
+      content: { title: NEW_CHAPTERS_TITLE, body: await newChaptersBody(count) },
       // A channel-only trigger delivers immediately on that channel; null = immediate on default
       // (iOS has no channels).
       trigger: Platform.OS === 'android' ? { channelId: 'new-chapters' } : null,
     });
   } catch {
     // Notification failure never fails the check.
-  }
-}
-
-/** Names of the most recent unread finds, e.g. "One Piece, Berserk and 2 more". Null on any miss. */
-async function seriesSummary(): Promise<string | null> {
-  try {
-    const items = await api.getActivity();
-    const titles: string[] = [];
-    for (const item of items) {
-      if (item.read) continue;
-      if (!titles.includes(item.title)) titles.push(item.title);
-    }
-    if (titles.length === 0) return null;
-    if (titles.length <= 3) return titles.join(', ');
-    return `${titles[0]}, ${titles[1]} and ${titles.length - 2} more`;
-  } catch {
-    return null;
   }
 }
 

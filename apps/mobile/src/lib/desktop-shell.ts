@@ -6,6 +6,8 @@ import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import { Platform } from 'react-native';
 
+export type ShellCommand = { type: 'open'; route: string } | { type: 'navigate'; dir: 'back' | 'forward' };
+
 type DesktopShell = {
   platform: string;
   runInTray: boolean;
@@ -15,6 +17,9 @@ type DesktopShell = {
   updates?: boolean;
   onUpdateReady?(onReady: (version: string) => void): () => void;
   installUpdate?(): void;
+  /** Absent before the shell had links, notices or back/forward to pass on. */
+  onShellCommand?(onCommand: (command: ShellCommand) => void): () => void;
+  notify?(title: string, body: string, route?: string): void;
   setRunInTray(on: boolean): void;
   setOpenAtLogin(on: boolean): void;
   dimCaptionButtons(dim: boolean): void;
@@ -48,6 +53,11 @@ export function useDesktopUpdateReady(): string | null {
 
 export function installDesktopUpdate(): void {
   desktopShell()?.installUpdate?.();
+}
+
+/** A system notice, which brings the window up on `route` when clicked. */
+export function notifyDesktop(title: string, body: string, route?: string): void {
+  desktopShell()?.notify?.(title, body, route);
 }
 
 export function useRunInTray(): [boolean, (on: boolean) => void] {

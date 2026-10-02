@@ -45,15 +45,18 @@ async function run(): Promise<void> {
   // background/foreground flip) can't double-fire; a failed check just waits out the window.
   lastAutoCheckAt$.set(now);
   try {
-    const res = await api.runBackgroundSync({});
-    // mock=false throughout: this never runs against the mock source (guard above).
-    void queryClient.invalidateQueries({ queryKey: queryKeys.activity(false) });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(false) });
-    // Unread counts on library cards moved too — but only bother when something changed.
-    if (res.newChapters > 0 || res.readSynced > 0) {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.libraryList(false) });
-    }
+    refreshAfterSync(await api.runBackgroundSync({}));
   } catch {
     // Best-effort: offline or no server reachable is a normal state, never surface an error.
+  }
+}
+
+/** Repaint what a library sync moved. Never for the mock source, which nothing here syncs. */
+export function refreshAfterSync(res: { newChapters: number; readSynced: number }): void {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.activity(false) });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(false) });
+  // Unread counts on library cards moved too — but only bother when something changed.
+  if (res.newChapters > 0 || res.readSynced > 0) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.libraryList(false) });
   }
 }

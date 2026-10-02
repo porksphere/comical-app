@@ -9,15 +9,18 @@
  * spike: the desktop app is the shipped web UI plus a private, per-user backend, so nothing in
  * `apps/mobile` has to know desktop exists.
  */
-import { app, BrowserWindow, ipcMain, screen, shell, session } from "electron";
+import { app, BrowserWindow, ipcMain, nativeImage, Notification, screen, shell, session } from "electron";
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
 import { createDesktopHost } from "./host/create-host.ts";
 import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
+import { linkInArgs, linkRoute, registerLinkScheme } from "./links.ts";
 import { canOpenAtLogin, launchedAtLogin, setOpenAtLogin } from "./login-item.ts";
+import { attachContextMenu, setAppMenu, type NavDirection } from "./menus.ts";
 import { shellSettings, updateShellSettings } from "./shell-settings.ts";
 import { setTray, trayNotice } from "./tray.ts";
 import { startAutoUpdate, updatesSupported } from "./updater.ts";
+import { savedWindowState, trackWindowState } from "./window-state.ts";
 
 /** The web export, which `scripts/build-web.ts` writes to `build/web` beside the bundled main.
  *
@@ -94,6 +97,25 @@ let mainWindow: BrowserWindow | null = null;
 let quitting = false;
 /** A session start with the tray on opens no window: being there is the whole point of it. */
 let startInTray = false;
+/** Maximizing a hidden window shows it, so a window that was left maximized is maximized as it is
+ *  first shown rather than when it is made — a start into the tray has to stay hidden. */
+let maximizeOnShow = false;
+
+/** The page subscribes to shell commands once it can navigate (`shell-commands` below). A route
+ *  asked for before then — a link that launched the app, a click on a notice while it reloads —
+ *  waits here and is handed over as it subscribes. */
+let commandsReady = false;
+let pendingRoute: string | null = linkInArgs(process.argv);
+
+type ShellCommand = { type: "open"; route: string } | { type: "navigate"; dir: NavDirection };
+
+function reveal(win: BrowserWindow): void {
+  if (maximizeOnShow) {
+    maximizeOnShow = false;
+    win.maximize();
+  }
+  win.show();
+}
 
 /** Bring the window back from the tray, the taskbar or behind other windows. */
 function showWindow(): void {
@@ -101,8 +123,39 @@ function showWindow(): void {
   // Before the listener is up the boot in progress is about to open one anyway.
   if (!win) return void (server && openWindow());
   if (win.isMinimized()) win.restore();
-  win.show();
+  reveal(win);
   win.focus();
+}
+
+function openRoute(route: string): void {
+  if (mainWindow && commandsReady) mainWindow.webContents.send("shell-command", { type: "open", route } satisfies ShellCommand);
+  else pendingRoute = route;
+  showWindow();
+}
+
+function navigate(win: BrowserWindow, dir: NavDirection): void {
+  if (win === mainWindow && commandsReady) win.webContents.send("shell-command", { type: "navigate", dir } satisfies ShellCommand);
+}
+
+/** Held until clicked or dismissed: a notice collected by the garbage collector loses its click
+ *  handler on Windows while still sitting in the Action Center. */
+const notices = new Set<Notification>();
+
+function notify(title: string, body: string, route: string | null): void {
+  if (!Notification.isSupported()) return;
+  const notice = new Notification({
+    title,
+    body,
+    icon: nativeImage.createFromPath(join(app.getAppPath(), "build", "tray.png")),
+  });
+  notices.add(notice);
+  notice.on("click", () => {
+    notices.delete(notice);
+    if (route) openRoute(route);
+    else showWindow();
+  });
+  notice.on("close", () => notices.delete(notice));
+  notice.show();
 }
 
 /** Start the host + its listener. Runs once per process; `openWindow` can then be called freely. */
@@ -147,9 +200,12 @@ async function boot(): Promise<void> {
 async function openWindow(): Promise<void> {
   if (!server) throw new Error("openWindow before boot");
 
+  const saved = savedWindowState();
+  maximizeOnShow = saved.maximized;
   const win = new BrowserWindow({
-    width: 1280,
-    height: 860,
+    width: saved.bounds?.width ?? 1280,
+    height: saved.bounds?.height ?? 860,
+    ...(saved.bounds ? { x: saved.bounds.x, y: saved.bounds.y } : {}),
     minWidth: 480,
     minHeight: 480,
     backgroundColor: "#000000",
@@ -167,11 +223,23 @@ async function openWindow(): Promise<void> {
   const hidden = startInTray;
   startInTray = false;
   win.once("ready-to-show", () => {
-    if (!hidden) win.show();
+    if (!hidden) reveal(win);
   });
   mainWindow = win;
   win.on("closed", () => {
-    if (mainWindow === win) mainWindow = null;
+    if (mainWindow !== win) return;
+    mainWindow = null;
+    commandsReady = false;
+  });
+  trackWindowState(win);
+  attachContextMenu(win, server.origin);
+  // The mouse's back and forward buttons, on Windows and Linux; macOS sends them to the page.
+  win.on("app-command", (_e, command) => {
+    if (command === "browser-backward") navigate(win, "back");
+    else if (command === "browser-forward") navigate(win, "forward");
+  });
+  win.webContents.on("did-start-navigation", (details) => {
+    if (details.isMainFrame && !details.isSameDocument) commandsReady = false;
   });
   win.on("close", (e) => {
     if (quitting || !shellSettings().runInTray) return;
@@ -307,12 +375,32 @@ async function openWindow(): Promise<void> {
 // against the same data dir. It hands over to the running one instead.
 const primary = app.requestSingleInstanceLock();
 if (!primary) app.quit();
-app.on("second-instance", showWindow);
+app.on("second-instance", (_e, argv) => {
+  const route = linkInArgs(argv);
+  if (route) openRoute(route);
+  else showWindow();
+});
+// macOS delivers links as an event instead — before `ready`, for the one that launched the app.
+app.on("open-url", (e, url) => {
+  e.preventDefault();
+  const route = linkRoute(url);
+  if (route) openRoute(route);
+});
 
 // The renderer reads these synchronously from its preload, before the page's first render.
 ipcMain.on("shell-settings", (e) => {
   const { runInTray, openAtLogin } = shellSettings();
   e.returnValue = { runInTray, openAtLogin, loginItems: canOpenAtLogin(), updates: updatesSupported };
+});
+ipcMain.on("shell-commands", (e) => {
+  if (e.sender !== mainWindow?.webContents) return void (e.returnValue = null);
+  commandsReady = true;
+  e.returnValue = pendingRoute;
+  pendingRoute = null;
+});
+ipcMain.on("notify", (_e, title: unknown, body: unknown, route: unknown) => {
+  if (typeof title !== "string" || typeof body !== "string") return;
+  notify(title, body, typeof route === "string" && route.startsWith("/") ? route : null);
 });
 ipcMain.on("run-in-tray", (_e, on: unknown) => {
   updateShellSettings({ runInTray: on === true });
@@ -329,6 +417,8 @@ if (primary) {
     .then(() => {
       // Without it Windows attributes the tray's notice to Electron itself in dev.
       if (process.platform === "win32") app.setAppUserModelId("com.porksphere.comical");
+      setAppMenu(navigate);
+      registerLinkScheme();
       const settings = shellSettings();
       setTray(settings.runInTray, showWindow);
       startInTray = settings.runInTray && launchedAtLogin();

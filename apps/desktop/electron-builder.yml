@@ -31,6 +31,13 @@ publish:
   provider: generic
   url: https://github.com/porksphere/comical-app/releases/download/desktop-release
 
+# `comical://` links (src/links.ts). macOS and Linux take the association from the package; on
+# Windows the app registers itself when it first runs.
+protocols:
+  - name: Comical
+    schemes:
+      - comical
+
 directories:
   output: dist
 

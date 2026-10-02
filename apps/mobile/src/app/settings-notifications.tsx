@@ -13,7 +13,9 @@ import { applyChapterCheck } from '@/data/activity/background';
 import { notifyPrefs$, useNotifyPrefs } from '@/data/activity/prefs';
 import { queryKeys } from '@/data/queries';
 import { useMockActive } from '@/data/source';
+import { useHydrated } from '@/hooks/use-responsive';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { desktopShell, trayName } from '@/lib/desktop-shell';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 const isNative = Platform.OS !== 'web';
@@ -23,11 +25,15 @@ export default function NotificationsSettingsScreen() {
   const queryClient = useQueryClient();
   const mock = useMockActive();
   const { autoCheck, backgroundCheck, wifiOnly, notifications, appBadge } = useNotifyPrefs();
+  // Gated on hydration: the static web render has no shell, so the rows would otherwise appear only
+  // after it and mismatch.
+  const desktop = useHydrated() && !!desktopShell();
 
-  /** Enabling alerts needs the OS permission first; a denial reverts the toggle with a pointer. */
+  /** Enabling alerts needs the OS permission first; a denial reverts the toggle with a pointer. The
+   *  desktop shell needs none — it posts the notice itself. */
   const toggleNotifications = async (v: boolean) => {
-    if (!v) {
-      notifyPrefs$.notifications.set(false);
+    if (!v || desktop) {
+      notifyPrefs$.notifications.set(v);
       return;
     }
     try {
@@ -90,10 +96,14 @@ export default function NotificationsSettingsScreen() {
             value={autoCheck}
             onChange={(v) => notifyPrefs$.autoCheck.set(v)}
           />
-          {isNative && (
+          {(isNative || desktop) && (
             <SettingsToggleRow
               label="Check in background"
-              description="Periodically, when the system allows."
+              description={
+                desktop
+                  ? `Every hour while Comical is running, from the ${trayName()} too.`
+                  : 'Periodically, when the system allows.'
+              }
               value={backgroundCheck}
               onChange={(v) => {
                 notifyPrefs$.backgroundCheck.set(v);
@@ -109,7 +119,7 @@ export default function NotificationsSettingsScreen() {
               onChange={(v) => notifyPrefs$.wifiOnly.set(v)}
             />
           )}
-          {isNative && (
+          {(isNative || desktop) && (
             <SettingsToggleRow
               label="Notify about new chapters"
               description="A notification when a background check finds releases."

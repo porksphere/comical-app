@@ -1,7 +1,7 @@
 # Comical desktop — Electron spike
 
 The web UI in an Electron window, with the Comical host running in-process. A spike, not a shipping
-app: unsigned, and short of most desktop chrome.
+app: unsigned.
 
 ```bash
 bun run setup       # once, from the repo root
@@ -63,6 +63,25 @@ bundles its own Chromium regardless — Obsidian's own Flatpak is community-main
 require FUSE to run`. Either `apt install libfuse2` or run it with `--appimage-extract-and-run`. The
 .deb has no such problem, which is half the reason it's there.
 
+## Desktop chrome
+
+- **Window.** Size, position and maximized state persist (`src/window-state.ts`); a saved position
+  that no longer lands on any display is dropped rather than restored off-screen.
+- **Menus.** The app menu is a set of shortcuts on Windows and Linux, where the caption overlay
+  means no menu bar is drawn; only macOS shows it. Reload and the developer tools are left out of a
+  packaged build unless `COMICAL_DEBUG` is set. Right-click gives cut/copy/paste, spelling
+  suggestions, and copy/open for links and images (`src/menus.ts`).
+- **Back / Forward.** Alt+←/→ (⌘[ / ⌘] on macOS) and the mouse's side buttons. Back closes whatever
+  is over the page first — the reader, a sheet, the settings panel, the series pane — by asking it
+  the way Escape does, and only then goes back in history.
+- **Links.** `comical://<route>` opens that route, e.g. `comical://add-registry?url=…` lands on the
+  add-registry confirm. The scheme is registered only by a packaged build, so a dev run never
+  claims it from an installed one (`src/links.ts`).
+- **Tray and notifications.** Both opt-in. The tray (Settings → General) keeps the app running with
+  the window closed; Settings → Notifications → *Check in background* then checks the library
+  hourly, and *Notify about new chapters* posts a system notice for what it finds — only while the
+  window isn't focused, and clicking it opens Activity.
+
 ## Updates
 
 A release build updates itself from the rolling `desktop-release` Release (`src/updater.ts`): it
@@ -89,8 +108,6 @@ load-bearing:
   requests keeps other local processes out, but the port exists. The fix is IPC: `ipcMain.handle` →
   `host.fetch(path, init)` and a `startup.electron.ts` calling the existing `setTransport()` — the
   shape `@comical/host-rn` already uses on device, and the only item here touching `apps/mobile`.
-- **Desktop chrome.** No app menu, shortcuts, window-state persistence, or deep links. (The tray is
-  opt-in, from Settings → General: closing the window then leaves the app running behind it.)
 - **macOS in CI.** `build-desktop-reusable.yml` matrixes Windows and Linux only.
 - **Publishing has never run.** Installers are published only by `release.yml`, to the `vX.Y.Z`
   Release and the rolling `desktop-release` one (`publish-desktop-channel.sh`); until a release is

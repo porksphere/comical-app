@@ -62,6 +62,10 @@ export function openSeriesPane(params: PaneParams): boolean {
   return true;
 }
 
+export function isSeriesPaneOpen(): boolean {
+  return seriesPane$.params.peek() !== null;
+}
+
 export function closeSeriesPane(): void {
   seriesPane$.params.set(null);
 }

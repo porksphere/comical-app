@@ -33,6 +33,22 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
   },
   /** Quit, install the downloaded update and relaunch. */
   installUpdate: () => ipcRenderer.send("update-install"),
+  /** Routes to open (a `comical://` link, a click on a notice) and the back/forward buttons. Call
+   *  once the page can navigate: anything asked for before then is delivered at once. Returns the
+   *  unsubscribe. */
+  onShellCommand: (
+    onCommand: (command: { type: "open"; route: string } | { type: "navigate"; dir: "back" | "forward" }) => void,
+  ) => {
+    const listener = (_e: IpcRendererEvent, command: Parameters<typeof onCommand>[0]) => onCommand(command);
+    ipcRenderer.on("shell-command", listener);
+    const pending = ipcRenderer.sendSync("shell-commands") as string | null;
+    if (pending) onCommand({ type: "open", route: pending });
+    return () => {
+      ipcRenderer.off("shell-command", listener);
+    };
+  },
+  /** A system notice; clicking it brings the window up on `route`. */
+  notify: (title: string, body: string, route?: string) => ipcRenderer.send("notify", title, body, route ?? null),
   setRunInTray: (on: boolean) => ipcRenderer.send("run-in-tray", on === true),
   setOpenAtLogin: (on: boolean) => ipcRenderer.send("open-at-login", on === true),
   /** Fade the caption buttons' glyphs back, for a screen that has hidden its own chrome. */
