@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseSyncAddress } from './sync-address';
+import { displaySyncAddress, parseSyncAddress } from './sync-address';
 
 describe('parseSyncAddress', () => {
   test('takes the address the desktop shows, as it shows it', () => {
@@ -24,6 +24,18 @@ describe('parseSyncAddress', () => {
       'http://user:pw@10.0.0.5:3130/key',
     ]) {
       expect(parseSyncAddress(text)).toBeNull();
+    }
+  });
+});
+
+describe('displaySyncAddress', () => {
+  test('hides the key', () => {
+    expect(displaySyncAddress('http://10.0.0.5:3130/abcdefghjkmn')).toBe('http://10.0.0.5:3130/••••');
+  });
+
+  test('leaves a server without one alone', () => {
+    for (const address of ['http://localhost:3100', 'https://comical.example/api', 'not a url']) {
+      expect(displaySyncAddress(address)).toBe(address);
     }
   });
 });

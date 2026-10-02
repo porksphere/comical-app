@@ -32,6 +32,7 @@ import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { switchServer } from '@/data/switch-server';
+import { displaySyncAddress } from '@/data/sync-address';
 import { setSyncEnabled, syncLibraryNow, useSyncStatus, type SyncStatus } from '@/data/sync';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
@@ -198,8 +199,7 @@ export default function GeneralSettingsScreen() {
             <SettingsRow
               testID="settings.general.remote-server"
               label={embeddedActive ? 'Sync server' : 'Remote server'}
-              description={apiBase}
-              descriptionSelectable
+              description={displaySyncAddress(apiBase)}
               onPress={() =>
                 open(() => (
                   <RemoteServerForm
@@ -249,8 +249,7 @@ export default function GeneralSettingsScreen() {
             <SettingsRow
               testID="settings.general.sync-address"
               label="Sync server for your phone"
-              description={networkSyncAddress ?? 'Not connected to a network'}
-              descriptionSelectable={!!networkSyncAddress}
+              description={networkSyncAddress ? displaySyncAddress(networkSyncAddress) : 'Not connected to a network'}
               onPress={networkSyncAddress ? () => open(() => <PairPhoneSheet />) : undefined}
             />
           )}

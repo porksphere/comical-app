@@ -16,3 +16,20 @@ export function parseSyncAddress(text: string): string | null {
   if (segments.length > 1) return null;
   return `${url.origin}${segments.length === 1 ? `/${segments[0]}` : ''}`;
 }
+
+/** The desktop's key shape (`newSyncKey` in the desktop shell): twelve of an unambiguous alphabet. */
+const KEY_SEGMENT = /^\/[a-z2-9]{12}$/;
+
+/**
+ * The address for a settings row: the key is the whole secret, so it is not left on screen where
+ * a glance reads it. A path that isn't key-shaped — a `/api` prefix behind a proxy — is kept.
+ */
+export function displaySyncAddress(address: string): string {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return address;
+  }
+  return KEY_SEGMENT.test(url.pathname) ? `${url.origin}/••••` : address;
+}
