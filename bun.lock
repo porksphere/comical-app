@@ -30,6 +30,7 @@
         "@expo/ui": "~56.0.18",
         "@legendapp/list": "^3.3.5",
         "@legendapp/state": "^3.0.0-beta.47",
+        "@noble/ciphers": "^2.4.0",
         "@noble/ed25519": "^3.1.0",
         "@noble/hashes": "^2.2.0",
         "@react-native-async-storage/async-storage": "2.2.0",
@@ -390,6 +391,8 @@
     "@margelo/hermes-profile-transformer": ["@margelo/hermes-profile-transformer@0.0.10", "", { "dependencies": { "source-map": "^0.7.3" } }, "sha512-mQp4pMbdBRUPNdgXEt0H+VlQWdEOpvaImP5HBgwY0dsFLxN/qnCGZoERe5kyN5q5x5GT5bj9kmZPt5V7EMhfRA=="],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.1.6", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1", "@emnapi/runtime": "^1.7.1" } }, "sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg=="],
+
+    "@noble/ciphers": ["@noble/ciphers@2.4.0", "", {}, "sha512-AnjFn0Jv92laAkvMrghlFZq4qQCIN/4DxFV/eooqtC2YTjB7kBeLMS2T9KJX4Dn+ZVXLOwK0lSgqDtx9gvxtiw=="],
 
     "@noble/ed25519": ["@noble/ed25519@3.1.0", "", {}, "sha512-pfcObRY3CtvwfaG9Mt5XqZdKmAQppl37tHUeuBhDUbiwJBCVY4/A4lbMvb1xKhMDx96AqAqZpMWuBX1HulhX4g=="],
 

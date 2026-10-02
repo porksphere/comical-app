@@ -4,18 +4,21 @@
  *
  * The loopback listener in `serve.ts` can't be it — it is loopback, and its token is made per
  * launch for a renderer that Electron hands it to. This one has to be reachable and has to keep
- * one address, so its secret is a saved key, carried as the first path segment: the phone already
- * takes a server URL with a prefix (`HttpBackend`'s `baseUrl`), so pairing is pasting one address
- * and needs nothing new on the phone.
+ * one address, so its secret is a saved key. The phone is given it as the last segment of the
+ * address it scans (`http://<ip>:<port>/<key>`), which it keeps to itself: every body in either
+ * direction is sealed under the key (`@comical/sync`'s `sealedChannel`), and the key never crosses
+ * the network — not in a path, not in a header. A request that doesn't open is answered as if the
+ * route didn't exist; a wrong key and a wrong path look the same from outside.
  *
  * It has to be a secret, and it has to guard only this much. A sync push carries more than reading
  * progress — a registry to add, a bridge to install — and an installed bridge is code this machine
- * runs. Nothing but `/sync` and `/health` is forwarded, so the key never opens the rest of the API.
+ * runs. Nothing but the two `/sync` routes is forwarded, so the key never opens the rest of the API.
  */
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { createSocket } from "node:dgram";
 import type { AddressInfo } from "node:net";
 import { networkInterfaces } from "node:os";
+import { sealedChannel, SYNC_PULL_PATH, SYNC_PUSH_PATH } from "@comical/sync";
 import type { DesktopHost } from "./create-host.ts";
 import { listen } from "./serve.ts";
 
@@ -44,19 +47,26 @@ export interface SyncListenerOptions {
 }
 
 export async function startSyncListener(opts: SyncListenerOptions): Promise<SyncListener> {
-  const expected = digest(opts.key);
+  const channel = sealedChannel(opts.key);
+  const notFound = () => new Response("not found", { status: 404 });
 
   const handler = async (req: Request): Promise<Response> => {
-    const url = new URL(req.url);
-    const [, key = "", ...rest] = url.pathname.split("/");
-    const path = `/${rest.join("/")}`;
-    // A wrong key and a path that isn't served look the same from outside.
-    if (!timingSafeEqual(digest(key), expected) || !(path === "/health" || path.startsWith("/sync/"))) {
-      return new Response("not found", { status: 404 });
-    }
+    const path = new URL(req.url).pathname;
+    if (req.method !== "POST" || !(path === SYNC_PUSH_PATH || path === SYNC_PULL_PATH)) return notFound();
+    const request = channel.openRequest(path, await req.text());
+    if (!request) return notFound();
+    const reply = (status: number, body: string) =>
+      new Response(channel.sealResponse(request.nonce, status, body), { headers: { "content-type": "application/json" } });
     const host = opts.getHost();
-    if (!host) return new Response("starting", { status: 503 });
-    return host.router.fetch(new Request(`http://desktop.comical.local${path}${url.search}`, req));
+    if (!host) return reply(503, JSON.stringify({ error: "starting" }));
+    const res = await host.router.fetch(
+      new Request(`http://desktop.comical.local${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: request.body,
+      }),
+    );
+    return reply(res.status, await res.text());
   };
 
   const port = opts.port ?? DEFAULT_PORT;
@@ -78,9 +88,6 @@ export async function startSyncListener(opts: SyncListenerOptions): Promise<Sync
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
-
-// Hashed so the comparison is over equal lengths whatever was sent.
-const digest = (key: string): Buffer => createHash("sha256").update(key).digest();
 
 /**
  * This machine's address on the network it routes out through. Connecting a UDP socket sends

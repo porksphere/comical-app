@@ -21,6 +21,21 @@ export function parseSyncAddress(text: string): string | null {
 const KEY_SEGMENT = /^\/[a-z2-9]{12}$/;
 
 /**
+ * What a saved address is for the sync client: where to send, and the secret the two sides seal
+ * under. The key is never part of a URL that leaves the phone — the desktop answers the sealed
+ * `/sync` routes at its origin. A path that isn't key-shaped is a server's prefix and stays.
+ */
+export function splitSyncAddress(address: string): { baseUrl: string; secret?: string } {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return { baseUrl: address };
+  }
+  return KEY_SEGMENT.test(url.pathname) ? { baseUrl: url.origin, secret: url.pathname.slice(1) } : { baseUrl: address };
+}
+
+/**
  * The address for a settings row: the key is the whole secret, so it is not left on screen where
  * a glance reads it. A path that isn't key-shaped — a `/api` prefix behind a proxy — is kept.
  */

@@ -17,6 +17,7 @@ import { getApiBase } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
 import { getResolvedModeSync } from '../embedded/preference';
 import { queryClient } from '../query-client';
+import { splitSyncAddress } from '../sync-address';
 import { createLibrarySync, type LibrarySync, type SyncDoc, type SyncStatus } from './controller';
 
 export type { SyncStatus } from './controller';
@@ -42,7 +43,10 @@ export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): Lib
       if (doc) await AsyncStorage.setItem(STATE_KEY, JSON.stringify(doc));
       else await AsyncStorage.removeItem(STATE_KEY);
     },
-    backend: () => new HttpBackend({ baseUrl: getApiBase(), fetch: (url, init) => fetch(url, init) }),
+    backend: () => {
+      const { baseUrl, secret } = splitSyncAddress(getApiBase());
+      return new HttpBackend({ baseUrl, fetch: (url, init) => fetch(url, init), ...(secret && { secret }) });
+    },
     canSync: () => getResolvedModeSync() === 'embedded',
     newDeviceId: () => `app-${crypto.randomUUID()}`,
     onApplied: () => {
