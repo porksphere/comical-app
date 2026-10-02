@@ -67,8 +67,9 @@ require FUSE to run`. Either `apt install libfuse2` or run it with `--appimage-e
 
 - **Signing / notarization.** None, anywhere. See above.
 - **Auto-update.** A release build is told about a newer one and links to its download page
-  (`use-app-update.ts`), but installs nothing itself. `publish: null` in `electron-builder.yml`; `electron-updater` needs a `github`
-  provider and a fix for the version ordering noted in `scripts/stamp-version.ts`.
+  (`use-app-update.ts`), but installs nothing itself. `publish: null` in `electron-builder.yml`;
+  `electron-updater` needs a `github` provider and a fix for the version ordering noted in
+  `scripts/stamp-version.ts`.
 - **The open port.** Loopback plus a per-launch bearer token Electron injects into the renderer's
   requests keeps other local processes out, but the port exists. The fix is IPC: `ipcMain.handle` →
   `host.fetch(path, init)` and a `startup.electron.ts` calling the existing `setTransport()` — the
