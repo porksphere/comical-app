@@ -1,48 +1,26 @@
-name: Build Android (rolling APK)
+name: Build Android (nightly main + PR)
 
-# Rolling Android channel — the counterpart of ios-main, NOT the channel users follow. On every
-# push to main it rebuilds the release APK and refreshes the "android-latest" Release, which hosts
-# the APK at a stable, public, unauthenticated direct-download URL (parity with the iOS channel —
-# so you can install on a device without a logged-in GitHub session).
-#
-# The public channel is "android-release", owned exclusively by release.yml. This lane used to
-# refresh that same Release as well, which is what made a tagged build's update check offer main
-# builds; see .github/scripts/publish-android-channel.sh for the split. Versioned, archival
-# releases with BOTH the APK and the iOS IPA are produced by release.yml.
+# PR builds publish an installable APK to a per-PR android-pr-<N> Release; main is built nightly
+# and published nowhere. The public channel is "android-release", owned by release.yml, which also
+# produces the versioned, archival releases.
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'apps/**'
-      - 'packages/**'
-      # On-device runtime submodule pointer — a bump changes the built app.
-      - 'external/comical'
-      - 'package.json'
-      - 'bun.lock'
-      - '.github/workflows/build-android.yml'
-      - '.github/workflows/build-android-reusable.yml'
-      # Exclude docs-only and eas.json changes. These negations are evaluated
-      # after the positives above, so a commit touching ONLY markdown, the docs
-      # dir, or eas.json won't fire a build; a mixed commit still does. (eas.json
-      # isn't used by CI — it does bare `expo prebuild`.)
-      - '!**/*.md'
-      - '!apps/mobile/docs/**'
-      - '!apps/mobile/eas.json'
-  # PR builds verify the branch compiles and produce a downloadable APK artifact.
-  # They read main's warm caches (see the reusable workflow) but never write
-  # them, and the rolling `publish` job below is gated to main so a PR can't
-  # clobber the android-latest channel.
+  # Main is built nightly rather than per push: nothing installs a main build, so all a main build
+  # is for is proving main still builds and keeping the warm caches that only main may save from
+  # being evicted (7 days unused). Skipped when nothing it depends on changed (the `gate` job).
+  schedule:
+    - cron: '17 9 * * *'
+  # PR builds verify the branch compiles and produce an installable APK. They read main's warm
+  # caches (see the reusable workflow) but never write them.
   pull_request:
     # NO `closed` here, deliberately. Teardown of the per-PR release lives in
     # cleanup-pr-releases.yml (which fires on closed with no paths filter, plus a
-    # nightly sweep). Beyond redundancy, `closed` was actively harmful: on a
+    # nightly sweep). Beyond redundancy, `closed` is actively harmful: on a
     # MERGED PR the closed event's `github.ref` is the BASE branch
-    # (refs/heads/main), so its run landed in the same `android-${{ github.ref }}`
-    # concurrency group as the merge's own push-to-main run and, with
-    # cancel-in-progress, cancelled the rolling android-latest build on every merge.
+    # (refs/heads/main), so its run lands in the same `android-${{ github.ref }}`
+    # concurrency group as main's own builds and, with cancel-in-progress,
+    # would cancel a nightly that happened to be running.
     types: [opened, synchronize, reopened]
     paths:
       - 'apps/**'
@@ -65,52 +43,41 @@ concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
 
-# Needed to publish the APK to a GitHub Release (public direct-download URL).
+# Needed to publish a PR's APK to a GitHub Release (public direct-download URL).
 permissions:
   contents: write
 
 jobs:
-  build:
-    uses: ./.github/workflows/build-android-reusable.yml
-    with:
-      # One job serves both push-to-main and pull_request (see the `if` above) — the reusable
-      # workflow's own `github` context reflects whichever event triggered THIS caller, so this
-      # correctly resolves to android-pr on a PR run and android-main on a push-to-main run.
-      channel: ${{ github.event_name == 'pull_request' && 'android-pr' || 'android-main' }}
-    secrets: inherit
-
-  publish:
-    needs: build
-    # Rolling android-latest channel is main-only; PR/branch builds stop at the
-    # uploaded artifact so they can't overwrite the download URL.
-    if: github.ref == 'refs/heads/main'
+  # A nightly run with nothing new to build stops here (see nightly-gate.sh). Every other event
+  # builds.
+  gate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
     steps:
-      - name: Download APK
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.build.outputs.artifact }}
-          path: ${{ runner.temp }}/apk
-
-      # The publish script is shared with release.yml, but the CHANNEL is not: this lane owns
-      # android-latest (rolling main) and release.yml owns android-release (newest tag). See the
-      # script's header for why they used to be one Release and what that cost.
       - uses: actions/checkout@v4
-        with:
-          # Full history so the publish step's patch notes can span from the channel's previously
-          # published commit (see rolling-changelog.sh). release.yml's own checkout can stay shallow
-          # — the tagged lane quotes CHANGELOG.md, which needs no history at all.
-          fetch-depth: 0
-
-      - name: Publish APK to the android-latest Release
+      - id: gate
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/publish-android-channel.sh android-latest "$RUNNER_TEMP/apk/comical-android.apk" "${{ needs.build.outputs.version }}" "${{ github.sha }}"
+        run: >-
+          bash .github/scripts/nightly-gate.sh build-android.yml
+          apps packages external/comical package.json bun.lock .github/workflows/build-android.yml .github/workflows/build-android-reusable.yml
+
+  build:
+    needs: gate
+    if: needs.gate.outputs.build == 'true'
+    uses: ./.github/workflows/build-android-reusable.yml
+    with:
+      channel: ${{ github.ref == 'refs/heads/main' && 'android-nightly' || 'android-pr' }}
+    secrets: inherit
 
   # Per-PR channel. Each open PR gets its own `android-pr-<N>` Release with a
   # stable APK download URL (parity with the iOS per-PR channel). The APK keeps
   # the production applicationId (com.porksphere.comical), so it REPLACES the
-  # main app on device. cleanup-pr-releases.yml tears it down when the PR
+  # installed app on device. cleanup-pr-releases.yml tears it down when the PR
   # closes. Fork PRs get a read-only token and skip this — this repo builds its
   # own branches.
   publish-pr:

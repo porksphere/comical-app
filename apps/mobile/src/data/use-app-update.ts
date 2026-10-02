@@ -1,22 +1,17 @@
 /**
- * Whether a newer build exists than the one running, for the channels that ship a rolling or
- * tagged artifact a user actually follows (ios-release, ios-main, android-release/android-main,
- * web-pages). Every other channel — the per-branch/dev lanes (ios-pr, ios-devclient, android-pr,
- * *-e2e, local-dev) — is `'unsupported'` and triggers no network request at all (`enabled: false`
+ * Whether a newer build exists than the one running, for the channels that ship an artifact a
+ * user actually follows (ios-release, android-release, web-pages). Every other channel — the
+ * nightly, per-branch and dev lanes (*-nightly, ios-pr, ios-devclient, android-pr, *-e2e,
+ * local-dev) — is `'unsupported'` and triggers no network request at all (`enabled: false`
  * below).
  *
  * Per-channel check:
- *  - ios-release / ios-main: compare the channel's AltStore/SideStore source's `apps[0].version`
- *    against APP_VERSION via `compareVersions`. Both sources carry the same string the build baked
- *    into APP_VERSION — see build-ios-reusable.yml's "Compute full version", whose two branches
- *    give ios-release a plain `X.Y.Z` (the git tag) and ios-main a `X.Y.Z.<Nth build of that
- *    release series>`. Each channel only ever compares against its own source, so the two formats
- *    never meet; `compareVersions` handles the extra part either way.
- *  - android-release / android-main: compare `version.json`'s `commit` against BUILD_COMMIT, on the
- *    build's OWN channel Release — `android-release` (newest tag) or `android-latest` (tip of
- *    main). Commit equality, not version ordering: the counter in APP_VERSION restarts at .1 each
- *    release series, so two APKs' versions can legitimately compare in either direction. ANY
- *    mismatch means "there's a newer build", since each URL is always rebuilt from its lane's head.
+ *  - ios-release: compare the AltStore/SideStore source's `apps[0].version` against APP_VERSION via
+ *    `compareVersions`. The source carries the same string the build baked into APP_VERSION — the
+ *    git tag's `X.Y.Z` (build-ios-reusable.yml's "Compute full version").
+ *  - android-release: compare `version.json`'s `commit` against BUILD_COMMIT, on the channel's
+ *    Release. Commit equality, not version ordering: ANY mismatch means "there's a newer build",
+ *    since the URL is always rebuilt from the newest tag.
  *  - web-pages: same commit-equality check, against a `version.json` written into `dist/` by
  *    deploy-web.yml, fetched with `cache: 'no-store'` so a stale CDN/browser cache can't mask it.
  *
@@ -68,17 +63,10 @@ export type AppUpdateCheck = {
 };
 
 const IOS_RELEASE_APPS_JSON_URL = 'https://github.com/porksphere/comical-app/releases/download/ios-release/apps.json';
-/** The rolling main source (build-ios.yml's `publish` job). Same manifest shape as ios-release's,
- *  but it lists only the one current build — the rolling Release keeps a single IPA. */
-const IOS_MAIN_APPS_JSON_URL = 'https://github.com/porksphere/comical-app/releases/download/ios-main/apps.json';
-/** The two rolling Android channels, each its own Release — `android-release` carries the newest
- *  TAGGED build (refreshed only by release.yml), `android-latest` whatever main last built
- *  (refreshed only by build-android.yml). A build checks the channel it was built on and no other,
- *  which is what stops a release user being offered a main build; see
- *  .github/scripts/publish-android-channel.sh. */
+/** Build channel → the Release its update check reads. `android-release` carries the newest TAGGED
+ *  build, refreshed only by release.yml; see .github/scripts/publish-android-channel.sh. */
 const ANDROID_CHANNEL_TAG: Record<string, string> = {
   'android-release': 'android-release',
-  'android-main': 'android-latest',
 };
 const androidVersionJsonUrl = (tag: string) =>
   `https://github.com/porksphere/comical-app/releases/download/${tag}/version.json`;
@@ -90,7 +78,6 @@ const androidApkUrl = (tag: string) =>
  *  `fetchAppUpdateCheck` would fetch nothing and sit on 'checking' forever. */
 const SUPPORTED_CHANNELS = new Set([
   'ios-release',
-  'ios-main',
   ...Object.keys(ANDROID_CHANNEL_TAG),
   'web-pages',
 ]);
@@ -141,7 +128,6 @@ function toCheck(read: ChannelRead): AppUpdateCheck {
 
 async function fetchAppUpdateCheck(signal?: AbortSignal): Promise<AppUpdateCheck> {
   if (BUILD_CHANNEL === 'ios-release') return checkIosSource(IOS_RELEASE_APPS_JSON_URL, signal);
-  if (BUILD_CHANNEL === 'ios-main') return checkIosSource(IOS_MAIN_APPS_JSON_URL, signal);
   const androidTag = ANDROID_CHANNEL_TAG[BUILD_CHANNEL];
   if (androidTag) return checkAndroidChannel(androidTag, signal);
   if (BUILD_CHANNEL === 'web-pages') return checkWebPages(signal);

@@ -1,35 +1,19 @@
 name: Build desktop
 
 # Packaging lane for the Electron desktop app (apps/desktop): every PR that can change it builds the
-# installers (build-desktop-reusable.yml) and uploads them as run artifacts, and — on main only —
-# refreshes the rolling `desktop-latest` Release so the installer has a stable, public,
-# unauthenticated download URL. (Actions *artifacts* need a logged-in GitHub session to download,
-# which is why the mobile lanes publish to Releases too; same reasoning here.) Versioned installers
-# are release.yml's, which calls the same reusable build.
+# installers (build-desktop-reusable.yml) and uploads them as run artifacts; main is built nightly.
+# Versioned installers, and the desktop-release download links, are release.yml's, which calls the
+# same reusable build.
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'apps/desktop/**'
-      # The renderer IS apps/mobile's web export, so a screen change changes the desktop build.
-      - 'apps/mobile/**'
-      # On-device runtime submodule pointer — the main-process bundle inlines @comical/*.
-      - 'external/comical'
-      - 'package.json'
-      - 'bun.lock'
-      - '.github/workflows/build-desktop.yml'
-      - '.github/workflows/build-desktop-reusable.yml'
-      - '.github/scripts/compute-build-version.sh'
-      # Docs-only commits don't change a binary. Evaluated after the positives above, so a mixed
-      # commit still builds.
-      - '!**/*.md'
-      - '!apps/mobile/docs/**'
-      - '!apps/mobile/eas.json'
+  # Main is built nightly rather than per push: nothing installs a main build, so all a main build
+  # is for is proving main still builds and keeping the warm caches that only main may save from
+  # being evicted (7 days unused). Skipped when nothing it depends on changed (the `gate` job).
+  schedule:
+    - cron: '17 9 * * *'
   pull_request:
-    # No `closed` — see build-android.yml's note on why that event's ref cancels the main run.
+    # No `closed` — see build-android.yml's note on why that event's ref would cancel a nightly.
     types: [opened, synchronize, reopened]
     paths:
       - 'apps/desktop/**'
@@ -48,72 +32,31 @@ concurrency:
   group: desktop-${{ github.ref }}
   cancel-in-progress: true
 
-# Only the publish job needs write; it's scoped there rather than granted job-wide.
 permissions:
   contents: read
 
 jobs:
-  build:
-    uses: ./.github/workflows/build-desktop-reusable.yml
-    with:
-      channel: ${{ github.event_name == 'pull_request' && 'desktop-pr' || 'desktop-main' }}
-
-  # ── Rolling desktop-latest channel (main only) ───────────────────────────────────────────────
-  # The counterpart of android-latest / ios-main: whatever main last built, at a stable public
-  # URL. Deliberately NOT a channel a released build would follow — versioned releases stay
-  # release.yml's business, and keeping the tags separate is the lesson publish-android-channel.sh
-  # already carries (one shared Release had the two lanes racing and mis-offering updates).
-  publish:
-    needs: build
-    if: github.ref == 'refs/heads/main'
+  # A nightly run with nothing new to build stops here (see nightly-gate.sh). Every other event
+  # builds.
+  gate:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+      actions: read
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
     steps:
       - uses: actions/checkout@v4
-
-      # Both matrix artifacts, flattened into one dir. `merge-multiple` keeps the filenames rather
-      # than nesting each under its artifact name.
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: comical-desktop-*
-          merge-multiple: true
-          path: ${{ runner.temp }}/desktop
-
-      - name: Refresh the desktop-latest Release
+      - id: gate
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.build.outputs.version }}
-          COMMIT: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          TAG="desktop-latest"
-          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+        run: >-
+          bash .github/scripts/nightly-gate.sh build-desktop.yml
+          apps/desktop apps/mobile external/comical package.json bun.lock .github/workflows/build-desktop.yml .github/workflows/build-desktop-reusable.yml .github/scripts/compute-build-version.sh
 
-          bash .github/scripts/collect-desktop-installers.sh "$RUNNER_TEMP/desktop"
-          INSTALLER="$RUNNER_TEMP/desktop/comical-desktop-setup.exe"
-          APPIMAGE="$RUNNER_TEMP/desktop/comical-desktop-x86_64.AppImage"
-          DEB="$RUNNER_TEMP/desktop/comical-desktop-amd64.deb"
-
-          printf '{"commit":"%s","version":"%s","publishedAt":"%s"}\n' \
-            "$COMMIT" "$VERSION" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            > "$RUNNER_TEMP/desktop/version.json"
-
-          # Delete-and-recreate, not edit: that's what keeps the asset URLs byte-identical (a
-          # second asset of the same name would be served as `comical-desktop-setup.1.exe`).
-          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create "$TAG" \
-            "$INSTALLER" "$APPIMAGE" "$DEB" "$RUNNER_TEMP/desktop/version.json" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$COMMIT" \
-            --title "Comical Desktop — rolling" \
-            --notes "Desktop build of \`main\` (version ${VERSION}, commit \`${COMMIT:0:7}\`).
-          Rolling: this tag always carries whatever main last built. Not a released version.
-
-          **Windows:** \`${BASE}/comical-desktop-setup.exe\`
-          **Linux (AppImage):** \`${BASE}/comical-desktop-x86_64.AppImage\` — \`chmod +x\` and run.
-          **Linux (Debian/Ubuntu):** \`${BASE}/comical-desktop-amd64.deb\`
-
-          ⚠️ Neither is code-signed. Windows SmartScreen warns on first run (**More info → Run
-          anyway**). On Linux, if the AppImage exits with a libfuse error, either install
-          \`libfuse2\` or run it with \`--appimage-extract-and-run\`."
+  build:
+    needs: gate
+    if: needs.gate.outputs.build == 'true'
+    uses: ./.github/workflows/build-desktop-reusable.yml
+    with:
+      channel: ${{ github.ref == 'refs/heads/main' && 'desktop-nightly' || 'desktop-pr' }}

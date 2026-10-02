@@ -3,8 +3,8 @@
 name: ↳ Build Android APK (called by build-android.yml, release.yml)
 
 # Reusable: builds an installable release APK and uploads it as a run artifact
-# (renamed to comical-android.apk). Called by both build-android.yml (rolling,
-# on push to main) and release.yml (versioned, on a v* tag). The Expo Android
+# (renamed to comical-android.apk). Called by both build-android.yml (nightly
+# main + PRs) and release.yml (versioned, on a v* tag). The Expo Android
 # template signs the release build with the auto-generated debug keystore, so it
 # installs directly on any device. Swap in a real upload key before Play Store.
 
@@ -40,14 +40,14 @@ on:
         # Bakes EXPO_PUBLIC_COMICAL_BUILD_CHANNEL into the JS bundle — read by src/lib/sentry.ts
         # as the `buildChannel` tag on every Sentry event, so a crash report is attributable to
         # the exact CI build that produced it. Every caller passes its own distinct value
-        # (android-main / android-pr / android-release / android-e2e) — required, not defaulted,
+        # (android-nightly / android-pr / android-release / android-e2e) — required, not defaulted,
         # so a new caller can't silently ship crash reports with no channel attached.
         description: Value baked into EXPO_PUBLIC_COMICAL_BUILD_CHANNEL (Sentry's buildChannel tag).
         type: string
         required: true
       version:
         # Mirrors build-ios-reusable.yml's input of the same name. Optional explicit version
-        # string; when empty (the rolling android-main lane) the version is computed as
+        # string; when empty (nightly and PR builds) the version is computed as
         # `<app.json base>.<Nth build of this release series>` — see
         # .github/scripts/compute-build-version.sh. release.yml passes the git tag so a tagged APK
         # carries the real release version rather than a build counter.

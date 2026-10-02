@@ -75,6 +75,7 @@ require FUSE to run`. Either `apt install libfuse2` or run it with `--appimage-e
 - **Desktop chrome.** No app menu, shortcuts, window-state persistence, or deep links. (The tray is
   opt-in, from Settings → General: closing the window then leaves the app running behind it.)
 - **Desktop-shaped UI.** It's the responsive *web* layout. Usable at 1280×860, not designed for it.
-- **macOS in CI.** `build-desktop.yml` matrixes Windows and Linux only.
-- **The `publish` job has never run.** Gated to `main`, so every branch run skips it. The rolling
-  `desktop-latest` Release — the public URL needing no GitHub login — is verified only by reading it.
+- **macOS in CI.** `build-desktop-reusable.yml` matrixes Windows and Linux only.
+- **Publishing has never run.** Installers are published only by `release.yml`, to the `vX.Y.Z`
+  Release and the rolling `desktop-release` one (`publish-desktop-channel.sh`); until a release is
+  cut, that path — and the README's download links — is verified only by reading it.

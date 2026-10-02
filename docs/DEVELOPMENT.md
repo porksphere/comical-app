@@ -78,12 +78,16 @@ category has no flow referencing it yet — see `apps/mobile/e2e/README.md`.
 ## Build (GitHub-hosted runners, local builds — no Expo cloud)
 
 Native projects are generated on the fly (`expo prebuild`, CNG); `ios/` and `android/` are
-git-ignored. Workflows in `.github/workflows/` run on push to `main`, on every **pull request**
-(build + downloadable artifact, so branches are verified — see the dev channel below), and via
-manual dispatch. Caches keep repeat builds fast: iOS caches Bun + CocoaPods + **ccache** (native
-compile), Android caches Bun + the **Gradle** cache. Only `main` *writes* those caches; every
-branch/PR restores them read-only, so the shared 10 GB Actions cache budget holds one
-authoritative warm cache instead of being thrashed per branch. Two iOS-specific notes on the
+git-ignored. The native builds (iOS, Android, desktop) run on every **pull request** (build +
+installable artifact, so branches are verified — see the dev channel below), **nightly** on `main`,
+and via manual dispatch. `main` is not built per push: nothing installs a main build, so a main
+build only proves `main` still builds and keeps the caches warm — and the nightly does both,
+skipping itself when nothing it depends on changed since its last success
+(`.github/scripts/nightly-gate.sh`). Caches keep repeat builds fast: iOS caches Bun + CocoaPods +
+**ccache** (native compile), Android caches Bun + the **Gradle** cache. Only `main` *writes* those
+caches — in practice, the nightly; every branch/PR restores them read-only, so the shared 10 GB
+Actions cache budget holds one authoritative warm cache instead of being thrashed per branch. The
+nightly is also what keeps them inside GitHub's seven-day eviction window. Two iOS-specific notes on the
 native compile: RN core itself isn't compiled at all (prebuilt via
 `ReactNativeDependencies.xcframework`/`React-Core-prebuilt`, default on RN 0.80+); and the
 third-party pods that *do* compile go through **ccache** — but only because the "Route ccache"
@@ -93,19 +97,20 @@ relies on the `CCACHE_BINARY` build setting reaching the compile env, which Xcod
 silently never fires (0 hits/misses). With it, ~99.9% of compiles are cacheable:
 
 - **Android** (`ubuntu-latest`): `expo prebuild` → `gradlew assembleRelease` → installable
-  `.apk` artifact (release is signed with the auto-generated debug keystore). `build-android.yml`
-  refreshes the rolling **`android-latest`** Release so the APK has a stable, public,
-  unauthenticated direct-download URL — the testing lane, not the one the README links (see
-  "Android distribution" below).
+  `.apk` artifact (release is signed with the auto-generated debug keystore). On a PR it's
+  published to an `android-pr-<N>` Release (see "Android distribution" below).
 - **iOS** (`macos-26`): `expo prebuild` → `pod install` → `xcodebuild archive` with code
-  signing disabled → packaged into an **unsigned `.ipa`** artifact. On push to main it's a
-  **profiling** build published to the rolling **`ios-main`** Release; on a PR it's published to
-  the aggregate **`ios-pr`** source (see "iOS distribution" below).
-- **Versioned releases:** `release.yml` builds both binaries (iOS **clean** Release — no profiler),
+  signing disabled → packaged into an **unsigned `.ipa`** artifact. Every build here is a
+  **profiling** build; on a PR it's published to the aggregate **`ios-pr`** source (see "iOS
+  distribution" below).
+- **Desktop** (`windows-latest` + `ubuntu-latest`): the web export packaged by electron-builder
+  into an unsigned Windows installer, an AppImage and a `.deb` (`build-desktop-reusable.yml`). PR
+  builds stop at the run artifacts.
+- **Versioned releases:** `release.yml` builds every binary (iOS **clean** Release — no profiler),
   attaches them to an immutable `vX.Y.Z` Release, publishes the versioned web image, and refreshes
-  the public **`ios-release`** source and **`android-release`** download link. Those are the
-  channels normal users follow; the rolling `ios-main`/`ios-pr`/`android-latest` lanes are for
-  dev/perf testing. See "Cutting a release" below.
+  the public **`ios-release`** source and the **`android-release`** and **`desktop-release`**
+  download links. Those are the channels normal users follow; the `ios-pr`/`android-pr-<N>` lanes
+  are for dev/perf testing. See "Cutting a release" below.
 
 ### Cutting a release
 
@@ -134,7 +139,7 @@ Pushing a `v*` tag by hand still works and skips step 1–2, but `app.json` must
 the tag. Do **not** use the web Releases form to create the tag: it creates the Release object too,
 and `gh release create` then fails — after both builds have run.
 
-**Release notes reach five places, from two generators.** `CHANGELOG.md` is the source for anything
+**Release notes reach four places, from two generators.** `CHANGELOG.md` is the source for anything
 TAGGED and `.github/scripts/changelog-section.sh` quotes one version's section out of it; the
 rolling channels have no release to quote, so `.github/scripts/rolling-changelog.sh` lists the
 commits each has picked up since it last published (it measures from a `built-sha` marker the
@@ -144,9 +149,7 @@ channel's own Release body carries). Between them they fill:
 | --- | --- |
 | The `vX.Y.Z` GitHub Release body | GitHub's own `--generate-notes` commit list |
 | `ios-release` source — every version in `versions[]` | `changelog-section.sh` for that tag |
-| `ios-main` source — the one current build | `rolling-changelog.sh ios-main` |
-| `android-release` / `android-latest` — `version.json` `notes` + the Release body | tag section / rolling |
-| `desktop-release` — `version.json` `notes` + the Release body | `changelog-section.sh` for that tag |
+| `android-release` / `desktop-release` — `version.json` `notes` + the Release body | `changelog-section.sh` for that tag |
 | gh-pages `version.json` `notes` | `rolling-changelog.sh web-pages` |
 
 The app reads the SAME artifacts its update check already fetches, so Settings → About → the
@@ -200,29 +203,28 @@ session, so an unauthenticated fetch returns an HTML login page, which the sidel
 `Encountered unknown tag html on line 1` / `isn't in the correct format`. Artifacts are also
 double-zipped.)
 
-### The four iOS channels (SideStore sources)
+### The three iOS channels (SideStore sources)
 
 | Channel | Source URL (`…/releases/download/<tag>/apps.json`) | Trigger | Build | Bundle id |
 |---------|-----------------------------------------------------|---------|-------|-----------|
 | **release** (public) | `ios-release` | `v*` tag (`release.yml`) | clean Release, **no profiler** | `com.porksphere.comical` |
-| **main** (perf testing) | `ios-main` | push to `main` (`build-ios.yml`) | **profiling** (Release + on-device Hermes profiler) | `com.porksphere.comical` |
-| **PR** (branch testing) | `ios-pr` | each open PR (`build-ios.yml`) | **profiling** | `com.porksphere.comical` |
+| **PR** (branch testing) | `ios-pr` | each open PR (`build-ios.yml`) | **profiling** (Release + on-device Hermes profiler) | `com.porksphere.comical` |
 | **dev-client** (iterate over Metro) | `ios-devclient` | manual only (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical` |
 
-**All four share the production bundle id**, so exactly one is installed at a time — switch lanes by
+**All three share the production bundle id**, so exactly one is installed at a time — switch lanes by
 picking a source/version in SideStore, and whatever you install replaces what was there. That is
 deliberate for the dev-client too: coexistence and a shared data container are mutually exclusive on
 iOS (the container is keyed by bundle id), and iterating over Metro against your real library beats
 iterating against an empty one. See `apps/mobile/plugins/with-devclient-variant.js`.
 
-`main` and every PR are **profiling** builds on purpose (the app is marked "Comical (profiling)"), so
+Every PR build is a **profiling** build on purpose (the app is marked "Comical (profiling)"), so
 any of them can be perf-tested on device without a special manual build; the clean **`ios-release`**
 channel carries no profiler and is what a normal user subscribes to (see the
 [README](../README.md#ios)).
 
 ### `ios-release` — the public channel (all tagged versions)
 
-`release.yml` (on a `v*` tag) builds both binaries, attaches them to an immutable `vX.Y.Z` Release,
+`release.yml` (on a `v*` tag) builds every binary, attaches them to an immutable `vX.Y.Z` Release,
 then refreshes the `ios-release` source. Because each `vX.Y.Z` Release is immutable and keeps its own
 IPA forever, this source lists the **full version history** and every entry stays installable — the
 build passes the tag (minus `v`) as the version override so the IPA's `CFBundleShortVersionString` and
@@ -230,21 +232,21 @@ the manifest agree (AltStore rejects a mismatch). Produced by
 `.github/scripts/refresh-ios-release-source.sh`, which enumerates every `v*` Release, newest-first —
 stateless, so deleting a bad release self-heals the source on the next tag.
 
-### `ios-main` / `ios-pr` — the rolling dev channels
+### `ios-pr` — the rolling dev channel
 
-`ios-main` is a standalone source refreshed on every push to `main` (one rolling IPA). `ios-pr` is an
-**aggregate** listing every open PR, so you add it **once** and every branch shows up inside it — no
-adding a source per branch. Add either in SideStore/AltStore → Sources → +:
+`ios-pr` is an **aggregate** listing every open PR, so you add it **once** and every branch shows up
+inside it — no adding a source per branch. Add it in SideStore/AltStore → Sources → +:
 
-> `https://github.com/porksphere/comical-app/releases/download/ios-main/apps.json`
 > `https://github.com/porksphere/comical-app/releases/download/ios-pr/apps.json`
+
+To try `main` itself, install the newest `ios-release`, or open a PR from it.
 
 The `ios-pr` app's version list is ordered **newest build first** (`PR #<N>: <title>`, sorted by
 build/run number). SideStore/AltStore pick the installable "latest" by array order — not by comparing
 version numbers — so whatever you built most recently is `versions[0]` and installs with one tap;
 older builds sit below and are still selectable from SideStore's version list.
 
-Both are **Release** builds (carrying the profiler) — installable on-device to eyeball a PR's UI or
+These are **Release** builds (carrying the profiler) — installable on-device to eyeball a PR's UI or
 capture a real release-mode Hermes trace, but with no Metro dev menu. (An offline "dev build" from CI
 isn't practical: Expo intentionally skips embedding JS in debug builds; use the dev-client channel
 below for a live-Metro loop, or a local `expo run:ios --device` build — see [PROFILING.md](PROFILING.md).)
@@ -253,7 +255,7 @@ How the PR aggregate is produced (see `.github/workflows/build-ios.yml` +
 `.github/scripts/refresh-ios-pr-source.sh`):
 
 - Each PR build publishes its IPA to an `ios-pr-<N>` **prerelease** (just the IPA + a small
-  `meta.json`). `main` is **not** in this aggregate — it has its own `ios-main` source.
+  `meta.json`). `main` is **not** in this aggregate — nothing publishes main builds.
 - A concurrency-locked `refresh-dev-source` job then regenerates `ios-pr/apps.json` from scratch by
   enumerating the `ios-pr-<N>` releases — stateless, so opening/closing PRs converge without races.
 - Closing/merging a PR deletes its `ios-pr-<N>` release; the next refresh drops it from the list.
@@ -261,29 +263,28 @@ How the PR aggregate is produced (see `.github/workflows/build-ios.yml` +
 Android needs no equivalent — its per-PR `android-pr-<N>` prerelease already exposes a direct,
 stable APK download URL (there's no "source" concept to aggregate).
 
-## Android distribution — two channels, same split as iOS
+## Android distribution
 
-Android has no source manifest to subscribe to, so each channel is just a Release whose APK sits at
-a stable, public, unauthenticated URL. Both are refreshed by
-`.github/scripts/publish-android-channel.sh`, but by different workflows, and a build only ever
-checks for updates on the channel it was built on:
+Android has no source manifest to subscribe to, so a channel is just a Release whose APK sits at a
+stable, public, unauthenticated URL:
 
 | Channel | Download URL (`…/releases/download/<tag>/comical-android.apk`) | Refreshed by | For |
 | --- | --- | --- | --- |
-| **`android-release`** | `android-release` | `release.yml` (a `vX.Y.Z` release) | normal users — this is the README's download button |
-| **`android-latest`** | `android-latest` | `build-android.yml` (push to main) | testing unreleased work; the counterpart of `ios-main` |
+| **`android-release`** | `android-release` | `release.yml` (a `vX.Y.Z` release), via `.github/scripts/publish-android-channel.sh` | normal users — this is the README's download button |
+| **`android-pr-<N>`** | `android-pr-<N>` | `build-android.yml` (each open PR) | testing a branch |
 
-They were **one** Release until they were split, and both lanes republished it. That meant a user on
-a tagged release was told "update available" the first time any commit landed on main, and the
-button handed them a main build — iOS had never had that problem, because `ios-release` and
-`ios-main` are genuinely separate sources. It also meant the two lanes raced: they sit in different
-concurrency groups (`android-*` vs `release-*`), so merging a release bump and then dispatching the
-release had both delete-and-recreate the same Release at once, with a 404 window on the download URL
-in between. Different tags, no race.
+`android-release` also carries a `version.json` (`{commit, version, notes, publishedAt}`). The
+in-app update check (`src/data/use-app-update.ts`) compares its `commit` against the running
+build's — equality, not ordering, because `versionName` doesn't move between builds within a
+release series.
 
-Each channel also carries a `version.json` (`{commit, version, publishedAt}`). The in-app update
-check (`src/data/use-app-update.ts`) compares its `commit` against the running build's — equality,
-not ordering, because `versionName` doesn't move between builds within a release series.
+## Desktop distribution
+
+`release.yml` attaches the Windows installer, AppImage and `.deb` to each `vX.Y.Z` Release under
+fixed names (`.github/scripts/collect-desktop-installers.sh`), then refreshes the rolling
+**`desktop-release`** Release with the same three plus a `version.json`
+(`.github/scripts/publish-desktop-channel.sh`). Its stable URLs are what the README links. PR builds
+stop at the run artifacts. The desktop app has no in-app update check yet.
 
 ### Dev-client builds — iterate on a device from any OS (incl. Windows)
 

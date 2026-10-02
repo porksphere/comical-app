@@ -16,12 +16,12 @@ name: Release (iOS IPA + Android APK + desktop installers)
 # both builds have run.
 #
 # This is the clean, PROFILER-FREE, public iOS channel. Besides the immutable
-# vX.Y.Z Release (both binaries), it maintains a rolling `ios-release`
+# vX.Y.Z Release (every binary), it maintains a rolling `ios-release`
 # SideStore/AltStore source whose versions[] lists every tag newest-first, each
 # pointing at that tag's PERMANENT IPA asset (so full version history stays
-# installable — unlike the rolling ios-main/ios-pr sources that keep one IPA).
-# `ios-release` is what a normal user subscribes to; the profiling ios-main /
-# ios-pr sources (build-ios.yml) are for dev/perf testing.
+# installable — unlike the ios-pr source, which keeps one IPA per PR).
+# `ios-release` is what a normal user subscribes to; the profiling ios-pr
+# source (build-ios.yml) is for dev/perf testing.
 
 on:
   push:
@@ -263,8 +263,7 @@ jobs:
 
       # Android has no source manifest to subscribe to the way iOS has apps.json, so the stable
       # android-release download URL is the whole channel — it's what the README points at and what
-      # an installed release build's update check follows. This lane owns it exclusively; pushes to
-      # main move android-latest instead, which is the rolling counterpart of ios-main.
+      # an installed release build's update check follows.
       - name: Refresh the android-release download link
         env:
           GH_TOKEN: ${{ github.token }}

@@ -5,9 +5,9 @@ export const SENTRY_DSN =
   'https://940637967e832057b44b527fb1122774@o4511662386446336.ingest.us.sentry.io/4511662559526912';
 
 // Which CI build produced this binary — baked in by each workflow's job-level env (see
-// build-ios-reusable.yml / build-android-reusable.yml): ios-devclient, ios-main, ios-pr,
-// ios-release, ios-e2e, android-main, android-pr, android-release, android-e2e, web-pages,
-// web-docker. Unset outside CI (a local `bun run dev`/`bun start` Metro session), so crashes from
+// build-ios-reusable.yml / build-android-reusable.yml / build-desktop-reusable.yml): ios-devclient,
+// ios-nightly, ios-pr, ios-release, ios-e2e, android-nightly, android-pr, android-release,
+// android-e2e, desktop-nightly, desktop-pr, desktop-release, web-pages, web-docker. Unset outside CI (a local `bun run dev`/`bun start` Metro session), so crashes from
 // local iteration are still distinguishable from every shipped build.
 //
 // Defined HERE, and re-exported by lib/build-info.ts as `BUILD_CHANNEL` (the About screen shows the

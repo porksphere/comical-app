@@ -175,7 +175,7 @@ jobs:
           # anyone reading this file directly, and matches the string the running bundle shows.
           #
           # `notes` is what Settings shows for the build — the commits since this channel last
-          # published, the same rolling rule ios-main and android-latest use. The marker it measures
+          # published, the same rolling rule every rolling channel uses. The marker it measures
           # from is the web-pages Release's; this lane publishes to gh-pages rather than a Release,
           # so `rolling-changelog.sh` finds no marker and falls back to recent commits. That is the
           # honest answer for a branch preview, which is most of what this workflow deploys.

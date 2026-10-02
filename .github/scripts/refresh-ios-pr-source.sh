@@ -6,9 +6,9 @@
 # recently sits at versions[0] and installs with one tap — no digging into
 # version history to find your branch.
 #
-# main is NOT in this aggregate — it has its own standalone ios-main source. This
-# source is purely the open-PR fan-out. Every build listed here is a PROFILING
-# build (Release + on-device Hermes profiler), same as ios-main.
+# main is NOT in this aggregate — nothing publishes main builds. This source is
+# purely the open-PR fan-out. Every build listed here is a PROFILING build
+# (Release + on-device Hermes profiler).
 #
 # Rebuilt from scratch on every run by enumerating the ios-pr-* releases and
 # reading the meta.json fragment each publish leaves on its release, so it is
