@@ -458,7 +458,7 @@ not put over the screen.
 
 Which generator fills a channel is set by whether it is TAGGED: `changelog-section.sh` quotes
 `CHANGELOG.md`, `rolling-changelog.sh` lists the commits since the channel's last publish. See
-`docs/DEVELOPMENT.md` → "Release notes reach four places" for the full table.
+`docs/DEVELOPMENT.md` → "Release notes reach five places" for the full table.
 
 # Downsampling is the reader's choice, not expo-image's default
 
