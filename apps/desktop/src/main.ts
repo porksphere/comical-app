@@ -502,6 +502,7 @@ app.on("activate", () => {
 
 app.on("before-quit", () => {
   quitting = true;
+  host?.close();
   void server?.close();
   void syncListener?.close();
 });

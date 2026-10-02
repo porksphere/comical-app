@@ -54,6 +54,8 @@ export interface DesktopHost {
   /** In-process transport: a server-relative path in, a `Response` out. No socket involved.
    *  Shape-identical to the app's own `Transport` type in `apps/mobile/src/data/api.ts`. */
   fetch(path: string, init?: RequestInit): Promise<Response>;
+  /** Schedule no more sync rounds; a write landing inside the debounce window stays for next launch. */
+  close(): void;
 }
 
 export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
@@ -140,5 +142,6 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
     // Same trick `@comical/host-rn`'s embedded transport uses on iOS/Android.
     fetch: (path, init) =>
       Promise.resolve(router.fetch(new Request(`http://desktop.comical.local${path}`, init))),
+    close: () => sync.stop(),
   };
 }
