@@ -115,8 +115,8 @@ export function useSelectedBridge(): SelectedBridge {
  * series modal over them — so there is nothing to stay in sync with, and subscribing would only
  * re-introduce the coupling this hook exists to remove.
  */
-export function useInheritedBridge(): SelectedBridge {
-  const [bridge, setBridge] = useState<string | null>(() => selectedBridge$.peek());
+export function useInheritedBridge(seed?: string): SelectedBridge {
+  const [bridge, setBridge] = useState<string | null>(() => seed ?? selectedBridge$.peek());
   return useResolvedBridge(bridge, setBridge);
 }
 

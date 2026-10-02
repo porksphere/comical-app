@@ -4,10 +4,10 @@
 # (v*), newest-first, each pointing at that tag's PERMANENT IPA asset.
 #
 # This is the clean, PROFILER-FREE, public channel a normal user subscribes to
-# (the profiling ios-main / ios-pr sources are for dev/perf testing). Because
+# (the profiling ios-pr source is for dev/perf testing). Because
 # each vX.Y.Z Release is immutable and keeps its own IPA forever, this source can
 # list the FULL version history and every entry stays installable — unlike the
-# rolling ios-main/ios-pr sources, which keep only one IPA.
+# ios-pr source, which keeps only one IPA per PR.
 #
 # Rebuilt from scratch on every tag by enumerating the v* Releases — stateless,
 # so deleting a bad release drops it on the next run. Requires gh + jq (present
@@ -23,8 +23,8 @@ ENTRIES="$WORK/entries"
 mkdir -p "$ENTRIES"
 
 # Enumerate every version-tag Release (v1.2.3, v0.0.1, …). The `^v[0-9]` filter
-# excludes the rolling channel tags (ios-main, ios-pr, ios-devclient,
-# android-release, android-latest, and this script's own ios-release output).
+# excludes the rolling channel tags (ios-pr, ios-devclient, android-release,
+# desktop-release, and this script's own ios-release output).
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
 

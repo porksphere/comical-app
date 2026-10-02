@@ -2,6 +2,8 @@ import { useEffect, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
+import { windowControlsLayer, windowDragOff } from '@/lib/window-controls';
+
 /**
  * TopBarSwitch — a persistent top-of-screen SLOT that crossfades between whole bar
  * implementations as the screen's mode changes: the X/Reddit morphing-header treatment, where
@@ -36,7 +38,7 @@ export function TopBarSwitch({
         </BarLayer>
       ))}
       {persistent != null && (
-        <View style={styles.layer} pointerEvents="box-none">
+        <View {...windowControlsLayer} style={styles.layer} pointerEvents="box-none">
           {persistent}
         </View>
       )}
@@ -53,7 +55,7 @@ function BarLayer({ active, children }: { active: boolean; children: ReactNode }
   }, [active, shown]);
   const style = useAnimatedStyle(() => ({ opacity: shown.value }));
   return (
-    <Animated.View pointerEvents={active ? 'box-none' : 'none'} style={[styles.layer, style]}>
+    <Animated.View {...(active ? {} : windowDragOff)} pointerEvents={active ? 'box-none' : 'none'} style={[styles.layer, style]}>
       {children}
     </Animated.View>
   );

@@ -4,6 +4,7 @@ import Animated, { type AnimatedProps } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/hooks/use-theme';
+import { windowDragRegion } from '@/lib/window-controls';
 
 /**
  * The shell every top bar in the app is built on: the safe-area top padding, the hairline bottom
@@ -43,6 +44,8 @@ export function BarSurface({
   const insets = useSafeAreaInsets();
   return (
     <Animated.View
+      // A bar at the top of the window is what moves it, where the window has no title bar.
+      {...(safeAreaTop ? windowDragRegion : {})}
       // box-none so the bar's own controls stay tappable while taps outside them fall through.
       pointerEvents="box-none"
       style={[

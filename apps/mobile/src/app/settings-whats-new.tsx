@@ -26,7 +26,9 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { noteLines, type ReleaseNote } from '@/data/release-notes';
 import { useAppUpdateCheck } from '@/data/use-app-update';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
+import { installDesktopUpdate, useDesktopUpdateReady } from '@/lib/desktop-shell';
 import { APP_VERSION } from '@/lib/build-info';
 
 function ReleaseNoteCard({ note }: { note: ReleaseNote }) {
@@ -60,9 +62,11 @@ export default function WhatsNewScreen() {
   const update = useAppUpdateCheck();
   const contentPadding = useSettingsScrollPadding();
   const pending = update.pending ?? [];
+  const updateReady = useDesktopUpdateReady();
 
   const handleUpdatePress = () => {
-    if (update.downloadUrl) void openBrowserAsync(update.downloadUrl);
+    if (updateReady) installDesktopUpdate();
+    else if (update.downloadUrl) void openBrowserAsync(update.downloadUrl);
     // web-pages has no artifact to download — the "update" is whatever the server is already
     // serving, so the action is to reload onto it (mirrors the About row).
     else if (Platform.OS === 'web') window.location.reload();
@@ -71,7 +75,7 @@ export default function WhatsNewScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="What's new" />
-      <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
+      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {pending.length > 0 && (
           <SettingsSection title={pending.length > 1 ? 'Available now' : 'Available'}>
             {pending.map((note) => (
@@ -79,7 +83,7 @@ export default function WhatsNewScreen() {
             ))}
             <SettingsRow
               testID="whatsNew.update"
-              label={Platform.OS === 'web' ? 'Reload to update' : 'Download update'}
+              label={updateReady ? 'Restart to update' : update.downloadUrl ? 'Download update' : 'Reload to update'}
               onPress={handleUpdatePress}
             />
           </SettingsSection>

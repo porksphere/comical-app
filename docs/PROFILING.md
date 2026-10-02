@@ -121,7 +121,7 @@ Build the shell once; iterate the JS forever from the PC.
    writes the compiler cache the next one restores.
 2. Add that source in SideStore/AltStore and install **Comical (dev)**. It carries the production
    bundle id, so it *replaces* whatever Comical is installed and inherits its data — which is the
-   point: you iterate against your real library. Reinstall from `ios-main`/`ios-release` to switch
+   point: you iterate against your real library. Reinstall from `ios-pr`/`ios-release` to switch
    back. Rebuild only when *native* code changes (a native module, a config plugin, an SDK bump).
 
 **Every day (all on Windows):**

@@ -1,6 +1,5 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
 import { useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +16,7 @@ import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScop
 import { useDataSource, useMockActive } from '@/data/source';
 import { friendlyError } from '@/lib/friendly-error';
 import { useGridLayout } from '@/hooks/use-grid-layout';
+import { useLocalSearchParams } from '@/lib/nav';
 
 /**
  * A rail's "See all" destination — a single bridge's infinite-scroll results, with NO search bar.

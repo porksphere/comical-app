@@ -33,10 +33,12 @@
  * the controls fade out instead of parking over the clock; on a device with no top inset the same
  * distance is simply a full hide). A secondary bar that disappears behind other chrome (Search's
  * clipped filter bar) passes its full height.
+ *
+ * On desktop none of it runs and the bar stays put (`usePinned`).
  */
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
-import type { NativeScrollEvent, NativeSyntheticEvent, ViewStyle } from 'react-native';
+import { Platform, type NativeScrollEvent, type NativeSyntheticEvent, type ViewStyle } from 'react-native';
 import type Animated from 'react-native-reanimated';
 import {
   cancelAnimation,
@@ -51,6 +53,7 @@ import {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { useIsLargeScreen } from '@/hooks/use-responsive';
 import {
   beginSelfDrivenScroll,
   endSelfDrivenScroll,
@@ -71,6 +74,7 @@ import {
   TOP_GUARD,
 } from '@/lib/slide-step';
 import { setTopBarHidden } from '@/lib/top-bar-visibility';
+import { useWindowControlsInset } from '@/lib/window-controls';
 
 /** Minimal structural type for the list refs we reset — LegendList and FlatList both satisfy it. */
 type Scrollable = { scrollToOffset: (opts: { offset: number; animated?: boolean }) => void };
@@ -103,6 +107,18 @@ export type SlidingBar = {
   /** Wire to the list's plain `onScroll` — keeps `maxScrollY` in sync. */
   onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
 };
+
+/**
+ * A desktop window has the height to spare and a pointer that never covers the bar, so there is
+ * nothing to win by sliding it away — and where the window's caption buttons sit over the bar, a
+ * bar that left would strand them over the content. A wide browser window, or any window drawing
+ * its buttons over the page.
+ */
+function usePinned(): boolean {
+  const large = useIsLargeScreen();
+  const controls = useWindowControlsInset();
+  return (Platform.OS === 'web' && large) || controls > 0;
+}
 
 export function useSlidingBar(
   barHeight: number,
@@ -143,6 +159,8 @@ export function useSlidingBar(
    *  and less only where the content ran out before the bar did (see the settle). Null when no
    *  settle is driving the scroller — which is also how the reaction below knows to stay out. */
   const settleFrom = useSharedValue<{ hidden: number; y: number; per: number } | null>(null);
+  const pinned = usePinned();
+  const pinnedSV = useSharedValue(pinned);
 
   useAnimatedReaction(
     () => scrollY.value,
@@ -164,6 +182,7 @@ export function useSlidingBar(
         primed.set(true);
         return;
       }
+      if (pinnedSV.value) return;
       // A settle is playing out (the user let go and the bar is animating to its committed state).
       // Scroll reports don't fight it; `begin` cancels it the moment a finger goes down, and on web
       // — where there's no drag event to cancel on — it's over in SETTLE_MS.
@@ -225,7 +244,7 @@ export function useSlidingBar(
     (phase: ScrollPhase) => {
       // The broadcast is global (one scroller at a time), but a blurred screen's bar keeps its
       // subscription — it must not animate off the back of another screen's scrolling.
-      if (!focused.current) return;
+      if (!focused.current || pinnedSV.value) return;
       if (phase === 'begin') {
         // A new gesture takes the bar over wherever the settle had got to — including the scroller,
         // which the finger now owns.
@@ -295,9 +314,31 @@ export function useSlidingBar(
         }),
       );
     },
-    [barHeight, lockstepScroll, maxScrollY, offset, releaseScroll, revealUp, scrollY, settleFrom, settleRule, settling],
+    [
+      barHeight,
+      lockstepScroll,
+      maxScrollY,
+      offset,
+      pinnedSV,
+      releaseScroll,
+      revealUp,
+      scrollY,
+      settleFrom,
+      settleRule,
+      settling,
+    ],
   );
   useEffect(() => subscribeScrollPhase(settle), [settle]);
+  // Widening the window past the breakpoint brings back a bar that had slid away.
+  useEffect(() => {
+    pinnedSV.set(pinned);
+    if (!pinned) return;
+    cancelAnimation(offset);
+    settling.set(false);
+    releaseScroll();
+    revealUp.set(COMMIT_DISTANCE);
+    offset.set(0);
+  }, [offset, pinned, pinnedSV, releaseScroll, revealUp, settling]);
   // A screen that leaves mid-settle must not strand the window shut — nothing would reopen it, and
   // every later scroll frame would then be ignored as self-driven.
   useEffect(() => releaseScroll, [releaseScroll]);

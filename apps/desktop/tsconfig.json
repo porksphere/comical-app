@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node", "bun"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": false,
+    "paths": {
+      "@comical/contract": ["../../external/comical/packages/contract/src/index.ts"],
+      "@comical/core": ["../../external/comical/packages/core/src/index.ts"],
+      "@comical/downloads": ["../../external/comical/packages/downloads/src/index.ts"],
+      "@comical/host-bun": ["../../external/comical/packages/host-bun/src/index.ts"],
+      "@comical/library": ["../../external/comical/packages/library/src/index.ts"],
+      "@comical/registry": ["../../external/comical/packages/registry/src/index.ts"],
+      "@comical/runtime": ["../../external/comical/packages/runtime/src/index.ts"],
+      "@comical/host-server/bridge-manager": ["../../external/comical/packages/host-server/src/bridge-manager.ts"],
+      "@comical/host-server/blob-store": ["../../external/comical/packages/host-server/src/blob-store.ts"],
+      "@comical/host-server/downloads-store": ["../../external/comical/packages/host-server/src/downloads-store.ts"],
+      "@comical/host-server/library-store": ["../../external/comical/packages/host-server/src/library-store.ts"],
+      "@comical/host-server/page-fetcher": ["../../external/comical/packages/host-server/src/page-fetcher.ts"],
+      "@comical/host-server/router": ["../../external/comical/packages/host-server/src/router.ts"],
+      "@comical/host-server/settings-store": ["../../external/comical/packages/host-server/src/settings-store.ts"],
+      "@comical/host-server/tracker-manager": ["../../external/comical/packages/host-server/src/tracker-manager.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts"]
+}

@@ -79,6 +79,7 @@ import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } f
 import { closeSeriesPane } from '@/lib/series-pane';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
+import { useDimWindowControls, useWindowThemeColor, watchWindowTopEdge } from '@/lib/window-controls';
 import {
   holdZoomingSeries,
   onZoomSurfaceChange,
@@ -133,6 +134,12 @@ const CHROME_HIDE_MS = 3000;
 // CI-speed override: Maestro steps can outlast the auto-hide, and hidden chrome drops out of the
 // accessibility tree.
 const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
+/** A mouse this close to the top of the reader brings the toolbar up, the way a video player's
+ *  controls come up under the pointer. A little deeper than the toolbar itself, so the reveal starts
+ *  on the way into it. */
+const CHROME_HOVER_EDGE = 80;
+/** How long a toolbar brought up by hovering outlasts the pointer leaving it. */
+const CHROME_HOVER_HIDE_MS = 500;
 const WARM_BEHIND = 2;
 /**
  * The longest a NEW stitched window will wait for the previous chapter's page list before being
@@ -1231,6 +1238,7 @@ function SeriesReaderInstance({
   // The committed side of the reveal (declared up here — the stitching queries below gate on
   // it). The screen opens ON the details; see the reveal section further down.
   const [detailsActive, setDetailsActive] = useState(!readerFirst);
+  useWindowThemeColor(detailsActive ? null : READER_BACKDROP, 1);
   // True while a horizontal details gesture (back-swipe or webtoon reveal) is ACTIVE. The pans
   // ride the details scroller's own detector, simultaneous with it — that's the only way they
   // activate over a UIScrollView at all (see makeBackSwipePan) — but simultaneous means the list
@@ -1494,12 +1502,17 @@ function SeriesReaderInstance({
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
   }, [scheduleHide]);
+  // Set while the toolbar is up only because a mouse is near it; anything that shows the toolbar
+  // on purpose clears it, and with it the quick hide.
+  const hoverShownRef = useRef(false);
   const showChrome = useCallback(() => {
+    hoverShownRef.current = false;
     setChromeVisible(true);
     scheduleHide();
   }, [scheduleHide]);
   const holdChrome = useCallback(
     (hold: boolean) => {
+      hoverShownRef.current = false;
       chromeHeldRef.current = hold;
       if (hold) {
         if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -1510,7 +1523,9 @@ function SeriesReaderInstance({
     },
     [scheduleHide],
   );
+  useDimWindowControls(!chromeVisible && !detailsActive);
   const toggleChrome = useCallback(() => {
+    hoverShownRef.current = false;
     setChromeVisible((v) => {
       const nextVisible = !v;
       if (nextVisible) scheduleHide();
@@ -1518,6 +1533,49 @@ function SeriesReaderInstance({
       return nextVisible;
     });
   }, [scheduleHide]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || detailsActive || typeof document === 'undefined') return;
+    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+    const cancelLeave = () => {
+      if (leaveTimer) clearTimeout(leaveTimer);
+      leaveTimer = null;
+    };
+    const near = () => {
+      cancelLeave();
+      setChromeVisible((visible) => {
+        if (visible && !hoverShownRef.current) return visible;
+        hoverShownRef.current = true;
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+        return true;
+      });
+    };
+    const away = () => {
+      if (!hoverShownRef.current || leaveTimer) return;
+      leaveTimer = setTimeout(() => {
+        leaveTimer = null;
+        if (!hoverShownRef.current) return;
+        hoverShownRef.current = false;
+        setChromeVisible(false);
+      }, CHROME_HOVER_HIDE_MS);
+    };
+    const onEdge = (inside: boolean) => (inside ? near() : away());
+    const unwatch = watchWindowTopEdge(CHROME_HOVER_EDGE, onEdge);
+    if (unwatch) {
+      return () => {
+        cancelLeave();
+        unwatch();
+      };
+    }
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.buttons === 0) onEdge(e.clientY < CHROME_HOVER_EDGE);
+    };
+    window.addEventListener('pointermove', onMove, true);
+    return () => {
+      cancelLeave();
+      window.removeEventListener('pointermove', onMove, true);
+    };
+  }, [detailsActive]);
 
   // Pinch-zoom / an active scrub both suspend the reveal pan (a one-finger drag pans the zoomed
   // page; a scrub owns the finger).
@@ -3493,7 +3551,9 @@ function SeriesReaderInstance({
                         sourceUrl={pageAction?.sourceUrl}
                         onPress={showChrome}
                       />
-                      <SettingsControl />
+                      {/* Held up while the menu is open: it is anchored to the gear, and the
+                          toolbar fading out from under it would leave it pointing at nothing. */}
+                      <SettingsControl onOpenChange={holdChrome} />
                     </>
                   }
                 />
@@ -3832,6 +3892,7 @@ export default function SeriesReaderScreen() {
   const params = useLocalSearchParams<SeriesReaderParams & ReaderSequenceParams>();
   const router = useRouter();
   const { width } = useViewport();
+  const inPane = useSeriesPaneWidth() !== null;
   const [drills, setDrills] = useState<DrillEntry[]>([]);
 
   // ── Sequence mode (`seq=1`): the reader pages over a COLLECTION's saved pages ──
@@ -3926,7 +3987,9 @@ export default function SeriesReaderScreen() {
   // is exactly where it was left. Without this gate the layers beneath would SNAP sideways the
   // moment a series was drilled from search results, riding a value the search layer had parked
   // at 1 and the series would never move again.
-  const pushed = top >= 0 && drills[top].kind === 'search' ? layerParallax : null;
+  // Nor in the desktop pane, where the search arrives without a slide to drift against (see
+  // SearchLayer) — and the pane doesn't clip, so the page would be shoved out over the rail.
+  const pushed = !inPane && top >= 0 && drills[top].kind === 'search' ? layerParallax : null;
   return (
     <View style={styles.container}>
       <Animated.View
@@ -3986,13 +4049,17 @@ function SearchLayer({
 }) {
   const { width } = useViewport();
   const theme = useTheme();
-  const edgeX = useSharedValue(width);
+  // In the desktop pane a tag's search simply replaces the page, the way the pane's own navigation
+  // does: a push sliding in from the edge is a phone's idiom, and there it is a sideways ride
+  // across most of the window for every chip clicked.
+  const inPane = useSeriesPaneWidth() !== null;
+  const edgeX = useSharedValue(inPane ? 0 : width);
   const edgeCommitting = useSharedValue(false);
   // Set the moment the back-swipe activates: the results list stops scrolling for as long as this
   // layer is being dragged out. See the note in the pan's onStart.
   const [swipeLocked, setSwipeLocked] = useState(false);
   useEffect(() => {
-    edgeX.set(withSpring(0, IOS_CARD_SPRING));
+    if (!inPane) edgeX.set(withSpring(0, IOS_CARD_SPRING));
     // Mount-only entrance — edgeX is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -4034,8 +4101,11 @@ function SearchLayer({
     [edgeX, edgeCommitting, width, onPopLayer],
   );
   const closeLayer = useCallback(() => {
-    runOnUI(slideOut)(0);
-  }, [slideOut]);
+    if (!inPane) return runOnUI(slideOut)(0);
+    if (edgeCommitting.get()) return;
+    edgeCommitting.set(true);
+    onPopLayer();
+  }, [slideOut, inPane, edgeCommitting, onPopLayer]);
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -4785,6 +4855,8 @@ const ReaderPane = forwardRef<
         e.preventDefault();
         return;
       }
+      // Alt+Left is the desktop shell's Back, not a page turn.
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
       const isRight = e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D';
       const isLeft = e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A';
       if (!isRight && !isLeft) return;

@@ -3,7 +3,7 @@
 #
 # Two shapes, one per lane:
 #   - release (a v* tag): the tag itself, passed in as $VERSION_INPUT. Printed verbatim.
-#   - every rolling lane (ios-main, ios-pr, ios-devclient, android-main, …): `<base>.<N>`, where
+#   - every other build (nightly, ios-pr, ios-devclient, android-pr, …): `<base>.<N>`, where
 #     `base` is app.json's `expo.version` and N counts THIS release series' builds — the commits
 #     from the one that last moved `expo.version` up to HEAD, +1. So the first build after
 #     `release: 0.2.0` is `0.2.0.1`, the next `0.2.0.2`, and cutting 0.3.0 starts over at

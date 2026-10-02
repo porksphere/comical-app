@@ -11,15 +11,11 @@
 #     (collection-picker.tsx) also calls createCollection, then immediately files the series into it
 #     — the same path as manage-collections, reached from a series detail page instead.
 #
-# registries.add and manage-collections.add both open their form via useOverlay()'s plain `open()`, which
-# always renders as an OverlaySheet (bottom sheet, `Gesture.Pan().activeOffsetY(12)`) — on web this
-# is EMPIRICALLY CONFIRMED broken (not just theoretically at risk, see ../README.md's "Web-only
-# gesture quirk" section, which scoped series-trackers.yaml mobile-only on the same theory): a local
-# headless run showed the sheet dismiss itself the instant its TextInput is tapped, before any
-# typing happens. So this flow (all three sub-flows) is MOBILE-ONLY; ../web/registries-collections.yaml
-# covers only the third sub-flow (series.action.collections), whose route is DIFFERENT and confirmed safe
-# the same way: openCollectionPicker renders its own floating card (collection-picker.tsx's HostPopup, dismissed
-# by a plain Pressable backdrop or the Done button) — no pan gesture at all.
+# registries.add uses `openDialog`: it remains an OverlaySheet here and becomes a centered dialog on
+# desktop-width web. ../web/registries-collections.yaml now covers that path too. manage-collections.add
+# remains web-omitted because it is a plain OverlaySheet and Maestro-web's synthetic pointer movement
+# can trip the sheet's pan gesture (see ../README.md). series.action.collections is safe on web because
+# openCollectionPicker renders its own floating HostPopup with no pan gesture.
 appId: com.porksphere.comical
 ---
 - launchApp

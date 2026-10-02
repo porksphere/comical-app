@@ -42,6 +42,7 @@ import { useKeyboardLift } from '@/hooks/use-keyboard-lift';
 import { useCollections } from '@/hooks/use-collections';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
+import { windowModalLayer } from '@/lib/window-controls';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
@@ -187,7 +188,7 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
   }));
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="auto">
+    <View {...windowModalLayer} style={StyleSheet.absoluteFill} pointerEvents="auto">
       <AnimatedBlurView
         tint={scheme}
         animatedProps={backdropBlurProps}

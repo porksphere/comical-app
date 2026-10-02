@@ -68,6 +68,8 @@ node_modules/
 .expo/
 dist/
 web-build/
+# Desktop (Electron) spike build output: the bundled main process + the web export it serves.
+/apps/desktop/build/
 *.tsbuildinfo
 npm-debug.*
 

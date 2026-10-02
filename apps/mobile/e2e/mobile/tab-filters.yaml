@@ -1,0 +1,54 @@
+# History + Activity: the in-place filter (components/tab-filter.tsx), which narrows the rows
+# already on screen as you type — no submit. Library's own copy is covered by library.yaml.
+#
+# Selectors (TabFilterTrigger/TabFilterField derive them from one testID base):
+#   - <tab>.search-icon      the bar's trigger below the rail breakpoint (a phone)
+#   - <tab>.search.input     the field (SearchField puts `${testID}.input` on the TextInput)
+#   - <tab>.search-close     the back chevron that closes it
+#
+# Mock data (data/mock.ts): "The Silent Sea" leads History and "Crimson Harbor" leads Activity
+# (see history-activity.yaml). "zzqx" matches nothing in either, so "No matches" is
+# deterministic.
+appId: com.porksphere.comical
+---
+- launchApp
+
+# ── History ──────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "tab.history"
+- tapOn:
+    id: "history.search-icon"
+- extendedWaitUntil:
+    visible:
+      id: "history.search.input"
+    timeout: 10000
+- inputText: "silent"
+- assertVisible:
+    id: "history-row.the-silent-sea"
+- inputText: "zzqx"
+- assertVisible:
+    text: "No matches"
+- tapOn:
+    id: "history.search-close"
+- assertVisible:
+    id: "history-row.the-silent-sea"
+
+# ── Activity ─────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "tab.activity"
+- tapOn:
+    id: "activity.search-icon"
+- extendedWaitUntil:
+    visible:
+      id: "activity.search.input"
+    timeout: 10000
+- inputText: "crimson"
+- assertVisible:
+    id: "history-row.crimson-harbor"
+- inputText: "zzqx"
+- assertVisible:
+    text: "No matches"
+- tapOn:
+    id: "activity.search-close"
+- assertVisible:
+    id: "history-row.crimson-harbor"

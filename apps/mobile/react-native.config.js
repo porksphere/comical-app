@@ -9,8 +9,8 @@
 // It IS linked in two kinds of build, gated by env flags the CI sets job-wide
 // (so both `expo prebuild` and `pod install` see them):
 //   - the dev-client shell               (COMICAL_DEVCLIENT=1, build-ios-devclient.yml)
-//   - the rolling profiling builds        (COMICAL_PROFILING=1, build-ios.yml — every
-//     ios-main and ios-pr build is a Release binary carrying the profiler so we can
+//   - the profiling builds               (COMICAL_PROFILING=1, build-ios.yml — every
+//     nightly and ios-pr build is a Release binary carrying the profiler so we can
 //     capture a Hermes trace with the dev-mode instrumentation gone).
 // Excluded from the public tagged release (neither flag set) and from a plain
 // local `expo run:ios` (also fine — profile via a CI profiling build instead).

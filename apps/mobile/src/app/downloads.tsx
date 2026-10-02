@@ -52,6 +52,7 @@ import { queryClient } from '@/data/query-client';
 import { queryKeys } from '@/data/queries';
 import { hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { useSeriesSubPath } from '@/lib/series-nav';
@@ -369,7 +370,7 @@ export default function DownloadsScreen() {
         // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
         // tracking manual scrolling accurately without spamming.
         scrollEventThrottle={16}
-        style={styles.list}
+        style={[styles.list, scrollbarInset(paddingTop)]}
         data={rows}
         keyExtractor={(r) => r.key}
         // Recycle row views instead of mounting/unmounting a fresh gesture+reanimated swipe stack for

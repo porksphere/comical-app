@@ -47,3 +47,7 @@ export function useSidebarCollapsed(): boolean {
 export function toggleSidebarCollapsed(): void {
   sidebarCollapsed$.set(!sidebarCollapsed$.peek());
 }
+
+export function expandSidebar(): void {
+  sidebarCollapsed$.set(false);
+}

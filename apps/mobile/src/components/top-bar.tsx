@@ -11,6 +11,7 @@ import { useInSettingsPane } from '@/lib/settings-pane';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
+import { useWindowControlsClearance } from '@/lib/window-controls';
 
 /**
  * Static top bar (back button + centered title) shared by every pushed detail
@@ -38,6 +39,7 @@ export function TopBar({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const barHeight = useTopBarHeight();
+  const clearance = useWindowControlsClearance();
   const inPane = useInSettingsPane();
   // Inside the settings modal the pane has no bar of its own: the modal supplies the header, and a
   // back button here would point at a stack this pane isn't on.
@@ -66,7 +68,7 @@ export function TopBar({
       </ThemedText>
       {/* Trailing action (e.g. the "+" that adds a registry / installs a bridge). Absolute, like the
           back button, so it can't push the centered title off-center. */}
-      {right && <View style={[styles.rightAction, { height: barHeight }]}>{right}</View>}
+      {right && <View style={[styles.rightAction, { height: barHeight, right: Spacing.three + clearance }]}>{right}</View>}
     </BarSurface>
   );
 }

@@ -138,6 +138,10 @@ export function GroupedGrid<T>({
         estimatedItemSize={rowHeight}
         header={header}
         paddingTop={paddingTop}
+        // Below the pinned heading too, which covers the track just as the bar does.
+        scrollbarInsetTop={
+          stickyHeaderTop === undefined ? paddingTop : Math.max(paddingTop, stickyHeaderTop + RowHeight)
+        }
         paddingBottom={paddingBottom}
         sidePad={sidePad}
         sharedValues={sharedValues}

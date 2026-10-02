@@ -29,6 +29,7 @@ on:
   pull_request:
     paths:
       - 'apps/mobile/**'
+      - 'apps/desktop/**'
       - '.github/workflows/checks.yml'
       # A submodule bump moves the `@comical/*` types the app compiles against, so it can break
       # typecheck without a single file under apps/mobile changing.
@@ -39,6 +40,7 @@ on:
       - '**'
     paths:
       - 'apps/mobile/**'
+      - 'apps/desktop/**'
       - '.github/workflows/checks.yml'
       - 'external/comical'
       - 'bun.lock'
@@ -64,6 +66,10 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          # apps/desktop pulls in `electron`, whose postinstall fetches a ~110 MB binary. Nothing
+          # in this workflow launches it — the `.d.ts` that `tsc` needs ships in the npm package.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
 
       - name: Enforce testIDs on interactive elements
         working-directory: apps/mobile
@@ -108,6 +114,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          # See the note in the `testids` job — no Electron binary is launched here either.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
 
       # The submodule's own deps (hono/zod, which `@comical/*` import). Not `--frozen-lockfile`: that
       # repo commits no lockfile. No `build:native` either — that generates the Android harness
@@ -118,6 +127,13 @@ jobs:
 
       - name: Typecheck
         working-directory: apps/mobile
+        run: bun run typecheck
+
+      # The desktop spike (apps/desktop) compiles against the same submodule types plus electron's,
+      # so it's gated on the same install. `always()` so a mobile type error doesn't hide it.
+      - name: Typecheck desktop
+        if: ${{ always() }}
+        working-directory: apps/desktop
         run: bun run typecheck
 
       # `always()` so a type error doesn't hide the lint result — one push, both answers.

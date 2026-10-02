@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Prints the commit subjects a ROLLING channel has picked up since it last published — the notes
-# for ios-main, android-latest and any other lane whose "version" is just whatever its branch last
-# built. Tagged lanes have a CHANGELOG section to quote instead; see changelog-section.sh.
+# for web-pages and any other lane whose "version" is just whatever its branch last built. Tagged lanes have a CHANGELOG section to quote instead; see changelog-section.sh.
 #
 # The previous build's commit comes from a `built-sha: <40 hex>` marker in the channel Release's
 # body, which `stamp-line` below emits for the publisher to append. That marker is the whole state:

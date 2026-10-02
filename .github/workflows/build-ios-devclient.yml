@@ -28,7 +28,7 @@ name: Build iOS dev-client (Windows iterative dev)
 # Dispatch from `main` when you can: the cache SAVE steps are gated on the default branch, so a run
 # from a feature branch reads the cache but leaves nothing behind for the next one.
 #
-# Kept separate from build-ios.yml on purpose: the ios-main / per-PR ios-pr builds are profiling
+# Kept separate from build-ios.yml on purpose: the nightly / per-PR ios-pr builds are profiling
 # Release and the tagged ios-release build is clean Release — this is the only thing that builds
 # Debug.
 
@@ -78,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           # The reusable build always names the artifact comical-unsigned.ipa;
-          # rename so the dev-client asset URL is unambiguous alongside ios-main.
+          # rename so the dev-client asset URL is unambiguous alongside the other IPAs.
           mv "$RUNNER_TEMP/ipa/comical-unsigned.ipa" "$RUNNER_TEMP/ipa/comical-devclient.ipa"
           IPA="$RUNNER_TEMP/ipa/comical-devclient.ipa"
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-devclient"
