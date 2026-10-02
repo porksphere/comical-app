@@ -8,6 +8,7 @@ const settings = ipcRenderer.sendSync("shell-settings") as {
   runInTray: boolean;
   openAtLogin: boolean;
   loginItems: boolean;
+  updates: boolean;
 };
 
 contextBridge.exposeInMainWorld("comicalDesktop", {
@@ -17,6 +18,21 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
   openAtLogin: settings.openAtLogin,
   /** False in a dev run, which has nothing a login launch could start. */
   loginItems: settings.loginItems,
+  /** This build installs its own updates. False in dev, on a PR build and on a .deb. */
+  updates: settings.updates,
+  /** Called with the version once an update has downloaded — at once, if one already has. Returns
+   *  the unsubscribe. */
+  onUpdateReady: (onReady: (version: string) => void) => {
+    const listener = (_e: IpcRendererEvent, version: string) => onReady(version);
+    ipcRenderer.on("update-ready", listener);
+    const ready = ipcRenderer.sendSync("update-ready?") as string | null;
+    if (ready) onReady(ready);
+    return () => {
+      ipcRenderer.off("update-ready", listener);
+    };
+  },
+  /** Quit, install the downloaded update and relaunch. */
+  installUpdate: () => ipcRenderer.send("update-install"),
   setRunInTray: (on: boolean) => ipcRenderer.send("run-in-tray", on === true),
   setOpenAtLogin: (on: boolean) => ipcRenderer.send("open-at-login", on === true),
   /** Fade the caption buttons' glyphs back, for a screen that has hidden its own chrome. */

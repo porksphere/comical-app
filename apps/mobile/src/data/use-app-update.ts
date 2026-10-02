@@ -13,7 +13,8 @@
  *  - android-release / desktop-release: compare `version.json`'s `commit` against BUILD_COMMIT, on
  *    the channel's Release. Commit equality, not version ordering: ANY mismatch means "there's a
  *    newer build", since the URL is always rebuilt from the newest tag. Desktop's Update button
- *    opens the Release page rather than one installer, since the user picks theirs by OS.
+ *    opens the Release page rather than one installer, since the user picks theirs by OS — unless
+ *    the shell downloaded the update itself, when it restarts into it (`lib/desktop-shell.ts`).
  *  - web-pages: same commit-equality check, against a `version.json` written into `dist/` by
  *    deploy-web.yml, fetched with `cache: 'no-store'` so a stale CDN/browser cache can't mask it.
  *

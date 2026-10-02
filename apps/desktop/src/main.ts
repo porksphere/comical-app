@@ -17,6 +17,7 @@ import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
 import { canOpenAtLogin, launchedAtLogin, setOpenAtLogin } from "./login-item.ts";
 import { shellSettings, updateShellSettings } from "./shell-settings.ts";
 import { setTray, trayNotice } from "./tray.ts";
+import { startAutoUpdate, updatesSupported } from "./updater.ts";
 
 /** The web export, which `scripts/build-web.ts` writes to `build/web` beside the bundled main.
  *
@@ -311,7 +312,7 @@ app.on("second-instance", showWindow);
 // The renderer reads these synchronously from its preload, before the page's first render.
 ipcMain.on("shell-settings", (e) => {
   const { runInTray, openAtLogin } = shellSettings();
-  e.returnValue = { runInTray, openAtLogin, loginItems: canOpenAtLogin() };
+  e.returnValue = { runInTray, openAtLogin, loginItems: canOpenAtLogin(), updates: updatesSupported };
 });
 ipcMain.on("run-in-tray", (_e, on: unknown) => {
   updateShellSettings({ runInTray: on === true });
@@ -335,6 +336,7 @@ if (primary) {
       if (settings.openAtLogin) {
         setOpenAtLogin(true).catch((err: unknown) => console.error("[login-item] failed:", err));
       }
+      startAutoUpdate();
       return boot();
     })
     .catch((err: unknown) => {

@@ -1,7 +1,7 @@
 # Comical desktop — Electron spike
 
 The web UI in an Electron window, with the Comical host running in-process. A spike, not a shipping
-app: unsigned, no auto-update, no desktop chrome.
+app: unsigned, and short of most desktop chrome.
 
 ```bash
 bun run setup       # once, from the repo root
@@ -63,21 +63,37 @@ bundles its own Chromium regardless — Obsidian's own Flatpak is community-main
 require FUSE to run`. Either `apt install libfuse2` or run it with `--appimage-extract-and-run`. The
 .deb has no such problem, which is half the reason it's there.
 
+## Updates
+
+A release build updates itself from the rolling `desktop-release` Release (`src/updater.ts`): it
+checks every four hours, downloads in the background, and Settings → About offers **Restart** once
+the new version is ready; quitting installs it too. That's the Windows installer and the AppImage.
+A `.deb` belongs to apt, so it gets the same "update available" notice with a link to the download
+page instead — as does any build where the updater can't run.
+
+The feed is electron-builder's own `latest.yml` / `latest-linux.yml`, which it writes beside the
+installers because `publish` names a `generic` provider; CI still builds with `--publish never` and
+uploads them itself (`.github/scripts/publish-desktop-channel.sh`). Two things about it are
+load-bearing:
+
+- **Only `desktop-release` builds follow it.** The channel is baked into the main bundle
+  (`COMICAL_BUILD_CHANNEL`, `scripts/build-main.ts`). A PR build is versioned `X.Y.Z-N`, which
+  semver ranks *below* `X.Y.Z`, so left to it a PR build would replace itself with the release.
+- **Differential downloads are off.** The installers keep fixed names, so the old blockmap the
+  updater would diff against is always the new one.
+
 ## Not done
 
 - **Signing / notarization.** None, anywhere. See above.
-- **Auto-update.** A release build is told about a newer one and links to its download page
-  (`use-app-update.ts`), but installs nothing itself. `publish: null` in `electron-builder.yml`;
-  `electron-updater` needs a `github` provider and a fix for the version ordering noted in
-  `scripts/stamp-version.ts`.
 - **The open port.** Loopback plus a per-launch bearer token Electron injects into the renderer's
   requests keeps other local processes out, but the port exists. The fix is IPC: `ipcMain.handle` →
   `host.fetch(path, init)` and a `startup.electron.ts` calling the existing `setTransport()` — the
   shape `@comical/host-rn` already uses on device, and the only item here touching `apps/mobile`.
 - **Desktop chrome.** No app menu, shortcuts, window-state persistence, or deep links. (The tray is
   opt-in, from Settings → General: closing the window then leaves the app running behind it.)
-- **Desktop-shaped UI.** It's the responsive *web* layout. Usable at 1280×860, not designed for it.
 - **macOS in CI.** `build-desktop-reusable.yml` matrixes Windows and Linux only.
 - **Publishing has never run.** Installers are published only by `release.yml`, to the `vX.Y.Z`
   Release and the rolling `desktop-release` one (`publish-desktop-channel.sh`); until a release is
-  cut, that path — and the README's download links — is verified only by reading it.
+  cut, that path — and the README's download links — is verified only by reading it. The updater
+  itself has run once, locally: a packaged 0.0.0 found, downloaded and silently installed a 0.0.1
+  from a feed served off disk.

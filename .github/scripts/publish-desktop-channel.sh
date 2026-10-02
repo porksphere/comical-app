@@ -6,7 +6,9 @@
 #
 # Same shape as publish-android-channel.sh — delete-and-recreate so the asset URLs stay
 # byte-identical, plus a version.json carrying the commit and the CHANGELOG section, which a
-# desktop-release build's in-app update check (apps/mobile/src/data/use-app-update.ts) reads.
+# desktop-release build's in-app update check (apps/mobile/src/data/use-app-update.ts) reads. The
+# electron-builder feeds (latest.yml, latest-linux.yml) ride along: they are what the app's own
+# updater (apps/desktop/src/updater.ts) downloads the new installer by.
 #
 # Usage: publish-desktop-channel.sh <dir> <version> <commit>
 #   <dir> holds the installers under their fixed names (collect-desktop-installers.sh).
@@ -24,7 +26,8 @@ BASE="https://github.com/${REPO}/releases/download/${TAG}"
 INSTALLER="$DIR/comical-desktop-setup.exe"
 APPIMAGE="$DIR/comical-desktop-x86_64.AppImage"
 DEB="$DIR/comical-desktop-amd64.deb"
-for f in "$INSTALLER" "$APPIMAGE" "$DEB"; do
+FEEDS=("$DIR/latest.yml" "$DIR/latest-linux.yml")
+for f in "$INSTALLER" "$APPIMAGE" "$DEB" "${FEEDS[@]}"; do
   [ -f "$f" ] || { echo "::error::$f not found — run collect-desktop-installers.sh first"; exit 1; }
 done
 
@@ -46,7 +49,7 @@ ${NOTES}
 
 gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag || true
 gh release create "$TAG" \
-  "$INSTALLER" "$APPIMAGE" "$DEB" "$WORK/version.json" \
+  "$INSTALLER" "$APPIMAGE" "$DEB" "${FEEDS[@]}" "$WORK/version.json" \
   --repo "$REPO" \
   --target "$FULL_COMMIT" \
   --title "Comical Desktop — release channel — $VERSION" \

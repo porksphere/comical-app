@@ -22,10 +22,14 @@ productName: Comical
 executableName: comical
 copyright: Comical
 
-# No update feed yet — without this electron-builder tries to compute release-channel names for a
-# publish target that doesn't exist and dies with "Cannot read properties of null (reading
-# 'channel')". Auto-update (a `github` provider + electron-updater) is Milestone 4.
-publish: null
+# The update feed electron-updater reads (src/updater.ts). CI builds with `--publish never` and
+# publishes itself (publish-desktop-channel.sh); this is still what makes electron-builder write
+# latest.yml / latest-linux.yml beside the installers, and app-update.yml into the app. `generic`,
+# not `github`: that provider follows GitHub's "latest" release, which here is a vX.Y.Z carrying no
+# feed files, while desktop-release is a fixed URL that always has them.
+publish:
+  provider: generic
+  url: https://github.com/porksphere/comical-app/releases/download/desktop-release
 
 directories:
   output: dist
@@ -51,9 +55,11 @@ win:
   # someone actually wants a no-install copy.
   target:
     - nsis
-  artifactName: comical-desktop-${version}-${arch}.${ext}
 
+# The fixed names every download link uses. They are set here rather than renamed afterwards
+# because latest.yml records the file name it was written for, and the updater fetches that name.
 nsis:
+  artifactName: comical-desktop-setup.${ext}
   # A real installer UI rather than electron-builder's default one-click: users pick the install
   # dir, and it's per-user so no UAC elevation prompt on top of the SmartScreen one.
   oneClick: false
@@ -74,7 +80,12 @@ linux:
   # Lets desktop environments associate the running window with the .desktop entry
   # (`desktopName` itself lives in package.json — electron-builder reads it from there).
   syncDesktopName: true
-  artifactName: comical-desktop-${version}-${arch}.${ext}
+
+appImage:
+  artifactName: comical-desktop-x86_64.${ext}
+
+deb:
+  artifactName: comical-desktop-amd64.${ext}
 
 mac:
   target:

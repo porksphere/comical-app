@@ -11,8 +11,9 @@
  * So the fourth component is rewritten as a semver prerelease: `0.2.0.40` → `0.2.0-40`. Same two
  * facts, one character different, and every downstream consumer (installer filename, Windows file
  * version, the release notes) then agrees on one string. Ordering does invert versus the mobile
- * lanes — semver ranks `0.2.0-40` *below* `0.2.0` — which is harmless while there's no update feed
- * (`publish: null` in electron-builder.yml); revisit it alongside electron-updater in Milestone 4.
+ * lanes — semver ranks `0.2.0-40` *below* `0.2.0` — which is harmless only because no `X.Y.Z-N` build
+ * ever follows the update feed: `src/updater.ts` is gated to `desktop-release`, whose builds are
+ * always a plain tag.
  *
  *   bun run scripts/stamp-version.ts            # compute from git history (needs full history)
  *   VERSION_INPUT=1.2.3 bun run scripts/…       # or pass one in (what CI does)

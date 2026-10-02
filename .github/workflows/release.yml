@@ -202,7 +202,7 @@ jobs:
           merge-multiple: true
           path: ${{ runner.temp }}/desktop
 
-      - name: Give the desktop installers their fixed names
+      - name: Check the desktop installers and update feeds are all there
         run: bash .github/scripts/collect-desktop-installers.sh "$RUNNER_TEMP/desktop"
 
       # `--target` is what makes the dispatch path work: `gh release create` creates the tag itself

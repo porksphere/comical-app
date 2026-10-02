@@ -285,8 +285,10 @@ fixed names (`.github/scripts/collect-desktop-installers.sh`), then refreshes th
 **`desktop-release`** Release with the same three plus a `version.json`
 (`.github/scripts/publish-desktop-channel.sh`). Its stable URLs are what the README links. PR builds
 stop at the run artifacts. A `desktop-release` build checks that `version.json` the way Android
-does (commit equality, in `src/data/use-app-update.ts`) and its Update button opens the Release page
-in the system browser. It doesn't update itself: there is no `electron-updater` yet.
+does (commit equality, in `src/data/use-app-update.ts`) for the notice and the notes. The Windows
+installer and the AppImage also update themselves, through electron-updater and the `latest.yml` /
+`latest-linux.yml` feeds published beside them; a `.deb` gets a link to the Release page instead.
+See `apps/desktop/README.md` → "Updates".
 
 ### Dev-client builds — iterate on a device from any OS (incl. Windows)
 

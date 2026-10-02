@@ -139,7 +139,9 @@ jobs:
           - os: windows-latest
             platform: win
             artifact: comical-desktop-windows
-            glob: apps/desktop/dist/*.exe
+            glob: |
+              apps/desktop/dist/*.exe
+              apps/desktop/dist/latest.yml
             # windows-latest has an interactive desktop session, so Electron opens a real window
             # with no virtual display and the SUID sandbox is not in play.
             launch: bun run launch-check
@@ -149,6 +151,7 @@ jobs:
             glob: |
               apps/desktop/dist/*.AppImage
               apps/desktop/dist/*.deb
+              apps/desktop/dist/latest-linux.yml
             # Headless runner, so a virtual display. --no-sandbox because ubuntu-24.04 restricts
             # unprivileged user namespaces (AppArmor), which Electron's sandbox needs.
             launch: xvfb-run -a bun run launch-check
@@ -220,6 +223,8 @@ jobs:
       - name: Bundle the main process
         run: bun run build:main
         working-directory: apps/desktop
+        env:
+          COMICAL_BUILD_CHANNEL: ${{ inputs.channel }}
 
       # Proves the whole @comical/* stack boots on Windows: bridges discovered, evaluated in
       # node:vm, answering through the router, plus the loopback's auth and traversal guards.

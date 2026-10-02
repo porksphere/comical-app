@@ -11,6 +11,10 @@ type DesktopShell = {
   runInTray: boolean;
   openAtLogin: boolean;
   loginItems: boolean;
+  /** Absent before the shell could install its own updates. */
+  updates?: boolean;
+  onUpdateReady?(onReady: (version: string) => void): () => void;
+  installUpdate?(): void;
   setRunInTray(on: boolean): void;
   setOpenAtLogin(on: boolean): void;
   dimCaptionButtons(dim: boolean): void;
@@ -27,7 +31,24 @@ export function desktopShell(): DesktopShell | undefined {
 const shell$ = observable({
   runInTray: desktopShell()?.runInTray ?? false,
   openAtLogin: desktopShell()?.openAtLogin ?? false,
+  updateReady: null as string | null,
 });
+desktopShell()?.onUpdateReady?.((version) => shell$.updateReady.set(version));
+
+/** Whether this build downloads and installs its own updates (a release build's Windows installer
+ *  or AppImage). Everywhere else an update is a link to the download page. */
+export function desktopSelfUpdates(): boolean {
+  return desktopShell()?.updates === true;
+}
+
+/** The version a self-updating build has downloaded and will install on restart, once it has. */
+export function useDesktopUpdateReady(): string | null {
+  return use$(shell$.updateReady);
+}
+
+export function installDesktopUpdate(): void {
+  desktopShell()?.installUpdate?.();
+}
 
 export function useRunInTray(): [boolean, (on: boolean) => void] {
   return [use$(shell$.runInTray), setRunInTray];

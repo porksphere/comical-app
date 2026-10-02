@@ -24,6 +24,7 @@
     "@types/node": "^22.10.0",
     "electron": "40.10.6",
     "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.9",
     "typescript": "~6.0.3"
   },
   "dependencies": {
