@@ -121,9 +121,13 @@ export async function startLoopbackServer(opts: ServeOptions): Promise<LoopbackS
 
 /** A bind failure has to reject here: left as an unhandled 'error' event it becomes Electron's modal
  *  "JavaScript error in the main process" dialog, and the process hangs on it instead of exiting. */
-function listen(handler: (req: Request) => Promise<Response>, port: number): Promise<Server> {
+export function listen(
+  handler: (req: Request) => Promise<Response>,
+  port: number,
+  hostname = "127.0.0.1",
+): Promise<Server> {
   return new Promise((resolve, reject) => {
-    const server = serve({ fetch: handler, hostname: "127.0.0.1", port }) as unknown as Server;
+    const server = serve({ fetch: handler, hostname, port }) as unknown as Server;
     if (server.listening) return resolve(server);
     server.once("error", reject);
     server.once("listening", () => {

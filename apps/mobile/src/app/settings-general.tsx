@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { OverlayHeading, useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
@@ -24,7 +24,16 @@ import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { setSyncEnabled, syncLibraryNow, useSyncStatus, type SyncStatus } from '@/data/sync';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
-import { desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
+import {
+  desktopShell,
+  desktopSyncsDevices,
+  refreshNetworkSyncAddress,
+  trayName,
+  useNetworkSync,
+  useNetworkSyncAddress,
+  useOpenAtLogin,
+  useRunInTray,
+} from '@/lib/desktop-shell';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -81,6 +90,9 @@ export default function GeneralSettingsScreen() {
   const lightCards = useLightCards();
   const [runInTray, setRunInTray] = useRunInTray();
   const [openAtLogin, setOpenAtLogin] = useOpenAtLogin();
+  const [networkSync, setNetworkSync] = useNetworkSync();
+  const networkSyncAddress = useNetworkSyncAddress();
+  useEffect(refreshNetworkSyncAddress, []);
   // Gated on hydration: the static web render has no shell, so the row would otherwise appear only
   // after it and mismatch.
   const desktop = useHydrated() && !!desktopShell();
@@ -201,6 +213,24 @@ export default function GeneralSettingsScreen() {
               }
               value={openAtLogin}
               onChange={setOpenAtLogin}
+            />
+          )}
+          {/* The other end of "Sync library" above: the desktop's library is its own server's, so it
+              is never the one syncing — it is what a phone syncs WITH. */}
+          {desktop && desktopSyncsDevices() && (
+            <SettingsToggleRow
+              label="Sync with your phone"
+              description="Let phones on your network keep their library in step with this computer."
+              value={networkSync}
+              onChange={setNetworkSync}
+            />
+          )}
+          {desktop && networkSync && (
+            <SettingsRow
+              testID="settings.general.sync-address"
+              label="Sync server for your phone"
+              description={networkSyncAddress ?? 'Not connected to a network'}
+              descriptionSelectable={!!networkSyncAddress}
             />
           )}
           {/* The download policies gate the DEVICE engine — meaningless when a remote server owns

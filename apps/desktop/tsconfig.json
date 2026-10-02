@@ -25,7 +25,8 @@
       "@comical/host-server/library-store": ["../../external/comical/packages/host-server/src/library-store.ts"],
       "@comical/host-server/page-fetcher": ["../../external/comical/packages/host-server/src/page-fetcher.ts"],
       "@comical/host-server/router": ["../../external/comical/packages/host-server/src/router.ts"],
-      "@comical/host-server/settings-store": ["../../external/comical/packages/host-server/src/settings-store.ts"],
+      "@comical/host-server/sync-host": ["../../external/comical/packages/host-server/src/sync-host.ts"],
+      "@comical/host-server/settings-store":["../../external/comical/packages/host-server/src/settings-store.ts"],
       "@comical/host-server/tracker-manager": ["../../external/comical/packages/host-server/src/tracker-manager.ts"]
     }
   },

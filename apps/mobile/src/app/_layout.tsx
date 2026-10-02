@@ -42,6 +42,7 @@ import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu
 import { ToastHost } from '@/components/toast';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
 import { installDesktopChapterCheck } from '@/data/activity/desktop-check';
+import { installDesktopSyncRefresh } from '@/data/sync/desktop';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { installAppUpdateAutoCheck } from '@/data/use-app-update';
 import { useDesktopShellCommands } from '@/lib/desktop-commands';
@@ -60,6 +61,7 @@ startEmbeddedRuntime();
 // New-chapter auto-check on launch + foreground return (all platforms; startup.ts is native-only).
 installActivityAutoCheck();
 installDesktopChapterCheck();
+installDesktopSyncRefresh();
 
 // App-update auto-check on launch + foreground return — see data/use-app-update.ts. No-ops on
 // internal/dev build channels.

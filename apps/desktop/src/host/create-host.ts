@@ -31,6 +31,7 @@ import { FileLibraryStore } from "@comical/host-server/library-store";
 import { createServerPageFetcher, createServerPageResolver } from "@comical/host-server/page-fetcher";
 import { createRouter, type RouterOptions } from "@comical/host-server/router";
 import { SettingsStore } from "@comical/host-server/settings-store";
+import { createSyncHost } from "@comical/host-server/sync-host";
 import { TrackerManager } from "@comical/host-server/tracker-manager";
 
 export interface DesktopHostOptions {
@@ -43,6 +44,8 @@ export interface DesktopHostOptions {
   /** Base URL handed to bridges as `hostUrl` and used as the OAuth redirect target. Set once the
    *  loopback listener has a port. */
   baseUrl: string;
+  /** Another device's changes have just landed in this library or its bridges. */
+  onSynced?: () => void;
 }
 
 export interface DesktopHost {
@@ -90,7 +93,23 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
   // Desktop gets both optional modules unconditionally — it's a single-user machine with a disk,
   // which is exactly the case they were written for.
   const libDir = join(dataDir, "library");
-  const lib = new Library(new FileLibraryStore(libDir));
+  // Always a sync hub, as `createServer({ sync: true })` is: the routes cost nothing while only the
+  // loopback can reach them, and `sync-listener.ts` is what lets a phone in.
+  const sync = createSyncHost({
+    dir: join(dataDir, "sync"),
+    store: new FileLibraryStore(libDir),
+    registry,
+    lists: {
+      registries: () => manifest.allRegistries(),
+      installed: () => manifest.allInstalled(),
+      installedTrackers: () => manifest.allInstalledTrackers(),
+    },
+    onApplied: opts.onSynced,
+  });
+  routerOpts.sync = sync.backend;
+  // The router's installs are recorded; the managers keep the plain one, they only read.
+  routerOpts.registry = sync.registry;
+  const lib = new Library(sync.store);
   routerOpts.library = lib;
   routerOpts.runtime = new ComicalRuntime({
     bridges: manager,

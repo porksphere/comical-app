@@ -9,6 +9,7 @@ const settings = ipcRenderer.sendSync("shell-settings") as {
   openAtLogin: boolean;
   loginItems: boolean;
   updates: boolean;
+  networkSync: boolean;
 };
 
 contextBridge.exposeInMainWorld("comicalDesktop", {
@@ -51,6 +52,20 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
   notify: (title: string, body: string, route?: string) => ipcRenderer.send("notify", title, body, route ?? null),
   setRunInTray: (on: boolean) => ipcRenderer.send("run-in-tray", on === true),
   setOpenAtLogin: (on: boolean) => ipcRenderer.send("open-at-login", on === true),
+  /** Whether phones on the network may sync with this library, as saved when the page loaded. */
+  networkSync: settings.networkSync,
+  /** Resolves to the address a phone is given as its sync server — null when turned off, or while
+   *  this computer is on no network. */
+  setNetworkSync: (on: boolean) => ipcRenderer.invoke("network-sync", on === true) as Promise<string | null>,
+  networkSyncAddress: () => ipcRenderer.invoke("network-sync") as Promise<string | null>,
+  /** Called when another device's changes have landed in this library. Returns the unsubscribe. */
+  onSynced: (onSynced: () => void) => {
+    const listener = () => onSynced();
+    ipcRenderer.on("synced", listener);
+    return () => {
+      ipcRenderer.off("synced", listener);
+    };
+  },
   /** Fade the caption buttons' glyphs back, for a screen that has hidden its own chrome. */
   dimCaptionButtons: (dim: boolean) => ipcRenderer.send("caption-dim", dim === true),
   /** Reports the pointer entering and leaving the top `edge` px of the window — over a drag
