@@ -715,11 +715,10 @@ one that decides whether it can be trusted.
       survives the first sync, a bridge installed on the phone appears on the hub, and one
       uninstalled on the hub leaves the phone. The native file pickers behind export/restore have
       not run on a device either.
-- [ ] **Rotate the desktop sync key.** It is made once and kept, and the only way to replace it is
-      deleting `syncKey` from `desktop-settings.json` (`apps/desktop/README.md`). It guards a push
-      that can install a bridge, so this is the one to do before anyone else uses sync.
-- [ ] **Pairing UI.** The phone's *Sync server* is typed by hand, key and all. A QR code on the
-      desktop's "Sync server for your phone" row would replace that.
+- [x] **Rotate the desktop sync key.** *New key* on the desktop's pairing sheet (2026-10-02).
+- [x] **Pairing UI.** The desktop's "Sync server for your phone" row opens a QR code; the phone's
+      *Sync server* → *Scan a code* reads it (`app/scan-sync-server.tsx`, expo-camera — a new
+      native module, so it needs a fresh build). Not yet run on a device.
 - [ ] **Recover from a sequence gap.** A hub that refuses a push with `seq-gap` or `seq-conflict`
       fails that round and every round after it; the phone only shows "Couldn't sync". Turning
       *Sync library* off and on pairs from scratch, and nothing offers to.

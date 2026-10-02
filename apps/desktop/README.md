@@ -87,14 +87,17 @@ require FUSE to run`. Either `apt install libfuse2` or run it with `--appimage-e
 The desktop app is the hub a phone syncs with — its library is the hub's library, so there is
 nothing for it to sync *to*. Settings → General → **Sync with your phone** opens a second listener
 on the local network and shows one address, `http://<this computer>:3130/<key>`; that address is
-what goes in the phone's *Sync server*. Off by default, and off again closes the port.
+what goes in the phone's *Sync server*. Clicking the address row shows it as a QR code, which the
+phone's *Sync server* → **Scan a code** reads (typing it works too). Off by default, and off again
+closes the port.
 
 - **The key opens sync and nothing else.** Only `/sync/*` and `/health` are forwarded
   (`src/host/sync-listener.ts`); the rest of the API stays on the loopback listener. It still has to
   be a secret: a sync push can add a registry and install a bridge, which is code this machine runs.
 - **It is plain HTTP.** The key crosses the local network in the clear, so this is for a network
-  you trust. It is made once and kept, so a paired phone survives a restart; there is no way to
-  rotate it yet short of deleting `syncKey` from `desktop-settings.json`.
+  you trust. It is made once and kept, so a paired phone survives a restart. **New key** on the
+  QR sheet replaces it (the old listener closes and a fresh one opens on the same port); every
+  phone paired with the old key is cut off until it scans the new code.
 - **Windows asks about the firewall** the first time the listener binds. Refuse and the phone
   can't connect, with nothing in the app to say why.
 - **The port is a preference.** `COMICAL_SYNC_PORT` overrides 3130, and a port that can't be bound

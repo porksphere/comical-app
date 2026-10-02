@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
 import { OverlayHeading, useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
+import { QrCode } from '@/components/qr-code';
 import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
@@ -25,19 +26,20 @@ import {
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
 import { kickDownloads } from '@/data/downloads/engine';
-import { installDownloadProgress } from '@/data/downloads/events';
-import { hydrateDownloadIndex } from '@/data/downloads/index-cache';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } from '@/data/embedded';
 import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
+import { switchServer } from '@/data/switch-server';
 import { setSyncEnabled, syncLibraryNow, useSyncStatus, type SyncStatus } from '@/data/sync';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import {
+  desktopRekeysSync,
   desktopShell,
   desktopSyncsDevices,
+  newNetworkSyncKey,
   refreshNetworkSyncAddress,
   trayName,
   useNetworkSync,
@@ -46,6 +48,7 @@ import {
   useRunInTray,
 } from '@/lib/desktop-shell';
 import { friendlyError } from '@/lib/friendly-error';
+import { useRouter } from '@/lib/nav';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -98,7 +101,8 @@ export default function GeneralSettingsScreen() {
   const [holdAction, setHoldAction] = useBrowseHoldAction();
   const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
-  const [apiBase, setApiBaseOverride] = useApiBase();
+  const [apiBase] = useApiBase();
+  const router = useRouter();
   const lightCards = useLightCards();
   const [runInTray, setRunInTray] = useRunInTray();
   const [openAtLogin, setOpenAtLogin] = useOpenAtLogin();
@@ -122,16 +126,6 @@ export default function GeneralSettingsScreen() {
   const toggleOnDevice = (enabled: boolean) => {
     setOnDevice(enabled);
     swapDataSourceMode(enabled); // transport swap + the cache/downloads flushes (see apply-mode.ts)
-  };
-
-  const saveApiBase = (url: string | null) => {
-    setApiBaseOverride(url);
-    queryClient.clear(); // a different server's cached data can't be trusted (mirrors PERSIST_BUSTER)
-    bumpDataEpoch(); // refetch useDataSource-backed screens against the new server
-    installDownloadProgress(); // the SSE stream targets the new server
-    void hydrateDownloadIndex(); // remote /file URLs embed the server base — rebuild them
-    // A different hub has never seen this device's changes, so pair with it from scratch.
-    if (embeddedActive && sync.enabled) void setSyncEnabled(false).then(() => setSyncEnabled(true));
   };
 
   return (
@@ -199,10 +193,21 @@ export default function GeneralSettingsScreen() {
           )}
           {(!embeddedActive || sync.enabled) && (
             <SettingsRow
+              testID="settings.general.remote-server"
               label={embeddedActive ? 'Sync server' : 'Remote server'}
               description={apiBase}
               descriptionSelectable
-              onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
+              onPress={() =>
+                open(() => (
+                  <RemoteServerForm
+                    currentUrl={apiBase}
+                    onSave={switchServer}
+                    // The scanner is a camera, so only where there is one. A desktop never pairs
+                    // this way round — it is the end that shows the code.
+                    onScan={Platform.OS === 'web' ? undefined : () => router.push('/scan-sync-server')}
+                  />
+                ))
+              }
             />
           )}
           {desktop && (
@@ -243,6 +248,7 @@ export default function GeneralSettingsScreen() {
               label="Sync server for your phone"
               description={networkSyncAddress ?? 'Not connected to a network'}
               descriptionSelectable={!!networkSyncAddress}
+              onPress={networkSyncAddress ? () => open(() => <PairPhoneSheet />) : undefined}
             />
           )}
           {/* The download policies gate the DEVICE engine — meaningless when a remote server owns
@@ -359,9 +365,77 @@ function LibraryBackupSection() {
   );
 }
 
+/**
+ * The desktop's half of pairing: its address as a QR code for the phone's scanner, and the one
+ * place the key in it can be replaced. The address is read live, so a changed network shows here
+ * without reopening.
+ */
+function PairPhoneSheet() {
+  const theme = useTheme();
+  const address = useNetworkSyncAddress();
+  const { open, closeTop } = useOverlay();
+
+  // The confirm popup draws beneath the overlay stack, so the sheet gives way to it and comes back
+  // once the new code exists — the same hand-off AddRegistryForm makes before offering adoption.
+  const rekey = () => {
+    closeTop();
+    openConfirm({
+      title: 'Use a new key?',
+      message: 'Every phone paired with this computer stops syncing until it scans the new code.',
+      confirmLabel: 'New key',
+      pendingLabel: 'Making a new key…',
+      tone: 'danger',
+      errorFallback: "Couldn't make a new key",
+      onConfirm: async () => {
+        if (!(await newNetworkSyncKey())) throw new Error("Couldn't make a new key");
+        open(() => <PairPhoneSheet />);
+      },
+    });
+  };
+
+  return (
+    <View style={styles.confirmBody}>
+      <OverlayHeading>Pair your phone</OverlayHeading>
+      <ThemedText type="small" themeColor="textSecondary">
+        On the phone, turn on Sync library, open Sync server and scan this code.
+      </ThemedText>
+      {address ? (
+        <View style={styles.qr}>
+          <QrCode testID="settings.general.pair-phone.qr" value={address} size={200} />
+        </View>
+      ) : (
+        <ThemedText type="small" themeColor="textSecondary">
+          Not connected to a network.
+        </ThemedText>
+      )}
+      <ThemedText type="small" themeColor="textSecondary" selectable>
+        {address ?? ''}
+      </ThemedText>
+      {desktopRekeysSync() && (
+        <View style={styles.confirmActions}>
+          <Pressable testID="settings.general.pair-phone.new-key" onPress={rekey} style={styles.confirmBtn}>
+            <ThemedText type="smallBold" style={{ color: theme.accent }}>
+              New key
+            </ThemedText>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
 /** Sheet/popover form for editing the remote-server override (see its trigger row above) — mirrors
  *  `AddRegistryForm`'s text-input-plus-save shape in `registries.tsx`. */
-function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: (url: string | null) => void }) {
+function RemoteServerForm({
+  currentUrl,
+  onSave,
+  onScan,
+}: {
+  currentUrl: string;
+  onSave: (url: string | null) => void;
+  /** Open the pairing-code scanner; absent where there is no camera. */
+  onScan?: () => void;
+}) {
   const theme = useTheme();
   const { closeTop } = useOverlay();
   const keyboardAvoiding = useKeyboardAvoidingInput();
@@ -389,6 +463,17 @@ function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: 
         style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
       />
       <View style={styles.confirmActions}>
+        {onScan && (
+          <Pressable
+            testID="settings.general.remote-server.scan"
+            onPress={() => {
+              closeTop();
+              onScan();
+            }}
+            style={[styles.confirmBtn, styles.confirmLead]}>
+            <ThemedText type="smallBold">Scan a code</ThemedText>
+          </Pressable>
+        )}
         <Pressable
           testID="settings.general.remote-server.reset"
           onPress={() => {
@@ -436,6 +521,12 @@ const styles = StyleSheet.create({
   },
   confirmBtn: {
     paddingVertical: Spacing.two,
+  },
+  confirmLead: {
+    marginRight: 'auto',
+  },
+  qr: {
+    alignItems: 'center',
   },
   input: {
     borderWidth: 1,

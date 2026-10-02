@@ -1,0 +1,40 @@
+# Pairing-code scanner: Settings → General → the server row → "Scan a code" opens the camera
+# screen, and back leaves it.
+#
+# Mobile only, with no web copy: the button exists where there is a camera, and the web build hides
+# it. The screen is asserted by its title, which it shows whether the camera is granted or refused —
+# a simulator has no camera to point at the desktop's code, so the scan itself is not tested here.
+#
+# The row reads "Remote server" off-device and "Sync server" once the on-device runtime syncs; it is
+# absent only while bridges run on-device with sync off, hence the `when: visible`.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.general"
+- assertVisible:
+    id: "settings.select.appearance"
+
+- runFlow:
+    when:
+      visible:
+        id: "settings.general.remote-server"
+    commands:
+      - tapOn:
+          id: "settings.general.remote-server"
+      - assertVisible:
+          id: "settings.general.remote-server.scan"
+      - tapOn:
+          id: "settings.general.remote-server.scan"
+      - assertVisible: "Scan a code"
+      - takeScreenshot: scan-sync-server
+      - tapOn:
+          id: "top-bar.back"
+      - assertVisible:
+          id: "settings.select.appearance"
+
+- tapOn:
+    id: "top-bar.back"

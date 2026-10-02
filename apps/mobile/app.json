@@ -63,7 +63,15 @@
       "./plugins/with-ipad-orientations.js",
       "expo-sharing",
       "expo-background-task",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Comical uses the camera to scan the pairing code shown by Comical on your computer.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

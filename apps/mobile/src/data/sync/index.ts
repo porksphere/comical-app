@@ -69,6 +69,11 @@ export function useSyncStatus(): SyncStatus {
   return use$(status$);
 }
 
+/** Paired, as of now — for code outside React deciding whether a server change is a re-pair. */
+export function isSyncEnabled(): boolean {
+  return status$.enabled.peek();
+}
+
 export function setSyncEnabled(enabled: boolean): Promise<void> {
   if (!sync) return Promise.resolve();
   return enabled ? sync.enable() : sync.disable();

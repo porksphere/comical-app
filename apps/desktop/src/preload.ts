@@ -58,6 +58,9 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
    *  this computer is on no network. */
   setNetworkSync: (on: boolean) => ipcRenderer.invoke("network-sync", on === true) as Promise<string | null>,
   networkSyncAddress: () => ipcRenderer.invoke("network-sync") as Promise<string | null>,
+  /** Replace the key in that address. Resolves to the new address; every phone paired with the old
+   *  one is cut off until it is given this. */
+  newNetworkSyncKey: () => ipcRenderer.invoke("network-sync-new-key") as Promise<string | null>,
   /** Called when another device's changes have landed in this library. Returns the unsubscribe. */
   onSynced: (onSynced: () => void) => {
     const listener = () => onSynced();

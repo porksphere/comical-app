@@ -24,6 +24,7 @@ type DesktopShell = {
   networkSync?: boolean;
   setNetworkSync?(on: boolean): Promise<string | null>;
   networkSyncAddress?(): Promise<string | null>;
+  newNetworkSyncKey?(): Promise<string | null>;
   onSynced?(onSynced: () => void): () => void;
   setRunInTray(on: boolean): void;
   setOpenAtLogin(on: boolean): void;
@@ -113,6 +114,20 @@ export function refreshNetworkSyncAddress(): void {
   void desktopShell()
     ?.networkSyncAddress?.()
     .then((address) => shell$.networkSyncAddress.set(address));
+}
+
+/** Whether the shell can replace the key in that address. */
+export function desktopRekeysSync(): boolean {
+  return !!desktopShell()?.newNetworkSyncKey;
+}
+
+/** Replace the key in the sync address with a fresh one. Resolves once the new address is up; a
+ *  phone paired with the old one is cut off from then until it is given the new. */
+export async function newNetworkSyncKey(): Promise<string | null> {
+  shell$.networkSyncAddress.set(null);
+  const address = (await desktopShell()?.newNetworkSyncKey?.()) ?? null;
+  shell$.networkSyncAddress.set(address);
+  return address;
 }
 
 /** What the platform calls the place a background app's icon lives. */

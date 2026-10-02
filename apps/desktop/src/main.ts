@@ -450,6 +450,20 @@ ipcMain.handle("network-sync", (_e, on: unknown) => {
   return applyNetworkSync();
 });
 
+// The key is the listener's whole secret, so a new one means a new listener: the old is closed
+// first, through the same queue a toggle goes through, and the old key stops opening anything the
+// moment the new address exists.
+ipcMain.handle("network-sync-new-key", async () => {
+  const closed = syncListenerChange.then(async () => {
+    await syncListener?.close();
+    syncListener = null;
+    updateShellSettings({ syncKey: newSyncKey() });
+  });
+  syncListenerChange = closed.catch(() => {});
+  await closed.catch((err: unknown) => console.error("[sync] rekey failed:", err));
+  return applyNetworkSync();
+});
+
 if (primary) {
   app
     .whenReady()
