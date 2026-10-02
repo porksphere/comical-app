@@ -703,3 +703,32 @@ and only paid when the row has actually moved off screen, which is why it was le
 top bar rather than in the middle of the screen — the centring is deliberate (see the comment in
 `useZoomSurfaceList`), since the row can drift out either end. If this ever becomes visible, that
 trade is the lever.
+
+## Sync: what's left (branch `claude/sync-changelog`, 2026-10-02)
+
+Sync is built and covered end to end by tests (two in-process phones against a real server), and
+has been run in the browser and the desktop app. None of the below blocks it; the first item is the
+one that decides whether it can be trusted.
+
+- [ ] **Sync a real phone.** Never done. Export a backup first (Settings → General → Library
+      backup), pair with the dev host-server or the desktop app, and check: the phone's library
+      survives the first sync, a bridge installed on the phone appears on the hub, and one
+      uninstalled on the hub leaves the phone. The native file pickers behind export/restore have
+      not run on a device either.
+- [ ] **Rotate the desktop sync key.** It is made once and kept, and the only way to replace it is
+      deleting `syncKey` from `desktop-settings.json` (`apps/desktop/README.md`). It guards a push
+      that can install a bridge, so this is the one to do before anyone else uses sync.
+- [ ] **Pairing UI.** The phone's *Sync server* is typed by hand, key and all. A QR code on the
+      desktop's "Sync server for your phone" row would replace that.
+- [ ] **Recover from a sequence gap.** A hub that refuses a push with `seq-gap` or `seq-conflict`
+      fails that round and every round after it; the phone only shows "Couldn't sync". Turning
+      *Sync library* off and on pairs from scratch, and nothing offers to.
+- [ ] **Sync while the app stays open.** Rounds run on launch, on return to the foreground and
+      after a burst of local writes (`data/sync/index.ts`). A phone left open never hears about a
+      change made elsewhere until one of those, or *Sync now*.
+- [ ] **Cancel the hub's debounce on shutdown.** `createSyncHost` (comical, `host-server`) has no
+      way to stop its pending round, so a host shutting down inside the 250ms window still starts
+      one.
+- [ ] **Maestro flow for the desktop-only settings rows** ("Sync with your phone", the sync
+      address, tray, open at login). They only render inside the desktop shell, which the flows
+      don't run in.
