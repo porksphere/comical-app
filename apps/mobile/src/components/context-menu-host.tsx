@@ -15,12 +15,13 @@
  *    card's identical reasoning). On web it degrades to the child Pressable's own `onLongPress`
  *    (RNW suppresses the click after its own long-press; a wrapping gesture can't).
  *
- * Native-only presentation by design — web consumers keep their overlay popover affordance, exactly
- * as web series cards keep their 3-dot menu.
+ * Web opens the same object from a click (a series card's 3-dot button, a chapter row's long-press):
+ * no hold to peek through, but the same panel, rows and placement, so a menu looks like one menu on
+ * every platform.
  */
-import { observable } from '@legendapp/state';
+import { observable, ObservableHint, type OpaqueObject } from '@legendapp/state';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore, type ReactElement, type ReactNode } from 'react';
 import { BackHandler, Platform, StyleSheet, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -57,16 +58,24 @@ import {
 } from '@/components/context-menu-material';
 import { HOLD_ARM_DISTANCE } from '@/lib/series-card-menu';
 import { useActiveColorScheme } from '@/hooks/use-theme';
+import { windowModalLayer } from '@/lib/window-controls';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 // The menu's entrance/exit — quick springs in the card popup's family.
 const OPEN_SPRING = { damping: 18, stiffness: 320, mass: 0.7 } as const;
 const GAP = 10; // between the press point and the menu's near edge
 
+/**
+ * Rows that depend on queries — a favourite's status, a download's state — which should run only while
+ * the menu is open, never once per card. The host calls this with the renderer the rows go to, and it
+ * returns a component that runs those queries and hands the rows on as they resolve.
+ */
+export type LiveMenuRows = (render: (rows: MenuRowSpec[]) => ReactElement) => ReactElement;
+
 export type ContextMenuRequest = {
   /** Slim muted title line above the rows (e.g. the chapter name). */
   title?: string;
-  rows: MenuRowSpec[];
+  rows: MenuRowSpec[] | LiveMenuRows;
   /** The press point (window coords) the menu floats at — or, with `anchor: 'fixed'`, the exact
    *  TOP-LEFT corner the menu hangs from. */
   x: number;
@@ -79,19 +88,29 @@ export type ContextMenuRequest = {
    */
   anchor?: 'point' | 'fixed';
   /** Backdrop frost strength — defaults to `plain` (lighter): this host shows rows only, no lifted
-   *  preview to set off against the page. See `BACKDROP_BLUR` in context-menu-material. */
-  backdrop?: BackdropBlurMode;
+   *  preview to set off against the page. See `BACKDROP_BLUR` in context-menu-material. `none` is
+   *  web's default: a menu opened by a click is a dropdown, and frosting the whole window for one
+   *  makes it read as a modal. The clear backdrop still catches the click that dismisses it. */
+  backdrop?: BackdropBlurMode | 'none';
+  /** Runs once the menu is gone, however it went — dismissed, replaced, or a row run. */
+  onClose?: () => void;
 };
 
 /** The currently-open generic hold menu, or null (in-memory local UI state, per the app's split). */
-export const contextMenu$ = observable<ContextMenuRequest | null>(null);
+// Opaque: a request carries functions (`rows` may be one), which an observable would otherwise take
+// for computeds and call.
+export const contextMenu$ = observable<OpaqueObject<ContextMenuRequest> | null>(null);
 
 export function openContextMenu(req: ContextMenuRequest): void {
-  contextMenu$.set(req);
+  const prev = contextMenu$.peek();
+  contextMenu$.set(ObservableHint.opaque(req));
+  prev?.onClose?.();
 }
 
 export function closeContextMenu(): void {
+  const prev = contextMenu$.peek();
   contextMenu$.set(null);
+  prev?.onClose?.();
 }
 
 /** Reactive read via `useSyncExternalStore` — a bare `use$` isn't compiler-recognized as a hook
@@ -206,10 +225,11 @@ export function ContextMenuHold({
 export function ContextMenuHost() {
   const req = useContextMenu();
   if (!req) return null;
-  return <HostMenu req={req} />;
+  if (typeof req.rows === 'function') return req.rows((rows) => <HostMenu req={req} rows={rows} />);
+  return <HostMenu req={req} rows={req.rows} />;
 }
 
-function HostMenu({ req }: { req: ContextMenuRequest }) {
+function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRowSpec[] }) {
   const { width: winW, height: winH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const scheme = useActiveColorScheme();
@@ -224,7 +244,7 @@ function HostMenu({ req }: { req: ContextMenuRequest }) {
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const headerH = req.title !== undefined ? MENU_TITLE_HEIGHT : 0;
   const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
-  const menuH = MENU_PAD_V * 2 + headerH + MENU_ROW_HEIGHT * req.rows.length;
+  const menuH = MENU_PAD_V * 2 + headerH + MENU_ROW_HEIGHT * specs.length;
   const left = fixed
     ? clamp(req.x, EDGE_PAD, winW - menuW - EDGE_PAD)
     : clamp(req.x - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
@@ -247,6 +267,15 @@ function HostMenu({ req }: { req: ContextMenuRequest }) {
     // The hold pays off with the card popup's medium thump; a plain button tap gets a light tick.
     void Haptics.impactAsync(fixed ? Haptics.ImpactFeedbackStyle.Light : Haptics.ImpactFeedbackStyle.Medium);
     progress.set(withSpring(1, OPEN_SPRING));
+    if (Platform.OS === 'web') {
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        dismiss();
+      };
+      document.addEventListener('keydown', onKey);
+      return () => document.removeEventListener('keydown', onKey);
+    }
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       dismiss();
       return true;
@@ -257,14 +286,14 @@ function HostMenu({ req }: { req: ContextMenuRequest }) {
   // Every row action also dismisses the menu — for a plain press AND a lift-commit alike.
   const rows = useMemo(
     () =>
-      req.rows.map((r) => ({
+      specs.map((r) => ({
         ...r,
         onPress: () => {
           r.onPress();
           dismiss();
         },
       })),
-    [req, dismiss],
+    [specs, dismiss],
   );
 
   // What a commit (lift over a row) runs — registered, since the lifting finger belongs to the
@@ -281,14 +310,14 @@ function HostMenu({ req }: { req: ContextMenuRequest }) {
       const local = ctxHoldY.value - top - MENU_PAD_V - headerH;
       if (local < 0) return -1;
       const index = Math.floor(local / MENU_ROW_HEIGHT);
-      return index >= 0 && index < req.rows.length ? index : -1;
+      return index >= 0 && index < specs.length ? index : -1;
     },
     (row, prev) => {
       if (row === prev) return;
       ctxHoveredRow.set(row);
       if (row >= 0) runOnJS(selectionTick)();
     },
-    [top, headerH, req.rows.length],
+    [top, headerH, specs.length],
   );
 
   // The ONE travelling bubble (see the material module): fades in where the finger enters, slides
@@ -318,7 +347,8 @@ function HostMenu({ req }: { req: ContextMenuRequest }) {
     transform: [{ translateY: hoverY.value }],
   }));
 
-  const blurTarget = BACKDROP_BLUR[req.backdrop ?? 'plain'];
+  const backdrop = req.backdrop ?? (Platform.OS === 'web' ? 'none' : 'plain');
+  const blurTarget = backdrop === 'none' ? 0 : BACKDROP_BLUR[backdrop];
   const backdropBlurProps = useAnimatedProps(() => ({
     intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, blurTarget]),
   }));
@@ -347,18 +377,22 @@ function HostMenu({ req }: { req: ContextMenuRequest }) {
   );
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <View {...windowModalLayer} style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <GestureDetector gesture={tapDismiss}>
         <View style={StyleSheet.absoluteFill}>
-          <AnimatedBlurView
-            tint={tint}
-            experimentalBlurMethod={ANDROID_BLUR}
-            animatedProps={backdropBlurProps}
-            style={StyleSheet.absoluteFill}
-          />
-          <Animated.View
-            style={[StyleSheet.absoluteFill, { backgroundColor: BACKDROP_TINT[tint] }, backdropTintStyle]}
-          />
+          {backdrop === 'none' ? null : (
+            <>
+              <AnimatedBlurView
+                tint={tint}
+                experimentalBlurMethod={ANDROID_BLUR}
+                animatedProps={backdropBlurProps}
+                style={StyleSheet.absoluteFill}
+              />
+              <Animated.View
+                style={[StyleSheet.absoluteFill, { backgroundColor: BACKDROP_TINT[tint] }, backdropTintStyle]}
+              />
+            </>
+          )}
         </View>
       </GestureDetector>
       <Animated.View style={[menuStyles.menuWrap, { width: menuW, left, top }, menuStyle]}>

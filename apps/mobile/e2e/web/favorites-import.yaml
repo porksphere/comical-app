@@ -2,8 +2,8 @@
 # reasoning for every step — see that file's header for why Panelfox, why select-all instead of a
 # hardcoded default count, what the three row kinds are, and why the inert rows sort last.
 #
-# It's a plain pushed screen (app/favorites-import.tsx), not an overlay, so none of the sheet-gesture
-# caveats that scope registries.add / manage-collections.add to mobile apply here.
+# It's a plain pushed screen (app/favorites-import.tsx), not an overlay, so the sheet-gesture caveat
+# that keeps manage-collections.add mobile-only does not apply here.
 #
 # Selectors hitting the web-only aria-label quirk (see ../README.md — an accessibilityLabel wins over
 # data-testid for Maestro's `id:` matcher on web):

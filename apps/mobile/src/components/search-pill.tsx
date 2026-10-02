@@ -15,7 +15,7 @@ import { Pressable, StyleSheet } from 'react-native';
 import { SearchIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { ContinuousCorner, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export function SearchPill({
@@ -53,7 +53,6 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     height: 40,
     paddingHorizontal: Spacing.three,
-    ...ContinuousCorner,
-    borderRadius: Spacing.three,
+    borderRadius: 20,
   },
 });

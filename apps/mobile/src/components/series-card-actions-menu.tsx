@@ -1,41 +1,55 @@
-import { View, StyleSheet } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
 
-import { MenuActionRow, MenuHeader } from '@/components/context-menu';
-import { CheckIcon, DownloadsIcon, LogInIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
-import { OptionList, useOverlay } from '@/components/overlay/overlay';
-import { Spacing } from '@/constants/theme';
+import type { MenuRowSpec } from '@/components/context-menu-material';
+import { CheckIcon, DownloadsIcon, LogInIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
+import { seriesDetailQuery } from '@/data/queries';
+import { useDataSource, useMockActive } from '@/data/source';
 import type { SeriesEntry } from '@/data/types';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useResetReadProgress } from '@/hooks/use-reset-read-progress';
-import { useSeriesSave } from '@/hooks/use-series-save';
 import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
+import { useSeriesSave } from '@/hooks/use-series-save';
+import { useStartReading } from '@/hooks/use-start-reading';
 import { useRouter } from '@/lib/nav';
 
 /**
- * The per-series quick-actions menu content, shared by the native long-press menu and the web 3-dot
- * menu. It's rendered inside the app overlay (a bottom sheet on phones, an anchored popover on
- * desktop-web) and mounted ONLY while the menu is open — so the two status queries (`useFavorite` /
- * `useLibrary`) run once, on open, instead of once per card. That's what lets the grid drop the
- * per-card native context-menu host (the iOS scroll tax) without losing the actions or the
- * full-title / cover reveal that the old iOS lifted preview provided.
+ * The web card menu's rows: the native popup's (series-card-context-menu.tsx), in its order and
+ * wording, for the generic menu host to draw. Mounted only while the menu is open, so its queries run
+ * once per open rather than once per card in the grid.
  *
- * Chrome comes from the shared context-menu module (`MenuHeader` + `MenuActionRow`), which every
- * other long-press menu (e.g. the chapter rows') renders with too.
+ * Two departures, both because there is no preview here: Save never expands in place (a saved
+ * series opens the collection picker, which is what that submenu stands in for), and nothing hands
+ * off a zoom, since web has no zoom entrance.
  */
-export function SeriesActionsMenu({
+export function SeriesCardMenuRows({
   bridgeId,
+  bridge,
   entry,
   direct,
-  coverAspect,
+  children,
 }: {
   bridgeId: string;
+  bridge?: string;
   entry: SeriesEntry;
-  /** Whether the bridge serves a direct (page-thumbnail) series — affects how a download is enqueued. */
   direct?: boolean;
-  coverAspect?: number;
+  children: (rows: MenuRowSpec[]) => ReactElement;
 }) {
-  const { closeTop } = useOverlay();
   const router = useRouter();
+  const ds = useDataSource();
+  const mock = useMockActive();
+  const detail = useQuery(
+    seriesDetailQuery(ds, mock, bridgeId, entry.id, { direct: !!direct, title: entry.title, cover: entry.cover }),
+  );
+  const reading = useStartReading({
+    bridgeId,
+    seriesId: entry.id,
+    title: entry.title,
+    direct: !!direct,
+    readLabel: detail.data?.readLabel,
+    ...(bridge ? { bridge } : {}),
+    ...(entry.cover ? { cover: entry.cover } : {}),
+  });
   const { favorited, toggle: toggleFavorite, status: favoriteStatus, loginSettings } = useFavorite(bridgeId, entry.id);
   const save = useSeriesSave(
     bridgeId,
@@ -44,7 +58,6 @@ export function SeriesActionsMenu({
     entry.title,
   );
   const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
-  // Lazy — this menu is mounted only while open, so the download-status query runs once, on open.
   const download = useSeriesDownloadAction(
     bridgeId,
     entry.id,
@@ -52,81 +65,62 @@ export function SeriesActionsMenu({
     { title: entry.title, ...(entry.cover ? { cover: entry.cover } : {}) },
     true,
   );
-  return (
-    <View style={styles.menu}>
-      <MenuHeader title={entry.title} {...(entry.cover !== undefined && { cover: entry.cover })} {...(coverAspect !== undefined && { coverAspect })} />
-      <OptionList>
-        <MenuActionRow
-          testID="series.card-menu.download"
-          label={download.label}
-          Icon={DownloadsIcon}
-          loading={download.loading}
-          active={download.active}
-          onPress={() => {
-            // Close FIRST: onPress may push the download sheet, and closing after would pop it.
-            closeTop();
-            download.onPress();
-          }}
-        />
-        {/* ONE row where there were two — "Add to Library" and "Add to collection" became the same
-            action when the library dissolved into collections. Unsaved: files into the last-used
-            collection, and the label then names it. Saved: opens the picker. See useSeriesSave. */}
-        <MenuActionRow
-          testID="series.card-menu.save"
-          label={save.menuLabel}
-          Icon={save.saved ? CheckIcon : PlusIcon}
-          loading={save.saved === null}
-          active={!!save.saved}
-          onPress={() => {
-            // Close this overlay sheet FIRST — the picker is a root host that renders under the
-            // overlay stack, so it must not overlap this menu. No stacking here; that's the native
-            // long-press menu's job (series-card-context-menu.tsx).
-            closeTop();
-            void save.onPress();
-          }}
-        />
-        <MenuActionRow
-          testID="series.card-menu.reset-progress"
-          label="Reset read progress"
-          // RotateCcw — the same "put it back" glyph the retry rows use.
-          Icon={RetryIcon}
-          onPress={() => {
-            closeTop();
-            resetProgress();
-          }}
-        />
-        {/* Same faces as the series page's star (see there): absent without the capability, a way
-            into the bridge's settings when it needs a login, dimmed only while genuinely unknown. */}
-        {favoriteStatus === 'login' && loginSettings ? (
-          <MenuActionRow
-            testID="series.card-menu.favorite"
-            label="Log in to favorite"
-            Icon={LogInIcon}
-            onPress={() => {
-              closeTop();
-              router.push({ pathname: '/bridge-settings', params: loginSettings });
-            }}
-          />
-        ) : favoriteStatus !== 'unsupported' ? (
-          <MenuActionRow
-            testID="series.card-menu.favorite"
-            label={favorited ? 'Unfavorite' : 'Favorite'}
-            Icon={StarIcon}
-            loading={favoriteStatus !== 'ready'}
-            active={!!favorited}
-            onPress={() => {
-              toggleFavorite();
-              closeTop();
-            }}
-          />
-        ) : null}
-      </OptionList>
-    </View>
-  );
-}
 
-const styles = StyleSheet.create({
-  menu: {
-    gap: Spacing.three,
-  },
-});
+  const rows: MenuRowSpec[] = [
+    {
+      label: reading.label,
+      Icon: PlayIcon,
+      primary: true,
+      loading: false,
+      testID: 'series.card-menu.read',
+      onPress: reading.start,
+    },
+    {
+      label: save.menuLabel,
+      Icon: save.saved ? CheckIcon : PlusIcon,
+      loading: save.saved === null,
+      active: !!save.saved,
+      testID: 'series.card-menu.save',
+      onPress: () => void save.onPress(),
+    },
+    ...(favoriteStatus === 'login' && loginSettings
+      ? [
+          {
+            label: 'Log in to favorite',
+            Icon: LogInIcon,
+            loading: false,
+            testID: 'series.card-menu.favorite',
+            onPress: () => router.push({ pathname: '/bridge-settings', params: loginSettings }),
+          } satisfies MenuRowSpec,
+        ]
+      : favoriteStatus !== 'unsupported'
+        ? [
+            {
+              label: favorited ? 'Unfavorite' : 'Favorite',
+              Icon: StarIcon,
+              iconFilled: !!favorited,
+              loading: favoriteStatus !== 'ready',
+              active: !!favorited,
+              testID: 'series.card-menu.favorite',
+              onPress: toggleFavorite,
+            } satisfies MenuRowSpec,
+          ]
+        : []),
+    {
+      label: download.label,
+      Icon: DownloadsIcon,
+      loading: download.loading,
+      active: download.active,
+      testID: 'series.card-menu.download',
+      onPress: download.onPress,
+    },
+    {
+      label: 'Reset read progress',
+      Icon: RetryIcon,
+      loading: false,
+      testID: 'series.card-menu.reset-progress',
+      onPress: resetProgress,
+    },
+  ];
+  return children(rows);
+}

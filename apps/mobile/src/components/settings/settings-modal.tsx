@@ -131,7 +131,9 @@ export function SettingsModal() {
   useEffect(() => {
     if (!open || Platform.OS !== 'web' || typeof document === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeSettingsModal();
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      closeSettingsModal();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);

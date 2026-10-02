@@ -7,8 +7,7 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
-import { SearchField } from '@/components/search-field';
-import { SearchPill } from '@/components/search-pill';
+import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import {
@@ -31,7 +30,7 @@ import { historyQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useContentWidth, useHasSidebar } from '@/hooks/use-content-width';
+import { useContentWidth } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
@@ -41,6 +40,7 @@ import { relTime } from '@/lib/rel-time';
 import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
 import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { scrollPhaseHandlers } from '@/lib/scroll-release';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 export default function HistoryScreen() {
   const ds = useDataSource();
@@ -49,11 +49,8 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   // The content column, not the window — the sidebar's inset is already out of it.
   const width = useContentWidth();
-  const railNav = useHasSidebar();
-  // Wide only: the trailing search this tab never had. Below the rail breakpoint History is
-  // unchanged — no control, no filter.
-  const [searching, setSearching] = useState(false);
-  const [query, setQuery] = useState('');
+  const filter = useTabFilter();
+  const query = filter.query;
   const queryClient = useQueryClient();
   const hideNsfw = useHideNsfw();
   const { byId, nameOf, directOf } = useBridgeMap();
@@ -161,6 +158,7 @@ export default function HistoryScreen() {
     if (error) return <RetryBlock message={(error as Error).message || 'Failed to load history'} onRetry={refetch} />;
     if (!ready || isLoading || items === undefined) return <ThemedText themeColor="textSecondary">Loading…</ThemedText>;
     if (!visible || visible.length === 0) {
+      if (query.trim()) return <ThemedText themeColor="textSecondary">No matches</ThemedText>;
       return (
         <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
           No reading history yet. Open a series and start reading — it’ll show up here.
@@ -184,7 +182,7 @@ export default function HistoryScreen() {
         <AnimatedLegendList
           ref={listRef}
           // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
-          style={styles.list}
+          style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
           data={visible}
           keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
           recycleItems={false}
@@ -222,26 +220,11 @@ export default function HistoryScreen() {
       <TabTitleBar
         title="History"
         titleSlot={
-          railNav && searching ? (
-            <SearchField
-              testID="history.search-field"
-              value={query}
-              onSubmit={(q) => setQuery(q.trim())}
-              onClear={() => {
-                setQuery('');
-                setSearching(false);
-              }}
-              placeholder="Search history…"
-              autoFocus
-              immediateFocus
-            />
+          filter.open ? (
+            <TabFilterField filter={filter} testID="history.search" placeholder="Filter history…" />
           ) : undefined
         }
-        right={
-          railNav && !searching ? (
-            <SearchPill testID="history.search-pill" onPress={() => setSearching(true)} placeholder="Search history…" />
-          ) : undefined
-        }
+        right={<TabFilterTrigger filter={filter} testID="history.search" placeholder="Filter history…" />}
       />
     </ThemedView>
     </ZoomSurfaceContext.Provider>

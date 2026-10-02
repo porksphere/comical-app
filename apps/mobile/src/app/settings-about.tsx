@@ -29,7 +29,9 @@ import { getResolvedModeSync } from '@/data/embedded/preference';
 import { IS_DEMO_MODE, useMockActive } from '@/data/source';
 import { useAppUpdateCheck } from '@/data/use-app-update';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
+import { installDesktopUpdate, useDesktopUpdateReady } from '@/lib/desktop-shell';
 import { router } from '@/lib/nav';
 import {
   APP_VERSION,
@@ -83,12 +85,12 @@ export default function AboutScreen() {
   const [apiBase] = useApiBase();
   const mockActive = useMockActive();
   const appUpdate = useAppUpdateCheck();
+  const updateReady = useDesktopUpdateReady();
+  const updatePending = updateReady !== null || appUpdate.status === 'update-available';
   const handleUpdatePress = () => {
-    if (Platform.OS === 'web') {
-      window.location.reload();
-      return;
-    }
-    if (appUpdate.downloadUrl) void openBrowserAsync(appUpdate.downloadUrl);
+    if (updateReady) installDesktopUpdate();
+    else if (appUpdate.downloadUrl) void openBrowserAsync(appUpdate.downloadUrl);
+    else if (Platform.OS === 'web') window.location.reload();
   };
   // The mode actually in force right now, not the stored preference — the toggle only takes effect
   // where the native runtime exists (see embedded/preference.ts).
@@ -155,7 +157,7 @@ export default function AboutScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="About" />
-      <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
+      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {/* No blurb above the list: the section headings and row labels already say what every value
             is, and a paragraph explaining a table of facts only pushed the facts down the screen. */}
         {sections.map(([title, rows]) => (
@@ -183,23 +185,25 @@ export default function AboutScreen() {
                 testID="about.checkForUpdates"
                 label="Check for updates"
                 description={
-                  appUpdate.status === 'update-available'
-                    ? `Version ${appUpdate.latestVersionLabel ?? 'newer build'} available`
-                    : appUpdate.status === 'checking'
-                      ? 'Checking…'
-                      : appUpdate.status === 'error'
-                        ? "Couldn't check"
-                        : 'Up to date'
+                  updateReady
+                    ? `Version ${updateReady} is ready — restart to install`
+                    : appUpdate.status === 'update-available'
+                      ? `Version ${appUpdate.latestVersionLabel ?? 'newer build'} available`
+                      : appUpdate.status === 'checking'
+                        ? 'Checking…'
+                        : appUpdate.status === 'error'
+                          ? "Couldn't check"
+                          : 'Up to date'
                 }
-                leading={appUpdate.status === 'update-available' ? <UpdateDot /> : undefined}
+                leading={updatePending ? <UpdateDot /> : undefined}
                 right={
-                  appUpdate.status === 'update-available' ? (
+                  updatePending ? (
                     <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                      Update
+                      {updateReady ? 'Restart' : 'Update'}
                     </ThemedText>
                   ) : undefined
                 }
-                onPress={appUpdate.status === 'update-available' ? handleUpdatePress : undefined}
+                onPress={updatePending ? handleUpdatePress : undefined}
               />
             )}
           </SettingsSection>

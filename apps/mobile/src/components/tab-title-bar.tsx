@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { testId } from '@/lib/test-id';
+import { useWindowControlsClearance } from '@/lib/window-controls';
 
 /**
  * The plain title bar used by the tab screens that just name themselves (Library, History, Activity,
@@ -33,10 +34,16 @@ export function TabTitleBar({
   barStyle?: AnimatedProps<ViewProps>['style'];
 }) {
   const barHeight = useTopBarHeight();
+  const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   return (
     <BarSurface style={[styles.topBar, barStyle]}>
       {/* Cap+centre only on web; native fills the width so the title aligns with the full-width grids. */}
-      <View style={[styles.titleRow, { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined }]}>
+      <View
+        style={[
+          styles.titleRow,
+          { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined },
+          clearance > 0 && { paddingRight: Spacing.four + clearance },
+        ]}>
         {titleSlot ?? (
           <ThemedText testID={title ? testId('screen-title', title) : undefined} numberOfLines={1} style={styles.title}>
             {title}

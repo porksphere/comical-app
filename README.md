@@ -45,9 +45,17 @@ The frontend and backend can be run as two Docker containers. See
 A mock preview is deployed to
 **[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**.
 
-### Windows & macOS
+### Windows & Linux
 
-In development.
+Install
+**[comical-desktop-setup.exe](https://github.com/porksphere/comical-app/releases/download/desktop-release/comical-desktop-setup.exe)**
+on Windows. On Linux, use the
+**[AppImage](https://github.com/porksphere/comical-app/releases/download/desktop-release/comical-desktop-x86_64.AppImage)**
+or the
+**[.deb](https://github.com/porksphere/comical-app/releases/download/desktop-release/comical-desktop-amd64.deb)**.
+
+The installers aren't code-signed, so Windows SmartScreen warns on first run (**More info → Run
+anyway**). A macOS build is in development.
 
 ## How it works
 

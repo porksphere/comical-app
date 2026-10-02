@@ -69,6 +69,7 @@ import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
+import { useWindowControlsClearance } from '@/lib/window-controls';
 
 // Stable, never-fetched keys for the two grid infinite queries while they're disabled (no active
 // scope) — hooks must be called unconditionally, so a disabled query still needs a queryKey; these
@@ -116,8 +117,7 @@ export default function BrowseScreen() {
   // below all gate off for it (`!isComical`), and ContentFeed is fed `comicalRails.rows` directly.
   const isComical = isComicalBridge(bridgeId);
   const realBridges = useMemo(() => visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID), [visibleBridges]);
-  // Drop bridges the user excluded from the Comical home (per-bridge setting). Cross-bridge SEARCH is
-  // unaffected — this only trims the home rails.
+  // Drop bridges the user excluded from Comical (per-bridge setting) — Search drops the same ones.
   const comicalExcluded = useComicalExcludedIds();
   const comicalRailBridges = useMemo(
     () => realBridges.filter((b) => !comicalExcluded[b.id]),
@@ -594,6 +594,7 @@ export default function BrowseScreen() {
 
   // Shared with the series-detail bar so both stay the same height.
   const barHeight = useTopBarHeight();
+  const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
   const thumbSize = BridgeThumbSize;
   // Desktop shows an always-visible search pill in the top bar; mobile shows just a search icon.
@@ -677,6 +678,7 @@ export default function BrowseScreen() {
         style={[
           styles.selectorRow,
           { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined },
+          clearance > 0 && { paddingRight: TopLevelGutter + clearance },
           headerContentStyle,
         ]}>
         {currentBridge ? (

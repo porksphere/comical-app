@@ -1,8 +1,9 @@
 # Same journey as ../mobile/library.yaml, kept in sync by hand. Several selectors hit the
 # web-only aria-label quirk (see ../README.md):
 #   - tab bar: "Library", not tab.library (same as smoke.yaml).
-#   - library.search-icon sets accessibilityLabel="Search library" (library.tsx).
-#   - library.search-close sets accessibilityLabel="Close search" (library.tsx).
+#   - on this (wide) layout the filter is a field always in the bar (components/tab-filter.tsx), so
+#     the flow types straight into it and empties it with its ✕. Narrow, `library.search-icon`
+#     (labelled "Filter library") opens it instead.
 #   - library.search.clear sets accessibilityLabel="Clear search" (search-field.tsx, same as
 #     browse/search.yaml's clear button).
 #   - library.sort sets accessibilityLabel="Sort library" (library-sort-button.tsx).
@@ -19,18 +20,16 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "series-card\\..*"
 
-# Inline search
-- tapOn:
-    id: "Search library"
+# Inline filter
 - extendedWaitUntil:
     visible:
       id: "library.search.input"
     timeout: 10000
-- inputText: "one piece"
-- assertVisible:
-    id: "Clear search"
 - tapOn:
-    id: "Close search"
+    id: "library.search.input"
+- inputText: "one piece"
+- tapOn:
+    id: "Clear search"
 
 # Sort
 - tapOn:

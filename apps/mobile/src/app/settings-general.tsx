@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useApiBase } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
@@ -21,7 +22,9 @@ import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { setSyncEnabled, syncLibraryNow, useSyncStatus, type SyncStatus } from '@/data/sync';
+import { useHydrated } from '@/hooks/use-responsive';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
+import { desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -76,6 +79,11 @@ export default function GeneralSettingsScreen() {
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
   const lightCards = useLightCards();
+  const [runInTray, setRunInTray] = useRunInTray();
+  const [openAtLogin, setOpenAtLogin] = useOpenAtLogin();
+  // Gated on hydration: the static web render has no shell, so the row would otherwise appear only
+  // after it and mismatch.
+  const desktop = useHydrated() && !!desktopShell();
   const { wifiOnly, background } = useDownloadPrefs();
   const { open } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
@@ -105,7 +113,7 @@ export default function GeneralSettingsScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="General" />
-      <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
+      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {/* One unheadered list. "APPEARANCE" over a row already called Appearance, and "CONTENT"
             over one called NSFW content, said nothing the row didn't — every row here carries its
             own title and a line explaining it. */}
@@ -171,6 +179,28 @@ export default function GeneralSettingsScreen() {
               description={apiBase}
               descriptionSelectable
               onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
+            />
+          )}
+          {desktop && (
+            <SettingsToggleRow
+              label={`Keep running in the ${trayName()}`}
+              description="Closing the window leaves Comical running, so downloads carry on."
+              value={runInTray}
+              onChange={setRunInTray}
+            />
+          )}
+          {desktop && (
+            <SettingsToggleRow
+              label="Open at login"
+              description={
+                !desktopShell()?.loginItems
+                  ? 'Takes effect in an installed build.'
+                  : runInTray
+                    ? `Start Comical in the ${trayName()} when you sign in.`
+                    : 'Start Comical when you sign in.'
+              }
+              value={openAtLogin}
+              onChange={setOpenAtLogin}
             />
           )}
           {/* The download policies gate the DEVICE engine — meaningless when a remote server owns

@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import type { AvailableBridge, AvailableTracker } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
@@ -55,6 +56,7 @@ export default function RegistryBrowseScreen() {
     <ThemedView style={styles.container}>
       <TopBar title="Browse registry" />
       <ScrollView
+        style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[styles.content, contentPadding]}>
         <ThemedText type="small" themeColor="textSecondary">
           {url}

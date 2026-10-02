@@ -19,7 +19,7 @@ on:
     inputs:
       configuration:
         # Xcode configuration. "Release" (default) is what every normal caller
-        # uses (ios-main, per-PR ios-pr, versioned ios-release). "Debug" is used ONLY by
+        # uses (ios-nightly, per-PR ios-pr, versioned ios-release). "Debug" is used ONLY by
         # build-ios-devclient.yml together with dev_client — a development-client
         # shell that loads JS from Metro (no embedded bundle needed; expo-dev-client
         # shows its launcher). This is NOT the reverted offline-dev-build hack —
@@ -44,7 +44,7 @@ on:
         # (COMICAL_PROFILING=1 → react-native.config.js) AND bakes
         # EXPO_PUBLIC_COMICAL_PROFILING=1 into the JS bundle so PROFILING_ENABLED
         # is true — i.e. a normal Release binary that carries the on-device
-        # profiler. The rolling main (ios-main) and per-PR (ios-pr) channels pass
+        # profiler. The nightly main and per-PR (ios-pr) builds pass
         # this via build-ios.yml so every non-release build is profileable; the
         # clean tagged-release channel (release.yml) does NOT, so the public IPA
         # stays profiler-free.
@@ -53,8 +53,8 @@ on:
         default: false
         required: false
       version:
-        # Optional explicit version string. When empty (the rolling ios-main /
-        # ios-pr channels), the version is computed as `<app.json base>.<Nth build of this
+        # Optional explicit version string. When empty (nightly and
+        # ios-pr builds), the version is computed as `<app.json base>.<Nth build of this
         # release series>` — see .github/scripts/compute-build-version.sh — so every push yields a
         # strictly higher, AltStore-valid value that restarts at .1 when a release moves the base.
         # release.yml passes the git tag (minus the leading `v`, e.g. "1.2.0") so
@@ -111,7 +111,7 @@ on:
         # Bakes EXPO_PUBLIC_COMICAL_BUILD_CHANNEL into the JS bundle — read by src/lib/sentry.ts
         # as the `buildChannel` tag on every Sentry event, so a crash report is attributable to
         # the exact CI build that produced it. Every caller passes its own distinct value
-        # (ios-devclient / ios-main / ios-pr / ios-release / ios-e2e) — required, not defaulted,
+        # (ios-devclient / ios-nightly / ios-pr / ios-release / ios-e2e) — required, not defaulted,
         # so a new caller can't silently ship crash reports with no channel attached.
         description: Value baked into EXPO_PUBLIC_COMICAL_BUILD_CHANNEL (Sentry's buildChannel tag).
         type: string
@@ -155,7 +155,7 @@ jobs:
       COMICAL_DEVCLIENT: ${{ inputs.dev_client && '1' || '' }}
       # Profiling build: link the profiler pod (react-native.config.js) AND bake the JS flag
       # (PROFILING_ENABLED, src/lib/profiling.ts) so the profiler is present in an otherwise-normal
-      # Release binary. build-ios.yml sets it for every ios-main + ios-pr build; empty for the clean
+      # Release binary. build-ios.yml sets it for every nightly + ios-pr build; empty for the clean
       # tagged release (release.yml), so the profiler never ships in the public channel.
       COMICAL_PROFILING: ${{ inputs.profiling && '1' || '' }}
       EXPO_PUBLIC_COMICAL_PROFILING: ${{ inputs.profiling && '1' || '' }}
@@ -244,7 +244,7 @@ jobs:
       # Keyed on BUILD_FLAVOR (see the job env above for what's in it, and for why Release is
       # implicit in it). Every flavor needs something on the default branch that writes its entry,
       # or branches restore nothing: e2e.yml's push-to-main keeps `sim` warm and build-ios.yml's
-      # keeps `device`. Nothing keeps `device-Debug-devclient` warm on a timer — build-ios-devclient
+      # nightly keeps `device`. Nothing keeps `device-Debug-devclient` warm on a timer — build-ios-devclient
       # is manual, so that entry is only written when someone dispatches it from main, and a
       # dispatch after a week's gap finds it evicted and compiles cold. Deliberate; see its header.
       - name: Restore ccache
@@ -285,7 +285,7 @@ jobs:
         working-directory: apps/mobile/ios
 
       # Version precedence: an explicit `version` input (release.yml passes the git tag) wins;
-      # otherwise the rolling ios-main / ios-pr channels get `<app.json base>.<Nth build of this
+      # otherwise nightly and ios-pr builds get `<app.json base>.<Nth build of this
       # release series>` — see .github/scripts/compute-build-version.sh for how N is derived and
       # why it's no longer the run number.
       - name: Compute full version (input override or base + series build number)

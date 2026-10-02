@@ -72,6 +72,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { hapticSelection } from '@/lib/haptics';
 import { usePreferredGroup } from '@/lib/preferred-group';
 import { testId } from '@/lib/test-id';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import type { ChapterGroup } from '@/lib/chapter-order';
@@ -510,7 +511,7 @@ export default function SeriesDownloadsScreen() {
         // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
         // tracking manual scrolling accurately without spamming.
         scrollEventThrottle={16}
-        style={styles.list}
+        style={[styles.list, scrollbarInset(paddingTop)]}
         data={rows}
         keyExtractor={(r) => r.key}
         recycleItems

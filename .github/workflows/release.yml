@@ -1,11 +1,11 @@
-name: Release (iOS IPA + Android APK)
+name: Release (iOS IPA + Android APK + desktop installers)
 
-# Cut a versioned, archival release containing BOTH platform binaries.
+# Cut a versioned, archival release containing every platform's binaries.
 #
 #   git tag v1.2.0 && git push origin v1.2.0
 #
-# builds the unsigned iOS IPA and the Android APK from the same reusable steps as
-# the rolling channels, then attaches both to an immutable vX.Y.Z GitHub Release.
+# builds the unsigned iOS IPA, the Android APK and the Windows/Linux desktop installers from the
+# same reusable steps as the PR builds, then attaches them all to an immutable vX.Y.Z GitHub Release.
 #
 # Or, with the version already bumped on main and no tag yet: Actions → Release →
 # Run workflow. That takes the version from app.json and creates the tag itself
@@ -16,12 +16,12 @@ name: Release (iOS IPA + Android APK)
 # both builds have run.
 #
 # This is the clean, PROFILER-FREE, public iOS channel. Besides the immutable
-# vX.Y.Z Release (both binaries), it maintains a rolling `ios-release`
+# vX.Y.Z Release (every binary), it maintains a rolling `ios-release`
 # SideStore/AltStore source whose versions[] lists every tag newest-first, each
 # pointing at that tag's PERMANENT IPA asset (so full version history stays
-# installable — unlike the rolling ios-main/ios-pr sources that keep one IPA).
-# `ios-release` is what a normal user subscribes to; the profiling ios-main /
-# ios-pr sources (build-ios.yml) are for dev/perf testing.
+# installable — unlike the ios-pr source, which keeps one IPA per PR).
+# `ios-release` is what a normal user subscribes to; the profiling ios-pr
+# source (build-ios.yml) is for dev/perf testing.
 
 on:
   push:
@@ -154,7 +154,14 @@ jobs:
       channel: android-release
     secrets: inherit
 
-  # The web image is the third artifact of a release, and it is built from the same commit as the
+  desktop:
+    needs: prep
+    uses: ./.github/workflows/build-desktop-reusable.yml
+    with:
+      version: ${{ needs.prep.outputs.version }}
+      channel: desktop-release
+
+  # The web image is the fourth artifact of a release, and it is built from the same commit as the
   # two binaries. It hangs off `release` rather than `prep` so it publishes only once the tag and
   # its Release actually exist — the same rule the tag itself follows below. A version-tagged image
   # for a release that failed to cut would be the one piece of this that couldn't be walked back by
@@ -169,7 +176,7 @@ jobs:
       version: ${{ needs.prep.outputs.version }}
 
   release:
-    needs: [prep, ios, android]
+    needs: [prep, ios, android, desktop]
     runs-on: ubuntu-latest
     steps:
       # Needed for the ios-release source refresh below (reads the app icon) and
@@ -188,6 +195,16 @@ jobs:
           name: ${{ needs.android.outputs.artifact }}
           path: ${{ runner.temp }}/apk
 
+      - name: Download desktop installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: comical-desktop-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/desktop
+
+      - name: Check the desktop installers and update feeds are all there
+        run: bash .github/scripts/collect-desktop-installers.sh "$RUNNER_TEMP/desktop"
+
       # `--target` is what makes the dispatch path work: `gh release create` creates the tag itself
       # when it doesn't already exist, pointing it at the commit this run built. On the pushed-tag
       # path the tag is already there and the flag is ignored, so both paths run this same step.
@@ -196,7 +213,7 @@ jobs:
       # that fails then leaves no tag behind, so retrying is "run it again" instead of "delete the
       # dangling tag first", which is precisely the cleanup you cannot do from the phone this path
       # exists for. It also means a tag never exists without the binaries it promises.
-      - name: Create versioned release with both binaries
+      - name: Create versioned release with every binary
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prep.outputs.tag }}
@@ -204,6 +221,7 @@ jobs:
           set -euo pipefail
           IPA="$RUNNER_TEMP/ipa/comical-unsigned.ipa"
           APK="$RUNNER_TEMP/apk/comical-android.apk"
+          DESKTOP="$RUNNER_TEMP/desktop"
           DL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           IOS_RELEASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-release/apps.json"
 
@@ -214,17 +232,25 @@ jobs:
           gh release create "$TAG" \
             "$IPA" \
             "$APK" \
+            "$DESKTOP/comical-desktop-setup.exe" \
+            "$DESKTOP/comical-desktop-x86_64.AppImage" \
+            "$DESKTOP/comical-desktop-amd64.deb" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Comical ${TAG}" \
             --generate-notes \
-            --notes "Versioned build with both platform binaries.
+            --notes "Versioned build with every platform's binaries.
 
           **iOS (unsigned IPA, re-signed on-device by SideStore/AltStore):**
           \`${DL}/comical-unsigned.ipa\`
 
           **Android (APK):**
           \`${DL}/comical-android.apk\`
+
+          **Windows (installer):** \`${DL}/comical-desktop-setup.exe\`
+          **Linux (AppImage):** \`${DL}/comical-desktop-x86_64.AppImage\` — \`chmod +x\` and run.
+          **Linux (Debian/Ubuntu):** \`${DL}/comical-desktop-amd64.deb\`
+          The desktop installers aren't code-signed: Windows SmartScreen warns on first run (**More info → Run anyway**).
 
           **AltStore users:** keep your existing source — the public release channel tracks every tag and updates automatically:
           \`${IOS_RELEASE}\`"
@@ -240,11 +266,15 @@ jobs:
 
       # Android has no source manifest to subscribe to the way iOS has apps.json, so the stable
       # android-release download URL is the whole channel — it's what the README points at and what
-      # an installed release build's update check follows. This lane owns it exclusively; pushes to
-      # main move android-latest instead, which is the rolling counterpart of ios-main.
+      # an installed release build's update check follows.
       - name: Refresh the android-release download link
         env:
           GH_TOKEN: ${{ github.token }}
         # The resolved tag, not `github.ref_name` — on a dispatch that would be the BRANCH, and this
         # label is what the android-release notes show as the version they carry.
         run: bash .github/scripts/publish-android-channel.sh android-release "$RUNNER_TEMP/apk/comical-android.apk" "${{ needs.prep.outputs.tag }}" "${{ github.sha }}"
+
+      - name: Refresh the desktop-release download links
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-desktop-channel.sh "$RUNNER_TEMP/desktop" "${{ needs.prep.outputs.tag }}" "${{ github.sha }}"

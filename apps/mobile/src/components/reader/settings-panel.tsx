@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import { useEffect, type ComponentType } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
@@ -37,8 +37,13 @@ const SHEET_SETTLE_MS = 600;
  *  gear (`CollectPageControl`); a chapter has its row's long-press menu on the series screen
  *  (`series.chapter-menu.collect`); a series has the series screen. Nothing was lost, and the sheet
  *  is now only the three things that actually change how the reader behaves. */
-export function SettingsControl() {
-  const { ref, openAt } = useAnchoredOverlay();
+export function SettingsControl({ onOpenChange }: { onOpenChange?: (open: boolean) => void }) {
+  const { ref, openAt, isOpen } = useAnchoredOverlay();
+  useEffect(() => {
+    if (!isOpen || !onOpenChange) return;
+    onOpenChange(true);
+    return () => onOpenChange(false);
+  }, [isOpen, onOpenChange]);
 
   return (
     <Pressable

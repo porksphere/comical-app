@@ -1,0 +1,62 @@
+name: Build desktop
+
+# Packaging lane for the Electron desktop app (apps/desktop): every PR that can change it builds the
+# installers (build-desktop-reusable.yml) and uploads them as run artifacts; main is built nightly.
+# Versioned installers, and the desktop-release download links, are release.yml's, which calls the
+# same reusable build.
+
+on:
+  workflow_dispatch:
+  # Main is built nightly rather than per push: nothing installs a main build, so all a main build
+  # is for is proving main still builds and keeping the warm caches that only main may save from
+  # being evicted (7 days unused). Skipped when nothing it depends on changed (the `gate` job).
+  schedule:
+    - cron: '17 9 * * *'
+  pull_request:
+    # No `closed` — see build-android.yml's note on why that event's ref would cancel a nightly.
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/mobile/**'
+      - 'external/comical'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/build-desktop.yml'
+      - '.github/workflows/build-desktop-reusable.yml'
+      - '.github/scripts/compute-build-version.sh'
+      - '!**/*.md'
+      - '!apps/mobile/docs/**'
+      - '!apps/mobile/eas.json'
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # A nightly run with nothing new to build stops here (see nightly-gate.sh). Every other event
+  # builds.
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          bash .github/scripts/nightly-gate.sh build-desktop.yml
+          apps/desktop apps/mobile external/comical package.json bun.lock .github/workflows/build-desktop.yml .github/workflows/build-desktop-reusable.yml .github/scripts/compute-build-version.sh
+
+  build:
+    needs: gate
+    if: needs.gate.outputs.build == 'true'
+    uses: ./.github/workflows/build-desktop-reusable.yml
+    with:
+      channel: ${{ github.ref == 'refs/heads/main' && 'desktop-nightly' || 'desktop-pr' }}

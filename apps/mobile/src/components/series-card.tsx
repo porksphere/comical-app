@@ -345,8 +345,8 @@ export function SeriesCard({
 
   // The quick-actions menu is only offered when there's a real bridge to act against (`bridgeId` —
   // absent in mock mode). Its status queries no longer touch the card at all: they run inside the
-  // shared `SeriesActionsMenu`, which only mounts while the menu is open (native long-press / web
-  // 3-dot), so a scrolling grid pays nothing for them. See `series-card-menu.tsx`.
+  // menu's rows, which only mount while the menu is open (native long-press / web 3-dot), so a
+  // scrolling grid pays nothing for them. See `series-card-menu.tsx`.
   const menuEnabled = !!bridgeId;
 
   // Recycle-safety: the browse grid and rails now reuse card instances

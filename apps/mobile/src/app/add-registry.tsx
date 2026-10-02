@@ -10,7 +10,9 @@ import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { BarContentGap, MaxContentWidth, Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
+import { useHydrated } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { desktopShell } from '@/lib/desktop-shell';
 import {useLocalSearchParams, useRouter} from '@/lib/nav';
 
 // Deep-link entry point: comical://add-registry?url=<registry index.json URL>
@@ -28,6 +30,12 @@ import {useLocalSearchParams, useRouter} from '@/lib/nav';
 // scheme (a real click, not an auto-redirect, since browsers largely require
 // a user gesture to honor a custom-scheme navigation); the native app then
 // re-enters this same screen for the actual confirm-and-add flow below.
+//
+// The desktop app is web too, but it IS the app the link is for (it handles `comical://` itself),
+// so it takes the native path. Handing off from there would launch itself, land here again, and
+// hand off again.
+const handsOff = () => Platform.OS === 'web' && !desktopShell();
+
 export default function AddRegistryScreen() {
   const { url } = useLocalSearchParams<{ url?: string }>();
   const ds = useDataSource();
@@ -36,6 +44,8 @@ export default function AddRegistryScreen() {
   const insets = useSafeAreaInsets();
   const topBarInset = useTopBarInset();
   const queryClient = useQueryClient();
+  // Gated on hydration: the static render has no shell, so the desktop would mismatch it.
+  const handoff = !useHydrated() ? Platform.OS === 'web' : handsOff();
 
   const deepLink = url ? `comical://add-registry?url=${encodeURIComponent(url)}` : null;
 
@@ -56,7 +66,7 @@ export default function AddRegistryScreen() {
   // Best-effort auto-handoff on page load; the visible button below is the
   // reliable path if the browser declines to honor a scripted redirect.
   useEffect(() => {
-    if (Platform.OS === 'web' && deepLink && typeof window !== 'undefined') window.location.href = deepLink;
+    if (handsOff() && deepLink && typeof window !== 'undefined') window.location.href = deepLink;
   }, [deepLink]);
 
   const cancel = () => {
@@ -76,7 +86,7 @@ export default function AddRegistryScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             No registry URL was provided with this link.
           </ThemedText>
-        ) : Platform.OS === 'web' ? (
+        ) : handoff ? (
           <>
             <ThemedText type="subtitle">Open in the Comical app</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">

@@ -7,7 +7,7 @@
  *
  * The manifests are minted by CI and documented where they're written:
  *   - iOS — an AltStore/SideStore source, `.github/scripts/refresh-ios-release-source.sh`
- *     (ios-release, every tag) and `build-ios.yml`'s publish job (ios-main, the current build).
+ *     (ios-release, every tag).
  *   - Android/web — a flat `version.json`, `.github/scripts/publish-android-channel.sh` and
  *     `deploy-web.yml`.
  * The notes inside them come from `changelog-section.sh` on a tagged lane and
@@ -44,11 +44,10 @@ export type ChannelVersionJson = { commit?: string; version?: string; notes?: st
 
 /** Numeric part-by-part compare of `MAJOR.MINOR.PATCH[.N]` strings (missing parts treated as 0),
  *  positive when `a` is newer than `b`. Not general semver — doesn't need to be: every version this
- *  compares is minted by CI as numeric parts only, never a pre-release suffix — a `vX.Y.Z` tag on
- *  ios-release, `X.Y.Z.<series build number>` on ios-main. The optional 4th part is why the shorter
- *  side's missing parts count as 0: that's what makes a tag and the main builds derived from it
- *  order correctly, though in practice the two never meet (each channel compares only against its
- *  own source). Most-significant-part-first is also what makes the counter safe to restart at .1
+ *  compares is minted by CI as numeric parts only, never a pre-release suffix — a `vX.Y.Z` tag, or
+ *  `X.Y.Z.<series build number>` on the builds between tags. The optional 4th part is why the
+ *  shorter side's missing parts count as 0: that's what makes a tag and the builds derived from it
+ *  order correctly. Most-significant-part-first is also what makes the counter safe to restart at .1
  *  on a release: the base moving up outranks the counter dropping, so 0.2.0.1 > 0.1.1.4287. */
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
@@ -70,9 +69,8 @@ function toNote(version: string | undefined, body: string | undefined, date?: st
 
 export function readIosSource(json: IosSourceJson, runningVersion: string): ChannelRead {
   const app = json.apps?.[0];
-  // `versions[]` is the whole history on ios-release and a single entry on ios-main. Both are
-  // ordered newest-first by their publisher, but the split is made on the running version rather
-  // than by trusting that order.
+  // `versions[]` is the whole history, ordered newest-first by its publisher, but the split is made
+  // on the running version rather than by trusting that order.
   const all = app?.versions ?? [];
   const pending = all
     .filter((v) => v.version && compareVersions(v.version, runningVersion) > 0)

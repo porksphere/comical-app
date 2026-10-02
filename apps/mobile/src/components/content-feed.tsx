@@ -156,7 +156,7 @@ export function ContentFeed({
   /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
   scrollEnabled?: boolean;
 }) {
-  const { numColumns, cardWidth, railViewport, width } = useGridLayout();
+  const { numColumns, cardWidth, railViewport, width, gutter } = useGridLayout();
   const wide = useIsLargeScreen();
   // The breakpoint `SectionHead` itself reads — the sticky sizes its band from the head's real
   // height. A DIFFERENT breakpoint from `wide` above.
@@ -210,15 +210,15 @@ export function ContentFeed({
         case 'rail':
           // Strip only — the heading is its own preceding `sectionHead` row now. The rail's own
           // bridge (aggregate rails carry an override) decides whether the sub line is reserved.
-          return railStripHeight(row.section.kind, railViewport, wide, subOf(row.bridgeId ?? bridgeId));
+          return railStripHeight(row.section.kind, railViewport, wide, subOf(row.bridgeId ?? bridgeId), gutter);
         case 'railSkeleton':
           // Self-headed (still renders its own title), so it's the whole head+strip height.
-          return railRowHeight('regular', railViewport, wide, subOf(bridgeId));
+          return railRowHeight('regular', railViewport, wide, subOf(bridgeId), gutter);
         default:
           return undefined; // gridBlock / gridBlockSkeleton — measured
       }
     },
-    [cellHeight, railViewport, wide, subOf, bridgeId],
+    [cellHeight, railViewport, wide, subOf, bridgeId, gutter],
   );
 
   // ── The sticky heading's offsets ────────────────────────────────────────────
@@ -310,6 +310,12 @@ export function ContentFeed({
       header={header}
       footer={footer}
       paddingTop={paddingTop}
+      // Below the pinned heading too, which covers the track just as the bar does.
+      scrollbarInsetTop={
+        stickyHeaderTop === undefined
+          ? paddingTop
+          : Math.max(paddingTop, stickyHeaderTop + sectionHeadHeight(compact) + HEADING_GAP * 2)
+      }
       paddingBottom={paddingBottom ?? BottomTabInset + Spacing.five}
       sidePad={centerPad}
       sharedValues={sharedValues}

@@ -54,6 +54,7 @@ import { friendlyError } from '@/lib/friendly-error';
 import { hapticSelection } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 /** Cover width in a row. Its 2:3 crop is 45px tall, which clears a 64px settings row's padding. */
 const THUMB_W = 30;
@@ -239,7 +240,7 @@ export default function FavoritesImportScreen() {
           scrollYRef.current = e.nativeEvent.contentOffset.y;
         }}
         scrollEventThrottle={16}
-        style={styles.list}
+        style={[styles.list, scrollbarInset(paddingTop)]}
         data={rows}
         keyExtractor={(i) => i.seriesId}
         recycleItems

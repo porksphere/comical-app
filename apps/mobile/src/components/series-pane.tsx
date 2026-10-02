@@ -14,12 +14,15 @@
  *   `/series`, and the pane would take that push back and replace itself, losing the series you
  *   drilled from.
  * - `PaneNavContext` so the page's back closes the pane rather than unwinding the app beneath it.
- * - `SeriesPaneWidthContext` so it measures against the pane and not the window.
+ * - `SeriesPaneWidthContext` so it measures against the pane and not the window, and a content width
+ *   that says the same to everything else inside it — a tag's search grid, and the bars that keep
+ *   clear of the window's caption buttons.
  * - `PaneParamsContext` because it was never pushed, so there are no route params to read.
  */
 import { StyleSheet, View } from 'react-native';
 
 import SeriesReaderScreen from '@/app/series/index';
+import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useTheme } from '@/hooks/use-theme';
 import { PaneNavContext, PaneParamsContext, type PaneNav } from '@/lib/pane';
 import { closeSeriesPane, useSeriesPane } from '@/lib/series-pane';
@@ -55,13 +58,15 @@ export function SeriesPane({ left, width, top }: { left: number; width: number; 
           screen is written expecting exactly that, because a route push is what it usually is. */}
       <View style={styles.body} key={`${params.bridgeId ?? ''}:${params.id ?? ''}`}>
         <SeriesPaneWidthContext.Provider value={width}>
-          <InSeriesPageStack.Provider value={true}>
-            <PaneNavContext.Provider value={PANE_NAV}>
-              <PaneParamsContext.Provider value={params}>
-                <SeriesReaderScreen />
-              </PaneParamsContext.Provider>
-            </PaneNavContext.Provider>
-          </InSeriesPageStack.Provider>
+          <ContentWidthProvider width={width} sidebar>
+            <InSeriesPageStack.Provider value={true}>
+              <PaneNavContext.Provider value={PANE_NAV}>
+                <PaneParamsContext.Provider value={params}>
+                  <SeriesReaderScreen />
+                </PaneParamsContext.Provider>
+              </PaneNavContext.Provider>
+            </InSeriesPageStack.Provider>
+          </ContentWidthProvider>
         </SeriesPaneWidthContext.Provider>
       </View>
     </View>

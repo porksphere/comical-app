@@ -1,26 +1,17 @@
 #!/usr/bin/env bash
-# Republishes one of the two rolling Android channels, each a GitHub Release whose single APK asset
-# lives at a stable, public, unauthenticated download URL:
+# Republishes the `android-release` channel: a GitHub Release whose single APK asset — the newest
+# TAGGED release's — lives at a stable, public, unauthenticated download URL. Refreshed only by
+# release.yml. This is what the README's download button points at and what an `android-release`
+# build's in-app update check follows.
 #
-#   android-release  the PUBLIC channel — the newest TAGGED release's APK. Refreshed only by
-#                    release.yml. This is what the README's download button points at and what an
-#                    `android-release` build's in-app update check follows.
-#   android-latest   the ROLLING channel — whatever main last built. Refreshed only by
-#                    build-android.yml. For dev/testing, the Android counterpart of ios-main.
-#
-# THE TWO USED TO BE ONE, and both lanes republished it. That had two consequences, both fixed by
-# the split. A user on a tagged release was told "update available" the first time any commit
-# landed on main, and the button handed them a main build — Android had no equivalent of the
-# ios-release/ios-main separation that keeps iOS users on the channel they chose. And because the
-# two lanes run in different concurrency groups (`android-*` vs `release-*`), merging a release
-# bump and then dispatching the release had both of them delete-and-recreate the same Release at
-# once: last writer wins, with a 404 window on the download URL in between. Different tags, no race.
+# Nothing else may publish to it. A main build once refreshed the same Release, and a user on a
+# tagged release was offered every main build as an update.
 #
 # The Release is deleted and recreated rather than edited: that's what keeps the asset URL
 # byte-identical across builds (a second asset of the same name would otherwise be served as
 # `comical-android.1.apk`). `--cleanup-tag` takes the lightweight tag with it.
 #
-# Usage: publish-android-channel.sh <android-release|android-latest> <path-to-apk> [version] [commit]
+# Usage: publish-android-channel.sh android-release <path-to-apk> [version] [commit]
 # Requires gh + GH_TOKEN and GITHUB_REPOSITORY in the environment.
 set -euo pipefail
 
@@ -28,7 +19,7 @@ TAG="${1:?usage: publish-android-channel.sh <channel> <path-to-apk> [version] [c
 APK="${2:?usage: publish-android-channel.sh <channel> <path-to-apk> [version] [commit]}"
 VERSION="${3:-}"
 # Both forms are needed: the app compares against a SHORT sha (build-info.ts truncates to 7), while
-# the rolling channel's `built-sha` marker has to stay a full 40 so `git merge-base` can resolve it.
+# the `built-sha` marker has to stay a full 40 so `git merge-base` can resolve it.
 FULL_COMMIT="${4:-}"
 COMMIT="${FULL_COMMIT:0:7}"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY not set}"
@@ -43,28 +34,18 @@ case "$TAG" in
 version also stays permanently downloadable from its own \`vX.Y.Z\` entry in
 [Releases](https://github.com/${REPO}/releases)."
     ;;
-  android-latest)
-    TITLE="Comical Android — main channel (rolling)"
-    LANE_NOTES="This link is rolling: it always serves whatever **main** last built, which may be
-ahead of the newest tagged release and is not a stable channel. For released builds use
-\`${BASE%/*}/android-release/comical-android.apk\`."
-    ;;
   *)
-    echo "::error::unknown channel '$TAG' (expected android-release or android-latest)"; exit 1 ;;
+    echo "::error::unknown channel '$TAG' (expected android-release)"; exit 1 ;;
 esac
 
-# The version is only ever shown in the notes; a caller that doesn't know it (the rolling lane
-# reads it from the build job) still gets a valid release.
+# The version is only ever shown in the notes; a caller that doesn't know it still gets a valid
+# release.
 [ -n "$VERSION" ] && TITLE="$TITLE — $VERSION"
 
-# What CHANGED in this APK, by the same rule the iOS sources use: a tagged channel quotes the
-# release's CHANGELOG section, a rolling one lists the commits since it last published. Android has
-# no source manifest to carry this, so it goes in version.json — which the in-app update check
-# already fetches — and into the release body for anyone reading the page.
-case "$TAG" in
-  android-release) NOTES="$(bash .github/scripts/changelog-section.sh "${VERSION#v}" || true)" ;;
-  android-latest)  NOTES="$(bash .github/scripts/rolling-changelog.sh android-latest || true)" ;;
-esac
+# What CHANGED in this APK: the release's CHANGELOG section, the same notes the ios-release source
+# carries. Android has no source manifest to carry this, so it goes in version.json — which the
+# in-app update check already fetches — and into the release body for anyone reading the page.
+NOTES="$(bash .github/scripts/changelog-section.sh "${VERSION#v}" || true)"
 
 # version.json: what the in-app update checker (apps/mobile/src/data/use-app-update.ts) compares
 # BUILD_COMMIT against to decide "there's a newer build on my channel than the one I'm running".

@@ -152,6 +152,12 @@ function SubmenuRow({
       onPressOut={() => {
         if (!channel.holdActive.value) channel.hoveredRow.set(-1);
       }}
+      onHoverIn={() => {
+        if (!channel.holdActive.value) channel.hoveredRow.set(index);
+      }}
+      onHoverOut={() => {
+        if (!channel.holdActive.value) channel.hoveredRow.set(-1);
+      }}
       style={menuStyles.row}>
       <ThemedText
         style={[menuStyles.rowLabel, { color: loading ? theme.textSecondary : theme.text }]}
@@ -302,8 +308,8 @@ export function MenuRow({
   // a change without needing a colour of its own. A submenu row's chevron uses the FULL-contrast colour
   // too, so it matches the expanded header's chevron it rotates into (no grey→white shift on open).
   const iconColor = inert ? theme.textSecondary : primary || active || submenu ? color : theme.textSecondary;
-  // A row has NO highlight of its own: pressing it writes the same channel the held finger does, so
-  // the one travelling bubble draws a press and a peek alike. While a hold owns the selection, the
+  // A row has NO highlight of its own: pressing it — or a pointer resting on it — writes the same
+  // channel the held finger does, so the one travelling bubble draws a press, a hover and a peek alike. While a hold owns the selection, the
   // press keeps its hands off (activating the hold cancels the responder → onPressOut fires, which
   // would otherwise clear the very row the hold just picked).
   return (
@@ -315,6 +321,12 @@ export function MenuRow({
         if (!channel.holdActive.value) channel.hoveredRow.set(index);
       }}
       onPressOut={() => {
+        if (!channel.holdActive.value) channel.hoveredRow.set(-1);
+      }}
+      onHoverIn={() => {
+        if (!channel.holdActive.value) channel.hoveredRow.set(index);
+      }}
+      onHoverOut={() => {
         if (!channel.holdActive.value) channel.hoveredRow.set(-1);
       }}
       style={menuStyles.row}>

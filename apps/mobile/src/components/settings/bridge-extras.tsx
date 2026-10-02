@@ -266,15 +266,15 @@ export function BridgePrefsToggles({ bridgeId }: { bridgeId: string }) {
   );
 }
 
-/** App-local toggle: whether this bridge contributes a rail to the synthetic "Comical" aggregate home
- *  (cross-bridge search is unaffected). Persisted via `useComicalExcluded`. */
+/** App-local toggle: whether this bridge takes part in the synthetic "Comical" aggregate — its home
+ *  rails and its cross-bridge search. Persisted via `useComicalExcluded`. */
 export function ComicalHomeToggle({ bridgeId }: { bridgeId: string }) {
   const [excluded, setExcluded] = useComicalExcluded(bridgeId);
   return (
-    <SettingsSection title="Comical home">
+    <SettingsSection title="Comical">
       <SettingsRow
-        label="Show on Comical home"
-        description="Include this bridge's rail in the cross-bridge home."
+        label="Include in Comical"
+        description="Show this bridge on the cross-bridge home and in its search."
         right={<ThemedSwitch value={!excluded} onValueChange={(show) => setExcluded(!show)} />}
       />
     </SettingsSection>

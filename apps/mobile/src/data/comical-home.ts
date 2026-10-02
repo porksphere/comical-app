@@ -1,8 +1,7 @@
 /**
- * Which bridges the user has excluded from the synthetic "Comical" aggregate HOME. App-local and
- * persisted (Legend State, not a bridge-server pref) — set per-bridge in that bridge's settings. Only
- * the home rails are trimmed; cross-bridge SEARCH still spans every bridge. A bridge is excluded when
- * its id maps to `true`.
+ * Which bridges the user has excluded from the synthetic "Comical" aggregate. App-local and
+ * persisted (Legend State, not a bridge-server pref) — set per-bridge in that bridge's settings. Both
+ * the home rails and cross-bridge search skip it. A bridge is excluded when its id maps to `true`.
  */
 import { use$ } from '@legendapp/state/react';
 
@@ -10,7 +9,7 @@ import { persisted$ } from '@/lib/observable';
 
 const excludedFromComicalHome$ = persisted$<Record<string, boolean>>('comical:excludedBridges', {});
 
-/** Reactive map of excluded bridge ids — for filtering the Comical home's bridge fan-out. */
+/** Reactive map of excluded bridge ids — for filtering the Comical home and search fan-out. */
 export function useComicalExcludedIds(): Record<string, boolean> {
   return use$(excludedFromComicalHome$);
 }

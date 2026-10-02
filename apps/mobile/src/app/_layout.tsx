@@ -41,12 +41,16 @@ import { OverlayProvider } from '@/components/overlay/overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
 import { ToastHost } from '@/components/toast';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
+import { installDesktopChapterCheck } from '@/data/activity/desktop-check';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { installAppUpdateAutoCheck } from '@/data/use-app-update';
+import { useDesktopShellCommands } from '@/lib/desktop-commands';
 import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
+import { useWindowThemeColor } from '@/lib/window-controls';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
 import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
+import { Colors } from '@/constants/theme';
 /* eslint-enable import/first */
 
 // Install the on-device transport per the persisted preference before any screen queries fire
@@ -55,6 +59,7 @@ startEmbeddedRuntime();
 
 // New-chapter auto-check on launch + foreground return (all platforms; startup.ts is native-only).
 installActivityAutoCheck();
+installDesktopChapterCheck();
 
 // App-update auto-check on launch + foreground return — see data/use-app-update.ts. No-ops on
 // internal/dev build channels.
@@ -103,6 +108,8 @@ function RootNavigation() {
   // navigation theme + status bar match the app content and re-theme live when the
   // preference changes.
   const scheme = useActiveColorScheme();
+  useWindowThemeColor(Colors[scheme].background);
+  useDesktopShellCommands();
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       {/* Status-bar contents follow the active scheme (light glyphs on the dark

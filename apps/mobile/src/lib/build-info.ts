@@ -26,7 +26,7 @@ import { Platform } from 'react-native';
 
 import { SENTRY_BUILD_CHANNEL } from './sentry';
 
-/** Which CI build produced this binary (ios-main, android-release, web-docker, … or 'local-dev'
+/** Which CI build produced this binary (ios-release, android-pr, web-docker, … or 'local-dev'
  *  outside CI). Defined in `lib/sentry.ts`, which tags every crash with it — see the note there for
  *  why that module, not this one, holds the definition. Re-exported through a local const rather
  *  than `export … from`, so `buildSummary()` below can read it. */
@@ -90,7 +90,7 @@ export function buildTimeLabel(): string {
   return Number.isNaN(date.getTime()) ? BUILD_TIME : date.toLocaleString();
 }
 
-/** One-line summary of what kind of build this is, e.g. "release · ios-main" — the line that
+/** One-line summary of what kind of build this is, e.g. "release · ios-pr" — the line that
  *  answers "is this a shipped build or a PR one?" without reading three separate rows. */
 export function buildSummary(): string {
   return `${BUILD_TYPE} · ${BUILD_CHANNEL}`;

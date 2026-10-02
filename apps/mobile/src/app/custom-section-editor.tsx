@@ -15,6 +15,7 @@ import { queryKeys } from '@/data/queries';
 import { LIST_LAYOUTS, useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 // Content-type options, derived from the contract's layout list (LIST_LAYOUTS) — a layout added to the
 // contract shows up here automatically. `grid` renders as a vertical grid; everything else as a rail.
@@ -109,7 +110,7 @@ export default function CustomSectionEditorScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title={editing ? 'Edit section' : 'Add section'} />
-      <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
+      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
           <SettingsSelectRow
             label="Bridge"

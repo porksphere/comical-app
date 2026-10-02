@@ -8,7 +8,9 @@ import {
 } from 'expo-router';
 import { useMemo, type ComponentProps } from 'react';
 
+import { openBridgeSearchPane } from '@/lib/bridge-search-pane';
 import { usePaneNav, usePaneParams, type PaneParams } from '@/lib/pane';
+import { openResultsPane } from '@/lib/results-pane';
 import { openSeriesPane } from '@/lib/series-pane';
 
 import { BACK_TARGET, claimNavigation, navTargetKey } from '@/lib/nav-guard';
@@ -47,12 +49,12 @@ function guard(base: Router): Router {
     ...base,
     push: (href, options) => {
       if (!claimNavigation(navTargetKey(href))) return;
-      if (takeSeriesPane(href)) return;
+      if (takeContentPane(href)) return;
       base.push(href, options);
     },
     navigate: (href, options) => {
       if (!claimNavigation(navTargetKey(href))) return;
-      if (takeSeriesPane(href)) return;
+      if (takeContentPane(href)) return;
       base.navigate(href, options);
     },
     replace: (href, options) => {
@@ -106,16 +108,20 @@ export function useRouter(): Router {
 }
 
 /**
- * Hands a `/series` navigation to the right-hand pane when one is up, and reports that it did.
+ * Hands a `/series`, `/results` or `/search` navigation to its pane over the content region when one is up,
+ * and reports that it did.
  *
  * Here rather than at the call sites because there are eleven of them across cards, rows, menus and
  * the series page's own related rails, and a pane that some of them missed would be a pane you can
- * navigate out from under. `openSeriesPane` answers false whenever no pane is mounted — every
- * viewport below the rail's, and every native build — so this reduces to the plain push there.
+ * navigate out from under. The panes answer false whenever none is mounted — every viewport below
+ * the rail's, and every native build — so this reduces to the plain push there.
  */
-function takeSeriesPane(href: unknown): boolean {
+function takeContentPane(href: unknown): boolean {
   const { pathname, params } = splitHref(href);
-  return pathname === '/series' && openSeriesPane(params);
+  if (pathname === '/series') return openSeriesPane(params);
+  if (pathname === '/results') return openResultsPane(params);
+  if (pathname === '/search') return openBridgeSearchPane();
+  return false;
 }
 
 /** Both shapes expo-router accepts, reduced to the pathname and params the pane needs to render. */
@@ -183,7 +189,7 @@ export function Link({ onPress, ...rest }: LinkProps) {
     onPress?.(event);
     if (Platform.OS !== 'web') return;
     event.preventDefault();
-    if (takeSeriesPane(rest.href)) return;
+    if (takeContentPane(rest.href)) return;
     if (rest.replace) expoRouter.replace(rest.href);
     else if (rest.push) expoRouter.push(rest.href);
     else expoRouter.navigate(rest.href);

@@ -7,6 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { readFrameSummary } from '@/lib/frame-trace';
 import {
@@ -112,7 +113,7 @@ export default function GestureTraceScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Gesture trace" />
-      <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
+      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <ThemedText type="small" themeColor="textSecondary">
           Records what the swipe recognizers on the series page and the search layer did — whether
           they saw the touches, whether they began, whether they activated, and what state they saw

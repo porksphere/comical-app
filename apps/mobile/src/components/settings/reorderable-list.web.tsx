@@ -8,6 +8,7 @@ import { Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 import type { ReorderableListProps } from './reorderable-list.types';
 
@@ -27,7 +28,7 @@ export function ReorderableList<T>({ data, keyOf, renderRow, label, leading, onR
     onReorder(keys);
   };
   return (
-    <ScrollView contentContainerStyle={contentPadding} style={styles.host}>
+    <ScrollView contentContainerStyle={contentPadding} style={[styles.host, scrollbarInset(contentPadding.paddingTop)]}>
       {editing ? (
         data.map((item, i) => (
           <ThemedView key={keyOf(item)} type="backgroundElement" style={styles.row}>

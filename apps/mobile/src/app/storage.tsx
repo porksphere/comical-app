@@ -32,6 +32,7 @@ import { getResolvedModeSync } from '@/data/embedded/preference';
 import { queryKeys } from '@/data/queries';
 import { applyImageCacheConfig, cachePrefs$, clearImageCache, measureCacheUsage, useCachePrefs } from '@/data/image-cache';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useRouter } from '@/lib/nav';
 
 const MB = 1024 * 1024;
@@ -119,7 +120,7 @@ export default function StorageScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Storage" />
-      <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
+      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
           <View style={styles.summary}>
             <StorageBreakdownBar segments={segments} totalBytes={downloadsBytes + libraryBytes + (cacheSize ?? 0)} />

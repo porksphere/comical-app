@@ -40,6 +40,7 @@ import { APP_VERSION } from '@/lib/build-info';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 /**
  * The Settings landing screen is a table of contents, nothing more: every category owns its own
@@ -75,6 +76,7 @@ export default function SettingsScreen() {
         // No scroll reporting and no gesture phases: the bar is pinned here, and the phase
         // broadcast is global — a blurred screen's bar would still be listening to this one's
         // scrolling.
+        style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[
           styles.content,
           contentPadding,

@@ -23,8 +23,7 @@ import { RetryBlock } from '@/components/retry-block';
 import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
-import { SearchField } from '@/components/search-field';
-import { SearchPill } from '@/components/search-pill';
+import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -34,7 +33,7 @@ import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useContentWidth, useHasSidebar } from '@/hooks/use-content-width';
+import { useContentWidth } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -45,6 +44,7 @@ import { relTime } from '@/lib/rel-time';
 import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
 import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 /**
  * One coalesced feed row: a single library series with its newly-detected chapters folded together
@@ -79,10 +79,8 @@ export default function ActivityScreen() {
   const insets = useSafeAreaInsets();
   // The content column, not the window — the sidebar's inset is already out of it.
   const width = useContentWidth();
-  const railNav = useHasSidebar();
-  // Wide only — below the rail breakpoint Activity is unchanged.
-  const [searching, setSearching] = useState(false);
-  const [query, setQuery] = useState('');
+  const filter = useTabFilter();
+  const query = filter.query;
   const queryClient = useQueryClient();
   const hideNsfw = useHideNsfw();
   const { byId, nameOf, directOf } = useBridgeMap();
@@ -277,6 +275,7 @@ export default function ActivityScreen() {
         </ThemedText>
       );
     }
+    if (rows.length === 0) return <ThemedText themeColor="textSecondary">No matches</ThemedText>;
     return null;
   };
 
@@ -295,7 +294,7 @@ export default function ActivityScreen() {
           <AnimatedLegendList
             ref={listRef}
             // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
-            style={styles.list}
+            style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
             data={rows}
             keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
             recycleItems={false}
@@ -351,30 +350,11 @@ export default function ActivityScreen() {
       <TabTitleBar
         title="Activity"
         titleSlot={
-          railNav && searching ? (
-            <SearchField
-              testID="activity.search-field"
-              value={query}
-              onSubmit={(q) => setQuery(q.trim())}
-              onClear={() => {
-                setQuery('');
-                setSearching(false);
-              }}
-              placeholder="Search activity…"
-              autoFocus
-              immediateFocus
-            />
+          filter.open ? (
+            <TabFilterField filter={filter} testID="activity.search" placeholder="Filter activity…" />
           ) : undefined
         }
-        right={
-          railNav && !searching ? (
-            <SearchPill
-              testID="activity.search-pill"
-              onPress={() => setSearching(true)}
-              placeholder="Search activity…"
-            />
-          ) : undefined
-        }
+        right={<TabFilterTrigger filter={filter} testID="activity.search" placeholder="Filter activity…" />}
       />
     </ThemedView>
     </ZoomSurfaceContext.Provider>

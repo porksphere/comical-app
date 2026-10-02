@@ -1,20 +1,17 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 
 import { useRouter } from '@/lib/nav';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChevronLeftIcon } from '@/components/icons/chevron-left';
-import { SearchIcon } from '@/components/icons/ui-icons';
-import { SearchPill } from '@/components/search-pill';
 import { LibraryCollectionSelector } from '@/components/library-collection-selector';
 import { LibrarySortButton } from '@/components/library-sort-button';
 import { RetryBlock } from '@/components/retry-block';
-import { SearchField } from '@/components/search-field';
+import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectedItemsGrid } from '@/components/collections/collected-items-grid';
 import { CollectedSortButton } from '@/components/collections/collected-sort-button';
@@ -34,6 +31,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useHasSidebar } from '@/hooks/use-content-width';
 import { useCollections } from '@/hooks/use-collections';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { libraryGroupOf } from '@/data/library-grouping';
 import { useLibraryGrouping, useLibrarySort } from '@/hooks/use-library-sort';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
@@ -81,14 +79,9 @@ export default function LibraryScreen() {
   // store's doc), so each one restores its own last-used axes.
   const [collectedView, setCollectedView] = useCollectedView(collectionFilter);
 
-  // In-place search: the top-bar search icon swaps the bar's leading content for a search field
-  // (no pushed screen). `query` is committed on submit and folds straight into the same grid query.
-  const [searching, setSearching] = useState(false);
-  const [query, setQuery] = useState('');
-  const closeSearch = () => {
-    setSearching(false);
-    setQuery('');
-  };
+  // What's typed folds straight into the same grid query, debounced since each term is a fetch.
+  const filter = useTabFilter();
+  const term = useDebouncedValue(filter.query.trim(), 200);
 
   // Bridges resolve each entry's display name + direct-ness (each library card
   // carries its own bridge, unlike the Browse grid's single-bridge view).
@@ -99,8 +92,9 @@ export default function LibraryScreen() {
   const { data: items = undefined, error, isLoading, refetch } = useQuery({
     // Collections no longer FILTER the series grid — they have their own contents view — so the
     // library query is always unscoped.
-    ...libraryQuery(ds, mock, query, sort, null),
+    ...libraryQuery(ds, mock, term, sort, null),
     enabled: !showingCollected,
+    placeholderData: keepPreviousData,
   });
 
   // Saved pages. `type: 'page'` is NOT optional — a bare collected query returns the mixed
@@ -112,9 +106,15 @@ export default function LibraryScreen() {
       collection: collectionFilter ?? '',
       sort: collectedView.sort,
       dir: collectedView.dir,
-      ...(query ? { q: query } : {}),
+      ...(term ? { q: term } : {}),
     }),
     enabled: showingCollected,
+    // Held across a refined filter, not across a switch of collection — that would show the last
+    // collection's contents under the new one's name.
+    placeholderData: (prev, prevQuery) =>
+      (prevQuery?.queryKey[2] as { collection?: string } | undefined)?.collection === (collectionFilter ?? '')
+        ? prev
+        : undefined,
   });
 
   // Reflect adds/removes made on the series detail (or a mode switch) when the
@@ -181,8 +181,8 @@ export default function LibraryScreen() {
       );
     }
     if (visibleCollected.length === 0) {
-      if (query.trim()) {
-        return <EmptyState title="No matches" detail="Nothing in this collection matches your search." />;
+      if (term) {
+        return <EmptyState title="No matches" detail="Nothing in this collection matches your filter." />;
       }
       return (
         <EmptyState
@@ -212,8 +212,8 @@ export default function LibraryScreen() {
       );
     }
     if (cards.length === 0) {
-      if (query.trim()) {
-        return <EmptyState title="No matches" detail="No series in your library match your search." />;
+      if (term) {
+        return <EmptyState title="No matches" detail="No series in your library match your filter." />;
       }
       return <EmptyState title="Your library is empty" detail="Open a series and tap “＋ Library” to add it here." />;
     }
@@ -232,7 +232,7 @@ export default function LibraryScreen() {
           grouping={collectedView.grouping}
           // Every axis is in the key: a sort/dir/grouping switch is a scroll-to-top moment and must
           // reset recycled rows, exactly as a search or collection switch does.
-          scopeKey={`collected|${query}|${collectionFilter}|${collectedView.sort}|${collectedView.dir}|${collectedView.grouping}`}
+          scopeKey={`collected|${term}|${collectionFilter}|${collectedView.sort}|${collectedView.dir}|${collectedView.grouping}`}
           listRef={listRef}
           header={renderCollectedEmpty()}
           paddingTop={headerHeight + BarContentGap}
@@ -295,7 +295,7 @@ export default function LibraryScreen() {
                   seqCollection: collectionFilter ?? '',
                   seqSort: collectedView.sort,
                   seqDir: collectedView.dir,
-                  ...(query ? { seqQ: query } : {}),
+                  ...(term ? { seqQ: term } : {}),
                   seqStart: item.id,
                 },
               });
@@ -322,7 +322,7 @@ export default function LibraryScreen() {
       ) : (
         <SeriesGrid
           items={listData}
-          scopeKey={`${query}|${sort}|${grouping}|${collectionFilter ?? ''}`}
+          scopeKey={`${term}|${sort}|${grouping}|${collectionFilter ?? ''}`}
           listRef={listRef}
           header={renderEmpty()}
           // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
@@ -340,34 +340,13 @@ export default function LibraryScreen() {
       )}
 
       {/* The sort button lives in the bar's trailing slot in BOTH states, so it stays put and visible
-          while searching. Searching only swaps the LEADING content — the list selector becomes a back
-          button + search field in place — and collapses the search icon (now redundant) beside sort. */}
+          while filtering. Filtering only swaps the LEADING content — the list selector becomes a back
+          button + field in place — and collapses the filter trigger (now redundant) beside sort. */}
       <TabTitleBar
         barStyle={barRuleStyle}
         titleSlot={
-          searching ? (
-            <View style={styles.searchRow}>
-              <Pressable
-                testID="library.search-close"
-                onPress={closeSearch}
-                hitSlop={12}
-                accessibilityRole="button"
-                accessibilityLabel="Close search"
-                style={styles.searchCloseButton}>
-                <ChevronLeftIcon color={theme.text} />
-              </Pressable>
-              <View style={styles.searchWrap}>
-                <SearchField
-                  testID="library.search"
-                  value={query}
-                  onSubmit={(q) => setQuery(q.trim())}
-                  onClear={() => setQuery('')}
-                  placeholder="Search library…"
-                  autoFocus
-                  immediateFocus
-                />
-              </View>
-            </View>
+          filter.open ? (
+            <TabFilterField filter={filter} testID="library.search" placeholder="Filter library…" />
           ) : (
             // The rail lists the collections when it's showing, so the selector would be a second
             // control for one selection. Unlike Browse — whose `Home` selector is a different axis
@@ -388,25 +367,7 @@ export default function LibraryScreen() {
         }
         right={
           <>
-            {/* Wide: the shared trailing pill every content tab uses. Narrow: the icon, unchanged. */}
-            {!searching &&
-              (railNav ? (
-                <SearchPill
-                  testID="library.search-pill"
-                  onPress={() => setSearching(true)}
-                  placeholder="Search library…"
-                />
-              ) : (
-                <Pressable
-                  testID="library.search-icon"
-                  onPress={() => setSearching(true)}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Search library"
-                  style={styles.searchIconButton}>
-                  <SearchIcon color={theme.text} size={22} />
-                </Pressable>
-              ))}
+            <TabFilterTrigger filter={filter} testID="library.search" placeholder="Filter library…" />
             {/* Sort applies to the library grid only. The saved-pages view has its own sort/dir
                 axes (Phase 3); showing this control there would be a lever that does nothing. */}
             {showingCollected ? (
@@ -463,23 +424,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   container: {
-    flex: 1,
-  },
-  searchIconButton: {
-    padding: Spacing.one,
-  },
-  // Fills the bar's leading slot while searching: back button + a flexed search field.
-  searchRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  searchCloseButton: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  searchWrap: {
     flex: 1,
   },
   cell: {

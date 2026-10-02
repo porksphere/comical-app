@@ -14,6 +14,7 @@ import type { SettingValue } from '@/data/api';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function TrackerSettingsScreen() {
@@ -85,6 +86,7 @@ export default function TrackerSettingsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title={data?.info.name ?? 'Tracker settings'} />
       <ScrollView
+        style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[styles.content, contentPadding]}>
         {isLoading ? (
           <ActivityIndicator />
