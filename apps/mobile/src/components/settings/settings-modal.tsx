@@ -23,6 +23,7 @@ import GeneralScreen from '@/app/settings-general';
 import NotificationsScreen from '@/app/settings-notifications';
 import RegistriesScreen from '@/app/registries';
 import StorageScreen from '@/app/storage';
+import SyncScreen from '@/app/settings-sync';
 import TrackersScreen from '@/app/trackers';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import {
@@ -36,6 +37,7 @@ import {
   NotificationsIcon,
   RegistriesIcon,
   StorageIcon,
+  SyncIcon,
   TrackersIcon,
 } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -81,6 +83,7 @@ const EMPTY_PARAMS: PaneParams = {};
 const CATEGORIES: { id: string; label: string; Icon: SettingsIcon; Screen: () => React.ReactNode }[] = [
   { id: 'general', label: 'General', Icon: GeneralSettingsIcon, Screen: GeneralScreen },
   { id: 'notifications', label: 'Notifications', Icon: NotificationsIcon, Screen: NotificationsScreen },
+  { id: 'sync', label: 'Sync', Icon: SyncIcon, Screen: SyncScreen },
   { id: 'bridges', label: 'Bridges', Icon: BridgesIcon, Screen: BridgesScreen },
   { id: 'trackers', label: 'Trackers', Icon: TrackersIcon, Screen: TrackersScreen },
   { id: 'registries', label: 'Registries', Icon: RegistriesIcon, Screen: RegistriesScreen },

@@ -1,5 +1,5 @@
 /**
- * The phone's half of pairing: point the camera at the code the desktop shows (Settings → General →
+ * The phone's half of pairing: point the camera at the code the desktop shows (Settings → Sync →
  * Sync server for your phone) and the address in it becomes this app's server. Native only — a
  * desktop is the end that shows the code, and the web build has no camera to speak of.
  */
@@ -56,7 +56,7 @@ export default function ScanSyncServerScreen() {
           />
           <View style={styles.hint}>
             <ThemedText type="small" style={styles.hintText}>
-              On your computer: Settings → General → Sync server for your phone.
+              On your computer: Settings → Sync → Sync server for your phone.
             </ThemedText>
           </View>
         </View>

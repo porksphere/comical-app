@@ -85,7 +85,7 @@ require FUSE to run`. Either `apt install libfuse2` or run it with `--appimage-e
 ## Syncing with a phone
 
 The desktop app is the hub a phone syncs with — its library is the hub's library, so there is
-nothing for it to sync *to*. Settings → General → **Sync with your phone** opens a second listener
+nothing for it to sync *to*. Settings → Sync → **Sync with your phone** opens a second listener
 on the local network and shows one address, `http://<this computer>:3130/<key>`; that address is
 what goes in the phone's *Sync server*. Clicking the address row shows it as a QR code, which the
 phone's *Sync server* → **Scan a code** reads (typing it works too). Off by default, and off again

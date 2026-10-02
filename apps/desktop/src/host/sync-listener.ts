@@ -1,6 +1,6 @@
 /**
  * The one door other devices get: the host's `/sync` routes on the local network, so a phone can
- * use this computer as its sync hub. Off until asked for (Settings → General).
+ * use this computer as its sync hub. Off until asked for (Settings → Sync).
  *
  * The loopback listener in `serve.ts` can't be it — it is loopback, and its token is made per
  * launch for a renderer that Electron hands it to. This one has to be reachable and has to keep

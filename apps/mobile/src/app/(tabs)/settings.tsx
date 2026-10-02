@@ -14,6 +14,7 @@ import {
   NotificationsIcon,
   RegistriesIcon,
   StorageIcon,
+  SyncIcon,
   TrackersIcon,
 } from '@/components/icons/ui-icons';
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
@@ -97,6 +98,13 @@ export default function SettingsScreen() {
             icon={<NotificationsIcon color={theme.textSecondary} size={22} />}
             title="Notifications"
             onPress={() => router.push('/settings-notifications')}
+          />
+          <Divider />
+          <CategoryRow
+            testID="settings.category.sync"
+            icon={<SyncIcon color={theme.textSecondary} size={22} />}
+            title="Sync"
+            onPress={() => router.push('/settings-sync')}
           />
           <Divider />
           <CategoryRow

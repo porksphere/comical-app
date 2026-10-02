@@ -18,7 +18,7 @@ export type ShellSettings = {
   /** Other devices on the network may sync with this library (`host/sync-listener.ts`). */
   networkSync: boolean;
   /** What those devices present. Made the first time `networkSync` goes on and kept, so a device
-   *  paired once stays paired, until the user asks for a new one (Settings → General). */
+   *  paired once stays paired, until the user asks for a new one (Settings → Sync). */
   syncKey: string | null;
 };
 

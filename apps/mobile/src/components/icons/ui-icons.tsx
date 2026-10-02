@@ -29,6 +29,7 @@ import {
   ListPlus,
   LogIn,
   Minus,
+  MonitorSmartphone,
   MoreVertical,
   PanelLeftClose,
   PanelLeftOpen,
@@ -93,6 +94,8 @@ export const GripIcon = ({ color, size = 16 }: IconProps) => <GripVertical color
 // Settings section glyphs — General/Bridges/Trackers/Registries/Developer.
 export const GeneralSettingsIcon = ({ color, size = 16 }: IconProps) => <SlidersHorizontal color={color} size={size} />;
 export const NotificationsIcon = ({ color, size = 16 }: IconProps) => <Bell color={color} size={size} />;
+// A phone beside a computer: the two ends of sync, which is what the screen is about.
+export const SyncIcon = ({ color, size = 16 }: IconProps) => <MonitorSmartphone color={color} size={size} />;
 export const BridgesIcon = ({ color, size = 16 }: IconProps) => <Blocks color={color} size={size} />;
 // Sync arrows, because that is what the screen itself says a tracker does — "sync your reading
 // progress to an external service". It held `Compass` until that went to the Browse TAB, where the

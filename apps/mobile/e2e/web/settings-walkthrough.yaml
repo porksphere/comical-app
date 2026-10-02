@@ -74,6 +74,14 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "Go back"
 
+# Sync
+- tapOn:
+    id: "Sync"
+- takeScreenshot: sync
+- assertVisible: "Sync library"
+- tapOn:
+    id: "Go back"
+
 # Bridges
 - tapOn:
     id: "Bridges"
