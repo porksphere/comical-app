@@ -1582,8 +1582,6 @@ export interface LibraryRestoreResult {
   restored: LibraryRestoreCounts;
   /** Records in the file that weren't usable and were left out. */
   skipped: number;
-  /** Registries, bridges and trackers the backup named that couldn't be brought back. */
-  failed: { kind: 'registry' | 'bridge' | 'tracker'; id: string; error: string }[];
 }
 
 export function exportLibraryBackup(signal?: AbortSignal): Promise<LibraryBackup> {

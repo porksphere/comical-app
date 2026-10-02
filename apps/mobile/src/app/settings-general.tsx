@@ -12,9 +12,16 @@ import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
-import { exportLibraryBackup, restoreLibraryBackup, useApiBase, type LibraryRestoreResult } from '@/data/api';
+import { exportLibraryBackup, getBridges, getTrackers, restoreLibraryBackup, useApiBase } from '@/data/api';
 import { pickBackupFile, saveBackupFile } from '@/data/backup-file';
-import { backupFileName, describeBackup, describeRestore, parseBackupFile } from '@/data/backup-summary';
+import {
+  backupFileName,
+  describeBackup,
+  describeMissing,
+  describeRestore,
+  missingFromBackup,
+  parseBackupFile,
+} from '@/data/backup-summary';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
 import { kickDownloads } from '@/data/downloads/engine';
@@ -273,7 +280,6 @@ export default function GeneralSettingsScreen() {
 
 /** Headered, unlike the list above: these two are things to do, not settings to leave on. */
 function LibraryBackupSection() {
-  const { open } = useOverlay();
   const [exporting, setExporting] = useState(false);
 
   const exportLibrary = async () => {
@@ -300,13 +306,29 @@ function LibraryBackupSection() {
       showToast(err instanceof Error ? err.message : "Couldn't read that file.");
       return;
     }
+    // A restore installs nothing, so what the restored library will lack is said here, while
+    // backing out to install it first is still on offer.
+    let missing: string | null;
+    try {
+      const [bridges, trackers] = await Promise.all([getBridges(), getTrackers()]);
+      missing = describeMissing(
+        picked.backup,
+        missingFromBackup(picked.backup, {
+          bridges: bridges.map((b) => b.id),
+          trackers: trackers && trackers.map((t) => t.info.id),
+        }),
+      );
+    } catch (err) {
+      showToast(friendlyError(err, "Couldn't check which bridges are installed."));
+      return;
+    }
+    const message =
+      'Everything in it is added to your library, and anything that differs goes back to how the backup has it. Nothing is removed.';
     openConfirm({
       title: 'Restore this backup?',
-      message:
-        'Everything in it is added to your library, and anything that differs goes back to how the backup has it. ' +
-        'Nothing is removed. Registries and bridges it used are added if they are missing.',
+      message: missing ? `${message}\n\n${missing}` : message,
       detail: describeBackup(picked.backup),
-      confirmLabel: 'Restore',
+      confirmLabel: missing ? 'Restore anyway' : 'Restore',
       pendingLabel: 'Restoring…',
       tone: 'primary',
       errorFallback: "Couldn't restore this backup.",
@@ -315,7 +337,6 @@ function LibraryBackupSection() {
         bumpDataEpoch();
         void queryClient.invalidateQueries();
         showToast(describeRestore(result), { durationMs: 6000 });
-        if (result.failed.length > 0) open(() => <RestoreFailures failed={result.failed} />);
       },
     });
   };
@@ -335,32 +356,6 @@ function LibraryBackupSection() {
         onPress={() => void restoreLibrary()}
       />
     </SettingsSection>
-  );
-}
-
-function RestoreFailures({ failed }: { failed: LibraryRestoreResult['failed'] }) {
-  const { closeTop } = useOverlay();
-  return (
-    <View testID="settings.general.backup-failures" style={styles.confirmBody}>
-      <OverlayHeading>Not everything came back</OverlayHeading>
-      <ThemedText type="small" themeColor="textSecondary">
-        Your library was restored, but these couldn’t be added again. Series that need them won’t open until
-        they are installed.
-      </ThemedText>
-      {failed.map((f) => (
-        <View key={`${f.kind}:${f.id}`}>
-          <ThemedText type="smallBold">{f.id}</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {f.kind[0].toUpperCase() + f.kind.slice(1)} · {f.error}
-          </ThemedText>
-        </View>
-      ))}
-      <View style={styles.confirmActions}>
-        <Pressable testID="settings.general.backup-failures.done" onPress={closeTop} style={styles.confirmBtn}>
-          <ThemedText type="smallBold">Done</ThemedText>
-        </Pressable>
-      </View>
-    </View>
   );
 }
 

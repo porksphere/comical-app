@@ -2,7 +2,7 @@
  * The words around a library backup: its file name, what a picked file holds, and what a restore
  * did. Free of react-native imports so it can be tested.
  */
-import { LibraryBackupError, readLibraryBackup, type LibraryBackup } from '@comical/library';
+import { LibraryBackupError, parseEntryKey, readLibraryBackup, type LibraryBackup } from '@comical/library';
 
 import type { LibraryRestoreResult } from './api';
 
@@ -45,17 +45,70 @@ export function describeBackup(backup: LibraryBackup): string {
   ].join(' · ');
 }
 
-export function describeRestore({ restored, skipped, failed }: LibraryRestoreResult): string {
+export interface MissingFromBackup {
+  bridges: string[];
+  trackers: string[];
+}
+
+/**
+ * The bridges and trackers a backup's records belong to that aren't installed here. Read off the
+ * records, not the file's `sources` note: what matters is what the restored library will need, and
+ * a file is free to say anything about where it came from. `trackers: null` is a host that has no
+ * trackers at all — nothing to install there, so nothing is reported.
+ */
+export function missingFromBackup(
+  backup: LibraryBackup,
+  installed: { bridges: string[]; trackers: string[] | null },
+): MissingFromBackup {
+  const bridges = new Set<string>();
+  for (const item of backup.items) bridges.add(item.bridgeId);
+  for (const row of backup.readingLog) bridges.add(row.bridgeId);
+  for (const key of Object.keys(backup.progress)) bridges.add(parseEntryKey(key).bridgeId);
+  const trackers = new Set(Object.values(backup.trackerLinks).flatMap((links) => links.map((link) => link.trackerId)));
+
+  const lacking = (needed: Set<string>, have: string[]) => {
+    const here = new Set(have);
+    return [...needed].filter((id) => !here.has(id)).sort();
+  };
+  return {
+    bridges: lacking(bridges, installed.bridges),
+    trackers: installed.trackers ? lacking(trackers, installed.trackers) : [],
+  };
+}
+
+const NAMED = 6;
+const named = (ids: string[]) =>
+  ids.length > NAMED ? `${ids.slice(0, NAMED).join(', ')} and ${ids.length - NAMED} more` : ids.join(', ');
+
+/** What to say before restoring a backup whose bridges or trackers aren't all here; `null` when
+ *  they are. Names the registries the missing ones came from, where the backup noted them. */
+export function describeMissing(backup: LibraryBackup, missing: MissingFromBackup): string | null {
+  const kinds = [
+    missing.bridges.length > 0 && `${plural(missing.bridges.length, 'bridge')} (${named(missing.bridges)})`,
+    missing.trackers.length > 0 && `${plural(missing.trackers.length, 'tracker')} (${named(missing.trackers)})`,
+  ].filter(Boolean);
+  if (kinds.length === 0) return null;
+
+  const lacking = new Set([...missing.bridges, ...missing.trackers]);
+  const noted = [...(backup.sources?.bridges ?? []), ...(backup.sources?.trackers ?? [])];
+  const from = [...new Set(noted.filter((source) => lacking.has(source.id)).map((source) => source.registryUrl))];
+  const one = lacking.size === 1;
+  return [
+    `Needs ${kinds.join(' and ')} that ${one ? "isn't" : "aren't"} installed here.`,
+    `${one ? 'Its' : 'Their'} part of the library is restored, but won't work until ${one ? 'it is' : 'they are'}.`,
+    from.length > 0 && `Find ${one ? 'it' : 'them'} at ${from.join(', ')}.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+export function describeRestore({ restored, skipped }: LibraryRestoreResult): string {
   const other = restored.collections + restored.groups + restored.trackerLinks + restored.readingLog + restored.bridgePrefs;
   const wrote = [
     restored.items > 0 && plural(restored.items, 'library item'),
     restored.progress > 0 && `progress on ${plural(restored.progress, 'chapter')}`,
     other > 0 && plural(other, 'other record'),
   ].filter(Boolean);
-  const notes = [
-    failed.length > 0 && `${plural(failed.length, 'source')} couldn't be brought back`,
-    skipped > 0 && `${plural(skipped, 'unreadable record')} left out`,
-  ].filter(Boolean);
   const head = wrote.length > 0 ? `Restored ${wrote.join(', ')}` : 'Nothing to restore — your library already has everything in this backup';
-  return [head, ...notes].join(' · ');
+  return skipped > 0 ? `${head} · ${plural(skipped, 'unreadable record')} left out` : head;
 }
