@@ -3,7 +3,7 @@ name: Build iOS (nightly main + PR, SideStore/AltStore)
 # iOS DEV builds — every build here is a PROFILING build (Release + on-device Hermes profiler) so
 # any PR build can be perf-tested on device. PR builds are published to the `ios-pr` source: an
 # aggregate of every OPEN PR's build (refresh-ios-pr-source.sh), backed by per-PR ios-pr-<N>
-# holding releases. main is built nightly and published nowhere.
+# holding releases. main is built nightly and published to the `ios-nightly` source.
 #
 # The clean, PROFILER-FREE, public channel is the tagged-release source (ios-release), produced
 # separately by release.yml on a v* tag — that's what a normal user subscribes to.
@@ -13,9 +13,10 @@ name: Build iOS (nightly main + PR, SideStore/AltStore)
 
 on:
   workflow_dispatch:
-  # Main is built nightly rather than per push: nothing installs a main build, so all a main build
-  # is for is proving main still builds and keeping the warm caches that only main may save from
-  # being evicted (7 days unused). Skipped when nothing it depends on changed (the `gate` job).
+  # Main is built nightly rather than per push: a macOS build per merge is more than following
+  # main on a device is worth. The nightly publishes the `ios-nightly` source, proves main still
+  # builds, and keeps the warm caches that only main may save from being evicted (7 days unused).
+  # Skipped when nothing it depends on changed (the `gate` job).
   schedule:
     - cron: '17 9 * * *'
   # PR builds verify the branch compiles and produce an installable IPA. They read main's warm
@@ -50,8 +51,8 @@ concurrency:
   group: ios-${{ github.ref }}
   cancel-in-progress: true
 
-# contents: write — publish a PR's IPA to a GitHub Release (a public, unauthenticated,
-#   raw direct-download URL that SideStore/AltStore can actually fetch).
+# contents: write — publish a PR's or the nightly's IPA to a GitHub Release (a public,
+#   unauthenticated, raw direct-download URL that SideStore/AltStore can actually fetch).
 # pull-requests: read — refresh-ios-pr-source.sh calls `gh pr view` to check each
 #   ios-pr-<N>'s state so it only lists OPEN PRs (self-heals merged squatters).
 permissions:
@@ -88,6 +89,37 @@ jobs:
       # By ref, not event: a dispatch on a PR branch is a PR build too, and publish-pr publishes it.
       channel: ${{ github.ref == 'refs/heads/main' && 'ios-nightly' || 'ios-pr' }}
     secrets: inherit
+
+  # main's build, as the single-version `ios-nightly` source. By ref, like the channel above: a
+  # dispatch on main is a nightly on demand.
+  publish-nightly:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Never cancelled half way: an interrupted publish can leave the manifest describing an IPA
+    # that isn't the one beside it.
+    concurrency:
+      group: ios-nightly-source
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # rolling-changelog.sh lists the commits since the last publish.
+          fetch-depth: 0
+
+      - name: Download unsigned IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/ipa
+
+      - name: Publish IPA + SideStore source to the ios-nightly Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: >-
+          bash .github/scripts/publish-ios-nightly-source.sh
+          "$RUNNER_TEMP/ipa/comical-unsigned.ipa" "$VERSION" "$GITHUB_SHA"
 
   # Per-PR IPA host. Each open PR gets an `ios-pr-<N>` prerelease holding just
   # the IPA + a `meta.json` fragment — NOT its own source. The refresh-dev-source

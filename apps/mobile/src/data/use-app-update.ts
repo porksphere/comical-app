@@ -1,15 +1,15 @@
 /**
  * Whether a newer build exists than the one running, for the channels that ship an artifact a
- * user actually follows (ios-release, android-release, desktop-release, web-pages). Every other
- * channel — the
- * nightly, per-branch and dev lanes (*-nightly, ios-pr, ios-devclient, android-pr, *-e2e,
- * local-dev) — is `'unsupported'` and triggers no network request at all (`enabled: false`
- * below).
+ * user actually follows (ios-release, ios-nightly, android-release, desktop-release, web-pages).
+ * Every other channel — the unpublished nightlies, per-branch and dev lanes (android-nightly,
+ * desktop-nightly, ios-pr, ios-devclient, android-pr, *-e2e, local-dev) — is `'unsupported'` and
+ * triggers no network request at all (`enabled: false` below).
  *
  * Per-channel check:
- *  - ios-release: compare the AltStore/SideStore source's `apps[0].version` against APP_VERSION via
- *    `compareVersions`. The source carries the same string the build baked into APP_VERSION — the
- *    git tag's `X.Y.Z` (build-ios-reusable.yml's "Compute full version").
+ *  - ios-release / ios-nightly: compare the channel's AltStore/SideStore source's
+ *    `apps[0].version` against APP_VERSION via `compareVersions`. The source carries the same
+ *    string the build baked into APP_VERSION — the git tag's `X.Y.Z` on ios-release, `X.Y.Z.<Nth
+ *    build of that series>` on ios-nightly (build-ios-reusable.yml's "Compute full version").
  *  - android-release / desktop-release: compare `version.json`'s `commit` against BUILD_COMMIT, on
  *    the channel's Release. Commit equality, not version ordering: ANY mismatch means "there's a
  *    newer build", since the URL is always rebuilt from the newest tag. Desktop's Update button
@@ -67,6 +67,9 @@ export type AppUpdateCheck = {
 };
 
 const IOS_RELEASE_APPS_JSON_URL = 'https://github.com/porksphere/comical-app/releases/download/ios-release/apps.json';
+/** Whatever main last built (.github/scripts/publish-ios-nightly-source.sh). Its own URL, so a
+ *  release user is never offered a nightly. */
+const IOS_NIGHTLY_APPS_JSON_URL = 'https://github.com/porksphere/comical-app/releases/download/ios-nightly/apps.json';
 /** Build channel → the Release its update check reads. `android-release` carries the newest TAGGED
  *  build, refreshed only by release.yml; see .github/scripts/publish-android-channel.sh. */
 const ANDROID_CHANNEL_TAG: Record<string, string> = {
@@ -84,6 +87,7 @@ const DESKTOP_RELEASE_PAGE_URL = `https://github.com/porksphere/comical-app/rele
  *  `fetchAppUpdateCheck` would fetch nothing and sit on 'checking' forever. */
 const SUPPORTED_CHANNELS = new Set([
   'ios-release',
+  'ios-nightly',
   ...Object.keys(ANDROID_CHANNEL_TAG),
   'desktop-release',
   'web-pages',
@@ -135,6 +139,7 @@ function toCheck(read: ChannelRead): AppUpdateCheck {
 
 async function fetchAppUpdateCheck(signal?: AbortSignal): Promise<AppUpdateCheck> {
   if (BUILD_CHANNEL === 'ios-release') return checkIosSource(IOS_RELEASE_APPS_JSON_URL, signal);
+  if (BUILD_CHANNEL === 'ios-nightly') return checkIosSource(IOS_NIGHTLY_APPS_JSON_URL, signal);
   const androidTag = ANDROID_CHANNEL_TAG[BUILD_CHANNEL];
   if (androidTag) return checkChannelRelease(androidTag, androidApkUrl(androidTag), signal);
   if (BUILD_CHANNEL === 'desktop-release') {

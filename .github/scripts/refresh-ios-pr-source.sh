@@ -6,7 +6,7 @@
 # recently sits at versions[0] and installs with one tap — no digging into
 # version history to find your branch.
 #
-# main is NOT in this aggregate — nothing publishes main builds. This source is
+# main is NOT in this aggregate — it has its own ios-nightly source. This source is
 # purely the open-PR fan-out. Every build listed here is a PROFILING build
 # (Release + on-device Hermes profiler).
 #

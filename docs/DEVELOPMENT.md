@@ -80,8 +80,8 @@ category has no flow referencing it yet — see `apps/mobile/e2e/README.md`.
 Native projects are generated on the fly (`expo prebuild`, CNG); `ios/` and `android/` are
 git-ignored. The native builds (iOS, Android, desktop) run on every **pull request** (build +
 installable artifact, so branches are verified — see the dev channel below), **nightly** on `main`,
-and via manual dispatch. `main` is not built per push: nothing installs a main build, so a main
-build only proves `main` still builds and keeps the caches warm — and the nightly does both,
+and via manual dispatch. `main` is not built per push: the nightly is what proves `main` still
+builds, keeps the caches warm and (on iOS) publishes the **`ios-nightly`** source,
 skipping itself when nothing it depends on changed since its last success
 (`.github/scripts/nightly-gate.sh`). Caches keep repeat builds fast: iOS caches Bun + CocoaPods +
 **ccache** (native compile), Android caches Bun + the **Gradle** cache. Only `main` *writes* those
@@ -101,8 +101,8 @@ silently never fires (0 hits/misses). With it, ~99.9% of compiles are cacheable:
   published to an `android-pr-<N>` Release (see "Android distribution" below).
 - **iOS** (`macos-26`): `expo prebuild` → `pod install` → `xcodebuild archive` with code
   signing disabled → packaged into an **unsigned `.ipa`** artifact. Every build here is a
-  **profiling** build; on a PR it's published to the aggregate **`ios-pr`** source (see "iOS
-  distribution" below).
+  **profiling** build; on a PR it's published to the aggregate **`ios-pr`** source, and the
+  nightly `main` build to the **`ios-nightly`** source (see "iOS distribution" below).
 - **Desktop** (`windows-latest` + `ubuntu-latest`): the web export packaged by electron-builder
   into an unsigned Windows installer, an AppImage and a `.deb` (`build-desktop-reusable.yml`). PR
   builds stop at the run artifacts.
@@ -139,7 +139,7 @@ Pushing a `v*` tag by hand still works and skips step 1–2, but `app.json` must
 the tag. Do **not** use the web Releases form to create the tag: it creates the Release object too,
 and `gh release create` then fails — after both builds have run.
 
-**Release notes reach four places, from two generators.** `CHANGELOG.md` is the source for anything
+**Release notes reach five places, from two generators.** `CHANGELOG.md` is the source for anything
 TAGGED and `.github/scripts/changelog-section.sh` quotes one version's section out of it; the
 rolling channels have no release to quote, so `.github/scripts/rolling-changelog.sh` lists the
 commits each has picked up since it last published (it measures from a `built-sha` marker the
@@ -150,6 +150,7 @@ channel's own Release body carries). Between them they fill:
 | The `vX.Y.Z` GitHub Release body | GitHub's own `--generate-notes` commit list |
 | `ios-release` source — every version in `versions[]` | `changelog-section.sh` for that tag |
 | `android-release` / `desktop-release` — `version.json` `notes` + the Release body | `changelog-section.sh` for that tag |
+| `ios-nightly` source — its one version + the Release body | `rolling-changelog.sh ios-nightly` |
 | gh-pages `version.json` `notes` | `rolling-changelog.sh web-pages` |
 
 The app reads the SAME artifacts its update check already fetches, so Settings → About → the
@@ -203,21 +204,22 @@ session, so an unauthenticated fetch returns an HTML login page, which the sidel
 `Encountered unknown tag html on line 1` / `isn't in the correct format`. Artifacts are also
 double-zipped.)
 
-### The three iOS channels (SideStore sources)
+### The four iOS channels (SideStore sources)
 
 | Channel | Source URL (`…/releases/download/<tag>/apps.json`) | Trigger | Build | Bundle id |
 |---------|-----------------------------------------------------|---------|-------|-----------|
 | **release** (public) | `ios-release` | `v*` tag (`release.yml`) | clean Release, **no profiler** | `com.porksphere.comical` |
+| **nightly** (following `main`) | `ios-nightly` | nightly on `main`, when it moved (`build-ios.yml`) | **profiling** (Release + on-device Hermes profiler) | `com.porksphere.comical` |
 | **PR** (branch testing) | `ios-pr` | each open PR (`build-ios.yml`) | **profiling** (Release + on-device Hermes profiler) | `com.porksphere.comical` |
 | **dev-client** (iterate over Metro) | `ios-devclient` | manual only (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical` |
 
-**All three share the production bundle id**, so exactly one is installed at a time — switch lanes by
+**All four share the production bundle id**, so exactly one is installed at a time — switch lanes by
 picking a source/version in SideStore, and whatever you install replaces what was there. That is
 deliberate for the dev-client too: coexistence and a shared data container are mutually exclusive on
 iOS (the container is keyed by bundle id), and iterating over Metro against your real library beats
 iterating against an empty one. See `apps/mobile/plugins/with-devclient-variant.js`.
 
-Every PR build is a **profiling** build on purpose (the app is marked "Comical (profiling)"), so
+Every nightly and PR build is a **profiling** build on purpose (the app is marked "Comical (profiling)"), so
 any of them can be perf-tested on device without a special manual build; the clean **`ios-release`**
 channel carries no profiler and is what a normal user subscribes to (see the
 [README](../README.md#ios)).
@@ -232,14 +234,23 @@ the manifest agree (AltStore rejects a mismatch). Produced by
 `.github/scripts/refresh-ios-release-source.sh`, which enumerates every `v*` Release, newest-first —
 stateless, so deleting a bad release self-heals the source on the next tag.
 
+### `ios-nightly` — `main`, between releases
+
+The nightly `main` build, as a source of its own:
+
+> `https://github.com/porksphere/comical-app/releases/download/ios-nightly/apps.json`
+
+It lists **one** version — whatever `main` last built, versioned `X.Y.Z.<N>` so every build outranks
+the last — with the commits picked up since the previous nightly as its notes. A night where `main`
+hasn't moved publishes nothing. For a build right now, dispatch **Build iOS** on `main`. Produced by
+`.github/scripts/publish-ios-nightly-source.sh`.
+
 ### `ios-pr` — the rolling dev channel
 
 `ios-pr` is an **aggregate** listing every open PR, so you add it **once** and every branch shows up
 inside it — no adding a source per branch. Add it in SideStore/AltStore → Sources → +:
 
 > `https://github.com/porksphere/comical-app/releases/download/ios-pr/apps.json`
-
-To try `main` itself, install the newest `ios-release`, or open a PR from it.
 
 The `ios-pr` app's version list is ordered **newest build first** (`PR #<N>: <title>`, sorted by
 build/run number). SideStore/AltStore pick the installable "latest" by array order — not by comparing
