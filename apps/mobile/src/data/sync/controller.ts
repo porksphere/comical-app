@@ -177,9 +177,14 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
     try {
       const stats = await a.engine.sync();
       let applied = stats.applied;
-      if (!a.adopted) {
-        await adoptLibrary(opts.raw, a.engine);
-        await adoptRegistry(opts.registry, a.engine);
+      // Everything on a first round; on a device already paired, only a table that has started to
+      // sync since. The flag outranks the engine's list: a state saved before the list existed
+      // reads as having adopted every table of its day, which a never-adopted device has not.
+      const tables = a.adopted ? a.engine.unadopted() : [...LIBRARY_TABLES, ...REGISTRY_TABLES];
+      if (tables.length > 0) {
+        await adoptLibrary(opts.raw, a.engine, tables);
+        await adoptRegistry(opts.registry, a.engine, tables);
+        a.engine.markAdopted();
         a.adopted = true;
         applied += (await a.engine.sync()).applied;
       }

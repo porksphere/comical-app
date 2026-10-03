@@ -3,7 +3,7 @@
  * fresh pairing takes (pull first, then adopt), against an in-process hub.
  */
 import { describe, expect, test } from 'bun:test';
-import { InMemoryLibraryStore, Library } from '@comical/library';
+import { entryKey, InMemoryLibraryStore, Library } from '@comical/library';
 import { MemorySegmentStore, SyncHub, type SyncBackend, type SyncedRegistry } from '@comical/sync';
 
 import { createLibrarySync, type LibrarySyncOptions, type SyncDoc } from './controller';
@@ -42,7 +42,7 @@ function fakeRegistry() {
 }
 
 function device(hub: SyncBackend, overrides: Partial<LibrarySyncOptions> = {}) {
-  const raw = new InMemoryLibraryStore();
+  const raw = overrides.raw ?? new InMemoryLibraryStore();
   const held = fakeRegistry();
   let saved: SyncDoc | null = null;
   const sync = createLibrarySync({
@@ -64,6 +64,10 @@ function device(hub: SyncBackend, overrides: Partial<LibrarySyncOptions> = {}) {
   });
   return { raw, sync, library: new Library(sync.store), saved: () => saved, held, registry: sync.decorateRegistry(held) };
 }
+
+const SERIES = { bridgeId: 'bridge-a', seriesId: 's1' };
+const KEY = entryKey(SERIES.bridgeId, SERIES.seriesId);
+const chapters = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `ch${i + 1}`, name: `Chapter ${i + 1}`, number: i + 1 }));
 
 const names = async (lib: Library) => (await lib.getCollections()).map((c) => c.name).sort();
 
@@ -128,6 +132,56 @@ describe('createLibrarySync', () => {
     expect(b.saved()?.adopted).toBe(true);
     expect(b.sync.status().lastError).toBeUndefined();
     expect(await names(b.library)).toEqual(['Hub name']);
+  });
+
+  test("a new chapter one device noticed is in the other's feed, which has nothing left to announce", async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    const b = device(hub);
+    await a.sync.enable();
+    await a.library.collectSeries(SERIES, { seriesTitle: 'One' });
+    await a.sync.syncNow();
+    await b.sync.enable();
+    for (const d of [a, b]) await d.library.syncChapters(KEY, chapters(1));
+
+    expect((await a.library.syncChapters(KEY, chapters(2))).fresh.map((c) => c.id)).toEqual(['ch2']);
+    await a.sync.syncNow();
+    await b.sync.syncNow();
+    expect(await b.raw.listActivity()).toEqual(await a.raw.listActivity());
+    expect((await b.library.syncChapters(KEY, chapters(2))).fresh).toEqual([]);
+
+    await b.library.clearActivity();
+    await b.sync.syncNow();
+    await a.sync.syncNow();
+    expect(await a.raw.listActivity()).toEqual([]);
+  });
+
+  test('a device paired before the feed synced sends the feed it already had, once', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    await a.sync.enable();
+    await a.library.collectSeries(SERIES, { seriesTitle: 'One' });
+    await a.sync.syncNow();
+
+    // As an older build left it: a row sync never recorded, and a saved state with no list of
+    // adopted tables.
+    const row = { bridgeId: SERIES.bridgeId, seriesId: SERIES.seriesId, chapterId: 'ch2', title: 'One', detectedAt: 5 };
+    await a.raw.putActivity(row);
+    const doc = structuredClone(a.saved()!);
+    delete doc.state.adopted;
+
+    const upgraded = device(hub, { raw: a.raw, load: async () => doc });
+    await upgraded.sync.syncNow();
+    expect(upgraded.saved()?.state.adopted).toContain('activity');
+
+    const b = device(hub);
+    await b.sync.enable();
+    expect(await b.raw.listActivity()).toEqual([row]);
+
+    // Adopted once: a later round has nothing more to send.
+    const before = (await hub.pull(PROBE)).segments.length;
+    await upgraded.sync.syncNow();
+    expect((await hub.pull(PROBE)).segments).toHaveLength(before);
   });
 
   test('a write made before the saved state loads is still recorded', async () => {

@@ -327,10 +327,24 @@ export class AsyncStorageLibraryStore implements LibraryStore {
   async listActivity(): Promise<ActivityItem[]> {
     return Object.values(await readRecord<ActivityItem>(ACTIVITY));
   }
-  async putActivity(item: ActivityItem): Promise<void> {
+  async putActivity(item: ActivityItem): Promise<boolean> {
     const all = await readRecord<ActivityItem>(ACTIVITY);
-    all[activityKey(item.bridgeId, item.seriesId, item.chapterId)] = item;
+    const k = activityKey(item.bridgeId, item.seriesId, item.chapterId);
+    if (k in all) return false;
+    all[k] = item;
     await write(ACTIVITY, all);
+    return true;
+  }
+  async dropActivity(keys: string[]): Promise<void> {
+    const all = await readRecord<ActivityItem>(ACTIVITY);
+    let changed = false;
+    for (const k of keys) {
+      if (k in all) {
+        delete all[k];
+        changed = true;
+      }
+    }
+    if (changed) await write(ACTIVITY, all);
   }
   async deleteActivityForEntry(key: string): Promise<void> {
     const all = await readRecord<ActivityItem>(ACTIVITY);
