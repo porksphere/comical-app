@@ -43,6 +43,7 @@ import {
   readIosSource,
 } from '@/data/release-notes';
 import { APP_VERSION, BUILD_CHANNEL, BUILD_COMMIT, WEB_BASE_URL } from '@/lib/build-info';
+import { desktopShell } from '@/lib/desktop-shell';
 
 export { compareVersions, type ReleaseNote } from '@/data/release-notes';
 
@@ -114,9 +115,19 @@ async function checkIosSource(url: string, signal?: AbortSignal): Promise<AppUpd
 }
 
 async function checkChannelRelease(tag: string, downloadUrl: string, signal?: AbortSignal): Promise<AppUpdateCheck> {
-  const res = await fetch(channelVersionJsonUrl(tag), { signal });
+  const json = await fetchReleaseJson(channelVersionJsonUrl(tag), signal);
+  return toCheck(readChannelVersion(json as ChannelVersionJson, BUILD_COMMIT, downloadUrl));
+}
+
+/** Through the desktop shell where there is one: a Release asset carries no CORS headers, so a
+ *  page — which is what the desktop app is — has its own fetch of one refused. Native has no such
+ *  policy to fail. */
+async function fetchReleaseJson(url: string, signal?: AbortSignal): Promise<unknown> {
+  const viaShell = desktopShell()?.releaseJson;
+  if (viaShell) return viaShell(url);
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`version.json fetch failed: ${res.status}`);
-  return toCheck(readChannelVersion((await res.json()) as ChannelVersionJson, BUILD_COMMIT, downloadUrl));
+  return res.json();
 }
 
 async function checkWebPages(signal?: AbortSignal): Promise<AppUpdateCheck> {

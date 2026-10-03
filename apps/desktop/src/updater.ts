@@ -2,7 +2,7 @@
  * Self-update, from the `desktop-release` channel `release.yml` publishes: the installer or AppImage
  * downloads in the background and the page is told once it's ready to install on a restart.
  */
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, net } from "electron";
 import { autoUpdater } from "electron-updater";
 
 /** Baked in by `scripts/build-main.ts`, from the same input the web export's channel comes from. */
@@ -20,9 +20,19 @@ export const updatesSupported =
   CHANNEL === "desktop-release" &&
   (process.platform === "win32" || (process.platform === "linux" && !!process.env.APPIMAGE));
 
+const RELEASE_ASSETS = "https://github.com/porksphere/comical-app/releases/download/";
+
 let readyVersion: string | null = null;
 
 export function startAutoUpdate(): void {
+  // The page's own update check reads its channel's version.json, and cannot fetch it: GitHub
+  // serves a Release asset with no CORS headers, so a browser refuses the response to every page.
+  ipcMain.handle("release-json", async (_e, url: unknown) => {
+    if (typeof url !== "string" || !new URL(url).href.startsWith(RELEASE_ASSETS)) throw new Error("not a release asset");
+    const res = await net.fetch(url);
+    if (!res.ok) throw new Error(`release asset fetch failed: ${res.status}`);
+    return res.json();
+  });
   ipcMain.on("update-ready?", (e) => {
     e.returnValue = readyVersion;
   });

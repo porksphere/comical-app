@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
       ipcRenderer.off("update-ready", listener);
     };
   },
+  /** A JSON asset of one of this app's Releases, fetched by the shell — the page's own fetch of one
+   *  is refused for want of CORS headers. Rejects when it can't be had. */
+  releaseJson: (url: string) => ipcRenderer.invoke("release-json", url) as Promise<unknown>,
   /** Quit, install the downloaded update and relaunch. */
   installUpdate: () => ipcRenderer.send("update-install"),
   /** Routes to open (a `comical://` link, a click on a notice) and the back/forward buttons. Call

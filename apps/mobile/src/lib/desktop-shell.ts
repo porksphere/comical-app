@@ -20,6 +20,8 @@ type DesktopShell = {
   updates?: boolean;
   onUpdateReady?(onReady: (version: string) => void): () => void;
   installUpdate?(): void;
+  /** Absent before the shell fetched Release assets for the page. */
+  releaseJson?(url: string): Promise<unknown>;
   /** Absent before the shell had links, notices or back/forward to pass on. */
   onShellCommand?(onCommand: (command: ShellCommand) => void): () => void;
   notify?(title: string, body: string, route?: string): void;
