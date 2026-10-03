@@ -139,7 +139,7 @@ function DeviceRows() {
 
 /** The desktop's side: a hub phones sync with. */
 function HubRows() {
-  const { open } = useOverlay();
+  const { openDialog } = useOverlay();
   const [networkSync, setNetworkSync] = useNetworkSync();
   const networkSyncAddress = useNetworkSyncAddress();
   const devices = useSyncDevices();
@@ -161,7 +161,7 @@ function HubRows() {
           testID="settings.sync.address"
           label="Sync server for your phone"
           description={networkSyncAddress ? displaySyncAddress(networkSyncAddress) : 'Not connected to a network'}
-          onPress={networkSyncAddress ? () => open(() => <PairPhoneSheet />) : undefined}
+          onPress={networkSyncAddress ? () => openDialog(() => <PairPhoneSheet />, { accessibilityLabel: 'Pair your phone' }) : undefined}
         />
       )}
       {networkSync && devices.length === 0 && (
@@ -206,7 +206,7 @@ function useMinuteTick(): number {
 function PairPhoneSheet() {
   const theme = useTheme();
   const address = useNetworkSyncAddress();
-  const { open, closeTop } = useOverlay();
+  const { openDialog, closeTop } = useOverlay();
 
   // The confirm popup draws beneath the overlay stack, so the sheet gives way to it and comes back
   // once the new code exists — the same hand-off AddRegistryForm makes before offering adoption.
@@ -221,7 +221,7 @@ function PairPhoneSheet() {
       errorFallback: "Couldn't make a new key",
       onConfirm: async () => {
         if (!(await newNetworkSyncKey())) throw new Error("Couldn't make a new key");
-        open(() => <PairPhoneSheet />);
+        openDialog(() => <PairPhoneSheet />, { accessibilityLabel: 'Pair your phone' });
       },
     });
   };
