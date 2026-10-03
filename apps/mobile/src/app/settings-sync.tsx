@@ -11,7 +11,7 @@ import { openConfirm } from '@/components/confirm-popup';
 import { OverlayHeading, useOverlay } from '@/components/overlay/overlay';
 import { QrCode } from '@/components/qr-code';
 import { RemoteServerForm } from '@/components/settings/remote-server-form';
-import { SettingsToggleRow } from '@/components/settings/settings-fields';
+import { SettingsTextRow, SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -36,6 +36,7 @@ import {
   useSyncDevices,
   type SyncDevice,
 } from '@/lib/desktop-shell';
+import { defaultSyncDeviceName, useChosenSyncDeviceName } from '@/lib/device-name';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
@@ -74,6 +75,7 @@ function DeviceRows() {
   const [onDevice] = useEmbeddedEnabled();
   const [apiBase] = useApiBase();
   const sync = useSyncStatus();
+  const [chosenName, setChosenName] = useChosenSyncDeviceName();
   // Only an on-device library needs syncing — a remote server's library is already shared by every
   // client reading it, so a phone running bridges on a server has nothing to do here.
   const embeddedAvailable = isEmbeddedRuntimeAvailable();
@@ -131,6 +133,16 @@ function DeviceRows() {
               />
             ))
           }
+        />
+      )}
+      {sync.enabled && (
+        <SettingsTextRow
+          label="This phone's name"
+          description="How the computer lists it."
+          value={chosenName}
+          placeholder={defaultSyncDeviceName()}
+          onChange={setChosenName}
+          autoCorrect={false}
         />
       )}
     </>

@@ -163,7 +163,7 @@ async function main(): Promise<void> {
     store: librarySyncStore(phoneStore),
     backend: new HttpBackend({ baseUrl: local, secret: key, fetch: (url, init) => fetch(url, init) }),
     device: "smoke-phone",
-    name: "Smoke phone",
+    name: () => "Smoke phone",
     newDeviceId: () => "smoke-phone-2",
   });
   await new Library(wrapLibraryStore(phoneStore, phone)).createCollection("From a phone");
