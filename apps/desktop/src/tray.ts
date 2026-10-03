@@ -1,14 +1,14 @@
 /**
  * The tray icon the app keeps running behind once its window is closed, while `runInTray` is on.
  */
-import { app, Menu, nativeImage, Tray } from "electron";
-import { join } from "node:path";
+import { app, Menu, Tray } from "electron";
+import { iconImage, shellIcon } from "./icon.ts";
 
 let tray: Tray | null = null;
 
-/** `build-main.ts` copies the web favicon here, so the tray carries the same mark as the window. */
 function trayImage(): Electron.NativeImage {
-  const source = nativeImage.createFromPath(join(app.getAppPath(), "build", "tray.png"));
+  if (process.platform === "win32") return shellIcon();
+  const source = iconImage();
   const image = source.resize({ width: 16, height: 16, quality: "best" });
   image.addRepresentation({ scaleFactor: 2, buffer: source.resize({ width: 32, height: 32, quality: "best" }).toPNG() });
   return image;

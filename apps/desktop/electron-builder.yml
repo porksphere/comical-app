@@ -44,12 +44,15 @@ directories:
 files:
   - build/main.cjs
   - build/preload.cjs
-  - build/tray.png
+  - build/icon.ico
+  - build/icon.png
   - build/web/**/*
   - package.json
 
-# electron-builder derives every size it needs — including the Windows .ico — from this one PNG,
-# so there's no committed per-platform icon set to drift from the app's own.
+# macOS: the app's own tile. A dock icon is expected to be one, and macOS draws no plate of its own.
+# Windows and Linux override it below with the book alone on transparent (assets/, rendered from the
+# same master by `bun run icons`) — neither masks an icon, so the tile shows up there as a black
+# square with a small book in it.
 icon: ../mobile/assets/images/icon.png
 
 # Chromium ships 55 locales of UI strings (~46 MB) — a big fraction of the download for an app
@@ -58,6 +61,9 @@ electronLanguages:
   - en-US
 
 win:
+  # Committed as an .ico rather than derived from the PNG: every size in it is drawn from the vector
+  # at that size, the taskbar's 24px included, instead of being one bitmap scaled down.
+  icon: assets/icon.ico
   # Installer only. A portable zip would double the download for the same app; add it back when
   # someone actually wants a no-install copy.
   target:
@@ -77,6 +83,7 @@ nsis:
   shortcutName: Comical
 
 linux:
+  icon: assets/icon.png
   # AppImage runs anywhere with no install and no root — the testing/no-package-manager path.
   # .deb gives Debian/Ubuntu users menu integration and an apt-managed uninstall, which AppImage
   # doesn't. Snap and Flatpak are deliberately absent: see README.

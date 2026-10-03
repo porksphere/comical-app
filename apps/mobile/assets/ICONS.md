@@ -2,7 +2,8 @@
 
 How the Comical logo and every derived icon are produced. There is **no build
 script** — this is the manual recipe. `logo.svg` is the master; everything else
-is derived from it by hand and must be kept in sync when the art changes.
+is derived from it by hand and must be kept in sync when the art changes. (The
+one exception is the desktop set, which has a script: see "Desktop icons".)
 
 ## Source of truth
 
@@ -151,6 +152,36 @@ Two things to get right:
 rows paint the gradient on the frame div itself, so they save as RGB. Match each
 file's exact size/mode from the table so nothing downstream (Expo config,
 splash, web favicon) has to change.
+
+## Desktop icons (`apps/desktop/assets/`)
+
+Windows and Linux draw an icon exactly as given — no mask, no plate. `icon.png`
+on a taskbar is therefore a black square with a small book in it, so the desktop
+app carries its own pair: **the book alone, on transparent, cropped to its own
+bounds** so it fills the frame (2% margin per side; the book is wider than tall,
+so the bands above and below are simply empty).
+
+| file | sizes | used for |
+|------|-------|----------|
+| `icon.ico` | 16, 20, 24, 32, 40, 48, 64, 256 | the Windows `.exe`, installer, window, taskbar and tray |
+| `icon.png` | 512 | the Linux icon set, the tray off Windows, notifications |
+
+Regenerate both with `bun run icons` in `apps/desktop` (`scripts/render-icons.ts`)
+and commit the result. It reads `logo.svg` directly and measures the art's
+bounding box itself, so a change to the master needs nothing but a re-run.
+
+Every size in the `.ico` is rendered **from the vector at that size**, not
+scaled down from a large bitmap — Windows picks the entry its display scaling
+calls for (24px on a 100% taskbar, 16px in the tray) and resamples whatever is
+missing, poorly. That is why the `.ico` is committed rather than left for
+electron-builder to derive from a PNG.
+
+macOS is deliberately not on this list: a dock icon is expected to be a tile,
+so the Mac build keeps `icon.png`.
+
+On a dark taskbar the graphite cover all but disappears and the white pages
+carry the mark; on a light one the cover frames them. Both read — check both
+when the art changes.
 
 ## The bridge mark (`images/comical-bridge.svg` → `.png`)
 

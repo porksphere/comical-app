@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "launch-check": "bun run scripts/launch-check.ts",
     "stamp-version": "bun run scripts/stamp-version.ts",
+    "icons": "bun build scripts/render-icons.ts --target=node --format=cjs --external electron --outfile build/render-icons.cjs && electron build/render-icons.cjs",
     "dist:win": "bun run build && electron-builder --win --publish never",
     "dist:linux": "bun run build && electron-builder --linux --publish never",
     "dist:mac": "bun run build && electron-builder --mac --publish never"

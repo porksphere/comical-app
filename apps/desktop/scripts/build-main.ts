@@ -43,5 +43,6 @@ for (const name of ["main", "preload"]) {
   console.log(`${name} → ${outfile}`);
 }
 
-// The tray's icon, read at runtime from beside the bundles — the same mark the web build uses.
-await copyFile(join(DESKTOP, "..", "mobile", "assets", "images", "favicon.png"), join(OUT, "tray.png"));
+// Read at runtime from beside the bundles (src/icon.ts).
+for (const name of ["icon.ico", "icon.png"]) await copyFile(join(DESKTOP, "assets", name), join(OUT, name));
+await rm(join(OUT, "tray.png"), { force: true });

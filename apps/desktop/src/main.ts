@@ -9,11 +9,12 @@
  * spike: the desktop app is the shipped web UI plus a private, per-user backend, so nothing in
  * `apps/mobile` has to know desktop exists.
  */
-import { app, BrowserWindow, ipcMain, nativeImage, Notification, screen, shell, session } from "electron";
+import { app, BrowserWindow, ipcMain, Notification, screen, shell, session } from "electron";
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
 import { createDesktopHost, type DesktopHost } from "./host/create-host.ts";
 import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
+import { iconImage, shellIcon } from "./icon.ts";
 import { newSyncKey, startSyncListener, type SyncListener } from "./host/sync-listener.ts";
 import { linkInArgs, linkRoute, registerLinkScheme } from "./links.ts";
 import { canOpenAtLogin, launchedAtLogin, setOpenAtLogin } from "./login-item.ts";
@@ -148,7 +149,7 @@ function notify(title: string, body: string, route: string | null): void {
   const notice = new Notification({
     title,
     body,
-    icon: nativeImage.createFromPath(join(app.getAppPath(), "build", "tray.png")),
+    icon: iconImage(),
   });
   notices.add(notice);
   notice.on("click", () => {
@@ -267,6 +268,9 @@ async function openWindow(): Promise<void> {
     minWidth: 480,
     minHeight: 480,
     backgroundColor: "#000000",
+    // A packaged Windows build would take the .exe's icon anyway; Linux and an unpackaged run have
+    // nothing else to go on. macOS ignores it.
+    icon: shellIcon(),
     titleBarStyle: CAPTION_OVERLAY ? "hidden" : "hiddenInset",
     ...(CAPTION_OVERLAY ? { titleBarOverlay: { ...captionColors("#000000"), height: 63 } } : {}),
     show: false,
