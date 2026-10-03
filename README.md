@@ -54,8 +54,7 @@ on Windows. On Linux, use the
 or the
 **[.deb](https://github.com/porksphere/comical-app/releases/download/desktop-release/comical-desktop-amd64.deb)**.
 
-The installers aren't code-signed, so Windows SmartScreen warns on first run (**More info → Run
-anyway**). A macOS build is in development.
+Warning: the installers aren't code-signed, so Windows SmartScreen will warn on first run.
 
 ## How it works
 
