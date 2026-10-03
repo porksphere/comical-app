@@ -213,6 +213,7 @@ async function boot(): Promise<void> {
     bridgesDir: process.env.COMICAL_BRIDGES_DIR ?? join(dataDir, "bridges"),
     baseUrl: `${server.origin}/api`,
     onSynced: () => mainWindow?.webContents.send("synced"),
+    onSyncDevices: (devices) => mainWindow?.webContents.send("sync-devices", devices),
   });
   if (shellSettings().networkSync) void applyNetworkSync();
 
@@ -449,6 +450,8 @@ ipcMain.handle("network-sync", (_e, on: unknown) => {
   if (typeof on === "boolean") updateShellSettings({ networkSync: on });
   return applyNetworkSync();
 });
+
+ipcMain.handle("sync-devices", () => host?.syncDevices() ?? []);
 
 // The key is the listener's whole secret, so a new one means a new listener: the old is closed
 // first, through the same queue a toggle goes through, and the old key stops opening anything the

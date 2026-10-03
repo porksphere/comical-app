@@ -11,6 +11,8 @@ import { createLibrarySync, type LibrarySyncOptions, type SyncDoc } from './cont
 let ids = 0;
 
 const REG = 'https://example.test/index.json';
+/** A look at the hub from the test itself, which has to say who it is like any device. */
+const PROBE = { device: 'probe', name: 'A probe', have: {} };
 
 /** The app's registry stores and provider, over maps: an install is a record of where it came from. */
 function fakeRegistry() {
@@ -53,6 +55,7 @@ function device(hub: SyncBackend, overrides: Partial<LibrarySyncOptions> = {}) {
     backend: () => hub,
     canSync: () => true,
     newDeviceId: () => `dev-${++ids}`,
+    deviceName: () => 'A phone',
     onApplied: () => {},
     onStatus: () => {},
     log: () => {},
@@ -85,7 +88,7 @@ describe('createLibrarySync', () => {
     expect(a.sync.status().enabled).toBe(false);
     expect(await a.sync.syncNow()).toBeUndefined();
     expect(a.saved()).toBeNull();
-    expect((await hub.pull({})).segments).toHaveLength(0);
+    expect((await hub.pull(PROBE)).segments).toHaveLength(0);
   });
 
   test("what the hub holds wins over this device's copy when pairing", async () => {
@@ -112,7 +115,7 @@ describe('createLibrarySync', () => {
     let online = false;
     const flaky: SyncBackend = {
       push: (s) => (online ? hub.push(s) : Promise.reject(new Error('offline'))),
-      pull: (have, limit) => (online ? hub.pull(have, limit) : Promise.reject(new Error('offline'))),
+      pull: (request) => (online ? hub.pull(request) : Promise.reject(new Error('offline'))),
     };
     const b = device(flaky);
     await b.raw.putCollections([{ ...c, name: 'Stale name' }]);
@@ -229,6 +232,7 @@ describe('createLibrarySync', () => {
       backend: () => hub,
       canSync: () => true,
       newDeviceId: () => `dev-${++ids}`,
+      deviceName: () => 'A phone',
       onApplied: () => {},
       onStatus: () => {},
       log: () => {},
@@ -249,6 +253,6 @@ describe('createLibrarySync', () => {
     await a.registry.add(REG);
     await a.registry.install(REG, 'bridge-one');
     expect(a.held.calls).toEqual([`add ${REG}`, 'install bridge-one']);
-    expect((await hub.pull({})).segments).toHaveLength(0);
+    expect((await hub.pull(PROBE)).segments).toHaveLength(0);
   });
 });

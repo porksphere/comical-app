@@ -12,6 +12,7 @@ import { HttpBackend, type RegistryLists, type RegistryMutations, type SyncStats
 import { AppState } from 'react-native';
 
 import { showToast } from '@/components/toast';
+import { syncDeviceName } from '@/lib/device-name';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { getApiBase, getSyncSecret } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
@@ -48,6 +49,7 @@ export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): Lib
     },
     canSync: () => getResolvedModeSync() === 'embedded',
     newDeviceId: () => `app-${crypto.randomUUID()}`,
+    deviceName: syncDeviceName,
     onApplied: () => {
       bumpDataEpoch();
       void queryClient.invalidateQueries();

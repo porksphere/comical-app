@@ -8,6 +8,9 @@ import { Platform } from 'react-native';
 
 export type ShellCommand = { type: 'open'; route: string } | { type: 'navigate'; dir: 'back' | 'forward' };
 
+/** A device that has synced with this computer — `@comical/host-server`'s `SyncDevice`, as the shell hands it over. */
+export type SyncDevice = { id: string; name: string; firstSeenAt: number; lastSeenAt: number };
+
 type DesktopShell = {
   platform: string;
   runInTray: boolean;
@@ -25,6 +28,8 @@ type DesktopShell = {
   setNetworkSync?(on: boolean): Promise<string | null>;
   networkSyncAddress?(): Promise<string | null>;
   newNetworkSyncKey?(): Promise<string | null>;
+  syncDevices?(): Promise<SyncDevice[]>;
+  onSyncDevices?(onDevices: (devices: SyncDevice[]) => void): () => void;
   onSynced?(onSynced: () => void): () => void;
   setRunInTray(on: boolean): void;
   setOpenAtLogin(on: boolean): void;
@@ -45,8 +50,13 @@ const shell$ = observable({
   updateReady: null as string | null,
   networkSync: desktopShell()?.networkSync ?? false,
   networkSyncAddress: null as string | null,
+  syncDevices: [] as SyncDevice[],
 });
 desktopShell()?.onUpdateReady?.((version) => shell$.updateReady.set(version));
+desktopShell()?.onSyncDevices?.((devices) => shell$.syncDevices.set(devices));
+void desktopShell()
+  ?.syncDevices?.()
+  .then((devices) => shell$.syncDevices.set(devices));
 
 /** Whether this build downloads and installs its own updates (a release build's Windows installer
  *  or AppImage). Everywhere else an update is a link to the download page. */
@@ -114,6 +124,11 @@ export function refreshNetworkSyncAddress(): void {
   void desktopShell()
     ?.networkSyncAddress?.()
     .then((address) => shell$.networkSyncAddress.set(address));
+}
+
+/** The devices that have synced with this computer, most recent first; kept current by the shell. */
+export function useSyncDevices(): SyncDevice[] {
+  return use$(shell$.syncDevices);
 }
 
 /** Whether the shell can replace the key in that address. */

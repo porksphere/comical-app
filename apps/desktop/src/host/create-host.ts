@@ -31,7 +31,7 @@ import { FileLibraryStore } from "@comical/host-server/library-store";
 import { createServerPageFetcher, createServerPageResolver } from "@comical/host-server/page-fetcher";
 import { createRouter, type RouterOptions } from "@comical/host-server/router";
 import { SettingsStore } from "@comical/host-server/settings-store";
-import { createSyncHost } from "@comical/host-server/sync-host";
+import { createSyncHost, type SyncDevice } from "@comical/host-server/sync-host";
 import { TrackerManager } from "@comical/host-server/tracker-manager";
 
 export interface DesktopHostOptions {
@@ -46,6 +46,8 @@ export interface DesktopHostOptions {
   baseUrl: string;
   /** Another device's changes have just landed in this library or its bridges. */
   onSynced?: () => void;
+  /** The devices that have synced with this library have a new answer (one more, renamed, or back). */
+  onSyncDevices?: (devices: SyncDevice[]) => void;
 }
 
 export interface DesktopHost {
@@ -54,6 +56,8 @@ export interface DesktopHost {
   /** In-process transport: a server-relative path in, a `Response` out. No socket involved.
    *  Shape-identical to the app's own `Transport` type in `apps/mobile/src/data/api.ts`. */
   fetch(path: string, init?: RequestInit): Promise<Response>;
+  /** Every device that has synced with this library, most recent first. */
+  syncDevices(): SyncDevice[];
   /** Schedule no more sync rounds; a write landing inside the debounce window stays for next launch. */
   close(): void;
 }
@@ -107,6 +111,7 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
       installedTrackers: () => manifest.allInstalledTrackers(),
     },
     onApplied: opts.onSynced,
+    onDevices: opts.onSyncDevices,
   });
   routerOpts.sync = sync.backend;
   // The router's installs are recorded; the managers keep the plain one, they only read.
@@ -142,6 +147,7 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
     // Same trick `@comical/host-rn`'s embedded transport uses on iOS/Android.
     fetch: (path, init) =>
       Promise.resolve(router.fetch(new Request(`http://desktop.comical.local${path}`, init))),
+    syncDevices: () => sync.devices(),
     close: () => sync.stop(),
   };
 }

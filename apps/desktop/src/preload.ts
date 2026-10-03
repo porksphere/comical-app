@@ -3,6 +3,7 @@
  * renderer half is all it can reach.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import type { SyncDevice } from "@comical/host-server/sync-host";
 
 const settings = ipcRenderer.sendSync("shell-settings") as {
   runInTray: boolean;
@@ -61,6 +62,16 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
   /** Replace the key in that address. Resolves to the new address; every phone paired with the old
    *  one is cut off until it is given this. */
   newNetworkSyncKey: () => ipcRenderer.invoke("network-sync-new-key") as Promise<string | null>,
+  /** The devices that have synced with this library, most recent first. */
+  syncDevices: () => ipcRenderer.invoke("sync-devices") as Promise<SyncDevice[]>,
+  /** Called with the new list whenever it changes. Returns the unsubscribe. */
+  onSyncDevices: (onDevices: (devices: SyncDevice[]) => void) => {
+    const listener = (_e: IpcRendererEvent, devices: SyncDevice[]) => onDevices(devices);
+    ipcRenderer.on("sync-devices", listener);
+    return () => {
+      ipcRenderer.off("sync-devices", listener);
+    };
+  },
   /** Called when another device's changes have landed in this library. Returns the unsubscribe. */
   onSynced: (onSynced: () => void) => {
     const listener = () => onSynced();

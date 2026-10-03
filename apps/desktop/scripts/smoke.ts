@@ -145,13 +145,14 @@ async function main(): Promise<void> {
   const local = address ? `http://127.0.0.1:${new URL(address).port}` : "";
   const post = (path: string, body: string) =>
     fetch(`${local}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body });
-  const sealed = await post("/sync/pull", sealedChannel(key).sealRequest("/sync/pull", JSON.stringify({ have: {} })).envelope);
+  const probe = { device: "smoke-probe", name: "Smoke probe", have: {} };
+  const sealed = await post("/sync/pull", sealedChannel(key).sealRequest("/sync/pull", JSON.stringify(probe)).envelope);
   check("POST /sync/pull sealed under the key → 200", sealed.status === 200, sealed.status);
-  const wrongKey = await post("/sync/pull", sealedChannel(newSyncKey()).sealRequest("/sync/pull", JSON.stringify({ have: {} })).envelope);
+  const wrongKey = await post("/sync/pull", sealedChannel(newSyncKey()).sealRequest("/sync/pull", JSON.stringify(probe)).envelope);
   check("…sealed under a wrong key → 404", wrongKey.status === 404, wrongKey.status);
-  const clear = await post("/sync/pull", JSON.stringify({ have: {} }));
+  const clear = await post("/sync/pull", JSON.stringify(probe));
   check("…in the clear → 404", clear.status === 404, clear.status);
-  const keyInPath = await post(`/${key}/sync/pull`, JSON.stringify({ have: {} }));
+  const keyInPath = await post(`/${key}/sync/pull`, JSON.stringify(probe));
   check("…the key in the path → 404", keyInPath.status === 404, keyInPath.status);
   const beyond = await fetch(`${local}/bridges`);
   check("…nothing but sync is there", beyond.status === 404, beyond.status);
@@ -162,6 +163,7 @@ async function main(): Promise<void> {
     store: librarySyncStore(phoneStore),
     backend: new HttpBackend({ baseUrl: local, secret: key, fetch: (url, init) => fetch(url, init) }),
     device: "smoke-phone",
+    name: "Smoke phone",
     newDeviceId: () => "smoke-phone-2",
   });
   await new Library(wrapLibraryStore(phoneStore, phone)).createCollection("From a phone");
@@ -177,6 +179,12 @@ async function main(): Promise<void> {
   // Said once the round that applied it is over, a moment after the write itself.
   for (let i = 0; i < 20 && synced === 0; i++) await new Promise((r) => setTimeout(r, 100));
   check("…and the shell is told to refresh its page", synced > 0, synced);
+  const devices = host.syncDevices();
+  check(
+    "…and the phone is on the hub's roster by name, the probe beside it, the hub itself not",
+    devices.map((d) => d.name).sort().join() === "Smoke phone,Smoke probe",
+    JSON.stringify(devices),
+  );
 
   await lan.close();
   await server.close();

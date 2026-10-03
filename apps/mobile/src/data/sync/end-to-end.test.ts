@@ -129,6 +129,7 @@ function phone(url: () => string) {
     backend: () => new HttpBackend({ baseUrl: url(), fetch: (u, init) => fetch(u, init) }),
     canSync: () => true,
     newDeviceId: () => `app-${++ids}`,
+    deviceName: () => 'A phone',
     onApplied: () => {},
     onRepaired: () => repaired++,
     onStatus: (s) => {
@@ -253,7 +254,7 @@ describe('library sync, phone ↔ host-server ↔ phone', () => {
     await b.sync.enable();
     expect(await collectionNames(b.library)).toEqual(['After restart', 'Before restart']);
     // The hub kept the phone's two segments as one log; nothing was pushed twice.
-    const hub = await new HttpBackend({ baseUrl: server.url, fetch: (u, init) => fetch(u, init) }).pull({});
+    const hub = await new HttpBackend({ baseUrl: server.url, fetch: (u, init) => fetch(u, init) }).pull({ device: 'probe', name: 'A probe', have: {} });
     const phoneDevice = a.saved()!.state.device;
     expect(hub.segments.map((s) => [s.device, s.seq])).toEqual([[phoneDevice, 1], [phoneDevice, 2]]);
   });

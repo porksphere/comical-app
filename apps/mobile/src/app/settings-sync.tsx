@@ -4,7 +4,7 @@
  * one syncing — it is the hub. A browser is neither: it reads the server's library directly, and
  * that is already shared with everything else on the same server.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
@@ -33,9 +33,13 @@ import {
   refreshNetworkSyncAddress,
   useNetworkSync,
   useNetworkSyncAddress,
+  useSyncDevices,
+  type SyncDevice,
 } from '@/lib/desktop-shell';
 import { useRouter } from '@/lib/nav';
+import { relTime } from '@/lib/rel-time';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
+import { testId } from '@/lib/test-id';
 
 const timeOf = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
@@ -138,6 +142,7 @@ function HubRows() {
   const { open } = useOverlay();
   const [networkSync, setNetworkSync] = useNetworkSync();
   const networkSyncAddress = useNetworkSyncAddress();
+  const devices = useSyncDevices();
   useEffect(refreshNetworkSyncAddress, []);
 
   if (!desktopSyncsDevices()) {
@@ -159,8 +164,38 @@ function HubRows() {
           onPress={networkSyncAddress ? () => open(() => <PairPhoneSheet />) : undefined}
         />
       )}
+      {networkSync && devices.length === 0 && (
+        <SettingsRow testID="settings.sync.no-devices" label="No phones yet" description="A phone appears here once it has synced." />
+      )}
+      {networkSync && devices.map((device) => <DeviceRow key={device.id} device={device} />)}
     </>
   );
+}
+
+/**
+ * One phone that has synced with this computer. There is no "connected" to show — a sync is a
+ * request and a reply — so when it was last here is the whole status; the hub can't tell a phone
+ * apart from a phone-shaped stranger, and the shared key is the only thing to cut off.
+ */
+function DeviceRow({ device }: { device: SyncDevice }) {
+  const now = useMinuteTick();
+  return (
+    <SettingsRow
+      testID={testId('settings.sync.device', device.id)}
+      label={device.name}
+      description={`Synced ${relTime(device.lastSeenAt, now)}`}
+    />
+  );
+}
+
+/** Re-renders once a minute, so "Synced 3m ago" keeps pace without anything else changing. */
+function useMinuteTick(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
 }
 
 /**

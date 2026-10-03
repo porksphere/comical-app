@@ -11,7 +11,6 @@
  * probed here so `expo-device` stays off the app's startup path (see that module's header).
  */
 import { CONTRACT_VERSION } from '@comical/contract';
-import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { openBrowserAsync } from 'expo-web-browser';
 import { useEffect, useState } from 'react';
@@ -32,6 +31,7 @@ import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { installDesktopUpdate, useDesktopUpdateReady } from '@/lib/desktop-shell';
+import { deviceLabel } from '@/lib/device-name';
 import { router } from '@/lib/nav';
 import {
   APP_VERSION,
@@ -62,12 +62,6 @@ function osLabel(): string {
   const name = Device.osName || (Platform.OS === 'ios' ? 'iOS' : Platform.OS === 'android' ? 'Android' : 'Web');
   const version = Device.osVersion || String(Platform.Version ?? '');
   return version ? `${name} ${version}` : name;
-}
-
-/** The device this is running on — its user-assigned name where the OS exposes one, else the model.
- *  Empty on web, where neither is available (`Device.deviceName` is hard-null there). */
-function deviceLabel(): string {
-  return Constants.deviceName || Device.modelName || '';
 }
 
 export default function AboutScreen() {

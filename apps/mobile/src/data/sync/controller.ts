@@ -61,6 +61,9 @@ export type LibrarySyncOptions = {
   /** False while the app runs against a remote server, whose library isn't this device's. */
   canSync: () => boolean;
   newDeviceId: () => string;
+  /** What the hub lists this device as. Read each time sync starts, so a renamed phone catches up
+   *  on its next launch. */
+  deviceName: () => string;
   /** A round brought in changes — the screens reading the library should refetch. */
   onApplied: () => void;
   /** The hub had lost this device's history, and the device paired with it again (see `round`). */
@@ -138,9 +141,10 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
       ]),
       backend: {
         push: (s) => opts.backend().push(s),
-        pull: (have, limit) => opts.backend().pull(have, limit),
+        pull: (request) => opts.backend().pull(request),
       },
       ...(doc ? { state: doc.state } : { device: opts.newDeviceId() }),
+      name: opts.deviceName(),
       newDeviceId: opts.newDeviceId,
       persist: async (state) => {
         if (active?.engine === engine) await opts.save({ state, adopted: active.adopted });
