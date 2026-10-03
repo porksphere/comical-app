@@ -7,7 +7,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InMemoryLibraryStore, Library } from "@comical/library";
-import { HttpBackend, librarySyncStore, SyncEngine, wrapLibraryStore } from "@comical/sync";
+import { HttpBackend, librarySyncStore, sealedChannel, SyncEngine, wrapLibraryStore } from "@comical/sync";
 import { createDesktopHost } from "../src/host/create-host.ts";
 import { startLoopbackServer } from "../src/host/serve.ts";
 import { newSyncKey, startSyncListener } from "../src/host/sync-listener.ts";
@@ -134,36 +134,33 @@ async function main(): Promise<void> {
     check("path traversal is refused", escape.status === 404 || escape.status === 403, escape.status);
   }
 
-  // 8. A phone's way in: the sync routes alone, on the network, behind the pairing key.
+  // 8. A phone's way in: the sync routes alone, on the network, sealed under the pairing key.
   const key = newSyncKey();
   const lan = await startSyncListener({ getHost: () => host, key, port: 0 });
   const address = await lan.address();
   check("the sync listener has an address to hand a phone", Boolean(address), address);
+  check("…which ends in the key the phone keeps", address?.endsWith(`/${key}`) ?? false, address);
   // Whatever interface that names, the listener is on all of them — loopback is the one a CI
   // runner is sure to have.
   const local = address ? `http://127.0.0.1:${new URL(address).port}` : "";
-  const pull = (base: string) =>
-    fetch(`${base}/sync/pull`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ have: {} }),
-    });
-  const keyed = await pull(`${local}/${key}`);
-  check("POST /<key>/sync/pull → 200", keyed.status === 200, keyed.status);
-  const wrongKey = await pull(`${local}/${newSyncKey()}`);
-  check("…a wrong key → 404", wrongKey.status === 404, wrongKey.status);
-  const noKey = await pull(local);
-  check("…no key → 404", noKey.status === 404, noKey.status);
-  const beyond = await fetch(`${local}/${key}/bridges`);
-  check("…the key opens nothing but sync", beyond.status === 404, beyond.status);
-  const health = await fetch(`${local}/${key}/health`);
-  check("GET /<key>/health → 200", health.status === 200, health.status);
+  const post = (path: string, body: string) =>
+    fetch(`${local}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body });
+  const sealed = await post("/sync/pull", sealedChannel(key).sealRequest("/sync/pull", JSON.stringify({ have: {} })).envelope);
+  check("POST /sync/pull sealed under the key → 200", sealed.status === 200, sealed.status);
+  const wrongKey = await post("/sync/pull", sealedChannel(newSyncKey()).sealRequest("/sync/pull", JSON.stringify({ have: {} })).envelope);
+  check("…sealed under a wrong key → 404", wrongKey.status === 404, wrongKey.status);
+  const clear = await post("/sync/pull", JSON.stringify({ have: {} }));
+  check("…in the clear → 404", clear.status === 404, clear.status);
+  const keyInPath = await post(`/${key}/sync/pull`, JSON.stringify({ have: {} }));
+  check("…the key in the path → 404", keyInPath.status === 404, keyInPath.status);
+  const beyond = await fetch(`${local}/bridges`);
+  check("…nothing but sync is there", beyond.status === 404, beyond.status);
 
   // A phone's whole exchange: its own engine, the app's own client, one new collection.
   const phoneStore = new InMemoryLibraryStore();
   const phone = new SyncEngine({
     store: librarySyncStore(phoneStore),
-    backend: new HttpBackend({ baseUrl: `${local}/${key}`, fetch: (url, init) => fetch(url, init) }),
+    backend: new HttpBackend({ baseUrl: local, secret: key, fetch: (url, init) => fetch(url, init) }),
     device: "smoke-phone",
     newDeviceId: () => "smoke-phone-2",
   });
