@@ -45,16 +45,23 @@ if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
   exit 1
 fi
 
-# Walk the commits that touched app.json, newest first, past every one that already carried the
-# current base; the last one still carrying it is the commit that introduced this version. (An
-# empty read — the commit that first added app.json — ends the walk the same way a different
-# version does.)
+version_at() {
+  git show "$1:${APP_JSON}" 2>/dev/null | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).expo.version" 2>/dev/null || true
+}
+
+# The commit that introduced this version: the newest one touching app.json that carries the base
+# while its (first) parent doesn't. Judged against the parent, not the previous commit in the
+# list — `git log` orders by date, and a PR build runs on a merge of main, where a branch commit
+# that edited app.json for something else (still on the old version) can be newer than main's
+# release bump. Stopping at the first non-base commit there minted `<base>.1` on every push.
+# (An empty parent read — the commit that first added app.json — counts as a change too.)
 BUMP=""
 while read -r sha; do
   [ -n "$sha" ] || continue
-  version="$(git show "${sha}:${APP_JSON}" 2>/dev/null | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).expo.version" 2>/dev/null || true)"
-  [ "$version" = "$BASE" ] || break
+  [ "$(version_at "$sha")" = "$BASE" ] || continue
+  [ "$(version_at "${sha}^")" = "$BASE" ] && continue
   BUMP="$sha"
+  break
 done < <(git log --format=%H -- "$APP_JSON")
 
 if [ -n "$BUMP" ]; then

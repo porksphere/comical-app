@@ -1,0 +1,43 @@
+# Pairing-code scanner: Settings → Sync → "Sync server" → "Scan a code" opens the camera screen,
+# and back leaves it.
+#
+# Mobile only, with no web copy: the button exists where there is a camera, and the web build hides
+# it. The screen is asserted by its title, which it shows whether the camera is granted or refused —
+# a simulator has no camera to point at the desktop's code, so the scan itself is not tested here.
+#
+# The server row only renders while bridges run on-device with sync on, so the flow turns sync on
+# for the look and off again after, behind a `when: visible` for a build without the native runtime.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.sync"
+- assertVisible: "Sync library"
+
+- runFlow:
+    when:
+      visible:
+        id: "settings.toggle.sync-library"
+    commands:
+      - tapOn:
+          id: "settings.toggle.sync-library"
+      - tapOn:
+          id: "settings.sync.server"
+      - assertVisible:
+          id: "settings.general.remote-server.scan"
+      - tapOn:
+          id: "settings.general.remote-server.scan"
+      - assertVisible: "Scan a code"
+      - takeScreenshot: scan-sync-server
+      - tapOn:
+          id: "top-bar.back"
+      - assertVisible:
+          id: "settings.sync.server"
+      - tapOn:
+          id: "settings.toggle.sync-library"
+
+- tapOn:
+    id: "top-bar.back"

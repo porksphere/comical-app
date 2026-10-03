@@ -1,6 +1,6 @@
 # Settings tab: drill into every category and back out, asserting a stable landing element on
-# each pushed screen. Categories walked (10 of the 11 in settings.tsx): general, notifications,
-# bridges, trackers, registries, custom-pages, downloads, storage, diagnostics, about.
+# each pushed screen. Categories walked (11 of the 12 in settings.tsx): general, notifications,
+# sync, bridges, trackers, registries, custom-pages, downloads, storage, diagnostics, about.
 #
 # `settings.category.developer` is deliberately SKIPPED: it's gated behind PROFILING_ENABLED
 # (src/lib/profiling.ts — true only in __DEV__ or a EXPO_PUBLIC_COMICAL_PROFILING=1 build), which
@@ -10,6 +10,9 @@
 # element with a stable id on that screen, since a pushed screen's own TopBar title has no testID):
 #   - general:        settings.select.appearance   (settings-general.tsx's Appearance row)
 #   - notifications:  settings.toggle.check-for-new-chapters (settings-notifications.tsx)
+#   - sync:           "Sync library" row label via `text:` — the screen's first row keeps that label in
+#     every state (a toggle with the on-device runtime, a pointer to General without it, a note on
+#     a build with no runtime at all), while its testID differs per state (settings-sync.tsx).
 #   - bridges:        bridges.add                  (AddFab)
 #   - trackers:        trackers.install            (TopBarButton)
 #   - registries:      registries.add              (AddFab)
@@ -43,7 +46,7 @@ appId: com.porksphere.comical
 #
 # `scrollUntilVisible` rather than a bare `scroll` so this is deterministic on both platforms
 # (settings.tsx is an ordinary ScrollView, not a LegendList-owned scroller — see the web copy). On a
-# viewport tall enough to fit all eleven categories it finds About without scrolling at all, which
+# viewport tall enough to fit all twelve categories it finds About without scrolling at all, which
 # still covers the other half of the guarantee: a drag on a list with nothing to scroll is pure
 # stretch, and that must not move the bar either.
 - scrollUntilVisible:
@@ -60,6 +63,15 @@ appId: com.porksphere.comical
 - takeScreenshot: general
 - assertVisible:
     id: "settings.select.appearance"
+# Library backup sits under the settings list. Only its presence is checked: both rows hand off to
+# a system file dialog, which is outside what a flow can drive.
+- scrollUntilVisible:
+    element:
+      id: "settings.general.backup-restore"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "settings.general.backup-export"
 - tapOn:
     id: "top-bar.back"
 
@@ -69,6 +81,14 @@ appId: com.porksphere.comical
 - takeScreenshot: notifications
 - assertVisible:
     id: "settings.toggle.check-for-new-chapters"
+- tapOn:
+    id: "top-bar.back"
+
+# Sync
+- tapOn:
+    id: "settings.category.sync"
+- takeScreenshot: sync
+- assertVisible: "Sync library"
 - tapOn:
     id: "top-bar.back"
 

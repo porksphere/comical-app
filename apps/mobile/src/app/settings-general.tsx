@@ -1,29 +1,40 @@
-import { useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, StyleSheet } from 'react-native';
 
-import { OverlayHeading, useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
+import { openConfirm } from '@/components/confirm-popup';
+import { useOverlay } from '@/components/overlay/overlay';
+import { RemoteServerForm } from '@/components/settings/remote-server-form';
 import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
-import { useApiBase } from '@/data/api';
+import { exportLibraryBackup, getBridges, getTrackers, restoreLibraryBackup, useApiBase } from '@/data/api';
+import { pickBackupFile, saveBackupFile } from '@/data/backup-file';
+import {
+  backupFileName,
+  describeBackup,
+  describeMissing,
+  describeRestore,
+  missingFromBackup,
+  parseBackupFile,
+} from '@/data/backup-summary';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
 import { kickDownloads } from '@/data/downloads/engine';
-import { installDownloadProgress } from '@/data/downloads/events';
-import { hydrateDownloadIndex } from '@/data/downloads/index-cache';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } from '@/data/embedded';
 import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
+import { switchServer } from '@/data/switch-server';
 import { useHydrated } from '@/hooks/use-responsive';
-import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
+import { useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
+import { friendlyError } from '@/lib/friendly-error';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -69,7 +80,7 @@ export default function GeneralSettingsScreen() {
   const [holdAction, setHoldAction] = useBrowseHoldAction();
   const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
-  const [apiBase, setApiBaseOverride] = useApiBase();
+  const [apiBase] = useApiBase();
   const lightCards = useLightCards();
   const [runInTray, setRunInTray] = useRunInTray();
   const [openAtLogin, setOpenAtLogin] = useOpenAtLogin();
@@ -89,14 +100,6 @@ export default function GeneralSettingsScreen() {
   const toggleOnDevice = (enabled: boolean) => {
     setOnDevice(enabled);
     swapDataSourceMode(enabled); // transport swap + the cache/downloads flushes (see apply-mode.ts)
-  };
-
-  const saveApiBase = (url: string | null) => {
-    setApiBaseOverride(url);
-    queryClient.clear(); // a different server's cached data can't be trusted (mirrors PERSIST_BUSTER)
-    bumpDataEpoch(); // refetch useDataSource-backed screens against the new server
-    installDownloadProgress(); // the SSE stream targets the new server
-    void hydrateDownloadIndex(); // remote /file URLs embed the server base — rebuild them
   };
 
   return (
@@ -144,12 +147,23 @@ export default function GeneralSettingsScreen() {
               onChange={toggleOnDevice}
             />
           )}
+          {/* Which server runs the bridges. While they run on the device this is the sync hub
+              instead, and lives on the Sync screen. */}
           {!embeddedActive && (
             <SettingsRow
+              testID="settings.general.remote-server"
               label="Remote server"
               description={apiBase}
-              descriptionSelectable
-              onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
+              onPress={() =>
+                open(() => (
+                  <RemoteServerForm
+                    title="Remote server"
+                    description="The Comical server this app talks to when not running bridges on this device."
+                    currentUrl={apiBase}
+                    onSave={switchServer}
+                  />
+                ))
+              }
             />
           )}
           {desktop && (
@@ -201,64 +215,90 @@ export default function GeneralSettingsScreen() {
             />
           )}
         </SettingsSection>
+        <LibraryBackupSection />
       </ScrollView>
     </ThemedView>
   );
 }
 
-/** Sheet/popover form for editing the remote-server override (see its trigger row above) — mirrors
- *  `AddRegistryForm`'s text-input-plus-save shape in `registries.tsx`. */
-function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: (url: string | null) => void }) {
-  const theme = useTheme();
-  const { closeTop } = useOverlay();
-  const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
-  const [url, setUrl] = useState(currentUrl);
+/** Headered, unlike the list above: these two are things to do, not settings to leave on. */
+function LibraryBackupSection() {
+  const [exporting, setExporting] = useState(false);
+
+  const exportLibrary = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const backup = await exportLibraryBackup();
+      const outcome = await saveBackupFile(backupFileName(backup.exportedAt), JSON.stringify(backup));
+      if (outcome === 'saved') showToast('Library exported');
+    } catch (err) {
+      showToast(friendlyError(err, "Couldn't export your library."));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const restoreLibrary = async () => {
+    let picked: ReturnType<typeof parseBackupFile>;
+    try {
+      const text = await pickBackupFile();
+      if (text === null) return;
+      picked = parseBackupFile(text);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Couldn't read that file.");
+      return;
+    }
+    // A restore installs nothing, so what the restored library will lack is said here, while
+    // backing out to install it first is still on offer.
+    let missing: string | null;
+    try {
+      const [bridges, trackers] = await Promise.all([getBridges(), getTrackers()]);
+      missing = describeMissing(
+        picked.backup,
+        missingFromBackup(picked.backup, {
+          bridges: bridges.map((b) => b.id),
+          trackers: trackers && trackers.map((t) => t.info.id),
+        }),
+      );
+    } catch (err) {
+      showToast(friendlyError(err, "Couldn't check which bridges are installed."));
+      return;
+    }
+    const message =
+      'Everything in it is added to your library, and anything that differs goes back to how the backup has it. Nothing is removed.';
+    openConfirm({
+      title: 'Restore this backup?',
+      message: missing ? `${message}\n\n${missing}` : message,
+      detail: describeBackup(picked.backup),
+      confirmLabel: missing ? 'Restore anyway' : 'Restore',
+      pendingLabel: 'Restoring…',
+      tone: 'primary',
+      errorFallback: "Couldn't restore this backup.",
+      onConfirm: async () => {
+        const result = await restoreLibraryBackup(picked.raw);
+        bumpDataEpoch();
+        void queryClient.invalidateQueries();
+        showToast(describeRestore(result), { durationMs: 6000 });
+      },
+    });
+  };
 
   return (
-    <View style={styles.confirmBody}>
-      <OverlayHeading>Remote server</OverlayHeading>
-      <ThemedText type="small" themeColor="textSecondary">
-        The Comical server this app talks to when not running bridges on this device.
-      </ThemedText>
-      <TextInput
-        ref={inputRef}
-        testID="settings.general.remote-server.input"
-        value={url}
-        onChangeText={setUrl}
-        onFocus={() => keyboardAvoiding.onFocus(inputRef.current)}
-        onBlur={keyboardAvoiding.onBlur}
-        placeholder="http://localhost:3100"
-        placeholderTextColor={theme.textSecondary}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="url"
-        style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+    <SettingsSection title="Library backup">
+      <SettingsRow
+        testID="settings.general.backup-export"
+        label="Export library"
+        description={exporting ? 'Exporting…' : 'Save your collections, history and reading progress to a file.'}
+        onPress={() => void exportLibrary()}
       />
-      <View style={styles.confirmActions}>
-        <Pressable
-          testID="settings.general.remote-server.reset"
-          onPress={() => {
-            onSave(null);
-            closeTop();
-          }}
-          style={styles.confirmBtn}>
-          <ThemedText type="smallBold">Reset to default</ThemedText>
-        </Pressable>
-        <Pressable
-          testID="settings.general.remote-server.save"
-          onPress={() => {
-            onSave(url);
-            closeTop();
-          }}
-          disabled={!url.trim()}
-          style={styles.confirmBtn}>
-          <ThemedText type="smallBold" style={{ color: theme.accent }}>
-            Save
-          </ThemedText>
-        </Pressable>
-      </View>
-    </View>
+      <SettingsRow
+        testID="settings.general.backup-restore"
+        label="Restore from a backup"
+        description="Add back what a backup file holds. Nothing is removed."
+        onPress={() => void restoreLibrary()}
+      />
+    </SettingsSection>
   );
 }
 
@@ -272,23 +312,5 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
-  },
-  confirmBody: {
-    gap: Spacing.three,
-  },
-  confirmActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: Spacing.five,
-  },
-  confirmBtn: {
-    paddingVertical: Spacing.two,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    fontSize: 16,
   },
 });

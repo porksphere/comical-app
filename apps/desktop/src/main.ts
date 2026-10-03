@@ -12,8 +12,9 @@
 import { app, BrowserWindow, ipcMain, nativeImage, Notification, screen, shell, session } from "electron";
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
-import { createDesktopHost } from "./host/create-host.ts";
+import { createDesktopHost, type DesktopHost } from "./host/create-host.ts";
 import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
+import { newSyncKey, startSyncListener, type SyncListener } from "./host/sync-listener.ts";
 import { linkInArgs, linkRoute, registerLinkScheme } from "./links.ts";
 import { canOpenAtLogin, launchedAtLogin, setOpenAtLogin } from "./login-item.ts";
 import { attachContextMenu, setAppMenu, type NavDirection } from "./menus.ts";
@@ -93,6 +94,7 @@ function captionColors(background: string, dimmed = false): { color: string; sym
 }
 
 let server: LoopbackServer | null = null;
+let host: DesktopHost | null = null;
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
 /** A session start with the tray on opens no window: being there is the whole point of it. */
@@ -158,6 +160,36 @@ function notify(title: string, body: string, route: string | null): void {
   notice.show();
 }
 
+let syncListener: SyncListener | null = null;
+let syncListenerChange: Promise<unknown> = Promise.resolve();
+
+/** Bring the network listener in line with the saved setting. Resolves to the address a phone is
+ *  given, or null when off or unreachable. Queued, so a toggle flicked twice can't leave two
+ *  listeners or close the one just opened. */
+function applyNetworkSync(): Promise<string | null> {
+  const applied = syncListenerChange.then(async () => {
+    if (!shellSettings().networkSync) {
+      await syncListener?.close();
+      syncListener = null;
+      return null;
+    }
+    if (!syncListener) {
+      const key = shellSettings().syncKey ?? updateShellSettings({ syncKey: newSyncKey() }).syncKey!;
+      syncListener = await startSyncListener({
+        getHost: () => host,
+        key,
+        port: process.env.COMICAL_SYNC_PORT ? Number(process.env.COMICAL_SYNC_PORT) : undefined,
+      });
+    }
+    return syncListener.address();
+  });
+  syncListenerChange = applied.catch(() => {});
+  return applied.catch((err: unknown) => {
+    console.error("[sync] listener failed:", err);
+    return null;
+  });
+}
+
 function withoutHeaders<V>(headers: Record<string, V>, dropped: RegExp): Record<string, V> {
   return Object.fromEntries(Object.entries(headers).filter(([name]) => !dropped.test(name)));
 }
@@ -169,7 +201,6 @@ async function boot(): Promise<void> {
 
   // Bind the listener first: the host wants its own base URL (bridges get it as `hostUrl`, OAuth
   // uses it as the redirect target) and that URL only exists once the ephemeral port is bound.
-  let host: ReturnType<typeof createDesktopHost> | null = null;
   server = await startLoopbackServer({
     getHost: () => host,
     webRoot: webRoot(),
@@ -185,7 +216,10 @@ async function boot(): Promise<void> {
     //   COMICAL_BRIDGES_DIR=../../external/comical/bridges bun run start
     bridgesDir: process.env.COMICAL_BRIDGES_DIR ?? join(dataDir, "bridges"),
     baseUrl: `${server.origin}/api`,
+    onSynced: () => mainWindow?.webContents.send("synced"),
+    onSyncDevices: (devices) => mainWindow?.webContents.send("sync-devices", devices),
   });
+  if (shellSettings().networkSync) void applyNetworkSync();
 
   // The renderer's requests — page load, JS, and every API call — carry the launch token; nothing
   // else on the machine has it, so the open port isn't an open door.
@@ -413,8 +447,8 @@ app.on("open-url", (e, url) => {
 
 // The renderer reads these synchronously from its preload, before the page's first render.
 ipcMain.on("shell-settings", (e) => {
-  const { runInTray, openAtLogin } = shellSettings();
-  e.returnValue = { runInTray, openAtLogin, loginItems: canOpenAtLogin(), updates: updatesSupported };
+  const { runInTray, openAtLogin, networkSync } = shellSettings();
+  e.returnValue = { runInTray, openAtLogin, networkSync, loginItems: canOpenAtLogin(), updates: updatesSupported };
 });
 ipcMain.on("shell-commands", (e) => {
   if (e.sender !== mainWindow?.webContents) return void (e.returnValue = null);
@@ -433,6 +467,28 @@ ipcMain.on("run-in-tray", (_e, on: unknown) => {
 ipcMain.on("open-at-login", (_e, on: unknown) => {
   updateShellSettings({ openAtLogin: on === true });
   setOpenAtLogin(on === true).catch((err: unknown) => console.error("[login-item] failed:", err));
+});
+
+// With a boolean it sets; without one it only reports where the listener is.
+ipcMain.handle("network-sync", (_e, on: unknown) => {
+  if (typeof on === "boolean") updateShellSettings({ networkSync: on });
+  return applyNetworkSync();
+});
+
+ipcMain.handle("sync-devices", () => host?.syncDevices() ?? []);
+
+// The key is the listener's whole secret, so a new one means a new listener: the old is closed
+// first, through the same queue a toggle goes through, and the old key stops opening anything the
+// moment the new address exists.
+ipcMain.handle("network-sync-new-key", async () => {
+  const closed = syncListenerChange.then(async () => {
+    await syncListener?.close();
+    syncListener = null;
+    updateShellSettings({ syncKey: newSyncKey() });
+  });
+  syncListenerChange = closed.catch(() => {});
+  await closed.catch((err: unknown) => console.error("[sync] rekey failed:", err));
+  return applyNetworkSync();
 });
 
 if (primary) {
@@ -473,5 +529,7 @@ app.on("activate", () => {
 
 app.on("before-quit", () => {
   quitting = true;
+  host?.close();
   void server?.close();
+  void syncListener?.close();
 });

@@ -53,7 +53,8 @@ const TRACKER_LINKS = `${NS}:tracker-links`;
 const READING_LOG = `${NS}:reading-log`;
 const BRIDGE_PREFS = `${NS}:bridge-prefs`;
 const ACTIVITY = `${NS}:activity`;
-const progressKey = (key: string) => `${NS}:progress:${encodeURIComponent(key)}`;
+const PROGRESS_PREFIX = `${NS}:progress:`;
+const progressKey = (key: string) => `${PROGRESS_PREFIX}${encodeURIComponent(key)}`;
 const detailKey = (key: string) => `${NS}:detail:${encodeURIComponent(key)}`;
 const cachedChaptersKey = (key: string) => `${NS}:chapters:${encodeURIComponent(key)}`;
 
@@ -133,6 +134,11 @@ export class AsyncStorageLibraryStore implements LibraryStore {
   // ── Progress ───────────────────────────────────────────────────────────────
   async listProgress(key: string): Promise<ChapterProgress[]> {
     return Object.values(await readRecord<ChapterProgress>(progressKey(key)));
+  }
+  async listProgressKeys(): Promise<string[]> {
+    return (await AsyncStorage.getAllKeys())
+      .filter((k) => k.startsWith(PROGRESS_PREFIX))
+      .map((k) => decodeURIComponent(k.slice(PROGRESS_PREFIX.length)));
   }
   async putProgress(key: string, progress: ChapterProgress): Promise<void> {
     const all = await readRecord<ChapterProgress>(progressKey(key));
@@ -307,6 +313,9 @@ export class AsyncStorageLibraryStore implements LibraryStore {
   // ── Bridge preferences ───────────────────────────────────────────────────────
   async getBridgePrefs(bridgeId: string): Promise<BridgePrefs | undefined> {
     return (await readRecord<BridgePrefs>(BRIDGE_PREFS))[bridgeId];
+  }
+  async listBridgePrefs(): Promise<BridgePrefs[]> {
+    return Object.values(await readRecord<BridgePrefs>(BRIDGE_PREFS));
   }
   async setBridgePrefs(bridgeId: string, prefs: BridgePrefs): Promise<void> {
     const all = await readRecord<BridgePrefs>(BRIDGE_PREFS);

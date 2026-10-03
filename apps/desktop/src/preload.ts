@@ -3,12 +3,14 @@
  * renderer half is all it can reach.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import type { SyncDevice } from "@comical/host-server/sync-host";
 
 const settings = ipcRenderer.sendSync("shell-settings") as {
   runInTray: boolean;
   openAtLogin: boolean;
   loginItems: boolean;
   updates: boolean;
+  networkSync: boolean;
 };
 
 contextBridge.exposeInMainWorld("comicalDesktop", {
@@ -51,6 +53,33 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
   notify: (title: string, body: string, route?: string) => ipcRenderer.send("notify", title, body, route ?? null),
   setRunInTray: (on: boolean) => ipcRenderer.send("run-in-tray", on === true),
   setOpenAtLogin: (on: boolean) => ipcRenderer.send("open-at-login", on === true),
+  /** Whether phones on the network may sync with this library, as saved when the page loaded. */
+  networkSync: settings.networkSync,
+  /** Resolves to the address a phone is given as its sync server — null when turned off, or while
+   *  this computer is on no network. */
+  setNetworkSync: (on: boolean) => ipcRenderer.invoke("network-sync", on === true) as Promise<string | null>,
+  networkSyncAddress: () => ipcRenderer.invoke("network-sync") as Promise<string | null>,
+  /** Replace the key in that address. Resolves to the new address; every phone paired with the old
+   *  one is cut off until it is given this. */
+  newNetworkSyncKey: () => ipcRenderer.invoke("network-sync-new-key") as Promise<string | null>,
+  /** The devices that have synced with this library, most recent first. */
+  syncDevices: () => ipcRenderer.invoke("sync-devices") as Promise<SyncDevice[]>,
+  /** Called with the new list whenever it changes. Returns the unsubscribe. */
+  onSyncDevices: (onDevices: (devices: SyncDevice[]) => void) => {
+    const listener = (_e: IpcRendererEvent, devices: SyncDevice[]) => onDevices(devices);
+    ipcRenderer.on("sync-devices", listener);
+    return () => {
+      ipcRenderer.off("sync-devices", listener);
+    };
+  },
+  /** Called when another device's changes have landed in this library. Returns the unsubscribe. */
+  onSynced: (onSynced: () => void) => {
+    const listener = () => onSynced();
+    ipcRenderer.on("synced", listener);
+    return () => {
+      ipcRenderer.off("synced", listener);
+    };
+  },
   /** Fade the caption buttons' glyphs back, for a screen that has hidden its own chrome. */
   dimCaptionButtons: (dim: boolean) => ipcRenderer.send("caption-dim", dim === true),
   /** Reports the pointer entering and leaving the top `edge` px of the window — over a drag

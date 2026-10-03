@@ -49,6 +49,7 @@ import { swapDataSourceMode } from './apply-mode';
 import { fileSystemBundleCache, pruneBundleCache } from './bundle-cache';
 import { expoCoversBlobStore } from './covers-store';
 import { AsyncStorageLibraryStore } from './library-store';
+import { decorateRegistryForSync, initLibrarySync } from '../sync';
 import { migrateLegacyEntries } from '../migrations/legacy-entries';
 import { getResolvedModeSync, whenEmbeddedPrefLoaded } from './preference';
 import { applyImageCacheConfig } from '../image-cache';
@@ -60,7 +61,14 @@ import { embeddedOAuthCallbackUrl } from './oauth-callback';
 // ONE store instance for the process: the router writes through it, and the legacy-entries
 // migration below reads and rebuilds through it. Two instances would each hold their own
 // `serializeAsyncMethods` lock, so the migration's writes could interleave with the router's.
-const libraryStore = new AsyncStorageLibraryStore();
+// Wrapped by library sync, which records every write while this device is paired with a server —
+// and, through the registry stores, which registries and bridges this device has, so an install
+// made on another device is performed here too.
+const libraryStore = initLibrarySync(new AsyncStorageLibraryStore(), {
+  registries: () => savedRegistryStore.all(),
+  installed: () => installedStore.all(),
+  installedTrackers: () => installedTrackerStore.all(),
+});
 
 /** The fixed pieces host-rn needs; the stores supply the (user-managed) registries + installs. */
 function bootstrapConfig(): EmbeddedBootstrapConfig {
@@ -109,6 +117,8 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
       bumpDataEpoch();
       queryClient.invalidateQueries();
     },
+    // Installs from the app's own screens are recorded for the other devices while paired.
+    decorateRegistry: decorateRegistryForSync,
   };
 }
 

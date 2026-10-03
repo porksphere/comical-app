@@ -15,6 +15,11 @@ export type ShellSettings = {
   openAtLogin: boolean;
   /** The one-time "still running" notice has been shown. */
   trayNoticeShown: boolean;
+  /** Other devices on the network may sync with this library (`host/sync-listener.ts`). */
+  networkSync: boolean;
+  /** What those devices present. Made the first time `networkSync` goes on and kept, so a device
+   *  paired once stays paired, until the user asks for a new one (Settings → Sync). */
+  syncKey: string | null;
 };
 
 const file = (): string => join(app.getPath("userData"), "comical", "desktop-settings.json");
@@ -33,6 +38,8 @@ export function shellSettings(): ShellSettings {
     runInTray: raw.runInTray === true,
     openAtLogin: raw.openAtLogin === true,
     trayNoticeShown: raw.trayNoticeShown === true,
+    networkSync: raw.networkSync === true,
+    syncKey: typeof raw.syncKey === "string" && raw.syncKey ? raw.syncKey : null,
   };
   return current;
 }

@@ -53,6 +53,15 @@ url: http://localhost:4000/comical-app
 - takeScreenshot: general
 - assertVisible:
     id: "settings.select.appearance"
+# Library backup — see the mobile copy. Both are SettingsRows, selected by label here (the
+# about.share quirk above).
+- scrollUntilVisible:
+    element:
+      id: "Restore from a backup"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "Export library"
 - tapOn:
     id: "Go back"
 
@@ -62,6 +71,14 @@ url: http://localhost:4000/comical-app
 - takeScreenshot: notifications
 - assertVisible:
     id: "settings.toggle.check-for-new-chapters"
+- tapOn:
+    id: "Go back"
+
+# Sync
+- tapOn:
+    id: "Sync"
+- takeScreenshot: sync
+- assertVisible: "Sync library"
 - tapOn:
     id: "Go back"
 

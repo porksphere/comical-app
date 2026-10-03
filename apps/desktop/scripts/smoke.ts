@@ -6,8 +6,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { InMemoryLibraryStore, Library } from "@comical/library";
+import { HttpBackend, librarySyncStore, sealedChannel, SyncEngine, wrapLibraryStore } from "@comical/sync";
 import { createDesktopHost } from "../src/host/create-host.ts";
 import { startLoopbackServer } from "../src/host/serve.ts";
+import { newSyncKey, startSyncListener } from "../src/host/sync-listener.ts";
 
 async function main(): Promise<void> {
   const WEB_ROOT = process.env.COMICAL_WEB_ROOT ?? join(__dirname, "..", "build", "web");
@@ -35,7 +38,13 @@ async function main(): Promise<void> {
     process.env.COMICAL_BRIDGES_DIR ??
     join(__dirname, "..", "..", "..", "external", "comical", "bridges");
   const server = await startLoopbackServer({ getHost: () => host, webRoot: WEB_ROOT });
-  host = createDesktopHost({ dataDir, bridgesDir: EXAMPLE_BRIDGES, baseUrl: `${server.origin}/api` });
+  let synced = 0;
+  host = createDesktopHost({
+    dataDir,
+    bridgesDir: EXAMPLE_BRIDGES,
+    baseUrl: `${server.origin}/api`,
+    onSynced: () => synced++,
+  });
   console.log(`origin:  ${server.origin}\n`);
 
   const authed = (path: string, init: RequestInit = {}) =>
@@ -125,6 +134,59 @@ async function main(): Promise<void> {
     check("path traversal is refused", escape.status === 404 || escape.status === 403, escape.status);
   }
 
+  // 8. A phone's way in: the sync routes alone, on the network, sealed under the pairing key.
+  const key = newSyncKey();
+  const lan = await startSyncListener({ getHost: () => host, key, port: 0 });
+  const address = await lan.address();
+  check("the sync listener has an address to hand a phone", Boolean(address), address);
+  check("…which ends in the key the phone keeps", address?.endsWith(`/${key}`) ?? false, address);
+  // Whatever interface that names, the listener is on all of them — loopback is the one a CI
+  // runner is sure to have.
+  const local = address ? `http://127.0.0.1:${new URL(address).port}` : "";
+  const post = (path: string, body: string) =>
+    fetch(`${local}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body });
+  const probe = { device: "smoke-probe", name: "Smoke probe", have: {} };
+  const sealed = await post("/sync/pull", sealedChannel(key).sealRequest("/sync/pull", JSON.stringify(probe)).envelope);
+  check("POST /sync/pull sealed under the key → 200", sealed.status === 200, sealed.status);
+  const wrongKey = await post("/sync/pull", sealedChannel(newSyncKey()).sealRequest("/sync/pull", JSON.stringify(probe)).envelope);
+  check("…sealed under a wrong key → 404", wrongKey.status === 404, wrongKey.status);
+  const clear = await post("/sync/pull", JSON.stringify(probe));
+  check("…in the clear → 404", clear.status === 404, clear.status);
+  const keyInPath = await post(`/${key}/sync/pull`, JSON.stringify(probe));
+  check("…the key in the path → 404", keyInPath.status === 404, keyInPath.status);
+  const beyond = await fetch(`${local}/bridges`);
+  check("…nothing but sync is there", beyond.status === 404, beyond.status);
+
+  // A phone's whole exchange: its own engine, the app's own client, one new collection.
+  const phoneStore = new InMemoryLibraryStore();
+  const phone = new SyncEngine({
+    store: librarySyncStore(phoneStore),
+    backend: new HttpBackend({ baseUrl: local, secret: key, fetch: (url, init) => fetch(url, init) }),
+    device: "smoke-phone",
+    name: () => "Smoke phone",
+    newDeviceId: () => "smoke-phone-2",
+  });
+  await new Library(wrapLibraryStore(phoneStore, phone)).createCollection("From a phone");
+  const round = await phone.sync().catch((err: unknown) => err);
+  check("a phone's change is pushed", ((round as { pushed?: number }).pushed ?? 0) > 0, JSON.stringify(round));
+  let landed = false;
+  for (let i = 0; i < 50 && !landed; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    const collections = (await (await authed("/api/library/collections")).json().catch(() => null)) as { name?: string }[] | null;
+    landed = Array.isArray(collections) && collections.some((c) => c.name === "From a phone");
+  }
+  check("…and lands in the desktop's library", landed);
+  // Said once the round that applied it is over, a moment after the write itself.
+  for (let i = 0; i < 20 && synced === 0; i++) await new Promise((r) => setTimeout(r, 100));
+  check("…and the shell is told to refresh its page", synced > 0, synced);
+  const devices = host.syncDevices();
+  check(
+    "…and the phone is on the hub's roster by name, the probe beside it, the hub itself not",
+    devices.map((d) => d.name).sort().join() === "Smoke phone,Smoke probe",
+    JSON.stringify(devices),
+  );
+
+  await lan.close();
   await server.close();
   await rm(dataDir, { recursive: true, force: true });
   console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);

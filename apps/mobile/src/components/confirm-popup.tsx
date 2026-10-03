@@ -14,7 +14,7 @@
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
+import { BackHandler, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   interpolate,
   runOnJS,
@@ -152,6 +152,8 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     progress.set(withSpring(1, OPEN_SPRING));
+    // BackHandler is native-only (it raises a red dev error on web).
+    if (Platform.OS === 'web') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       dismiss();
       return true;

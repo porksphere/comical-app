@@ -1,0 +1,42 @@
+# Library sync: Settings → Sync → "Sync library". Pair, check the "Sync now" row appears and takes a
+# tap, then unpair and check it goes away.
+#
+# Mobile only, with no web copy: sync exists for the ON-DEVICE library, and web always reads the
+# server's own library, so the toggle never renders there. Even on a device it only renders while
+# the app runs bridges on-device (`embeddedActive` in settings-sync.tsx), so the steps sit behind a
+# `when: visible` — a build without the native runtime has nothing to test here.
+#
+# The demo builds this suite runs have no server to sync with, so the round itself fails; the flow
+# checks the controls, not the network. A failed round still leaves the row visible (it reports
+# "Couldn't sync: …" in its description), which is exactly what's asserted after the tap.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.sync"
+- assertVisible: "Sync library"
+
+- runFlow:
+    when:
+      visible:
+        id: "settings.toggle.sync-library"
+    commands:
+      - tapOn:
+          id: "settings.toggle.sync-library"
+      - assertVisible:
+          id: "settings.sync.sync-now"
+      - takeScreenshot: library-sync-on
+      - tapOn:
+          id: "settings.sync.sync-now"
+      - assertVisible:
+          id: "settings.sync.sync-now"
+      - tapOn:
+          id: "settings.toggle.sync-library"
+      - assertNotVisible:
+          id: "settings.sync.sync-now"
+
+- tapOn:
+    id: "top-bar.back"
