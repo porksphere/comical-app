@@ -37,14 +37,6 @@ Install
 **[comical-android.apk](https://github.com/porksphere/comical-app/releases/download/android-release/comical-android.apk)**
 directly.
 
-### Web
-
-The frontend and backend can be run as two Docker containers. See
-**[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)** for the compose file and configuration.
-
-A mock preview is deployed to
-**[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**.
-
 ### Windows & Linux
 
 Install
@@ -55,6 +47,14 @@ or the
 **[.deb](https://github.com/porksphere/comical-app/releases/download/desktop-release/comical-desktop-amd64.deb)**.
 
 Warning: the installers aren't code-signed, so Windows SmartScreen will warn on first run.
+
+### Web
+
+The frontend and backend can be run as two Docker containers. See
+**[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)** for the compose file and configuration.
+
+A mock preview is deployed to
+**[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**.
 
 ## How it works
 
