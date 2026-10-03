@@ -1,20 +1,21 @@
 /**
  * Whether a newer build exists than the one running, for the channels that ship an artifact a
- * user actually follows (ios-release, ios-nightly, android-release, desktop-release, web-pages).
- * Every other channel — the unpublished nightlies, per-branch and dev lanes (android-nightly,
- * desktop-nightly, ios-pr, ios-devclient, android-pr, *-e2e, local-dev) — is `'unsupported'` and
- * triggers no network request at all (`enabled: false` below).
+ * user actually follows (ios-release, ios-nightly, android-release, desktop-release,
+ * desktop-nightly, web-pages). Every other channel — the unpublished nightly, per-branch and dev
+ * lanes (android-nightly, ios-pr, ios-devclient, android-pr, desktop-pr, *-e2e, local-dev) — is
+ * `'unsupported'` and triggers no network request at all (`enabled: false` below).
  *
  * Per-channel check:
  *  - ios-release / ios-nightly: compare the channel's AltStore/SideStore source's
  *    `apps[0].version` against APP_VERSION via `compareVersions`. The source carries the same
  *    string the build baked into APP_VERSION — the git tag's `X.Y.Z` on ios-release, `X.Y.Z.<Nth
  *    build of that series>` on ios-nightly (build-ios-reusable.yml's "Compute full version").
- *  - android-release / desktop-release: compare `version.json`'s `commit` against BUILD_COMMIT, on
- *    the channel's Release. Commit equality, not version ordering: ANY mismatch means "there's a
- *    newer build", since the URL is always rebuilt from the newest tag. Desktop's Update button
- *    opens the Release page rather than one installer, since the user picks theirs by OS — unless
- *    the shell downloaded the update itself, when it restarts into it (`lib/desktop-shell.ts`).
+ *  - android-release / desktop-release / desktop-nightly: compare `version.json`'s `commit`
+ *    against BUILD_COMMIT, on the channel's Release. Commit equality, not version ordering: ANY
+ *    mismatch means "there's a newer build", since the URL is always rebuilt from the channel's
+ *    newest build. Desktop's Update button opens the Release page rather than one installer, since
+ *    the user picks theirs by OS — unless the shell downloaded the update itself, when it restarts
+ *    into it (`lib/desktop-shell.ts`).
  *  - web-pages: same commit-equality check, against a `version.json` written into `dist/` by
  *    deploy-web.yml, fetched with `cache: 'no-store'` so a stale CDN/browser cache can't mask it.
  *
@@ -79,8 +80,10 @@ const channelVersionJsonUrl = (tag: string) =>
   `https://github.com/porksphere/comical-app/releases/download/${tag}/version.json`;
 const androidApkUrl = (tag: string) =>
   `https://github.com/porksphere/comical-app/releases/download/${tag}/comical-android.apk`;
-const DESKTOP_RELEASE_TAG = 'desktop-release';
-const DESKTOP_RELEASE_PAGE_URL = `https://github.com/porksphere/comical-app/releases/tag/${DESKTOP_RELEASE_TAG}`;
+/** The desktop channels, each its own Release under its own name — so a release user is never
+ *  offered a nightly (.github/scripts/publish-desktop-channel.sh, publish-desktop-nightly.sh). */
+const DESKTOP_CHANNELS = ['desktop-release', 'desktop-nightly'];
+const releasePageUrl = (tag: string) => `https://github.com/porksphere/comical-app/releases/tag/${tag}`;
 
 /** Derived, not re-listed: the Android entries come from the map above, so adding a channel there
  *  can't leave this Set behind. A channel that's "supported" here but unrouted in
@@ -89,7 +92,7 @@ const SUPPORTED_CHANNELS = new Set([
   'ios-release',
   'ios-nightly',
   ...Object.keys(ANDROID_CHANNEL_TAG),
-  'desktop-release',
+  ...DESKTOP_CHANNELS,
   'web-pages',
 ]);
 
@@ -142,8 +145,8 @@ async function fetchAppUpdateCheck(signal?: AbortSignal): Promise<AppUpdateCheck
   if (BUILD_CHANNEL === 'ios-nightly') return checkIosSource(IOS_NIGHTLY_APPS_JSON_URL, signal);
   const androidTag = ANDROID_CHANNEL_TAG[BUILD_CHANNEL];
   if (androidTag) return checkChannelRelease(androidTag, androidApkUrl(androidTag), signal);
-  if (BUILD_CHANNEL === 'desktop-release') {
-    return checkChannelRelease(DESKTOP_RELEASE_TAG, DESKTOP_RELEASE_PAGE_URL, signal);
+  if (DESKTOP_CHANNELS.includes(BUILD_CHANNEL)) {
+    return checkChannelRelease(BUILD_CHANNEL, releasePageUrl(BUILD_CHANNEL), signal);
   }
   if (BUILD_CHANNEL === 'web-pages') return checkWebPages(signal);
   return { status: 'unsupported' };

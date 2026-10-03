@@ -81,8 +81,9 @@ Native projects are generated on the fly (`expo prebuild`, CNG); `ios/` and `and
 git-ignored. The native builds (iOS, Android, desktop) run on every **pull request** (build +
 installable artifact, so branches are verified — see the dev channel below), **nightly** on `main`,
 and via manual dispatch. `main` is not built per push: the nightly is what proves `main` still
-builds, keeps the caches warm and (on iOS) publishes the **`ios-nightly`** source,
-skipping itself when nothing it depends on changed since its last success
+builds, keeps the caches warm and publishes the **`ios-nightly`** source and the
+**`desktop-nightly`** Release, skipping itself when nothing it depends on changed since its last
+success
 (`.github/scripts/nightly-gate.sh`). Caches keep repeat builds fast: iOS caches Bun + CocoaPods +
 **ccache** (native compile), Android caches Bun + the **Gradle** cache. Only `main` *writes* those
 caches — in practice, the nightly; every branch/PR restores them read-only, so the shared 10 GB
@@ -105,7 +106,8 @@ silently never fires (0 hits/misses). With it, ~99.9% of compiles are cacheable:
   nightly `main` build to the **`ios-nightly`** source (see "iOS distribution" below).
 - **Desktop** (`windows-latest` + `ubuntu-latest`): the web export packaged by electron-builder
   into an unsigned Windows installer, an AppImage and a `.deb` (`build-desktop-reusable.yml`). PR
-  builds stop at the run artifacts.
+  builds stop at the run artifacts; the nightly `main` build is published to the
+  **`desktop-nightly`** Release (see "Desktop distribution" below).
 - **Versioned releases:** `release.yml` builds every binary (iOS **clean** Release — no profiler),
   attaches them to an immutable `vX.Y.Z` Release, publishes the versioned web image, and refreshes
   the public **`ios-release`** source and the **`android-release`** and **`desktop-release`**
@@ -139,7 +141,7 @@ Pushing a `v*` tag by hand still works and skips step 1–2, but `app.json` must
 the tag. Do **not** use the web Releases form to create the tag: it creates the Release object too,
 and `gh release create` then fails — after both builds have run.
 
-**Release notes reach five places, from two generators.** `CHANGELOG.md` is the source for anything
+**Release notes reach six places, from two generators.** `CHANGELOG.md` is the source for anything
 TAGGED and `.github/scripts/changelog-section.sh` quotes one version's section out of it; the
 rolling channels have no release to quote, so `.github/scripts/rolling-changelog.sh` lists the
 commits each has picked up since it last published (it measures from a `built-sha` marker the
@@ -151,6 +153,7 @@ channel's own Release body carries). Between them they fill:
 | `ios-release` source — every version in `versions[]` | `changelog-section.sh` for that tag |
 | `android-release` / `desktop-release` — `version.json` `notes` + the Release body | `changelog-section.sh` for that tag |
 | `ios-nightly` source — its one version + the Release body | `rolling-changelog.sh ios-nightly` |
+| `desktop-nightly` — `version.json` `notes` + the Release body | `rolling-changelog.sh desktop-nightly` |
 | gh-pages `version.json` `notes` | `rolling-changelog.sh web-pages` |
 
 The app reads the SAME artifacts its update check already fetches, so Settings → About → the
@@ -300,6 +303,16 @@ does (commit equality, in `src/data/use-app-update.ts`) for the notice and the n
 installer and the AppImage also update themselves, through electron-updater and the `latest.yml` /
 `latest-linux.yml` feeds published beside them; a `.deb` gets a link to the Release page instead.
 See `apps/desktop/README.md` → "Updates".
+
+The nightly `main` build goes to a rolling Release of its own, **`desktop-nightly`**
+(`.github/scripts/publish-desktop-nightly.sh`), for following `main` between releases:
+
+> `https://github.com/porksphere/comical-app/releases/tag/desktop-nightly`
+
+Same three installers, same fixed names, and a `version.json` whose notes are the commits picked up
+since the previous nightly. A night where `main` hasn't moved publishes nothing; for a build right
+now, dispatch **Build desktop** on `main`. A nightly gets the same in-app notice, but never updates
+itself — the feeds aren't published there, and its updater is off.
 
 ### Dev-client builds — iterate on a device from any OS (incl. Windows)
 

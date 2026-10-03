@@ -118,8 +118,10 @@ uploads them itself (`.github/scripts/publish-desktop-channel.sh`). Two things a
 load-bearing:
 
 - **Only `desktop-release` builds follow it.** The channel is baked into the main bundle
-  (`COMICAL_BUILD_CHANNEL`, `scripts/build-main.ts`). A PR build is versioned `X.Y.Z-N`, which
-  semver ranks *below* `X.Y.Z`, so left to it a PR build would replace itself with the release.
+  (`COMICAL_BUILD_CHANNEL`, `scripts/build-main.ts`). A PR or nightly build is versioned `X.Y.Z-N`,
+  which semver ranks *below* `X.Y.Z`, so left to it one would replace itself with the release. A
+  nightly gets the notice-and-link instead, pointing at the rolling `desktop-nightly` Release
+  (`.github/scripts/publish-desktop-nightly.sh`).
 - **Differential downloads are off.** The installers keep fixed names, so the old blockmap the
   updater would diff against is always the new one.
 
