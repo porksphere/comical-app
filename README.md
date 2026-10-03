@@ -4,7 +4,7 @@
 
 <h1 align="center">comical</h1>
 
-<p align="center">A cross-platform comic reader for iOS, Android, and the web.</p>
+<p align="center">A cross-platform comic reader for iOS, Android, Desktop, and the web.</p>
 
 <p align="center">
   Comical ships with no sources. You add a registry, install the bridges you want,<br />
