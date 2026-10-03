@@ -158,6 +158,10 @@ function notify(title: string, body: string, route: string | null): void {
   notice.show();
 }
 
+function withoutHeaders<V>(headers: Record<string, V>, dropped: RegExp): Record<string, V> {
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !dropped.test(name)));
+}
+
 /** Start the host + its listener. Runs once per process; `openWindow` can then be called freely. */
 async function boot(): Promise<void> {
   if (process.env.COMICAL_DEBUG || process.env.COMICAL_CAPTURE) console.log(`[boot] web root: ${webRoot()}`);
@@ -185,13 +189,33 @@ async function boot(): Promise<void> {
 
   // The renderer's requests — page load, JS, and every API call — carry the launch token; nothing
   // else on the machine has it, so the open port isn't an open door.
+  //
+  // The images it asks other hosts for are covers, straight off a source's CDN, and to a CDN with
+  // hotlink protection an <img> on a loopback page is a hotlink: `Sec-Fetch-Site: cross-site` with
+  // `Sec-Fetch-Mode: no-cors` is answered with an HTML 403 (which surfaces as an ORB block, not a
+  // status), and a cover that is served can still carry `Cross-Origin-Resource-Policy: same-site`
+  // and be dropped on arrival. The native apps send no such headers and enforce no such policy, so
+  // desktop asks the way they do. Both jobs share a listener because a session keeps only one per
+  // event — a second registration replaces the first, and with it the token.
   const bearer = `Bearer ${server.token}`;
-  session.defaultSession.webRequest.onBeforeSendHeaders(
-    { urls: [`${server.origin}/*`] },
-    (details, callback) => {
+  const own = `${server.origin}/`;
+  const { webRequest } = session.defaultSession;
+  webRequest.onBeforeSendHeaders((details, callback) => {
+    if (details.url.startsWith(own)) {
       callback({ requestHeaders: { ...details.requestHeaders, Authorization: bearer } });
-    },
-  );
+    } else if (details.resourceType === "image") {
+      callback({ requestHeaders: withoutHeaders(details.requestHeaders, /^(referer|sec-fetch-.+)$/i) });
+    } else {
+      callback({});
+    }
+  });
+  webRequest.onHeadersReceived((details, callback) => {
+    if (details.url.startsWith(own) || details.resourceType !== "image" || !details.responseHeaders) {
+      callback({});
+      return;
+    }
+    callback({ responseHeaders: withoutHeaders(details.responseHeaders, /^cross-origin-resource-policy$/i) });
+  });
 
   await openWindow();
 }
