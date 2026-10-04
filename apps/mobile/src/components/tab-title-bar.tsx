@@ -4,7 +4,7 @@ import type { AnimatedProps } from 'react-native-reanimated';
 
 import { BarSurface } from '@/components/bar-surface';
 import { ThemedText } from '@/components/themed-text';
-import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { testId } from '@/lib/test-id';
 import { useWindowControlsClearance } from '@/lib/window-controls';
@@ -23,11 +23,15 @@ import { useWindowControlsClearance } from '@/lib/window-controls';
 export function TabTitleBar({
   title,
   titleSlot,
+  leading,
   right,
   barStyle,
 }: {
   title?: string;
   titleSlot?: ReactNode;
+  /** Art ahead of the title — the Library's collection tile. It sits where Browse's bridge tile
+   *  does, at the grid's gutter, which is further out than a bare title is set. */
+  leading?: ReactNode;
   right?: ReactNode;
   /** Extra style for the bar surface itself — e.g. an animated rule colour, for a screen whose
    *  pinned section heading takes over the bottom edge (see StickySectionHeader). */
@@ -43,7 +47,9 @@ export function TabTitleBar({
           styles.titleRow,
           { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined },
           clearance > 0 && { paddingRight: Spacing.four + clearance },
+          leading != null && { paddingLeft: TopLevelGutter },
         ]}>
+        {leading != null && <View style={styles.leading}>{leading}</View>}
         {titleSlot ?? (
           <ThemedText testID={title ? testId('screen-title', title) : undefined} numberOfLines={1} style={styles.title}>
             {title}
@@ -77,6 +83,10 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 28,
     fontWeight: '700',
+  },
+  // Browse's own step between its tile and the selector beside it.
+  leading: {
+    marginRight: Spacing.three,
   },
   // Pushed to the trailing edge; the title/selector takes the remaining space.
   right: {

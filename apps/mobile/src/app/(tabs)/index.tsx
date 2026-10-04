@@ -20,7 +20,7 @@ import { SearchIcon } from '@/components/icons/ui-icons';
 import { SearchPill } from '@/components/search-pill';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
-import { BridgeThumbSize, Selector } from '@/components/selector';
+import { BridgeThumbRadius, BridgeThumbSize, Selector } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
@@ -987,7 +987,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   bridgeThumb: {
-    borderRadius: 8,
+    borderRadius: BridgeThumbRadius,
     overflow: 'hidden',
     alignSelf: 'center',
   },

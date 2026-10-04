@@ -1,7 +1,9 @@
 import { Pressable, StyleSheet } from 'react-native';
 
 import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { OptionActionRow, OptionMenu, OptionRow } from '@/components/overlay/option-menu';
+import { useOptionThumbBox } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import type { Collection } from '@/data/types';
@@ -70,6 +72,7 @@ function CollectionMenu({
 }) {
   const { closeTop } = useOverlay();
   const router = useRouter();
+  const thumb = useOptionThumbBox();
 
   const pick = (v: string | null) => {
     onChange(v);
@@ -86,6 +89,7 @@ function CollectionMenu({
           testID="library.collection.all"
           label="All"
           selected={value === null}
+          leading={<CollectionThumb name={null} size={thumb.size} style={thumb.style} />}
           onPress={() => pick(null)}
         />
         {collections.map((c) => (
@@ -94,6 +98,7 @@ function CollectionMenu({
             testID={`library.collection.${c.id}`}
             label={c.name}
             selected={value === c.id}
+            leading={<CollectionThumb name={c.name} size={thumb.size} style={thumb.style} />}
             onPress={() => pick(c.id)}
           />
         ))}

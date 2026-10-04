@@ -2,6 +2,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Asterisk,
   Bell,
   Blocks,
   Bug,
@@ -60,6 +61,9 @@ export type IconProps = {
 export const PanelCollapseIcon = ({ color, size = 16 }: IconProps) => <PanelLeftClose color={color} size={size} />;
 export const PanelExpandIcon = ({ color, size = 16 }: IconProps) => <PanelLeftOpen color={color} size={size} />;
 export const SearchIcon = ({ color, size = 16 }: IconProps) => <Search color={color} size={size} />;
+export const AsteriskIcon = ({ color, size = 16, strokeWidth }: IconProps) => (
+  <Asterisk color={color} size={size} strokeWidth={strokeWidth} />
+);
 export const ClearIcon = ({ color, size = 16 }: IconProps) => <X color={color} size={size} />;
 // Filled by default (the conventional read/da-capo triangle); pass `filled={false}` where a solid
 // glyph reads as a blob among outlines (the select-mode pill bar).

@@ -17,6 +17,10 @@ export const Colors = {
     backgroundPanel: '#F7F7F9',
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
+    /** A letter tile's fill. A wash rather than a step on the ladder above, because a tile is drawn
+     *  ON those steps — a sidebar row's hover and selection, a menu's surface — and an opaque one
+     *  disappears into whichever of them it happens to equal. */
+    tileWash: 'rgba(0,0,0,0.06)',
     /**
      * The RAISED surface ladder — an overlay's panel and the rows on it.
      *
@@ -88,6 +92,7 @@ export const Colors = {
     backgroundPanel: '#17181b',
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
+    tileWash: 'rgba(255,255,255,0.12)',
     // The raised ladder — see `light.overlaySurface` for what these are and where they come from.
     // #2C2C2D is iOS's own raised card and #404042 its divider; the two steps between them are the
     // row's hover and selection, which an iOS settings list has no need for and a menu does.

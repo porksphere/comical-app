@@ -13,8 +13,10 @@ import { testId } from '@/lib/test-id';
 /** Size of the bridge thumbnail shown in the dropdown rows — also reused by the
  *  browse top bar so the two read at the same size. */
 export const BridgeThumbSize = 28;
+/** That thumbnail's corner in a top bar. */
+export const BridgeThumbRadius = 8;
 
-/** Matches the rail's own bridge thumbnail (`THUMB_SIZE` in sidebar-bridges), because on the
+/** Matches the rail's own thumbnail (`SidebarThumbSize` in app-sidebar), because on the
  *  popover those are two views of one list. The sheet's rows are 10pt taller, so they keep the full
  *  size — the thumb is sized to its row, not to the platform. */
 const POINTER_THUMB_SIZE = 18;
@@ -140,6 +142,14 @@ function SelectMenu({
  * title starting at the same x — omitting the Image instead drops a child from the row and the
  * labels beside it shift.
  */
+/** The size and corner of a row's leading thumbnail, for a menu that draws its own. */
+export function useOptionThumbBox() {
+  const pointer = usePointerFine();
+  return pointer
+    ? { size: POINTER_THUMB_SIZE, style: styles.pointerOptionThumb }
+    : { size: BridgeThumbSize, style: styles.optionThumb };
+}
+
 function OptionThumb({
   label,
   thumbnail,
@@ -151,7 +161,7 @@ function OptionThumb({
   thumbnail?: string | null;
   source?: number;
 }) {
-  const pointer = usePointerFine();
+  const box = useOptionThumbBox();
   if (thumbnail === undefined && source === undefined) return null;
   return (
     <BridgeThumb
@@ -159,8 +169,8 @@ function OptionThumb({
       source={source}
       uri={thumbnail ?? undefined}
       label={label}
-      size={pointer ? POINTER_THUMB_SIZE : BridgeThumbSize}
-      style={pointer ? styles.pointerOptionThumb : styles.optionThumb}
+      size={box.size}
+      style={box.style}
     />
   );
 }

@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useState, type ComponentProps } from 'react';
+import { useState, type ComponentProps, type ReactNode } from 'react';
 import { ImageStyle, StyleProp, StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -24,6 +24,7 @@ export function BridgeThumb({
   uri,
   source,
   label,
+  glyph,
   size,
   fill,
   style,
@@ -33,6 +34,9 @@ export function BridgeThumb({
    *  (e.g. Comical) whose art is a bundled asset rather than a remote URL. */
   source?: ComponentProps<typeof Image>['source'];
   label: string;
+  /** Drawn on the fallback tile in place of the label's first letter — for a tile that is a mark
+   *  rather than an initial. */
+  glyph?: ReactNode;
   size: number;
   fill?: boolean;
   style?: StyleProp<ImageStyle>;
@@ -43,8 +47,10 @@ export function BridgeThumb({
   if (!imgSource || failed) {
     const letter = label.trim().charAt(0).toUpperCase() || '?';
     return (
-      <ThemedView type="backgroundSelected" style={[boxStyle, ContinuousCorner, styles.fallback, style]}>
-        <ThemedText style={{ fontSize: size * 0.46, fontWeight: '700' }}>{letter}</ThemedText>
+      <ThemedView type="tileWash" style={[boxStyle, ContinuousCorner, styles.fallback, style]}>
+        {glyph ?? (
+          <ThemedText style={{ fontSize: size * LETTER_SCALE, lineHeight: size, fontWeight: '700' }}>{letter}</ThemedText>
+        )}
       </ThemedView>
     );
   }
@@ -53,6 +59,10 @@ export function BridgeThumb({
   // because a bridge's tile should be the same shape wherever it appears.
   return <Image source={imgSource} style={[boxStyle, ContinuousCorner, style]} onError={() => setFailed(true)} />;
 }
+
+/** The fallback letter's size against its tile. The letter is the whole of the tile's content, so
+ *  it is set to fill it the way art would rather than sit in it like a label. */
+const LETTER_SCALE = 0.62;
 
 const styles = StyleSheet.create({
   fallback: {

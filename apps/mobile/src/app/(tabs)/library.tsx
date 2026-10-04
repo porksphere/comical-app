@@ -15,6 +15,8 @@ import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectedItemsGrid } from '@/components/collections/collected-items-grid';
 import { CollectedSortButton } from '@/components/collections/collected-sort-button';
+import { CollectionThumb } from '@/components/collections/collection-thumb';
+import { BridgeThumbRadius, BridgeThumbSize } from '@/components/selector';
 import { coverStyles } from '@/components/series-card';
 import { SeriesGrid } from '@/components/series-grid';
 import { Skeleton } from '@/components/skeleton';
@@ -88,6 +90,8 @@ export default function LibraryScreen() {
   // carries its own bridge, unlike the Browse grid's single-bridge view).
   const { byId: bridgeById } = useBridgeMap();
   const { collections } = useCollections();
+  // What the bar calls the current view: a collection by its name, the library grid by the tab's.
+  const viewName = collectionFilter ? (collections.find((c) => c.id === collectionFilter)?.name ?? 'Library') : 'Library';
 
   // Search + sort both fold into this one query and re-render the grid in place.
   const { data: items = undefined, error, isLoading, refetch } = useQuery({
@@ -345,6 +349,15 @@ export default function LibraryScreen() {
           button + field in place — and collapses the filter trigger (now redundant) beside sort. */}
       <TabTitleBar
         barStyle={barRuleStyle}
+        leading={
+          filter.open ? undefined : (
+            <CollectionThumb
+              name={collectionFilter === null ? null : viewName}
+              size={BridgeThumbSize}
+              style={styles.barThumb}
+            />
+          )
+        }
         titleSlot={
           filter.open ? (
             <TabFilterField filter={filter} testID="library.search" placeholder="Filter library…" />
@@ -355,7 +368,7 @@ export default function LibraryScreen() {
             // than leaving the bar with nothing in it.
             railNav ? (
               <ThemedText numberOfLines={1} style={styles.railTitle}>
-                {collectionFilter ? (collections.find((c) => c.id === collectionFilter)?.name ?? 'Library') : 'Library'}
+                {viewName}
               </ThemedText>
             ) : (
               <LibraryCollectionSelector
@@ -422,9 +435,14 @@ const styles = StyleSheet.create({
   railTitle: {
     flexShrink: 1,
     minWidth: 0,
+    // The selector's own inset, so the title stands the same step off the tile either way.
+    paddingHorizontal: Spacing.one,
     fontSize: 22,
     lineHeight: 28,
     fontWeight: '700',
+  },
+  barThumb: {
+    borderRadius: BridgeThumbRadius,
   },
   container: {
     flex: 1,

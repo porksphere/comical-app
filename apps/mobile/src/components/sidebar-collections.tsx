@@ -11,7 +11,10 @@
  * leave without being able to return to is a dead end.
  */
 
-import { SidebarSubItem } from '@/components/app-sidebar';
+import { StyleSheet } from 'react-native';
+
+import { SidebarSubItem, SidebarThumbRadius, SidebarThumbSize } from '@/components/app-sidebar';
+import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
 import { useCollections } from '@/hooks/use-collections';
 import { router } from '@/lib/nav';
@@ -30,6 +33,9 @@ export function SidebarCollections({ active, onNavigate }: { active?: boolean; o
           testID={`sidebar.collection.${row.id ?? 'all'}`}
           label={row.name}
           active={active === true && row.id === selected}
+          thumbnail={
+            <CollectionThumb name={row.id === null ? null : row.name} size={SidebarThumbSize} style={styles.thumb} />
+          }
           onPress={() => {
             setSelectedCollection(row.id);
             router.navigate('/library');
@@ -40,3 +46,7 @@ export function SidebarCollections({ active, onNavigate }: { active?: boolean; o
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  thumb: { borderRadius: SidebarThumbRadius },
+});

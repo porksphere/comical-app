@@ -16,6 +16,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type Pressable
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChevronRightIcon, PanelCollapseIcon, PanelExpandIcon } from '@/components/icons/ui-icons';
+import { BridgeThumbRadius, BridgeThumbSize } from '@/components/selector';
 
 import { useHover } from '@/hooks/use-hover';
 import { useTopBarHeight } from '@/hooks/use-responsive';
@@ -32,6 +33,12 @@ import { ContinuousCorner, Fonts, Spacing } from '@/constants/theme';
  *  `AppSidebar` — rather than picked to look about right. */
 const ITEM_HEIGHT = 44;
 const FOOTER_BUTTON = 36;
+
+/** A sub-row's thumbnail. Its corner matches the top bar's thumbnail by RATIO, not by copying the
+ *  pixel value: at this size the bar's own radius would read as a lozenge rather than the same
+ *  shape. */
+export const SidebarThumbSize = 18;
+export const SidebarThumbRadius = Math.round(SidebarThumbSize * (BridgeThumbRadius / BridgeThumbSize));
 
 /** A row in the sidebar. `active` drives the pill; the icon and label come from the tab table. */
 /** Extends `PressableProps` so a `TabTrigger`'s injected props (onPress, testID, accessibility)
@@ -345,7 +352,7 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     paddingTop: Spacing.one,
   },
-  subDot: { width: 18, height: 18 },
+  subDot: { width: SidebarThumbSize, height: SidebarThumbSize },
   subLabel: {
     fontFamily: Fonts.sans,
     fontSize: 14,
