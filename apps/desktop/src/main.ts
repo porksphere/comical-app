@@ -443,6 +443,11 @@ async function openWindow(): Promise<void> {
   }
 }
 
+// An unpackaged run keeps a data dir of its own. The lock below belongs to the data dir, so one
+// shared with an installed build has `bun run dev` hand over to that build and exit — and where it
+// isn't running, has two versions of the host writing one library.
+if (!app.isPackaged) app.setPath("userData", `${app.getPath("userData")}-dev`);
+
 // A second launch — the shortcut clicked while the app sits in the tray — would boot a second host
 // against the same data dir. It hands over to the running one instead.
 const primary = app.requestSingleInstanceLock();

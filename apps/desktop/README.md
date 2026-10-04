@@ -16,6 +16,9 @@ bun run dist:win    # packaged installer (also dist:linux, dist:mac)
 Set `COMICAL_BRIDGES_DIR=../../external/comical/bridges` to have something on the home screen
 before a registry is added.
 
+An unpackaged run (`dev`, `start`) keeps its data in `comical-desktop-dev` rather than the installed
+app's `comical-desktop`, so the two run side by side and a dev build never writes a real library.
+
 Electron's main process is a full Node, so `node:vm` evaluates bridges — no JSC or QuickJS harness,
 and `apps/mobile` is untouched. `src/host/create-host.ts` explains the rest.
 
