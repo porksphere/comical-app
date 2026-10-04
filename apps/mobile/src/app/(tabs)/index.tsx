@@ -898,7 +898,7 @@ export default function BrowseScreen() {
           stickyHeaderTop={headerHeight}
           stickyBarOffset={barOffset}
           stickyPinned={stickyPinned}
-          ambient={isComical}
+          ambient
           sharedValues={sharedValues}
           onScroll={onListScroll}
           // Drives terminalQuery.fetchNextPage — `loadMore` self-guards to the terminal-home mode.

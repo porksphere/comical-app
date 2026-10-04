@@ -169,7 +169,8 @@ export function ContentFeed({
   const router = useRouter();
   // Per-bridge `cardSubtitles` flags: each rail reserves the sub line only if ITS bridge sends one
   // (aggregate rails mix bridges), and the terminal grid follows the feed's own bridge.
-  const { subOf } = useBridgeMap();
+  const { subOf, byId } = useBridgeMap();
+  const bridgeOrder = useMemo(() => new Map([...byId.keys()].map((id, i) => [id, i] as const)), [byId]);
 
   const cellHeight = estimatedCardHeight(cardWidth, subOf(bridgeId)) + CELL_ROW_GAP;
 
@@ -255,9 +256,18 @@ export function ContentFeed({
     for (const row of rows) {
       // A band is a heading and everything under it, up to the next heading. A loading rail is
       // self-headed, so it opens one too — the colours are there before the covers are.
-      if (row.type === 'sectionHead') bands.push({ top: y, bodyTop: y + SECTION_HEAD_ROW_HEIGHT, bottom: y });
+      if (row.type === 'sectionHead') {
+        bands.push({ top: y, bodyTop: y + SECTION_HEAD_ROW_HEIGHT, bottom: y, tint: bands.length });
+      }
       // The heading `railRowHeight` puts inside the row.
-      if (row.type === 'railSkeleton') bands.push({ top: y, bodyTop: y + SECTION_HEAD_HEIGHT + Spacing.two, bottom: y });
+      if (row.type === 'railSkeleton') {
+        bands.push({ top: y, bodyTop: y + SECTION_HEAD_HEIGHT + Spacing.two, bottom: y, tint: bands.length });
+      }
+      // A bridge is one colour wherever it shows: its place among the installed ones, once a row
+      // says whose the section is. Until one does the section keeps its own place in the feed.
+      const owner = ('bridgeId' in row ? row.bridgeId : undefined) ?? bridgeId;
+      const open = bands[bands.length - 1];
+      if (open && owner !== undefined) open.tint = bridgeOrder.get(owner) ?? open.tint;
       // The HEAD's top (past the row's own top gap): the pinned copy is that head, so pinning it
       // there superimposes the two exactly at the hand-off — the band's padding is the band's, not
       // the row's. The row key rides along so that heading can hide itself while the pinned copy is
@@ -277,7 +287,7 @@ export function ContentFeed({
       if (band) band.bottom = y;
     }
     return { sections: out, bands };
-  }, [rows, header, stickyHeaderTop, ambient, paddingTop, getFixedItemSize, measuredHeights]);
+  }, [rows, header, stickyHeaderTop, ambient, paddingTop, getFixedItemSize, measuredHeights, bridgeId, bridgeOrder]);
 
   // The heading the pinned copy is currently standing in for — that row keeps its space but drops
   // its content, so one heading is never drawn twice.
@@ -314,6 +324,7 @@ export function ContentFeed({
     {ambient && sharedValues && (
       <FeedBackdrop
         bands={bands}
+        width={width}
         scrollOffset={sharedValues.scrollOffset}
         // Below the pinned heading's band when there is one: it is as opaque as the bar it rides.
         chromeBottom={

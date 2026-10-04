@@ -5,10 +5,10 @@ import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reani
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 
 /** One section's vertical extent in the feed's content space: its heading from `top`, its body
- *  from `bodyTop`. */
-export type FeedBand = { top: number; bodyTop: number; bottom: number };
+ *  from `bodyTop`. `tint` picks its colour — sections sharing one are the same colour. */
+export type FeedBand = { top: number; bodyTop: number; bottom: number; tint: number };
 
-// Placeholder colours, walked in feed order. Ordered so neighbours sit far apart on the hue wheel:
+// Placeholder colours, one per `tint`. Ordered so consecutive tints sit far apart on the hue wheel:
 // a feed of two or three sections is the common one, and adjacent hues there read as one colour.
 const PALETTE = ['#4F8DFD', '#E0569B', '#F2A03D', '#2FC4B2', '#9A6CF6', '#F2664F', '#57C96B', '#3FB2E8'];
 
@@ -32,14 +32,25 @@ const EASE = [
   [0.75, 0.84],
   [1, 1],
 ] as const;
-// Of the feed's width, each side, over which the colour gives way to the page. It never reaches
-// the screen's edge, where it would read as a shape the screen had cut.
-const SIDE_FADE = 0.26;
+// Of the feed's width, each side, over which the colour gives way to the page. On a wide feed it
+// never reaches the screen's edge, where it would read as a shape the screen had cut. A narrow one
+// has no width to give up, and keeps only enough to soften that edge.
+const SIDE_FADE = { narrow: 0.08, wide: 0.26 };
+const NARROW_FEED = 480;
+const WIDE_FEED = 960;
 
 // Against the section's body. Past its edges the glow is down to its last few percent, so it
 // thins out over the neighbouring heading without colouring the neighbour's covers.
 const GLOW_HEIGHT = 1.45;
+// A grid's body can be any length, and an ellipse that long is a stripe that shifts under the
+// covers every time the grid loads more. Past this the glow is the ellipse's two halves with a
+// straight run between them.
+const GLOW_MAX_HEIGHT = 1100;
+// Of the feed's width, and never under the floor: on a phone that is wider than the screen, so the
+// colour runs off both sides as the rail over it does. A share of that width alone is a stripe
+// down the middle.
 const GLOW_WIDTH = 0.92;
+const GLOW_MIN_WIDTH = 640;
 const GLOW_X = [0.47, 0.53, 0.49, 0.54, 0.46, 0.51];
 // Sideways travel per point of scroll, alternate glows in opposite directions. Each is on its own
 // `GLOW_X` as its section crosses the middle of the screen. Sideways only: a glow that also
@@ -81,12 +92,15 @@ function glowStyle(hex: string, alpha: number): ViewStyle {
  */
 export function FeedBackdrop({
   bands,
+  width,
   scrollOffset,
   chromeBottom,
   barOffset,
   style,
 }: {
   bands: FeedBand[];
+  /** The feed's own width, which is not the window's beside a sidebar. */
+  width: number;
   scrollOffset: SharedValue<number>;
   /** Screen-relative y of the bottom of whatever opaque chrome covers the top of the feed. The
    *  colour fades in below it rather than being cut off by its edge. */
@@ -105,31 +119,60 @@ export function FeedBackdrop({
 
   if (bands.length === 0) return null;
 
-  const color = (i: number) => PALETTE[i % PALETTE.length]!;
+  const color = (tint: number) => PALETTE[tint % PALETTE.length]!;
   const clear = `${theme.background}00`;
 
-  const glows = (parity: 0 | 1) =>
+  const glowWidth = Math.round(Math.max(width * GLOW_WIDTH, GLOW_MIN_WIDTH));
+  const wideness = Math.min(1, Math.max(0, (width - NARROW_FEED) / (WIDE_FEED - NARROW_FEED)));
+  const sideFade = width * (SIDE_FADE.narrow + (SIDE_FADE.wide - SIDE_FADE.narrow) * wideness);
+
+  // A long glow is in neither swaying layer: its section is on screen for far more scroll than a
+  // rail is, and would be carried clean off its covers.
+  const glows = (layer: 0 | 1 | 'still') =>
     bands.map((b, i) => {
       const body = b.bottom - b.bodyTop;
-      if (i % 2 !== parity || body <= 0) return null;
-      const mid = (b.bodyTop + b.bottom) / 2;
-      const height = body * GLOW_HEIGHT;
-      // The layer's sway at the scroll that puts this band mid-screen, taken back out.
-      const home = (parity === 0 ? -1 : 1) * GLOW_SWAY * (mid - viewport / 2);
+      if (body <= 0) return null;
+      const long = body * GLOW_HEIGHT > GLOW_MAX_HEIGHT;
+      if (layer !== (long ? 'still' : i % 2)) return null;
+      const left = Math.round((long ? 0.5 : GLOW_X[i % GLOW_X.length]!) * width - glowWidth / 2);
+      const image = glowStyle(color(b.tint), GLOW[scheme]);
+      if (!long) {
+        const mid = (b.bodyTop + b.bottom) / 2;
+        const height = body * GLOW_HEIGHT;
+        // The layer's sway at the scroll that puts this band mid-screen, taken back out.
+        const home = (layer === 0 ? -1 : 1) * GLOW_SWAY * (mid - viewport / 2);
+        return (
+          <View
+            key={i}
+            style={[
+              styles.glow,
+              { top: mid - height / 2, height, left, width: glowWidth, transform: [{ translateX: home }] },
+              image,
+            ]}
+          />
+        );
+      }
+      // Whole points throughout: the three pieces share edges, and a fraction between them is a line.
+      const cap = GLOW_MAX_HEIGHT / 2;
+      const over = Math.round((GLOW_MAX_HEIGHT - GLOW_MAX_HEIGHT / GLOW_HEIGHT) / 2);
+      const top = Math.round(b.bodyTop) - over;
+      const run = Math.max(0, Math.round(b.bottom) + over - top - cap * 2);
       return (
-        <View
-          key={i}
-          style={[
-            styles.glow,
-            {
-              top: mid - height / 2,
-              height,
-              left: `${(GLOW_X[i % GLOW_X.length]! - GLOW_WIDTH / 2) * 100}%`,
-              transform: [{ translateX: home }],
-            },
-            glowStyle(color(i), GLOW[scheme]),
-          ]}
-        />
+        <View key={i} style={[styles.glow, { top, left, width: glowWidth }]}>
+          <View style={[styles.cap, { height: cap }]}>
+            <View style={[{ height: cap * 2 }, image]} />
+          </View>
+          {/* The ellipse's own profile across its middle, so the run picks up where each half ends. */}
+          <LinearGradient
+            {...bandStops(color(b.tint), GLOW[scheme], 0.5)}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ height: run }}
+          />
+          <View style={[styles.cap, { height: cap }]}>
+            <View style={[{ height: cap * 2, marginTop: -cap }, image]} />
+          </View>
+        </View>
       );
     });
 
@@ -142,11 +185,12 @@ export function FeedBackdrop({
           return (
             <LinearGradient
               key={i}
-              {...bandStops(color(i), WASH[scheme], Math.min(0.5, BAND_RAMP / height))}
+              {...bandStops(color(b.tint), WASH[scheme], Math.min(0.5, BAND_RAMP / height))}
               style={[styles.span, { top: b.top - BAND_SPILL, height }]}
             />
           );
         })}
+        {glows('still')}
         <Animated.View style={[styles.sheet, swayRight]}>{glows(0)}</Animated.View>
         <Animated.View style={[styles.sheet, swayLeft]}>{glows(1)}</Animated.View>
       </Animated.View>
@@ -157,14 +201,14 @@ export function FeedBackdrop({
         locations={[0, 0.45, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={[styles.side, styles.left]}
+        style={[styles.side, styles.left, { width: sideFade }]}
       />
       <LinearGradient
         colors={[clear, `${theme.background}66`, theme.background]}
         locations={[0, 0.55, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={[styles.side, styles.right]}
+        style={[styles.side, styles.right, { width: sideFade }]}
       />
       {/* Solid down to the chrome's edge, not just from it: at rest no heading is pinned yet, and
           the strip its band will cover would otherwise show colour that the fade then cuts off. */}
@@ -197,13 +241,14 @@ const styles = StyleSheet.create({
   },
   glow: {
     position: 'absolute',
-    width: `${GLOW_WIDTH * 100}%`,
+  },
+  cap: {
+    overflow: 'hidden',
   },
   side: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    width: `${SIDE_FADE * 100}%`,
   },
   left: {
     left: 0,

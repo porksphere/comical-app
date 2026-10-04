@@ -48,8 +48,9 @@ export type ContentRow =
   // A rail (hero/ranked/regular) — strip only; its heading is the preceding `sectionHead` row. A whole
   // rail belongs to one bridge, so its override (if any) is section-level.
   | ({ type: 'rail'; key: string; section: RailSection } & BridgeScope)
-  // Loading placeholder for a rail — SELF-headed (keeps its own real/skeleton title inline).
-  | { type: 'railSkeleton'; key: string; title?: string }
+  // Loading placeholder for a rail — SELF-headed (keeps its own real/skeleton title inline). A
+  // cross-bridge feed says whose rail it stands in for.
+  | { type: 'railSkeleton'; key: string; title?: string; bridgeId?: string }
   // A rail whose fetch FAILED — a shared RetryBlock in the rail's slot (below its sectionHead), so one
   // bridge erroring in a cross-bridge feed shows an inline retry instead of silently vanishing.
   | { type: 'railError'; key: string; message: string; onRetry: () => void }
@@ -199,7 +200,7 @@ export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow
   const rows: ContentRow[] = [];
   for (const b of inputs) {
     if (b.loading) {
-      rows.push({ type: 'railSkeleton', key: `railsk:${b.bridgeId}`, title: b.bridgeName });
+      rows.push({ type: 'railSkeleton', key: `railsk:${b.bridgeId}`, title: b.bridgeName, bridgeId: b.bridgeId });
       continue;
     }
     if (b.error) {
@@ -290,7 +291,7 @@ export function buildCustomPageRows(inputs: CustomPageSectionInput[]): ContentRo
   for (const s of inputs) {
     if (s.loading) {
       if (s.layout === 'grid') rows.push({ type: 'gridBlockSkeleton', key: `blocksk:${s.key}`, title: s.title, rows: 2 });
-      else rows.push({ type: 'railSkeleton', key: `railsk:${s.key}`, title: s.title });
+      else rows.push({ type: 'railSkeleton', key: `railsk:${s.key}`, title: s.title, bridgeId: s.bridgeId });
       continue;
     }
     if (s.error) {
