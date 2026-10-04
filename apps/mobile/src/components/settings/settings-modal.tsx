@@ -42,6 +42,7 @@ import {
 } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { closeSettingsModal, setSettingsCategory, useSettingsModal } from '@/lib/settings-modal';
@@ -111,6 +112,7 @@ function SettingsPanel() {
   // registry-browse is three deep, and each step has to come back to the one before it.
   const [stack, setStack] = useState<{ pathname: string; params: PaneParams }[]>([]);
   const top = stack[stack.length - 1];
+  const [paneWidth, setPaneWidth] = useState(0);
   // Read by `nav.canGoBack`, which is built once and must not go stale as the stack moves.
   const stackDepth = useRef(stack.length);
   useEffect(() => {
@@ -189,7 +191,7 @@ function SettingsPanel() {
               ))}
             </ScrollView>
           </View>
-          <View style={styles.pane}>
+          <View style={styles.pane} onLayout={(e) => setPaneWidth(e.nativeEvent.layout.width)}>
             {/* OUTSIDE the scroller, so it stays put while the pane's content moves under it. Its
                 height is `SettingsPaneTopInset`. The category list does NOT match it: nothing sits
                 above those rows, so anything reserved on that side is an empty band. */}
@@ -203,13 +205,21 @@ function SettingsPanel() {
             {/* Keyed so switching category remounts the screen rather than handing the next one the
                 previous one's state — these are route components, written expecting a fresh mount. */}
             <View style={styles.paneBody} key={top ? `${stack.length}:${top.pathname}` : current.id}>
-              <SettingsPaneContext.Provider value={true}>
-                <PaneNavContext.Provider value={nav}>
-                  <PaneParamsContext.Provider value={top?.params ?? EMPTY_PARAMS}>
-                    {top ? <SubPage pathname={top.pathname} /> : <current.Screen />}
-                  </PaneParamsContext.Provider>
-                </PaneNavContext.Provider>
-              </SettingsPaneContext.Provider>
+              {/* A screen that centres its own column does it against the width it is told it has, and
+                  untold that is the window's: padding worked out for the window, spent inside the pane,
+                  left the column a sliver against the right edge. Held back until measured, so no
+                  screen lays out once against a width of 0. */}
+              {paneWidth > 0 ? (
+                <ContentWidthProvider width={paneWidth} sidebar={false}>
+                  <SettingsPaneContext.Provider value={true}>
+                    <PaneNavContext.Provider value={nav}>
+                      <PaneParamsContext.Provider value={top?.params ?? EMPTY_PARAMS}>
+                        {top ? <SubPage pathname={top.pathname} /> : <current.Screen />}
+                      </PaneParamsContext.Provider>
+                    </PaneNavContext.Provider>
+                  </SettingsPaneContext.Provider>
+                </ContentWidthProvider>
+              ) : null}
             </View>
           </View>
         </View>

@@ -21,7 +21,7 @@ import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { openConfirm } from '@/components/confirm-popup';
@@ -73,6 +73,7 @@ import { hapticSelection } from '@/lib/haptics';
 import { usePreferredGroup } from '@/lib/preferred-group';
 import { testId } from '@/lib/test-id';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
+import { useContentWidth } from '@/hooks/use-content-width';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import type { ChapterGroup } from '@/lib/chapter-order';
@@ -122,7 +123,7 @@ export default function SeriesDownloadsScreen() {
   // The standard settings-screen top inset (top bar + SettingsTopGap) — the same gap every
   // fixed-row-height list starts at, so this screen can't drift from the Downloads page's.
   const { paddingTop } = useSettingsScrollPadding();
-  const { width } = useWindowDimensions();
+  const width = useContentWidth();
   const ds = useDataSource();
   const mock = useMockActive();
   const preferredGroup = usePreferredGroup();

@@ -19,7 +19,7 @@ import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { openConfirm } from '@/components/confirm-popup';
@@ -53,6 +53,7 @@ import { queryKeys } from '@/data/queries';
 import { hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
+import { useContentWidth } from '@/hooks/use-content-width';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { useSeriesSubPath } from '@/lib/series-nav';
@@ -102,11 +103,11 @@ function buildRows(bySeries: StorageUsageSeries[], cache: Map<string, DlRow>): D
 
 export default function DownloadsScreen() {
   const { paddingTop, paddingBottom } = useSettingsScrollPadding();
-  const { width } = useWindowDimensions();
+  const width = useContentWidth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Full-width scroller (scrollbar at the window edge); rows centered within the settings column via
+  // Full-width scroller (scrollbar at the screen's edge); rows centered within the settings column via
   // symmetric side padding — LegendList ignores maxWidth/alignSelf on its content container, so the
   // centring has to be explicit. Rows escape `SettingsGutter` to reach the column's edge for their pills.
   const sidePad = SettingsGutter + Math.max(0, (width - MaxContentWidth) / 2);
