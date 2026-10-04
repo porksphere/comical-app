@@ -46,6 +46,10 @@ const GLOW_HEIGHT = 1.45;
 // covers every time the grid loads more. Past this the glow is the ellipse's two halves with a
 // straight run between them.
 const GLOW_MAX_HEIGHT = 1100;
+// Of `GLOW`, what a long glow keeps. An ellipse is at full strength at one point; the run is at it
+// all the way down its middle, and at a rail's strength that is a bright stripe behind the covers.
+// Lost over the first `GLOW_MAX_HEIGHT` of run, so a grid growing past the ellipse doesn't step.
+const GLOW_LONG = 0.5;
 // Of the feed's width, and never under the floor: on a phone that is wider than the screen, so the
 // colour runs off both sides as the rail over it does. A share of that width alone is a stripe
 // down the middle.
@@ -135,8 +139,8 @@ export function FeedBackdrop({
       const long = body * GLOW_HEIGHT > GLOW_MAX_HEIGHT;
       if (layer !== (long ? 'still' : i % 2)) return null;
       const left = Math.round((long ? 0.5 : GLOW_X[i % GLOW_X.length]!) * width - glowWidth / 2);
-      const image = glowStyle(color(b.tint), GLOW[scheme]);
       if (!long) {
+        const image = glowStyle(color(b.tint), GLOW[scheme]);
         const mid = (b.bodyTop + b.bottom) / 2;
         const height = body * GLOW_HEIGHT;
         // The layer's sway at the scroll that puts this band mid-screen, taken back out.
@@ -157,6 +161,8 @@ export function FeedBackdrop({
       const over = Math.round((GLOW_MAX_HEIGHT - GLOW_MAX_HEIGHT / GLOW_HEIGHT) / 2);
       const top = Math.round(b.bodyTop) - over;
       const run = Math.max(0, Math.round(b.bottom) + over - top - cap * 2);
+      const alpha = GLOW[scheme] * (1 - (1 - GLOW_LONG) * Math.min(1, run / GLOW_MAX_HEIGHT));
+      const image = glowStyle(color(b.tint), alpha);
       return (
         <View key={i} style={[styles.glow, { top, left, width: glowWidth }]}>
           <View style={[styles.cap, { height: cap }]}>
@@ -164,7 +170,7 @@ export function FeedBackdrop({
           </View>
           {/* The ellipse's own profile across its middle, so the run picks up where each half ends. */}
           <LinearGradient
-            {...bandStops(color(b.tint), GLOW[scheme], 0.5)}
+            {...bandStops(color(b.tint), alpha, 0.5)}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={{ height: run }}
