@@ -85,6 +85,6 @@ export function usePullToRefresh(scrollY: SharedValue<number>, refresh: () => Pr
     /** Pass to the list. iOS-only: a release past the threshold triggers the refresh. */
     onScrollEndDrag: Platform.OS === 'ios' ? nativePull.onScrollEndDrag : undefined,
     /** Spread into `<PullIndicator {...indicator} top={…} />`. */
-    indicator: { pullY: pull.pullY, pullThreshold: pull.pullThreshold, refreshing },
+    indicator: { pullY: pull.pullY, pullThreshold: pull.pullThreshold, refreshing, scrollY },
   };
 }

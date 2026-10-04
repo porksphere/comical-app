@@ -55,7 +55,10 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
 
   const onTouchStart = useCallback(
     (e: GestureResponderEvent) => {
-      pulling.current = scrollY.value <= 0;
+      // Never while a refresh holds the gap open. The gap IS `pullY`, so a second gesture writing it
+      // closes the gap under a spinner that stays up until the request lands — which left the
+      // spinner sitting on the first row.
+      pulling.current = !holding.current && scrollY.value <= 0;
       armed.current = false;
       startY.current = e.nativeEvent.pageY;
     },
@@ -84,9 +87,10 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
   );
 
   const onTouchEnd = useCallback(() => {
-    const triggered = pulling.current && pullY.value >= PULL_THRESHOLD;
+    // A touch that wasn't a pull never moved `pullY`, and has no business settling it.
+    if (!pulling.current) return;
     pulling.current = false;
-    if (triggered) {
+    if (pullY.value >= PULL_THRESHOLD) {
       // Snap into (and hold at) the resting "activated" position instead of springing all the
       // way back — the `refreshing` effect above releases it once the request actually resolves.
       holding.current = true;
