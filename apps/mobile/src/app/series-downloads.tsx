@@ -51,7 +51,7 @@ import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
+import { SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { dlDeleteChapter, dlGetSeries } from '@/data/api';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from '@/data/downloads/constants';
 import { bySortValue, chapterSortValue, displayChapterState } from '@/data/downloads/derive';
@@ -74,7 +74,7 @@ import { usePreferredGroup } from '@/lib/preferred-group';
 import { testId } from '@/lib/test-id';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useContentWidth } from '@/hooks/use-content-width';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import type { ChapterGroup } from '@/lib/chapter-order';
 import {useLocalSearchParams, useRouter} from '@/lib/nav';
@@ -387,7 +387,7 @@ export default function SeriesDownloadsScreen() {
     });
 
   // Full-width scroller centered within the settings column (same treatment as the Downloads page).
-  const sidePad = SettingsGutter + Math.max(0, (width - MaxContentWidth) / 2);
+  const sidePad = useSettingsSidePad(width);
 
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
 

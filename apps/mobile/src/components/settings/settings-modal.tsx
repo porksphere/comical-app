@@ -205,10 +205,10 @@ function SettingsPanel() {
             {/* Keyed so switching category remounts the screen rather than handing the next one the
                 previous one's state — these are route components, written expecting a fresh mount. */}
             <View style={styles.paneBody} key={top ? `${stack.length}:${top.pathname}` : current.id}>
-              {/* A screen that centres its own column does it against the width it is told it has, and
-                  untold that is the window's: padding worked out for the window, spent inside the pane,
-                  left the column a sliver against the right edge. Held back until measured, so no
-                  screen lays out once against a width of 0. */}
+              {/* A screen that lays out against a width does it against the one it is told it has, and
+                  untold that is the window's: a layout worked out for the window, spent inside the
+                  pane, overruns it. Held back until measured, so no screen lays out once against a
+                  width of 0. */}
               {paneWidth > 0 ? (
                 <ContentWidthProvider width={paneWidth} sidebar={false}>
                   <SettingsPaneContext.Provider value={true}>
@@ -301,8 +301,8 @@ function CloseButton() {
 }
 
 const CATEGORY_WIDTH = 200;
-// Wider than the categories plus a full-width screen (`MaxContentWidth`), which centres itself in the
-// pane: at exactly that sum a row ran edge to edge and the panel read as cramped on a large window.
+// Also how long a settings row gets: in the pane a row runs the pane's whole width (see
+// `useSettingsScrollPadding`), so there is no narrower column inside this to stop it.
 const PANEL_MAX_WIDTH = 1200;
 const PANEL_MAX_HEIGHT = 960;
 

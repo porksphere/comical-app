@@ -42,13 +42,13 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
+import { SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import type { FavoritesImportCandidate, FavoritesImportItem } from '@/data/api';
 import { favoritesImportPreviewQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
 import { hapticSelection } from '@/lib/haptics';
@@ -75,7 +75,7 @@ export default function FavoritesImportScreen() {
   const { nameOf } = useBridgeMap();
 
   // Full-width scroller centered within the settings column (same treatment as the Downloads pages).
-  const sidePad = SettingsGutter + Math.max(0, (width - MaxContentWidth) / 2);
+  const sidePad = useSettingsSidePad(width);
 
   const { data, error, isLoading, refetch, isFetching } = useQuery(favoritesImportPreviewQuery(ds, mock, bridgeId));
 
