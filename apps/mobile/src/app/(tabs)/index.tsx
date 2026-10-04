@@ -67,6 +67,7 @@ import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRampedHold } from '@/hooks/use-ramped-hold';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
+import { useFeedTint } from '@/hooks/use-feed-tint';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 import { useWindowControlsClearance } from '@/lib/window-controls';
@@ -89,6 +90,7 @@ export default function BrowseScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const feedTint = useFeedTint();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('browse', listRef);
 
@@ -898,7 +900,7 @@ export default function BrowseScreen() {
           stickyHeaderTop={headerHeight}
           stickyBarOffset={barOffset}
           stickyPinned={stickyPinned}
-          ambient
+          ambient={feedTint}
           sharedValues={sharedValues}
           onScroll={onListScroll}
           // Drives terminalQuery.fetchNextPage — `loadMore` self-guards to the terminal-home mode.

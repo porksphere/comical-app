@@ -31,6 +31,7 @@ import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { connectServer } from '@/data/switch-server';
+import { setFeedTint, useFeedTint } from '@/hooks/use-feed-tint';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
@@ -82,6 +83,7 @@ export default function GeneralSettingsScreen() {
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase] = useApiBase();
   const lightCards = useLightCards();
+  const feedTint = useFeedTint();
   const [runInTray, setRunInTray] = useRunInTray();
   const [openAtLogin, setOpenAtLogin] = useOpenAtLogin();
   // Gated on hydration: the static web render has no shell, so the row would otherwise appear only
@@ -122,6 +124,12 @@ export default function GeneralSettingsScreen() {
             description="Drop cover animations for smoother scrolling."
             value={lightCards}
             onChange={(v) => lightCards$.light.set(v)}
+          />
+          <SettingsToggleRow
+            label="Tinted backgrounds"
+            description="Tint the page behind each section on Browse."
+            value={feedTint}
+            onChange={setFeedTint}
           />
           <SettingsSelectRow
             label="NSFW content"
