@@ -11,25 +11,26 @@ import {
 
 import { CollectedItemMenu } from '@/components/collections/collected-item-menu';
 import { ChapterItemIcon, PageItemIcon, SeriesItemIcon } from '@/components/icons/collection-icons';
-import { CardCaption, coverStyles } from '@/components/series-card';
+import { CardCaption, CoverFrame, useCoverAspect } from '@/components/series-card';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { ApiCollectionItem } from '@/data/api';
-import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { useIsZoomingSeries, useZoomOriginSource, useZoomSurfaceKey } from '@/lib/series-zoom';
 
 /**
- * One tile in the collected grid — a saved SERIES, CHAPTER or PAGE. All three are the same 2:3
- * cover over the series card's caption; the type-icon badge (top-left) is what tells them apart, so
- * the grid reads as one surface instead of three interleaved layouts.
+ * One tile in the collected grid — a saved SERIES, CHAPTER or PAGE. All three are the series card's
+ * cover frame over its caption, shaped by the picture as a series card's is; the type-icon badge
+ * (top-left) is what tells them apart, so the grid reads as one surface instead of three interleaved
+ * layouts.
  *
  * Deliberately NOT `PageThumb`. That component exists to render a *bridge-supplied* thumbnail —
  * it lazily self-fetches via `getPageThumb`, which is series-level (no `chapterId`) and would be
- * wrong here, and it carries sprite-sheet cropping and aspect learning that a plain page URL
- * doesn't need. What this tile needs instead is the two states `PageThumb` has no concept of: a
- * source that has died, and an item the server could no longer locate.
+ * wrong here, and it carries sprite-sheet cropping that a plain page URL doesn't need. What this
+ * tile needs instead is the two states `PageThumb` has no concept of: a source that has died, and
+ * an item the server could no longer locate.
  *
  * Image per type: a page shows its page image (resolved per chapter by the grid), a series shows
  * its cover, and a CHAPTER is always the placeholder — it has no image of its own, and borrowing
@@ -47,7 +48,6 @@ export function CollectedItemTile({
   bridge,
   direct,
   width,
-  coverHeight,
   onPress,
   onWarm,
 }: {
@@ -62,14 +62,12 @@ export function CollectedItemTile({
   bridge?: string;
   direct?: boolean;
   width: number;
-  coverHeight: number;
   onPress: () => void;
   /** Start the fetch `onPress` is about to need. Supplied by whoever owns the navigation, since the
    *  three item types go three different places — see library's `onOpen`. */
   onWarm?: () => void;
 }) {
   const theme = useTheme();
-  const desktop = useIsDesktop();
   const [failed, setFailed] = useState(false);
   const [hovered, setHovered] = useState(false);
   // Recycle-safety: this tile is reused for a different item as the list scrolls, so a failure
@@ -88,6 +86,12 @@ export function CollectedItemTile({
     item.type === 'series' ? SeriesItemIcon : item.type === 'chapter' ? ChapterItemIcon : PageItemIcon;
   const chapterName = item.type === 'series' ? undefined : item.chapterName;
 
+  // A series is learned under the series' own id, the one its Library card learns it under, so
+  // whichever of the two is seen first has the other open at the right shape.
+  const [pictureAspect, learnAspect] = useCoverAspect(item.type === 'series' ? item.seriesId : item.id);
+  // A placeholder has no picture to take a shape from, and never will have.
+  const aspect = showImage ? pictureAspect : DEFAULT_THUMB_ASPECT;
+
   // ── The gallery zoom, exactly as a series card offers it (see lib/series-zoom) ──────────────
   // Press-in captures this tile's box as the zoom SOURCE RECT, so the screen it opens — the reader
   // in sequence mode for a page, the details for a series — grows out of the tile and collapses
@@ -104,96 +108,81 @@ export function CollectedItemTile({
   const zoomKey = useZoomSurfaceKey(`collected:${item.id}`);
   const flying = useIsZoomingSeries(item.seriesId, zoomKey);
   const boxRef = useRef<ViewType>(null);
-  // Radius matches styles.tile — the flying copy is drawn with the same corners. The hook also
+  // Radius matches the frame's — the flying copy is drawn with the same corners. The hook also
   // registers this tile as re-measurable for the collapse (see series-zoom).
   const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomKey, boxRef, 10, !isWeb && showImage);
 
   // `lifted` is the native series menu holding a copy of this cover up as its preview: the same
   // two-of-them problem as a zoom in flight, with the same answer.
-  const card = (onLongPress?: (e: GestureResponderEvent) => void, lifted = false) => {
-    const blank = flying || lifted;
-    return (
-      <Pressable
-        testID={`collected.tile.${item.id}`}
-        onPressIn={() => {
-          captureZoomOrigin();
-          onWarm?.();
-        }}
-        onPress={onPress}
-        onLongPress={onLongPress}
-        onHoverIn={() => setHovered(true)}
-        onHoverOut={() => setHovered(false)}
-        style={[styles.card, { width }]}
-        accessibilityRole="button"
-        accessibilityLabel={
-          item.type === 'series'
-            ? `Series, ${item.seriesTitle}`
-            : item.type === 'chapter'
-              ? `Chapter, ${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}`
-              : `${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}, page ${item.pageIndex + 1}`
-        }>
-        <View
-          ref={boxRef}
-          style={[
-            styles.tile,
-            coverStyles.corner,
-            desktop && coverStyles.cornerDesktop,
-            { height: coverHeight, backgroundColor: theme.backgroundElement },
-          ]}>
-          {showImage ? (
-            // While a zoom this tile is the source of is in the air, a COPY of this picture is what
-            // flies — the original (and the overlays drawn on it) blank so there aren't two. Layout is
-            // preserved; the tile's background stays, same as a series card's coverHidden.
-            <Image
-              source={{ uri: source }}
-              style={[StyleSheet.absoluteFill, blank && styles.hidden]}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              onError={() => setFailed(true)}
-            />
-          ) : (
-            <View style={styles.fallback}>
-              <TypeIcon color={theme.textSecondary} size={32} />
-            </View>
-          )}
-
-          {/* The badge reads against the image, so it needs its own scrim rather than the theme.
-              The icon is the type; a page also carries its number, since "which page of the chapter"
-              matters there the way it can't for the other two. */}
-          <View style={[styles.badge, blank && styles.hidden]}>
-            <TypeIcon color="#fff" size={12} />
-            {item.type === 'page' && (
-              <ThemedText type="small" style={styles.badgeText}>
-                {item.pageIndex + 1}
-              </ThemedText>
-            )}
+  const card = (onLongPress?: (e: GestureResponderEvent) => void, lifted = false) => (
+    <Pressable
+      testID={`collected.tile.${item.id}`}
+      onPressIn={() => {
+        captureZoomOrigin();
+        onWarm?.();
+      }}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[styles.card, { width }]}
+      accessibilityRole="button"
+      accessibilityLabel={
+        item.type === 'series'
+          ? `Series, ${item.seriesTitle}`
+          : item.type === 'chapter'
+            ? `Chapter, ${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}`
+            : `${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}, page ${item.pageIndex + 1}`
+      }>
+      <CoverFrame
+        aspect={aspect}
+        coverRef={boxRef}
+        hidden={flying || lifted}
+        ring={hovered}
+        // A placeholder is this tile for good, not a moment before its picture, so it sits on the
+        // theme's surface rather than the frame's loading grey.
+        contentStyle={{ backgroundColor: theme.backgroundElement }}>
+        {showImage ? (
+          <Image
+            source={{ uri: source }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            recyclingKey={item.id}
+            onLoad={(e) => {
+              if (e.source?.width && e.source?.height) learnAspect(e.source.width, e.source.height);
+            }}
+            onError={() => setFailed(true)}
+          />
+        ) : (
+          <View style={styles.fallback}>
+            <TypeIcon color={theme.textSecondary} size={32} />
           </View>
+        )}
 
-          {item.stale && (
-            <View style={[styles.staleBar, { backgroundColor: theme.danger }, blank && styles.hidden]}>
-              <ThemedText type="small" numberOfLines={1} style={styles.staleText}>
-                May no longer be available
-              </ThemedText>
-            </View>
-          )}
-
-          {/* The series card's hover ring, so a collection reads as the same grid the rest of the
-              library is. Web only: hover fires for a pointer on a tablet too, which has no ring anywhere. */}
-          {isWeb && hovered && (
-            <View
-              style={[
-                coverStyles.ring,
-                coverStyles.corner,
-                desktop && coverStyles.cornerDesktop,
-                { borderColor: theme.text, pointerEvents: 'none' },
-              ]}
-            />
+        {/* The badge reads against the image, so it needs its own scrim rather than the theme.
+            The icon is the type; a page also carries its number, since "which page of the chapter"
+            matters there the way it can't for the other two. */}
+        <View style={styles.badge}>
+          <TypeIcon color="#fff" size={12} />
+          {item.type === 'page' && (
+            <ThemedText type="small" style={styles.badgeText}>
+              {item.pageIndex + 1}
+            </ThemedText>
           )}
         </View>
-        <CardCaption title={item.seriesTitle} sub={sub} />
-      </Pressable>
-    );
-  };
+
+        {item.stale && (
+          <View style={[styles.staleBar, { backgroundColor: theme.danger }]}>
+            <ThemedText type="small" numberOfLines={1} style={styles.staleText}>
+              May no longer be available
+            </ThemedText>
+          </View>
+        )}
+      </CoverFrame>
+      <CardCaption title={item.seriesTitle} sub={sub} />
+    </Pressable>
+  );
 
   if (item.type === 'series') {
     return (
@@ -203,7 +192,7 @@ export function CollectedItemTile({
         bridge={bridge}
         entry={{ id: item.seriesId, title: item.seriesTitle, cover: item.thumbnailUrl ?? '' }}
         direct={direct}
-        coverAspect={width / coverHeight}
+        coverAspect={aspect}
         // The cover, not the card: the preview is a cover, and lifting it from a rect that takes
         // in the caption starts it too tall.
         measureRef={boxRef}
@@ -223,10 +212,6 @@ const styles = StyleSheet.create({
   // The series card's own gap between a cover and its title.
   card: {
     gap: Spacing.two,
-  },
-  tile: {
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
   },
   fallback: {
     ...StyleSheet.absoluteFill,
@@ -251,6 +236,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   staleBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     paddingHorizontal: Spacing.one,
     paddingVertical: 2,
   },
@@ -258,10 +247,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     textAlign: 'center',
-  },
-  // Blanks the picture (and its overlays) while this tile's zoom transition is flying a copy of
-  // it — leaving the original visible would double it through the collapse's transparency.
-  hidden: {
-    opacity: 0,
   },
 });

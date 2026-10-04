@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type View as ViewType, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -55,10 +55,10 @@ let lastResolvedCoverAspect = DEFAULT_THUMB_ASPECT;
 const COVER_CORNER = { ...ContinuousCorner, borderRadius: 10 };
 
 /**
- * A cover's corner and the hover ring that follows it, for anything drawn as a cover beside a
- * `SeriesCard` — a collection tile, a skeleton. Take these rather than the radius: the corner is
- * continuous where the platform can draw one, and that cuts visibly less out of a cover than a
- * circular corner of the same radius does, so a copy of the number alone is a different card.
+ * A cover's corner, for a skeleton standing in for one. Take this rather than the radius: the
+ * corner is continuous where the platform can draw one, and that cuts visibly less out of a cover
+ * than a circular corner of the same radius does, so a copy of the number alone is a different card.
+ * Anything that draws an actual cover takes `CoverFrame` instead.
  */
 export const coverStyles = StyleSheet.create({
   corner: COVER_CORNER,
@@ -66,17 +66,104 @@ export const coverStyles = StyleSheet.create({
   cornerDesktop: {
     borderRadius: 20,
   },
-  ring: {
-    position: 'absolute',
-    // Drawn INSIDE the cover's edge. A virtualized list paint-contains each item to its slot, and a
-    // slot ends exactly where an outer column's cover does, so a stroke outside it is cut off there.
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderWidth: 2,
-  },
 });
+
+/**
+ * A cover's real (capped) aspect ratio, learned from the visible `<Image>`'s own `onLoad`. Since
+ * `clampThumbAspect` only ever returns >= DEFAULT_THUMB_ASPECT, the box only ever shrinks from its
+ * placeholder height (never grows past it), so learning it is a single, one-time relayout — no
+ * cheaper way to know a cover's shape than to let that relayout happen once. Seeded from
+ * `resolvedCoverAspects` when this id has already resolved before (a revisit renders at its real
+ * shape immediately), else from the rolling `lastResolvedCoverAspect` guess rather than the flat
+ * placeholder. A recycled slot handed a different `id` is re-seeded, so it doesn't keep the prior
+ * cover's shape.
+ *
+ * `learn` takes the loaded picture's dimensions and returns the aspect they come to.
+ */
+export function useCoverAspect(id: string): [aspect: number, learn: (width: number, height: number) => number] {
+  const [aspect, setAspect] = useState(() => resolvedCoverAspects.get(id) ?? lastResolvedCoverAspect);
+  const [prevId, setPrevId] = useState(id);
+  if (prevId !== id) {
+    setPrevId(id);
+    setAspect(resolvedCoverAspects.get(id) ?? lastResolvedCoverAspect);
+  }
+  const learn = (width: number, height: number) => {
+    const next = clampThumbAspect(width / height);
+    resolvedCoverAspects.set(id, next);
+    lastResolvedCoverAspect = next;
+    // Only relayout when the real shape differs meaningfully from the seeded guess. Covers cluster
+    // by shape, so the rolling seed is usually within epsilon — skipping this avoids a Fabric commit
+    // per cover during scroll (the dominant completeRoot cost).
+    if (Math.abs(next - aspect) > 0.02) setAspect(next);
+    return next;
+  };
+  return [aspect, learn];
+}
+
+/**
+ * The box a cover is drawn in: `aspect` wide-to-tall, clipped to the cover's corner, over the grey
+ * that stands in for a picture still on its way. `SeriesCard`'s own frame, and the one anything else
+ * drawn as a cover in the same grid takes, so the two can't come apart.
+ */
+export function CoverFrame({
+  aspect,
+  coverRef,
+  hidden,
+  ring,
+  onLayout,
+  contentStyle,
+  children,
+}: {
+  aspect: number;
+  /** The box itself, which is what a zoom's source rect is measured off — see `useZoomOriginSource`. */
+  coverRef?: RefObject<ViewType | null>;
+  /** Blanks just the cover while a COPY of it is on screen — a long-press menu's lifted preview, a
+   *  zoom in flight — since leaving the original visible would double it. Layout is preserved. */
+  hidden?: boolean;
+  /** The highlight ring. Web only: native's held cue is a scrim, and the hover a tablet's pointer
+   *  fires has no ring anywhere. */
+  ring?: boolean;
+  onLayout?: (e: LayoutChangeEvent) => void;
+  /** How the box arranges and backs what it holds, over its own defaults. */
+  contentStyle?: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  const desktop = useIsDesktop();
+  const theme = useTheme();
+  if (Platform.OS !== 'web') {
+    // Native has no ring, so the box IS the clip — one fewer host view means one fewer Fabric clone
+    // up the ancestor chain on every commit, on the platform that scrolls these grids.
+    return (
+      <View
+        ref={coverRef}
+        style={[styles.coverBoxClip, { aspectRatio: aspect }, hidden && styles.coverHidden, contentStyle]}
+        onLayout={onLayout}>
+        {children}
+      </View>
+    );
+  }
+  return (
+    // Web draws the ring as a sibling over the clip, so a scaled picture inside the clip can't cover it.
+    <View
+      ref={coverRef}
+      style={[styles.coverBox, { aspectRatio: aspect }, hidden && styles.coverHidden]}
+      onLayout={onLayout}>
+      <View style={[styles.coverClip, coverStyles.corner, desktop && coverStyles.cornerDesktop, contentStyle]}>
+        {children}
+      </View>
+      {ring && (
+        <View
+          style={[
+            styles.ring,
+            coverStyles.corner,
+            desktop && coverStyles.cornerDesktop,
+            { borderColor: theme.text, pointerEvents: 'none' },
+          ]}
+        />
+      )}
+    </View>
+  );
+}
 
 const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
   rail: 130,
@@ -311,19 +398,10 @@ export function SeriesCard({
   // the skeleton to actually cover it; fresh mounts (no stale bitmap) leave the subtle look untouched.
   const [maskStale, setMaskStale] = useState(false);
   const theme = useTheme();
-  // The cover's real (capped) aspect ratio — a plain, UNanimated value. Since
-  // `clampThumbAspect` only ever returns >= DEFAULT_THUMB_ASPECT, the box only ever
-  // shrinks from its default placeholder height (never grows past it), so setting
-  // this is always a single, one-time relayout — no cheaper way to know a cover's
-  // shape than to just let that relayout happen once. What's smoothed below is the
-  // *visual* shrink, via a `transform`-only illusion that never triggers another
-  // relayout — see `pictureStyle`/`trailingStyle`. Seeded from `resolvedCoverAspects`
-  // when this id has already resolved before (revisit renders at its real shape
-  // immediately), else from the rolling `lastResolvedCoverAspect` guess (see above)
-  // rather than the flat placeholder.
-  const [coverAspect, setCoverAspect] = useState(
-    () => resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect
-  );
+  // A plain, UNanimated value. What's smoothed below is the *visual* shrink, via a
+  // `transform`-only illusion that never triggers another relayout — see
+  // `pictureStyle`/`trailingStyle`.
+  const [coverAspect, learnCoverAspect] = useCoverAspect(entry.id);
   // The FLIP-style cover-aspect shrink illusion lives in `CoverShrink` (rendered only when its
   // effects are wanted — see the render below), so its reanimated hooks aren't allocated per card
   // when Lightweight cards is on.
@@ -383,7 +461,7 @@ export function SeriesCard({
   // pattern), so not one frame shows the old cover-loaded/truncation state.
   // This works identically when the card is genuinely remounted (the previous-id
   // state starts equal to entry.id, so it's a no-op) and in the non-recycled call sites
-  // (HomeGridBlock, the wide rail grid). `coverAspect` resets here too so a reused
+  // (HomeGridBlock, the wide rail grid). `coverAspect` resets with it (in `useCoverAspect`) so a reused
   // slot doesn't keep the prior cover's shape — and the shrink illusion resets to
   // its settled (no-offset) values right alongside it, so a recycled slot showing a
   // DIFFERENT entry snaps back to the placeholder shape instantly rather than
@@ -418,13 +496,11 @@ export function SeriesCard({
     // a crossfaded swap) clears it so already-seen rows keep the subtle skeleton, or none at all.
     setMaskStale(maskSwap);
     setTruncated(false);
-    setCoverAspect(resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect);
     resetHeld();
   }
 
   // Responsive title size matching the reference's mobile/desktop type scale.
   const compact = useIsCompact();
-  const desktop = useIsDesktop();
   const titleFontSize = compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular;
   const titleLineHeight = compact ? TITLE_LINE_HEIGHT.compact : TITLE_LINE_HEIGHT.regular;
   const titleSize = { fontSize: titleFontSize, lineHeight: titleLineHeight };
@@ -504,13 +580,11 @@ export function SeriesCard({
   if (entry.excluded) {
     return (
       <View style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}>
-        <View style={[styles.coverBox, { aspectRatio: DEFAULT_THUMB_ASPECT }]}>
-          <View style={[styles.coverClip, coverStyles.corner, desktop && coverStyles.cornerDesktop, styles.hiddenCover]}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Hidden
-            </ThemedText>
-          </View>
-        </View>
+        <CoverFrame aspect={DEFAULT_THUMB_ASPECT} contentStyle={styles.hiddenCover}>
+          <ThemedText type="small" themeColor="textSecondary">
+            Hidden
+          </ThemedText>
+        </CoverFrame>
       </View>
     );
   }
@@ -538,15 +612,8 @@ export function SeriesCard({
               resolvedCoverIds.add(entry.id);
               const src = e.source;
               if (src?.width && src?.height) {
-                const nextAspect = clampThumbAspect(src.width / src.height);
-                resolvedCoverAspects.set(entry.id, nextAspect);
-                lastResolvedCoverAspect = nextAspect;
                 // Smooth the aspect settle when the shape changes; no-op when Lightweight is on.
-                shrink.runShrink?.(coverAspect, nextAspect);
-                // Only relayout when the real shape differs meaningfully from the seeded guess.
-                // Covers cluster by shape, so the rolling seed is usually within epsilon — skipping
-                // this avoids a Fabric commit per cover during scroll (the dominant completeRoot cost).
-                if (Math.abs(nextAspect - coverAspect) > 0.02) setCoverAspect(nextAspect);
+                shrink.runShrink?.(coverAspect, learnCoverAspect(src.width, src.height));
               }
               // Light path: the clip's own grey backing IS the placeholder, and expo-image paints the
               // decoded cover over it natively — so no `loaded` state flip (hence no per-cover commit)
@@ -614,7 +681,7 @@ export function SeriesCard({
     );
 
     // Cover contents: the (optionally scaled) picture, overlaid badges/rank, and the native held
-    // scrim. Shared by both the web (box > clip) and native (single merged box) structures below.
+    // scrim.
     const coverContents = (
       <>
         {/* Picture layer scaled by `pictureStyle` to fake the shrink illusion; badges/rank/ring are
@@ -641,35 +708,14 @@ export function SeriesCard({
 
     return (
       <>
-        {isWeb ? (
-          // Web draws the hover ring as a sibling over the clipping `coverClip`, so the scaled picture
-          // inside the clip can't cover it.
-          <View style={[styles.coverBox, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]} onLayout={shrink.onCoverLayout}>
-            <View style={[styles.coverClip, coverStyles.corner, desktop && coverStyles.cornerDesktop]}>{coverContents}</View>
-            {active && (
-              <View
-                style={[
-                  coverStyles.ring,
-                  coverStyles.corner,
-                  desktop && coverStyles.cornerDesktop,
-                  { borderColor: theme.text, pointerEvents: 'none' },
-                ]}
-              />
-            )}
-          </View>
-        ) : (
-          // Native has no ring, so the box IS the clip — one fewer host view means one fewer Fabric
-          // clone up the ancestor chain on every commit, on the platform that scrolls these grids.
-          // `coverHidden` blanks just the cover while THIS card's long-press menu is open (its lifted
-          // preview is a copy) — the title below stays visible under the dim.
-          <View
-            // The zoom entrance's source rect is measured off THIS box — see captureZoomOrigin.
-            ref={coverRef}
-            style={[styles.coverBoxClip, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]}
-            onLayout={shrink.onCoverLayout}>
-            {coverContents}
-          </View>
-        )}
+        <CoverFrame
+          aspect={coverAspect}
+          coverRef={coverRef}
+          hidden={coverHidden}
+          ring={active}
+          onLayout={shrink.onCoverLayout}>
+          {coverContents}
+        </CoverFrame>
 
         {/* Trailing group is an Animated.View only when the shrink illusion drives its translateY;
             otherwise a plain View, so lightweight cards carry no Reanimated wrapper here either. */}
@@ -897,6 +943,16 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
+  },
+  ring: {
+    position: 'absolute',
+    // Drawn INSIDE the cover's edge. A virtualized list paint-contains each item to its slot, and a
+    // slot ends exactly where an outer column's cover does, so a stroke outside it is cut off there.
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 2,
   },
   picture: {
     // Top-aligned scale origin so the shrink illusion (`pictureStyle`) settles

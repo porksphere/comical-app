@@ -13,21 +13,16 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCollectedPageUris } from '@/hooks/use-collected-page-uris';
 import { GRID_ROW_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 
-/** A page tile is a fixed 2:3 slot, like the series-page thumbnail grid. Fixed rather than
- *  aspect-driven so LegendList never re-measures mid-scroll — the same discipline `series-grid.tsx`
- *  uses, and what `todo.md` separately asks for on page thumbs. */
-const TILE_ASPECT = 3 / 2;
-
 /**
  * The grid of collected items — a `GroupedGrid` (which owns the row list and the sticky section
  * header) skinned with the collected tile.
  *
- * All three item types share the one 2:3 tile (`CollectedItemTile`); the tile's type-icon badge is
+ * All three item types share the one tile (`CollectedItemTile`); the tile's type-icon badge is
  * what distinguishes them, so a mixed collection reads as one surface rather than three interleaved
  * layouts.
  *
- * A row is as tall as a row of the Library's series cards, caption included, whatever its titles
- * run to: the list is told one height for every row.
+ * A row is as tall as a row of the Library's series cards, caption included, whatever shape its
+ * covers take and its titles run to: the list is told one height for every row.
  */
 export function CollectedItemsGrid({
   items,
@@ -81,8 +76,6 @@ export function CollectedItemsGrid({
     [items, numColumns, grouping],
   );
 
-  const tileHeight = cardWidth * TILE_ASPECT;
-
   return (
     <GroupedGrid
       rows={rows}
@@ -110,7 +103,6 @@ export function CollectedItemsGrid({
               bridge={nameOf(item.bridgeId)}
               direct={directOf(item.bridgeId)}
               width={cardWidth}
-              coverHeight={tileHeight}
               onPress={() => onOpen(item)}
               onWarm={onWarm && (() => onWarm(item))}
             />
