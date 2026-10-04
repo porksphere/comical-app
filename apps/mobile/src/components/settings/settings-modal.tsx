@@ -168,7 +168,19 @@ export function SettingsModal() {
           <View style={[styles.categories, { borderRightColor: theme.barHairline }]}>
             <ScrollView contentContainerStyle={styles.categoryList} showsVerticalScrollIndicator={false}>
               {CATEGORIES.map((c) => (
-                <CategoryRow key={c.id} id={c.id} label={c.label} Icon={c.Icon} active={c.id === current.id} />
+                <CategoryRow
+                  key={c.id}
+                  id={c.id}
+                  label={c.label}
+                  Icon={c.Icon}
+                  active={c.id === current.id}
+                  // A category is a top-level destination, the current one included: whatever was
+                  // pushed over the last one doesn't follow you to it.
+                  onPress={() => {
+                    setStack([]);
+                    setSettingsCategory(c.id);
+                  }}
+                />
               ))}
             </ScrollView>
           </View>
@@ -228,11 +240,13 @@ function CategoryRow({
   label,
   Icon,
   active,
+  onPress,
 }: {
   id: string;
   label: string;
   Icon: SettingsIcon;
   active: boolean;
+  onPress: () => void;
 }) {
   const theme = useTheme();
   const { hovered, handlers } = useHover();
@@ -240,7 +254,7 @@ function CategoryRow({
     <Pressable
       {...handlers}
       testID={`settings.modal.category.${id}`}
-      onPress={() => setSettingsCategory(id)}
+      onPress={onPress}
       accessibilityRole="tab"
       accessibilityState={{ selected: active }}
       style={[
