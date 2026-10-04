@@ -1,9 +1,18 @@
 import { Image } from 'expo-image';
 import { useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type View as ViewType } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type GestureResponderEvent,
+  type View as ViewType,
+} from 'react-native';
 
+import { CollectedItemMenu } from '@/components/collections/collected-item-menu';
 import { ChapterItemIcon, PageItemIcon, SeriesItemIcon } from '@/components/icons/collection-icons';
 import { CardCaption, COVER_RADIUS_DESKTOP } from '@/components/series-card';
+import { SeriesCardMenu } from '@/components/series-card-menu';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { ApiCollectionItem } from '@/data/api';
@@ -27,11 +36,16 @@ import { useIsZoomingSeries, useZoomOriginSource, useZoomSurfaceKey } from '@/li
  * one of its pages would cost a page-list fetch per chapter just to draw a tile. The placeholder is
  * also every type's fallback when a source has died; the caption underneath, built from the stored
  * snapshot, is what still says which item it is. `stale` adds the "may no longer be available" bar.
+ *
+ * Every tile has a menu. A series takes the series card's, the one its Library card opens; a
+ * chapter or a page takes `CollectedItemMenu`.
  */
 export function CollectedItemTile({
   item,
   uri,
   sub,
+  bridge,
+  direct,
   width,
   coverHeight,
   onPress,
@@ -43,6 +57,10 @@ export function CollectedItemTile({
   uri?: string;
   /** The caption's second line — whatever the series title alone doesn't say about this item. */
   sub?: string;
+  /** The bridge's name and whether it is a direct one — a series tile's menu needs both, as a
+   *  series card's does. */
+  bridge?: string;
+  direct?: boolean;
   width: number;
   coverHeight: number;
   onPress: () => void;
@@ -90,83 +108,112 @@ export function CollectedItemTile({
   // registers this tile as re-measurable for the collapse (see series-zoom).
   const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomKey, boxRef, 10, !isWeb && showImage);
 
-  return (
-    <Pressable
-      testID={`collected.tile.${item.id}`}
-      onPressIn={() => {
-        captureZoomOrigin();
-        onWarm?.();
-      }}
-      onPress={onPress}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      style={[styles.card, { width }]}
-      accessibilityRole="button"
-      accessibilityLabel={
-        item.type === 'series'
-          ? `Series, ${item.seriesTitle}`
-          : item.type === 'chapter'
-            ? `Chapter, ${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}`
-            : `${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}, page ${item.pageIndex + 1}`
-      }>
-      <View
-        ref={boxRef}
-        style={[
-          styles.tile,
-          desktop && styles.tileDesktop,
-          { height: coverHeight, backgroundColor: theme.backgroundElement },
-        ]}>
-        {showImage ? (
-          // While a zoom this tile is the source of is in the air, a COPY of this picture is what
-          // flies — the original (and the overlays drawn on it) blank so there aren't two. Layout is
-          // preserved; the tile's background stays, same as a series card's coverHidden.
-          <Image
-            source={{ uri: source }}
-            style={[StyleSheet.absoluteFill, flying && styles.hidden]}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            onError={() => setFailed(true)}
-          />
-        ) : (
-          <View style={styles.fallback}>
-            <TypeIcon color={theme.textSecondary} size={32} />
-          </View>
-        )}
+  // `lifted` is the native series menu holding a copy of this cover up as its preview: the same
+  // two-of-them problem as a zoom in flight, with the same answer.
+  const card = (onLongPress?: (e: GestureResponderEvent) => void, lifted = false) => {
+    const blank = flying || lifted;
+    return (
+      <Pressable
+        testID={`collected.tile.${item.id}`}
+        onPressIn={() => {
+          captureZoomOrigin();
+          onWarm?.();
+        }}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        style={[styles.card, { width }]}
+        accessibilityRole="button"
+        accessibilityLabel={
+          item.type === 'series'
+            ? `Series, ${item.seriesTitle}`
+            : item.type === 'chapter'
+              ? `Chapter, ${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}`
+              : `${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}, page ${item.pageIndex + 1}`
+        }>
+        <View
+          ref={boxRef}
+          style={[
+            styles.tile,
+            desktop && styles.tileDesktop,
+            { height: coverHeight, backgroundColor: theme.backgroundElement },
+          ]}>
+          {showImage ? (
+            // While a zoom this tile is the source of is in the air, a COPY of this picture is what
+            // flies — the original (and the overlays drawn on it) blank so there aren't two. Layout is
+            // preserved; the tile's background stays, same as a series card's coverHidden.
+            <Image
+              source={{ uri: source }}
+              style={[StyleSheet.absoluteFill, blank && styles.hidden]}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              onError={() => setFailed(true)}
+            />
+          ) : (
+            <View style={styles.fallback}>
+              <TypeIcon color={theme.textSecondary} size={32} />
+            </View>
+          )}
 
-        {/* The badge reads against the image, so it needs its own scrim rather than the theme.
-            The icon is the type; a page also carries its number, since "which page of the chapter"
-            matters there the way it can't for the other two. */}
-        <View style={[styles.badge, flying && styles.hidden]}>
-          <TypeIcon color="#fff" size={12} />
-          {item.type === 'page' && (
-            <ThemedText type="small" style={styles.badgeText}>
-              {item.pageIndex + 1}
-            </ThemedText>
+          {/* The badge reads against the image, so it needs its own scrim rather than the theme.
+              The icon is the type; a page also carries its number, since "which page of the chapter"
+              matters there the way it can't for the other two. */}
+          <View style={[styles.badge, blank && styles.hidden]}>
+            <TypeIcon color="#fff" size={12} />
+            {item.type === 'page' && (
+              <ThemedText type="small" style={styles.badgeText}>
+                {item.pageIndex + 1}
+              </ThemedText>
+            )}
+          </View>
+
+          {item.stale && (
+            <View style={[styles.staleBar, { backgroundColor: theme.danger }, blank && styles.hidden]}>
+              <ThemedText type="small" numberOfLines={1} style={styles.staleText}>
+                May no longer be available
+              </ThemedText>
+            </View>
+          )}
+
+          {/* The series card's hover ring, so a collection reads as the same grid the rest of the
+              library is. Web only: hover fires for a pointer on a tablet too, which has no ring anywhere. */}
+          {isWeb && hovered && (
+            <View
+              style={[
+                styles.ring,
+                desktop && styles.tileDesktop,
+                { borderColor: theme.text, pointerEvents: 'none' },
+              ]}
+            />
           )}
         </View>
+        <CardCaption title={item.seriesTitle} sub={sub} />
+      </Pressable>
+    );
+  };
 
-        {item.stale && (
-          <View style={[styles.staleBar, { backgroundColor: theme.danger }, flying && styles.hidden]}>
-            <ThemedText type="small" numberOfLines={1} style={styles.staleText}>
-              May no longer be available
-            </ThemedText>
-          </View>
-        )}
-
-        {/* The series card's hover ring, so a collection reads as the same grid the rest of the
-            library is. Web only: hover fires for a pointer on a tablet too, which has no ring anywhere. */}
-        {isWeb && hovered && (
-          <View
-            style={[
-              styles.ring,
-              desktop && styles.tileDesktop,
-              { borderColor: theme.text, pointerEvents: 'none' },
-            ]}
-          />
-        )}
-      </View>
-      <CardCaption title={item.seriesTitle} sub={sub} />
-    </Pressable>
+  if (item.type === 'series') {
+    return (
+      <SeriesCardMenu
+        enabled
+        bridgeId={item.bridgeId}
+        bridge={bridge}
+        entry={{ id: item.seriesId, title: item.seriesTitle, cover: item.thumbnailUrl ?? '' }}
+        direct={direct}
+        coverAspect={width / coverHeight}
+        // The cover, not the card: the preview is a cover, and lifting it from a rect that takes
+        // in the caption starts it too tall.
+        measureRef={boxRef}
+        zoomSource={zoomKey}>
+        {({ onLongPress, hidden }) => card(onLongPress, hidden)}
+      </SeriesCardMenu>
+    );
+  }
+  return (
+    <CollectedItemMenu item={item} onOpen={onPress}>
+      {({ onLongPress }) => card(onLongPress)}
+    </CollectedItemMenu>
   );
 }
 

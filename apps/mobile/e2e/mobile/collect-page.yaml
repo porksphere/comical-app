@@ -29,6 +29,8 @@
 #     that collection's CONTENTS, so there is no separate "saved pages" row any more.
 #   - collected.tile.<id>              a saved-page tile (collected-page-tile.tsx). The id is the
 #     item's derived coordinate id, so the regex form is what's selectable.
+#   - collected.tile-menu.open / .series / .collect   a held chapter or page tile's menu
+#     (collected-item-menu.tsx). A series tile opens the series card's menu instead.
 #   - collected.sort / .sort.* / .dir.* / .group.*   the saved-pages ordering menu
 #     (collected-sort-button.tsx). Sort and direction are SEPARATE server params, and grouping is
 #     client-side over the result — hence three sections rather than one fused list. The menu stays
@@ -155,6 +157,22 @@ appId: com.porksphere.comical
     id: "collected.group.none"
 - assertVisible:
     id: "collected\\.tile\\..*"
+
+# Holding a saved PAGE opens its menu. Its collect row hands the item to the same picker the save
+# button used, so the picker's rows are what proves the row is wired to this item's kind.
+- longPressOn:
+    id: "collected\\.tile\\.page:.*"
+    index: 0
+- assertVisible:
+    id: "collected.tile-menu.open"
+- assertVisible:
+    id: "collected.tile-menu.series"
+- tapOn:
+    id: "collected.tile-menu.collect"
+- assertVisible:
+    id: "collection-picker\\.collection\\..*"
+- tapOn:
+    id: "collection-picker.done"
 
 # Tapping a saved PAGE opens THE reader in SEQUENCE mode — the same series screen, but its pager
 # runs over this view's saved pages (the ALBUM: same collection, sort and direction as the grid)

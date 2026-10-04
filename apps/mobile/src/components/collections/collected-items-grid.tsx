@@ -68,7 +68,7 @@ export function CollectedItemsGrid({
   onWarm?: (item: ApiCollectionItem) => void;
 }) {
   const { numColumns, sidePad, cardWidth, columnGap } = useGridLayout();
-  const { nameOf } = useBridgeMap();
+  const { nameOf, directOf } = useBridgeMap();
   // One request per CHAPTER, not per tile — see the hook. Read during render as a lookup table;
   // never a memo dependency (it is a fresh Map each render by design).
   const uris = useCollectedPageUris(items);
@@ -107,6 +107,8 @@ export function CollectedItemsGrid({
               // A series says where it comes from, as its Library card does; a chapter or a page
               // says which chapter, the page's number being on its badge already.
               sub={item.type === 'series' ? nameOf(item.bridgeId) : item.chapterName}
+              bridge={nameOf(item.bridgeId)}
+              direct={directOf(item.bridgeId)}
               width={cardWidth}
               coverHeight={tileHeight}
               onPress={() => onOpen(item)}
