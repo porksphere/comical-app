@@ -761,6 +761,46 @@ export function SeriesCard({
 }
 
 /**
+ * A card's title and sub lines on their own, for a grid tile that is not a `SeriesCard` but sits in
+ * the same grid as one. The tile supplies `styles.card`'s gap above it; `estimatedCardHeight` with
+ * `hasSub` is then its height too.
+ */
+export function CardCaption({ title, sub }: { title: string; sub?: string }) {
+  const compact = useIsCompact();
+  return (
+    <>
+      <ThemedText
+        type="small"
+        numberOfLines={MAX_TITLE_LINES}
+        style={[
+          styles.title,
+          {
+            fontSize: compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular,
+            lineHeight: compact ? TITLE_LINE_HEIGHT.compact : TITLE_LINE_HEIGHT.regular,
+          },
+        ]}>
+        {title}
+      </ThemedText>
+      {sub ? (
+        <ThemedText
+          type="small"
+          themeColor="textSecondary"
+          numberOfLines={1}
+          style={[
+            styles.sub,
+            {
+              fontSize: compact ? SUB_FONT_SIZE.compact : SUB_FONT_SIZE.regular,
+              lineHeight: compact ? SUB_LINE_HEIGHT.compact : SUB_LINE_HEIGHT.regular,
+            },
+          ]}>
+          {sub}
+        </ThemedText>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * The full-title popover. Used in-card by the grid and lifted out of the
  * scroller by the rail (which passes a positioning `style`). Its content box
  * matches the clamped title width so the first lines wrap identically.

@@ -5,12 +5,13 @@ import type { SharedValue } from 'react-native-reanimated';
 
 import { CollectedItemTile } from '@/components/collections/collected-item-tile';
 import { GroupedGrid } from '@/components/grouped-grid';
-import { Spacing } from '@/constants/theme';
+import { estimatedCardHeight } from '@/components/series-card';
 import type { ApiCollectionItem } from '@/data/api';
 import { buildCollectedRows, type CollectedRow } from '@/data/collected-rows';
 import type { CollectedGrouping } from '@/data/collected-view';
+import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCollectedPageUris } from '@/hooks/use-collected-page-uris';
-import { useGridLayout } from '@/hooks/use-grid-layout';
+import { GRID_ROW_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 
 /** A page tile is a fixed 2:3 slot, like the series-page thumbnail grid. Fixed rather than
  *  aspect-driven so LegendList never re-measures mid-scroll — the same discipline `series-grid.tsx`
@@ -24,6 +25,9 @@ const TILE_ASPECT = 3 / 2;
  * All three item types share the one 2:3 tile (`CollectedItemTile`); the tile's type-icon badge is
  * what distinguishes them, so a mixed collection reads as one surface rather than three interleaved
  * layouts.
+ *
+ * A row is as tall as a row of the Library's series cards, caption included, whatever its titles
+ * run to: the list is told one height for every row.
  */
 export function CollectedItemsGrid({
   items,
@@ -64,6 +68,7 @@ export function CollectedItemsGrid({
   onWarm?: (item: ApiCollectionItem) => void;
 }) {
   const { numColumns, sidePad, cardWidth, columnGap } = useGridLayout();
+  const { nameOf } = useBridgeMap();
   // One request per CHAPTER, not per tile — see the hook. Read during render as a lookup table;
   // never a memo dependency (it is a fresh Map each render by design).
   const uris = useCollectedPageUris(items);
@@ -81,7 +86,7 @@ export function CollectedItemsGrid({
   return (
     <GroupedGrid
       rows={rows}
-      rowHeight={tileHeight + Spacing.three}
+      rowHeight={estimatedCardHeight(cardWidth, true) + GRID_ROW_GAP}
       scopeKey={scopeKey}
       listRef={listRef}
       header={header}
@@ -99,8 +104,11 @@ export function CollectedItemsGrid({
               key={item.id}
               item={item}
               uri={uris.get(item.id)}
+              // A series says where it comes from, as its Library card does; a chapter or a page
+              // says which chapter, the page's number being on its badge already.
+              sub={item.type === 'series' ? nameOf(item.bridgeId) : item.chapterName}
               width={cardWidth}
-              height={tileHeight}
+              coverHeight={tileHeight}
               onPress={() => onOpen(item)}
               onWarm={onWarm && (() => onWarm(item))}
             />
@@ -119,6 +127,6 @@ export function CollectedItemsGrid({
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    paddingBottom: Spacing.three,
+    paddingBottom: GRID_ROW_GAP,
   },
 });
