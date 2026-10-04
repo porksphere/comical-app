@@ -148,8 +148,8 @@ export function ContentFeed({
   /** Written by the sticky: 1 while a heading is pinned. The screen drops its top bar's own rule
    *  off this, on the same frame — see StickySectionHeader's `pinnedValue`. */
   stickyPinned?: SharedValue<number>;
-  /** Tint the page behind each section, one section's colour running into the next — see
-   *  `FeedBackdrop`. Needs `sharedValues`, which is what moves it. */
+  /** Tint the page behind each section — see `FeedBackdrop`. Needs `sharedValues`, which is what
+   *  moves it. */
   ambient?: boolean;
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;

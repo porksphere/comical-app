@@ -12,20 +12,26 @@ export type FeedBand = { top: number; bodyTop: number; bottom: number };
 // a feed of two or three sections is the common one, and adjacent hues there read as one colour.
 const PALETTE = ['#4F8DFD', '#E0569B', '#F2A03D', '#2FC4B2', '#9A6CF6', '#F2664F', '#57C96B', '#3FB2E8'];
 
-const WASH = { dark: 0.16, light: 0.1 };
-const GLOW = { dark: 0.34, light: 0.2 };
+const WASH = { dark: 0.12, light: 0.08 };
+const GLOW = { dark: 0.14, light: 0.09 };
 
-const GLOW_HEIGHT = 1.7;
+// A section's colour is whole behind its covers and gone by its own edges, so two sections' colours
+// never mix: it comes in across the heading and leaves over this much at the foot.
+const BAND_TAIL = 72;
+// Of the feed's width, each side, over which the colour gives way to the page. It never reaches
+// the screen's edge, where it would read as a shape the screen had cut.
+const SIDE_FADE = 0.2;
+
+// The glow is the wash's highlight and stays inside its own band, body-sized or barely more.
+const GLOW_HEIGHT = 1.15;
 const GLOW_WIDTH = 0.7;
-// Where each glow's centre sits across the feed, kept near the middle: a glow run off the side of
-// the screen is cut by it, and a cut glow reads as a clipped shape rather than as light.
 const GLOW_X = [0.42, 0.58, 0.47, 0.6, 0.4, 0.54];
 // Sideways travel per point of scroll, alternate glows in opposite directions. Each is on its own
 // `GLOW_X` as its section crosses the middle of the screen. Sideways only: a glow that also
 // travelled down the page at its own rate was off its rail everywhere but that one moment.
 const GLOW_SWAY = 0.07;
 
-const CHROME_FADE = 72;
+const CHROME_FADE = 32;
 
 function rgba(hex: string, alpha: number): string {
   const n = parseInt(hex.slice(1), 16);
@@ -44,9 +50,9 @@ function glowStyle(hex: string, alpha: number): ViewStyle {
 }
 
 /**
- * The feed's ambient colour: each section tints the page behind it, and one section's colour runs
- * into the next. Drawn BEHIND the list (which paints no background of its own) and moved by the
- * list's own scroll offset, so nothing here is in the list's rows or its recycling.
+ * The feed's ambient colour: each section tints the page behind its own covers. Drawn BEHIND the
+ * list (which paints no background of its own) and moved by the list's own scroll offset, so
+ * nothing here is in the list's rows or its recycling.
  */
 export function FeedBackdrop({
   bands,
@@ -75,33 +81,23 @@ export function FeedBackdrop({
   if (bands.length === 0) return null;
 
   const color = (i: number) => PALETTE[i % PALETTE.length]!;
-  // The BODY's middle, not the band's: the colour belongs behind the covers, and a band's own
-  // middle is pulled up toward its heading. A band cut off at its heading has no body yet.
-  const mid = (b: FeedBand) => Math.round((Math.min(b.bodyTop, b.bottom) + b.bottom) / 2);
-  const first = bands[0]!;
-  const last = bands[bands.length - 1]!;
-
-  // Knots at each body's middle, so a rail sits on its own colour and the blend happens across the
-  // seam between two. The ends ramp from and to nothing.
-  const knots = [
-    { y: Math.round(first.top), color: rgba(color(0), 0) },
-    ...bands.map((b, i) => ({ y: mid(b), color: rgba(color(i), WASH[scheme]) })),
-    { y: Math.round(last.bottom), color: rgba(color(bands.length - 1), 0) },
-  ];
+  const clear = `${theme.background}00`;
 
   const glows = (parity: 0 | 1) =>
     bands.map((b, i) => {
-      if (i % 2 !== parity) return null;
-      const height = Math.max(0, b.bottom - b.bodyTop) * GLOW_HEIGHT;
+      const body = b.bottom - b.bodyTop;
+      if (i % 2 !== parity || body <= 0) return null;
+      const mid = (b.bodyTop + b.bottom) / 2;
+      const height = body * GLOW_HEIGHT;
       // The layer's sway at the scroll that puts this band mid-screen, taken back out.
-      const home = (parity === 0 ? -1 : 1) * GLOW_SWAY * (mid(b) - viewport / 2);
+      const home = (parity === 0 ? -1 : 1) * GLOW_SWAY * (mid - viewport / 2);
       return (
         <View
           key={i}
           style={[
             styles.glow,
             {
-              top: mid(b) - height / 2,
+              top: mid - height / 2,
               height,
               left: `${(GLOW_X[i % GLOW_X.length]! - GLOW_WIDTH / 2) * 100}%`,
               transform: [{ translateX: home }],
@@ -115,24 +111,46 @@ export function FeedBackdrop({
   return (
     <Animated.View pointerEvents="none" style={[styles.clip, style]}>
       <Animated.View style={[styles.sheet, scroll]}>
-        {knots.slice(1).map((to, i) => {
-          const from = knots[i]!;
+        {bands.map((b, i) => {
+          const height = b.bottom - b.top;
+          if (height <= 0) return null;
+          const head = Math.min(0.5, Math.max(0, b.bodyTop - b.top) / height);
+          const tail = Math.min(0.5, BAND_TAIL / height);
+          const tint = rgba(color(i), WASH[scheme]);
+          const none = rgba(color(i), 0);
           return (
             <LinearGradient
               key={i}
-              colors={[from.color, to.color]}
-              style={[styles.span, { top: from.y, height: to.y - from.y }]}
+              colors={[none, tint, tint, none]}
+              locations={[0, head, 1 - tail, 1]}
+              style={[styles.span, { top: b.top, height }]}
             />
           );
         })}
         <Animated.View style={[styles.sheet, swayRight]}>{glows(0)}</Animated.View>
         <Animated.View style={[styles.sheet, swayLeft]}>{glows(1)}</Animated.View>
       </Animated.View>
+      {/* The page's own colour laid back over the sides: the same as fading the colour out, and it
+          needs no mask, which native doesn't have. */}
+      <LinearGradient
+        colors={[theme.background, `${theme.background}66`, clear]}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={[styles.side, styles.left]}
+      />
+      <LinearGradient
+        colors={[clear, `${theme.background}66`, theme.background]}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={[styles.side, styles.right]}
+      />
       {/* Solid down to the chrome's edge, not just from it: at rest no heading is pinned yet, and
           the strip its band will cover would otherwise show colour that the fade then cuts off. */}
       <Animated.View style={[styles.fade, { height: chromeBottom + CHROME_FADE }, fade]}>
         <LinearGradient
-          colors={[theme.background, theme.background, `${theme.background}00`]}
+          colors={[theme.background, theme.background, clear]}
           locations={[0, chromeBottom / (chromeBottom + CHROME_FADE), 1]}
           style={styles.fill}
         />
@@ -160,6 +178,18 @@ const styles = StyleSheet.create({
   glow: {
     position: 'absolute',
     width: `${GLOW_WIDTH * 100}%`,
+  },
+  side: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: `${SIDE_FADE * 100}%`,
+  },
+  left: {
+    left: 0,
+  },
+  right: {
+    right: 0,
   },
   fade: {
     position: 'absolute',
