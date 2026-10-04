@@ -4,6 +4,7 @@ import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } f
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
+import { FeedBackdrop, type FeedBand } from '@/components/feed-backdrop';
 import { HomeGridBlock } from '@/components/home-grid-block';
 import { SkeletonCard } from '@/components/grid-skeleton';
 import {
@@ -113,6 +114,7 @@ export function ContentFeed({
   stickyHeaderTop,
   stickyBarOffset,
   stickyPinned,
+  ambient,
   sharedValues,
   onScroll,
   onEndReached,
@@ -146,6 +148,9 @@ export function ContentFeed({
   /** Written by the sticky: 1 while a heading is pinned. The screen drops its top bar's own rule
    *  off this, on the same frame — see StickySectionHeader's `pinnedValue`. */
   stickyPinned?: SharedValue<number>;
+  /** Tint the page behind each section, one section's colour running into the next — see
+   *  `FeedBackdrop`. Needs `sharedValues`, which is what moves it. */
+  ambient?: boolean;
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEndReached?: () => void;
@@ -232,19 +237,23 @@ export function ContentFeed({
     setMeasuredHeights((m) => (Math.abs((m[key] ?? -1) - h) < 0.5 ? m : { ...m, [key]: h }));
   }, []);
   type FeedSection = StickySection & { seeAll?: SeeAllTarget };
-  const sections = useMemo<FeedSection[]>(() => {
-    if (stickyHeaderTop === undefined) return [];
+  const { sections, bands } = useMemo(() => {
+    const out: FeedSection[] = [];
+    const bands: FeedBand[] = [];
+    if (stickyHeaderTop === undefined && !ambient) return { sections: out, bands };
     // A list header (the error-retry block) sits above the rows and shifts every offset by its
     // unmeasured height — no sticky while one is up; a pinned heading matters least mid-error.
-    if (header) return [];
-    const out: FeedSection[] = [];
+    if (header) return { sections: out, bands };
     let y = paddingTop;
     for (const row of rows) {
+      // A band is a heading and everything under it, up to the next heading. A loading rail is
+      // self-headed, so it opens one too — the colours are there before the covers are.
+      if (row.type === 'sectionHead' || row.type === 'railSkeleton') bands.push({ top: y, bottom: y });
       // The HEAD's top (past the row's own top gap): the pinned copy is that head, so pinning it
       // there superimposes the two exactly at the hand-off — the band's padding is the band's, not
       // the row's. The row key rides along so that heading can hide itself while the pinned copy is
       // up, and the See-all target so the pinned chevron stays live.
-      if (row.type === 'sectionHead') {
+      if (row.type === 'sectionHead' && stickyHeaderTop !== undefined) {
         out.push({
           key: row.key,
           label: row.title,
@@ -255,9 +264,11 @@ export function ContentFeed({
       const h = getFixedItemSize(row) ?? measuredHeights[row.key];
       if (h === undefined) break;
       y += h;
+      const band = bands[bands.length - 1];
+      if (band) band.bottom = y;
     }
-    return out;
-  }, [rows, header, stickyHeaderTop, paddingTop, getFixedItemSize, measuredHeights]);
+    return { sections: out, bands };
+  }, [rows, header, stickyHeaderTop, ambient, paddingTop, getFixedItemSize, measuredHeights]);
 
   // The heading the pinned copy is currently standing in for — that row keeps its space but drops
   // its content, so one heading is never drawn twice.
@@ -291,6 +302,19 @@ export function ContentFeed({
 
   return (
     <View style={styles.fill}>
+    {ambient && sharedValues && (
+      <FeedBackdrop
+        bands={bands}
+        scrollOffset={sharedValues.scrollOffset}
+        // Below the pinned heading's band when there is one: it is as opaque as the bar it rides.
+        chromeBottom={
+          stickyHeaderTop === undefined ? paddingTop : stickyHeaderTop + sectionHeadHeight(compact) + HEADING_GAP * 2
+        }
+        barOffset={stickyBarOffset}
+        // The list's own shift and dim, so the colour is pulled and faded with the rows over it.
+        style={wrapperStyle}
+      />
+    )}
     <RecyclerList
       data={rows}
       scopeKey={scopeKey}
@@ -357,7 +381,12 @@ export function ContentFeed({
           case 'railError':
             // Shared error element (self-pads horizontally), shown in a failed rail's slot below its
             // sectionHead — so one bridge erroring in the aggregate feed offers a retry, not a gap.
-            return <RetryBlock message={item.message} onRetry={item.onRetry} />;
+            // Measured like a grid block: the offset walk stops at a row of unknown height.
+            return (
+              <View onLayout={(e) => onRowMeasured(item.key, e.nativeEvent.layout.height)}>
+                <RetryBlock message={item.message} onRetry={item.onRetry} />
+              </View>
+            );
           case 'gridBlock':
             return (
               // The one variable-height row — its measured height feeds the sticky heading's
