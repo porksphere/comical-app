@@ -622,7 +622,15 @@ export function SeriesCard({
           // ring (negative insets) can extend past the clip without being cut off.
           <View style={[styles.coverBox, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]} onLayout={shrink.onCoverLayout}>
             <View style={[styles.coverClip, desktop && styles.coverClipDesktop]}>{coverContents}</View>
-            {active && <View style={[styles.ring, desktop && styles.ringDesktop, { pointerEvents: 'none' }]} />}
+            {active && (
+              <View
+                style={[
+                  styles.ring,
+                  desktop && styles.ringDesktop,
+                  { borderColor: theme.text, pointerEvents: 'none' },
+                ]}
+              />
+            )}
           </View>
         ) : (
           // Native has no ring, so the box IS the clip — one fewer host view means one fewer Fabric
@@ -870,7 +878,6 @@ const styles = StyleSheet.create({
     ...ContinuousCorner,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#60a5fa',
   },
   ringDesktop: {
     borderRadius: COVER_RADIUS_DESKTOP + 2,
