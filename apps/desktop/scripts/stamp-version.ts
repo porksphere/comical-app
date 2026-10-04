@@ -12,8 +12,8 @@
  * facts, one character different, and every downstream consumer (installer filename, Windows file
  * version, the release notes) then agrees on one string. Ordering does invert versus the mobile
  * lanes — semver ranks `0.2.0-40` *below* `0.2.0` — which is harmless only because no `X.Y.Z-N` build
- * ever follows the update feed: `src/updater.ts` is gated to `desktop-release`, whose builds are
- * always a plain tag.
+ * ever follows the release feed: `src/updater.ts` keeps each build on its own channel's, and among
+ * themselves the nightlies only go up (`0.2.0-40` < `0.2.0-41` < `0.2.1-1`).
  *
  *   bun run scripts/stamp-version.ts            # compute from git history (needs full history)
  *   VERSION_INPUT=1.2.3 bun run scripts/…       # or pass one in (what CI does)

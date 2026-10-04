@@ -110,6 +110,28 @@ export function readChannelVersion(
   };
 }
 
+/** What the Update button does on this build. `fetch` has a self-updating desktop shell download
+ *  the update in place, `downloading` is that under way and `restart` is it done; `open` sends the
+ *  user to the download instead, and `reload` is the web's whole update. */
+export type UpdateStep = 'restart' | 'downloading' | 'fetch' | 'open' | 'reload';
+
+/** `shellPhase` is the desktop shell's own account of its update — `idle` wherever there is no
+ *  shell. `ready` wins over the page's check: the shell holds an installer whatever the page has
+ *  or hasn't managed to read. */
+export function updateStep(o: {
+  available: boolean;
+  hasDownloadUrl: boolean;
+  selfUpdates: boolean;
+  shellPhase: 'idle' | 'downloading' | 'ready' | 'manual';
+}): UpdateStep | null {
+  if (o.shellPhase === 'ready') return 'restart';
+  if (!o.available) return null;
+  if (o.shellPhase === 'downloading') return 'downloading';
+  // The link is what a self-updating build is left with once its own download has failed.
+  if (o.selfUpdates && o.shellPhase === 'idle') return 'fetch';
+  return o.hasDownloadUrl ? 'open' : 'reload';
+}
+
 /** Split a note body into display lines, dropping the publisher's own bullet glyph — the two lanes
  *  spell it differently ("- " from CHANGELOG.md, "• " from the git log format) and the screen draws
  *  its own. Nothing else about the text is touched: it is the published release note, and a screen

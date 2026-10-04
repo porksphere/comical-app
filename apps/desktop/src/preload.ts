@@ -5,6 +5,8 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { PairedDevice } from "@comical/sync";
 
+type UpdateState = { phase: "idle" | "downloading" | "ready" | "manual"; version: string | null };
+
 const settings = ipcRenderer.sendSync("shell-settings") as {
   runInTray: boolean;
   openAtLogin: boolean;
@@ -22,17 +24,19 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
   loginItems: settings.loginItems,
   /** This build installs its own updates. False in dev, on a PR build and on a .deb. */
   updates: settings.updates,
-  /** Called with the version once an update has downloaded — at once, if one already has. Returns
-   *  the unsubscribe. */
-  onUpdateReady: (onReady: (version: string) => void) => {
-    const listener = (_e: IpcRendererEvent, version: string) => onReady(version);
-    ipcRenderer.on("update-ready", listener);
-    const ready = ipcRenderer.sendSync("update-ready?") as string | null;
-    if (ready) onReady(ready);
+  /** Called with where the shell's own update stands, at once and on every change: `downloading`,
+   *  `ready` (with the version a restart installs), or `manual` when it couldn't get one the page
+   *  asked for. Returns the unsubscribe. */
+  onUpdateState: (onState: (state: UpdateState) => void) => {
+    const listener = (_e: IpcRendererEvent, state: UpdateState) => onState(state);
+    ipcRenderer.on("update-state", listener);
+    onState(ipcRenderer.sendSync("update-state?") as UpdateState);
     return () => {
-      ipcRenderer.off("update-ready", listener);
+      ipcRenderer.off("update-state", listener);
     };
   },
+  /** The page has seen a newer build: fetch it now rather than at the next timed look. */
+  downloadUpdate: () => ipcRenderer.send("update-download"),
   /** A JSON asset of one of this app's Releases, fetched by the shell — the page's own fetch of one
    *  is refused for want of CORS headers. Rejects when it can't be had. */
   releaseJson: (url: string) => ipcRenderer.invoke("release-json", url) as Promise<unknown>,

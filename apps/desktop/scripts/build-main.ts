@@ -29,7 +29,7 @@ for (const name of ["main", "preload"]) {
     target: "node",
     format: "cjs",
     external: ["electron"],
-    // CI sets it from the workflow's `channel` input; only `desktop-release` self-updates.
+    // CI sets it from the workflow's `channel` input; it names the Release the build updates from.
     define: { "process.env.COMICAL_BUILD_CHANNEL": JSON.stringify(process.env.COMICAL_BUILD_CHANNEL ?? "") },
     outdir: OUT,
     naming: `${name}.cjs`,

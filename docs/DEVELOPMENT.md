@@ -311,8 +311,8 @@ The nightly `main` build goes to a rolling Release of its own, **`desktop-nightl
 
 Same three installers, same fixed names, and a `version.json` whose notes are the commits picked up
 since the previous nightly. A night where `main` hasn't moved publishes nothing; for a build right
-now, dispatch **Build desktop** on `main`. A nightly gets the same in-app notice, but never updates
-itself — the feeds aren't published there, and its updater is off.
+now, dispatch **Build desktop** on `main`. A nightly gets the same in-app notice and updates itself
+the same way, from the feeds published beside its own installers — never from `desktop-release`.
 
 ### Dev-client builds — iterate on a device from any OS (incl. Windows)
 

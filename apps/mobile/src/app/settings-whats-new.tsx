@@ -15,8 +15,7 @@
  * The toast deliberately doesn't carry any of this — it says an update exists and points here. A
  * changelog is something you read when you choose to, not something to put over the screen.
  */
-import { openBrowserAsync } from 'expo-web-browser';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
@@ -24,11 +23,10 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { noteLines, type ReleaseNote } from '@/data/release-notes';
-import { useAppUpdateCheck } from '@/data/use-app-update';
+import { type AppUpdateAction, useAppUpdateAction, useAppUpdateCheck } from '@/data/use-app-update';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
-import { installDesktopUpdate, useDesktopUpdateReady } from '@/lib/desktop-shell';
 import { APP_VERSION } from '@/lib/build-info';
 
 function ReleaseNoteCard({ note }: { note: ReleaseNote }) {
@@ -58,19 +56,20 @@ function ReleaseNoteCard({ note }: { note: ReleaseNote }) {
   );
 }
 
+const UPDATE_LABEL: Record<AppUpdateAction['step'], string> = {
+  restart: 'Restart to update',
+  downloading: 'Downloading update…',
+  fetch: 'Download update',
+  open: 'Download update',
+  // web-pages has no artifact to download — the "update" is whatever the server is already serving.
+  reload: 'Reload to update',
+};
+
 export default function WhatsNewScreen() {
   const update = useAppUpdateCheck();
   const contentPadding = useSettingsScrollPadding();
   const pending = update.pending ?? [];
-  const updateReady = useDesktopUpdateReady();
-
-  const handleUpdatePress = () => {
-    if (updateReady) installDesktopUpdate();
-    else if (update.downloadUrl) void openBrowserAsync(update.downloadUrl);
-    // web-pages has no artifact to download — the "update" is whatever the server is already
-    // serving, so the action is to reload onto it (mirrors the About row).
-    else if (Platform.OS === 'web') window.location.reload();
-  };
+  const updateAction = useAppUpdateAction();
 
   return (
     <ThemedView style={styles.container}>
@@ -81,11 +80,13 @@ export default function WhatsNewScreen() {
             {pending.map((note) => (
               <ReleaseNoteCard key={note.version} note={note} />
             ))}
-            <SettingsRow
-              testID="whatsNew.update"
-              label={updateReady ? 'Restart to update' : update.downloadUrl ? 'Download update' : 'Reload to update'}
-              onPress={handleUpdatePress}
-            />
+            {updateAction && (
+              <SettingsRow
+                testID="whatsNew.update"
+                label={UPDATE_LABEL[updateAction.step]}
+                onPress={updateAction.run}
+              />
+            )}
           </SettingsSection>
         )}
 

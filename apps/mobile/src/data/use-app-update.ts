@@ -13,9 +13,10 @@
  *  - android-release / desktop-release / desktop-nightly: compare `version.json`'s `commit`
  *    against BUILD_COMMIT, on the channel's Release. Commit equality, not version ordering: ANY
  *    mismatch means "there's a newer build", since the URL is always rebuilt from the channel's
- *    newest build. Desktop's Update button opens the Release page rather than one installer, since
- *    the user picks theirs by OS — unless the shell downloaded the update itself, when it restarts
- *    into it (`lib/desktop-shell.ts`).
+ *    newest build. A desktop build that updates itself (the Windows installer, the AppImage) is
+ *    told to fetch the update the moment this check finds one, and its button restarts into it;
+ *    the rest open the Release page rather than one installer, since the user picks theirs by OS
+ *    (`useAppUpdateAction`, `lib/desktop-shell.ts`).
  *  - web-pages: same commit-equality check, against a `version.json` written into `dist/` by
  *    deploy-web.yml, fetched with `cache: 'no-store'` so a stale CDN/browser cache can't mask it.
  *
@@ -29,7 +30,8 @@
  *    app-wide.
  */
 import { useQuery } from '@tanstack/react-query';
-import { AppState } from 'react-native';
+import { openBrowserAsync } from 'expo-web-browser';
+import { AppState, Platform } from 'react-native';
 
 import { showToast } from '@/components/toast';
 import { queryKeys } from '@/data/queries';
@@ -39,11 +41,19 @@ import {
   type ChannelVersionJson,
   type IosSourceJson,
   type ReleaseNote,
+  type UpdateStep,
   readChannelVersion,
   readIosSource,
+  updateStep,
 } from '@/data/release-notes';
 import { APP_VERSION, BUILD_CHANNEL, BUILD_COMMIT, WEB_BASE_URL } from '@/lib/build-info';
-import { desktopShell } from '@/lib/desktop-shell';
+import {
+  desktopSelfUpdates,
+  desktopShell,
+  downloadDesktopUpdate,
+  installDesktopUpdate,
+  useDesktopUpdate,
+} from '@/lib/desktop-shell';
 
 export { compareVersions, type ReleaseNote } from '@/data/release-notes';
 
@@ -157,7 +167,9 @@ async function fetchAppUpdateCheck(signal?: AbortSignal): Promise<AppUpdateCheck
   const androidTag = ANDROID_CHANNEL_TAG[BUILD_CHANNEL];
   if (androidTag) return checkChannelRelease(androidTag, androidApkUrl(androidTag), signal);
   if (DESKTOP_CHANNELS.includes(BUILD_CHANNEL)) {
-    return checkChannelRelease(BUILD_CHANNEL, releasePageUrl(BUILD_CHANNEL), signal);
+    const check = await checkChannelRelease(BUILD_CHANNEL, releasePageUrl(BUILD_CHANNEL), signal);
+    if (check.status === 'update-available') downloadDesktopUpdate();
+    return check;
   }
   if (BUILD_CHANNEL === 'web-pages') return checkWebPages(signal);
   return { status: 'unsupported' };
@@ -182,6 +194,36 @@ export function useAppUpdateCheck(): AppUpdateCheck {
   if (!supported) return { status: 'unsupported' };
   if (data) return data;
   return { status: isError ? 'error' : 'checking' };
+}
+
+/** The Update button, for the two screens that have one: which step this build is at, the version
+ *  it concerns, and what a press does — nothing while a download is under way. Null with no update. */
+export type AppUpdateAction = { step: UpdateStep; version?: string; run?: () => void };
+
+export function useAppUpdateAction(): AppUpdateAction | null {
+  const check = useAppUpdateCheck();
+  const shell = useDesktopUpdate();
+  const { downloadUrl, latestVersionLabel: version } = check;
+  const step = updateStep({
+    available: check.status === 'update-available',
+    hasDownloadUrl: !!downloadUrl,
+    selfUpdates: desktopSelfUpdates(),
+    shellPhase: shell.phase,
+  });
+  switch (step) {
+    case null:
+      return null;
+    case 'restart':
+      return { step, version: shell.version ?? version, run: installDesktopUpdate };
+    case 'downloading':
+      return { step, version };
+    case 'fetch':
+      return { step, version, run: downloadDesktopUpdate };
+    case 'open':
+      return { step, version, run: () => void (downloadUrl && openBrowserAsync(downloadUrl)) };
+    case 'reload':
+      return { step, version, run: () => void (Platform.OS === 'web' && window.location.reload()) };
+  }
 }
 
 // ─── App-wide launch + foreground trigger (mirrors activity/auto-check.ts) ───────────────────────

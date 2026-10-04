@@ -7,6 +7,7 @@ import {
   noteLines,
   readChannelVersion,
   readIosSource,
+  updateStep,
 } from './release-notes';
 
 /** An ios-release source: every tag, newest first, each with its CHANGELOG section. */
@@ -142,6 +143,35 @@ describe('readChannelVersion', () => {
     const read = readChannelVersion(json({ notes: '' }), 'def5678');
     expect(read.newer).toBe(true);
     expect(read.pending).toEqual([]);
+  });
+});
+
+describe('updateStep', () => {
+  const phone = { hasDownloadUrl: true, selfUpdates: false, shellPhase: 'idle' } as const;
+  const desktop = { hasDownloadUrl: true, selfUpdates: true } as const;
+
+  test('nothing to do without an update', () => {
+    expect(updateStep({ ...phone, available: false })).toBeNull();
+    expect(updateStep({ ...desktop, available: false, shellPhase: 'idle' })).toBeNull();
+  });
+
+  test('a build that cannot update itself gets the link, and the web a reload', () => {
+    expect(updateStep({ ...phone, available: true })).toBe('open');
+    expect(updateStep({ ...phone, available: true, hasDownloadUrl: false })).toBe('reload');
+  });
+
+  test('a self-updating build fetches in place and is never sent to the download page meanwhile', () => {
+    expect(updateStep({ ...desktop, available: true, shellPhase: 'idle' })).toBe('fetch');
+    expect(updateStep({ ...desktop, available: true, shellPhase: 'downloading' })).toBe('downloading');
+    expect(updateStep({ ...desktop, available: true, shellPhase: 'ready' })).toBe('restart');
+  });
+
+  test('a downloaded update is offered whatever the page’s own check says', () => {
+    expect(updateStep({ ...desktop, available: false, shellPhase: 'ready' })).toBe('restart');
+  });
+
+  test('a download the shell could not make falls back to the link', () => {
+    expect(updateStep({ ...desktop, available: true, shellPhase: 'manual' })).toBe('open');
   });
 });
 

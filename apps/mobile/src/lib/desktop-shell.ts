@@ -9,6 +9,12 @@ import { Platform } from 'react-native';
 
 export type ShellCommand = { type: 'open'; route: string } | { type: 'navigate'; dir: 'back' | 'forward' };
 
+/** Where the shell's own update stands. `ready` carries the version a restart installs; `manual`
+ *  means it couldn't get one the page knows of, which leaves the download page. */
+export type DesktopUpdate =
+  | { phase: 'idle' | 'downloading' | 'manual'; version: null }
+  | { phase: 'ready'; version: string };
+
 /** What one phone scans to pair with this computer: its address ending in a code that works once, until `expiresAt`. */
 export type PairingOffer = { address: string; expiresAt: number };
 
@@ -19,7 +25,8 @@ type DesktopShell = {
   loginItems: boolean;
   /** Absent before the shell could install its own updates. */
   updates?: boolean;
-  onUpdateReady?(onReady: (version: string) => void): () => void;
+  onUpdateState?(onState: (state: DesktopUpdate) => void): () => void;
+  downloadUpdate?(): void;
   installUpdate?(): void;
   /** Absent before the shell fetched Release assets for the page. */
   releaseJson?(url: string): Promise<unknown>;
@@ -52,26 +59,31 @@ export function desktopShell(): DesktopShell | undefined {
 const shell$ = observable({
   runInTray: desktopShell()?.runInTray ?? false,
   openAtLogin: desktopShell()?.openAtLogin ?? false,
-  updateReady: null as string | null,
+  update: { phase: 'idle', version: null } as DesktopUpdate,
   networkSync: desktopShell()?.networkSync ?? false,
   networkSyncAddress: null as string | null,
   syncDevices: [] as PairedDevice[],
 });
-desktopShell()?.onUpdateReady?.((version) => shell$.updateReady.set(version));
+desktopShell()?.onUpdateState?.((update) => shell$.update.set(update));
 desktopShell()?.onSyncDevices?.((devices) => shell$.syncDevices.set(devices));
 void desktopShell()
   ?.syncDevices?.()
   .then((devices) => shell$.syncDevices.set(devices));
 
-/** Whether this build downloads and installs its own updates (a release build's Windows installer
- *  or AppImage). Everywhere else an update is a link to the download page. */
+/** Whether this build downloads and installs its own updates (a release or nightly build's Windows
+ *  installer or AppImage). Everywhere else an update is a link to the download page. */
 export function desktopSelfUpdates(): boolean {
   return desktopShell()?.updates === true;
 }
 
-/** The version a self-updating build has downloaded and will install on restart, once it has. */
-export function useDesktopUpdateReady(): string | null {
-  return use$(shell$.updateReady);
+export function useDesktopUpdate(): DesktopUpdate {
+  return use$(shell$.update);
+}
+
+/** Have a self-updating build fetch the update now; it reports back through `useDesktopUpdate`.
+ *  Nothing happens on a build that doesn't update itself. */
+export function downloadDesktopUpdate(): void {
+  desktopShell()?.downloadUpdate?.();
 }
 
 export function installDesktopUpdate(): void {

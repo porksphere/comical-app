@@ -12,7 +12,6 @@
  */
 import { CONTRACT_VERSION } from '@comical/contract';
 import * as Device from 'expo-device';
-import { openBrowserAsync } from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { Platform, ScrollView, Share, StyleSheet, View } from 'react-native';
 
@@ -26,11 +25,10 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useApiBase } from '@/data/api';
 import { getResolvedModeSync } from '@/data/embedded/preference';
 import { IS_DEMO_MODE, useMockActive } from '@/data/source';
-import { useAppUpdateCheck } from '@/data/use-app-update';
+import { useAppUpdateAction, useAppUpdateCheck } from '@/data/use-app-update';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
-import { installDesktopUpdate, useDesktopUpdateReady } from '@/lib/desktop-shell';
 import { deviceLabel } from '@/lib/device-name';
 import { router } from '@/lib/nav';
 import {
@@ -79,13 +77,8 @@ export default function AboutScreen() {
   const [apiBase] = useApiBase();
   const mockActive = useMockActive();
   const appUpdate = useAppUpdateCheck();
-  const updateReady = useDesktopUpdateReady();
-  const updatePending = updateReady !== null || appUpdate.status === 'update-available';
-  const handleUpdatePress = () => {
-    if (updateReady) installDesktopUpdate();
-    else if (appUpdate.downloadUrl) void openBrowserAsync(appUpdate.downloadUrl);
-    else if (Platform.OS === 'web') window.location.reload();
-  };
+  const updateAction = useAppUpdateAction();
+  const updateVersion = updateAction?.version ?? 'newer build';
   // The mode actually in force right now, not the stored preference — the toggle only takes effect
   // where the native runtime exists (see embedded/preference.ts).
   const embedded = getResolvedModeSync() === 'embedded';
@@ -179,25 +172,27 @@ export default function AboutScreen() {
                 testID="about.checkForUpdates"
                 label="Check for updates"
                 description={
-                  updateReady
-                    ? `Version ${updateReady} is ready — restart to install`
-                    : appUpdate.status === 'update-available'
-                      ? `Version ${appUpdate.latestVersionLabel ?? 'newer build'} available`
-                      : appUpdate.status === 'checking'
-                        ? 'Checking…'
-                        : appUpdate.status === 'error'
-                          ? "Couldn't check"
-                          : 'Up to date'
+                  updateAction?.step === 'restart'
+                    ? `Version ${updateVersion} is ready — restart to install`
+                    : updateAction?.step === 'downloading'
+                      ? `Downloading version ${updateVersion}…`
+                      : updateAction
+                        ? `Version ${updateVersion} available`
+                        : appUpdate.status === 'checking'
+                          ? 'Checking…'
+                          : appUpdate.status === 'error'
+                            ? "Couldn't check"
+                            : 'Up to date'
                 }
-                leading={updatePending ? <UpdateDot /> : undefined}
+                leading={updateAction ? <UpdateDot /> : undefined}
                 right={
-                  updatePending ? (
+                  updateAction?.run ? (
                     <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                      {updateReady ? 'Restart' : 'Update'}
+                      {updateAction.step === 'restart' ? 'Restart' : 'Update'}
                     </ThemedText>
                   ) : undefined
                 }
-                onPress={updatePending ? handleUpdatePress : undefined}
+                onPress={updateAction?.run}
               />
             )}
           </SettingsSection>

@@ -88,8 +88,9 @@ jobs:
           merge-multiple: true
           path: ${{ runner.temp }}/desktop
 
-      # No collect-desktop-installers.sh here: it also demands the latest*.yml update feeds, which
-      # a build versioned `X.Y.Z-N` doesn't come with.
+      - name: Check the installers and their update feeds
+        run: bash .github/scripts/collect-desktop-installers.sh "$RUNNER_TEMP/desktop"
+
       - name: Publish the installers to the desktop-nightly Release
         env:
           GH_TOKEN: ${{ github.token }}

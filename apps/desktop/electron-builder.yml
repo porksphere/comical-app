@@ -23,13 +23,19 @@ executableName: comical
 copyright: Comical
 
 # The update feed electron-updater reads (src/updater.ts). CI builds with `--publish never` and
-# publishes itself (publish-desktop-channel.sh); this is still what makes electron-builder write
-# latest.yml / latest-linux.yml beside the installers, and app-update.yml into the app. `generic`,
-# not `github`: that provider follows GitHub's "latest" release, which here is a vX.Y.Z carrying no
-# feed files, while desktop-release is a fixed URL that always has them.
+# publishes itself (publish-desktop-channel.sh, publish-desktop-nightly.sh); this is still what
+# makes electron-builder write latest.yml / latest-linux.yml beside the installers, and
+# app-update.yml into the app. `generic`, not `github`: that provider follows GitHub's "latest"
+# release, which here is a vX.Y.Z carrying no feed files, while a channel's Release is a fixed URL
+# that always has them. The URL is the release channel's; a nightly swaps in its own at startup.
 publish:
   provider: generic
   url: https://github.com/porksphere/comical-app/releases/download/desktop-release
+
+# A nightly is versioned `X.Y.Z-N`, and electron-builder reads a prerelease tag as the name of an
+# update channel: left on, build 12 writes its feed as `12.yml` and looks for updates in `12.yml`,
+# a file no later build will ever write.
+detectUpdateChannel: false
 
 # `comical://` links (src/links.ts). macOS and Linux take the association from the package; on
 # Windows the app registers itself when it first runs.

@@ -5,17 +5,17 @@
 #
 # The version.json beside the installers is what a desktop-nightly build's in-app update check
 # reads (apps/mobile/src/data/use-app-update.ts): commit equality, with the commits picked up since
-# the last nightly as its notes. The electron-builder feeds are NOT published: the app's own
-# updater follows desktop-release only (apps/desktop/src/updater.ts), so a nightly updates by
-# downloading the next installer from this Release.
+# the last nightly as its notes. The electron-builder feeds (latest.yml, latest-linux.yml) ride
+# along: they are what a nightly's own updater reads to replace itself with the next one
+# (apps/desktop/src/updater.ts).
 #
 # The Release is created once and its assets clobbered in place, like the ios-nightly source. The
-# installers go up first and the body last: version.json is what announces a build, and the body
-# carries the `built-sha` marker rolling-changelog.sh measures the next night's notes from, so a
-# publish that fails half way announces nothing it hasn't uploaded.
+# installers go up first, then the feeds, and the body last: a feed and version.json are what
+# announce a build, and the body carries the `built-sha` marker rolling-changelog.sh measures the
+# next night's notes from, so a publish that fails half way announces nothing it hasn't uploaded.
 #
 # Usage: publish-desktop-nightly.sh <dir> <version> <commit>
-#   <dir> holds the installers under their fixed names (collect-desktop-installers.sh).
+#   <dir> holds the installers and feeds under their fixed names (collect-desktop-installers.sh).
 # Requires gh + jq, GH_TOKEN (contents: write), GITHUB_REPOSITORY, and a full-history checkout.
 set -euo pipefail
 
@@ -31,7 +31,8 @@ BASE="https://github.com/${REPO}/releases/download/${TAG}"
 INSTALLER="$DIR/comical-desktop-setup.exe"
 APPIMAGE="$DIR/comical-desktop-x86_64.AppImage"
 DEB="$DIR/comical-desktop-amd64.deb"
-for f in "$INSTALLER" "$APPIMAGE" "$DEB"; do
+FEEDS=("$DIR/latest.yml" "$DIR/latest-linux.yml")
+for f in "$INSTALLER" "$APPIMAGE" "$DEB" "${FEEDS[@]}"; do
   [ -f "$f" ] || { echo "::error::$f not found — run collect-desktop-installers.sh first"; exit 1; }
 done
 
@@ -54,8 +55,9 @@ BODY="Installers of \`main\` (${VERSION}), rebuilt nightly when main has moved.
 On Linux, if the AppImage exits with a libfuse error, either install \`libfuse2\` or run it with
 \`--appimage-extract-and-run\`.
 
-A nightly doesn't update itself: Settings → About says when a newer one is here. The installers
-of the newest **tagged** release are on the \`desktop-release\` entry in
+Installed from the Windows installer or the AppImage, a nightly replaces itself with the next
+one: Settings → About offers **Restart** once it has downloaded. A \`.deb\` gets a link back here.
+The installers of the newest **tagged** release are on the \`desktop-release\` entry in
 [Releases](https://github.com/${REPO}/releases).
 
 ## What changed
@@ -71,6 +73,7 @@ if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
 fi
 
 gh release upload "$TAG" "$INSTALLER" "$APPIMAGE" "$DEB" --repo "$REPO" --clobber
+gh release upload "$TAG" "${FEEDS[@]}" --repo "$REPO" --clobber
 gh release upload "$TAG" "$WORK/version.json" --repo "$REPO" --clobber
 # The tag follows the build, so the Release page names the commit its installers came from.
 gh api -X PATCH "repos/${REPO}/git/refs/tags/${TAG}" -f sha="$FULL_COMMIT" -F force=true >/dev/null

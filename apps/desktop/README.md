@@ -114,22 +114,24 @@ on the local network. Off by default, and off again closes the port.
 
 ## Updates
 
-A release build updates itself from the rolling `desktop-release` Release (`src/updater.ts`): it
-checks every four hours, downloads in the background, and Settings → About offers **Restart** once
-the new version is ready; quitting installs it too. That's the Windows installer and the AppImage.
-A `.deb` belongs to apt, so it gets the same "update available" notice with a link to the download
-page instead — as does any build where the updater can't run.
+A release or nightly build updates itself from its channel's rolling Release — `desktop-release`
+or `desktop-nightly` (`src/updater.ts`). It checks every four hours, and at once when the page's
+own check finds a newer build; the download runs in the background, Settings → About says
+**Downloading** and then offers **Restart**; quitting installs it too. That's the Windows installer
+and the AppImage. A `.deb` belongs to apt, so it gets the same "update available" notice with a
+link to the download page instead — as does a PR build, and any build whose download fails.
 
 The feed is electron-builder's own `latest.yml` / `latest-linux.yml`, which it writes beside the
 installers because `publish` names a `generic` provider; CI still builds with `--publish never` and
-uploads them itself (`.github/scripts/publish-desktop-channel.sh`). Two things about it are
-load-bearing:
+uploads them itself (`.github/scripts/publish-desktop-channel.sh`, `publish-desktop-nightly.sh`).
+Three things about it are load-bearing:
 
-- **Only `desktop-release` builds follow it.** The channel is baked into the main bundle
-  (`COMICAL_BUILD_CHANNEL`, `scripts/build-main.ts`). A PR or nightly build is versioned `X.Y.Z-N`,
-  which semver ranks *below* `X.Y.Z`, so left to it one would replace itself with the release. A
-  nightly gets the notice-and-link instead, pointing at the rolling `desktop-nightly` Release
-  (`.github/scripts/publish-desktop-nightly.sh`).
+- **A build follows its own channel's feed and no other.** The channel is baked into the main
+  bundle (`COMICAL_BUILD_CHANNEL`, `scripts/build-main.ts`) and picks the feed URL at startup. A
+  nightly is versioned `X.Y.Z-N`, which semver ranks *below* `X.Y.Z`, so on the release feed it
+  would replace itself with the release; among themselves nightlies only go up.
+- **`detectUpdateChannel` is off.** electron-builder otherwise reads the `-N` as a channel name,
+  and nightly 12 would write, and look for, a feed called `12.yml`.
 - **Differential downloads are off.** The installers keep fixed names, so the old blockmap the
   updater would diff against is always the new one.
 
@@ -141,8 +143,7 @@ load-bearing:
   `host.fetch(path, init)` and a `startup.electron.ts` calling the existing `setTransport()` — the
   shape `@comical/host-rn` already uses on device, and the only item here touching `apps/mobile`.
 - **macOS in CI.** `build-desktop-reusable.yml` matrixes Windows and Linux only.
-- **Publishing has never run.** Installers are published only by `release.yml`, to the `vX.Y.Z`
-  Release and the rolling `desktop-release` one (`publish-desktop-channel.sh`); until a release is
-  cut, that path — and the README's download links — is verified only by reading it. The updater
-  itself has run once, locally: a packaged 0.0.0 found, downloaded and silently installed a 0.0.1
-  from a feed served off disk.
+- **An update from a published Release has never been watched.** Both channels publish their
+  installers and feeds, but the updater has only run locally: a packaged 0.0.0 found, downloaded
+  and silently installed a 0.0.1 from a feed served off disk. A nightly replacing itself with the
+  next night's is the first real run of it.
