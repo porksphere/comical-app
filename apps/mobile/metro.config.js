@@ -20,6 +20,29 @@ const comicalRoot = path.resolve(monorepoRoot, 'external/comical');
 // correlate against at symbolication time.
 const config = getSentryExpoConfig(projectRoot);
 
+// Expo's cache store opens a file per module with nothing bounding how many at once, and with the
+// cache warm Metro asks for the whole graph before the first read has finished. Node on Windows
+// holds 8,189 files open and the web graph is past that, so every page was a 500 (EMFILE) on any
+// start but a cold one.
+const MAX_CACHE_READS = 512;
+for (const store of config.cacheStores) {
+  const get = store.get.bind(store);
+  const waiting = [];
+  let reading = 0;
+  store.get = async (key) => {
+    if (reading < MAX_CACHE_READS) reading++;
+    else await new Promise((resolve) => waiting.push(resolve));
+    try {
+      return await get(key);
+    } finally {
+      // A waiter takes the slot over rather than it being freed and claimed again.
+      const next = waiting.shift();
+      if (next) next();
+      else reading--;
+    }
+  };
+}
+
 config.watchFolders = [monorepoRoot];
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
