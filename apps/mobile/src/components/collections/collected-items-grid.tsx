@@ -11,7 +11,7 @@ import { buildCollectedRows, type CollectedRow } from '@/data/collected-rows';
 import type { CollectedGrouping } from '@/data/collected-view';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCollectedPageUris } from '@/hooks/use-collected-page-uris';
-import { GRID_ROW_GAP, useGridLayout } from '@/hooks/use-grid-layout';
+import { GRID_ROW_GAP, GRID_ROW_PAD_BOTTOM, GRID_ROW_PAD_TOP, useGridLayout } from '@/hooks/use-grid-layout';
 
 /**
  * The grid of collected items — a `GroupedGrid` (which owns the row list and the sticky section
@@ -121,6 +121,7 @@ export function CollectedItemsGrid({
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    paddingBottom: GRID_ROW_GAP,
+    paddingTop: GRID_ROW_PAD_TOP,
+    paddingBottom: GRID_ROW_PAD_BOTTOM,
   },
 });

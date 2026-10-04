@@ -11,18 +11,12 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 import { buildGroupedRows } from '@/data/grouped-rows';
 import type { SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { GRID_ROW_GAP, useGridLayout } from '@/hooks/use-grid-layout';
+import { GRID_ROW_GAP, GRID_ROW_PAD_BOTTOM, GRID_ROW_PAD_TOP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 
 // A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are absolutely
-// positioned). Split top/bottom rather than all-bottom because LegendList's web row container is
-// `contain: paint`, which would clip a card's hover-lift if it were flush to the row's top edge. These
-// feed both `styles.cell`'s padding AND the fixed `cellHeight` below, so the two never drift.
-// Deliberately TIGHT (4px total, down from the original 16): the cards' own title/author block
-// already gives each row visual separation, so the old gap read as dead air. Split evenly — the
-// top half doubles as the web hover-lift clip guard (see above).
-const CELL_PAD_TOP = GRID_ROW_GAP / 2;
-const CELL_PAD_BOTTOM = GRID_ROW_GAP / 2;
+// positioned). The split (see `GRID_ROW_PAD_TOP`) feeds both `styles.cell`'s padding AND the fixed
+// `cellHeight` below, so the two never drift.
 const CELL_ROW_GAP = GRID_ROW_GAP;
 
 /**
@@ -246,8 +240,8 @@ const styles = StyleSheet.create({
     // NO `flex: 1` — pinned to `cardWidth` at the call site so a short last row ends rather than
     // stretching. `justifyContent: flex-start` so a card shorter than the fixed cell top-aligns.
     justifyContent: 'flex-start',
-    paddingTop: CELL_PAD_TOP,
-    paddingBottom: CELL_PAD_BOTTOM,
+    paddingTop: GRID_ROW_PAD_TOP,
+    paddingBottom: GRID_ROW_PAD_BOTTOM,
   },
   groupedRow: {
     flexDirection: 'row',

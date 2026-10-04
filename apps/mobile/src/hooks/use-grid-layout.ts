@@ -27,6 +27,12 @@ const GRID_COLUMN_GAP_DESKTOP = Spacing.three;
 /** The space between rows of cards — tight, because a card's own title/author block already
  *  separates one row from the next (see `series-grid.tsx`). */
 export const GRID_ROW_GAP = Spacing.one;
+/** How a row spends that gap around its cards. Split, not all below: LegendList's web row container
+ *  is `contain: paint`, which clips a card's hover-lift if the card is flush to the row's top edge.
+ *  Every grid takes its padding from these, so one grid's first row never starts higher than
+ *  another's. */
+export const GRID_ROW_PAD_TOP = GRID_ROW_GAP / 2;
+export const GRID_ROW_PAD_BOTTOM = GRID_ROW_GAP - GRID_ROW_PAD_TOP;
 
 export type GridLayout = {
   numColumns: number;
