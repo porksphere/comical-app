@@ -159,7 +159,7 @@ export function CollectedItemTile({
           {/* The badge reads against the image, so it needs its own scrim rather than the theme.
               The icon is the type; a page also carries its number, since "which page of the chapter"
               matters there the way it can't for the other two. */}
-          <View style={[styles.badge, blank && styles.hidden]}>
+          <View style={[styles.badge, desktop && styles.badgeDesktop, blank && styles.hidden]}>
             <TypeIcon color="#fff" size={12} />
             {item.type === 'page' && (
               <ThemedText type="small" style={styles.badgeText}>
@@ -252,6 +252,13 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: Spacing.one,
     backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  // The desktop cover's corner curves through where the phone's chip sits, so it moves in to
+  // clear it and takes a corner of its own that follows the curve.
+  badgeDesktop: {
+    top: Spacing.two,
+    left: Spacing.two,
+    borderRadius: Spacing.two,
   },
   badgeText: {
     color: '#fff',
