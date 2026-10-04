@@ -97,8 +97,15 @@ const CATEGORIES: { id: string; label: string; Icon: SettingsIcon; Screen: () =>
 type SettingsIcon = (props: { color: string; size?: number }) => React.ReactNode;
 
 export function SettingsModal() {
+  const { open } = useSettingsModal();
+  // Mounted only while open, so the pane's sub-page stack goes with it: reopening lands on the
+  // category's own page, not on whatever was pushed over it last time.
+  return open ? <SettingsPanel /> : null;
+}
+
+function SettingsPanel() {
   const theme = useTheme();
-  const { open, category } = useSettingsModal();
+  const { category } = useSettingsModal();
   const current = CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0]!;
   // Sub-pages pushed from within the pane. A stack, not a single slot: bridges → registries →
   // registry-browse is three deep, and each step has to come back to the one before it.
@@ -132,7 +139,7 @@ export function SettingsModal() {
 
   // `Modal` gave Escape for free; an in-tree panel has to ask for it.
   useEffect(() => {
-    if (!open || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();
@@ -140,9 +147,7 @@ export function SettingsModal() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open]);
-
-  if (!open) return null;
+  }, []);
 
   return (
     // An absolutely-positioned View, NOT `Modal`. A `Modal` renders in a layer above the whole app
