@@ -100,8 +100,6 @@ export function attachContextMenu(win: BrowserWindow, appOrigin: string): void {
       groups.push([{ label: "Copy image", click: () => contents.copyImageAt(p.x, p.y) }]);
     }
 
-    if (DEV_TOOLS) groups.push([{ label: "Inspect element", click: () => contents.inspectElement(p.x, p.y) }]);
-
     const items = groups.flatMap((group, i) => (i ? [{ type: "separator" } as const, ...group] : group));
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
