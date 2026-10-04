@@ -1,5 +1,5 @@
-import { type RefObject, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { type MouseEvent, type RefObject, useRef, useState } from 'react';
+import { Pressable, StyleSheet, View, type GestureResponderEvent, type ViewProps } from 'react-native';
 
 import { openContextMenu } from '@/components/context-menu-host';
 import { MENU_WIDTH } from '@/components/context-menu-material';
@@ -13,7 +13,8 @@ import { useTheme } from '@/hooks/use-theme';
  * Web variant of the per-card quick-actions menu (see `series-card-menu.tsx` for the native
  * long-press version). The affordance is a 3-dot button that fades in when the card is hovered, and
  * the menu it opens is the native popup's menu without its preview: the same frosted panel from the
- * generic host (context-menu-host.tsx), hanging from the button, with the same rows.
+ * generic host (context-menu-host.tsx), hanging from the button, with the same rows. A right-click
+ * anywhere on the card opens it at the pointer instead, in place of the browser's own menu.
  *
  * `children` is a render function to match the native variant's contract (native threads a long-press
  * handler down to the card's Pressable); on web there's no long-press, so it's always undefined.
@@ -49,10 +50,38 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, child
 
   if (!enabled || !bridgeId) return <>{children({ onLongPress: undefined, hidden: false })}</>;
 
+  // `x`/`y` is the menu's top-left corner.
+  const openAt = (x: number, y: number) => {
+    setIsOpen(true);
+    openContextMenu({
+      x,
+      y,
+      anchor: 'fixed',
+      onClose: () => setIsOpen(false),
+      rows: (render) => (
+        <SeriesCardMenuRows
+          bridgeId={bridgeId}
+          entry={entry}
+          {...(bridge !== undefined && { bridge })}
+          {...(direct !== undefined && { direct })}>
+          {render}
+        </SeriesCardMenuRows>
+      ),
+    });
+  };
+  // react-native-web forwards `onContextMenu` to the element; react-native's types don't know it.
+  const rightClick = {
+    onContextMenu: (e: MouseEvent) => {
+      e.preventDefault();
+      openAt(e.clientX, e.clientY);
+    },
+  } as ViewProps;
+
   const show = hovered || isOpen;
   return (
     <View
       style={styles.wrapper}
+      {...rightClick}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}>
       {children({ onLongPress: undefined, hidden: false })}
@@ -63,25 +92,8 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, child
         // here opens the menu without also triggering navigation; stopPropagation is defensive.
         onPress={(e) => {
           e?.stopPropagation?.();
-          ref.current?.measureInWindow((x, y, w, h) => {
-            setIsOpen(true);
-            openContextMenu({
-              // Right edges aligned, so the menu hangs from the button over the card it belongs to.
-              x: x + w - MENU_WIDTH,
-              y: y + h + MENU_GAP,
-              anchor: 'fixed',
-              onClose: () => setIsOpen(false),
-              rows: (render) => (
-                <SeriesCardMenuRows
-                  bridgeId={bridgeId}
-                  entry={entry}
-                  {...(bridge !== undefined && { bridge })}
-                  {...(direct !== undefined && { direct })}>
-                  {render}
-                </SeriesCardMenuRows>
-              ),
-            });
-          });
+          // Right edges aligned, so the menu hangs from the button over the card it belongs to.
+          ref.current?.measureInWindow((x, y, w, h) => openAt(x + w - MENU_WIDTH, y + h + MENU_GAP));
         }}
         // Kept mounted (so the anchor `ref` stays measurable) but only shown/interactive
         // while hovered or open — fading via opacity avoids any layout shift on the card.
