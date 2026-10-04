@@ -22,6 +22,9 @@ set -euo pipefail
 USAGE="usage: publish-desktop-nightly.sh <dir> <version> <commit>"
 DIR="${1:?$USAGE}"
 VERSION="${2:?$USAGE}"
+# The build passes the installer's semver (`X.Y.Z-N`, stamp-version.ts); the app calls itself
+# `X.Y.Z.N`, and this is the string its update notice puts beside that.
+VERSION="${VERSION/-/.}"
 FULL_COMMIT="${3:?$USAGE}"
 COMMIT="${FULL_COMMIT:0:7}"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY not set}"
