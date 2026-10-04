@@ -3,9 +3,11 @@ import { useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type View as ViewType } from 'react-native';
 
 import { ChapterItemIcon, PageItemIcon, SeriesItemIcon } from '@/components/icons/collection-icons';
+import { COVER_RADIUS_DESKTOP } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { ApiCollectionItem } from '@/data/api';
+import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { useIsZoomingSeries, useZoomOriginSource, useZoomSurfaceKey } from '@/lib/series-zoom';
 
@@ -46,7 +48,9 @@ export function CollectedItemTile({
   onWarm?: () => void;
 }) {
   const theme = useTheme();
+  const desktop = useIsDesktop();
   const [failed, setFailed] = useState(false);
+  const [hovered, setHovered] = useState(false);
   // Recycle-safety: this tile is reused for a different item as the list scrolls, so a failure
   // recorded for the previous one must not stick. React's own "adjust state on prop change"
   // pattern — a ref would survive a discarded render and leave the wrong item looking broken.
@@ -54,6 +58,7 @@ export function CollectedItemTile({
   if (seenId !== item.id) {
     setSeenId(item.id);
     setFailed(false);
+    setHovered(false);
   }
 
   const source = item.type === 'series' ? item.thumbnailUrl : item.type === 'page' ? uri : undefined;
@@ -91,7 +96,13 @@ export function CollectedItemTile({
         onWarm?.();
       }}
       onPress={onPress}
-      style={[styles.tile, { width, height, backgroundColor: theme.backgroundElement }]}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[
+        styles.tile,
+        desktop && styles.tileDesktop,
+        { width, height, backgroundColor: theme.backgroundElement },
+      ]}
       accessibilityRole="button"
       accessibilityLabel={
         item.type === 'series'
@@ -143,6 +154,18 @@ export function CollectedItemTile({
           </ThemedText>
         </View>
       )}
+
+      {/* The series card's hover ring, so a collection reads as the same grid the rest of the
+          library is. Web only: hover fires for a pointer on a tablet too, which has no ring anywhere. */}
+      {isWeb && hovered && (
+        <View
+          style={[
+            styles.ring,
+            desktop && styles.tileDesktop,
+            { borderColor: theme.text, pointerEvents: 'none' },
+          ]}
+        />
+      )}
     </Pressable>
   );
 }
@@ -152,6 +175,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
     justifyContent: 'flex-end',
+  },
+  tileDesktop: {
+    borderRadius: COVER_RADIUS_DESKTOP,
+  },
+  ring: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 10,
+    borderWidth: 2,
   },
   fallback: {
     ...StyleSheet.absoluteFill,
