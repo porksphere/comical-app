@@ -618,8 +618,8 @@ export function SeriesCard({
     return (
       <>
         {isWeb ? (
-          // Web keeps a non-clipping `coverBox` around the clipping `coverClip` so the active hover
-          // ring (negative insets) can extend past the clip without being cut off.
+          // Web draws the hover ring as a sibling over the clipping `coverClip`, so the scaled picture
+          // inside the clip can't cover it.
           <View style={[styles.coverBox, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]} onLayout={shrink.onCoverLayout}>
             <View style={[styles.coverClip, desktop && styles.coverClipDesktop]}>{coverContents}</View>
             {active && (
@@ -808,8 +808,8 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   coverBoxClip: {
-    // Native-only: `coverBox` and `coverClip` merged into one host view (no hover ring to escape the
-    // clip there). Same aspect box, but it clips + backs the cover directly — one fewer view per card.
+    // Native-only: `coverBox` and `coverClip` merged into one host view (no hover ring to draw over
+    // the clip there). Same aspect box, but it clips + backs the cover directly — one fewer view per card.
     width: '100%',
     position: 'relative',
     ...ContinuousCorner,
@@ -869,18 +869,18 @@ const styles = StyleSheet.create({
   },
   ring: {
     position: 'absolute',
-    // Offset == border width, so the ring's inner edge is flush with the cover
-    // (no gap) while the stroke itself sits just outside it.
-    top: -2,
-    left: -2,
-    right: -2,
-    bottom: -2,
+    // Drawn INSIDE the cover's edge. A virtualized list paint-contains each item to its slot, and a
+    // slot ends exactly where an outer column's cover does, so a stroke outside it is cut off there.
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     ...ContinuousCorner,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 2,
   },
   ringDesktop: {
-    borderRadius: COVER_RADIUS_DESKTOP + 2,
+    borderRadius: COVER_RADIUS_DESKTOP,
   },
   titleWrap: {
     position: 'relative',
