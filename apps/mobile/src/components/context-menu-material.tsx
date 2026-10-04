@@ -22,6 +22,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
+const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
+
 export const MENU_WIDTH = 240;
 export const MENU_ROW_HEIGHT = 48;
 /** The selection bubble's inset from the menu's side edges. */
@@ -354,6 +356,7 @@ export function MenuSurface({
   hoverStyle,
   title,
   suppressLabelIndex,
+  surfaceStyle,
 }: {
   tint: 'light' | 'dark';
   rows: MenuRowSpec[];
@@ -364,14 +367,16 @@ export function MenuSurface({
   title?: string;
   /** Row whose label + icon to hide (its expanded submenu shows the same label crisply on top). */
   suppressLabelIndex?: number;
+  /** An animated style for the frosted panel ITSELF. A browser gives a blur nothing to blur while
+   *  anything above it in the tree is less than opaque, so a host that fades the menu in on web has
+   *  to fade the panel, not the box around it. */
+  surfaceStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
 }) {
   const theme = useTheme();
-  return (
-    <BlurView
-      tint={tint}
-      intensity={MENU_BLUR}
-      experimentalBlurMethod={ANDROID_BLUR}
-      style={[menuStyles.menu, { borderColor: theme.backgroundSelected }]}>
+  const blur = { tint, intensity: MENU_BLUR, experimentalBlurMethod: ANDROID_BLUR } as const;
+  const panel = [menuStyles.menu, { borderColor: theme.backgroundSelected }];
+  const contents = (
+    <>
       {/* The surface tint — its own layer INSIDE the blur, not a backgroundColor on the BlurView
           (expo-blur's web build applies its own tint background last and silently drops yours). */}
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[tint] }]} />
@@ -390,9 +395,26 @@ export function MenuSurface({
       {rows.map((row, i) => (
         <MenuRow key={i} {...row} index={i} channel={channel} suppressLabel={i === suppressLabelIndex} />
       ))}
+    </>
+  );
+  return surfaceStyle ? (
+    <AnimatedBlurView {...blur} style={[panel, surfaceStyle]}>
+      {contents}
+    </AnimatedBlurView>
+  ) : (
+    <BlurView {...blur} style={panel}>
+      {contents}
     </BlurView>
   );
 }
+
+const MENU_SHADOW = {
+  shadowColor: '#000000',
+  shadowOpacity: 0.28,
+  shadowRadius: 16,
+  shadowOffset: { width: 0, height: 8 },
+  elevation: 10,
+} as const;
 
 export const menuStyles = StyleSheet.create({
   // The floating box around the surface (shared shadow/rounding; hosts position it themselves).
@@ -401,12 +423,16 @@ export const menuStyles = StyleSheet.create({
     left: 0,
     top: 0,
     borderRadius: 14,
-    shadowColor: '#000000',
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
+    ...MENU_SHADOW,
   },
+  // `menuWrap` without the shadow, and the shadow for the panel to carry instead: a pair for a host
+  // that fades the panel (see `surfaceStyle`), since a shadow left on the box would not fade with it.
+  menuWrapBare: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  menuShadow: MENU_SHADOW,
   menu: {
     borderRadius: 14,
     paddingVertical: MENU_PAD_V,

@@ -61,6 +61,7 @@ import { useActiveColorScheme } from '@/hooks/use-theme';
 import { windowModalLayer } from '@/lib/window-controls';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
+const WEB = Platform.OS === 'web';
 // The menu's entrance/exit — quick springs in the card popup's family.
 const OPEN_SPRING = { damping: 18, stiffness: 320, mass: 0.7 } as const;
 const GAP = 10; // between the press point and the menu's near edge
@@ -356,13 +357,17 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
   const backdropTintStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 0.2, 1], [0, 0, scrimOpacity]),
   }));
+  // Web fades the panel itself (`surfaceFadeStyle`), not this box around it: a browser drops a blur
+  // whose ancestor is less than opaque, so the frost was missing through the fade and blinked off
+  // again each time the spring dipped back under 1 on its way to rest.
   const menuStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
+    opacity: WEB ? 1 : progress.value,
     transform: [
       { translateY: interpolate(progress.value, [0, 1], [below ? -8 : 8, 0]) },
       { scale: interpolate(progress.value, [0, 1], [0.92, 1]) },
     ],
   }));
+  const surfaceFadeStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
   // Tap the backdrop to dismiss — a gesture with a distance bound, exactly as the card popup does,
   // so a drag that happens to start on the backdrop isn't counted as a tap.
@@ -395,12 +400,14 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
           )}
         </View>
       </GestureDetector>
-      <Animated.View style={[menuStyles.menuWrap, { width: menuW, left, top }, menuStyle]}>
+      <Animated.View
+        style={[WEB ? menuStyles.menuWrapBare : menuStyles.menuWrap, { width: menuW, left, top }, menuStyle]}>
         <MenuSurface
           tint={tint}
           rows={rows}
           channel={{ holdActive: ctxHoldActive, hoveredRow: ctxHoveredRow }}
           hoverStyle={hoverStyle}
+          {...(WEB && { surfaceStyle: [menuStyles.menuShadow, surfaceFadeStyle] })}
           {...(req.title !== undefined && { title: req.title })}
         />
       </Animated.View>
