@@ -41,7 +41,7 @@ import {
   TrackersIcon,
 } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { closeSettingsModal, setSettingsCategory, useSettingsModal } from '@/lib/settings-modal';
@@ -286,6 +286,10 @@ function CloseButton() {
 }
 
 const CATEGORY_WIDTH = 200;
+// Wider than the categories plus a full-width screen (`MaxContentWidth`), which centres itself in the
+// pane: at exactly that sum a row ran edge to edge and the panel read as cramped on a large window.
+const PANEL_MAX_WIDTH = 1200;
+const PANEL_MAX_HEIGHT = 960;
 
 const styles = StyleSheet.create({
   scrim: {
@@ -308,9 +312,9 @@ const styles = StyleSheet.create({
     // as a hole rather than a surface. The scrim alone wasn't enough to separate them.
     borderWidth: StyleSheet.hairlineWidth,
     width: '100%',
-    maxWidth: MaxContentWidth + CATEGORY_WIDTH,
+    maxWidth: PANEL_MAX_WIDTH,
     height: '100%',
-    maxHeight: 640,
+    maxHeight: PANEL_MAX_HEIGHT,
     borderRadius: Spacing.three,
     overflow: 'hidden',
   },
