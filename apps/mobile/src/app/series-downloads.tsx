@@ -469,6 +469,7 @@ export default function SeriesDownloadsScreen() {
             right={selecting ? <View /> : undefined /* suppress the auto chevron a pressable row grows */}
             onPress={selecting ? () => ms.toggle(item.key) : undefined}
             onLongPress={selecting ? onLongPress : undefined}
+            lanes={2}
             actions={
               item.c && cState
                 ? chapterActions(cState, {

@@ -435,6 +435,7 @@ function ActivityItem({
     <>
       <SwipeableRow
         name={item.title}
+        lanes={2}
         // Actions lay out left→right, so the LAST sits at the screen edge — revealed by the
         // smallest swipe and the easiest to tap. Put the destructive Clear FIRST (the inner
         // slot, reached only by swiping further) and Mark read at the edge, so the safe action

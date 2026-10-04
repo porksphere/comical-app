@@ -78,6 +78,9 @@ const WEB_ACTION_TRANSITION = {
   transitionDuration: '120ms',
 } as unknown as ViewStyle;
 
+/** Width of one hover-action lane on web. */
+const WEB_LANE = 34;
+
 /** One trailing swipe/hover action. The `icon` is a glyph component from `@/components/icons/ui-icons`
  *  (they all take `{ color, size }`). `destructive` paints the action in the danger colour (a delete);
  *  everything else gets the accent colour (rename, edit, …). */
@@ -130,6 +133,11 @@ type SwipeableRowProps = {
   /** Set false to suppress the actions entirely (no swipe gesture, no hover lanes) — e.g. while a
    *  screen's multi-select mode owns row interaction. The row renders as plain content, same layout. */
   swipeEnabled?: boolean;
+  /** The most actions any row of this list can carry, when that varies row to row. On web the actions
+   *  sit in lanes BESIDE the content, so a row with fewer of them is a wider row, and its trailing
+   *  control lands further right than its neighbours'; a row short of this count pads the difference.
+   *  Native ignores it — a swipe uncovers its actions from beneath a row that is always full width. */
+  lanes?: number;
   /** The row's own content (rendered as the swipeable surface / hover body). */
   children: ReactNode;
 };
@@ -149,7 +157,15 @@ type SwipeableRowProps = {
  * only safe with an undo snackbar, which this app has none of). On web there is no swipe — the actions
  * reveal as buttons on hover (and show unconditionally on a touch screen, which never hovers).
  */
-export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEnabled = true, children }: SwipeableRowProps) {
+export function SwipeableRow({
+  name,
+  actions,
+  edgeInset = 0,
+  recycleKey,
+  swipeEnabled = true,
+  lanes = 0,
+  children,
+}: SwipeableRowProps) {
   // Nothing to act on: plain content in the same escaped layout, no gesture/lanes. Checked BEFORE
   // clampActions — an intentionally empty action set isn't the dev error it warns on. A DISABLED
   // row (`swipeEnabled: false`) deliberately does NOT take this branch: swapping between the
@@ -157,7 +173,8 @@ export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEn
   // which made entering a big list's select mode visibly stall — the row stays mounted and its
   // gesture is switched off instead.
   if (actions.length === 0) {
-    return <View style={{ marginHorizontal: -edgeInset }}>{children}</View>;
+    const reserved = IS_WEB && swipeEnabled && lanes > 0 ? edgeInset + lanes * WEB_LANE : 0;
+    return <View style={{ marginHorizontal: -edgeInset, paddingRight: reserved }}>{children}</View>;
   }
   // Delegated so the action-less early return above stays hook-free.
   return (
@@ -166,7 +183,8 @@ export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEn
       actions={clampActions(actions, name)}
       edgeInset={edgeInset}
       recycleKey={recycleKey}
-      swipeEnabled={swipeEnabled}>
+      swipeEnabled={swipeEnabled}
+      lanes={lanes}>
       {children}
     </CollapsingRow>
   );
@@ -188,6 +206,7 @@ function CollapsingRow({
   edgeInset,
   recycleKey,
   swipeEnabled,
+  lanes,
   children,
 }: {
   name: string;
@@ -195,6 +214,7 @@ function CollapsingRow({
   edgeInset: number;
   recycleKey?: string;
   swipeEnabled: boolean;
+  lanes: number;
   children: ReactNode;
 }) {
   // Mirrors the natural height while idle, so a fold starts where the row already sits.
@@ -235,7 +255,13 @@ function CollapsingRow({
     // Only while folding — a row left to size itself must not be pinned to a measured height.
     <Animated.View onLayout={onLayout} style={pending ? [styles.folding, foldStyle] : undefined}>
       {IS_WEB ? (
-        <HoverActionsRow name={name} actions={wired} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
+        <HoverActionsRow
+          name={name}
+          actions={wired}
+          edgeInset={edgeInset}
+          recycleKey={recycleKey}
+          enabled={swipeEnabled}
+          lanes={lanes}>
           {children}
         </HoverActionsRow>
       ) : (
@@ -262,6 +288,7 @@ export function SwipeableSettingsRow({
   actions,
   recycleKey,
   swipeEnabled,
+  lanes,
   testID,
 }: {
   label: string;
@@ -282,6 +309,8 @@ export function SwipeableSettingsRow({
   recycleKey?: string;
   /** See `SwipeableRow.swipeEnabled` — false renders the row without its actions. */
   swipeEnabled?: boolean;
+  /** See `SwipeableRow.lanes`. */
+  lanes?: number;
   /** Automation selector forwarded to the inner row. */
   testID?: string;
 }) {
@@ -291,6 +320,7 @@ export function SwipeableSettingsRow({
       actions={actions}
       edgeInset={SettingsGutter}
       recycleKey={recycleKey}
+      lanes={lanes}
       {...(swipeEnabled !== undefined ? { swipeEnabled } : {})}>
       <SettingsRow
         label={label}
@@ -643,7 +673,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   );
 }
 
-function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, children }: RowImplProps) {
+function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, lanes, children }: RowImplProps & { lanes: number }) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   // Drop any lingering hover when a recycling list reuses this row for a different item (see SwipeRow).
@@ -657,9 +687,12 @@ function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, childr
   // renders an accessibilityRole="button" Pressable as a real <button>, and a <button> inside a
   // <button> is invalid HTML, so the actions get their own lanes to the row's right.
   const lastIndex = actions.length - 1;
+  const spareLanes = Math.max(0, lanes - actions.length);
   return (
     <View style={[styles.webRow, { marginHorizontal: -edgeInset }]} onPointerEnter={onHoverIn} onPointerLeave={onHoverOut}>
       <View style={styles.webRowBody}>{children}</View>
+      {/* On the inner side, so the actions a short row does have stay against the edge. */}
+      {enabled && spareLanes > 0 && <View style={{ width: spareLanes * WEB_LANE }} />}
       {/* Disabled (select mode): the body stays, the lanes go — no actions to hover. */}
       {enabled &&
         actions.map((a, i) => {
@@ -673,7 +706,7 @@ function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, childr
             style={[
               styles.webAction,
               WEB_ACTION_TRANSITION,
-              isEdge ? { width: edgeInset + 34, paddingRight: edgeInset } : { width: 34 },
+              isEdge ? { width: edgeInset + WEB_LANE, paddingRight: edgeInset } : { width: WEB_LANE },
               CAN_HOVER && !hovered && styles.webActionIdle,
             ]}
             accessibilityRole="button"

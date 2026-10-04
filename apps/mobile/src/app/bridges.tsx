@@ -239,6 +239,7 @@ export default function BridgesScreen() {
             onPress={selecting ? () => ms.toggle(key) : openBridge}
             onLongPress={selecting ? onLongPress : undefined}
             actions={rowActions}
+            lanes={2}
           />
         )}
       </Holdable>
