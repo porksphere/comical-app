@@ -24,7 +24,7 @@ export default function NotificationsSettingsScreen() {
   const contentPadding = useSettingsScrollPadding();
   const queryClient = useQueryClient();
   const mock = useMockActive();
-  const { autoCheck, backgroundCheck, wifiOnly, notifications, appBadge } = useNotifyPrefs();
+  const { autoCheck, backgroundCheck, wifiOnly, notifications, appBadge, caughtUpOnly } = useNotifyPrefs();
   // Gated on hydration: the static web render has no shell, so the rows would otherwise appear only
   // after it and mismatch.
   const desktop = useHydrated() && !!desktopShell();
@@ -85,6 +85,13 @@ export default function NotificationsSettingsScreen() {
     }
   };
 
+  const toggleCaughtUpOnly = (v: boolean) => {
+    notifyPrefs$.caughtUpOnly.set(v);
+    // The data source reads the pref per request, so what is cached answers for the other feed.
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
+  };
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Notifications" />
@@ -135,6 +142,14 @@ export default function NotificationsSettingsScreen() {
               onChange={(v) => void toggleAppBadge(v)}
             />
           )}
+        </SettingsSection>
+        <SettingsSection title="New chapters">
+          <SettingsToggleRow
+            label="Only for series I'm caught up on"
+            description="Others stay out of Activity until you are."
+            value={caughtUpOnly}
+            onChange={toggleCaughtUpOnly}
+          />
         </SettingsSection>
       </ScrollView>
     </ThemedView>

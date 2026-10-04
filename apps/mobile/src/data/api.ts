@@ -1554,22 +1554,37 @@ export function recordReadingHistory(
   return fetchPost('/reading-history', { ...entry, lastReadAt: Date.now() }, signal);
 }
 
+/** Which feed an activity request is about: every new chapter, or only those of series the reader
+ *  was caught up on. A server older than the option ignores it and answers for the whole feed. */
+export type ActivityFeedOpts = { caughtUpOnly?: boolean };
+
+const feedQuery = (opts: ActivityFeedOpts): string => (opts.caughtUpOnly ? '?caughtUp=1' : '');
+
 /** GET /library/activity → the new-chapters feed (each item carries a derived `read`). */
-export function getActivity(signal?: AbortSignal): Promise<ApiActivityItem[]> {
-  return fetchJson('/library/activity', signal);
+export function getActivity(opts: ActivityFeedOpts = {}, signal?: AbortSignal): Promise<ApiActivityItem[]> {
+  return fetchJson(`/library/activity${feedQuery(opts)}`, signal);
 }
 
 /** GET /library/activity/count → unread new-chapter count for the tab/app badge. Counts the whole
  *  feed — an item only leaves the count when its chapter is read (or its entry is cleared). */
-export function getActivityCount(signal?: AbortSignal): Promise<{ unread: number }> {
-  return fetchJson('/library/activity/count', signal);
+export function getActivityCount(opts: ActivityFeedOpts = {}, signal?: AbortSignal): Promise<{ unread: number }> {
+  return fetchJson(`/library/activity/count${feedQuery(opts)}`, signal);
 }
 
 /** POST /library/activity/{b}/{s}/read → mark one series' feed chapters read (the row's swipe
  *  "Mark read"). Union mark-read server-side: it never un-reads, and it leaves the resume
  *  pointer/history alone — dismissing a feed row is not reading. */
-export function markActivityRead(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
-  return fetchOk(`/library/activity/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/read`, 'POST', signal);
+export function markActivityRead(
+  bridgeId: string,
+  seriesId: string,
+  opts: ActivityFeedOpts = {},
+  signal?: AbortSignal,
+): Promise<void> {
+  return fetchOk(
+    `/library/activity/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/read${feedQuery(opts)}`,
+    'POST',
+    signal,
+  );
 }
 
 /** DELETE /library/activity → empty the new-chapters feed (user "clear" action). */
@@ -1666,6 +1681,8 @@ export function importBridgeFavorites(
 export interface ApiSyncResult {
   updated: number;
   newChapters: number;
+  /** Of `newChapters`, those on series the reader had unread chapters of — see `feedCounts`. */
+  behind?: { joined: number; unseen: number };
   readSynced: number;
   /** True when the time budget expired before every stale entry was synced. */
   partial: boolean;

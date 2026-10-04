@@ -3,6 +3,7 @@
  * (`./desktop-check.ts`).
  */
 import * as api from '../api';
+import { getNotifyPrefsSync } from './prefs';
 
 export const NEW_CHAPTERS_TITLE = 'New chapters';
 
@@ -14,7 +15,7 @@ export async function newChaptersBody(count: number): Promise<string> {
 /** Names of the most recent unread finds, e.g. "One Piece, Berserk and 2 more". Null on any miss. */
 async function seriesSummary(): Promise<string | null> {
   try {
-    const items = await api.getActivity();
+    const items = await api.getActivity({ caughtUpOnly: getNotifyPrefsSync().caughtUpOnly });
     const titles: string[] = [];
     for (const item of items) {
       if (item.read) continue;

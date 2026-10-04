@@ -18,6 +18,9 @@ export interface NotifyPrefs {
   notifications: boolean;
   /** Mirror the unread count onto the app icon (iOS/Android home screen). */
   appBadge: boolean;
+  /** Keep the feed, its badge and the notification to series the reader had no unread chapters of
+   *  when the new one landed. Every chapter is still recorded, so this can be flipped either way. */
+  caughtUpOnly: boolean;
 }
 
 const DEFAULTS: NotifyPrefs = {
@@ -26,6 +29,7 @@ const DEFAULTS: NotifyPrefs = {
   wifiOnly: false,
   notifications: false,
   appBadge: true,
+  caughtUpOnly: true,
 };
 
 export const notifyPrefs$ = persisted$<NotifyPrefs>('comical:notify:prefs', DEFAULTS);

@@ -81,6 +81,8 @@ appId: com.porksphere.comical
 - takeScreenshot: notifications
 - assertVisible:
     id: "settings.toggle.check-for-new-chapters"
+- assertVisible:
+    id: "settings.toggle.only-for-series-i-m-caught-up-on"
 - tapOn:
     id: "top-bar.back"
 

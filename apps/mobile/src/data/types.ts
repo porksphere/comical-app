@@ -245,6 +245,9 @@ export type ActivityEntry = {
   detectedAt: number;
   /** Derived: true once the user has read this chapter (clears it from the unread badge). */
   read: boolean;
+  /** Landed on a row its series already had waiting unread: it counts toward that row, and isn't
+   *  news that moves it back up the feed. */
+  quiet?: boolean;
 };
 
 export type RailKind = 'hero' | 'ranked' | 'regular';

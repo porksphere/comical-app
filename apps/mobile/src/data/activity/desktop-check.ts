@@ -9,6 +9,7 @@ import { desktopShell, notifyDesktop } from '@/lib/desktop-shell';
 import * as api from '../api';
 import { isMockActive } from '../mock';
 import { refreshAfterSync } from './auto-check';
+import { feedCounts } from './feed-counts';
 import { NEW_CHAPTERS_TITLE, newChaptersBody } from './notice';
 import { getNotifyPrefsSync } from './prefs';
 
@@ -30,8 +31,9 @@ async function run(): Promise<void> {
     const res = await api.runBackgroundSync({});
     refreshAfterSync(res);
     // Someone looking at the app already has the Activity badge in front of them.
-    if (res.newChapters > 0 && prefs.notifications && !document.hasFocus()) {
-      notifyDesktop(NEW_CHAPTERS_TITLE, await newChaptersBody(res.newChapters), '/activity');
+    const { announced } = feedCounts(res, prefs.caughtUpOnly);
+    if (announced > 0 && prefs.notifications && !document.hasFocus()) {
+      notifyDesktop(NEW_CHAPTERS_TITLE, await newChaptersBody(announced), '/activity');
     }
   } catch {
     // Offline is an ordinary state; the next hour tries again.

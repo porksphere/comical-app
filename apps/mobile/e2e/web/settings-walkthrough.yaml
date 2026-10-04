@@ -71,6 +71,8 @@ url: http://localhost:4000/comical-app
 - takeScreenshot: notifications
 - assertVisible:
     id: "settings.toggle.check-for-new-chapters"
+- assertVisible:
+    id: "settings.toggle.only-for-series-i-m-caught-up-on"
 - tapOn:
     id: "Go back"
 

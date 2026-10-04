@@ -20,6 +20,7 @@ import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import * as api from '../api';
 import { isMockActive } from '../mock';
 import { syncAppBadge } from './app-badge';
+import { feedCounts } from './feed-counts';
 import { NEW_CHAPTERS_TITLE, newChaptersBody } from './notice';
 import { getNotifyPrefsSync } from './prefs';
 
@@ -59,9 +60,10 @@ export async function runChapterCheck(): Promise<BackgroundTask.BackgroundTaskRe
 
     const res = await api.runBackgroundSync({ budgetMs: SYNC_BUDGET_MS, trackers: false });
 
-    if (res.newChapters > 0 && prefs.notifications) await notifyNewChapters(res.newChapters);
+    const { announced } = feedCounts(res, prefs.caughtUpOnly);
+    if (announced > 0 && prefs.notifications) await notifyNewChapters(announced);
     // Same whole-feed unread count as the tab pip, so the icon and the in-app badge always agree.
-    const { unread } = await api.getActivityCount();
+    const { unread } = await api.getActivityCount({ caughtUpOnly: prefs.caughtUpOnly });
     syncAppBadge(unread);
 
     return BackgroundTask.BackgroundTaskResult.Success;

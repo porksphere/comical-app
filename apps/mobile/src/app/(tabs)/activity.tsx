@@ -57,7 +57,7 @@ type SeriesActivity = {
   seriesId: string;
   title: string;
   thumbnailUrl?: string;
-  /** Newest detection across the group — the sort key and the row's "when". */
+  /** When the group last had news — the sort key and the row's "when". */
   latestAt: number;
   /** How many of the group's new chapters are still unread — the "N new chapters" count. */
   newCount: number;
@@ -201,7 +201,7 @@ export default function ActivityScreen() {
         seriesId: head.seriesId,
         title: head.title,
         thumbnailUrl: head.thumbnailUrl,
-        latestAt: head.detectedAt,
+        latestAt: (entries.find((e) => !e.quiet) ?? head).detectedAt,
         newCount: unread.length,
         hasUnread: unread.length > 0,
         chapterId: rep.chapterId,

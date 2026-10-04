@@ -24,6 +24,8 @@ import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { persisted$ } from '@/lib/observable';
 import * as api from './api';
 import * as mock from './mock';
+import { feedCounts } from './activity/feed-counts';
+import { getNotifyPrefsSync } from './activity/prefs';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './downloads/constants';
 import { localChapterPages } from './downloads/index-cache';
 import type {
@@ -240,7 +242,8 @@ export interface DataSource {
   markActivityRead(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   /** Scan the library for new chapters. `force` re-checks every entry (the user-facing
    *  "Check for updates"); without it the host skips recently-synced entries, and
-   *  `budgetMs`/`trackers: false` keep OS background windows short. */
+   *  `budgetMs`/`trackers: false` keep OS background windows short. `newChapters` is what the scan
+   *  added to the feed the reader sees, which isn't every chapter it found. */
   checkForUpdates(
     opts?: { force?: boolean; budgetMs?: number; trackers?: boolean },
     signal?: AbortSignal,
@@ -418,7 +421,7 @@ function toApiChapter(c: Chapter): { id: string; name: string; number?: number; 
   };
 }
 
-function toActivityEntry(a: api.ApiActivityItem): ActivityEntry {
+function toActivityEntry(a: api.ApiActivityItem, caughtUpOnly: boolean): ActivityEntry {
   return {
     bridgeId: a.bridgeId,
     seriesId: a.seriesId,
@@ -429,6 +432,7 @@ function toActivityEntry(a: api.ApiActivityItem): ActivityEntry {
     ...(a.number !== undefined && { number: a.number }),
     detectedAt: a.detectedAt,
     read: a.read,
+    ...(caughtUpOnly && a.behind === 'joined' && { quiet: true }),
   };
 }
 
@@ -655,18 +659,23 @@ const realDataSource: DataSource = {
   async removeHistoryEntry(bridgeId, seriesId, signal) {
     await api.deleteHistoryEntry(bridgeId, seriesId, signal);
   },
+  // The feed the reader chose in Settings → Notifications. Not in the query keys: the screen that
+  // flips it invalidates them.
   async getActivity(signal) {
-    return (await api.getActivity(signal)).map(toActivityEntry);
+    const { caughtUpOnly } = getNotifyPrefsSync();
+    return (await api.getActivity({ caughtUpOnly }, signal)).map((a) => toActivityEntry(a, caughtUpOnly));
   },
   async getActivityCount(signal) {
-    return (await api.getActivityCount(signal)).unread;
+    const { caughtUpOnly } = getNotifyPrefsSync();
+    return (await api.getActivityCount({ caughtUpOnly }, signal)).unread;
   },
   async markActivityRead(bridgeId, seriesId, signal) {
-    await api.markActivityRead(bridgeId, seriesId, signal);
+    const { caughtUpOnly } = getNotifyPrefsSync();
+    await api.markActivityRead(bridgeId, seriesId, { caughtUpOnly }, signal);
   },
   async checkForUpdates(opts = {}, signal) {
     const res = await api.runBackgroundSync(opts, signal);
-    return { newChapters: res.newChapters, partial: res.partial };
+    return { newChapters: feedCounts(res, getNotifyPrefsSync().caughtUpOnly).shown, partial: res.partial };
   },
   async clearActivity(signal) {
     await api.clearActivity(signal);
