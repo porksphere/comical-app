@@ -4,8 +4,9 @@ import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reani
 
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 
-/** One section's vertical extent in the feed's content space (a heading plus its body). */
-export type FeedBand = { top: number; bottom: number };
+/** One section's vertical extent in the feed's content space: its heading from `top`, its body
+ *  from `bodyTop`. */
+export type FeedBand = { top: number; bodyTop: number; bottom: number };
 
 // Placeholder colours, walked in feed order. Ordered so neighbours sit far apart on the hue wheel:
 // a feed of two or three sections is the common one, and adjacent hues there read as one colour.
@@ -14,14 +15,15 @@ const PALETTE = ['#4F8DFD', '#E0569B', '#F2A03D', '#2FC4B2', '#9A6CF6', '#F2664F
 const WASH = { dark: 0.16, light: 0.1 };
 const GLOW = { dark: 0.34, light: 0.2 };
 
-// The glows scroll slower than the rails they sit behind, about the viewport's centre: a rail
-// meets its own glow as it crosses the middle of the screen and parts from it toward either edge.
-const GLOW_DRIFT = 0.78;
-const GLOW_HEIGHT = 2.1;
-const GLOW_WIDTH = '85%';
-// Where each glow's centre sits across the feed. Not a strict left/right alternation, which reads
-// as a zip down the page.
-const GLOW_X = [0.08, 0.9, 0.3, 0.98, 0.02, 0.72];
+const GLOW_HEIGHT = 1.7;
+const GLOW_WIDTH = 0.7;
+// Where each glow's centre sits across the feed, kept near the middle: a glow run off the side of
+// the screen is cut by it, and a cut glow reads as a clipped shape rather than as light.
+const GLOW_X = [0.42, 0.58, 0.47, 0.6, 0.4, 0.54];
+// Sideways travel per point of scroll, alternate glows in opposite directions. Each is on its own
+// `GLOW_X` as its section crosses the middle of the screen. Sideways only: a glow that also
+// travelled down the page at its own rate was off its rail everywhere but that one moment.
+const GLOW_SWAY = 0.07;
 
 const CHROME_FADE = 72;
 
@@ -65,18 +67,21 @@ export function FeedBackdrop({
   const scheme = useActiveColorScheme();
   const { height: viewport } = useWindowDimensions();
 
-  const wash = useAnimatedStyle(() => ({ transform: [{ translateY: -scrollOffset.value }] }));
-  const glow = useAnimatedStyle(() => ({ transform: [{ translateY: -scrollOffset.value * GLOW_DRIFT }] }));
+  const scroll = useAnimatedStyle(() => ({ transform: [{ translateY: -scrollOffset.value }] }));
+  const swayRight = useAnimatedStyle(() => ({ transform: [{ translateX: scrollOffset.value * GLOW_SWAY }] }));
+  const swayLeft = useAnimatedStyle(() => ({ transform: [{ translateX: -scrollOffset.value * GLOW_SWAY }] }));
   const fade = useAnimatedStyle(() => ({ transform: [{ translateY: barOffset?.value ?? 0 }] }));
 
   if (bands.length === 0) return null;
 
   const color = (i: number) => PALETTE[i % PALETTE.length]!;
-  const mid = (b: FeedBand) => Math.round((b.top + b.bottom) / 2);
+  // The BODY's middle, not the band's: the colour belongs behind the covers, and a band's own
+  // middle is pulled up toward its heading. A band cut off at its heading has no body yet.
+  const mid = (b: FeedBand) => Math.round((Math.min(b.bodyTop, b.bottom) + b.bottom) / 2);
   const first = bands[0]!;
   const last = bands[bands.length - 1]!;
 
-  // Knots at each band's middle, so a rail sits on its own colour and the blend happens across the
+  // Knots at each body's middle, so a rail sits on its own colour and the blend happens across the
   // seam between two. The ends ramp from and to nothing.
   const knots = [
     { y: Math.round(first.top), color: rgba(color(0), 0) },
@@ -84,9 +89,32 @@ export function FeedBackdrop({
     { y: Math.round(last.bottom), color: rgba(color(bands.length - 1), 0) },
   ];
 
+  const glows = (parity: 0 | 1) =>
+    bands.map((b, i) => {
+      if (i % 2 !== parity) return null;
+      const height = Math.max(0, b.bottom - b.bodyTop) * GLOW_HEIGHT;
+      // The layer's sway at the scroll that puts this band mid-screen, taken back out.
+      const home = (parity === 0 ? -1 : 1) * GLOW_SWAY * (mid(b) - viewport / 2);
+      return (
+        <View
+          key={i}
+          style={[
+            styles.glow,
+            {
+              top: mid(b) - height / 2,
+              height,
+              left: `${(GLOW_X[i % GLOW_X.length]! - GLOW_WIDTH / 2) * 100}%`,
+              transform: [{ translateX: home }],
+            },
+            glowStyle(color(i), GLOW[scheme]),
+          ]}
+        />
+      );
+    });
+
   return (
     <Animated.View pointerEvents="none" style={[styles.clip, style]}>
-      <Animated.View style={[styles.sheet, wash]}>
+      <Animated.View style={[styles.sheet, scroll]}>
         {knots.slice(1).map((to, i) => {
           const from = knots[i]!;
           return (
@@ -97,24 +125,8 @@ export function FeedBackdrop({
             />
           );
         })}
-      </Animated.View>
-      <Animated.View style={[styles.sheet, glow]}>
-        {bands.map((b, i) => {
-          const height = (b.bottom - b.top) * GLOW_HEIGHT;
-          // Laid out in the drifted space: at scroll `s` this lands `GLOW_DRIFT` of the way from
-          // the viewport's centre to the band's own.
-          const center = GLOW_DRIFT * mid(b) + (1 - GLOW_DRIFT) * (viewport / 2);
-          return (
-            <View
-              key={i}
-              style={[
-                styles.glow,
-                { top: center - height / 2, height, left: `${GLOW_X[i % GLOW_X.length]! * 100}%` },
-                glowStyle(color(i), GLOW[scheme]),
-              ]}
-            />
-          );
-        })}
+        <Animated.View style={[styles.sheet, swayRight]}>{glows(0)}</Animated.View>
+        <Animated.View style={[styles.sheet, swayLeft]}>{glows(1)}</Animated.View>
       </Animated.View>
       {/* Solid down to the chrome's edge, not just from it: at rest no heading is pinned yet, and
           the strip its band will cover would otherwise show colour that the fade then cuts off. */}
@@ -145,11 +157,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
   },
-  // `left` places the CENTRE: the box is pulled back by half its own width.
   glow: {
     position: 'absolute',
-    width: GLOW_WIDTH,
-    marginLeft: '-42.5%',
+    width: `${GLOW_WIDTH * 100}%`,
   },
   fade: {
     position: 'absolute',

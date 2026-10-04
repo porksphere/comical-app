@@ -215,7 +215,14 @@ export function ContentFeed({
         case 'rail':
           // Strip only — the heading is its own preceding `sectionHead` row now. The rail's own
           // bridge (aggregate rails carry an override) decides whether the sub line is reserved.
-          return railStripHeight(row.section.kind, railViewport, wide, subOf(row.bridgeId ?? bridgeId), gutter);
+          return railStripHeight(
+            row.section.kind,
+            railViewport,
+            wide,
+            subOf(row.bridgeId ?? bridgeId),
+            gutter,
+            row.section.items.length,
+          );
         case 'railSkeleton':
           // Self-headed (still renders its own title), so it's the whole head+strip height.
           return railRowHeight('regular', railViewport, wide, subOf(bridgeId), gutter);
@@ -248,7 +255,9 @@ export function ContentFeed({
     for (const row of rows) {
       // A band is a heading and everything under it, up to the next heading. A loading rail is
       // self-headed, so it opens one too — the colours are there before the covers are.
-      if (row.type === 'sectionHead' || row.type === 'railSkeleton') bands.push({ top: y, bottom: y });
+      if (row.type === 'sectionHead') bands.push({ top: y, bodyTop: y + SECTION_HEAD_ROW_HEIGHT, bottom: y });
+      // The heading `railRowHeight` puts inside the row.
+      if (row.type === 'railSkeleton') bands.push({ top: y, bodyTop: y + SECTION_HEAD_HEIGHT + Spacing.two, bottom: y });
       // The HEAD's top (past the row's own top gap): the pinned copy is that head, so pinning it
       // there superimposes the two exactly at the hand-off — the band's padding is the band's, not
       // the row's. The row key rides along so that heading can hide itself while the pinned copy is

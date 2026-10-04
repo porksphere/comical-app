@@ -151,12 +151,16 @@ export function railStripHeight(
   wide: boolean,
   hasSub: boolean,
   gutter: number,
+  /** How many items the rail holds, when known: a rail too short to fill the wide grid draws only
+   *  the rows it has. Unknown reserves the full grid. */
+  count?: number,
 ): number {
   if (wide) {
-    // Static GRID_ROWS-row grid: rows of `estimatedCardHeight` cards + inter-row gaps + the grid
-    // wrapper's own `Spacing.one` vertical padding (styles.grid).
-    const cardH = estimatedCardHeight(wideGrid(viewportWidth, gutter).cardWidth, hasSub);
-    return Spacing.one * 2 + GRID_ROWS * cardH + (GRID_ROWS - 1) * GRID_ROW_GAP;
+    // Static grid of up to GRID_ROWS rows: rows of `estimatedCardHeight` cards + inter-row gaps +
+    // the grid wrapper's own `Spacing.one` vertical padding (styles.grid).
+    const { columns, cardWidth } = wideGrid(viewportWidth, gutter);
+    const rows = count === undefined ? GRID_ROWS : Math.min(GRID_ROWS, Math.max(1, Math.ceil(count / columns)));
+    return Spacing.one * 2 + rows * estimatedCardHeight(cardWidth, hasSub) + (rows - 1) * GRID_ROW_GAP;
   }
   // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
   return estimatedCardHeight(cardWidthFor(kind, viewportWidth), hasSub) + STRIP_PAD_V * 2;
