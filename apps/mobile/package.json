@@ -7,6 +7,7 @@
     "@legendapp/list": "^3.3.5",
     "@legendapp/state": "^3.0.0-beta.47",
     "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
     "@noble/ed25519": "^3.1.0",
     "@noble/hashes": "^2.2.0",
     "@react-native-async-storage/async-storage": "2.2.0",

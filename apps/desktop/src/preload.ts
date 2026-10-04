@@ -3,7 +3,7 @@
  * renderer half is all it can reach.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { SyncDevice } from "@comical/host-server/sync-host";
+import type { PairedDevice } from "@comical/sync";
 
 const settings = ipcRenderer.sendSync("shell-settings") as {
   runInTray: boolean;
@@ -58,18 +58,23 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
   setOpenAtLogin: (on: boolean) => ipcRenderer.send("open-at-login", on === true),
   /** Whether phones on the network may sync with this library, as saved when the page loaded. */
   networkSync: settings.networkSync,
-  /** Resolves to the address a phone is given as its sync server — null when turned off, or while
-   *  this computer is on no network. */
+  /** Resolves to where a phone reaches this computer — null when turned off, or while this
+   *  computer is on no network. */
   setNetworkSync: (on: boolean) => ipcRenderer.invoke("network-sync", on === true) as Promise<string | null>,
   networkSyncAddress: () => ipcRenderer.invoke("network-sync") as Promise<string | null>,
-  /** Replace the key in that address. Resolves to the new address; every phone paired with the old
-   *  one is cut off until it is given this. */
-  newNetworkSyncKey: () => ipcRenderer.invoke("network-sync-new-key") as Promise<string | null>,
-  /** The devices that have synced with this library, most recent first. */
-  syncDevices: () => ipcRenderer.invoke("sync-devices") as Promise<SyncDevice[]>,
+  /** What one phone scans to pair: this computer's address ending in a code that works once, until
+   *  `expiresAt`. Each call replaces the last code. Null when sync is off or there is no network. */
+  openSyncPairing: () =>
+    ipcRenderer.invoke("sync-pairing-open") as Promise<{ address: string; expiresAt: number } | null>,
+  /** The code on screen is no longer on screen. */
+  closeSyncPairing: () => ipcRenderer.send("sync-pairing-close"),
+  /** The devices paired with this computer, most recently active first. */
+  syncDevices: () => ipcRenderer.invoke("sync-devices") as Promise<PairedDevice[]>,
+  /** Stop syncing with one of them. The others are untouched. False when it wasn't paired. */
+  unlinkSyncDevice: (id: string) => ipcRenderer.invoke("sync-device-unlink", id) as Promise<boolean>,
   /** Called with the new list whenever it changes. Returns the unsubscribe. */
-  onSyncDevices: (onDevices: (devices: SyncDevice[]) => void) => {
-    const listener = (_e: IpcRendererEvent, devices: SyncDevice[]) => onDevices(devices);
+  onSyncDevices: (onDevices: (devices: PairedDevice[]) => void) => {
+    const listener = (_e: IpcRendererEvent, devices: PairedDevice[]) => onDevices(devices);
     ipcRenderer.on("sync-devices", listener);
     return () => {
       ipcRenderer.off("sync-devices", listener);

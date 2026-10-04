@@ -1,7 +1,7 @@
 /**
  * The sheet that edits which server the app talks to. Two rows open it — General's "Remote server"
  * (the backend, while bridges run on a server) and Sync's "Sync server" (the hub, while they run on
- * the device) — and it is one form because they set one value: `switchServer`.
+ * the device) — and it is one form because they set one value: `connectServer`.
  *
  * Mirrors `AddRegistryForm`'s text-input-plus-save shape in `registries.tsx`.
  */
@@ -11,20 +11,24 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { OverlayHeading, useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { parseSyncAddress } from '@/data/sync-address';
+import { pairingFailureMessage } from '@/data/switch-server';
+import { parseSyncAddress, type SyncAddress } from '@/data/sync-address';
 import { useTheme } from '@/hooks/use-theme';
 
 export function RemoteServerForm({
   title,
   description,
   currentUrl,
+  resetLabel = 'Reset to default',
   onSave,
   onScan,
 }: {
   title: string;
   description: string;
   currentUrl: string;
-  onSave: (url: string | null, secret?: string) => void;
+  resetLabel?: string;
+  /** `null` goes back to the default server. The sheet stays open, saying why, if it rejects. */
+  onSave: (address: SyncAddress | null) => Promise<void>;
   /** Open the pairing-code scanner; absent where there is no camera. */
   onScan?: () => void;
 }) {
@@ -33,6 +37,17 @@ export function RemoteServerForm({
   const keyboardAvoiding = useKeyboardAvoidingInput();
   const inputRef = useRef<TextInput>(null);
   const [url, setUrl] = useState(currentUrl);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = (address: SyncAddress | null) => {
+    setBusy(true);
+    setError(null);
+    onSave(address).then(closeTop, (e: unknown) => {
+      setError(pairingFailureMessage(e));
+      setBusy(false);
+    });
+  };
 
   return (
     <View style={styles.body}>
@@ -54,6 +69,11 @@ export function RemoteServerForm({
         keyboardType="url"
         style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
       />
+      {error && (
+        <ThemedText type="small" style={{ color: theme.danger }}>
+          {error}
+        </ThemedText>
+      )}
       <View style={styles.actions}>
         {onScan && (
           <Pressable
@@ -68,27 +88,21 @@ export function RemoteServerForm({
         )}
         <Pressable
           testID="settings.general.remote-server.reset"
-          onPress={() => {
-            onSave(null);
-            closeTop();
-          }}
+          onPress={() => save(null)}
+          disabled={busy}
           style={styles.btn}>
-          <ThemedText type="smallBold">Reset to default</ThemedText>
+          <ThemedText type="smallBold">{resetLabel}</ThemedText>
         </Pressable>
         <Pressable
           testID="settings.general.remote-server.save"
-          onPress={() => {
-            // A pairing code typed from the desktop's sheet carries its key; anything else is
-            // saved as typed, as a server that speaks in the clear.
-            const address = parseSyncAddress(url);
-            onSave(address?.url ?? url, address?.secret);
-            closeTop();
-          }}
-          // Saving the server shown would re-save it without its key.
-          disabled={!url.trim() || url.trim() === currentUrl}
+          // An address typed from the desktop's sheet ends in its pairing code; anything else is
+          // saved as typed, as a server that speaks in the clear.
+          onPress={() => save(parseSyncAddress(url) ?? { url })}
+          // Saving the server shown would re-save it without its pairing.
+          disabled={busy || !url.trim() || url.trim() === currentUrl}
           style={styles.btn}>
           <ThemedText type="smallBold" style={{ color: theme.accent }}>
-            Save
+            {busy ? 'Saving…' : 'Save'}
           </ThemedText>
         </Pressable>
       </View>

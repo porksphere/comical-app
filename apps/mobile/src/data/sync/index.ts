@@ -14,7 +14,7 @@ import { AppState } from 'react-native';
 import { showToast } from '@/components/toast';
 import { syncDeviceName } from '@/lib/device-name';
 import { logDiagnostic } from '@/lib/diagnostics';
-import { getApiBase, getSyncSecret } from '../api';
+import { getApiBase, getSyncPairing, setApiBaseOverride } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
 import { getResolvedModeSync } from '../embedded/preference';
 import { queryClient } from '../query-client';
@@ -44,8 +44,8 @@ export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): Lib
       else await AsyncStorage.removeItem(STATE_KEY);
     },
     backend: () => {
-      const secret = getSyncSecret();
-      return new HttpBackend({ baseUrl: getApiBase(), fetch: (url, init) => fetch(url, init), ...(secret && { secret }) });
+      const pairing = getSyncPairing();
+      return new HttpBackend({ baseUrl: getApiBase(), fetch: (url, init) => fetch(url, init), ...(pairing && { pairing }) });
     },
     canSync: () => getResolvedModeSync() === 'embedded',
     newDeviceId: () => `app-${crypto.randomUUID()}`,
@@ -55,6 +55,11 @@ export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): Lib
       void queryClient.invalidateQueries();
     },
     onRepaired: () => showToast('Sync paired again — the computer had been reset.'),
+    onUnlinked: () => {
+      // The key is dead; kept, it would only make the next attempt fail the same way.
+      setApiBaseOverride(null);
+      showToast('Your computer unlinked this device. Pair again to keep syncing.');
+    },
     onStatus: (next) => status$.set(next),
     log: (message) => logDiagnostic('sync', message),
   });

@@ -4,8 +4,9 @@
  * one syncing — it is the hub. A browser is neither: it reads the server's library directly, and
  * that is already shared with everything else on the same server.
  */
+import type { PairedDevice } from '@comical/sync';
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
 import { OverlayHeading, useOverlay } from '@/components/overlay/overlay';
@@ -15,26 +16,27 @@ import { SettingsTextRow, SettingsToggleRow } from '@/components/settings/settin
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { useApiBase } from '@/data/api';
+import { useApiBase, useSyncPaired } from '@/data/api';
 import { isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
-import { switchServer } from '@/data/switch-server';
-import { displaySyncAddress } from '@/data/sync-address';
+import { connectServer } from '@/data/switch-server';
 import { setSyncEnabled, syncLibraryNow, useSyncStatus, type SyncStatus } from '@/data/sync';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import {
-  desktopRekeysSync,
+  closeSyncPairing,
   desktopShell,
   desktopSyncsDevices,
-  newNetworkSyncKey,
+  openSyncPairing,
   refreshNetworkSyncAddress,
+  unlinkSyncDevice,
   useNetworkSync,
   useNetworkSyncAddress,
   useSyncDevices,
-  type SyncDevice,
+  type PairingOffer,
 } from '@/lib/desktop-shell';
 import { defaultSyncDeviceName, useChosenSyncDeviceName } from '@/lib/device-name';
 import { useRouter } from '@/lib/nav';
@@ -74,6 +76,7 @@ function DeviceRows() {
   const { open } = useOverlay();
   const [onDevice] = useEmbeddedEnabled();
   const [apiBase] = useApiBase();
+  const paired = useSyncPaired();
   const sync = useSyncStatus();
   const [chosenName, setChosenName] = useChosenSyncDeviceName();
   // Only an on-device library needs syncing — a remote server's library is already shared by every
@@ -104,7 +107,11 @@ function DeviceRows() {
     <>
       <SettingsToggleRow
         label="Sync library"
-        description="Keep your library in step with your computer."
+        description={
+          sync.unlinked
+            ? 'Your computer unlinked this device. Pair again to keep syncing.'
+            : 'Keep your library in step with your computer.'
+        }
         value={sync.enabled}
         onChange={(v) => void setSyncEnabled(v)}
       />
@@ -127,7 +134,8 @@ function DeviceRows() {
                 title="Sync server"
                 description="The computer this library syncs with. Scan the code on its Sync settings, or type the address shown beside it."
                 currentUrl={apiBase}
-                onSave={switchServer}
+                resetLabel={paired ? 'Unpair' : undefined}
+                onSave={connectServer}
                 // The scanner is a camera, so only where there is one.
                 onScan={Platform.OS === 'web' ? undefined : () => router.push('/scan-sync-server')}
               />
@@ -170,32 +178,52 @@ function HubRows() {
       />
       {networkSync && (
         <SettingsRow
-          testID="settings.sync.address"
-          label="Sync server for your phone"
-          description={networkSyncAddress ? displaySyncAddress(networkSyncAddress) : 'Not connected to a network'}
-          onPress={networkSyncAddress ? () => openDialog(() => <PairPhoneSheet />, { accessibilityLabel: 'Pair your phone' }) : undefined}
+          testID="settings.sync.pair-phone"
+          label="Pair a phone"
+          description={networkSyncAddress ? 'Show a code for one phone to scan' : 'Not connected to a network'}
+          onPress={networkSyncAddress ? () => openDialog(() => <PairPhoneSheet />, { accessibilityLabel: 'Pair a phone' }) : undefined}
         />
       )}
       {networkSync && devices.length === 0 && (
-        <SettingsRow testID="settings.sync.no-devices" label="No phones yet" description="A phone appears here once it has synced." />
+        <SettingsRow testID="settings.sync.no-devices" label="No phones yet" description="A phone appears here once it is paired." />
       )}
-      {networkSync && devices.map((device) => <DeviceRow key={device.id} device={device} />)}
+      {/* Listed while sync is off too: a phone can be unlinked without opening the door to do it. */}
+      {devices.map((device) => (
+        <DeviceRow key={device.id} device={device} />
+      ))}
     </>
   );
 }
 
 /**
- * One phone that has synced with this computer. There is no "connected" to show — a sync is a
- * request and a reply — so when it was last here is the whole status; the hub can't tell a phone
- * apart from a phone-shaped stranger, and the shared key is the only thing to cut off.
+ * One phone paired with this computer. There is no "connected" to show — a sync is a request and a
+ * reply — so when it was last here is the whole status. Its key is its own, so unlinking it cuts
+ * off that phone and no other.
  */
-function DeviceRow({ device }: { device: SyncDevice }) {
+function DeviceRow({ device }: { device: PairedDevice }) {
+  const theme = useTheme();
   const now = useMinuteTick();
   return (
     <SettingsRow
       testID={testId('settings.sync.device', device.id)}
       label={device.name}
-      description={`Synced ${relTime(device.lastSeenAt, now)}`}
+      description={device.lastSeenAt === null ? 'Paired, not synced yet' : `Synced ${relTime(device.lastSeenAt, now)}`}
+      right={
+        <ThemedText type="smallBold" style={{ color: theme.danger }}>
+          Unlink
+        </ThemedText>
+      }
+      onPress={() =>
+        openConfirm({
+          title: `Unlink ${device.name}?`,
+          message: 'It stops syncing with this computer until it is paired again. The library already on it stays there.',
+          confirmLabel: 'Unlink',
+          pendingLabel: 'Unlinking…',
+          tone: 'danger',
+          errorFallback: "Couldn't unlink",
+          onConfirm: () => unlinkSyncDevice(device.id),
+        })
+      }
     />
   );
 }
@@ -211,60 +239,61 @@ function useMinuteTick(): number {
 }
 
 /**
- * The desktop's half of pairing: its address as a QR code for the phone's scanner, and the one
- * place the key in it can be replaced. The address is read live, so a changed network shows here
- * without reopening.
+ * The desktop's half of pairing: a code for ONE phone, as a QR for its scanner. The code works
+ * once and only while this sheet shows it — a phone that pairs closes the sheet, and one left open
+ * swaps in a fresh code as each runs out.
  */
 function PairPhoneSheet() {
-  const theme = useTheme();
-  const address = useNetworkSyncAddress();
-  const { openDialog, closeTop } = useOverlay();
+  const { closeTop } = useOverlay();
+  const devices = useSyncDevices();
+  const [known] = useState(() => new Set(devices.map((device) => device.id)));
+  // `undefined` until the shell has answered; `null` when it has no code to give.
+  const [offer, setOffer] = useState<PairingOffer | null | undefined>(undefined);
+  const [round, setRound] = useState(0);
 
-  // The confirm popup draws beneath the overlay stack, so the sheet gives way to it and comes back
-  // once the new code exists — the same hand-off AddRegistryForm makes before offering adoption.
-  const rekey = () => {
-    closeTop();
-    openConfirm({
-      title: 'Use a new key?',
-      message: 'Every phone paired with this computer stops syncing until it scans the new code.',
-      confirmLabel: 'New key',
-      pendingLabel: 'Making a new key…',
-      tone: 'danger',
-      errorFallback: "Couldn't make a new key",
-      onConfirm: async () => {
-        if (!(await newNetworkSyncKey())) throw new Error("Couldn't make a new key");
-        openDialog(() => <PairPhoneSheet />, { accessibilityLabel: 'Pair your phone' });
-      },
+  useEffect(() => {
+    let live = true;
+    let expiry: ReturnType<typeof setTimeout> | undefined;
+    void openSyncPairing().then((next) => {
+      if (!live) return;
+      setOffer(next);
+      if (next) expiry = setTimeout(() => setRound((r) => r + 1), Math.max(0, next.expiresAt - Date.now()));
     });
-  };
+    return () => {
+      live = false;
+      clearTimeout(expiry);
+      closeSyncPairing();
+    };
+  }, [round]);
+
+  const pairedName = devices.find((device) => !known.has(device.id))?.name;
+  useEffect(() => {
+    if (pairedName === undefined) return;
+    showToast(`Paired with ${pairedName}`);
+    closeTop();
+  }, [pairedName, closeTop]);
 
   return (
     <View style={styles.sheet}>
-      <OverlayHeading>Pair your phone</OverlayHeading>
+      <OverlayHeading>Pair a phone</OverlayHeading>
       <ThemedText type="small" themeColor="textSecondary">
-        On the phone, open Settings → Sync, turn on Sync library, and scan this code from Sync server.
+        On the phone, open Settings → Sync, turn on Sync library, and scan this code from Sync server. It pairs one phone;
+        show another for the next.
       </ThemedText>
-      {address ? (
+      {offer ? (
         <View style={styles.qr}>
-          <QrCode testID="settings.sync.pair-phone.qr" value={address} size={200} />
+          <QrCode testID="settings.sync.pair-phone.qr" value={offer.address} size={200} />
         </View>
       ) : (
-        <ThemedText type="small" themeColor="textSecondary">
-          Not connected to a network.
-        </ThemedText>
+        offer === null && (
+          <ThemedText type="small" themeColor="textSecondary">
+            Not connected to a network.
+          </ThemedText>
+        )
       )}
-      <ThemedText type="small" themeColor="textSecondary" selectable>
-        {address ?? ''}
+      <ThemedText testID="settings.sync.pair-phone.address" type="small" themeColor="textSecondary" selectable>
+        {offer?.address ?? ''}
       </ThemedText>
-      {desktopRekeysSync() && (
-        <View style={styles.sheetActions}>
-          <Pressable testID="settings.sync.pair-phone.new-key" onPress={rekey} style={styles.sheetBtn}>
-            <ThemedText type="smallBold" style={{ color: theme.accent }}>
-              New key
-            </ThemedText>
-          </Pressable>
-        </View>
-      )}
     </View>
   );
 }
@@ -281,14 +310,6 @@ const styles = StyleSheet.create({
   },
   sheet: {
     gap: Spacing.three,
-  },
-  sheetActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: Spacing.five,
-  },
-  sheetBtn: {
-    paddingVertical: Spacing.two,
   },
   qr: {
     alignItems: 'center',

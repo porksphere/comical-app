@@ -1,8 +1,9 @@
 /**
  * The phone's half of pairing: point the camera at the code the desktop shows (Settings → Sync →
- * Sync server for your phone) and the address in it becomes this app's server. Native only — a
+ * Pair a phone) and this phone pairs with the computer at the address in it. Native only — a
  * desktop is the end that shows the code, and the web build has no camera to speak of.
  */
+import { SyncPairingError } from '@comical/sync';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
@@ -12,35 +13,48 @@ import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { Spacing } from '@/constants/theme';
-import { switchServer } from '@/data/switch-server';
+import { connectServer, pairingFailureMessage } from '@/data/switch-server';
 import { parseSyncAddress } from '@/data/sync-address';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
+
+/** How long a code that couldn't reach its computer is left alone before the camera's next sighting tries it again. */
+const RETRY_AFTER_MS = 4000;
 
 export default function ScanSyncServerScreen() {
   const router = useRouter();
   const theme = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
-  const [paired, setPaired] = useState(false);
-  // The camera reports the same code many times a second; one refusal per code is enough.
-  const refused = useRef<string | null>(null);
+  const [pairing, setPairing] = useState(false);
+  // The camera reports the same code many times a second; one refusal per code is enough, for good
+  // when the code itself is the problem.
+  const refused = useRef<{ data: string; until: number } | null>(null);
 
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) void requestPermission();
   }, [permission, requestPermission]);
 
   const onScanned = ({ data }: { data: string }) => {
-    if (paired) return;
+    if (pairing) return;
+    if (refused.current?.data === data && Date.now() < refused.current.until) return;
     const address = parseSyncAddress(data);
     if (!address) {
-      if (refused.current !== data) showToast("That isn't a Comical pairing code.");
-      refused.current = data;
+      refused.current = { data, until: Infinity };
+      showToast("That isn't a Comical pairing code.");
       return;
     }
-    setPaired(true);
-    switchServer(address.url, address.secret);
-    showToast('Paired. Syncing with your computer.');
-    router.back();
+    setPairing(true);
+    connectServer(address).then(
+      () => {
+        showToast('Paired. Syncing with your computer.');
+        router.back();
+      },
+      (e: unknown) => {
+        refused.current = { data, until: e instanceof SyncPairingError ? Infinity : Date.now() + RETRY_AFTER_MS };
+        showToast(pairingFailureMessage(e));
+        setPairing(false);
+      },
+    );
   };
 
   return (
@@ -52,11 +66,11 @@ export default function ScanSyncServerScreen() {
             style={StyleSheet.absoluteFill}
             facing="back"
             barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-            onBarcodeScanned={paired ? undefined : onScanned}
+            onBarcodeScanned={pairing ? undefined : onScanned}
           />
           <View style={styles.hint}>
             <ThemedText type="small" style={styles.hintText}>
-              On your computer: Settings → Sync → Sync server for your phone.
+              {pairing ? 'Pairing…' : 'On your computer: Settings → Sync → Pair a phone.'}
             </ThemedText>
           </View>
         </View>

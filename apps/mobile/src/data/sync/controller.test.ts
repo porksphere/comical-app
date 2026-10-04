@@ -5,7 +5,14 @@
 import { describe, expect, test } from 'bun:test';
 import type { SettingDescriptor, SettingValue } from '@comical/contract';
 import { entryKey, InMemoryLibraryStore, Library } from '@comical/library';
-import { MemorySegmentStore, SyncHub, type BridgeSettingsProvider, type SyncBackend, type SyncedRegistry } from '@comical/sync';
+import {
+  MemorySegmentStore,
+  SyncHub,
+  SyncUnlinkedError,
+  type BridgeSettingsProvider,
+  type SyncBackend,
+  type SyncedRegistry,
+} from '@comical/sync';
 
 import { createLibrarySync, type LibrarySyncOptions, type SyncDoc } from './controller';
 
@@ -253,6 +260,45 @@ describe('createLibrarySync', () => {
 
     await a.sync.enable();
     expect(a.saved()!.state.device).not.toBe(first);
+  });
+
+  test('a hub that unlinked this device turns sync off, says so, and leaves the library alone', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    let unlinked = false;
+    const gated: SyncBackend = {
+      push: (segment) => (unlinked ? Promise.reject(new SyncUnlinkedError()) : hub.push(segment)),
+      pull: (request) => (unlinked ? Promise.reject(new SyncUnlinkedError()) : hub.pull(request)),
+    };
+    let told = 0;
+    const a = device(gated, { onUnlinked: () => told++ });
+    await a.sync.enable();
+    await a.library.createCollection('Mine');
+
+    unlinked = true;
+    expect(await a.sync.syncNow()).toBeUndefined();
+    expect(a.sync.status()).toMatchObject({ enabled: false, running: false, unlinked: true });
+    expect(a.sync.status().lastError).toBeUndefined();
+    expect(a.saved()).toBeNull();
+    expect(told).toBe(1);
+    expect(await names(a.library)).toEqual(['Mine']);
+  });
+
+  test('turning sync back on after being unlinked no longer says so', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    let unlinked = true;
+    const gated: SyncBackend = {
+      push: (segment) => (unlinked ? Promise.reject(new SyncUnlinkedError()) : hub.push(segment)),
+      pull: (request) => (unlinked ? Promise.reject(new SyncUnlinkedError()) : hub.pull(request)),
+    };
+    const a = device(gated);
+    await a.sync.enable();
+    expect(a.sync.status()).toMatchObject({ enabled: false, unlinked: true });
+
+    unlinked = false;
+    await a.sync.enable();
+    expect(a.sync.status().enabled).toBe(true);
+    expect(a.sync.status().unlinked).toBeUndefined();
+    expect(a.sync.status().lastError).toBeUndefined();
   });
 
   test('holds rounds while the app is on a remote server', async () => {

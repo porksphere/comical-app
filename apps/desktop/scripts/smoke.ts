@@ -7,10 +7,19 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InMemoryLibraryStore, Library } from "@comical/library";
-import { HttpBackend, librarySyncStore, sealedChannel, SyncEngine, wrapLibraryStore } from "@comical/sync";
+import {
+  HttpBackend,
+  librarySyncStore,
+  pair,
+  SyncEngine,
+  SyncPairingError,
+  SyncUnlinkedError,
+  wrapLibraryStore,
+  type StoredPairing,
+} from "@comical/sync";
 import { createDesktopHost } from "../src/host/create-host.ts";
 import { startLoopbackServer } from "../src/host/serve.ts";
-import { newSyncKey, startSyncListener } from "../src/host/sync-listener.ts";
+import { createSyncGate, startSyncListener } from "../src/host/sync-listener.ts";
 
 async function main(): Promise<void> {
   const WEB_ROOT = process.env.COMICAL_WEB_ROOT ?? join(__dirname, "..", "build", "web");
@@ -134,26 +143,42 @@ async function main(): Promise<void> {
     check("path traversal is refused", escape.status === 404 || escape.status === 403, escape.status);
   }
 
-  // 8. A phone's way in: the sync routes alone, on the network, sealed under the pairing key.
-  const key = newSyncKey();
-  const lan = await startSyncListener({ getHost: () => host, key, port: 0 });
+  // 8. A phone's way in: the sync routes alone, on the network, each phone sealed under a key of
+  //    its own that a one-time code got it.
+  let savedPairings: StoredPairing[] = [];
+  const gate = createSyncGate({ getHost: () => host, pairings: [], save: (pairings) => (savedPairings = pairings) });
+  const lan = await startSyncListener({ gate, port: 0 });
   const address = await lan.address();
   check("the sync listener has an address to hand a phone", Boolean(address), address);
-  check("…which ends in the key the phone keeps", address?.endsWith(`/${key}`) ?? false, address);
   // Whatever interface that names, the listener is on all of them — loopback is the one a CI
   // runner is sure to have.
   const local = address ? `http://127.0.0.1:${new URL(address).port}` : "";
+  const viaFetch = (url: string, init?: RequestInit) => fetch(url, init);
   const post = (path: string, body: string) =>
     fetch(`${local}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body });
   const probe = { device: "smoke-probe", name: "Smoke probe", have: {} };
-  const sealed = await post("/sync/pull", sealedChannel(key).sealRequest("/sync/pull", JSON.stringify(probe)).envelope);
-  check("POST /sync/pull sealed under the key → 200", sealed.status === 200, sealed.status);
-  const wrongKey = await post("/sync/pull", sealedChannel(newSyncKey()).sealRequest("/sync/pull", JSON.stringify(probe)).envelope);
-  check("…sealed under a wrong key → 404", wrongKey.status === 404, wrongKey.status);
+
+  const { code } = gate.openCode();
+  const pairing = await pair({ baseUrl: local, fetch: viaFetch, code, name: "Smoke phone" });
+  check("a phone pairs with the code on screen, and is listed", gate.devices().map((d) => d.name).join() === "Smoke phone", JSON.stringify(gate.devices()));
+  check("…under a key the shell is handed to keep", savedPairings.some((p) => p.id === pairing.id && p.key === pairing.key), savedPairings.length);
+  const reused = await pair({ baseUrl: local, fetch: viaFetch, code, name: "Second phone" }).catch((err: unknown) => err);
+  check("…and the code doesn't work twice", reused instanceof SyncPairingError, String(reused));
+  const closed = gate.openCode().code;
+  gate.closeCode();
+  const late = await pair({ baseUrl: local, fetch: viaFetch, code: closed, name: "Late phone" }).catch((err: unknown) => err);
+  check("…nor one taken off the screen", late instanceof SyncPairingError, String(late));
+
+  const paired = new HttpBackend({ baseUrl: local, pairing, fetch: viaFetch });
+  const pulled = await paired.pull({ device: "smoke-phone", name: "Smoke phone", have: {} }).catch((err: unknown) => err);
+  check("a pull sealed under the phone's key is answered", !(pulled instanceof Error), String(pulled));
+  const stranger = new HttpBackend({ baseUrl: local, pairing: { id: pairing.id, key: Buffer.alloc(32, 7).toString("base64") }, fetch: viaFetch });
+  const forged = await stranger.pull(probe).catch((err: unknown) => err);
+  check("…one sealed under another key is not", forged instanceof Error, String(forged));
   const clear = await post("/sync/pull", JSON.stringify(probe));
   check("…in the clear → 404", clear.status === 404, clear.status);
-  const keyInPath = await post(`/${key}/sync/pull`, JSON.stringify(probe));
-  check("…the key in the path → 404", keyInPath.status === 404, keyInPath.status);
+  const codeInPath = await post(`/${code}/sync/pull`, JSON.stringify(probe));
+  check("…the code in the path → 404", codeInPath.status === 404, codeInPath.status);
   const beyond = await fetch(`${local}/bridges`);
   check("…nothing but sync is there", beyond.status === 404, beyond.status);
 
@@ -161,7 +186,7 @@ async function main(): Promise<void> {
   const phoneStore = new InMemoryLibraryStore();
   const phone = new SyncEngine({
     store: librarySyncStore(phoneStore),
-    backend: new HttpBackend({ baseUrl: local, secret: key, fetch: (url, init) => fetch(url, init) }),
+    backend: paired,
     device: "smoke-phone",
     name: () => "Smoke phone",
     newDeviceId: () => "smoke-phone-2",
@@ -179,12 +204,21 @@ async function main(): Promise<void> {
   // Said once the round that applied it is over, a moment after the write itself.
   for (let i = 0; i < 20 && synced === 0; i++) await new Promise((r) => setTimeout(r, 100));
   check("…and the shell is told to refresh its page", synced > 0, synced);
-  const devices = host.syncDevices();
-  check(
-    "…and the phone is on the hub's roster by name, the probe beside it, the hub itself not",
-    devices.map((d) => d.name).sort().join() === "Smoke phone,Smoke probe",
-    JSON.stringify(devices),
-  );
+  check("…and the phone is listed as having synced", gate.devices()[0]?.lastSeenAt != null, JSON.stringify(gate.devices()));
+
+  // A second phone, so unlinking one can be seen to leave the other alone.
+  const other = new HttpBackend({
+    baseUrl: local,
+    pairing: await pair({ baseUrl: local, fetch: viaFetch, code: gate.openCode().code, name: "Other phone" }),
+    fetch: viaFetch,
+  });
+  check("unlinking a phone takes it off the list", gate.unlink(pairing.id) && gate.devices().map((d) => d.name).join() === "Other phone", JSON.stringify(gate.devices()));
+  const cutOff = await paired.pull({ device: "smoke-phone", name: "Smoke phone", have: {} }).catch((err: unknown) => err);
+  check("…and it is told so when it next syncs", cutOff instanceof SyncUnlinkedError, String(cutOff));
+  const untouched = await other.pull({ device: "other-phone", name: "Other phone", have: {} }).catch((err: unknown) => err);
+  check("…while the other phone carries on", !(untouched instanceof Error), String(untouched));
+  await other.unpair();
+  check("a phone that unpairs itself is gone from the list", gate.devices().length === 0, JSON.stringify(gate.devices()));
 
   await lan.close();
   await server.close();

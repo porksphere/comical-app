@@ -1,14 +1,14 @@
 /**
- * A pairing code is one string — it is what a QR holds, and what the desktop shows beside it to
- * type — but what it names is two things: the server, and the secret the two sides seal the sync
- * channel under. `http://<computer>:<port>/<key>` is split here, once, and the phone keeps the
- * parts apart from then on. A plain origin pairs with no secret (a server on a trusted link, in
- * the clear); a path that isn't key-shaped — `/api` behind a proxy — is the server's own.
+ * What a desktop shows a phone is one string — it is what a QR holds, and what sits beside it to
+ * type — but what it names is two things: where the computer is, and the one-time code this phone
+ * pairs with. `http://<computer>:<port>/<code>` is split here, once. A plain origin is a server on
+ * a trusted link, synced with in the clear; a path that isn't code-shaped — `/api` behind a proxy —
+ * is the server's own.
  */
-export type SyncAddress = { url: string; secret?: string };
+export type SyncAddress = { url: string; code?: string };
 
-/** The desktop's key shape (`newSyncKey` in the desktop shell): twelve of an unambiguous alphabet. */
-const KEY_SEGMENT = /^[a-z2-9]{12}$/;
+/** `newPairingCode`'s shape in `@comical/sync`: twelve of an alphabet with nothing to misread. */
+const CODE_SEGMENT = /^[a-hjkmnp-z2-9]{12}$/;
 
 /** `null` for anything that isn't a server address — some other QR code, refused rather than
  *  saved as a server that can't answer. */
@@ -25,14 +25,5 @@ export function parseSyncAddress(text: string): SyncAddress | null {
   if (segments.length > 1) return null;
   const [segment] = segments;
   if (segment === undefined) return { url: url.origin };
-  return KEY_SEGMENT.test(segment) ? { url: url.origin, secret: segment } : { url: `${url.origin}/${segment}` };
-}
-
-/**
- * A pairing code for a settings row: the key is the whole secret, so it is not left on screen
- * where a glance reads it.
- */
-export function displaySyncAddress(address: string): string {
-  const parsed = parseSyncAddress(address);
-  return parsed?.secret ? `${parsed.url}/••••` : address;
+  return CODE_SEGMENT.test(segment) ? { url: url.origin, code: segment } : { url: `${url.origin}/${segment}` };
 }

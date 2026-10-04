@@ -25,6 +25,7 @@ import {
   SeqGapError,
   SETTINGS_TABLES,
   SyncEngine,
+  SyncUnlinkedError,
   wrapBridgeSettings,
   wrapLibraryStore,
   wrapRegistryProvider,
@@ -52,6 +53,8 @@ export type SyncStatus = {
   lastError?: string;
   /** Set by a round that found the hub reset and paired again; cleared by the next round. */
   repairedAt?: number;
+  /** The hub unlinked this device, which turned sync off. Cleared when it is turned on again. */
+  unlinked?: boolean;
 };
 
 export type LibrarySyncOptions = {
@@ -73,6 +76,8 @@ export type LibrarySyncOptions = {
   onApplied: () => void;
   /** The hub had lost this device's history, and the device paired with it again (see `round`). */
   onRepaired?: () => void;
+  /** The hub unlinked this device and sync is now off: whatever it was paired with is no use. */
+  onUnlinked?: () => void;
   onStatus: (status: SyncStatus) => void;
   log: (message: string) => void;
   /** How long a burst of local writes is gathered before they're saved and sent. */
@@ -179,7 +184,15 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
       onTouch: () => schedule(),
     });
     active = { engine, store: wrapLibraryStore(opts.raw, engine), registry, settings, adopted: doc?.adopted ?? false };
-    setStatus({ enabled: true });
+    setStatus({ enabled: true, unlinked: undefined });
+  }
+
+  async function forget(): Promise<void> {
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+    active = null;
+    setStatus({ enabled: false, running: false, lastSyncAt: undefined, lastError: undefined });
+    await opts.save(null);
   }
 
   const loaded = opts
@@ -240,6 +253,15 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
         const stats = await round(true);
         if (stats) opts.onRepaired?.();
         return stats;
+      }
+      // Said under this device's own key, so it is the hub's word and it is final: asking again
+      // would be answered the same way. Off, exactly as the toggle turns it off.
+      if (e instanceof SyncUnlinkedError) {
+        opts.log('Sync is off: the hub unlinked this device');
+        setStatus({ unlinked: true });
+        await forget().catch((err: unknown) => opts.log(`Sync state not cleared: ${String(err)}`));
+        opts.onUnlinked?.();
+        return undefined;
       }
       const message = e instanceof Error ? e.message : String(e);
       opts.log(`Sync failed: ${message}`);
@@ -323,11 +345,7 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
     disable: () =>
       serial(async () => {
         await loaded;
-        if (timer) clearTimeout(timer);
-        timer = undefined;
-        active = null;
-        await opts.save(null);
-        setStatus({ enabled: false, running: false, lastSyncAt: undefined, lastError: undefined });
+        await forget();
       }),
     syncNow,
     flush: async () => {

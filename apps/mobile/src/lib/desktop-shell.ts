@@ -4,12 +4,13 @@
  */
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
+import type { PairedDevice } from '@comical/sync';
 import { Platform } from 'react-native';
 
 export type ShellCommand = { type: 'open'; route: string } | { type: 'navigate'; dir: 'back' | 'forward' };
 
-/** A device that has synced with this computer — `@comical/host-server`'s `SyncDevice`, as the shell hands it over. */
-export type SyncDevice = { id: string; name: string; firstSeenAt: number; lastSeenAt: number };
+/** What one phone scans to pair with this computer: its address ending in a code that works once, until `expiresAt`. */
+export type PairingOffer = { address: string; expiresAt: number };
 
 type DesktopShell = {
   platform: string;
@@ -29,9 +30,11 @@ type DesktopShell = {
   networkSync?: boolean;
   setNetworkSync?(on: boolean): Promise<string | null>;
   networkSyncAddress?(): Promise<string | null>;
-  newNetworkSyncKey?(): Promise<string | null>;
-  syncDevices?(): Promise<SyncDevice[]>;
-  onSyncDevices?(onDevices: (devices: SyncDevice[]) => void): () => void;
+  openSyncPairing?(): Promise<PairingOffer | null>;
+  closeSyncPairing?(): void;
+  syncDevices?(): Promise<PairedDevice[]>;
+  unlinkSyncDevice?(id: string): Promise<boolean>;
+  onSyncDevices?(onDevices: (devices: PairedDevice[]) => void): () => void;
   onSynced?(onSynced: () => void): () => void;
   setRunInTray(on: boolean): void;
   setOpenAtLogin(on: boolean): void;
@@ -52,7 +55,7 @@ const shell$ = observable({
   updateReady: null as string | null,
   networkSync: desktopShell()?.networkSync ?? false,
   networkSyncAddress: null as string | null,
-  syncDevices: [] as SyncDevice[],
+  syncDevices: [] as PairedDevice[],
 });
 desktopShell()?.onUpdateReady?.((version) => shell$.updateReady.set(version));
 desktopShell()?.onSyncDevices?.((devices) => shell$.syncDevices.set(devices));
@@ -115,12 +118,12 @@ function setNetworkSync(on: boolean): void {
     .then((address) => shell$.networkSyncAddress.set(address));
 }
 
-/** The address a phone is given as its sync server; null while off or on no network. */
+/** Where a phone reaches this computer; null while off or on no network. */
 export function useNetworkSyncAddress(): string | null {
   return use$(shell$.networkSyncAddress);
 }
 
-/** For a screen about to show the address: the computer may have changed networks since. Kept out
+/** For a screen about to offer pairing: the computer may have changed networks since. Kept out
  *  of the hook above, which a real hook beside its `use$` would get compiled and break. */
 export function refreshNetworkSyncAddress(): void {
   void desktopShell()
@@ -128,23 +131,25 @@ export function refreshNetworkSyncAddress(): void {
     .then((address) => shell$.networkSyncAddress.set(address));
 }
 
-/** The devices that have synced with this computer, most recent first; kept current by the shell. */
-export function useSyncDevices(): SyncDevice[] {
+/** The devices paired with this computer, most recently active first; kept current by the shell. */
+export function useSyncDevices(): PairedDevice[] {
   return use$(shell$.syncDevices);
 }
 
-/** Whether the shell can replace the key in that address. */
-export function desktopRekeysSync(): boolean {
-  return !!desktopShell()?.newNetworkSyncKey;
+/** A fresh code for one phone to pair with, replacing any still open. Null while sync is off or
+ *  this computer is on no network. */
+export function openSyncPairing(): Promise<PairingOffer | null> {
+  return desktopShell()?.openSyncPairing?.() ?? Promise.resolve(null);
 }
 
-/** Replace the key in the sync address with a fresh one. Resolves once the new address is up; a
- *  phone paired with the old one is cut off from then until it is given the new. */
-export async function newNetworkSyncKey(): Promise<string | null> {
-  shell$.networkSyncAddress.set(null);
-  const address = (await desktopShell()?.newNetworkSyncKey?.()) ?? null;
-  shell$.networkSyncAddress.set(address);
-  return address;
+/** The code is off the screen, so it stops working. */
+export function closeSyncPairing(): void {
+  desktopShell()?.closeSyncPairing?.();
+}
+
+/** Stop syncing with one paired device; the rest carry on. The list above loses it by itself. */
+export async function unlinkSyncDevice(id: string): Promise<void> {
+  await desktopShell()?.unlinkSyncDevice?.(id);
 }
 
 /** What the platform calls the place a background app's icon lives. */

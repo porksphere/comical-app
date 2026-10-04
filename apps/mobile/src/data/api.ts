@@ -41,6 +41,7 @@
  */
 /* eslint-disable import/first, import/no-duplicates -- see the note above: contract type imports are filed beside the sections they type. */
 import { use$ } from '@legendapp/state/react';
+import type { Pairing } from '@comical/sync';
 
 import { getResolvedModeSync } from './embedded/preference';
 import type { Bridge, BridgeList } from './types';
@@ -72,9 +73,9 @@ const BUILT_IN_API_BASE = RUNTIME_API_BASE || process.env.EXPO_PUBLIC_COMICAL_SE
 // The Settings server override, persisted as JSON. Wrapped in an object because a
 // persisted *primitive* observable reads back as `{}` before anything is stored,
 // whereas an object initial round-trips cleanly; `{ url: null }` means "no override".
-// `syncSecret` is the pairing key a desktop hub was scanned with: it seals the sync channel and is
-// never part of a URL, so it lives beside the server rather than in it.
-type ServerOverride = { url: string | null; syncSecret?: string | null };
+// `pairing` is this device's own key with a desktop hub it was paired with: it seals the sync
+// channel and is never part of a URL, so it lives beside the server rather than in it.
+type ServerOverride = { url: string | null; pairing?: Pairing | null };
 const serverOverride$ = persisted$<ServerOverride>(SERVER_KEY, { url: null });
 
 // Defensive read: the empty / pre-hydration state can surface as `{}` (no `url`),
@@ -90,9 +91,13 @@ export function getApiBase(): string {
   return overrideUrl() ?? BUILT_IN_API_BASE;
 }
 
-/** The secret the current server was paired with, or null for a server that speaks in the clear. */
-export function getSyncSecret(): string | null {
-  return (serverOverride$.peek() as Partial<ServerOverride>).syncSecret ?? null;
+/** This device's pairing with the current server, or null for a server that speaks in the clear. */
+export function getSyncPairing(): Pairing | null {
+  return (serverOverride$.peek() as Partial<ServerOverride>).pairing ?? null;
+}
+
+export function useSyncPaired(): boolean {
+  return !!(use$(serverOverride$) as Partial<ServerOverride>).pairing;
 }
 
 /** Set (or, with `null`, clear) the user's remote-server override from the Settings screen.
@@ -101,9 +106,9 @@ export function getSyncSecret(): string | null {
  *  `settings.tsx`'s `queryClient.clear()` + `bumpDataEpoch()`). This store owns only the URL
  *  value — the query-cache side of a server switch stays with the caller, keeping the local
  *  preference and the TanStack Query cache cleanly separated. */
-export function setApiBaseOverride(url: string | null, syncSecret?: string): void {
+export function setApiBaseOverride(url: string | null, pairing?: Pairing): void {
   const trimmed = url?.trim().replace(/\/+$/, '') || null;
-  serverOverride$.set({ url: trimmed, syncSecret: trimmed && syncSecret ? syncSecret : null });
+  serverOverride$.set({ url: trimmed, pairing: trimmed && pairing ? pairing : null });
 }
 
 /** `[effectiveUrl, setOverride]` for the Settings screen's remote-server row. */

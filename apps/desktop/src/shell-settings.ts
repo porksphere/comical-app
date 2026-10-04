@@ -7,6 +7,7 @@ import { app } from "electron";
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { StoredPairing } from "@comical/sync";
 
 export type ShellSettings = {
   /** Closing the window hides it, and the app carries on from a tray icon until quit from there. */
@@ -17,9 +18,8 @@ export type ShellSettings = {
   trayNoticeShown: boolean;
   /** Other devices on the network may sync with this library (`host/sync-listener.ts`). */
   networkSync: boolean;
-  /** What those devices present. Made the first time `networkSync` goes on and kept, so a device
-   *  paired once stays paired, until the user asks for a new one (Settings → Sync). */
-  syncKey: string | null;
+  /** Those devices, each with the key it alone was paired with. */
+  syncPairings: StoredPairing[];
 };
 
 const file = (): string => join(app.getPath("userData"), "comical", "desktop-settings.json");
@@ -39,7 +39,7 @@ export function shellSettings(): ShellSettings {
     openAtLogin: raw.openAtLogin === true,
     trayNoticeShown: raw.trayNoticeShown === true,
     networkSync: raw.networkSync === true,
-    syncKey: typeof raw.syncKey === "string" && raw.syncKey ? raw.syncKey : null,
+    syncPairings: Array.isArray(raw.syncPairings) ? (raw.syncPairings as StoredPairing[]) : [],
   };
   return current;
 }

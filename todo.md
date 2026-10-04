@@ -715,24 +715,29 @@ one that decides whether it can be trusted.
       survives the first sync, a bridge installed on the phone appears on the hub, and one
       uninstalled on the hub leaves the phone. The native file pickers behind export/restore have
       not run on a device either.
-- [x] **Rotate the desktop sync key.** *New key* on the desktop's pairing sheet (2026-10-02).
-- [x] **Pairing UI.** The desktop's "Sync server for your phone" row opens a QR code; the phone's
+- [x] **A key per phone.** The desktop's *Pair a phone* shows a one-time code; the phone's
       *Sync server* → *Scan a code* reads it (`app/scan-sync-server.tsx`, expo-camera — a new
-      native module, so it needs a fresh build). Not yet run on a device.
+      native module, so it needs a fresh build) and exchanges keys under it, so no two devices hold
+      the same key and each is unlinked on its own from the desktop's list (2026-10-03). Replaced
+      the single shared key outright: anything paired before has to pair again. Not yet run on a
+      device.
+- [ ] **A paired phone follows the computer to a new address.** The pairing is stored beside the
+      address it was made at, so a computer whose LAN address changes is unreachable until the
+      phone pairs again, though its key is still good.
 - [x] **Recover from a sequence gap.** A `seq-gap` for the phone's own device (the hub was wiped or
       restored from an older backup) now pairs again in place — same as the toggle, nothing lost on
       either side — with a toast and a "Paired again" line in Settings (2026-10-02). `seq-conflict`
       was already the engine's own case.
 - [x] **Seal the phone↔hub channel.** Every `/sync` body is XChaCha20-Poly1305 under keys derived
-      from the pairing secret (`@comical/sync`'s `sealedChannel`), the key never leaves the phone,
-      and a round pulls before it pushes — so a device's deltas only ever go to a hub that has just
-      proven it holds the secret, and a stranger on a foreign network sees two opaque POSTs and a
-      404 (2026-10-02). The address format is unchanged, so nothing needs re-pairing.
+      from the phone's own pairing key (`@comical/sync`'s `sealedChannel`), the key never leaves
+      the phone, and a round pulls before it pushes — so a device's deltas only ever go to a hub
+      that has just proven it holds the key, and a stranger on a foreign network sees two opaque
+      POSTs and a 404 (2026-10-02).
 - [ ] **Sync while the app stays open.** Rounds run on launch, on return to the foreground and
       after a burst of local writes (`data/sync/index.ts`). A phone left open never hears about a
       change made elsewhere until one of those, or *Sync now*.
 - [x] **Cancel the hub's debounce on shutdown.** `createSyncHost` has `stop()`; the desktop's
       `before-quit` calls it through `DesktopHost.close()` (2026-10-02).
-- [ ] **Maestro flow for the desktop-only settings rows** ("Sync with your phone", the sync
-      address, tray, open at login). They only render inside the desktop shell, which the flows
-      don't run in.
+- [ ] **Maestro flow for the desktop-only settings rows** ("Sync with your phone", "Pair a
+      phone" and the paired-phone list, tray, open at login). They only render inside the desktop
+      shell, which the flows don't run in.

@@ -1,16 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 
-import { displaySyncAddress, parseSyncAddress } from './sync-address';
+import { parseSyncAddress } from './sync-address';
 
 describe('parseSyncAddress', () => {
-  test('splits the code the desktop shows into the server and the secret', () => {
+  test('splits what the desktop shows into the server and the pairing code', () => {
     expect(parseSyncAddress('http://10.0.0.5:3130/abcdefghjkmn')).toEqual({
       url: 'http://10.0.0.5:3130',
-      secret: 'abcdefghjkmn',
+      code: 'abcdefghjkmn',
     });
   });
 
-  test('takes a plain server with no secret, and drops a trailing slash', () => {
+  test('a path that could not be a code is the server\'s own', () => {
+    // Twelve characters, but `l`, `o` and `1` are never in a code.
+    expect(parseSyncAddress('http://10.0.0.5:3130/hello1worlds')).toEqual({ url: 'http://10.0.0.5:3130/hello1worlds' });
+    expect(parseSyncAddress('http://10.0.0.5:3130/abcdefghjkm')).toEqual({ url: 'http://10.0.0.5:3130/abcdefghjkm' });
+  });
+
+  test('takes a plain server with no code, and drops a trailing slash', () => {
     expect(parseSyncAddress('http://10.0.0.5:3100/')).toEqual({ url: 'http://10.0.0.5:3100' });
     expect(parseSyncAddress(' https://comical.example/api/ \n')).toEqual({ url: 'https://comical.example/api' });
   });
@@ -27,18 +33,6 @@ describe('parseSyncAddress', () => {
       'http://user:pw@10.0.0.5:3130/key',
     ]) {
       expect(parseSyncAddress(text)).toBeNull();
-    }
-  });
-});
-
-describe('displaySyncAddress', () => {
-  test('hides the key', () => {
-    expect(displaySyncAddress('http://10.0.0.5:3130/abcdefghjkmn')).toBe('http://10.0.0.5:3130/••••');
-  });
-
-  test('leaves a server without one alone', () => {
-    for (const address of ['http://localhost:3100', 'https://comical.example/api', 'not a url']) {
-      expect(displaySyncAddress(address)).toBe(address);
     }
   });
 });

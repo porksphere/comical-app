@@ -86,23 +86,31 @@ require FUSE to run`. Either `apt install libfuse2` or run it with `--appimage-e
 
 The desktop app is the hub a phone syncs with — its library is the hub's library, so there is
 nothing for it to sync *to*. Settings → Sync → **Sync with your phone** opens a second listener
-on the local network and shows one address, `http://<this computer>:3130/<key>`; that address is
-what goes in the phone's *Sync server*. Clicking the address row shows it as a QR code, which the
-phone's *Sync server* → **Scan a code** reads (typing it works too). Off by default, and off again
-closes the port.
+on the local network. Off by default, and off again closes the port.
 
-- **The key opens sync and nothing else.** Only `/sync/*` and `/health` are forwarded
-  (`src/host/sync-listener.ts`); the rest of the API stays on the loopback listener. It still has to
-  be a secret: a sync push can add a registry and install a bridge, which is code this machine runs.
-- **It is plain HTTP.** The key crosses the local network in the clear, so this is for a network
-  you trust. It is made once and kept, so a paired phone survives a restart. **New key** on the
-  QR sheet replaces it (the old listener closes and a fresh one opens on the same port); every
-  phone paired with the old key is cut off until it scans the new code.
+- **Each phone is paired on its own.** **Pair a phone** shows a QR code holding
+  `http://<this computer>:3130/<code>`, which the phone's *Sync server* → **Scan a code** reads
+  (typing the address works too). The code pairs one phone, once, and only while the sheet is
+  showing it — a fresh one replaces it every ten minutes. Pairing is a key exchange sealed under
+  that code, and what comes out of it is a key only that phone and this computer hold
+  (`@comical/sync`'s `pairingGate`); the code itself is never a key to anything afterwards.
+- **Each phone is unlinked on its own.** Paired phones are listed under the toggle with when they
+  last synced. **Unlink** cuts off that phone and no other: the next time it tries to sync it is
+  told so, turns its own sync off, and has to be paired again. A phone that leaves by itself
+  (*Sync server* → **Unpair**, or pointing it at another server) takes itself off the list. The
+  list stays up while sync is off, so a phone can be unlinked without opening the port.
+- **A paired phone can sync and nothing else.** The listener answers sealed `/sync` requests from
+  a phone it has paired and gives everything else a bare 404 (`src/host/sync-listener.ts`); the
+  rest of the API stays on the loopback listener. That still matters: a sync push can add a
+  registry and install a bridge, which is code this machine runs.
+- **It is plain HTTP, sealed.** Every body is encrypted under the phone's key, so the network sees
+  opaque POSTs. The pairings are kept in the shell's settings file, so a paired phone survives a
+  restart.
 - **Windows asks about the firewall** the first time the listener binds. Refuse and the phone
   can't connect, with nothing in the app to say why.
 - **The port is a preference.** `COMICAL_SYNC_PORT` overrides 3130, and a port that can't be bound
-  falls back to an ephemeral one — the address in Settings is read from what was actually bound,
-  but a phone paired with the old one has to be given the new one.
+  falls back to an ephemeral one — the address in a pairing code is read from what was actually
+  bound, but a phone paired at the old address has to be paired again.
 
 ## Updates
 

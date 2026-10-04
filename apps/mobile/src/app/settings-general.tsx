@@ -30,7 +30,7 @@ import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } fr
 import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
-import { switchServer } from '@/data/switch-server';
+import { connectServer } from '@/data/switch-server';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
@@ -160,7 +160,7 @@ export default function GeneralSettingsScreen() {
                     title="Remote server"
                     description="The Comical server this app talks to when not running bridges on this device."
                     currentUrl={apiBase}
-                    onSave={switchServer}
+                    onSave={connectServer}
                   />
                 ))
               }

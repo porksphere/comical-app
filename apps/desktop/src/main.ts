@@ -12,10 +12,11 @@
 import { app, BrowserWindow, ipcMain, Notification, screen, shell, session } from "electron";
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
+import type { PairingGate } from "@comical/sync";
 import { createDesktopHost, type DesktopHost } from "./host/create-host.ts";
 import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
 import { iconImage, shellIcon } from "./icon.ts";
-import { newSyncKey, startSyncListener, type SyncListener } from "./host/sync-listener.ts";
+import { createSyncGate, startSyncListener, type SyncListener } from "./host/sync-listener.ts";
 import { linkInArgs, linkRoute, registerLinkScheme } from "./links.ts";
 import { canOpenAtLogin, launchedAtLogin, setOpenAtLogin } from "./login-item.ts";
 import { attachContextMenu, setAppMenu, type NavDirection } from "./menus.ts";
@@ -161,24 +162,34 @@ function notify(title: string, body: string, route: string | null): void {
   notice.show();
 }
 
+let syncGate: PairingGate | null = null;
 let syncListener: SyncListener | null = null;
 let syncListenerChange: Promise<unknown> = Promise.resolve();
 
-/** Bring the network listener in line with the saved setting. Resolves to the address a phone is
- *  given, or null when off or unreachable. Queued, so a toggle flicked twice can't leave two
- *  listeners or close the one just opened. */
+function gate(): PairingGate {
+  syncGate ??= createSyncGate({
+    getHost: () => host,
+    pairings: shellSettings().syncPairings,
+    save: (syncPairings) => void updateShellSettings({ syncPairings }),
+    onDevices: (devices) => mainWindow?.webContents.send("sync-devices", devices),
+  });
+  return syncGate;
+}
+
+/** Bring the network listener in line with the saved setting. Resolves to where a phone reaches
+ *  this computer, or null when off or unreachable. Queued, so a toggle flicked twice can't leave
+ *  two listeners or close the one just opened. */
 function applyNetworkSync(): Promise<string | null> {
   const applied = syncListenerChange.then(async () => {
     if (!shellSettings().networkSync) {
+      gate().closeCode();
       await syncListener?.close();
       syncListener = null;
       return null;
     }
     if (!syncListener) {
-      const key = shellSettings().syncKey ?? updateShellSettings({ syncKey: newSyncKey() }).syncKey!;
       syncListener = await startSyncListener({
-        getHost: () => host,
-        key,
+        gate: gate(),
         port: process.env.COMICAL_SYNC_PORT ? Number(process.env.COMICAL_SYNC_PORT) : undefined,
       });
     }
@@ -218,7 +229,6 @@ async function boot(): Promise<void> {
     bridgesDir: process.env.COMICAL_BRIDGES_DIR ?? join(dataDir, "bridges"),
     baseUrl: `${server.origin}/api`,
     onSynced: () => mainWindow?.webContents.send("synced"),
-    onSyncDevices: (devices) => mainWindow?.webContents.send("sync-devices", devices),
   });
   if (shellSettings().networkSync) void applyNetworkSync();
 
@@ -479,21 +489,18 @@ ipcMain.handle("network-sync", (_e, on: unknown) => {
   return applyNetworkSync();
 });
 
-ipcMain.handle("sync-devices", () => host?.syncDevices() ?? []);
+ipcMain.handle("sync-devices", () => gate().devices());
 
-// The key is the listener's whole secret, so a new one means a new listener: the old is closed
-// first, through the same queue a toggle goes through, and the old key stops opening anything the
-// moment the new address exists.
-ipcMain.handle("network-sync-new-key", async () => {
-  const closed = syncListenerChange.then(async () => {
-    await syncListener?.close();
-    syncListener = null;
-    updateShellSettings({ syncKey: newSyncKey() });
-  });
-  syncListenerChange = closed.catch(() => {});
-  await closed.catch((err: unknown) => console.error("[sync] rekey failed:", err));
-  return applyNetworkSync();
+// What one phone scans to pair. Asking again replaces the code, so only the newest one shown works.
+ipcMain.handle("sync-pairing-open", async () => {
+  const base = await applyNetworkSync();
+  if (!base) return null;
+  const { code, expiresAt } = gate().openCode();
+  return { address: `${base}/${code}`, expiresAt };
 });
+ipcMain.on("sync-pairing-close", () => gate().closeCode());
+
+ipcMain.handle("sync-device-unlink", (_e, id: unknown) => typeof id === "string" && gate().unlink(id));
 
 if (primary) {
   app
