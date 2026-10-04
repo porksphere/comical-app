@@ -15,9 +15,20 @@ const PALETTE = ['#4F8DFD', '#E0569B', '#F2A03D', '#2FC4B2', '#9A6CF6', '#F2664F
 const WASH = { dark: 0.12, light: 0.08 };
 const GLOW = { dark: 0.14, light: 0.09 };
 
-// A section's colour is whole behind its covers and gone by its own edges, so two sections' colours
-// never mix: it comes in across the heading and leaves over this much at the foot.
-const BAND_TAIL = 72;
+// A section's colour is whole behind the middle of its covers and eases away over `BAND_RAMP` at
+// either end, running `BAND_SPILL` past its own edge. Two sections' colours meet only in their
+// last few percent, so the page between them dims without one colour becoming the other.
+const BAND_RAMP = 220;
+const BAND_SPILL = 56;
+// The ramp as (distance along it, share of the colour): a smoothstep, since a straight ramp shows
+// a rim at both of its ends.
+const EASE = [
+  [0, 0],
+  [0.25, 0.16],
+  [0.5, 0.5],
+  [0.75, 0.84],
+  [1, 1],
+] as const;
 // Of the feed's width, each side, over which the colour gives way to the page. It never reaches
 // the screen's edge, where it would read as a shape the screen had cut.
 const SIDE_FADE = 0.2;
@@ -31,11 +42,21 @@ const GLOW_X = [0.42, 0.58, 0.47, 0.6, 0.4, 0.54];
 // travelled down the page at its own rate was off its rail everywhere but that one moment.
 const GLOW_SWAY = 0.07;
 
-const CHROME_FADE = 32;
+const CHROME_FADE = 48;
 
 function rgba(hex: string, alpha: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+/** `ramp` is the eased run at each end, as a share of the gradient's length (at most half). */
+function bandStops(hex: string, alpha: number, ramp: number) {
+  const up = EASE.map(([t, a]) => ({ at: t * ramp, color: rgba(hex, a * alpha) }));
+  const stops = [...up, ...up.map((s) => ({ ...s, at: 1 - s.at })).reverse()];
+  return {
+    colors: stops.map((s) => s.color) as [string, string, ...string[]],
+    locations: stops.map((s) => s.at) as [number, number, ...number[]],
+  };
 }
 
 // A linear ramp to nothing has a visible rim where it ends; these stops ease it out.
@@ -112,18 +133,13 @@ export function FeedBackdrop({
     <Animated.View pointerEvents="none" style={[styles.clip, style]}>
       <Animated.View style={[styles.sheet, scroll]}>
         {bands.map((b, i) => {
-          const height = b.bottom - b.top;
-          if (height <= 0) return null;
-          const head = Math.min(0.5, Math.max(0, b.bodyTop - b.top) / height);
-          const tail = Math.min(0.5, BAND_TAIL / height);
-          const tint = rgba(color(i), WASH[scheme]);
-          const none = rgba(color(i), 0);
+          if (b.bottom <= b.top) return null;
+          const height = b.bottom - b.top + BAND_SPILL * 2;
           return (
             <LinearGradient
               key={i}
-              colors={[none, tint, tint, none]}
-              locations={[0, head, 1 - tail, 1]}
-              style={[styles.span, { top: b.top, height }]}
+              {...bandStops(color(i), WASH[scheme], Math.min(0.5, BAND_RAMP / height))}
+              style={[styles.span, { top: b.top - BAND_SPILL, height }]}
             />
           );
         })}
