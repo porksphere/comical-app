@@ -11,7 +11,7 @@ import {
 
 import { CollectedItemMenu } from '@/components/collections/collected-item-menu';
 import { ChapterItemIcon, PageItemIcon, SeriesItemIcon } from '@/components/icons/collection-icons';
-import { CardCaption, COVER_RADIUS_DESKTOP } from '@/components/series-card';
+import { CardCaption, coverStyles } from '@/components/series-card';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -136,7 +136,8 @@ export function CollectedItemTile({
           ref={boxRef}
           style={[
             styles.tile,
-            desktop && styles.tileDesktop,
+            coverStyles.corner,
+            desktop && coverStyles.cornerDesktop,
             { height: coverHeight, backgroundColor: theme.backgroundElement },
           ]}>
           {showImage ? (
@@ -159,7 +160,7 @@ export function CollectedItemTile({
           {/* The badge reads against the image, so it needs its own scrim rather than the theme.
               The icon is the type; a page also carries its number, since "which page of the chapter"
               matters there the way it can't for the other two. */}
-          <View style={[styles.badge, desktop && styles.badgeDesktop, blank && styles.hidden]}>
+          <View style={[styles.badge, blank && styles.hidden]}>
             <TypeIcon color="#fff" size={12} />
             {item.type === 'page' && (
               <ThemedText type="small" style={styles.badgeText}>
@@ -181,8 +182,9 @@ export function CollectedItemTile({
           {isWeb && hovered && (
             <View
               style={[
-                styles.ring,
-                desktop && styles.tileDesktop,
+                coverStyles.ring,
+                coverStyles.corner,
+                desktop && coverStyles.cornerDesktop,
                 { borderColor: theme.text, pointerEvents: 'none' },
               ]}
             />
@@ -223,17 +225,8 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   tile: {
-    borderRadius: 10,
     overflow: 'hidden',
     justifyContent: 'flex-end',
-  },
-  tileDesktop: {
-    borderRadius: COVER_RADIUS_DESKTOP,
-  },
-  ring: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: 10,
-    borderWidth: 2,
   },
   fallback: {
     ...StyleSheet.absoluteFill,
@@ -252,13 +245,6 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: Spacing.one,
     backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  // The desktop cover's corner curves through where the phone's chip sits, so it moves in to
-  // clear it and takes a corner of its own that follows the curve.
-  badgeDesktop: {
-    top: Spacing.two,
-    left: Spacing.two,
-    borderRadius: Spacing.two,
   },
   badgeText: {
     color: '#fff',

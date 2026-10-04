@@ -52,7 +52,31 @@ const resolvedCoverAspects = new Map<string, number>();
 // enough that the extra complexity of a position-indexed cache isn't worth it.
 let lastResolvedCoverAspect = DEFAULT_THUMB_ASPECT;
 
-export const COVER_RADIUS_DESKTOP = 20;
+const COVER_CORNER = { ...ContinuousCorner, borderRadius: 10 };
+
+/**
+ * A cover's corner and the hover ring that follows it, for anything drawn as a cover beside a
+ * `SeriesCard` — a collection tile, a skeleton. Take these rather than the radius: the corner is
+ * continuous where the platform can draw one, and that cuts visibly less out of a cover than a
+ * circular corner of the same radius does, so a copy of the number alone is a different card.
+ */
+export const coverStyles = StyleSheet.create({
+  corner: COVER_CORNER,
+  // The phone's corner all but disappears on a cover the width a desktop card is.
+  cornerDesktop: {
+    borderRadius: 20,
+  },
+  ring: {
+    position: 'absolute',
+    // Drawn INSIDE the cover's edge. A virtualized list paint-contains each item to its slot, and a
+    // slot ends exactly where an outer column's cover does, so a stroke outside it is cut off there.
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 2,
+  },
+});
 
 const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
   rail: 130,
@@ -481,7 +505,7 @@ export function SeriesCard({
     return (
       <View style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}>
         <View style={[styles.coverBox, { aspectRatio: DEFAULT_THUMB_ASPECT }]}>
-          <View style={[styles.coverClip, desktop && styles.coverClipDesktop, styles.hiddenCover]}>
+          <View style={[styles.coverClip, coverStyles.corner, desktop && coverStyles.cornerDesktop, styles.hiddenCover]}>
             <ThemedText type="small" themeColor="textSecondary">
               Hidden
             </ThemedText>
@@ -621,12 +645,13 @@ export function SeriesCard({
           // Web draws the hover ring as a sibling over the clipping `coverClip`, so the scaled picture
           // inside the clip can't cover it.
           <View style={[styles.coverBox, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]} onLayout={shrink.onCoverLayout}>
-            <View style={[styles.coverClip, desktop && styles.coverClipDesktop]}>{coverContents}</View>
+            <View style={[styles.coverClip, coverStyles.corner, desktop && coverStyles.cornerDesktop]}>{coverContents}</View>
             {active && (
               <View
                 style={[
-                  styles.ring,
-                  desktop && styles.ringDesktop,
+                  coverStyles.ring,
+                  coverStyles.corner,
+                  desktop && coverStyles.cornerDesktop,
                   { borderColor: theme.text, pointerEvents: 'none' },
                 ]}
               />
@@ -852,8 +877,7 @@ const styles = StyleSheet.create({
     // the clip there). Same aspect box, but it clips + backs the cover directly — one fewer view per card.
     width: '100%',
     position: 'relative',
-    ...ContinuousCorner,
-    borderRadius: 10,
+    ...COVER_CORNER,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
@@ -871,14 +895,8 @@ const styles = StyleSheet.create({
     // sits inside this, since clipping the SAME element being scaled wouldn't
     // actually contain overflow (the clip rect would scale with the transform).
     flex: 1,
-    ...ContinuousCorner,
-    borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
-  },
-  // The phone's corner all but disappears on a cover the width a desktop card is.
-  coverClipDesktop: {
-    borderRadius: COVER_RADIUS_DESKTOP,
   },
   picture: {
     // Top-aligned scale origin so the shrink illusion (`pictureStyle`) settles
@@ -906,21 +924,6 @@ const styles = StyleSheet.create({
     // Non-scaling press feedback on native — a light dark wash over the cover. Sits inside
     // `coverClip` so it inherits the cover's rounded corners.
     backgroundColor: 'rgba(0,0,0,0.22)',
-  },
-  ring: {
-    position: 'absolute',
-    // Drawn INSIDE the cover's edge. A virtualized list paint-contains each item to its slot, and a
-    // slot ends exactly where an outer column's cover does, so a stroke outside it is cut off there.
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    ...ContinuousCorner,
-    borderRadius: 10,
-    borderWidth: 2,
-  },
-  ringDesktop: {
-    borderRadius: COVER_RADIUS_DESKTOP,
   },
   titleWrap: {
     position: 'relative',

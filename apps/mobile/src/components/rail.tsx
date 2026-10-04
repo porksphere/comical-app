@@ -7,7 +7,7 @@ import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanima
 import { BackSwipeBoundary } from '@/components/back-swipe-boundary';
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import {
-  COVER_RADIUS_DESKTOP,
+  coverStyles,
   estimatedCardHeight,
   SeriesCard,
   TitlePeek,
@@ -577,11 +577,10 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
         {Array.from({ length: count }).map((_, i) => (
           <View key={i} style={{ width: cardWidth }}>
             <Skeleton
-              style={{
-                width: cardWidth,
-                height: cardWidth * COVER_RATIO,
-                borderRadius: desktop ? COVER_RADIUS_DESKTOP : 8,
-              }}
+              style={[
+                { width: cardWidth, height: cardWidth * COVER_RATIO },
+                desktop ? [coverStyles.corner, coverStyles.cornerDesktop] : styles.skelCoverPhone,
+              ]}
             />
             <Skeleton style={styles.skelCardLine} />
           </View>
@@ -761,6 +760,9 @@ const styles = StyleSheet.create({
   },
   skelStrip: {
     flexDirection: 'row',
+  },
+  skelCoverPhone: {
+    borderRadius: 8,
   },
   skelCardLine: {
     marginTop: Spacing.one,

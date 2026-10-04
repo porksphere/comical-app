@@ -7,7 +7,7 @@
  */
 import { StyleSheet, View } from 'react-native';
 
-import { COVER_RADIUS_DESKTOP } from '@/components/series-card';
+import { coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { useGridLayout } from '@/hooks/use-grid-layout';
@@ -20,7 +20,7 @@ export function SkeletonCard() {
   // same top/bottom padding as a real `gridCell`-wrapped SeriesCard.
   return (
     <View style={[styles.gridCell, styles.skelCell]}>
-      <Skeleton style={[styles.skelCover, desktop && styles.skelCoverDesktop]} />
+      <Skeleton style={[styles.skelCover, coverStyles.corner, desktop && coverStyles.cornerDesktop]} />
       <Skeleton style={styles.skelLine} />
       <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
     </View>
@@ -75,10 +75,6 @@ const styles = StyleSheet.create({
   skelCover: {
     width: '100%',
     aspectRatio: 2 / 3,
-    borderRadius: 10,
-  },
-  skelCoverDesktop: {
-    borderRadius: COVER_RADIUS_DESKTOP,
   },
   skelLine: {
     height: 12,

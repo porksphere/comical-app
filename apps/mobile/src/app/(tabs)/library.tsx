@@ -15,7 +15,7 @@ import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectedItemsGrid } from '@/components/collections/collected-items-grid';
 import { CollectedSortButton } from '@/components/collections/collected-sort-button';
-import { COVER_RADIUS_DESKTOP } from '@/components/series-card';
+import { coverStyles } from '@/components/series-card';
 import { SeriesGrid } from '@/components/series-grid';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -405,7 +405,7 @@ function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }
         <View key={r} style={[styles.skelRow, { gap: columnGap }]}>
           {Array.from({ length: numColumns }).map((_, c) => (
             <View key={c} style={[styles.cell, styles.skelCell]}>
-              <Skeleton style={[styles.skelCover, desktop && styles.skelCoverDesktop]} />
+              <Skeleton style={[styles.skelCover, coverStyles.corner, desktop && coverStyles.cornerDesktop]} />
               <Skeleton style={styles.skelLine} />
               <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
             </View>
@@ -469,10 +469,6 @@ const styles = StyleSheet.create({
   skelCover: {
     width: '100%',
     aspectRatio: 2 / 3,
-    borderRadius: 10,
-  },
-  skelCoverDesktop: {
-    borderRadius: COVER_RADIUS_DESKTOP,
   },
   skelLine: {
     height: 12,
