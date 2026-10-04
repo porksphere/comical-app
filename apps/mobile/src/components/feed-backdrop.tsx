@@ -12,8 +12,11 @@ export type FeedBand = { top: number; bodyTop: number; bottom: number };
 // a feed of two or three sections is the common one, and adjacent hues there read as one colour.
 const PALETTE = ['#4F8DFD', '#E0569B', '#F2A03D', '#2FC4B2', '#9A6CF6', '#F2664F', '#57C96B', '#3FB2E8'];
 
-const WASH = { dark: 0.12, light: 0.08 };
-const GLOW = { dark: 0.14, light: 0.09 };
+// The glow carries most of the colour and the wash the rest. The wash alone is a soft-edged
+// rectangle, which reads as a panel; the glow alone is an ellipse, which leaves a rail's first and
+// last rows bare. Weighted this way the whole is round, with the wash filling in toward the corners.
+const WASH = { dark: 0.06, light: 0.04 };
+const GLOW = { dark: 0.2, light: 0.13 };
 
 // A section's colour is whole behind the middle of its covers and eases away over `BAND_RAMP` at
 // either end, running `BAND_SPILL` past its own edge. Two sections' colours meet only in their
@@ -31,12 +34,13 @@ const EASE = [
 ] as const;
 // Of the feed's width, each side, over which the colour gives way to the page. It never reaches
 // the screen's edge, where it would read as a shape the screen had cut.
-const SIDE_FADE = 0.2;
+const SIDE_FADE = 0.26;
 
-// The glow is the wash's highlight and stays inside its own band, body-sized or barely more.
-const GLOW_HEIGHT = 1.15;
-const GLOW_WIDTH = 0.7;
-const GLOW_X = [0.42, 0.58, 0.47, 0.6, 0.4, 0.54];
+// Against the section's body. Past its edges the glow is down to its last few percent, so it
+// thins out over the neighbouring heading without colouring the neighbour's covers.
+const GLOW_HEIGHT = 1.45;
+const GLOW_WIDTH = 0.92;
+const GLOW_X = [0.47, 0.53, 0.49, 0.54, 0.46, 0.51];
 // Sideways travel per point of scroll, alternate glows in opposite directions. Each is on its own
 // `GLOW_X` as its section crosses the middle of the screen. Sideways only: a glow that also
 // travelled down the page at its own rate was off its rail everywhere but that one moment.
@@ -59,9 +63,9 @@ function bandStops(hex: string, alpha: number, ramp: number) {
   };
 }
 
-// A linear ramp to nothing has a visible rim where it ends; these stops ease it out.
 function glowImage(hex: string, alpha: number): string {
-  return `radial-gradient(ellipse closest-side, ${rgba(hex, alpha)} 0%, ${rgba(hex, alpha * 0.62)} 30%, ${rgba(hex, alpha * 0.24)} 60%, ${rgba(hex, alpha * 0.06)} 82%, ${rgba(hex, 0)} 100%)`;
+  const stops = [...EASE].reverse().map(([t, a]) => `${rgba(hex, a * alpha)} ${Math.round((1 - t) * 100)}%`);
+  return `radial-gradient(ellipse closest-side, ${stops.join(', ')})`;
 }
 
 // react-native-web has no `experimental_backgroundImage`, and native has no `backgroundImage`.
