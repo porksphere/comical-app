@@ -105,6 +105,7 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
     dir: join(dataDir, "sync"),
     store: new FileLibraryStore(libDir),
     registry,
+    bridges: manager,
     lists: {
       registries: () => manifest.allRegistries(),
       installed: () => manifest.allInstalled(),
@@ -137,7 +138,8 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
   routerOpts.downloads = downloads;
   routerOpts.downloadEngine = engine;
 
-  const router = createRouter(manager, routerOpts);
+  // A preference saved through the router is recorded for the other devices.
+  const router = createRouter(sync.bridges, routerOpts);
   routerFetch = (req) => router.fetch(req);
   engine.kick(); // resume anything the previous run left mid-download
 

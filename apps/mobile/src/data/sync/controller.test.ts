@@ -3,8 +3,9 @@
  * fresh pairing takes (pull first, then adopt), against an in-process hub.
  */
 import { describe, expect, test } from 'bun:test';
+import type { SettingDescriptor, SettingValue } from '@comical/contract';
 import { entryKey, InMemoryLibraryStore, Library } from '@comical/library';
-import { MemorySegmentStore, SyncHub, type SyncBackend, type SyncedRegistry } from '@comical/sync';
+import { MemorySegmentStore, SyncHub, type BridgeSettingsProvider, type SyncBackend, type SyncedRegistry } from '@comical/sync';
 
 import { createLibrarySync, type LibrarySyncOptions, type SyncDoc } from './controller';
 
@@ -41,9 +42,37 @@ function fakeRegistry() {
   return reg;
 }
 
+const BRIDGE_SETTINGS: SettingDescriptor[] = [
+  { type: 'boolean', key: 'dataSaver', label: 'Data saver' },
+  { type: 'string', key: 'password', label: 'Password', secret: true },
+];
+
+/** The app's bridge provider, over maps: `declares` is what can be loaded, `stored` what is saved. */
+function fakeBridges() {
+  const declares = new Map([['bridge-a', BRIDGE_SETTINGS]]);
+  const stored = new Map<string, Record<string, SettingValue>>();
+  const invalidated: string[] = [];
+  const provider: BridgeSettingsProvider & { invalidate(id: string): void } = {
+    get: async (id) => {
+      const descriptors = declares.get(id);
+      if (!descriptors) throw new Error(`bridge not found: ${id}`);
+      return { getSettings: () => descriptors };
+    },
+    storedSettings: async (id) => ({ ...stored.get(id) }),
+    updateSettings: async (id, values) => {
+      const next = { ...stored.get(id), ...values };
+      stored.set(id, next);
+      return { ...next };
+    },
+    invalidate: (id) => void invalidated.push(id),
+  };
+  return { provider, declares, stored, invalidated };
+}
+
 function device(hub: SyncBackend, overrides: Partial<LibrarySyncOptions> = {}) {
   const raw = overrides.raw ?? new InMemoryLibraryStore();
   const held = fakeRegistry();
+  const heldBridges = fakeBridges();
   let saved: SyncDoc | null = null;
   const sync = createLibrarySync({
     raw,
@@ -62,7 +91,16 @@ function device(hub: SyncBackend, overrides: Partial<LibrarySyncOptions> = {}) {
     debounceMs: 60_000,
     ...overrides,
   });
-  return { raw, sync, library: new Library(sync.store), saved: () => saved, held, registry: sync.decorateRegistry(held) };
+  return {
+    raw,
+    sync,
+    library: new Library(sync.store),
+    saved: () => saved,
+    held,
+    registry: sync.decorateRegistry(held),
+    heldBridges,
+    bridges: sync.decorateBridges(heldBridges.provider),
+  };
 }
 
 const SERIES = { bridgeId: 'bridge-a', seriesId: 's1' };
@@ -299,6 +337,137 @@ describe('createLibrarySync', () => {
     sync.decorateRegistry(held);
     await sync.syncNow();
     expect(await held.installed()).toEqual([{ id: 'bridge-one', registryUrl: REG }]);
+  });
+
+  test("a bridge preference changed on one device is stored on another, and a login isn't", async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    const b = device(hub);
+    await a.sync.enable();
+    await b.sync.enable();
+
+    await a.bridges.updateSettings('bridge-a', { dataSaver: true, password: "a's", excludedTags: ['gore'] });
+    await a.sync.syncNow();
+    expect((await b.sync.syncNow())?.applied).toBe(2);
+    expect(b.heldBridges.stored.get('bridge-a')).toEqual({ dataSaver: true, excludedTags: ['gore'] });
+    expect(JSON.stringify(await hub.pull(PROBE))).not.toContain("a's");
+
+    await b.bridges.updateSettings('bridge-a', { dataSaver: false });
+    await b.sync.syncNow();
+    await a.sync.syncNow();
+    expect(a.heldBridges.stored.get('bridge-a')).toEqual({ dataSaver: false, password: "a's", excludedTags: ['gore'] });
+  });
+
+  test('pairing sends the preferences this device already has for its installed bridges', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    await a.held.add(REG);
+    await a.held.install(REG, 'bridge-a');
+    await a.heldBridges.provider.updateSettings('bridge-a', { dataSaver: true, password: "a's" });
+    await a.sync.enable();
+
+    const b = device(hub);
+    await b.sync.enable();
+    expect(b.heldBridges.stored.get('bridge-a')).toEqual({ dataSaver: true });
+  });
+
+  test('a device paired before preferences synced sends the ones it already had, once', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    await a.held.add(REG);
+    await a.held.install(REG, 'bridge-a');
+    await a.sync.enable();
+
+    // As an older build left it: a preference sync never recorded, and a saved state from before
+    // the table existed.
+    const doc = structuredClone(a.saved()!);
+    doc.state.adopted = doc.state.adopted?.filter((t) => t !== 'bridgeSettings');
+    const upgraded = device(hub, { raw: a.raw, registry: a.held, load: async () => doc });
+    await upgraded.heldBridges.provider.updateSettings('bridge-a', { dataSaver: true });
+    await upgraded.sync.syncNow();
+    expect(upgraded.saved()?.state.adopted).toContain('bridgeSettings');
+
+    const b = device(hub);
+    await b.sync.enable();
+    expect(b.heldBridges.stored.get('bridge-a')).toEqual({ dataSaver: true });
+
+    const before = (await hub.pull(PROBE)).segments.length;
+    await upgraded.sync.syncNow();
+    expect((await hub.pull(PROBE)).segments).toHaveLength(before);
+  });
+
+  test('a preference for a bridge this device cannot load yet is stored once it can', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    await a.sync.enable();
+    await a.bridges.updateSettings('bridge-a', { dataSaver: true });
+    await a.sync.syncNow();
+
+    let applied = 0;
+    const b = device(hub, { onApplied: () => applied++ });
+    b.heldBridges.declares.clear();
+    await b.sync.enable();
+    expect(b.heldBridges.stored.has('bridge-a')).toBe(false);
+    expect(b.sync.status().lastError).toBeUndefined();
+    const before = applied;
+
+    b.heldBridges.declares.set('bridge-a', BRIDGE_SETTINGS);
+    await b.sync.syncNow();
+    expect(b.heldBridges.stored.get('bridge-a')).toEqual({ dataSaver: true });
+    expect(applied).toBe(before + 1);
+    // Stored from a's record, so b has nothing of its own to send.
+    const segments = (await hub.pull(PROBE)).segments.length;
+    await b.sync.syncNow();
+    expect((await hub.pull(PROBE)).segments).toHaveLength(segments);
+  });
+
+  test('a round that needs the bridges before they are bound fails, and the next one after carries on', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const held = fakeRegistry();
+    await held.add(REG);
+    await held.install(REG, 'bridge-a');
+    let saved: SyncDoc | null = null;
+    const sync = createLibrarySync({
+      raw: new InMemoryLibraryStore(),
+      registry: held,
+      load: async () => saved,
+      save: async (doc) => {
+        saved = doc;
+      },
+      backend: () => hub,
+      canSync: () => true,
+      newDeviceId: () => `dev-${++ids}`,
+      deviceName: () => 'A phone',
+      onApplied: () => {},
+      onStatus: () => {},
+      log: () => {},
+      debounceMs: 60_000,
+    });
+    await sync.enable();
+    expect(sync.status().lastError).toBe('bridges not available yet');
+
+    const bridges = fakeBridges();
+    await bridges.provider.updateSettings('bridge-a', { dataSaver: true });
+    sync.decorateBridges(bridges.provider);
+    await sync.syncNow();
+    expect(sync.status().lastError).toBeUndefined();
+
+    const b = device(hub);
+    await b.sync.enable();
+    expect(b.heldBridges.stored.get('bridge-a')).toEqual({ dataSaver: true });
+    expect(await b.held.installed()).toEqual([{ id: 'bridge-a', registryUrl: REG }]);
+  });
+
+  test('preferences changed while sync is off are not recorded, and the rest of the provider is untouched', async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    expect(await a.bridges.updateSettings('bridge-a', { dataSaver: true })).toEqual({ dataSaver: true });
+    expect((await hub.pull(PROBE)).segments).toHaveLength(0);
+
+    // Synchronous on the provider, so synchronous through the wrapper.
+    expect(a.bridges.invalidate('bridge-a')).toBeUndefined();
+    expect(a.heldBridges.invalidated).toEqual(['bridge-a']);
+    expect(await a.bridges.storedSettings('bridge-a')).toEqual({ dataSaver: true });
   });
 
   test('installs made while sync is off are not recorded, and go through the plain provider', async () => {

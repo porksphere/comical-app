@@ -49,7 +49,7 @@ import { swapDataSourceMode } from './apply-mode';
 import { fileSystemBundleCache, pruneBundleCache } from './bundle-cache';
 import { expoCoversBlobStore } from './covers-store';
 import { AsyncStorageLibraryStore } from './library-store';
-import { decorateRegistryForSync, initLibrarySync } from '../sync';
+import { decorateBridgesForSync, decorateRegistryForSync, initLibrarySync } from '../sync';
 import { migrateLegacyEntries } from '../migrations/legacy-entries';
 import { getResolvedModeSync, whenEmbeddedPrefLoaded } from './preference';
 import { applyImageCacheConfig } from '../image-cache';
@@ -119,6 +119,8 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     },
     // Installs from the app's own screens are recorded for the other devices while paired.
     decorateRegistry: decorateRegistryForSync,
+    // So are a bridge's preferences; its logins are never sent.
+    decorateBridges: decorateBridgesForSync,
   };
 }
 

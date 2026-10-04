@@ -13,17 +13,23 @@
  */
 import type { LibraryStore } from '@comical/library';
 import {
+  adoptBridgeSettings,
   adoptLibrary,
   adoptRegistry,
+  bridgeSettingsSyncStore,
   composeSyncStores,
   LIBRARY_TABLES,
   librarySyncStore,
   REGISTRY_TABLES,
   registrySyncStore,
   SeqGapError,
+  SETTINGS_TABLES,
   SyncEngine,
+  wrapBridgeSettings,
   wrapLibraryStore,
   wrapRegistryProvider,
+  type BridgeSettingsProvider,
+  type BridgeSettingsSyncStore,
   type RegistryLists,
   type RegistryMutations,
   type RegistrySyncStore,
@@ -82,6 +88,12 @@ export type LibrarySync = {
    * installed.
    */
   decorateRegistry<P extends RegistryMutations>(provider: P): P;
+  /**
+   * Wraps the bridge provider the router saves settings through, so a preference changed from a
+   * screen is recorded while sync is on — and makes it the provider other devices' preferences
+   * are stored through. A round before it is bound fails, and the next one tries again.
+   */
+  decorateBridges<P extends BridgeSettingsProvider>(provider: P): P;
   /** Resolves once the saved state has loaded (or failed to). */
   loaded: Promise<void>;
   enable(): Promise<void>;
@@ -94,7 +106,13 @@ export type LibrarySync = {
 };
 
 export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
-  let active: { engine: SyncEngine; store: LibraryStore; registry: RegistrySyncStore; adopted: boolean } | null = null;
+  let active: {
+    engine: SyncEngine;
+    store: LibraryStore;
+    registry: RegistrySyncStore;
+    settings: BridgeSettingsSyncStore;
+    adopted: boolean;
+  } | null = null;
   let provider: RegistryMutations | null = null;
   // Installs from other devices go through whatever provider is bound by the time they arrive.
   const lateProvider: RegistryMutations = {
@@ -108,6 +126,16 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
   function bound(): RegistryMutations {
     if (!provider) throw new Error('registry not available yet');
     return provider;
+  }
+  let bridges: BridgeSettingsProvider | null = null;
+  const lateBridges: BridgeSettingsProvider = {
+    get: (id) => boundBridges().get(id),
+    storedSettings: (id) => boundBridges().storedSettings(id),
+    updateSettings: (id, values) => boundBridges().updateSettings(id, values),
+  };
+  function boundBridges(): BridgeSettingsProvider {
+    if (!bridges) throw new Error('bridges not available yet');
+    return bridges;
   }
   let status: SyncStatus = { enabled: false, running: false };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -129,14 +157,14 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
   };
 
   function start(doc: SyncDoc | null): void {
-    const registry = registrySyncStore(
-      { ...opts.registry, ...lateProvider },
-      { log: { error: (message: string, err?: unknown) => opts.log(`${message}${err === undefined ? '' : `: ${String(err)}`}`) } },
-    );
+    const log = { error: (message: string, err?: unknown) => opts.log(`${message}${err === undefined ? '' : `: ${String(err)}`}`) };
+    const registry = registrySyncStore({ ...opts.registry, ...lateProvider }, { log });
+    const settings = bridgeSettingsSyncStore(lateBridges, { log });
     const engine = new SyncEngine({
       store: composeSyncStores([
         [LIBRARY_TABLES, librarySyncStore(opts.raw)],
         [REGISTRY_TABLES, registry],
+        [SETTINGS_TABLES, settings],
       ]),
       backend: {
         push: (s) => opts.backend().push(s),
@@ -150,7 +178,7 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
       },
       onTouch: () => schedule(),
     });
-    active = { engine, store: wrapLibraryStore(opts.raw, engine), registry, adopted: doc?.adopted ?? false };
+    active = { engine, store: wrapLibraryStore(opts.raw, engine), registry, settings, adopted: doc?.adopted ?? false };
     setStatus({ enabled: true });
   }
 
@@ -180,15 +208,20 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
       // Everything on a first round; on a device already paired, only a table that has started to
       // sync since. The flag outranks the engine's list: a state saved before the list existed
       // reads as having adopted every table of its day, which a never-adopted device has not.
-      const tables = a.adopted ? a.engine.unadopted() : [...LIBRARY_TABLES, ...REGISTRY_TABLES];
+      const tables = a.adopted ? a.engine.unadopted() : [...LIBRARY_TABLES, ...REGISTRY_TABLES, ...SETTINGS_TABLES];
       if (tables.length > 0) {
         await adoptLibrary(opts.raw, a.engine, tables);
         await adoptRegistry(opts.registry, a.engine, tables);
+        const bridgeIds = (await opts.registry.installed()).map((b) => b.id);
+        await adoptBridgeSettings(lateBridges, bridgeIds, a.engine, tables);
         a.engine.markAdopted();
         a.adopted = true;
         applied += (await a.engine.sync()).applied;
       }
       await a.registry.retry();
+      // After the registry's, so a preference held for a bridge that just installed lands this
+      // round. Under the engine's lock, so the recording wrapper never takes it for a local change.
+      applied += await a.engine.exclusive(() => a.settings.retry());
       await save();
       if (applied > 0) opts.onApplied();
       setStatus({ running: false, lastSyncAt: Date.now(), lastError: undefined, repairedAt: repaired ? Date.now() : undefined });
@@ -253,6 +286,27 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
             if (!engine) return (value as (...a: unknown[]) => unknown).apply(target, args);
             if (wrapped?.engine !== engine) wrapped = { engine, provider: wrapRegistryProvider(real, opts.registry, engine) };
             return (wrapped.provider as unknown as Record<PropertyKey, (...a: unknown[]) => unknown>)[prop]!(...args);
+          };
+        },
+      });
+    },
+    decorateBridges: (real) => {
+      bridges = real;
+      let wrapped: { engine: SyncEngine; provider: typeof real } | undefined;
+      return new Proxy(real, {
+        get(target, prop) {
+          const value: unknown = Reflect.get(target, prop, target);
+          if (typeof value !== 'function') return value;
+          const fn = value as (...a: unknown[]) => unknown;
+          // Only the write waits for the saved state: the provider's synchronous methods
+          // (`invalidate`, `refresh`) have to stay synchronous.
+          if (prop !== 'updateSettings') return (...args: unknown[]) => fn.apply(target, args);
+          return async (...args: Parameters<BridgeSettingsProvider['updateSettings']>) => {
+            await loaded;
+            const engine = active?.engine;
+            if (!engine) return real.updateSettings(...args);
+            if (wrapped?.engine !== engine) wrapped = { engine, provider: wrapBridgeSettings(real, engine) };
+            return wrapped.provider.updateSettings(...args);
           };
         },
       });

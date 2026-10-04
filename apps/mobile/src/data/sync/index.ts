@@ -8,7 +8,7 @@ import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { LibraryStore } from '@comical/library';
-import { HttpBackend, type RegistryLists, type RegistryMutations, type SyncStats } from '@comical/sync';
+import { HttpBackend, type BridgeSettingsProvider, type RegistryLists, type RegistryMutations, type SyncStats } from '@comical/sync';
 import { AppState } from 'react-native';
 
 import { showToast } from '@/components/toast';
@@ -70,6 +70,11 @@ export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): Lib
 /** For host-rn's `decorateRegistry`: the router's registry provider, recording while paired. */
 export function decorateRegistryForSync<P extends RegistryMutations>(provider: P): P {
   return sync ? sync.decorateRegistry(provider) : provider;
+}
+
+/** For host-rn's `decorateBridges`: the router's bridge provider, recording preferences while paired. */
+export function decorateBridgesForSync<P extends BridgeSettingsProvider>(provider: P): P {
+  return sync ? sync.decorateBridges(provider) : provider;
 }
 
 export function useSyncStatus(): SyncStatus {
