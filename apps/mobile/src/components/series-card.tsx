@@ -52,7 +52,7 @@ const resolvedCoverAspects = new Map<string, number>();
 // enough that the extra complexity of a position-indexed cache isn't worth it.
 let lastResolvedCoverAspect = DEFAULT_THUMB_ASPECT;
 
-export const COVER_RADIUS_DESKTOP = 16;
+export const COVER_RADIUS_DESKTOP = 20;
 
 const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
   rail: 130,
