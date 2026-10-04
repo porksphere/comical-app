@@ -592,7 +592,7 @@ export function SeriesCard({
   // The card's cover + trailing content, parameterized by the shrink-illusion API. Rendered plainly
   // (no-op API) when Lightweight cards is on, or wrapped in <CoverShrink> (which supplies real
   // animated styles) when off — so the shrink hooks are only paid for when actually animating.
-  const renderCardBody = (shrink: ShrinkApi, coverHidden: boolean) => {
+  const renderCardBody = (shrink: ShrinkApi, coverHidden: boolean, menuOpen: boolean) => {
     // The picture layer (image + skeleton/mask). Only the shrink illusion needs it wrapped in a
     // scalable Animated.View; the lightweight (non-animated) path renders these straight into the
     // clip box, dropping both a host view AND a Reanimated wrapper per card in the common case.
@@ -712,7 +712,7 @@ export function SeriesCard({
           aspect={coverAspect}
           coverRef={coverRef}
           hidden={coverHidden}
-          ring={active}
+          ring={active || menuOpen}
           onLayout={shrink.onCoverLayout}>
           {coverContents}
         </CoverFrame>
@@ -737,7 +737,7 @@ export function SeriesCard({
       direct={direct}
       coverAspect={coverAspect}
       zoomSource={zoomSource}>
-      {({ onLongPress, hidden }) => {
+      {({ onLongPress, hidden, menuOpen }) => {
         // Built LAZILY (only when actually navigating) — NOT per render. This object plus its
         // encodeURIComponent/.replace string churn was allocated for every card on every render, so a
         // scroll that recycles many cards produced steady garbage → GC pauses (a top cost in the
@@ -807,10 +807,10 @@ export function SeriesCard({
             {/* Shrink illusion only when Lightweight is off: wrap in CoverShrink (owns the reanimated
                 hooks + supplies real animated styles); otherwise render plainly with a no-op API. */}
             {lightCards ? (
-              renderCardBody(NOOP_SHRINK, hidden || zoomFlying)
+              renderCardBody(NOOP_SHRINK, hidden || zoomFlying, menuOpen)
             ) : (
               <CoverShrink entryId={entry.id}>
-                {(shrink) => renderCardBody(shrink, hidden || zoomFlying)}
+                {(shrink) => renderCardBody(shrink, hidden || zoomFlying, menuOpen)}
               </CoverShrink>
             )}
           </Pressable>

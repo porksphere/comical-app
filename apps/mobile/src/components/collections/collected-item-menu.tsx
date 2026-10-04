@@ -24,7 +24,8 @@ export function CollectedItemMenu({
   item: Extract<ApiCollectionItem, { type: 'chapter' | 'page' }>;
   /** What a tap on the tile does — the menu's leading row is the same action, spelled out. */
   onOpen: () => void;
-  children: (api: { onLongPress?: (e: GestureResponderEvent) => void }) => ReactNode;
+  /** `menuOpen` is web's — see `CardMenuTrigger`. */
+  children: (api: { onLongPress?: (e: GestureResponderEvent) => void; menuOpen?: boolean }) => ReactNode;
 }) {
   const router = useRouter();
   const pickerTitle = item.chapterName ? `${item.seriesTitle} — ${item.chapterName}` : item.seriesTitle;
@@ -97,7 +98,7 @@ export function CollectedItemMenu({
   if (Platform.OS === 'web') {
     return (
       <CardMenuTrigger testID="collected.tile-menu.trigger" label="Item actions" rows={rows}>
-        {children({})}
+        {(menuOpen) => children({ menuOpen })}
       </CardMenuTrigger>
     );
   }

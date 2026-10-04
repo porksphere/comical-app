@@ -53,8 +53,13 @@ export type SeriesCardMenuProps = {
    *  (see `SeriesCardMenuRequest.zoomSource`). Omitted on web, which has no zoom entrance. */
   zoomSource?: ZoomSourceKey;
   /** `hidden` is true while THIS card's menu is open — the child should hide just its COVER/thumbnail
-   *  (so the lifted preview isn't doubled), NOT the whole item; the rest stays visible under the dim. */
-  children: (api: { onLongPress?: (e: GestureResponderEvent) => void; hidden: boolean }) => React.ReactNode;
+   *  (so the lifted preview isn't doubled), NOT the whole item; the rest stays visible under the dim.
+   *  `menuOpen` is the same moment under the name web reads it by, where nothing is hidden. */
+  children: (api: {
+    onLongPress?: (e: GestureResponderEvent) => void;
+    hidden: boolean;
+    menuOpen: boolean;
+  }) => React.ReactNode;
 };
 
 export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, coverAspect, startRadius, measureRef, zoomSource, children }: SeriesCardMenuProps) {
@@ -160,7 +165,7 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
           hide the whole wrapper any more — the child hides just its cover via the `hidden` flag, so the
           rest of the item (title, and a History row's text) stays put under the dim. */}
       <View ref={anchorRef} collapsable={false}>
-        {children({ onLongPress: undefined, hidden })}
+        {children({ onLongPress: undefined, hidden, menuOpen: hidden })}
       </View>
     </GestureDetector>
   );

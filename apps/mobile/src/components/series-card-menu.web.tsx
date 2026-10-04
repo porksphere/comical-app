@@ -28,12 +28,17 @@ export type SeriesCardMenuProps = {
   measureRef?: RefObject<View | null>;
   /** Ignored on web (no lifted preview to give a starting radius) — matches the native contract. */
   startRadius?: number;
-  /** Always false on web (no lifted preview, so nothing to hide) — matches the native contract. */
-  children: (api: { onLongPress?: (e: GestureResponderEvent) => void; hidden: boolean }) => React.ReactNode;
+  /** `hidden` is always false on web (no lifted preview, so nothing to hide) — matches the native
+   *  contract. `menuOpen` is true while THIS card's menu is open. */
+  children: (api: {
+    onLongPress?: (e: GestureResponderEvent) => void;
+    hidden: boolean;
+    menuOpen: boolean;
+  }) => React.ReactNode;
 };
 
 export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, children }: SeriesCardMenuProps) {
-  if (!enabled || !bridgeId) return <>{children({ onLongPress: undefined, hidden: false })}</>;
+  if (!enabled || !bridgeId) return <>{children({ onLongPress: undefined, hidden: false, menuOpen: false })}</>;
 
   return (
     <CardMenuTrigger
@@ -48,7 +53,7 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, child
           {render}
         </SeriesCardMenuRows>
       )}>
-      {children({ onLongPress: undefined, hidden: false })}
+      {(menuOpen) => children({ onLongPress: undefined, hidden: false, menuOpen })}
     </CardMenuTrigger>
   );
 }

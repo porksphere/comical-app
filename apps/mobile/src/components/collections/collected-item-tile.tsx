@@ -114,7 +114,7 @@ export function CollectedItemTile({
 
   // `lifted` is the native series menu holding a copy of this cover up as its preview: the same
   // two-of-them problem as a zoom in flight, with the same answer.
-  const card = (onLongPress?: (e: GestureResponderEvent) => void, lifted = false) => (
+  const card = (onLongPress?: (e: GestureResponderEvent) => void, lifted = false, menuOpen = false) => (
     <Pressable
       testID={`collected.tile.${item.id}`}
       onPressIn={() => {
@@ -138,7 +138,7 @@ export function CollectedItemTile({
         aspect={aspect}
         coverRef={boxRef}
         hidden={flying || lifted}
-        ring={hovered}
+        ring={hovered || menuOpen}
         // A placeholder is this tile for good, not a moment before its picture, so it sits on the
         // theme's surface rather than the frame's loading grey.
         contentStyle={{ backgroundColor: theme.backgroundElement }}>
@@ -197,13 +197,13 @@ export function CollectedItemTile({
         // in the caption starts it too tall.
         measureRef={boxRef}
         zoomSource={zoomKey}>
-        {({ onLongPress, hidden }) => card(onLongPress, hidden)}
+        {({ onLongPress, hidden, menuOpen }) => card(onLongPress, hidden, menuOpen)}
       </SeriesCardMenu>
     );
   }
   return (
     <CollectedItemMenu item={item} onOpen={onPress}>
-      {({ onLongPress }) => card(onLongPress)}
+      {({ onLongPress, menuOpen }) => card(onLongPress, false, menuOpen)}
     </CollectedItemMenu>
   );
 }

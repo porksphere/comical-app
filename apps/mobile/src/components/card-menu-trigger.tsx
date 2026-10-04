@@ -25,7 +25,9 @@ export function CardMenuTrigger({
   testID: string;
   /** What the button is, to a screen reader. */
   label: string;
-  children: ReactNode;
+  /** Told whether this card's menu is open: the pointer leaves the card for the menu, so a card that
+   *  wants to stay marked as the one being acted on can't go by its own hover. */
+  children: (menuOpen: boolean) => ReactNode;
 }) {
   const theme = useTheme();
   const ref = useRef<View>(null);
@@ -55,7 +57,7 @@ export function CardMenuTrigger({
       {...rightClick}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}>
-      {children}
+      {children(isOpen)}
       <Pressable
         ref={ref}
         testID={testID}
