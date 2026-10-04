@@ -6,14 +6,20 @@ import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanima
 
 import { BackSwipeBoundary } from '@/components/back-swipe-boundary';
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
-import { estimatedCardHeight, SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
+import {
+  COVER_RADIUS_DESKTOP,
+  estimatedCardHeight,
+  SeriesCard,
+  TitlePeek,
+  type CardSize,
+} from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { GRID_COLUMN_GAP, GRID_ROW_GAP, gridGeometry } from '@/hooks/use-grid-layout';
+import { GRID_ROW_GAP, gridGeometry } from '@/hooks/use-grid-layout';
 import { useHovered } from '@/hooks/use-hovered';
-import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
+import { useIsCompact, useIsDesktop, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
 import { ZoomSurfaceContext, useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
@@ -84,9 +90,9 @@ function cardWidthFor(kind: RailSection['kind'], viewport: number): number {
  * (`gridGeometry`), for every rail kind. It used to be its own six columns at a strip's 16pt gap,
  * which put two different sizes of the same card one click apart.
  */
-function wideGrid(viewport: number, gutter: number): { columns: number; cardWidth: number } {
-  const { numColumns, cardWidth } = gridGeometry(viewport, true, gutter);
-  return { columns: numColumns, cardWidth };
+function wideGrid(viewport: number, gutter: number): { columns: number; cardWidth: number; columnGap: number } {
+  const { numColumns, cardWidth, columnGap } = gridGeometry(viewport, true, gutter);
+  return { columns: numColumns, cardWidth, columnGap };
 }
 
 // Rendered height of a `SectionHead` on the WIDE breakpoint, and the real thing rather than an
@@ -351,7 +357,7 @@ export function Rail({
   // peeked card sits in one of GRID_ROWS rows instead of a single scrolling row.
   const peekCol = peekIndex == null ? 0 : wide ? peekIndex % grid.columns : peekIndex;
   const peekRow = peekIndex == null ? 0 : wide ? Math.floor(peekIndex / grid.columns) : 0;
-  const peekBase = peekIndex == null ? 0 : STRIP_PAD + peekCol * (cardWidth + (wide ? GRID_COLUMN_GAP : stripGap));
+  const peekBase = peekIndex == null ? 0 : STRIP_PAD + peekCol * (cardWidth + (wide ? grid.columnGap : stripGap));
   const rowTop = wide ? (rowTops[peekRow] ?? 0) : stripTop;
   const titleTop = rowTop + STRIP_PAD_V + cardWidth * COVER_RATIO + CARD_GAP;
 
@@ -394,7 +400,7 @@ export function Rail({
               key={r}
               // The results grid's fixed cell height, so its rows sit at the same pitch as the grid's
               // instead of closing up under a short title.
-              style={[styles.gridRow, { gap: GRID_COLUMN_GAP, height: estimatedCardHeight(cardWidth, hasSub) }]}
+              style={[styles.gridRow, { gap: grid.columnGap, height: estimatedCardHeight(cardWidth, hasSub) }]}
               onLayout={(e) => {
                 const y = e.nativeEvent.layout.y;
                 setRowTops((prev) => (prev[r] === y ? prev : [...prev.slice(0, r), y, ...prev.slice(r + 1)]));
@@ -548,9 +554,10 @@ export function Rail({
  *  series content it hasn't fetched yet. */
 export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; title?: string }) {
   const wide = useIsLargeScreen();
+  const desktop = useIsDesktop();
   const gutter = useScrollbarGutter();
   const grid = wideGrid(viewportWidth, gutter);
-  const stripGap = wide ? GRID_COLUMN_GAP : stripGapFor(viewportWidth);
+  const stripGap = wide ? grid.columnGap : stripGapFor(viewportWidth);
   const cardWidth = wide ? grid.cardWidth : cardWidthFor('regular', viewportWidth);
   const count = wide ? grid.columns : 4;
   return (
@@ -569,7 +576,13 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
       <View style={[styles.strip, styles.skelStrip, { gap: stripGap }]}>
         {Array.from({ length: count }).map((_, i) => (
           <View key={i} style={{ width: cardWidth }}>
-            <Skeleton style={{ width: cardWidth, height: cardWidth * COVER_RATIO, borderRadius: 8 }} />
+            <Skeleton
+              style={{
+                width: cardWidth,
+                height: cardWidth * COVER_RATIO,
+                borderRadius: desktop ? COVER_RADIUS_DESKTOP : 8,
+              }}
+            />
             <Skeleton style={styles.skelCardLine} />
           </View>
         ))}

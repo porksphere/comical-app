@@ -10,7 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
-import { useIsCompact } from '@/hooks/use-responsive';
+import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
@@ -51,6 +51,8 @@ const resolvedCoverAspects = new Map<string, number>();
 // main grid call sites, and list/scroll order already correlates with resolve order closely
 // enough that the extra complexity of a position-indexed cache isn't worth it.
 let lastResolvedCoverAspect = DEFAULT_THUMB_ASPECT;
+
+export const COVER_RADIUS_DESKTOP = 16;
 
 const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
   rail: 130,
@@ -398,6 +400,7 @@ export function SeriesCard({
 
   // Responsive title size matching the reference's mobile/desktop type scale.
   const compact = useIsCompact();
+  const desktop = useIsDesktop();
   const titleFontSize = compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular;
   const titleLineHeight = compact ? TITLE_LINE_HEIGHT.compact : TITLE_LINE_HEIGHT.regular;
   const titleSize = { fontSize: titleFontSize, lineHeight: titleLineHeight };
@@ -478,7 +481,7 @@ export function SeriesCard({
     return (
       <View style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}>
         <View style={[styles.coverBox, { aspectRatio: DEFAULT_THUMB_ASPECT }]}>
-          <View style={[styles.coverClip, styles.hiddenCover]}>
+          <View style={[styles.coverClip, desktop && styles.coverClipDesktop, styles.hiddenCover]}>
             <ThemedText type="small" themeColor="textSecondary">
               Hidden
             </ThemedText>
@@ -618,8 +621,8 @@ export function SeriesCard({
           // Web keeps a non-clipping `coverBox` around the clipping `coverClip` so the active hover
           // ring (negative insets) can extend past the clip without being cut off.
           <View style={[styles.coverBox, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]} onLayout={shrink.onCoverLayout}>
-            <View style={styles.coverClip}>{coverContents}</View>
-            {active && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
+            <View style={[styles.coverClip, desktop && styles.coverClipDesktop]}>{coverContents}</View>
+            {active && <View style={[styles.ring, desktop && styles.ringDesktop, { pointerEvents: 'none' }]} />}
           </View>
         ) : (
           // Native has no ring, so the box IS the clip — one fewer host view means one fewer Fabric
@@ -825,6 +828,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
+  // The phone's corner all but disappears on a cover the width a desktop card is.
+  coverClipDesktop: {
+    borderRadius: COVER_RADIUS_DESKTOP,
+  },
   picture: {
     // Top-aligned scale origin so the shrink illusion (`pictureStyle`) settles
     // toward the bottom, matching `coverBox`'s own top-aligned layout.
@@ -864,6 +871,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     borderColor: '#60a5fa',
+  },
+  ringDesktop: {
+    borderRadius: COVER_RADIUS_DESKTOP + 2,
   },
   titleWrap: {
     position: 'relative',

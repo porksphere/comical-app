@@ -28,7 +28,7 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
 import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
-import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
+import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useRouter } from '@/lib/nav';
 
@@ -156,7 +156,7 @@ export function ContentFeed({
   /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
   scrollEnabled?: boolean;
 }) {
-  const { numColumns, cardWidth, railViewport, width, gutter } = useGridLayout();
+  const { numColumns, cardWidth, columnGap, railViewport, width, gutter } = useGridLayout();
   const wide = useIsLargeScreen();
   // The breakpoint `SectionHead` itself reads — the sticky sizes its band from the head's real
   // height. A DIFFERENT breakpoint from `wide` above.
@@ -280,7 +280,7 @@ export function ContentFeed({
   const footer = terminalLoading ? (
     <View style={styles.skelFooter}>
       {Array.from({ length: 2 }).map((_, r) => (
-        <View key={r} style={[styles.row, styles.gridRow]}>
+        <View key={r} style={[styles.row, styles.gridRow, { gap: columnGap }]}>
           {Array.from({ length: numColumns }).map((_, c) => (
             <SkeletonCard key={c} />
           ))}
@@ -381,7 +381,7 @@ export function ContentFeed({
                 <SectionHead title={item.title} />
                 <View style={styles.homeGridRows}>
                   {Array.from({ length: item.rows }).map((_, r) => (
-                    <View key={r} style={[styles.row, styles.gridRow]}>
+                    <View key={r} style={[styles.row, styles.gridRow, { gap: columnGap }]}>
                       {Array.from({ length: numColumns }).map((_, c) => (
                         <SkeletonCard key={c} />
                       ))}
@@ -392,7 +392,7 @@ export function ContentFeed({
             );
           case 'gridRow':
             return (
-              <View style={[styles.row, styles.gridRow]}>
+              <View style={[styles.row, styles.gridRow, { gap: columnGap }]}>
                 {item.items.map((entry) => (
                   // Both dims fixed — cardWidth (from useGridLayout) + cellHeight — so a short final row
                   // just ends, matching series-grid.tsx's cell exactly. Bridge-scope the key (like
@@ -459,7 +459,6 @@ const styles = StyleSheet.create({
   // series-grid.tsx's columnWrapper gap + cell width so home terminal cards align with results cells.
   gridRow: {
     flexDirection: 'row',
-    gap: GRID_COLUMN_GAP,
   },
   // NO flex: 1 — pinned to cardWidth at the call site so a short last row ends rather than stretching.
   cell: {

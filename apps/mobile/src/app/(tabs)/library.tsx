@@ -15,6 +15,7 @@ import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectedItemsGrid } from '@/components/collections/collected-items-grid';
 import { CollectedSortButton } from '@/components/collections/collected-sort-button';
+import { COVER_RADIUS_DESKTOP } from '@/components/series-card';
 import { SeriesGrid } from '@/components/series-grid';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -35,9 +36,9 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { libraryGroupOf } from '@/data/library-grouping';
 import { useLibraryGrouping, useLibrarySort } from '@/hooks/use-library-sort';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
-import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
+import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
-import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -396,13 +397,15 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
 }
 
 function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }) {
+  const { columnGap } = useGridLayout();
+  const desktop = useIsDesktop();
   return (
     <View style={styles.skelWrap}>
       {Array.from({ length: rows }).map((_, r) => (
-        <View key={r} style={styles.skelRow}>
+        <View key={r} style={[styles.skelRow, { gap: columnGap }]}>
           {Array.from({ length: numColumns }).map((_, c) => (
             <View key={c} style={[styles.cell, styles.skelCell]}>
-              <Skeleton style={styles.skelCover} />
+              <Skeleton style={[styles.skelCover, desktop && styles.skelCoverDesktop]} />
               <Skeleton style={styles.skelLine} />
               <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
             </View>
@@ -459,7 +462,6 @@ const styles = StyleSheet.create({
   },
   skelRow: {
     flexDirection: 'row',
-    gap: GRID_COLUMN_GAP,
   },
   skelCell: {
     gap: Spacing.one,
@@ -468,6 +470,9 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 2 / 3,
     borderRadius: 10,
+  },
+  skelCoverDesktop: {
+    borderRadius: COVER_RADIUS_DESKTOP,
   },
   skelLine: {
     height: 12,

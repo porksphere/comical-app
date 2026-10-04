@@ -12,7 +12,7 @@ import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys } from '@/data/q
 import { useDedupedPages } from '@/data/grid-pages';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
-import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
+import { useGridLayout } from '@/hooks/use-grid-layout';
 import { testId } from '@/lib/test-id';
 
 /**
@@ -44,7 +44,7 @@ export function HomeGridBlock({
    *  row above the block. Default keeps the head so the component stays usable standalone. */
   headless?: boolean;
 }) {
-  const { cardWidth } = useGridLayout();
+  const { cardWidth, columnGap } = useGridLayout();
   const ds = useDataSource();
   const mock = useMockActive();
   const queryClient = useQueryClient();
@@ -98,7 +98,7 @@ export function HomeGridBlock({
       {!headless && <SectionHead title={section.title} />}
       <View style={styles.homeGridRows}>
         {rows.map((row, r) => (
-          <View key={r} style={[styles.row, styles.gridRow]}>
+          <View key={r} style={[styles.row, styles.gridRow, { gap: columnGap }]}>
             {row.map((item) => (
               // Pinned to `cardWidth`, like SeriesGrid's cells. A short last row just ends — this
               // block used to append invisible spacer views to stop a `flex: 1` cell stretching.
@@ -144,7 +144,6 @@ const styles = StyleSheet.create({
   // grid's rows lay out identically to the main grid.
   gridRow: {
     flexDirection: 'row',
-    gap: GRID_COLUMN_GAP,
   },
   // NO `flex: 1` — pinned to `cardWidth` at the call site, so a short last row ends rather than
   // stretching its cards (which is what the old spacer views existed to prevent).

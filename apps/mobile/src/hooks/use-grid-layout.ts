@@ -10,15 +10,20 @@
  * known on the first render, so it's used immediately — deferring there would lay every
  * rail card out at the 390px fallback for one frame and then visibly snap them wider.
  */
+import { Platform } from 'react-native';
+
 import { Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { useContentWidth } from '@/hooks/use-content-width';
-import { useHydrated } from '@/hooks/use-responsive';
+import { LARGE_SCREEN_BREAKPOINT, useHydrated } from '@/hooks/use-responsive';
 import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
 
 // The reference's mobile grid uses a tighter inter-card gap than its row gap; Spacing.two (8px) is
-// the closest token. Shared so every card grid keeps the same column gap. (Spacing.three was tried
-// and reverted — the wider gap cost card width without reading better.)
-export const GRID_COLUMN_GAP = Spacing.two;
+// the closest token. (Spacing.three was tried there and reverted — the wider gap cost card width
+// without reading better.)
+const GRID_COLUMN_GAP = Spacing.two;
+// A desktop card is much wider than a phone's, and 8px between covers that size reads as one strip
+// of artwork. Web only: a tablet is at this width too, and keeps the phone's spacing.
+const GRID_COLUMN_GAP_DESKTOP = Spacing.three;
 /** The space between rows of cards — tight, because a card's own title/author block already
  *  separates one row from the next (see `series-grid.tsx`). */
 export const GRID_ROW_GAP = Spacing.one;
@@ -32,6 +37,9 @@ export type GridLayout = {
   /** EXACT width of one card, not a hint — `SeriesGrid` pins its cells to this. It's the whole reason
    *  a short final row can just end: an elastic cell would stretch to fill the row instead. */
   cardWidth: number;
+  /** The space between two cards in a row. Every card grid lays out with this one, so a card sits
+   *  at the same x whichever grid drew it. */
+  columnGap: number;
   hydrated: boolean;
   /** The CONTENT width this geometry was derived from — the window minus the sidebar, inside the
    *  tabs; the window itself everywhere else. Not `useWindowDimensions().width`. */
@@ -53,16 +61,18 @@ export function gridGeometry(
   width: number,
   hydrated: boolean,
   gutter: number,
-): Pick<GridLayout, 'numColumns' | 'sidePad' | 'cardWidth'> {
-  const numColumns = !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
+): Pick<GridLayout, 'numColumns' | 'sidePad' | 'cardWidth' | 'columnGap'> {
+  const large = hydrated && width >= LARGE_SCREEN_BREAKPOINT;
+  const numColumns = large ? Math.min(6, Math.max(3, Math.floor(width / 200))) : 3;
+  const columnGap = large && Platform.OS === 'web' ? GRID_COLUMN_GAP_DESKTOP : GRID_COLUMN_GAP;
   // Center content within MaxTopLevelWidth (web only — see topLevelCenterInset) plus the edge gutter;
   // header/footer blocks bleed TopLevelGutter of this back out (see the Browse list). On native this is
   // just the gutter, so the grid spans the full device width.
   const sidePad = topLevelCenterInset(width) + TopLevelGutter;
   // Not returned: it exists only to derive `cardWidth`, and nothing outside this hook ever wanted it.
   const gridContentWidth = width - gutter - sidePad * 2;
-  const cardWidth = (gridContentWidth - (numColumns - 1) * GRID_COLUMN_GAP) / numColumns;
-  return { numColumns, sidePad, cardWidth };
+  const cardWidth = (gridContentWidth - (numColumns - 1) * columnGap) / numColumns;
+  return { numColumns, sidePad, cardWidth, columnGap };
 }
 
 export function useGridLayout(): GridLayout {

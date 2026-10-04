@@ -11,7 +11,7 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 import { buildGroupedRows } from '@/data/grouped-rows';
 import type { SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { GRID_COLUMN_GAP, GRID_ROW_GAP, useGridLayout } from '@/hooks/use-grid-layout';
+import { GRID_ROW_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 
 // A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are absolutely
@@ -119,7 +119,7 @@ export function SeriesGrid({
   /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
   scrollEnabled?: boolean;
 }) {
-  const { numColumns, sidePad, cardWidth } = useGridLayout();
+  const { numColumns, sidePad, cardWidth, columnGap } = useGridLayout();
   const { subOf } = useBridgeMap();
 
   // FIXED row height — every cell is forced to the SAME height (worst-case card content via
@@ -168,9 +168,9 @@ export function SeriesGrid({
         onScroll={onScroll}
         renderRow={(rowItems) => (
           // Manual rows lay out with a real flex gap (LegendList's column slots can't gap — see the
-          // marginLeft note below), which lands cards at the same `cardWidth + GRID_COLUMN_GAP`
+          // marginLeft note below), which lands cards at the same `cardWidth + columnGap`
           // rhythm as the ungrouped grid; fixed widths keep a short final row left-aligned.
-          <View style={styles.groupedRow}>
+          <View style={[styles.groupedRow, { gap: columnGap }]}>
             {rowItems.map((item) => (
               <View key={keyOf(item)} style={[styles.cell, { width: cardWidth, height: cellHeight }]}>
                 <SeriesCard
@@ -220,12 +220,12 @@ export function SeriesGrid({
         // — the old prop did nothing), which squeezed the visual gap to `gap·(n−1)/n` (~5.3px) and
         // dumped the remainder as slack on the row's right edge — the Library read tighter than the
         // Browse feed's hand-laid rows. Column k sits `k·gap/n` right of its slot start, which lands
-        // every card at exactly `k·(cardWidth+gap)`: true `GRID_COLUMN_GAP` gaps, flush right edge,
+        // every card at exactly `k·(cardWidth+gap)`: true `columnGap` gaps, flush right edge,
         // identical to ContentFeed's terminal grid.
         <View
           style={[
             styles.cell,
-            { width: cardWidth, height: cellHeight, marginLeft: (index % numColumns) * (GRID_COLUMN_GAP / numColumns) },
+            { width: cardWidth, height: cellHeight, marginLeft: (index % numColumns) * (columnGap / numColumns) },
           ]}>
           <SeriesCard
             entry={item}
@@ -251,6 +251,5 @@ const styles = StyleSheet.create({
   },
   groupedRow: {
     flexDirection: 'row',
-    gap: GRID_COLUMN_GAP,
   },
 });

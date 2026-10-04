@@ -59,7 +59,7 @@ import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
 import type { Bridge, BridgeList } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { useHasSidebar } from '@/hooks/use-content-width';
-import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
+import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
@@ -1018,12 +1018,6 @@ const styles = StyleSheet.create({
   },
   homeGridRows: {
     gap: Spacing.three,
-  },
-  // Same shape as the main FlatList's `columnWrapperStyle` (`row` + this gap),
-  // so a non-terminal home grid's rows lay out identically to the main grid.
-  gridRow: {
-    flexDirection: 'row',
-    gap: GRID_COLUMN_GAP,
   },
   loadMoreButton: {
     alignSelf: 'center',

@@ -90,6 +90,15 @@ export function useIsLargeScreen(): boolean {
 }
 
 /**
+ * True on a desktop: the large-screen layout in a browser or the desktop shell. A tablet is as wide
+ * and is not one — it keeps the phone's card metrics at any width.
+ */
+export function useIsDesktop(): boolean {
+  const large = useIsLargeScreen();
+  return large && Platform.OS === 'web';
+}
+
+/**
  * Content height of the sticky top bars — taller on desktop (≥768px), compact
  * otherwise. Shared by the browse bridge/page bar and the series-detail bar so
  * the two stay the same height and resize together (just change the

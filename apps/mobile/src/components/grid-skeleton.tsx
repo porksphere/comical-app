@@ -7,17 +7,20 @@
  */
 import { StyleSheet, View } from 'react-native';
 
+import { COVER_RADIUS_DESKTOP } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
-import { GRID_COLUMN_GAP } from '@/hooks/use-grid-layout';
+import { useGridLayout } from '@/hooks/use-grid-layout';
+import { useIsDesktop } from '@/hooks/use-responsive';
 
 /** A single skeleton card (cover + two title lines) — one grid cell's worth. */
 export function SkeletonCard() {
+  const desktop = useIsDesktop();
   // `gridCell` (not the bare cell) so this matches a real card's cell exactly — same flex plus the
   // same top/bottom padding as a real `gridCell`-wrapped SeriesCard.
   return (
     <View style={[styles.gridCell, styles.skelCell]}>
-      <Skeleton style={styles.skelCover} />
+      <Skeleton style={[styles.skelCover, desktop && styles.skelCoverDesktop]} />
       <Skeleton style={styles.skelLine} />
       <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
     </View>
@@ -29,10 +32,11 @@ export function SkeletonCard() {
  * Infinite-scroll pagination itself shows no skeleton — only the initial load.
  */
 export function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }) {
+  const { columnGap } = useGridLayout();
   return (
     <View style={styles.skelFooter}>
       {Array.from({ length: rows }).map((_, r) => (
-        <View key={r} style={[styles.row, styles.skelRow]}>
+        <View key={r} style={[styles.row, styles.skelRow, { gap: columnGap }]}>
           {Array.from({ length: numColumns }).map((_, c) => (
             <SkeletonCard key={c} />
           ))}
@@ -59,11 +63,10 @@ const styles = StyleSheet.create({
   row: {
     paddingHorizontal: TopLevelGutter,
   },
-  // Same column gap as the real grid's columnWrapperStyle so skeleton columns sit at the same
+  // Takes the real grid's column gap at the call site, so skeleton columns sit at the same
   // x-offsets as the real cards that replace them.
   skelRow: {
     flexDirection: 'row',
-    gap: GRID_COLUMN_GAP,
   },
   skelCell: {
     flex: 1,
@@ -73,6 +76,9 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 2 / 3,
     borderRadius: 10,
+  },
+  skelCoverDesktop: {
+    borderRadius: COVER_RADIUS_DESKTOP,
   },
   skelLine: {
     height: 12,
