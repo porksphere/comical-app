@@ -17,11 +17,6 @@ const PALETTE = ['#4F8DFD', '#E0569B', '#F2A03D', '#2FC4B2', '#9A6CF6', '#F2664F
 // last rows bare. Weighted this way the whole is round, with the wash filling in toward the corners.
 const WASH = { dark: 0.06, light: 0.04 };
 const GLOW = { dark: 0.2, light: 0.13 };
-// Of `GLOW`, for a rail on a narrow feed. A phone's rail is one row of covers running edge to edge,
-// so they stand over the middle of the ellipse and what shows is its fringe, above and below them.
-// A wide feed has gaps to show the middle through, and a long glow is at full strength in every gap
-// down its run; neither takes any of this.
-const NARROW_GAIN = 1.7;
 
 // A section's colour is whole behind the middle of its covers and eases away over `BAND_RAMP` at
 // either end, running `BAND_SPILL` past its own edge. Two sections' colours meet only in their
@@ -130,7 +125,6 @@ export function FeedBackdrop({
   const glowWidth = Math.round(Math.max(width * GLOW_WIDTH, GLOW_MIN_WIDTH));
   const wideness = Math.min(1, Math.max(0, (width - NARROW_FEED) / (WIDE_FEED - NARROW_FEED)));
   const sideFade = width * (SIDE_FADE.narrow + (SIDE_FADE.wide - SIDE_FADE.narrow) * wideness);
-  const gain = NARROW_GAIN + (1 - NARROW_GAIN) * wideness;
 
   // A long glow is in neither swaying layer: its section is on screen for far more scroll than a
   // rail is, and would be carried clean off its covers.
@@ -141,8 +135,7 @@ export function FeedBackdrop({
       const long = body * GLOW_HEIGHT > GLOW_MAX_HEIGHT;
       if (layer !== (long ? 'still' : i % 2)) return null;
       const left = Math.round((long ? 0.5 : GLOW_X[i % GLOW_X.length]!) * width - glowWidth / 2);
-      const alpha = GLOW[scheme] * (long ? 1 : gain);
-      const image = glowStyle(color(b.tint), alpha);
+      const image = glowStyle(color(b.tint), GLOW[scheme]);
       if (!long) {
         const mid = (b.bodyTop + b.bottom) / 2;
         const height = body * GLOW_HEIGHT;
@@ -171,7 +164,7 @@ export function FeedBackdrop({
           </View>
           {/* The ellipse's own profile across its middle, so the run picks up where each half ends. */}
           <LinearGradient
-            {...bandStops(color(b.tint), alpha, 0.5)}
+            {...bandStops(color(b.tint), GLOW[scheme], 0.5)}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={{ height: run }}
