@@ -57,6 +57,7 @@ import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
 import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { mirrorGridRows } from '@/lib/grid-rows';
+import { stableScrollbarGutter, useScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useSeriesPageWidth } from '@/lib/series-pane-context';
 import { chapterProgressQuery, collectionItemsQuery, queryKeys } from '@/data/queries';
@@ -1096,6 +1097,12 @@ function chapterMenuRows(
 
 // Rows of tiles shown before a long page set collapses behind "Show all".
 const COLLAPSED_ROWS = 4;
+const PAGE_GRID_GAP = Spacing.two;
+/** LegendList's web build pads every column by half the gap and leaves it there, so a row laid out
+ *  in the column starts half a gap inside it — right of the heading above. On web the row is given
+ *  that much more room on each side, and the header and footer take it back. Its native build
+ *  resizes the row itself, so there is nothing to give back there. */
+const PAGE_ROW_BLEED = Platform.OS === 'web' ? PAGE_GRID_GAP / 2 : 0;
 
 /**
  * One grid cell fed to the `LegendList`. A discriminated, always-non-null value on purpose:
@@ -1168,9 +1175,9 @@ export function PageThumbList({
   const showMoreHover = useHovered();
 
   const cols = pageGridCols(screenW);
-  const gap = Spacing.two;
+  const gap = PAGE_GRID_GAP;
   const sidePad = seriesSidePad(screenW);
-  const contentWidth = screenW - sidePad * 2;
+  const contentWidth = screenW - useScrollbarGutter() - sidePad * 2;
   const tileW = (contentWidth - gap * (cols - 1)) / cols;
   // Row height: the constant 2:3 slot (`thumbShell`). It must be the vertical MAX a tile can take —
   // clampThumbAspect floors every tile there — so a taller tile can never overflow its row. A tile
@@ -1204,7 +1211,7 @@ export function PageThumbList({
 
   const list = (
     <AnimatedLegendList
-      style={[styles.pageList, scrollbarInset(scrollbarInsetTop)]}
+      style={[styles.pageList, stableScrollbarGutter, scrollbarInset(scrollbarInsetTop)]}
       scrollEnabled={scrollEnabled}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
@@ -1228,8 +1235,8 @@ export function PageThumbList({
       contentContainerStyle={{
         paddingTop: BarContentGap + topInset,
         paddingBottom: insets.bottom + Spacing.five,
-        paddingLeft: sidePad,
-        paddingRight: sidePad,
+        paddingLeft: sidePad - PAGE_ROW_BLEED,
+        paddingRight: sidePad - PAGE_ROW_BLEED,
       }}
       ListHeaderComponent={
         <View style={styles.pageHeader}>
@@ -1854,10 +1861,12 @@ const styles = StyleSheet.create({
   },
   pageHeader: {
     gap: Spacing.four,
+    marginHorizontal: PAGE_ROW_BLEED,
   },
   pageFooter: {
     gap: Spacing.four,
     paddingTop: Spacing.two,
+    marginHorizontal: PAGE_ROW_BLEED,
   },
   // The collapsed "Show all" overlay: pulled up over the last visible row (height
   // + negative marginTop set inline), the gradient fades that row out and the
