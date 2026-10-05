@@ -44,7 +44,7 @@ import {
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, ContinuousCorner, MaxContentWidth, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
+import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
@@ -128,9 +128,21 @@ function ChapterListSkeleton() {
 
 /** Page-grid placeholder shown while the deferred page fetch is in flight — one
  *  row of tiles at the grid's column count, matching the thumbnail aspect. */
+/** The side inset of both series scrollers: caps + centres the list at MaxTopLevelWidth — the width
+ *  the top-level views use, so the related rails line up with them — plus a Spacing.four gutter.
+ *  Below that width the cap never binds and this is just the gutter. */
+const seriesSidePad = (width: number) => Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
+
+/** Columns in the direct-series page grid. Past 900 they grow with the column, so a tile stays near
+ *  the size it has five-across instead of scaling up with the page. */
+function pageGridCols(width: number): number {
+  if (width < 600) return 2;
+  if (width < 900) return 3;
+  return Math.max(5, Math.round((width - seriesSidePad(width) * 2) / 160));
+}
+
 function PageGridSkeleton() {
-  const width = useSeriesPageWidth();
-  const cols = width >= 900 ? 5 : width >= 600 ? 3 : 2;
+  const cols = pageGridCols(useSeriesPageWidth());
   return (
     <View style={styles.section}>
       <ThemedText type="subtitle" style={styles.headTitle}>
@@ -486,10 +498,7 @@ export function ChapterScrollList({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const width = useSeriesPageWidth();
-  // Large screens cap + centre the whole list (hero, chapter rows, rails) at MaxTopLevelWidth, the
-  // same width the top-level views use, so the related rails line up with them. Below the breakpoint
-  // the cap never binds and the list just insets by Spacing.four.
-  const largeSidePad = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
+  const largeSidePad = seriesSidePad(width);
   const [tab, setTab] = useState<Tab>('all');
   const [asc, setAsc] = useState(false);
   // Reveal the collapsed middle portion of the current tab inline.
@@ -1156,12 +1165,10 @@ export function PageThumbList({
   const [expanded, setExpanded] = useState(false);
   const showMoreHover = useHovered();
 
-  const cols = screenW >= 900 ? 5 : screenW >= 600 ? 3 : 2;
+  const cols = pageGridCols(screenW);
   const gap = Spacing.two;
-  // Cap + centre the content at MaxContentWidth (matching the chaptered layout),
-  // inset by Spacing.four; the tiles fill the resulting columns.
-  const sidePad = Math.max(0, (screenW - MaxContentWidth) / 2) + Spacing.four;
-  const contentWidth = Math.min(screenW, MaxContentWidth) - Spacing.four * 2;
+  const sidePad = seriesSidePad(screenW);
+  const contentWidth = screenW - sidePad * 2;
   const tileW = (contentWidth - gap * (cols - 1)) / cols;
   // Row height: the constant 2:3 slot (`thumbShell`). It must be the vertical MAX a tile can take —
   // clampThumbAspect floors every tile there — so a taller tile can never overflow its row. A tile
