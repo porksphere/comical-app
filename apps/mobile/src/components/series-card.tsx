@@ -612,8 +612,10 @@ export function SeriesCard({
               resolvedCoverIds.add(entry.id);
               const src = e.source;
               if (src?.width && src?.height) {
-                // Smooth the aspect settle when the shape changes; no-op when Lightweight is on.
-                shrink.runShrink?.(coverAspect, learnCoverAspect(src.width, src.height));
+                // Learned on its own line: as an argument to the optional call below it would be
+                // skipped along with the call whenever Lightweight cards leaves `runShrink` unset.
+                const nextAspect = learnCoverAspect(src.width, src.height);
+                shrink.runShrink?.(coverAspect, nextAspect);
               }
               // Light path: the clip's own grey backing IS the placeholder, and expo-image paints the
               // decoded cover over it natively — so no `loaded` state flip (hence no per-cover commit)
