@@ -474,6 +474,7 @@ export async function getBridges(signal?: AbortSignal): Promise<Bridge[]> {
     nsfw: b.info.nsfw ?? false,
     capabilities: b.info.capabilities ?? [],
     cardSubtitles: b.info.cardSubtitles ?? false,
+    ratings: b.info.ratings ?? false,
     thumbnail: b.info.iconUrl,
   }));
 }

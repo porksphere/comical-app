@@ -7,7 +7,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -24,7 +24,7 @@ import { TagGroupRow } from '@/components/chip';
 import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton } from '@/components/rail';
 import { ACTION_ICON_SIZE, ActionButton, NewBadge } from '@/components/series/action-button';
-import { ChapterScrollList, PageThumbList } from '@/components/series/chapters-section';
+import { ChapterScrollList, Disclosure, PageThumbList, TurningChevron } from '@/components/series/chapters-section';
 import { SeriesDownloadButton } from '@/components/series/download-button';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
@@ -46,6 +46,7 @@ import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
 import { useOpenSearchLayer } from '@/lib/series-nav';
 import { useRouter } from '@/lib/nav';
+import { formatScore, formatVotes } from '@/lib/rating';
 import { tagPaletteFor } from '@/lib/tag-colors';
 import { testId } from '@/lib/test-id';
 
@@ -148,6 +149,18 @@ function MetaCell({
   );
 }
 
+/** A cell that is only read: STATUS, and anything a bridge added through its info cells. */
+function PlainCell({ metaLabel, value }: { metaLabel: string; value: string }) {
+  return (
+    <View style={styles.metaCell}>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
+        {metaLabel}
+      </ThemedText>
+      <ThemedText type="small">{value}</ThemedText>
+    </View>
+  );
+}
+
 /** An Author/Artist cell whose bridge supplied the people SEPARATELY (the contract's `authors` /
  *  `artists` arrays): each name is its own link, comma-joined inline, so a co-written series can be
  *  searched by either person rather than by the whole "A, B" line, which no filter matches. Same
@@ -199,6 +212,84 @@ function CreditLink({ credit, onPress, testID }: { credit: MetaCredit; onPress: 
         {credit.name}
       </ThemedText>
     </Pressable>
+  );
+}
+
+/** The meta grid's column count — what one row held before a bridge could add cells of its own.
+ *  A part-filled LAST row is padded out to it, so its cells sit under the first row's columns; a
+ *  lone row never is, so a series with two cells still splits the width in half. */
+const META_COLUMNS = 4;
+
+/** Only rendered for a bridge that declares ratings, so "Not rated" always means this series has
+ *  none yet — never that its source doesn't rate at all. */
+function RatingCell({ rating }: { rating: SeriesDetail['rating'] }) {
+  const theme = useTheme();
+  return (
+    <View testID="series.meta.rating" style={styles.metaCell}>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
+        RATING
+      </ThemedText>
+      {rating ? (
+        <View style={styles.rating}>
+          <StarIcon color={theme.badgeNew} size={13} filled />
+          <ThemedText type="small">{formatScore(rating.score)}</ThemedText>
+          {rating.votes != null && (
+            <ThemedText type="small" themeColor="textSecondary">
+              ({formatVotes(rating.votes)})
+            </ThemedText>
+          )}
+        </View>
+      ) : (
+        <ThemedText type="small" themeColor="textSecondary">
+          Not rated
+        </ThemedText>
+      )}
+    </View>
+  );
+}
+
+/** The series' other names, folded away: there can be a dozen, most in a script the reader of this
+ *  page doesn't read, and the one that matters is already the title. */
+function AltTitles({ titles }: { titles: string[] }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <View>
+      {/* No accessibilityLabel: the visible text is the label, and on web an aria-label would take
+          the testID's place as the id the e2e flows select by. */}
+      <Pressable
+        testID="series.alt-titles"
+        onPress={() => setOpen((o) => !o)}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
+        accessibilityRole="button"
+        aria-expanded={open}
+        hitSlop={Spacing.two}
+        style={({ pressed }) => [styles.altTitlesToggle, pressed && styles.metaCellPressed]}>
+        <ThemedText
+          type="small"
+          themeColor="textSecondary"
+          style={[styles.metaLabel, hovered && { color: theme.text }]}>
+          OTHER NAMES ({titles.length})
+        </ThemedText>
+        <TurningChevron open={open} color={theme.textSecondary} />
+      </Pressable>
+      <Disclosure open={open}>
+        {/* Mounted while closed (Disclosure measures it), and a clipped node still reads as visible
+            to the web e2e driver — so it answers to its testID only while open. */}
+        <View
+          testID={open ? 'series.alt-titles.list' : undefined}
+          aria-hidden={!open}
+          style={styles.altTitlesList}>
+          {titles.map((t, i) => (
+            <ThemedText key={i} type="small" themeColor="textSecondary" selectable>
+              {t}
+            </ThemedText>
+          ))}
+        </View>
+      </Disclosure>
+    </View>
   );
 }
 
@@ -316,7 +407,7 @@ export function SeriesBody({
   // footer, which made `PageThumbList` collapse the page grid
   // behind "Show all" for nothing — the page thumbnails past the first
   // `cols * COLLAPSED_ROWS` (20 on wide screens) appeared cut off.
-  const { byId: bridgeById } = useBridgeMap();
+  const { byId: bridgeById, ratingsOf } = useBridgeMap();
   const relatedCapable = bridgeId
     ? (bridgeById.get(bridgeId)?.capabilities.includes('related-series') ?? false)
     : false;
@@ -574,6 +665,40 @@ export function SeriesBody({
   // legend.
   const tagColors = tagPaletteFor(series.tagGroups?.map((g) => g.label) ?? [], scheme);
 
+  // The typed cells, then the rating, then whatever the bridge added — in rows of META_COLUMNS.
+  const metaCells: ReactNode[] = (series.meta ?? []).map((m) => {
+    const metaKey = SEARCHABLE_META_KEYS[m.label];
+    if (metaKey && bridgeId && m.credits) {
+      return (
+        <CreditsCell
+          key={m.label}
+          metaLabel={m.label}
+          credits={m.credits}
+          onPress={(c) => onMetaPress(metaKey, c.name)}
+          testIDBase={testId('series.meta', m.label)}
+        />
+      );
+    }
+    return metaKey && bridgeId ? (
+      <MetaCell
+        key={m.label}
+        testID={testId('series.meta', m.label)}
+        onPress={() => onMetaPress(metaKey, m.value)}
+        metaLabel={m.label}
+        value={m.value}
+      />
+    ) : (
+      <PlainCell key={m.label} metaLabel={m.label} value={m.value} />
+    );
+  });
+  if (ratingsOf(bridgeId)) metaCells.push(<RatingCell key="rating" rating={series.rating} />);
+  // Keyed by position: a bridge may repeat a label.
+  (series.infoCells ?? []).forEach((c, i) => {
+    metaCells.push(<PlainCell key={`info-${i}`} metaLabel={c.label.toUpperCase()} value={c.value} />);
+  });
+  const metaRows: ReactNode[][] = [];
+  for (let i = 0; i < metaCells.length; i += META_COLUMNS) metaRows.push(metaCells.slice(i, i + META_COLUMNS));
+
   // Metadata, description, and chapters — placed in the right column (large)
   // or stacked below the hero row (small).
   const contentEl = (
@@ -594,43 +719,17 @@ export function SeriesBody({
         </View>
       ) : null}
 
-      {series.meta?.length ? (
+      {metaRows.length ? (
         <View style={[styles.metaGrid, { borderColor: theme.hairline }]}>
-          {series.meta.map((m) => {
-            const metaKey = SEARCHABLE_META_KEYS[m.label];
-            const cellContent = (
-              <>
-                <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
-                  {m.label}
-                </ThemedText>
-                <ThemedText type="small">{m.value}</ThemedText>
-              </>
-            );
-            if (metaKey && bridgeId && m.credits) {
-              return (
-                <CreditsCell
-                  key={m.label}
-                  metaLabel={m.label}
-                  credits={m.credits}
-                  onPress={(c) => onMetaPress(metaKey, c.name)}
-                  testIDBase={testId('series.meta', m.label)}
-                />
-              );
-            }
-            return metaKey && bridgeId ? (
-              <MetaCell
-                key={m.label}
-                testID={testId('series.meta', m.label)}
-                onPress={() => onMetaPress(metaKey, m.value)}
-                metaLabel={m.label}
-                value={m.value}
-              />
-            ) : (
-              <View key={m.label} style={styles.metaCell}>
-                {cellContent}
-              </View>
-            );
-          })}
+          {metaRows.map((row, ri) => (
+            <View key={ri} style={styles.metaRow}>
+              {row}
+              {metaRows.length > 1 &&
+                Array.from({ length: META_COLUMNS - row.length }, (_, i) => (
+                  <View key={`pad-${i}`} style={styles.metaCell} />
+                ))}
+            </View>
+          ))}
         </View>
       ) : null}
 
@@ -639,6 +738,8 @@ export function SeriesBody({
           {series.description}
         </ThemedText>
       ) : null}
+
+      {series.altTitles?.length ? <AltTitles key={series.id} titles={series.altTitles} /> : null}
     </>
   );
   // `contentEl` above is now just tags + meta + description (no chapters). For chaptered series the
@@ -902,14 +1003,16 @@ const styles = StyleSheet.create({
     gap: Spacing.two
   },
   metaGrid: {
-    flexDirection: 'row',
-    // Keep all cells (Status / Type / Author / Artist) on a single row, each an
-    // equal column; long values wrap within their own cell.
-    alignItems: 'flex-start',
-    gap: Spacing.two,
+    gap: Spacing.three,
     paddingVertical: Spacing.three,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth
+  },
+  metaRow: {
+    flexDirection: 'row',
+    // Each cell an equal column; long values wrap within their own cell.
+    alignItems: 'flex-start',
+    gap: Spacing.two
   },
   metaCell: {
     flex: 1,
@@ -939,6 +1042,22 @@ const styles = StyleSheet.create({
   metaLabel: {
     fontSize: 11,
     letterSpacing: 0.5
+  },
+  rating: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    columnGap: Spacing.one
+  },
+  altTitlesToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: Spacing.one
+  },
+  altTitlesList: {
+    gap: Spacing.half,
+    paddingTop: Spacing.two
   },
   description: {
     // Reference #detail-description: 0.88rem / line-height 1.5.

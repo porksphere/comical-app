@@ -374,6 +374,13 @@ const META: MetaCell[] = [
   { label: 'AUTHOR', value: 'Halden Reyes, coldpress', credits: [{ name: 'Halden Reyes' }, { name: 'coldpress' }] },
   { label: 'ARTIST', value: 'Junia Marlow' },
 ];
+// Enough extra cells that the meta grid wraps onto a second, part-filled row.
+const ALT_TITLES = ["The Keeper's Ledger", 'Le Registre du gardien', '灯台守の帳簿'];
+const RATING = { score: 0.82, votes: 1284 };
+const INFO_CELLS = [
+  { label: 'Year', value: '2021' },
+  { label: 'Views', value: '48.2K' },
+];
 // Long enough to exercise the clamp-and-expand control on the series page.
 const DESCRIPTION =
   'Tamsin has walked the coast road for nine winters, trading errands for meals and sleeping ' +
@@ -574,6 +581,9 @@ export function mockSeries(
     bridge,
     description: DESCRIPTION,
     meta: META,
+    altTitles: ALT_TITLES,
+    rating: RATING,
+    infoCells: INFO_CELLS,
     // Mirror real bridges (source.ts `getSeriesDetail`): the detail is the fast info
     // payload; the chapter list / page-thumbnail grid — the slow part — streams in via
     // `getSeriesList` (see `mockGetSeriesList`), so both data sources share one shape.
@@ -666,6 +676,7 @@ export async function mockGetBridges(): Promise<Bridge[]> {
     // Mock entries carry "Ch. 176 · 2h ago" subs (see `entry`'s `sub` option), so the mock bridges
     // declare the flag — the grids reserve the sub line for them, exactly like a real sub-ful bridge.
     cardSubtitles: true,
+    ratings: true,
     thumbnail: MOCK_THUMBS[hash(slugify(name)) % MOCK_THUMBS.length]!,
   }));
   bridges.push({

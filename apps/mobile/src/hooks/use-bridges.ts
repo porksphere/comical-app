@@ -24,6 +24,9 @@ export function useBridgeMap(): {
   /** The bridge's `cardSubtitles` contract flag: whether its entries carry a card sub line, which
    *  is what the grids/rails reserve (or drop) the sub-line height on. Unknown bridge → false. */
   subOf: (bridgeId?: string) => boolean;
+  /** The bridge's `ratings` contract flag: whether its source rates series at all. Unknown bridge
+   *  → false, which hides the rating UI rather than showing an empty one. */
+  ratingsOf: (bridgeId?: string) => boolean;
 } {
   const ds = useDataSource();
   const mock = useMockActive();
@@ -40,6 +43,7 @@ export function useBridgeMap(): {
       nameOf: (bridgeId: string) => byId.get(bridgeId)?.name ?? bridgeId,
       directOf: (bridgeId: string) => byId.get(bridgeId)?.capabilities.includes('direct') ?? false,
       subOf: (bridgeId?: string) => (bridgeId ? (byId.get(bridgeId)?.cardSubtitles ?? false) : false),
+      ratingsOf: (bridgeId?: string) => (bridgeId ? (byId.get(bridgeId)?.ratings ?? false) : false),
     };
   }, [bridges]);
 }

@@ -140,6 +140,14 @@ export type SeriesDetail = SeriesEntry & {
   /** All taxonomies as labeled groups; genres are the `kind: "genre"` group (no separate field). */
   tagGroups?: TagGroup[];
   meta?: MetaCell[];
+  /** Other names the series goes by — translations, romanizations, the original script. */
+  altTitles?: string[];
+  /** The bridge's rating, normalized to 0–1. Only shown for a bridge that declares `ratings`. */
+  rating?: { score: number; votes?: number };
+  /** Print-only cells the bridge added, shown after the typed ones. Kept apart from `meta`, whose
+   *  cells are looked up BY LABEL (search routing, the library's author snapshot): a bridge's
+   *  free-form label must never be able to stand in for one of those. */
+  infoCells?: { label: string; value: string }[];
   description?: string;
   /** Whether the bridge exposes external sources actions. */
   hasSources?: boolean;
@@ -293,6 +301,9 @@ export type Bridge = {
   nsfw: boolean;
   capabilities: string[];
   cardSubtitles?: boolean;
+  /** The bridge's `ratings` contract flag: its source rates series at all. Unset, the app shows
+   *  no rating UI for the bridge — not even an empty one. */
+  ratings?: boolean;
   thumbnail?: string;
 };
 /** One of a bridge's browsable lists (home section or standalone page). */

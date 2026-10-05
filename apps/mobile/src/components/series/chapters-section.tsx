@@ -303,8 +303,8 @@ function SortToggle({ asc, onToggle }: { asc: boolean; onToggle: () => void }) {
 }
 
 /** The versions toggle's chevron, turning over as the list opens — the sidebar groups' chevron, at
- *  the sidebar's timing. */
-function TurningChevron({ open, color }: { open: boolean; color: string }) {
+ *  the sidebar's timing. Shared with the series body's own disclosure. */
+export function TurningChevron({ open, color }: { open: boolean; color: string }) {
   const turn = useSharedValue(open ? 1 : 0);
   useEffect(() => {
     turn.set(withTiming(open ? 1 : 0, DISCLOSE_TIMING));
@@ -324,7 +324,7 @@ function TurningChevron({ open, color }: { open: boolean; color: string }) {
  * animates instead of snapping. Pointer events are cut while closed, so a fully-collapsed list can't
  * be tapped through the hairline it has shrunk to.
  */
-function Disclosure({ open, children }: { open: boolean; children: ReactNode }) {
+export function Disclosure({ open, children }: { open: boolean; children: ReactNode }) {
   // The measured height is a SHARED value, not React state read through the worklet's closure: a
   // closure captured with the height still 0 is what the animation kept reading on native, so the
   // list animated to nothing. Read live, the worklet always has the latest measurement.
