@@ -46,6 +46,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
+import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
@@ -55,6 +56,7 @@ import { forgetChapter } from '@/data/downloads/index-cache';
 import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
 import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
+import { mirrorGridRows } from '@/lib/grid-rows';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useSeriesPageWidth } from '@/lib/series-pane-context';
 import { chapterProgressQuery, collectionItemsQuery, queryKeys } from '@/data/queries';
@@ -126,8 +128,6 @@ function ChapterListSkeleton() {
   );
 }
 
-/** Page-grid placeholder shown while the deferred page fetch is in flight — one
- *  row of tiles at the grid's column count, matching the thumbnail aspect. */
 /** The side inset of both series scrollers: caps + centres the list at MaxTopLevelWidth — the width
  *  the top-level views use, so the related rails line up with them — plus a Spacing.four gutter.
  *  Below that width the cap never binds and this is just the gutter. */
@@ -141,6 +141,8 @@ function pageGridCols(width: number): number {
   return Math.max(5, Math.round((width - seriesSidePad(width) * 2) / 160));
 }
 
+/** Page-grid placeholder shown while the deferred page fetch is in flight — one
+ *  row of tiles at the grid's column count, matching the thumbnail aspect. */
 function PageGridSkeleton() {
   const cols = pageGridCols(useSeriesPageWidth());
   return (
@@ -1103,12 +1105,11 @@ const COLLAPSED_ROWS = 4;
  * `page` cell carrying a `null` thumb — the absence lives *inside* the descriptor, not as the
  * cell itself.
  *
- * Every cell is a real page. There used to be a `spacer` variant padding out a short last row, which
- * a `flex: 1` cell needed or it would stretch its tiles across the row — the cell is pinned to
- * `tileW` now, so a short row simply ends. Given the null-entry footgun above, putting synthetic
- * entries in this particular `data` array was a fight not worth having.
+ * A `spacer` is an empty cell, and only a right-to-left grid has any: the list places cells by
+ * index from the left, so a short last row is padded at its start to sit against the right edge
+ * (see `mirrorGridRows`). Left to right a short row simply ends — the cell is pinned to `tileW`.
  */
-type PageCell = { kind: 'page'; pageIndex: number; thumb: PageThumbSource | null };
+type PageCell = { kind: 'page'; pageIndex: number; thumb: PageThumbSource | null } | { kind: 'spacer' };
 
 /**
  * The direct-series page-thumbnail grid — and the series screen's own scroll
@@ -1162,6 +1163,7 @@ export function PageThumbList({
   const theme = useTheme();
   const screenW = useSeriesPageWidth();
   const insets = useSafeAreaInsets();
+  const rtl = useReadsRightToLeft();
   const [expanded, setExpanded] = useState(false);
   const showMoreHover = useHovered();
 
@@ -1196,8 +1198,9 @@ export function PageThumbList({
   const data = useMemo<PageCell[]>(() => {
     // `base` is sliced from index 0 (collapsed or not), so its position IS the page index.
     const base = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
-    return base.map((thumb, pageIndex) => ({ kind: 'page', pageIndex, thumb }));
-  }, [loading, collapsed, thumbs, collapsedCount]);
+    const cells = base.map((thumb, pageIndex): PageCell => ({ kind: 'page', pageIndex, thumb }));
+    return rtl ? mirrorGridRows(cells, cols, () => ({ kind: 'spacer' })) : cells;
+  }, [loading, collapsed, thumbs, collapsedCount, rtl, cols]);
 
   const list = (
     <AnimatedLegendList
@@ -1276,18 +1279,20 @@ export function PageThumbList({
         </View>
       }
       renderItem={({ item }) => (
-        // Pinned to `tileW` — the same width the tile inside it is drawn at. An elastic cell is what
-        // made a short final row stretch, which is why this grid used to pad `data` with spacers.
+        // Pinned to `tileW` — the same width the tile inside it is drawn at. An elastic cell would
+        // stretch across a short final row.
         <View style={[styles.pageCell, { width: tileW }]}>
-          <PageThumb
-            thumb={item.thumb}
-            index={item.pageIndex}
-            seed={seed}
-            bridgeId={bridgeId}
-            page={item.pageIndex + 1}
-            width={tileW}
-            onPress={() => onOpenPage(item.pageIndex)}
-          />
+          {item.kind === 'page' ? (
+            <PageThumb
+              thumb={item.thumb}
+              index={item.pageIndex}
+              seed={seed}
+              bridgeId={bridgeId}
+              page={item.pageIndex + 1}
+              width={tileW}
+              onPress={() => onOpenPage(item.pageIndex)}
+            />
+          ) : null}
         </View>
       )}
     />

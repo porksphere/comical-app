@@ -94,6 +94,15 @@ export function useDownsampleImages(): boolean {
   return use$(settings$.downsample) ?? DEFAULT_SETTINGS.downsample;
 }
 
+/** True when pages run right to left. Only the paged reader has a direction: webtoon is vertical
+ *  whatever `direction` still holds from before it was chosen. */
+export function useReadsRightToLeft(): boolean {
+  return use$(() => {
+    const { mode, direction } = { ...DEFAULT_SETTINGS, ...settings$.get() };
+    return mode === 'paged' && direction === 'rtl';
+  });
+}
+
 /** `[settings, patch]`. Reads spread over the defaults so a blob persisted before a
  *  field existed still surfaces every key. */
 export function useReaderSettings(): [ReaderSettings, (patch: Partial<ReaderSettings>) => void] {
