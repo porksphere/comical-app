@@ -17,6 +17,11 @@ const PALETTE = ['#4F8DFD', '#E0569B', '#F2A03D', '#2FC4B2', '#9A6CF6', '#F2664F
 // last rows bare. Weighted this way the whole is round, with the wash filling in toward the corners.
 const WASH = { dark: 0.06, light: 0.04 };
 const GLOW = { dark: 0.2, light: 0.13 };
+// Of `GLOW`, for a rail on a narrow feed. A phone's rail is one row of covers running edge to edge,
+// so they stand over the middle of the ellipse and what shows is its fringe, above and below them.
+// A wide feed has gaps to show the middle through, and a long glow is at full strength in every gap
+// down its run; neither takes any of this.
+const NARROW_GAIN = 1.7;
 
 // A section's colour is whole behind the middle of its covers and eases away over `BAND_RAMP` at
 // either end, running `BAND_SPILL` past its own edge. Two sections' colours meet only in their
@@ -46,10 +51,6 @@ const GLOW_HEIGHT = 1.45;
 // covers every time the grid loads more. Past this the glow is the ellipse's two halves with a
 // straight run between them.
 const GLOW_MAX_HEIGHT = 1100;
-// Of `GLOW`, what a long glow keeps. An ellipse is at full strength at one point; the run is at it
-// all the way down its middle, and at a rail's strength that is a bright stripe behind the covers.
-// Lost over the first `GLOW_MAX_HEIGHT` of run, so a grid growing past the ellipse doesn't step.
-const GLOW_LONG = 0.5;
 // Of the feed's width, and never under the floor: on a phone that is wider than the screen, so the
 // colour runs off both sides as the rail over it does. A share of that width alone is a stripe
 // down the middle.
@@ -129,6 +130,7 @@ export function FeedBackdrop({
   const glowWidth = Math.round(Math.max(width * GLOW_WIDTH, GLOW_MIN_WIDTH));
   const wideness = Math.min(1, Math.max(0, (width - NARROW_FEED) / (WIDE_FEED - NARROW_FEED)));
   const sideFade = width * (SIDE_FADE.narrow + (SIDE_FADE.wide - SIDE_FADE.narrow) * wideness);
+  const gain = NARROW_GAIN + (1 - NARROW_GAIN) * wideness;
 
   // A long glow is in neither swaying layer: its section is on screen for far more scroll than a
   // rail is, and would be carried clean off its covers.
@@ -139,8 +141,9 @@ export function FeedBackdrop({
       const long = body * GLOW_HEIGHT > GLOW_MAX_HEIGHT;
       if (layer !== (long ? 'still' : i % 2)) return null;
       const left = Math.round((long ? 0.5 : GLOW_X[i % GLOW_X.length]!) * width - glowWidth / 2);
+      const alpha = GLOW[scheme] * (long ? 1 : gain);
+      const image = glowStyle(color(b.tint), alpha);
       if (!long) {
-        const image = glowStyle(color(b.tint), GLOW[scheme]);
         const mid = (b.bodyTop + b.bottom) / 2;
         const height = body * GLOW_HEIGHT;
         // The layer's sway at the scroll that puts this band mid-screen, taken back out.
@@ -161,8 +164,6 @@ export function FeedBackdrop({
       const over = Math.round((GLOW_MAX_HEIGHT - GLOW_MAX_HEIGHT / GLOW_HEIGHT) / 2);
       const top = Math.round(b.bodyTop) - over;
       const run = Math.max(0, Math.round(b.bottom) + over - top - cap * 2);
-      const alpha = GLOW[scheme] * (1 - (1 - GLOW_LONG) * Math.min(1, run / GLOW_MAX_HEIGHT));
-      const image = glowStyle(color(b.tint), alpha);
       return (
         <View key={i} style={[styles.glow, { top, left, width: glowWidth }]}>
           <View style={[styles.cap, { height: cap }]}>
