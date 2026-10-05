@@ -4,6 +4,9 @@
 #   - settings.category.<id> sets accessibilityLabel={title} ((tabs)/settings.tsx's CategoryRow) —
 #     select by the row's visible title text instead.
 #   - trackers.install (TopBarButton) sets accessibilityLabel="Install a tracker" — same reason.
+#   - bridges.check-updates / trackers.check-updates (TopBarButton) set accessibilityLabel="Check for
+#     bridge updates" / "Check for tracker updates" — same reason. Those two buttons exist on web
+#     only (native checks by pulling the list down), so the mobile copy has no step for them.
 #   - bridges.add / registries.add / custom-pages.add (AddFab) set accessibilityLabel=label — select
 #     by "Install a bridge" / "Add registry" / "Add page" instead.
 #   - downloads.select-toggle (SelectToggle) sets accessibilityLabel="Select items" (not selecting)
@@ -90,6 +93,10 @@ url: http://localhost:4000/comical-app
 - takeScreenshot: bridges
 - assertVisible:
     id: "Install a bridge"
+# No pull-to-refresh on web, so the update check is a top-bar button; its toast is the answer.
+- tapOn:
+    id: "Check for bridge updates"
+- assertVisible: "No bridge updates"
 - tapOn:
     id: "Go back"
 
@@ -99,6 +106,9 @@ url: http://localhost:4000/comical-app
 - takeScreenshot: trackers
 - assertVisible:
     id: "Install a tracker"
+- tapOn:
+    id: "Check for tracker updates"
+- assertVisible: "No tracker updates"
 - tapOn:
     id: "Go back"
 

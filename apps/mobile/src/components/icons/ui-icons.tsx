@@ -23,6 +23,7 @@ import {
   Pause,
   RefreshCw,
   RotateCcw,
+  RotateCw,
   TriangleAlert,
   Globe,
   GripVertical,
@@ -125,6 +126,9 @@ export const FailedIcon = ({ color, size = 16 }: IconProps) => <TriangleAlert co
 // variant read too close to the multi-select circles beside it).
 export const DownloadedIcon = ({ color, size = 16 }: IconProps) => <Check color={color} size={size} />;
 export const RetryIcon = ({ color, size = 16 }: IconProps) => <RotateCcw color={color} size={size} />;
+// Ask again for what's already on screen (check for updates). One arrow, so it can sit in the
+// Trackers top bar without reading as the two-arrow sync glyph on the rows beneath it.
+export const RefreshIcon = ({ color, size = 16 }: IconProps) => <RotateCw color={color} size={size} />;
 // Rename affordance (custom page editor's top bar).
 export const PencilIcon = ({ color, size = 16 }: IconProps) => <Pencil color={color} size={size} />;
 // Reveal / hide a masked secret field (settings text row).

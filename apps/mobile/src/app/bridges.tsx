@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
-import { ArrowUpIcon, BridgesIcon, CheckIcon, ClearIcon, GripIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { ArrowUpIcon, BridgesIcon, CheckIcon, ClearIcon, GripIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SelectLead, SelectLeadGap, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { ReorderableList } from '@/components/settings/reorderable-list';
@@ -27,7 +27,7 @@ import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyOrder, setBridgeOrder, useBridgeOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
-import { useBridgeUpdateMap } from '@/data/use-settings-badge';
+import { useBridgeUpdateMap, useRecheckRegistryUpdates } from '@/data/use-settings-badge';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
@@ -84,6 +84,17 @@ export default function BridgesScreen() {
   };
 
   const canReorder = (visible?.length ?? 0) >= 2;
+
+  const { checking, recheck } = useRecheckRegistryUpdates();
+  const checkForUpdates = async () => {
+    if (checking) return;
+    const [updates] = await Promise.all([recheck(), refetch()]);
+    // Counted against the rows on screen: an update to a bridge Hide NSFW has hidden isn't one the
+    // list can show.
+    const shown = new Set((visible ?? []).map((b) => b.info.id));
+    const n = updates.bridges.filter((u) => shown.has(u.id)).length;
+    showToast(n === 0 ? 'No bridge updates' : n === 1 ? '1 bridge update available' : `${n} bridge updates available`);
+  };
 
   // ── Multi-select mode (the shared select-mode chrome) — bulk-uninstall bridges ──
   // Only REGISTRY-INSTALLED bridges are selectable (a server-built one has nothing to uninstall,
@@ -259,6 +270,15 @@ export default function BridgesScreen() {
             // The + install button now lives in the floating FAB below (hidden in select mode); the
             // top-right holds the select toggle where the + used to be.
             <View style={styles.topActions}>
+              {/* Web has no pull-to-refresh on this list, so the check gets a button there. */}
+              {IS_WEB && (visible?.length ?? 0) > 0 && (
+                <TopBarButton
+                  testID="bridges.check-updates"
+                  icon={checking ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />}
+                  label="Check for bridge updates"
+                  onPress={() => void checkForUpdates()}
+                />
+              )}
               {/* Reorder button only on web (native reorders in place — long-press a row). */}
               {IS_WEB && canReorder && (
                 <TopBarButton testID="bridges.reorder" icon={<GripIcon color={theme.text} size={22} />} label="Reorder bridges" onPress={() => setEditing(true)} />

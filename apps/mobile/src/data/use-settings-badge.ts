@@ -13,7 +13,7 @@
  * `useBridgeUpdateMap` below, and the pip counts off the same list here.
  */
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
@@ -60,6 +60,23 @@ export function useBridgeUpdateMap(): Map<string, string> {
 export function useTrackerUpdateMap(): Map<string, string> {
   const { data } = useRegistryUpdates();
   return useMemo(() => new Map((data?.trackers ?? []).map((u) => [u.id, u.availableVersion])), [data]);
+}
+
+type RegistryUpdates = NonNullable<ReturnType<typeof useRegistryUpdates>['data']>;
+
+/** The registry check, re-run on demand. A phone has pull-to-refresh and gets restarted; a list
+ *  scrolled with a mouse has no pull, and a desktop window stays open for days — so without this the
+ *  check a launch made is the only one there ever is. Resolves to the fresh lists, since the caller's
+ *  own `useBridgeUpdateMap` won't have re-rendered by the time its handler continues. */
+export function useRecheckRegistryUpdates() {
+  const queryClient = useQueryClient();
+  const queryKey = queryKeys.registryUpdateCount();
+  const checking = useIsFetching({ queryKey }) > 0;
+  const recheck = async (): Promise<RegistryUpdates> => {
+    await queryClient.refetchQueries({ queryKey });
+    return queryClient.getQueryData<RegistryUpdates>(queryKey) ?? { bridges: [], trackers: [] };
+  };
+  return { checking, recheck };
 }
 
 /** The full breakdown — used by the Settings landing screen to badge the Bridges/Trackers rows. */
