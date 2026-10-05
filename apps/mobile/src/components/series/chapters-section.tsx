@@ -134,13 +134,8 @@ function ChapterListSkeleton() {
  *  Below that width the cap never binds and this is just the gutter. */
 const seriesSidePad = (width: number) => Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
 
-/** Columns in the direct-series page grid. Past 900 they grow with the column, so a tile stays near
- *  the size it has five-across instead of scaling up with the page. */
-function pageGridCols(width: number): number {
-  if (width < 600) return 2;
-  if (width < 900) return 3;
-  return Math.max(5, Math.round((width - seriesSidePad(width) * 2) / 160));
-}
+/** Columns in the direct-series page grid. */
+const pageGridCols = (width: number) => (width >= 900 ? 5 : width >= 600 ? 3 : 2);
 
 /** Page-grid placeholder shown while the deferred page fetch is in flight — one
  *  row of tiles at the grid's column count, matching the thumbnail aspect. */
@@ -1646,10 +1641,11 @@ export function PageThumb({
             </View>
           )}
         </View>
+        {/* Hover ring (brighten, not dim) — same highlight treatment as SeriesCard's own hover/active
+         *  ring, since an opacity-dim over an image reads as broken. A child of the BOX, not the
+         *  shell: the shell is the constant 2:3 slot, taller than a page wider than that. */}
+        {hovered && <View style={[styles.thumbRing, { pointerEvents: 'none' }]} />}
       </View>
-      {/* Hover ring (brighten, not dim) — same highlight treatment as SeriesCard's
-       *  own hover/active ring, since an opacity-dim over an image reads as broken. */}
-      {hovered && <View style={[styles.thumbRing, { pointerEvents: 'none' }]} />}
     </Pressable>
     );
   };
@@ -2117,12 +2113,14 @@ const styles = StyleSheet.create({
   },
   thumbRing: {
     position: 'absolute',
-    top: -2,
-    left: -2,
-    right: -2,
-    bottom: -2,
+    // Drawn INSIDE the tile's edge, on its corner: the list paint-contains each cell, and a tile is
+    // flush with its cell's top, so a stroke outside it is cut off there.
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     ...ContinuousCorner,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 2,
     borderColor: '#60a5fa',
   },
