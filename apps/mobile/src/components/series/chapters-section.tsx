@@ -341,7 +341,9 @@ export function Disclosure({ open, children }: { open: boolean; children: ReactN
   }));
   return (
     <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[styles.disclosure, style]}>
-      <View onLayout={(e) => measured.set(e.nativeEvent.layout.height)}>{children}</View>
+      <View style={styles.disclosureContent} onLayout={(e) => measured.set(e.nativeEvent.layout.height)}>
+        {children}
+      </View>
     </Animated.View>
   );
 }
@@ -2041,6 +2043,15 @@ const styles = StyleSheet.create({
   // Clips the measured version rows to the animated fraction of their height.
   disclosure: {
     overflow: 'hidden',
+  },
+  // Out of flow, so it is sized by its content and not by the box clipping it. In flow, native
+  // lays it out against that box's height — 0 while closed — and text handed no room measures 0
+  // tall, so there was never a height to open to. The web gives it its natural height either way.
+  disclosureContent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   // The expanded per-version list, indented under its logical-chapter row.
   versionList: {

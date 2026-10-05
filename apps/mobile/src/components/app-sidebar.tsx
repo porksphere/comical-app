@@ -348,7 +348,12 @@ const styles = StyleSheet.create({
   group: {
     overflow: 'hidden',
   },
+  // Out of flow for the measurement's sake: see the chapter list's `disclosureContent`.
   groupRows: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     gap: Spacing.one,
     paddingTop: Spacing.one,
   },
