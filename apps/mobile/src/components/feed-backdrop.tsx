@@ -65,13 +65,10 @@ function rgba(hex: string, alpha: number): string {
 }
 
 /** `ramp` is the eased run at each end, as a share of the gradient's length (at most half). */
-function bandStops(hex: string, alpha: number, ramp: number) {
+function bandImage(hex: string, alpha: number, ramp: number, to: 'bottom' | 'right'): string {
   const up = EASE.map(([t, a]) => ({ at: t * ramp, color: rgba(hex, a * alpha) }));
   const stops = [...up, ...up.map((s) => ({ ...s, at: 1 - s.at })).reverse()];
-  return {
-    colors: stops.map((s) => s.color) as [string, string, ...string[]],
-    locations: stops.map((s) => s.at) as [number, number, ...number[]],
-  };
+  return `linear-gradient(to ${to}, ${stops.map((s) => `${s.color} ${+(s.at * 100).toFixed(3)}%`).join(', ')})`;
 }
 
 function glowImage(hex: string, alpha: number): string {
@@ -80,8 +77,14 @@ function glowImage(hex: string, alpha: number): string {
 }
 
 // react-native-web has no `experimental_backgroundImage`, and native has no `backgroundImage`.
-function glowStyle(hex: string, alpha: number): ViewStyle {
-  const image = glowImage(hex, alpha);
+//
+// Every gradient that is as tall as a SECTION goes through here, never through `LinearGradient`.
+// expo-linear-gradient's iOS layer redraws itself into a CPU bitmap the size of its bounds whenever
+// those bounds change, and a grid's band is as tall as the grid: by a few pages in that is a bitmap
+// of hundreds of megabytes, rasterised again on the main thread on every load — a multi-second hang
+// (Sentry: App Hanging in LinearGradientLayer.display) and a memory warning with it. React Native's
+// own background-image gradients are CAGradientLayers, which the GPU draws at any size for free.
+function gradientStyle(image: string): ViewStyle {
   return Platform.OS === 'web' ? ({ backgroundImage: image } as ViewStyle) : { experimental_backgroundImage: image };
 }
 
@@ -135,7 +138,7 @@ export function FeedBackdrop({
       const long = body * GLOW_HEIGHT > GLOW_MAX_HEIGHT;
       if (layer !== (long ? 'still' : i % 2)) return null;
       const left = Math.round((long ? 0.5 : GLOW_X[i % GLOW_X.length]!) * width - glowWidth / 2);
-      const image = glowStyle(color(b.tint), GLOW[scheme]);
+      const image = gradientStyle(glowImage(color(b.tint), GLOW[scheme]));
       if (!long) {
         const mid = (b.bodyTop + b.bottom) / 2;
         const height = body * GLOW_HEIGHT;
@@ -163,12 +166,7 @@ export function FeedBackdrop({
             <View style={[{ height: cap * 2 }, image]} />
           </View>
           {/* The ellipse's own profile across its middle, so the run picks up where each half ends. */}
-          <LinearGradient
-            {...bandStops(color(b.tint), GLOW[scheme], 0.5)}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{ height: run }}
-          />
+          <View style={[{ height: run }, gradientStyle(bandImage(color(b.tint), GLOW[scheme], 0.5, 'right'))]} />
           <View style={[styles.cap, { height: cap }]}>
             <View style={[{ height: cap * 2, marginTop: -cap }, image]} />
           </View>
@@ -182,12 +180,9 @@ export function FeedBackdrop({
         {bands.map((b, i) => {
           if (b.bottom <= b.top) return null;
           const height = b.bottom - b.top + BAND_SPILL * 2;
+          const image = bandImage(color(b.tint), WASH[scheme], Math.min(0.5, BAND_RAMP / height), 'bottom');
           return (
-            <LinearGradient
-              key={i}
-              {...bandStops(color(b.tint), WASH[scheme], Math.min(0.5, BAND_RAMP / height))}
-              style={[styles.span, { top: b.top - BAND_SPILL, height }]}
-            />
+            <View key={i} style={[styles.span, { top: b.top - BAND_SPILL, height }, gradientStyle(image)]} />
           );
         })}
         {glows('still')}
