@@ -187,6 +187,15 @@ export function RecyclerList<T>({
         }}
         onEndReachedThreshold={onEndReachedThreshold}
         onEndReached={onEndReached}
+        // WEB ONLY. LegendList arbitrates the two edges through one shared gate, and the START edge
+        // claims it at scroll 0 under the default 0.5 threshold even with no `onStartReached` wired.
+        // The gate is only re-armed by a drag-begin or the list's own scroll-end hook — neither
+        // exists once the custom `renderScrollComponent` above is in play (wheel scrolling has no
+        // drag phase, and the hook is only passed to LegendList's own ScrollView). A first page
+        // shorter than ~2.4 viewports then latches "end reached" without ever dispatching it, and
+        // the grid never loads page 2. A zero start threshold means the start edge can't claim the
+        // gate, so the end edge dispatches on its own. Native keeps the drag re-arm path untouched.
+        onStartReachedThreshold={Platform.OS === 'web' ? 0 : undefined}
         // Show the browser's native scrollbar on web; hidden on native, where it isn't idiomatic.
         showsVerticalScrollIndicator={Platform.OS === 'web'}
         // No native RefreshControl anywhere — pull-to-refresh is the custom overlay spinner. Android's
