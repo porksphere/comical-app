@@ -74,6 +74,16 @@ function bandStops(hex: string, alpha: number, ramp: number) {
   };
 }
 
+/** One end of `bandStops`: the eased ramp alone, from clear (`up`) or down to it. */
+function rampStops(hex: string, alpha: number, up: boolean) {
+  const stops = EASE.map(([t, a]) => ({ at: t, color: rgba(hex, a * alpha) }));
+  if (!up) stops.reverse().forEach((s) => (s.at = 1 - s.at));
+  return {
+    colors: stops.map((s) => s.color) as [string, string, ...string[]],
+    locations: stops.map((s) => s.at) as [number, number, ...number[]],
+  };
+}
+
 function glowImage(hex: string, alpha: number): string {
   const stops = [...EASE].reverse().map(([t, a]) => `${rgba(hex, a * alpha)} ${Math.round((1 - t) * 100)}%`);
   return `radial-gradient(ellipse closest-side, ${stops.join(', ')})`;
@@ -182,12 +192,26 @@ export function FeedBackdrop({
         {bands.map((b, i) => {
           if (b.bottom <= b.top) return null;
           const height = b.bottom - b.top + BAND_SPILL * 2;
+          const top = b.top - BAND_SPILL;
+          const tint = color(b.tint);
+          // A gradient layer is drawn on the CPU at its full size and again whenever it resizes, so
+          // a grid that keeps loading pages would stall the main thread. Only the two ramps are
+          // gradients; the run between them is a flat colour, which costs nothing at any length.
+          if (height <= BAND_RAMP * 2) {
+            return (
+              <LinearGradient
+                key={i}
+                {...bandStops(tint, WASH[scheme], Math.min(0.5, BAND_RAMP / height))}
+                style={[styles.span, { top, height }]}
+              />
+            );
+          }
           return (
-            <LinearGradient
-              key={i}
-              {...bandStops(color(b.tint), WASH[scheme], Math.min(0.5, BAND_RAMP / height))}
-              style={[styles.span, { top: b.top - BAND_SPILL, height }]}
-            />
+            <View key={i} style={[styles.span, { top, height }]}>
+              <LinearGradient {...rampStops(tint, WASH[scheme], true)} style={{ height: BAND_RAMP }} />
+              <View style={[styles.fill, { backgroundColor: rgba(tint, WASH[scheme]) }]} />
+              <LinearGradient {...rampStops(tint, WASH[scheme], false)} style={{ height: BAND_RAMP }} />
+            </View>
           );
         })}
         {glows('still')}
