@@ -33,6 +33,10 @@ import { savedWindowState, trackWindowState } from "./window-state.ts";
  *  packaged — so it survives bundling either way. */
 const webRoot = (): string => process.env.COMICAL_WEB_ROOT ?? join(app.getAppPath(), "build", "web");
 
+/** First choice for the loopback listener (see `boot`). Beside the sync listener's 3130 and clear
+ *  of `scripts/dev.ts`'s 38100, so a dev shell and an installed app can run side by side. */
+const DEFAULT_PORT = 38120;
+
 /** Windows Chromium draws a grey track with arrow buttons; this is the thin overlay-style thumb macOS
  *  and phones show. Injected here rather than shipped in the web bundle so browsers keep their own.
  *  Only the `::-webkit-scrollbar` form: setting the standard `scrollbar-color` / `scrollbar-width`
@@ -212,14 +216,22 @@ async function boot(): Promise<void> {
   const dataDir = join(app.getPath("userData"), "comical");
 
   // Bind the listener first: the host wants its own base URL (bridges get it as `hostUrl`, OAuth
-  // uses it as the redirect target) and that URL only exists once the ephemeral port is bound.
+  // uses it as the redirect target) and that URL only exists once the port is bound.
+  //
+  // The port is the renderer's origin, and the origin keys its localStorage: an ephemeral port
+  // here started every launch with empty preferences — NSFW back to hidden, so the NSFW bridges
+  // were simply gone from the sidebar after a restart. So the last bound port is asked for again,
+  // and a launch that couldn't get it (taken, or reserved by Hyper-V) remembers the one it got
+  // instead, which costs the preferences once rather than every time.
+  const askedPort = process.env.COMICAL_PORT ? Number(process.env.COMICAL_PORT) : (shellSettings().port ?? DEFAULT_PORT);
   server = await startLoopbackServer({
     getHost: () => host,
     webRoot: webRoot(),
     // Set by `scripts/dev.ts`.
     devServer: process.env.COMICAL_DEV_SERVER,
-    port: process.env.COMICAL_PORT ? Number(process.env.COMICAL_PORT) : undefined,
+    port: askedPort,
   });
+  if (!process.env.COMICAL_PORT && server.port !== shellSettings().port) updateShellSettings({ port: server.port });
   host = createDesktopHost({
     dataDir,
     // Registry-installed bridges land in {dataDir}/bridge-cache regardless. This extra scan dir is

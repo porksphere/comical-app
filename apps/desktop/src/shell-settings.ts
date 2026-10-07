@@ -20,6 +20,10 @@ export type ShellSettings = {
   networkSync: boolean;
   /** Those devices, each with the key it alone was paired with. */
   syncPairings: StoredPairing[];
+  /** The loopback port the last launch bound. It is the renderer's origin, and the origin keys its
+   *  localStorage — every preference the page keeps (NSFW mode, reader settings, the lot) — so the
+   *  same port is asked for again each launch. Absent until a launch has bound one. */
+  port: number | null;
 };
 
 const file = (): string => join(app.getPath("userData"), "comical", "desktop-settings.json");
@@ -40,6 +44,7 @@ export function shellSettings(): ShellSettings {
     trayNoticeShown: raw.trayNoticeShown === true,
     networkSync: raw.networkSync === true,
     syncPairings: Array.isArray(raw.syncPairings) ? (raw.syncPairings as StoredPairing[]) : [],
+    port: Number.isInteger(raw.port) && (raw.port as number) > 0 && (raw.port as number) < 65536 ? (raw.port as number) : null,
   };
   return current;
 }

@@ -53,6 +53,8 @@ const MIME: Record<string, string> = {
 export interface LoopbackServer {
   /** e.g. `http://127.0.0.1:51234` — the renderer's origin *and* its API base. */
   origin: string;
+  /** The port actually bound — `opts.port` when it was free, otherwise whatever the OS handed out. */
+  port: number;
   /** Per-launch secret every request must present as `Authorization: Bearer …`. */
   token: string;
   close(): Promise<void>;
@@ -101,16 +103,20 @@ export async function startLoopbackServer(opts: ServeOptions): Promise<LoopbackS
     server = await listen(handler, opts.port ?? 0);
   } catch (err) {
     // Windows can refuse a port nothing visible is listening on (WSL and Hyper-V hold ports that
-    // netstat never shows), so a fixed port is a preference, not a requirement.
-    if (!opts.port || (err as NodeJS.ErrnoException).code !== "EADDRINUSE") throw err;
-    console.warn(`[serve] port ${opts.port} is taken; falling back to an ephemeral one`);
+    // netstat never shows, and EACCES is how it refuses one Hyper-V reserved), so a fixed port is
+    // a preference, not a requirement.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (!opts.port || (code !== "EADDRINUSE" && code !== "EACCES")) throw err;
+    console.warn(`[serve] port ${opts.port} is unavailable; falling back to an ephemeral one`);
     server = await listen(handler, 0);
   }
   if (opts.devServer) forwardUpgrades(server, opts.devServer);
-  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const port = (server.address() as AddressInfo).port;
+  origin = `http://127.0.0.1:${port}`;
 
   return {
     origin,
+    port,
     token,
     close: () =>
       new Promise<void>((resolve) =>
