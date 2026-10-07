@@ -3,6 +3,7 @@ import type { RefObject } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
+import { StackedProgress } from '@/components/stacked-progress';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
@@ -59,9 +60,12 @@ export function HistoryRow({
   dimmed?: boolean;
   /** Accent dot before the title (an unread activity item). */
   unread?: boolean;
-  /** Chapters read vs. known — a thin bar along the thumbnail's bottom edge (History's "how far
-   *  through this am I"). Omitted while the counts aren't known, and for series never collected. */
-  progress?: { read: number; known: number };
+  /** How far through this the reader is, as two bars stacked along the thumbnail's bottom edge:
+   *  the chapter (pages seen of the one being read) over the series (chapters read of those
+   *  known). Either half may be missing — a series never collected has no chapter count, a
+   *  chapter whose length isn't known yet has no page count — and the bar is omitted only when
+   *  both are. */
+  progress?: { chapter?: number; series?: number };
   /** Ref on the thumbnail — the anchor for the long-press preview's lift (see SeriesCardMenu). */
   thumbRef?: RefObject<View | null>;
   /** Blank just the thumbnail while this row's long-press menu is open (its lifted preview is a copy). */
@@ -93,15 +97,18 @@ export function HistoryRow({
           ) : (
             <View style={[styles.thumb, { backgroundColor: theme.backgroundElement }]} />
           )}
-          {progress && progress.known > 0 && (
-            <View style={styles.progressTrack} testID={testId(base, 'progress')}>
-              <View
-                style={[
-                  styles.progressFill,
-                  { backgroundColor: theme.accent, width: `${Math.round((100 * Math.min(progress.read, progress.known)) / progress.known)}%` },
-                ]}
-              />
-            </View>
+          {progress && (progress.chapter !== undefined || progress.series !== undefined) && (
+            <StackedProgress
+              style={styles.progress}
+              width={THUMB_W - PROGRESS_INSET * 2}
+              barHeight={PROGRESS_BAR_H}
+              top={progress.chapter ?? 0}
+              bottom={progress.series ?? 0}
+              topColor={theme.accentComplement}
+              bottomColor={theme.accent}
+              trackColor="rgba(0,0,0,0.45)"
+              testID={testId(base, 'progress')}
+            />
           )}
         </View>
         <View style={styles.body}>
@@ -151,6 +158,8 @@ export function HistoryRow({
 }
 
 const THUMB_W = 46;
+const PROGRESS_INSET = 3;
+const PROGRESS_BAR_H = 2.5;
 
 const styles = StyleSheet.create({
   row: {
@@ -186,21 +195,12 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
-  // Inset from the cover's rounded edge rather than clipped by it, so the fill never has to agree
-  // with the corner's curve — and the track reads over any cover, light or dark.
-  progressTrack: {
+  // Inset from the cover's rounded edge rather than clipped by it, so the pill never has to agree
+  // with the corner's curve — and the dark track reads over any cover, light or dark.
+  progress: {
     position: 'absolute',
-    left: 3,
-    right: 3,
-    bottom: 3,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 2,
+    left: PROGRESS_INSET,
+    bottom: PROGRESS_INSET,
   },
   body: {
     flex: 1,

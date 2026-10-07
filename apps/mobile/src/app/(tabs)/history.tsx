@@ -66,13 +66,14 @@ export default function HistoryScreen() {
   const ready = useDeferredMount();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(historyQuery(ds, mock));
-  // History rows for collected series carry a chapter-progress bar. The counts come from the
-  // library listing (one query, already cached by the Library tab) rather than a request per row.
+  // History rows for collected series carry a series-progress bar (chapters read of those known).
+  // The counts come from the library listing (one query, already cached by the Library tab)
+  // rather than a request per row.
   const { data: collected } = useQuery(libraryQuery(ds, mock, '', 'lastRead'));
-  const progressOf = useMemo(() => {
-    const map = new Map<string, { read: number; known: number }>();
+  const seriesProgressOf = useMemo(() => {
+    const map = new Map<string, number>();
     for (const e of collected ?? []) {
-      if (e.known > 0) map.set(`${e.bridgeId}:${e.seriesId}`, { read: e.known - e.unread, known: e.known });
+      if (e.known > 0) map.set(`${e.bridgeId}:${e.seriesId}`, Math.min(1, (e.known - e.unread) / e.known));
     }
     return map;
   }, [collected]);
@@ -216,7 +217,7 @@ export default function HistoryScreen() {
               onRemove={() => removeMutation.mutate(item)}
               bridge={nameOf(item.bridgeId)}
               direct={directOf(item.bridgeId)}
-              progress={progressOf.get(`${item.bridgeId}:${item.seriesId}`)}
+              seriesProgress={seriesProgressOf.get(`${item.bridgeId}:${item.seriesId}`)}
             />
           )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
@@ -258,7 +259,7 @@ function HistoryItem({
   onRemove,
   bridge,
   direct,
-  progress,
+  seriesProgress,
 }: {
   item: HistoryEntry;
   onResume: () => void;
@@ -266,8 +267,17 @@ function HistoryItem({
   onRemove: () => void;
   bridge: string;
   direct: boolean;
-  progress?: { read: number; known: number };
+  /** Chapters read of those known, 0–1; undefined for a series not in the library. */
+  seriesProgress?: number;
 }) {
+  // The chapter half of the row's bar: pages seen of the chapter being read. A page count the
+  // reader hasn't learned yet (or a direct read, which has no chapter) leaves that half empty.
+  const chapterProgress =
+    item.lastPage !== undefined && item.pageCount ? Math.min(1, (item.lastPage + 1) / item.pageCount) : undefined;
+  const progress =
+    chapterProgress !== undefined || seriesProgress !== undefined
+      ? { chapter: chapterProgress, series: seriesProgress }
+      : undefined;
   const thumbRef = useRef<View>(null);
   // The row's thumbnail is the zoom transition's source rect,
   // captured on press-IN because `measureInWindow` answers asynchronously — measuring at press
