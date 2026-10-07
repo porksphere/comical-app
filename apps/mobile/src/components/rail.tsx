@@ -553,9 +553,9 @@ export function Rail({
 /** Generic "a rail is loading" placeholder — shown wherever a rail's data
  *  hasn't resolved yet (e.g. a related-series rail lazily fetched after the
  *  rest of the series page, or the home rails during a bridge/page switch).
- *  Mirrors the real `Rail`'s shape (heading + a row of 2:3 cards) without
- *  knowing the eventual title/item count, same way `SeriesSkeleton` mirrors
- *  series content it hasn't fetched yet. */
+ *  Mirrors the real `Rail`'s shape (heading + a strip of 2:3 cards, or the wide
+ *  layout's GRID_ROWS-row static grid) without knowing the eventual title/item
+ *  count, same way `SeriesSkeleton` mirrors series content it hasn't fetched yet. */
 export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; title?: string }) {
   const wide = useIsLargeScreen();
   const desktop = useIsDesktop();
@@ -564,6 +564,24 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
   const stripGap = wide ? grid.columnGap : stripGapFor(viewportWidth);
   const cardWidth = wide ? grid.cardWidth : cardWidthFor('regular', viewportWidth);
   const count = wide ? grid.columns : 4;
+  // The wide skeleton is the full grid the feed already reserves height for (railStripHeight with
+  // no count) — rows at the loaded grid's own pitch, so nothing shifts when the cards arrive.
+  const rows = wide ? GRID_ROWS : 1;
+  const cards = (
+    <>
+      {Array.from({ length: count }).map((_, i) => (
+        <View key={i} style={{ width: cardWidth }}>
+          <Skeleton
+            style={[
+              { width: cardWidth, height: cardWidth * COVER_RATIO },
+              desktop ? [coverStyles.corner, coverStyles.cornerDesktop] : styles.skelCoverPhone,
+            ]}
+          />
+          <Skeleton style={styles.skelCardLine} />
+        </View>
+      ))}
+    </>
+  );
   return (
     <View style={styles.section}>
       {/* A known title (the Home skeleton, which already has it from the bridge's list
@@ -577,19 +595,17 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
           <Skeleton style={styles.skelHeadTitle} />
         </View>
       )}
-      <View style={[styles.strip, styles.skelStrip, { gap: stripGap }]}>
-        {Array.from({ length: count }).map((_, i) => (
-          <View key={i} style={{ width: cardWidth }}>
-            <Skeleton
-              style={[
-                { width: cardWidth, height: cardWidth * COVER_RATIO },
-                desktop ? [coverStyles.corner, coverStyles.cornerDesktop] : styles.skelCoverPhone,
-              ]}
-            />
-            <Skeleton style={styles.skelCardLine} />
-          </View>
-        ))}
-      </View>
+      {wide ? (
+        <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: GRID_ROW_GAP }]}>
+          {Array.from({ length: rows }).map((_, r) => (
+            <View key={r} style={[styles.gridRow, { gap: stripGap, height: estimatedCardHeight(cardWidth, false) }]}>
+              {cards}
+            </View>
+          ))}
+        </View>
+      ) : (
+        <View style={[styles.strip, styles.skelStrip, { gap: stripGap }]}>{cards}</View>
+      )}
     </View>
   );
 }
