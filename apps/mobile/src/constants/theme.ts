@@ -50,9 +50,6 @@ export const Colors = {
     // opacity, matching the neutral-surface hover treatment (`backgroundSelected`).
     accentHover: '#5A90FF',
     accentOn: '#ffffff',
-    // The accent's complement (opposite hue, matched in weight) for a second value drawn right
-    // beside the first — the stacked progress bars' chapter half against the series half.
-    accentComplement: '#F6A234',
     badgeInfo: '#2563eb',
     badgeWarn: '#ca8a04',
     badgeSuccess: '#16a34a',
@@ -107,7 +104,6 @@ export const Colors = {
     accent: '#3478F6',
     accentHover: '#5A90FF',
     accentOn: '#ffffff',
-    accentComplement: '#F6A234',
     badgeInfo: '#2563eb',
     badgeWarn: '#ca8a04',
     badgeSuccess: '#16a34a',

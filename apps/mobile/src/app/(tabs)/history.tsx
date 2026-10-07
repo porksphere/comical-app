@@ -66,14 +66,14 @@ export default function HistoryScreen() {
   const ready = useDeferredMount();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(historyQuery(ds, mock));
-  // History rows for collected series carry a series-progress bar (chapters read of those known).
-  // The counts come from the library listing (one query, already cached by the Library tab)
-  // rather than a request per row.
+  // History rows for collected series say where the reader stands in the series (chapters read of
+  // those known). The counts come from the library listing (one query, already cached by the
+  // Library tab) rather than a request per row.
   const { data: collected } = useQuery(libraryQuery(ds, mock, '', 'lastRead'));
-  const seriesProgressOf = useMemo(() => {
-    const map = new Map<string, number>();
+  const chaptersOf = useMemo(() => {
+    const map = new Map<string, { read: number; known: number }>();
     for (const e of collected ?? []) {
-      if (e.known > 0) map.set(`${e.bridgeId}:${e.seriesId}`, Math.min(1, (e.known - e.unread) / e.known));
+      if (e.known > 0) map.set(`${e.bridgeId}:${e.seriesId}`, { read: Math.max(0, e.known - e.unread), known: e.known });
     }
     return map;
   }, [collected]);
@@ -217,7 +217,7 @@ export default function HistoryScreen() {
               onRemove={() => removeMutation.mutate(item)}
               bridge={nameOf(item.bridgeId)}
               direct={directOf(item.bridgeId)}
-              seriesProgress={seriesProgressOf.get(`${item.bridgeId}:${item.seriesId}`)}
+              chapters={chaptersOf.get(`${item.bridgeId}:${item.seriesId}`)}
             />
           )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
@@ -259,7 +259,7 @@ function HistoryItem({
   onRemove,
   bridge,
   direct,
-  seriesProgress,
+  chapters,
 }: {
   item: HistoryEntry;
   onResume: () => void;
@@ -267,17 +267,17 @@ function HistoryItem({
   onRemove: () => void;
   bridge: string;
   direct: boolean;
-  /** Chapters read of those known, 0–1; undefined for a series not in the library. */
-  seriesProgress?: number;
+  /** Chapters read of those known; undefined for a series not in the library. */
+  chapters?: { read: number; known: number };
 }) {
-  // The chapter half of the row's bar: pages seen of the chapter being read. A page count the
-  // reader hasn't learned yet (or a direct read, which has no chapter) leaves that half empty.
-  const chapterProgress =
-    item.lastPage !== undefined && item.pageCount ? Math.min(1, (item.lastPage + 1) / item.pageCount) : undefined;
-  const progress =
-    chapterProgress !== undefined || seriesProgress !== undefined
-      ? { chapter: chapterProgress, series: seriesProgress }
-      : undefined;
+  // The row's bar: pages seen of the chapter being read. A page count the reader hasn't learned
+  // yet (or a direct read, which has no chapter) leaves it off.
+  const progress = item.lastPage !== undefined && item.pageCount ? (item.lastPage + 1) / item.pageCount : undefined;
+  // The series standing takes the time with it onto a second line; without one the time stays on
+  // the first, as it always has.
+  const standing = chapters ? `${chapters.read} of ${chapters.known} chapters` : undefined;
+  const sub = historySub(item, !standing);
+  const detail = standing ? [standing, relTime(item.lastReadAt)].join('  ·  ') : undefined;
   const thumbRef = useRef<View>(null);
   // The row's thumbnail is the zoom transition's source rect,
   // captured on press-IN because `measureInWindow` answers asynchronously — measuring at press
@@ -314,7 +314,8 @@ function HistoryItem({
     <HistoryRow
       thumbnailUrl={item.thumbnailUrl}
       title={item.title}
-      sub={historySub(item)}
+      sub={sub}
+      detail={detail}
       onPress={onResume}
       onPressIn={onRowPressIn}
       onMore={onOpenDetail}
@@ -355,12 +356,12 @@ function HistoryItem({
 }
 
 /** Build the row's secondary line: `chapter · X / N · when`, omitting absent parts. */
-function historySub(h: HistoryEntry): string {
+function historySub(h: HistoryEntry, withTime: boolean): string {
   const isDirect = h.chapterId === DIRECT_CHAPTER_ID;
   const chapter = !isDirect && h.chapterName ? h.chapterName : '';
   const page =
     h.lastPage !== undefined ? (h.pageCount ? `${h.lastPage + 1} / ${h.pageCount}` : `${h.lastPage + 1}`) : '';
-  return [chapter, page, relTime(h.lastReadAt)].filter(Boolean).join('  ·  ');
+  return [chapter, page, withTime ? relTime(h.lastReadAt) : ''].filter(Boolean).join('  ·  ');
 }
 
 const styles = StyleSheet.create({
