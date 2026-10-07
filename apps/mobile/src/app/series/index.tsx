@@ -72,6 +72,7 @@ import { useLocalSearchParams, useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
 import { backSwipePan, backSwipeShape, backSwipeStayedHorizontal, resetBackSwipeShape, trackBackSwipeShape, BACK_ACTIVATE_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
+import { desktopShell } from '@/lib/desktop-shell';
 import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } from '@/lib/gesture-trace';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
@@ -2459,6 +2460,11 @@ function SeriesReaderInstance({
     });
     return () => sub.remove();
   }, [detailsActive, setRevealed, closeLayer]);
+  // The desktop shell's back steps home the same way — Escape, the chevron, and the mouse's back
+  // button (which arrives as Escape, see lib/desktop-commands). A browser tab keeps the one-step
+  // exit, which is what its own back button does with the reader route anyway.
+  const backStepsHome = !detailsActive && !!desktopShell();
+  const revealDetails = useCallback(() => setRevealed(1), [setRevealed]);
   // The back-swipe recipe. FULL-SURFACE, not edge-only — a rightward drag anywhere on the details
   // goes back, the way a full-screen pop gesture does. What counts as an activation is
   // lib/back-swipe's, declarative (activeOffsetX/failOffset*), for the reasons written there.
@@ -3500,7 +3506,7 @@ function SeriesReaderInstance({
                 testID="series-page.header-back"
                 // A drilled layer's chevron slides it back out to the parent series; the modal
                 // root's pops the route.
-                onPress={closeLayer}
+                onPress={backStepsHome ? revealDetails : closeLayer}
                 hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
@@ -3746,6 +3752,7 @@ function SeriesReaderInstance({
               standby={detailsSettled || !entranceSettled}
               entering={!entranceSettled}
               inLibrary={inLibrary}
+              onEscape={backStepsHome ? revealDetails : undefined}
             />
           )}
             {/* The Details pill — the guaranteed collapse path in both modes (webtoon's expanded
@@ -4427,6 +4434,8 @@ const ReaderPane = forwardRef<
     /** Library membership (undefined while still resolving) — picks the progress-recording path.
      *  Queried by the screen, not here: this pane re-renders every page sweep. */
     inLibrary?: boolean;
+    /** What Escape does instead of leaving the route (web only). */
+    onEscape?: () => void;
   }
 >(function ReaderPane(
   {
@@ -4460,6 +4469,7 @@ const ReaderPane = forwardRef<
     standby,
     entering = false,
     inLibrary,
+    onEscape,
   },
   ref,
 ) {
@@ -4852,7 +4862,8 @@ const ReaderPane = forwardRef<
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
       if (e.key === 'Escape') {
-        router.back();
+        if (onEscape) onEscape();
+        else router.back();
         e.preventDefault();
         return;
       }
@@ -4868,7 +4879,7 @@ const ReaderPane = forwardRef<
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [router, turnNext, turnPrev, settings.direction]);
+  }, [router, onEscape, turnNext, turnPrev, settings.direction]);
 
   return (
     <>
