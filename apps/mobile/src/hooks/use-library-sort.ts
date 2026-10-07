@@ -3,6 +3,7 @@ import { use$ } from '@legendapp/state/react';
 import type { LibrarySort } from '@/data/api';
 import type { LibraryGrouping } from '@/data/library-grouping';
 import type { CollectionFilter } from '@/data/queries';
+import type { ReadState } from '@/data/types';
 import { persisted$ } from '@/lib/observable';
 
 /**
@@ -40,4 +41,15 @@ const libraryGrouping$ = persisted$<LibraryGrouping>('comical:libraryGrouping', 
 export function useLibraryGrouping(): [LibraryGrouping, (g: LibraryGrouping) => void] {
   const grouping = use$(libraryGrouping$);
   return [grouping, (next) => libraryGrouping$.set(next)];
+}
+
+/** The Library grid's "Show" filter — one derived reading state, or `'all'`. Persisted like the
+ *  grouping, and for the same reason: it is a view of the one unscoped grid. A string rather than
+ *  `null` for "all" so the persisted value is never a falsy/nullish primitive. */
+export type LibraryShow = ReadState | 'all';
+const libraryShow$ = persisted$<LibraryShow>('comical:libraryShow', 'all');
+
+export function useLibraryShow(): [LibraryShow, (s: LibraryShow) => void] {
+  const show = use$(libraryShow$);
+  return [show, (next) => libraryShow$.set(next)];
 }

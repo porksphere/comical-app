@@ -9,7 +9,7 @@ import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LibraryCollectionSelector } from '@/components/library-collection-selector';
-import { LibrarySortButton } from '@/components/library-sort-button';
+import { LibrarySortButton, SHOW_LABELS } from '@/components/library-sort-button';
 import { RetryBlock } from '@/components/retry-block';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { TabTitleBar } from '@/components/tab-title-bar';
@@ -28,7 +28,7 @@ import { collectionItemsQuery, libraryQuery } from '@/data/queries';
 import { setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
-import { DIRECT_CHAPTER_ID } from '@/data/types';
+import { DIRECT_CHAPTER_ID, type ReadState } from '@/data/types';
 import { encodeSeriesParam } from '@/lib/series-nav';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
@@ -36,7 +36,7 @@ import { useHasSidebar } from '@/hooks/use-content-width';
 import { useCollections } from '@/hooks/use-collections';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { libraryGroupOf } from '@/data/library-grouping';
-import { useLibraryGrouping, useLibrarySort } from '@/hooks/use-library-sort';
+import { useLibraryGrouping, useLibraryShow, useLibrarySort } from '@/hooks/use-library-sort';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -44,6 +44,14 @@ import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
+
+// What an empty grid says under each "Show" choice — the filter emptied it, not the library.
+const SHOW_EMPTY: Record<ReadState, [title: string, detail: string]> = {
+  unstarted: ['Everything’s been started', 'Every series in your library has a chapter read.'],
+  behind: ['You’re all caught up', 'No series in your library has unread chapters.'],
+  'caught-up': ['Nothing caught up', 'No series in your library is read up to its latest chapter.'],
+  finished: ['Nothing finished', 'No completed series in your library is read to the end.'],
+};
 
 export default function LibraryScreen() {
   // Collections tiles warm what a tap will need — see the grid's `onWarm` below. (The series GRID's
@@ -78,6 +86,8 @@ export default function LibraryScreen() {
   // below). Grouping is client-side sectioning over the server-sorted list.
   const [sort, setSort] = useLibrarySort(null);
   const [grouping, setGrouping] = useLibraryGrouping();
+  const [show, setShow] = useLibraryShow();
+  const readState = show === 'all' ? null : show;
   // Sort/dir/grouping for a collection's contents view — remembered PER COLLECTION (see the
   // store's doc), so each one restores its own last-used axes.
   const [collectedView, setCollectedView] = useCollectedView(collectionFilter);
@@ -97,7 +107,7 @@ export default function LibraryScreen() {
   const { data: items = undefined, error, isLoading, refetch } = useQuery({
     // Collections no longer FILTER the series grid — they have their own contents view — so the
     // library query is always unscoped.
-    ...libraryQuery(ds, mock, term, sort, null),
+    ...libraryQuery(ds, mock, term, sort, null, readState),
     enabled: !showingCollected,
     placeholderData: keepPreviousData,
   });
@@ -220,6 +230,10 @@ export default function LibraryScreen() {
       if (term) {
         return <EmptyState title="No matches" detail="No series in your library match your filter." />;
       }
+      if (readState) {
+        const [title, detail] = SHOW_EMPTY[readState];
+        return <EmptyState title={title} detail={`${detail} Showing “${SHOW_LABELS[readState]}” — change that from the sort menu.`} />;
+      }
       return <EmptyState title="Your library is empty" detail="Open a series and tap “＋ Library” to add it here." />;
     }
     return null;
@@ -327,7 +341,7 @@ export default function LibraryScreen() {
       ) : (
         <SeriesGrid
           items={listData}
-          scopeKey={`${term}|${sort}|${grouping}|${collectionFilter ?? ''}`}
+          scopeKey={`${term}|${sort}|${grouping}|${show}|${collectionFilter ?? ''}`}
           listRef={listRef}
           header={renderEmpty()}
           // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
@@ -387,7 +401,14 @@ export default function LibraryScreen() {
             {showingCollected ? (
               <CollectedSortButton value={collectedView} onChange={setCollectedView} />
             ) : (
-              <LibrarySortButton value={sort} onChange={setSort} grouping={grouping} onGroupingChange={setGrouping} />
+              <LibrarySortButton
+                value={sort}
+                onChange={setSort}
+                grouping={grouping}
+                onGroupingChange={setGrouping}
+                show={show}
+                onShowChange={setShow}
+              />
             )}
           </>
         }

@@ -44,6 +44,7 @@ import type {
   PageThumbSource,
   RailKind,
   RailSection,
+  ReadState,
   SeriesDetail,
   SeriesEntry,
   SeriesListResult,
@@ -89,12 +90,16 @@ export interface DataSource {
   // state instead of an error — the on-device embedded runtime and older servers may lack one.
 
   /** The library grid, or `null` when this server/runtime has no library store.
-   *  `collectionId`/`uncollected` filter by collection membership (joined host-side). */
+   *  `readState` keeps one derived reading state; `collectionId`/`uncollected` filter by
+   *  collection membership (joined host-side). */
   getLibrary(
-    opts: { q?: string; sort?: api.LibrarySort; collectionId?: string; uncollected?: boolean },
+    opts: { q?: string; sort?: api.LibrarySort; readState?: ReadState; collectionId?: string; uncollected?: boolean },
     signal?: AbortSignal,
   ): Promise<LibraryItem[] | null>;
   isInLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean>;
+  /** One collected series as the grid would list it (derived counts + `readState`), or `null`
+   *  when it isn't collected — or when there is no library store at all. */
+  getLibrarySeries(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<LibraryItem | null>;
 
   /** A bridge's favorites classified against the library, for the import confirmation dialog.
    *  Read-only — nothing is added until `importBridgeFavorites`. */
@@ -387,6 +392,8 @@ function toLibraryItem(e: api.ApiCollectedSeries): LibraryItem {
     ...(e.thumbnailUrl !== undefined && { thumbnailUrl: e.thumbnailUrl }),
     ...(e.author !== undefined && { author: e.author }),
     unread: e.unreadCount,
+    known: e.knownCount,
+    readState: e.readState,
     collectedAt: e.collectedAt,
     ...(e.lastReadAt !== undefined && { lastReadAt: e.lastReadAt }),
   };
@@ -617,6 +624,10 @@ const realDataSource: DataSource = {
     await api.setChapterCollections(bridgeId, seriesId, chapterId, collectionIds, signal);
   },
   isInLibrary: (bridgeId, seriesId, signal) => api.isInLibrary(bridgeId, seriesId, signal),
+  async getLibrarySeries(bridgeId, seriesId, signal) {
+    const entry = await api.getLibrarySeries(bridgeId, seriesId, signal);
+    return entry === null ? null : toLibraryItem(entry);
+  },
   getFavoritesImportPreview: (bridgeId, signal) => api.getFavoritesImportPreview(bridgeId, signal),
   importBridgeFavorites: (bridgeId, items, signal) => api.importBridgeFavorites(bridgeId, items, signal),
   async resetReadProgress(bridgeId, seriesId, signal) {
@@ -1013,6 +1024,7 @@ const mockDataSource: DataSource = {
   setChapterCollections: (bridgeId, seriesId, chapterId, collectionIds) =>
     mock.mockSetChapterCollections(bridgeId, seriesId, chapterId, collectionIds),
   isInLibrary: (bridgeId, seriesId) => mock.mockIsInLibrary(bridgeId, seriesId),
+  getLibrarySeries: (bridgeId, seriesId) => mock.mockGetLibrarySeries(bridgeId, seriesId),
   getFavoritesImportPreview: (bridgeId) => mock.mockGetFavoritesImportPreview(bridgeId),
   importBridgeFavorites: (bridgeId, items) => mock.mockImportBridgeFavorites(bridgeId, items),
   recordChapterProgress: (bridgeId, seriesId, chapterId, update) =>

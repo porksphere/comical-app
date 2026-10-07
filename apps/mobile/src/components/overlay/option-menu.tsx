@@ -103,11 +103,14 @@ export function OptionMenuButton({
   testID,
   accessibilityLabel,
   icon,
+  badge,
   render,
 }: {
   testID: string;
   accessibilityLabel: string;
   icon: ReactNode;
+  /** A dot on the icon — the menu holds a non-default choice that narrows what's shown. */
+  badge?: boolean;
   render: () => ReactNode;
 }) {
   const { ref, openAt } = useAnchoredOverlay();
@@ -124,6 +127,7 @@ export function OptionMenuButton({
       style={[styles.menuButton, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() => openAt(render, { popover: true })}>
       {icon}
+      {badge && <View style={[styles.menuBadge, { backgroundColor: theme.accent, borderColor: theme.background }]} />}
     </Pressable>
   );
 }
@@ -266,6 +270,15 @@ const styles = StyleSheet.create({
     ...ContinuousCorner,
     padding: Spacing.one,
     borderRadius: Spacing.two,
+  },
+  menuBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    borderWidth: 1.5,
   },
   row: {
     flexDirection: 'row',

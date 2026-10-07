@@ -36,6 +36,7 @@ export function HistoryRow({
   actions,
   dimmed,
   unread,
+  progress,
   thumbRef,
   coverHidden,
   testID,
@@ -58,6 +59,9 @@ export function HistoryRow({
   dimmed?: boolean;
   /** Accent dot before the title (an unread activity item). */
   unread?: boolean;
+  /** Chapters read vs. known — a thin bar along the thumbnail's bottom edge (History's "how far
+   *  through this am I"). Omitted while the counts aren't known, and for series never collected. */
+  progress?: { read: number; known: number };
   /** Ref on the thumbnail — the anchor for the long-press preview's lift (see SeriesCardMenu). */
   thumbRef?: RefObject<View | null>;
   /** Blank just the thumbnail while this row's long-press menu is open (its lifted preview is a copy). */
@@ -88,6 +92,16 @@ export function HistoryRow({
             />
           ) : (
             <View style={[styles.thumb, { backgroundColor: theme.backgroundElement }]} />
+          )}
+          {progress && progress.known > 0 && (
+            <View style={styles.progressTrack} testID={testId(base, 'progress')}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { backgroundColor: theme.accent, width: `${Math.round((100 * Math.min(progress.read, progress.known)) / progress.known)}%` },
+                ]}
+              />
+            </View>
           )}
         </View>
         <View style={styles.body}>
@@ -171,6 +185,22 @@ const styles = StyleSheet.create({
     ...ContinuousCorner,
     borderRadius: 6,
     backgroundColor: 'rgba(128,128,128,0.15)',
+  },
+  // Inset from the cover's rounded edge rather than clipped by it, so the fill never has to agree
+  // with the corner's curve — and the track reads over any cover, light or dark.
+  progressTrack: {
+    position: 'absolute',
+    left: 3,
+    right: 3,
+    bottom: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
   },
   body: {
     flex: 1,

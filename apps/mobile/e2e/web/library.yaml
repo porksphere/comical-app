@@ -54,6 +54,21 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "series-card\\..*"
 
+# Show only one read state (the seeded library has series behind on unread chapters), then back to
+# everything.
+- tapOn:
+    id: "Sort library"
+- tapOn:
+    id: "library.show.behind"
+- assertVisible:
+    id: "series-card\\..*"
+- tapOn:
+    id: "Sort library"
+- tapOn:
+    id: "library.show.all"
+- assertVisible:
+    id: "series-card\\..*"
+
 # List scope -> Manage Collections -> back
 - tapOn:
     id: "library.collection-selector"

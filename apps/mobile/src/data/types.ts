@@ -189,6 +189,11 @@ export type SeriesListResult = {
 // The user's own cross-bridge collection + reading progress (see @comical/library). Each item
 // carries its own `bridgeId` (unlike browse cards, which inherit one bridge for the whole grid).
 
+/** Where the reader stands on a collected series. Derived by the host from read progress and the
+ *  series' publication status — a fact, not a user-managed status (a linked tracker holds that).
+ *  Mirrors `@comical/library`'s `ReadState`; the Library's "Show" filter sends it back verbatim. */
+export type ReadState = 'unstarted' | 'behind' | 'caught-up' | 'finished';
+
 /** One series in the library grid. Maps to a `SeriesCard` `entry` + its own bridge. */
 export type LibraryItem = {
   bridgeId: string;
@@ -198,6 +203,10 @@ export type LibraryItem = {
   author?: string;
   /** Logical unread chapters — drives the card's unread pill. */
   unread: number;
+  /** Logical chapters known on the same scale as `unread`, so `known - unread` is chapters read. */
+  known: number;
+  /** Where the reader stands (derived host-side; see `@comical/library`'s `ReadState`). */
+  readState: ReadState;
   /** When the series was collected — the "Date added" grouping axis. Always present: it is
    *  `collectedAt` on the series item, which every collected series has. */
   collectedAt: number;

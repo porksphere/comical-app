@@ -883,9 +883,11 @@ import type {
   CollectionSeriesItem as ApiCollectionSeriesItem,
   LibraryBackup,
   LibraryRestoreCounts,
+  ReadState,
 } from '@comical/library';
 
 export type {
+  ReadState,
   ApiBridgeInfo,
   ContentRating,
   SettingDescriptor,
@@ -1133,22 +1135,23 @@ export function putBridgePrefs(
 /** How to sort the library grid — maps 1:1 to the `/library?sort=` query param. */
 export type LibrarySort = 'added' | 'title' | 'lastRead' | 'unread';
 
-/** GET /library → the user's collected series (with derived `unreadCount`), or `null` when no
- *  library store is mounted. `q` scopes to a title search; `sort` orders the grid; `collectionId`/
- *  `uncollected` filter by collection membership (mutually exclusive — `uncollected` wins if both
- *  are set). The host resolves membership by joining series items, so the grid never needs to
- *  read memberships client-side.
+/** GET /library → the user's collected series (with derived `unreadCount`/`readState`), or `null`
+ *  when no library store is mounted. `q` scopes to a title search; `sort` orders the grid;
+ *  `readState` keeps one reading state; `collectionId`/`uncollected` filter by collection
+ *  membership (mutually exclusive — `uncollected` wins if both are set). The host resolves
+ *  membership by joining series items, so the grid never needs to read memberships client-side.
  *
  *  These rows are `CollectionSeriesItem`s now, not library entries — the library dissolved into
  *  collections. Same fields with three renames: `title` → `seriesTitle`, `addedAt` → `collectedAt`,
  *  `listIds` → `collectionIds` (see `toLibraryItem` in source.ts, the one place that reads them). */
 export function getLibrary(
-  opts: { q?: string; sort?: LibrarySort; collectionId?: string; uncollected?: boolean } = {},
+  opts: { q?: string; sort?: LibrarySort; readState?: ReadState; collectionId?: string; uncollected?: boolean } = {},
   signal?: AbortSignal,
 ): Promise<ApiCollectedSeries[] | null> {
   const qs = new URLSearchParams();
   if (opts.q) qs.set('q', opts.q);
   if (opts.sort) qs.set('sort', opts.sort);
+  if (opts.readState) qs.set('readState', opts.readState);
   if (opts.uncollected) qs.set('uncollected', 'true');
   else if (opts.collectionId) qs.set('collection', opts.collectionId);
   const query = qs.toString();
@@ -1262,16 +1265,27 @@ export function setSeriesCollections(
  *  (404 = not). Under the dissolution these are the same question: a series item exists, or it
  *  doesn't. */
 export async function isInLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean> {
+  return (await getLibrarySeries(bridgeId, seriesId, signal)) !== null;
+}
+
+/** GET /library/collected/series/{b}/{s} → the collected series with the same derived
+ *  `unreadCount`/`knownCount`/`readState` a `/library` row carries, or `null` when it isn't
+ *  collected (404). */
+export async function getLibrarySeries(
+  bridgeId: string,
+  seriesId: string,
+  signal?: AbortSignal,
+): Promise<ApiCollectedSeries | null> {
   const res = await transport(
     `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
     { signal },
   );
-  if (res.status === 404) return false;
+  if (res.status === 404) return null;
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `${res.status} ${res.statusText}`);
   }
-  return true;
+  return ((await res.json()) as { series: ApiCollectedSeries }).series;
 }
 
 // ─── Collected page items ────────────────────────────────────────────────────

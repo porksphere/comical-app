@@ -4804,6 +4804,7 @@ const ReaderPane = forwardRef<
       void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.chapterProgress(mock, bridgeId, seriesId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.librarySeries(mock, bridgeId, seriesId) });
     };
     const recordChapter = (id: string) =>
       ds.recordChapterProgress(bridgeId, seriesId, id, {

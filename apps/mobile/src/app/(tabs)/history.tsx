@@ -26,7 +26,7 @@ import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
-import { historyQuery, queryKeys } from '@/data/queries';
+import { historyQuery, libraryQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
@@ -66,6 +66,16 @@ export default function HistoryScreen() {
   const ready = useDeferredMount();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(historyQuery(ds, mock));
+  // History rows for collected series carry a chapter-progress bar. The counts come from the
+  // library listing (one query, already cached by the Library tab) rather than a request per row.
+  const { data: collected } = useQuery(libraryQuery(ds, mock, '', 'lastRead'));
+  const progressOf = useMemo(() => {
+    const map = new Map<string, { read: number; known: number }>();
+    for (const e of collected ?? []) {
+      if (e.known > 0) map.set(`${e.bridgeId}:${e.seriesId}`, { read: e.known - e.unread, known: e.known });
+    }
+    return map;
+  }, [collected]);
 
   const [focusedOnce, setFocusedOnce] = useState(false);
   useFocusEffect(
@@ -206,6 +216,7 @@ export default function HistoryScreen() {
               onRemove={() => removeMutation.mutate(item)}
               bridge={nameOf(item.bridgeId)}
               direct={directOf(item.bridgeId)}
+              progress={progressOf.get(`${item.bridgeId}:${item.seriesId}`)}
             />
           )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
@@ -247,6 +258,7 @@ function HistoryItem({
   onRemove,
   bridge,
   direct,
+  progress,
 }: {
   item: HistoryEntry;
   onResume: () => void;
@@ -254,6 +266,7 @@ function HistoryItem({
   onRemove: () => void;
   bridge: string;
   direct: boolean;
+  progress?: { read: number; known: number };
 }) {
   const thumbRef = useRef<View>(null);
   // The row's thumbnail is the zoom transition's source rect,
@@ -297,6 +310,7 @@ function HistoryItem({
       onMore={onOpenDetail}
       onMorePressIn={onMorePressIn}
       actions={[]}
+      progress={progress}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}
     />

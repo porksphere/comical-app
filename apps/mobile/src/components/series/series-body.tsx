@@ -31,10 +31,10 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { useTopBarInset } from '@/components/top-bar';
 import { ContinuousCorner, MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { queryKeys, relatedGroupsQuery, seriesListQuery } from '@/data/queries';
+import { librarySeriesQuery, queryKeys, relatedGroupsQuery, seriesListQuery } from '@/data/queries';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
-import { type Chapter, type MetaCredit, type SeriesDetail, type TagGroup } from '@/data/types';
+import { type Chapter, type LibraryItem, type MetaCredit, type SeriesDetail, type TagGroup } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useFavorite } from '@/hooks/use-favorite';
@@ -44,6 +44,8 @@ import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
+import { shortChapterName } from '@/lib/chapter-label';
+import { groupChapters } from '@/lib/chapter-order';
 import { useOpenSearchLayer } from '@/lib/series-nav';
 import { useRouter } from '@/lib/nav';
 import { formatScore, formatVotes } from '@/lib/rating';
@@ -51,6 +53,27 @@ import { tagPaletteFor } from '@/lib/tag-colors';
 import { testId } from '@/lib/test-id';
 
 const LARGE_COVER_WIDTH = 300;
+
+/** The line under the Read button that says the read state in chapters — "12 unread" behind,
+ *  "Ch. 40 is the latest" caught up, "All 40 chapters read" finished; nothing before the first
+ *  read or outside the library. The latest chapter is named from the loaded list (the highest
+ *  numbered logical chapter), falling back to the resume point while the list is still coming. */
+function readStateCaption(item: LibraryItem | undefined, chapters: Chapter[] | undefined, resumeName?: string): string | undefined {
+  if (!item) return undefined;
+  switch (item.readState) {
+    case 'behind':
+      return `${item.unread} unread`;
+    case 'caught-up': {
+      const numbered = chapters ? groupChapters(chapters).filter((g) => g.number !== undefined) : [];
+      const latest = numbered[numbered.length - 1]?.name ?? resumeName;
+      return latest ? `${shortChapterName(latest)} is the latest` : 'Read to the latest chapter';
+    }
+    case 'finished':
+      return item.known > 0 ? `All ${item.known} chapters read` : 'Read to the end';
+    default:
+      return undefined;
+  }
+}
 
 
 /** The hero cover's box: width fills its wrap, height follows the animated aspect. Mounts AT the
@@ -461,7 +484,7 @@ export function SeriesBody({
   //
   // Read never waits on the deferred chapter list: with no resume point the reader is handed an
   // unspecified chapter and picks the first one itself, so the button is live immediately.
-  const { label: readingLabel } = useStartReading({
+  const { label: readingLabel, resume } = useStartReading({
     bridgeId,
     seriesId: series.id,
     title: series.title,
@@ -469,7 +492,16 @@ export function SeriesBody({
     readLabel
   });
   const startReading = onStartReading;
-  const primaryLabel = readingLabel;
+
+  // The collected series' derived read state shapes the Read button: a series read to its latest
+  // chapter has nothing to resume, so the button turns muted and says so (a tap rereads the last
+  // chapter), and a caption under it names what the state means in chapters. Outside the library
+  // (or with no library store) there is no state and the button is the plain Read/Resume.
+  const { data: collected } = useQuery(librarySeriesQuery(ds, mock, bridgeId ?? '', series.id));
+  const readState = collected?.readState;
+  const settled = readState === 'caught-up' || readState === 'finished';
+  const primaryLabel = readState === 'finished' ? 'Finished' : readState === 'caught-up' ? 'Caught up' : readingLabel;
+  const readCaption = readStateCaption(collected ?? undefined, chapters, resume?.chapterName);
 
   // Some bridges hand back a Referer-gated, server-relative `/img-proxy?…` cover that
   // `<Image>` can't load raw — resolve it the same way the browse card and the loading
@@ -548,10 +580,22 @@ export function SeriesBody({
       <ActionButton
         testID="series.action.read"
         label={primaryLabel}
-        leading={<PlayIcon color={theme.accentOn} size={ACTION_ICON_SIZE} />}
-        variant="primary"
+        leading={
+          settled ? (
+            <CheckIcon color={theme.text} size={ACTION_ICON_SIZE} />
+          ) : (
+            <PlayIcon color={theme.accentOn} size={ACTION_ICON_SIZE} />
+          )
+        }
+        variant={settled ? 'default' : 'primary'}
+        accessibilityLabel={settled ? `${primaryLabel} — ${readingLabel.toLowerCase()}` : undefined}
         onPress={startReading}
       />
+      {readCaption && (
+        <ThemedText type="small" testID="series.action.read.caption" style={[styles.readCaption, { color: theme.textSecondary }]}>
+          {readCaption}
+        </ThemedText>
+      )}
       {/* ONE control: a tap saves into the last-used collection and the label then names it; once
           saved, a tap opens the picker. The caret is the same affordance either way, so the button
           reads as "there is more here" rather than as a dead end. See useSeriesSave. */}
@@ -996,6 +1040,11 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: Spacing.two
+  },
+  // Tucked up under the Read button it describes, closer than the column's gap between buttons.
+  readCaption: {
+    textAlign: 'center',
+    marginTop: -Spacing.one,
   },
   // Genres + tag-group rows packed tightly together (the outer column's larger
   // gap then separates the whole block from the meta grid below).

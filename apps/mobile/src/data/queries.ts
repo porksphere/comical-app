@@ -24,6 +24,7 @@ import type {
   LibraryItem,
   Collection,
   RailSection,
+  ReadState,
   SeriesDetail,
   SeriesEntry,
   SeriesListResult,
@@ -81,8 +82,8 @@ export const queryKeys = {
     ['isFavorite', mock, bridgeId, seriesId] as const,
   relatedGroups: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['relatedGroups', mock, bridgeId, seriesId] as const,
-  library: (mock: boolean, q: string, sort: api.LibrarySort, collection: CollectionFilter = null) =>
-    ['library', mock, q, sort, collection] as const,
+  library: (mock: boolean, q: string, sort: api.LibrarySort, collection: CollectionFilter = null, readState: ReadState | null = null) =>
+    ['library', mock, q, sort, collection, readState] as const,
   /** The user's collections. */
   collections: (mock: boolean) => ['collections', mock] as const,
   /** One series' collection memberships (for the assign picker). */
@@ -210,7 +211,26 @@ export const queryKeys = {
   // Invalidation target that prefix-matches the library grid (`['library', mock, q, sort]`), so
   // invalidating this refreshes the Library tab regardless of its current search/sort.
   libraryList: (mock: boolean) => ['library', mock] as const,
+  /** One collected series with its derived read state. Under the `libraryList` prefix on purpose:
+   *  everything that invalidates the grid (a read, a reset, a collect) changes this too. */
+  librarySeries: (mock: boolean, bridgeId: string, seriesId: string) =>
+    ['library', mock, 'series', bridgeId, seriesId] as const,
 };
+
+/** `useQuery` options for one collected series' derived read state (`null` = not collected, or no
+ *  library store). */
+export function librarySeriesQuery(
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+  seriesId: string,
+): UseQueryOptions<LibraryItem | null, Error> {
+  return {
+    queryKey: queryKeys.librarySeries(mock, bridgeId, seriesId),
+    queryFn: ({ signal }) => ds.getLibrarySeries(bridgeId, seriesId, signal),
+    enabled: !!bridgeId && !!seriesId,
+  };
+}
 
 /** Maps a `BrowseScope` (+ resume cursor) to the data-source call that fetches it — the single place
  *  the grid's "which endpoint for this view" branching lives, shared by the infinite query's
@@ -421,21 +441,24 @@ export function favoritesImportPreviewQuery(
 }
 
 /** `useQuery` options for the library grid (`null` result = no library store mounted). `collection`
- *  scopes to a collection (`'uncollected'` = entries in none; an id; or `null` for all). */
+ *  scopes to a collection (`'uncollected'` = entries in none; an id; or `null` for all);
+ *  `readState` keeps one reading state (`null` for all). */
 export function libraryQuery(
   ds: DataSource,
   mock: boolean,
   q: string,
   sort: api.LibrarySort,
   collection: CollectionFilter = null,
+  readState: ReadState | null = null,
 ): UseQueryOptions<LibraryItem[] | null, Error> {
   return {
-    queryKey: queryKeys.library(mock, q, sort, collection),
+    queryKey: queryKeys.library(mock, q, sort, collection, readState),
     queryFn: ({ signal }) =>
       ds.getLibrary(
         {
           ...(q ? { q } : {}),
           sort,
+          ...(readState ? { readState } : {}),
           ...(collection === 'uncollected'
             ? { uncollected: true }
             : collection

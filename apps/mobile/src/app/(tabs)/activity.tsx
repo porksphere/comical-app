@@ -217,6 +217,7 @@ export default function ActivityScreen() {
     const q = query.trim().toLowerCase();
     return q ? out.filter((r) => r.title.toLowerCase().includes(q)) : out;
   }, [visible, query]);
+  const unreadTotal = rows.reduce((n, r) => n + r.newCount, 0);
 
   // Reading reorders this list, so a series opened from partway down can end up above the viewport
   // by the time the page closes — see useZoomSurfaceList.
@@ -328,6 +329,19 @@ export default function ActivityScreen() {
                 direct={directOf(item.bridgeId)}
               />
             )}
+            // Closes the feed with where you stand, so reaching the end answers "is there more to
+            // read" without counting dots. Only for the whole feed — a filtered view is a subset.
+            ListFooterComponent={
+              query.trim() ? undefined : (
+                <View style={styles.footer}>
+                  <ThemedText type="small" themeColor="textSecondary" testID="activity.footer">
+                    {unreadTotal === 0
+                      ? 'You’re all caught up'
+                      : `${unreadTotal} unread ${unreadTotal === 1 ? 'chapter' : 'chapters'} left`}
+                  </ThemedText>
+                </View>
+              )
+            }
             showsVerticalScrollIndicator={Platform.OS === 'web'}
             // Suppress Android's edge glow so it doesn't fight the custom pull; iOS keeps its bounce
             // (that's what sources the pull there) and fires the refresh via onScrollEndDrag.
@@ -496,6 +510,11 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: 'center',
     maxWidth: 340,
+  },
+  footer: {
+    alignItems: 'center',
+    paddingVertical: Spacing.four,
+    paddingHorizontal: Spacing.four,
   },
   list: {
     flex: 1,

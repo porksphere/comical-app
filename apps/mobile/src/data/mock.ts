@@ -16,6 +16,7 @@ import type {
   MetaCell,
   PageThumbSource,
   RailSection,
+  ReadState,
   SeriesDetail,
   SeriesEntry,
   SeriesListResult,
@@ -873,7 +874,7 @@ export async function mockRemoveFavorite(seriesId: string): Promise<void> {
 // The APP's `LibraryItem` shape, not the wire shape — the mock source hands these straight to the
 // UI without going through `toLibraryItem`. `collectedAt` is required for the same reason it is on
 // the real series item: a collected series always has one.
-type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; author?: string; unread: number; collectedAt: number; lastReadAt?: number };
+type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; author?: string; unread: number; known: number; readState: ReadState; collectedAt: number; lastReadAt?: number };
 type MockCollection = { id: string; name: string; order: number };
 type MockHist = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; chapterId?: string; chapterName?: string; lastPage?: number; pageCount?: number; lastReadAt: number; hidden?: boolean };
 type MockActivity = { bridgeId: string; seriesId: string; chapterId: string; title: string; thumbnailUrl: string; chapterName?: string; number?: number; detectedAt: number; read: boolean };
@@ -906,17 +907,24 @@ function seedLibrary(): Map<string, MockLibEntry> {
     if (i % 2 === 0) collectionIds.push('coll-reading');
     if (i % 3 === 0) collectionIds.push('coll-favorites');
     if (collectionIds.length > 0) mockSeriesCollections.set(libKey(bridgeId, seriesId), collectionIds);
+    // lib-0/3/5 lead the mock History (below), so they must count as started here too.
+    const started = i !== 2 && i !== 6;
+    const known = 12 + (h % 40);
+    // Never started = every known chapter unread, as the real derivation would count it.
+    const unread = !started ? known : h % 3 === 0 ? 1 + (h % 12) : 0;
     m.set(libKey(bridgeId, seriesId), {
       bridgeId,
       seriesId,
       title: TITLES[i % TITLES.length]!,
       thumbnailUrl: cover(seriesId),
-      unread: h % 3 === 0 ? 1 + (h % 12) : 0,
+      unread,
+      known,
+      readState: !started ? 'unstarted' : unread > 0 ? 'behind' : i === 7 ? 'finished' : 'caught-up',
       // Spread over distinct days so the library's date groupings have real buckets to show, and
-      // fixed timestamps so the demo/e2e render deterministically. Every third series has never
-      // been read — the "Not read yet" bucket.
+      // fixed timestamps so the demo/e2e render deterministically. Two series have never been
+      // read — the "Not read yet" bucket.
       collectedAt: 1_760_000_000_000 - i * 129_600_000,
-      ...(i % 3 !== 0 && { lastReadAt: 1_760_000_000_000 - ((i * 7) % 5) * 86_400_000 - i * 3_600_000 }),
+      ...(started && { lastReadAt: 1_760_000_000_000 - ((i * 7) % 5) * 86_400_000 - i * 3_600_000 }),
     });
   }
   // Two extra entries that overlap the favorites set (`mockFavorites` above), so the favorites-import
@@ -930,6 +938,8 @@ function seedLibrary(): Map<string, MockLibEntry> {
     title: alreadyHere.title,
     thumbnailUrl: alreadyHere.cover,
     unread: 0,
+    known: 0,
+    readState: 'unstarted',
     collectedAt: 1_759_000_000_000,
   });
   const otherSource = entry('fav-2', hash('fav-2'));
@@ -939,6 +949,8 @@ function seedLibrary(): Map<string, MockLibEntry> {
     title: otherSource.title,
     thumbnailUrl: cover('ns-771'),
     unread: 0,
+    known: 0,
+    readState: 'unstarted',
     collectedAt: 1_758_000_000_000,
   });
   return m;
@@ -991,13 +1003,14 @@ let mockActivity: MockActivity[] = [1, 2, 4, 6].flatMap((i) => {
 });
 
 export async function mockGetLibrary(
-  opts: { q?: string; sort?: string; collectionId?: string; uncollected?: boolean } = {},
+  opts: { q?: string; sort?: string; readState?: ReadState; collectionId?: string; uncollected?: boolean } = {},
 ): Promise<MockLibEntry[]> {
   let items = [...mockLibrary.values()];
   // Membership is a join through `mockSeriesCollections`, mirroring the host doing it server-side.
   const memberships = (e: MockLibEntry) => mockSeriesCollections.get(libKey(e.bridgeId, e.seriesId)) ?? [];
   if (opts.uncollected) items = items.filter((e) => memberships(e).length === 0);
   else if (opts.collectionId) items = items.filter((e) => memberships(e).includes(opts.collectionId!));
+  if (opts.readState) items = items.filter((e) => e.readState === opts.readState);
   const q = opts.q?.trim().toLowerCase();
   if (q) items = items.filter((e) => e.title.toLowerCase().includes(q));
   const dir = 1;
@@ -1014,6 +1027,10 @@ export async function mockGetLibrary(
 
 export async function mockIsInLibrary(bridgeId: string, seriesId: string): Promise<boolean> {
   return mockLibrary.has(libKey(bridgeId, seriesId));
+}
+
+export async function mockGetLibrarySeries(bridgeId: string, seriesId: string): Promise<MockLibEntry | null> {
+  return mockLibrary.get(libKey(bridgeId, seriesId)) ?? null;
 }
 
 /** Collect a series INTO a collection — under the dissolution there is no add-to-library separate
@@ -1036,6 +1053,8 @@ export async function mockAddToLibrary(
     thumbnailUrl: snap.thumbnailUrl ?? cover(seriesId),
     ...(snap.author !== undefined && { author: snap.author }),
     unread: 0,
+    known: 0,
+    readState: 'unstarted',
     collectedAt: Date.now(),
   });
 }
@@ -1057,7 +1076,7 @@ export async function mockResetReadProgress(bridgeId: string, seriesId: string):
   const entry = mockLibrary.get(key);
   if (entry) {
     const { lastReadAt: _drop, ...rest } = entry;
-    mockLibrary.set(key, rest);
+    mockLibrary.set(key, { ...rest, unread: rest.known, readState: 'unstarted' });
   }
 }
 
