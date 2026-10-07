@@ -690,13 +690,16 @@ export default function BrowseScreen() {
             accessibilityRole="button"
             accessibilityLabel="Hold to show NSFW content until the app is closed"
             style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]}>
-            <BridgeThumb
-              uri={currentBridge.thumbnail}
-              source={isComical ? COMICAL_ICON : undefined}
-              label={currentBridge.name}
-              size={thumbSize}
-              fill
-            />
+            {/* The ramp's beats swell the icon in step with the haptics (useRampedHold). */}
+            <Animated.View style={[styles.bridgeThumbPulse, nsfwHold.pulseStyle]}>
+              <BridgeThumb
+                uri={currentBridge.thumbnail}
+                source={isComical ? COMICAL_ICON : undefined}
+                label={currentBridge.name}
+                size={thumbSize}
+                fill
+              />
+            </Animated.View>
           </Pressable>
         ) : null}
         {/* The rail lists the bridges when it's showing, so this would be a second control for one
@@ -990,9 +993,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   bridgeThumb: {
+    alignSelf: 'center',
+  },
+  // The corner clip lives on the pulsing view, not the Pressable, so a beat swells the whole
+  // rounded tile instead of being cut off at the tile's own edge.
+  bridgeThumbPulse: {
+    flex: 1,
     borderRadius: BridgeThumbRadius,
     overflow: 'hidden',
-    alignSelf: 'center',
   },
   controls: {
     paddingHorizontal: Spacing.four,
