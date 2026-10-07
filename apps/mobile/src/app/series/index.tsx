@@ -4804,8 +4804,21 @@ const ReaderPane = forwardRef<
   // this call carries the title and cover to create it. A direct series goes to the log alone,
   // under the DIRECT_CHAPTER_ID sentinel. Unknown membership writes both — the host ignores a log
   // write for a library series, and waiting on the answer dropped reads whenever the check failed. ──
+  //
+  // A read is a page TURNED, not a pane mounted. This pane sits behind the details page as a
+  // decorative strip from the moment a series opens, so recording on mount wrote a resume point —
+  // and a "started" state — for every series merely looked at. Armed by the first page change
+  // while the reader is actually open, and never disarmed: a stitched crossing relabels in place,
+  // so a read that carried into the next chapter stays a read there. A one-page chapter has nothing
+  // to turn, so opening it full screen is its read.
+  const engagedRef = useRef(false);
+  const seenPageRef = useRef(currentPage);
+  useEffect(() => {
+    if (!standby && (currentPage !== seenPageRef.current || pages.length === 1)) engagedRef.current = true;
+    seenPageRef.current = currentPage;
+  }, [currentPage, standby, pages.length]);
   const record = useCallback(() => {
-    if (!recordProgress) return;
+    if (!recordProgress || !engagedRef.current) return;
     if (!bridgeId || !seriesId || !pages.length) return;
     const lastPage = currentRef.current;
     const pageCount = pages.length;
