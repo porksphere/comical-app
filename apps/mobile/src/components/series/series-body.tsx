@@ -55,9 +55,10 @@ import { testId } from '@/lib/test-id';
 const LARGE_COVER_WIDTH = 300;
 
 /** The line under the Read button that says the read state in chapters — "12 unread" behind,
- *  "Ch. 40 is the latest" caught up, "All 40 chapters read" finished; nothing before the first
- *  read or outside the library. The latest chapter is named from the loaded list (the highest
- *  numbered logical chapter), falling back to the resume point while the list is still coming. */
+ *  "Ch. 40 is the latest" caught up; nothing before the first read, outside the library, or once
+ *  finished ("Finished" on the button already says it all). The latest chapter is named from the
+ *  loaded list (the highest numbered logical chapter), falling back to the resume point while the
+ *  list is still coming. */
 function readStateCaption(item: LibraryItem | undefined, chapters: Chapter[] | undefined, resumeName?: string): string | undefined {
   if (!item) return undefined;
   switch (item.readState) {
@@ -68,8 +69,6 @@ function readStateCaption(item: LibraryItem | undefined, chapters: Chapter[] | u
       const latest = numbered[numbered.length - 1]?.name ?? resumeName;
       return latest ? `${shortChapterName(latest)} is the latest` : 'Read to the latest chapter';
     }
-    case 'finished':
-      return item.known > 0 ? `All ${item.known} chapters read` : 'Read to the end';
     default:
       return undefined;
   }
