@@ -1,5 +1,5 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useCallback, useMemo, type ReactElement, type RefObject } from 'react';
+import { useCallback, useMemo, useRef, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
@@ -12,12 +12,17 @@ import { buildGroupedRows } from '@/data/grouped-rows';
 import type { SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { GRID_ROW_GAP, GRID_ROW_PAD_BOTTOM, GRID_ROW_PAD_TOP, useGridLayout } from '@/hooks/use-grid-layout';
-import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
+import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
+import { useZoomSurfaceKey } from '@/lib/series-zoom';
+import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
 
 // A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are absolutely
 // positioned). The split (see `GRID_ROW_PAD_TOP`) feeds both `styles.cell`'s padding AND the fixed
 // `cellHeight` below, so the two never drift.
 const CELL_ROW_GAP = GRID_ROW_GAP;
+
+// The id a card registers under for the zoom (`entry.id`), never `keyOf`'s bridge-qualified one.
+const gridSeriesId = (item: SeriesGridItem) => String(item.id);
 
 /**
  * A cell in a series grid. Every item is a REAL series — the grid never injects placeholder entries.
@@ -55,6 +60,7 @@ export function SeriesGrid({
   direct,
   hasSub,
   crossfading,
+  animateReorder,
   groupOf,
   stickyHeaderTop,
   stickyPinned,
@@ -89,6 +95,10 @@ export function SeriesGrid({
   hasSub?: boolean;
   /** Suppresses per-card entrance work while a full-surface crossfade owns the transition. */
   crossfading?: boolean;
+  /** Slide cards to their new slots when `items` re-sorts in place (the Library under a last-read
+   *  sort, a gap closing after an unfollow). Ungrouped mode only — grouped rows are laid out by
+   *  hand, so there is no per-card container to transition. */
+  animateReorder?: boolean;
   /** GROUPED mode: which section each item belongs to (see `buildGroupedRows` — buckets in
    *  first-appearance order, so grouping composes with the sort instead of replacing it). When set,
    *  the grid renders through `GroupedGrid` (section headers + the sticky). Grouped mode supports
@@ -127,16 +137,21 @@ export function SeriesGrid({
   // bridgeId unset, so their keys are unchanged.
   const keyOf = (item: SeriesGridItem) => (item.bridgeId ? `${item.bridgeId}:${item.id}` : String(item.id));
 
-  // WHETHER this grid still holds a series, for a page collapsing back into it. Not where — a
-  // grouped grid coalesces N cards into one row, so there is no index to hand back, which is why
-  // this grid never registered a locator and why membership is a separate contract. Keyed off the
-  // SAME `scopeKey` RecyclerList derives its surface key from (`useZoomSurfaceKey` memoizes by
-  // name), so this registers against the very surface the cards capture into. The id is the series
-  // id the card registers under (`entry.id`), never `keyOf`'s bridge-qualified one.
-  useZoomSurfaceMembership(
-    useZoomSurfaceKey(scopeKey),
-    useCallback((seriesId: string) => items.some((i) => String(i.id) === seriesId), [items]),
-  );
+  // WHERE this grid holds a series, for a page collapsing back into it — a card that slid to a new
+  // slot under the page is aimed at by index, which `items` IS the index into when ungrouped. A
+  // grouped grid coalesces N cards into one row, so there it answers only WHETHER (the separate
+  // membership contract exists for exactly this). Keyed off the SAME `scopeKey` RecyclerList
+  // derives its surface key from (`useZoomSurfaceKey` memoizes by name), so this registers against
+  // the very surface the cards capture into.
+  const ownListRef = useRef<LegendListRef>(null);
+  useZoomSurfaceList(useZoomSurfaceKey(scopeKey), items, gridSeriesId, listRef ?? ownListRef, {
+    // Column k sits at k·(cardWidth + gap) — see the marginLeft note in renderItem.
+    xAtIndex: useCallback(
+      (index: number) => (index % numColumns) * (cardWidth + columnGap),
+      [numColumns, cardWidth, columnGap],
+    ),
+    locatable: !groupOf,
+  });
 
   // ── GROUPED mode: pre-chunked rows + section headers through GroupedGrid ──
   // Hooks run unconditionally (the memo is cheap when ungrouped); the render forks below.
@@ -187,12 +202,13 @@ export function SeriesGrid({
     <RecyclerList
       data={items}
       scopeKey={scopeKey}
-      listRef={listRef}
+      listRef={listRef ?? ownListRef}
       scrollRef={scrollRef}
       keyExtractor={keyOf}
       // EXACT, not a hint: every cell is pinned to `cellHeight` below, so this matches every measured row.
       estimatedItemSize={cellHeight}
       numColumns={numColumns}
+      itemLayoutAnimation={animateReorder ? ROW_REORDER_TRANSITION : undefined}
       header={header}
       footer={footer}
       paddingTop={paddingTop}

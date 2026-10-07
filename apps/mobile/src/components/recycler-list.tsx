@@ -33,6 +33,7 @@ export function RecyclerList<T>({
   numColumns = 1,
   columnWrapperStyle,
   recycleItems = true,
+  itemLayoutAnimation,
   drawDistance,
   listRef,
   scrollRef,
@@ -77,6 +78,10 @@ export function RecyclerList<T>({
   /** LegendList takes gap keys only here (column gap); the outer inset comes from `sidePad`. */
   columnWrapperStyle?: { gap?: number; rowGap?: number; columnGap?: number };
   recycleItems?: boolean;
+  /** A layout transition for an item that changes slot while mounted — a list that re-sorts under
+   *  you slides its items rather than teleporting them (see `ROW_REORDER_TRANSITION`). Rides on
+   *  recycling: a container handed a DIFFERENT item is remounted in place, not flown there. */
+  itemLayoutAnimation?: ComponentProps<typeof AnimatedLegendList>['itemLayoutAnimation'];
   /** How far beyond the viewport (px) to keep items mounted (LegendList default 250). Lower = fewer
    *  off-screen items mounted at once — e.g. a rails feed, where each mounted rail eagerly loads its
    *  cover images. */
@@ -153,6 +158,7 @@ export function RecyclerList<T>({
         columnWrapperStyle={columnWrapperStyle}
         // Recycle card/row instances rather than remounting per reuse (renderers must be recycle-safe).
         recycleItems={recycleItems}
+        itemLayoutAnimation={itemLayoutAnimation}
         drawDistance={drawDistance}
         // Don't retro-correct offsets from size measurements — a visible bounce/jitter while flinging
         // otherwise. Fixed/known sizes make this safe.

@@ -27,25 +27,36 @@ export function useZoomSurfaceList<T>(
   items: readonly T[] | undefined,
   seriesIdOf: (item: T) => string,
   listRef: RefObject<LegendListRef | null>,
+  {
+    xAtIndex,
+    locatable = true,
+  }: {
+    /** A multi-column list: an item's offset across the content, by its index into `items`.
+     *  `positionAtIndex` only answers down the content, so a card changing column would otherwise
+     *  be aimed at its old column. */
+    xAtIndex?: (index: number) => number;
+    /** False for a list that knows WHAT it holds but not where — `items` is not what the list
+     *  renders (a grouped grid coalesces them into rows), so an index into it is no position.
+     *  Membership alone is registered then; see `zoomSourceHolds`. */
+    locatable?: boolean;
+  } = {},
 ): void {
   const indexOf = useCallback(
     (seriesId: string) => items?.findIndex((item) => seriesIdOf(item) === seriesId) ?? -1,
     [items, seriesIdOf],
   );
 
-  useZoomSurfaceReveal(
-    surface,
-    useCallback(
-      (seriesId: string) => {
-        const index = indexOf(seriesId);
-        // -1 means this list no longer holds the series at all — nothing to scroll to.
-        traceJS('zoom', 'reveal.idx', { i: index, n: items?.length ?? 0 });
-        // Centred, so the card clears the top bar and the tab bar whichever way it drifted out.
-        if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
-      },
-      [indexOf, items, listRef],
-    ),
+  const reveal = useCallback(
+    (seriesId: string) => {
+      const index = indexOf(seriesId);
+      // -1 means this list no longer holds the series at all — nothing to scroll to.
+      traceJS('zoom', 'reveal.idx', { i: index, n: items?.length ?? 0 });
+      // Centred, so the card clears the top bar and the tab bar whichever way it drifted out.
+      if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
+    },
+    [indexOf, items, listRef],
   );
+  useZoomSurfaceReveal(surface, locatable ? reveal : undefined);
 
   // Cheaper than `locate` and answerable when it isn't — see `zoomSourceHolds`. Registered from the
   // same `indexOf`, so a list can never say it has an item it can't find.
@@ -54,17 +65,14 @@ export function useZoomSurfaceList<T>(
     useCallback((seriesId: string) => indexOf(seriesId) >= 0, [indexOf]),
   );
 
-  useZoomSurfaceLocator(
-    surface,
-    useCallback(
-      (seriesId: string) => {
-        const index = indexOf(seriesId);
-        const state = index >= 0 ? listRef.current?.getState() : undefined;
-        const contentY = state?.positionAtIndex(index);
-        return state && contentY !== undefined ? { contentY, scroll: state.scroll } : null;
-      },
-      [indexOf, listRef],
-    ),
+  const locate = useCallback(
+    (seriesId: string) => {
+      const index = indexOf(seriesId);
+      const state = index >= 0 ? listRef.current?.getState() : undefined;
+      const contentY = state?.positionAtIndex(index);
+      return state && contentY !== undefined ? { contentY, scroll: state.scroll, contentX: xAtIndex?.(index) } : null;
+    },
+    [indexOf, listRef, xAtIndex],
   );
-
+  useZoomSurfaceLocator(surface, locatable ? locate : undefined);
 }

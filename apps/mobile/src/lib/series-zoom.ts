@@ -169,9 +169,11 @@ export type ZoomSurfaceReveal = (id: string) => void;
 
 const reveals = new Map<ZoomSourceKey, ZoomSurfaceReveal>();
 
-/** Register this list as able to reveal its items. Safe to call unconditionally. */
-export function useZoomSurfaceReveal(surface: ZoomSourceKey, reveal: ZoomSurfaceReveal): void {
+/** Register this list as able to reveal its items. Safe to call unconditionally; `undefined`
+ *  registers nothing, for a surface that only sometimes knows where its items are. */
+export function useZoomSurfaceReveal(surface: ZoomSourceKey, reveal: ZoomSurfaceReveal | undefined): void {
   useEffect(() => {
+    if (!reveal) return;
     reveals.set(surface, reveal);
     return () => {
       if (reveals.get(surface) === reveal) reveals.delete(surface);
@@ -189,16 +191,21 @@ export function useZoomSurfaceReveal(surface: ZoomSourceKey, reveal: ZoomSurface
  * Raw list coordinates rather than a window rect, so the surface doesn't have to know that the zoom
  * flies a thumbnail INSIDE its row rather than the row itself: a captured rect plus the change in
  * these two numbers is the thumbnail's new position, whatever its inset within the row.
+ *
+ * `contentX` is the item's offset across the content, for a surface whose items can change COLUMN
+ * as well as row (a grid re-sorting itself); a single-column list leaves it out.
  */
-export type ZoomSurfacePlace = { contentY: number; scroll: number };
+export type ZoomSurfacePlace = { contentY: number; scroll: number; contentX?: number };
 export type ZoomSurfaceLocate = (id: string) => ZoomSurfacePlace | null;
 
 const locators = new Map<ZoomSourceKey, ZoomSurfaceLocate>();
 
 /** Register this list as able to say where its items are. Safe to call unconditionally; a surface
- *  without one falls back to asking the card, which is right for anything that can't reorder. */
-export function useZoomSurfaceLocator(surface: ZoomSourceKey, locate: ZoomSurfaceLocate): void {
+ *  without one (or passing `undefined`) falls back to asking the card, which is right for anything
+ *  that can't reorder. */
+export function useZoomSurfaceLocator(surface: ZoomSourceKey, locate: ZoomSurfaceLocate | undefined): void {
   useEffect(() => {
+    if (!locate) return;
     locators.set(surface, locate);
     everRegistered.add(surface);
     return () => {
@@ -334,10 +341,13 @@ function afterLayout(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 }
 
-/** The captured rect, moved by however far its surface has moved the item since. Single-column
- *  lists, so only y travels. */
+/** The captured rect, moved by however far its surface has moved the item since. */
 function shifted(origin: ZoomOrigin, base: ZoomSurfacePlace, now: ZoomSurfacePlace): ZoomOrigin {
-  return { ...origin, y: origin.y + (now.contentY - base.contentY) - (now.scroll - base.scroll) };
+  return {
+    ...origin,
+    x: origin.x + (now.contentX ?? 0) - (base.contentX ?? 0),
+    y: origin.y + (now.contentY - base.contentY) - (now.scroll - base.scroll),
+  };
 }
 
 /**

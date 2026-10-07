@@ -346,6 +346,9 @@ export default function LibraryScreen() {
           header={renderEmpty()}
           // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
           hasSub
+          // The one grid that re-sorts under an open page: closing a series moves its card to the
+          // front of a last-read sort, and an unfollow closes a gap under any sort.
+          animateReorder
           paddingTop={headerHeight + BarContentGap}
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
           // Flush to the bar's bottom edge, as on Browse — the pinned heading's material meets
