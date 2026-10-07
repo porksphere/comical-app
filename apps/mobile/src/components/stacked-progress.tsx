@@ -45,18 +45,26 @@ export function StackedProgress({
   const a = span(top);
   const b = span(bottom);
 
-  // The tab-shaped end: two quarter-circles of half the bar's height, convex then concave, so the
-  // S spans the same `r` horizontally as the pill's own quarter. The foot's tip is the fill value,
-  // so a shorter half never reaches past the longer one it flares into.
+  // Three ends. Equal or full halves take their quarter of the pill, so the outline closes. A half
+  // that stops short ends like a browser tab: a convex corner then a concave foot, each half the
+  // bar high and up to a full `r` wide (narrower only when the fill is too short to hold it), with
+  // the foot's tip at the fill value so it never reaches past the longer half it flares into. The
+  // longer half ends in its own semicircle rather than a quarter of the pill's, which would leave a
+  // sharp corner against the midline where the other colour has already stopped.
   const q = r / 2;
+  const tab = (v: number) => Math.min(r, (v - r) / 2);
   const topEnd =
     b > a
-      ? `H${a - r} A${q},${q} 0 0 1 ${a - q},${q} A${q},${q} 0 0 0 ${a},${r}`
-      : `H${a - r} A${r},${r} 0 0 1 ${a},${r}`;
+      ? `H${a - 2 * tab(a)} A${tab(a)},${q} 0 0 1 ${a - tab(a)},${q} A${tab(a)},${q} 0 0 0 ${a},${r}`
+      : a > b && a < width
+        ? `H${a - q} A${q},${q} 0 0 1 ${a - q},${r}`
+        : `H${a - r} A${r},${r} 0 0 1 ${a},${r}`;
   const bottomEnd =
     a > b
-      ? `H${b} A${q},${q} 0 0 0 ${b - q},${r + q} A${q},${q} 0 0 1 ${b - r},${h}`
-      : `H${b} A${r},${r} 0 0 1 ${b - r},${h}`;
+      ? `H${b} A${tab(b)},${q} 0 0 0 ${b - tab(b)},${r + q} A${tab(b)},${q} 0 0 1 ${b - 2 * tab(b)},${h}`
+      : b > a && b < width
+        ? `H${b - q} A${q},${q} 0 0 1 ${b - q},${h}`
+        : `H${b} A${r},${r} 0 0 1 ${b - r},${h}`;
   // Top half: left quarter up from the midline, flat run, its end back down to the midline.
   const topPath = a > 0 ? `M0,${r} A${r},${r} 0 0 1 ${r},0 ${topEnd} Z` : undefined;
   // Bottom half, mirrored: along the midline to its end, down and back along the bottom edge.
