@@ -41,7 +41,7 @@ import { useGridLayout } from '@/hooks/use-grid-layout';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
-import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { hapticImpactLight } from '@/lib/haptics';
@@ -153,6 +153,11 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // from it as you type — it is one local lookup, where a bridge search is a request to every source
   // you have, so those wait for Enter. Reset whenever the committed query moves on its own (an intent,
   // the clear button), which the field itself does in the same render.
+  //
+  // DESKTOP ONLY. The composite result — your own shelf above every source's — earns its place on a
+  // wide screen, where two rows of library cards sit above the rails with room to spare. On a phone
+  // those two rows are the whole first screen, so a search of the sources opened on a result you
+  // already had, and the Library tab is one tap away with its own filter.
   const [ownTyped, setTyped] = useState(query);
   const [prevQuery, setPrevQuery] = useState(query);
   if (prevQuery !== query) {
@@ -160,7 +165,8 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
     setTyped(query);
   }
   const typed = docked ? docked.typed : ownTyped;
-  const libraryTerm = useDebouncedValue(typed.trim(), 150);
+  const desktop = useIsDesktop();
+  const libraryTerm = useDebouncedValue(desktop ? typed.trim() : '', 150);
   const libraryMatches = useQuery({
     ...libraryQuery(ds, mock, libraryTerm, 'lastRead', null),
     enabled: isComical && !!libraryTerm,
