@@ -329,12 +329,13 @@ export default function ActivityScreen() {
                 direct={directOf(item.bridgeId)}
               />
             )}
-            // Closes the feed with where you stand, so reaching the end answers "is there more to
-            // read" without counting dots. Only for the whole feed — a filtered view is a subset.
-            ListFooterComponent={
+            // Opens the feed with where you stand, so the answer to "is there more to read" is the
+            // first thing seen rather than the last — a long feed buried it under the fold. Only
+            // for the whole feed — a filtered view is a subset.
+            ListHeaderComponent={
               query.trim() ? undefined : (
-                <View style={styles.footer}>
-                  <ThemedText type="small" themeColor="textSecondary" testID="activity.footer">
+                <View style={styles.standing}>
+                  <ThemedText type="small" themeColor="textSecondary" testID="activity.standing">
                     {unreadTotal === 0
                       ? 'You’re all caught up'
                       : `${unreadTotal} unread ${unreadTotal === 1 ? 'chapter' : 'chapters'} left`}
@@ -511,9 +512,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 340,
   },
-  footer: {
+  standing: {
     alignItems: 'center',
-    paddingVertical: Spacing.four,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.two,
     paddingHorizontal: Spacing.four,
   },
   list: {
