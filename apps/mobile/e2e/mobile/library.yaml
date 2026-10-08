@@ -44,16 +44,16 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "series-card\\..*"
 
-# Show only one read state (the seeded library has series behind on unread chapters), then back to
-# everything.
+# Filter to one read state (the seeded library has series behind on unread chapters), then back to
+# everything. Its own button beside the sort.
 - tapOn:
-    id: "library.sort"
+    id: "library.filter"
 - tapOn:
     id: "library.show.behind"
 - assertVisible:
     id: "series-card\\..*"
 - tapOn:
-    id: "library.sort"
+    id: "library.filter"
 - tapOn:
     id: "library.show.all"
 - assertVisible:

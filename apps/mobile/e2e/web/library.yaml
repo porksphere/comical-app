@@ -6,7 +6,8 @@
 #     (labelled "Filter library") opens it instead.
 #   - library.search.clear sets accessibilityLabel="Clear search" (search-field.tsx, same as
 #     browse/search.yaml's clear button).
-#   - library.sort sets accessibilityLabel="Sort library" (library-sort-button.tsx).
+#   - library.sort sets accessibilityLabel="Sort library" (library-sort-button.tsx);
+#     library.filter sets "Filter by reading state" (library-filter-button.tsx).
 #   - manage-collections.add (AddFab) sets accessibilityLabel="New collection" (manage-collections.tsx).
 #   - top-bar.back sets accessibilityLabel="Go back" (top-bar.tsx).
 # library.search.input, library.sort.title, library.collection-selector, and
@@ -54,16 +55,16 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "series-card\\..*"
 
-# Show only one read state (the seeded library has series behind on unread chapters), then back to
-# everything.
+# Filter to one read state (the seeded library has series behind on unread chapters), then back to
+# everything. Its own button beside the sort.
 - tapOn:
-    id: "Sort library"
+    id: "Filter by reading state"
 - tapOn:
     id: "library.show.behind"
 - assertVisible:
     id: "series-card\\..*"
 - tapOn:
-    id: "Sort library"
+    id: "Filter by reading state"
 - tapOn:
     id: "library.show.all"
 - assertVisible:

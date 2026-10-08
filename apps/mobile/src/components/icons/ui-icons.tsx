@@ -18,6 +18,7 @@ import {
   Ellipsis,
   Eye,
   EyeOff,
+  Funnel,
   HardDrive,
   Info,
   Pause,
@@ -95,6 +96,11 @@ export const ArrowUpIcon = ({ color, size = 16 }: IconProps) => <ArrowUp color={
 export const ArrowDownIcon = ({ color, size = 16 }: IconProps) => <ArrowDown color={color} size={size} />;
 // Sort affordance — the Library top bar's sort menu trigger.
 export const SortIcon = ({ color, size = 16 }: IconProps) => <ArrowUpDown color={color} size={size} />;
+// Filter affordance — the Library top bar's reading-state filter, beside the sort. A funnel, not
+// `ListFilter`, so it can't be mistaken for the sort's own lines at 22px.
+export const FilterIcon = ({ color, size = 16, filled }: IconProps) => (
+  <Funnel color={color} size={size} fill={filled ? color : 'none'} />
+);
 export const GripIcon = ({ color, size = 16 }: IconProps) => <GripVertical color={color} size={size} />;
 // Settings section glyphs — General/Bridges/Trackers/Registries/Developer.
 export const GeneralSettingsIcon = ({ color, size = 16 }: IconProps) => <SlidersHorizontal color={color} size={size} />;

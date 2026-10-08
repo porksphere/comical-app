@@ -9,7 +9,8 @@ import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LibraryCollectionSelector } from '@/components/library-collection-selector';
-import { LibrarySortButton, SHOW_LABELS } from '@/components/library-sort-button';
+import { LibraryFilterButton, SHOW_LABELS } from '@/components/library-filter-button';
+import { LibrarySortButton } from '@/components/library-sort-button';
 import { RetryBlock } from '@/components/retry-block';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { TabTitleBar } from '@/components/tab-title-bar';
@@ -404,14 +405,15 @@ export default function LibraryScreen() {
             {showingCollected ? (
               <CollectedSortButton value={collectedView} onChange={setCollectedView} />
             ) : (
-              <LibrarySortButton
-                value={sort}
-                onChange={setSort}
-                grouping={grouping}
-                onGroupingChange={setGrouping}
-                show={show}
-                onShowChange={setShow}
-              />
+              <>
+                <LibraryFilterButton value={show} onChange={setShow} />
+                <LibrarySortButton
+                  value={sort}
+                  onChange={setSort}
+                  grouping={grouping}
+                  onGroupingChange={setGrouping}
+                />
+              </>
             )}
           </>
         }
