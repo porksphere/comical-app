@@ -351,6 +351,29 @@ const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // looks: the copy is sized to the WINDOW now (see `zoomThumbStyle`), so it is a full 393pt wide at
 // q = 1. Raising 0.75 much further starts showing that.
 const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.15, 0.75];
+/**
+ * The READER's dismiss has its own pair, and both start BELOW anything a drag can reach.
+ *
+ * The copy here is the series cover arriving over a page of the chapter — a different picture, so
+ * unlike the back-swipe's `cover` this cross-fade is always visible. On [0.7, 1] it was visible
+ * while the finger was still down: a held drag bottoms out around q = 0.75 in practice (the follow
+ * asymptotes at `1 - ZOOM_DRAG_FOLLOW_REACH` = 0.47, and a full-screen pull gets nowhere near
+ * that), so the cover was fully in with the page still pinned under the thumb, and the drag read
+ * as dragging the cover around rather than the page. The fade is part of the LANDING, not the
+ * drag, so it is kept entirely inside the release spring: 0.45 is under the floor the follow can
+ * ever reach, so a drag, however long, holds the page itself.
+ *
+ * Sized in milliseconds against ZOOM_OUT_SPRING_READER, as `q` is far from linear in time: from a
+ * release at 0.75 the spring crosses [0.45, 0.15] in ~130ms of a ~570ms collapse, then spends the
+ * remaining ~380ms settling the last quarter onto the card — a band any narrower is a blink, and
+ * one reaching lower is a cover that keeps arriving after the window has already stopped moving.
+ *
+ * The page's own fade moves down with it, for the coverage reason ZOOM_THUMB_FADE_CLOSE_OFFCOVER
+ * spells out: it holds opaque until the copy is half in, so the window never opens onto the grid.
+ * Worst coverage 0.93 at q = 0.2.
+ */
+const ZOOM_THUMB_FADE_CLOSE_READER = [0.15, 0.45];
+const ZOOM_CONTENT_FADE_CLOSE_READER = [0.05, 0.3];
 // The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
 // carried away, it is the surface being uncovered, so matching the page's curve held it opaque
 // through the first third of the collapse and kept the grid hidden long after the page had
@@ -1844,6 +1867,10 @@ function SeriesReaderInstance({
   const zoomArmed = useSharedValue(false);
   // Which set of cross-fade ranges is in play (see the constants) — an exit uses different ones.
   const zoomClosing = useSharedValue(false);
+  /** Whether the close in play is the reader's dismiss, which has its own fade pair (see
+   *  ZOOM_THUMB_FADE_CLOSE_READER). Latched by every closing path alongside `zoomClosing`, never
+   *  read live off `detailsActiveSV`: a collapse must not swap curves part way through. */
+  const zoomReaderClose = useSharedValue(false);
   // The flying copy's IMAGE aspect (w/h), captured from its own onLoad. 0 = not yet known. What
   // the sequence-mode copy morph needs (see zoomThumbStyle): the copy's rect interpolates toward
   // the image's true fit rect, and only the image itself knows its shape.
@@ -1982,6 +2009,7 @@ function SeriesReaderInstance({
           // direction drives it, since unlike the back-swipe this gesture has no single axis to
           // measure along.
           zoomClosing.set(true);
+          zoomReaderClose.set(true);
           zoomRadiusClosing.set(true);
           homeAt.set(-1);
           const travel = dismissSpan * ZOOM_DRAG_TRAVEL;
@@ -2132,6 +2160,7 @@ function SeriesReaderInstance({
     homeAt,
     zoom,
     zoomClosing,
+    zoomReaderClose,
     dragX,
     dragY,
     edgeCommitting,
@@ -2405,6 +2434,7 @@ function SeriesReaderInstance({
   const closeLayer = useCallback(() => {
     if (LEFT.has(token)) return;
     zoomClosing.set(true);
+    zoomReaderClose.set(!detailsActiveSV.value);
     zoomRadiusClosing.set(true);
     edgeCommitting.set(true);
     homeAt.set(0);
@@ -2416,7 +2446,7 @@ function SeriesReaderInstance({
     zoom.set(IS_WEB ? 0 : withSpring(0, ZOOM_OUT_SPRING));
     // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
     // leaveOnce), with the `leaving` backstop above as the safety net.
-  }, [token, edgeCommitting, homeAt, zoom, zoomClosing, zoomRadiusClosing]);
+  }, [token, edgeCommitting, homeAt, zoom, zoomClosing, zoomReaderClose, zoomRadiusClosing, detailsActiveSV]);
 
   /**
    * Ask the source card where it is, once per collapse. Hung off `zoom` leaving the top rather than
@@ -2571,6 +2601,7 @@ function SeriesReaderInstance({
         homeAt.set(-1);
         // A drag IS a collapse, so it uses the collapse's cross-fade ranges from the first frame.
         zoomClosing.set(true);
+        zoomReaderClose.set(false);
         zoomRadiusClosing.set(true);
       })
       .onUpdate((e) => {
@@ -2670,6 +2701,7 @@ function SeriesReaderInstance({
     homeAt,
     zoom,
     zoomClosing,
+    zoomReaderClose,
   ]);
   // `traceOn` is a DEP on purpose: backSwipePan only attaches its touch observers while the trace
   // is recording, so flipping the toggle has to rebuild the gestures for the change to take.
@@ -3049,12 +3081,16 @@ function SeriesReaderInstance({
       zoomGeomOffCover,
       zoomGeomPage,
     );
+    // `no-source` draws no copy at all, so the page carries the collapse there whichever surface
+    // is leaving; every other destination has a copy arriving, and the reader's arrives later.
     const closing =
       geom?.kind === 'no-source'
         ? ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE
-        : geom?.kind === 'cover-offscreen'
-          ? ZOOM_CONTENT_FADE_CLOSE_OFFCOVER
-          : ZOOM_CONTENT_FADE_CLOSE;
+        : zoomReaderClose.value
+          ? ZOOM_CONTENT_FADE_CLOSE_READER
+          : geom?.kind === 'cover-offscreen'
+            ? ZOOM_CONTENT_FADE_CLOSE_OFFCOVER
+            : ZOOM_CONTENT_FADE_CLOSE;
     const range = zoomClosing.value ? closing : ZOOM_CONTENT_FADE_OPEN;
     return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
   }, [zoomGeomNoSource, zoomGeomCover, zoomGeomOffCover, zoomGeomPage]);
@@ -3122,7 +3158,11 @@ function SeriesReaderInstance({
         transform: [{ translateY: 0 }],
       };
     }
-    const closing = geom?.kind === 'cover-offscreen' ? ZOOM_THUMB_FADE_CLOSE_OFFCOVER : ZOOM_THUMB_FADE_CLOSE;
+    const closing = zoomReaderClose.value
+      ? ZOOM_THUMB_FADE_CLOSE_READER
+      : geom?.kind === 'cover-offscreen'
+        ? ZOOM_THUMB_FADE_CLOSE_OFFCOVER
+        : ZOOM_THUMB_FADE_CLOSE;
     const range = zoomClosing.value ? closing : ZOOM_THUMB_FADE_OPEN;
     // The copy has to READ as the thumbnail it came off, corner included — 10pt on a grid card, 6
     // on a History/Activity row (see ZoomOrigin). This
