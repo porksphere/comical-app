@@ -17,6 +17,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 
 import { ChevronRightIcon, PanelCollapseIcon, PanelExpandIcon } from '@/components/icons/ui-icons';
 import { BridgeThumbRadius, BridgeThumbSize } from '@/components/selector';
+import { SidebarUpdate } from '@/components/sidebar-update';
 
 import { useHover } from '@/hooks/use-hover';
 import { useTopBarHeight } from '@/hooks/use-responsive';
@@ -190,7 +191,13 @@ export function AppSidebar({
           get out of, so it must never be the thing that scrolled off. Settings sits with it because
           it is the same kind of thing — a way to open something, not a place in the list above. */}
       <View style={styles.footer}>
-        {settingsButton ? <FooterButton {...settingsButton} /> : null}
+        {/* The shell's update sits BESIDE Settings, in the room the expanded rail has to the right of
+            it; a collapsed rail has no such room, so there it takes a square of its own above. */}
+        {collapsed ? <SidebarUpdate compact /> : null}
+        <View style={styles.footerRow}>
+          {settingsButton ? <FooterButton {...settingsButton} /> : null}
+          {collapsed ? null : <SidebarUpdate compact={false} />}
+        </View>
         <CollapseToggle collapsed={collapsed} />
       </View>
     </View>
@@ -283,7 +290,14 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: Spacing.one,
     paddingLeft: (SidebarCollapsedWidth - FOOTER_BUTTON) / 2,
+    paddingRight: Spacing.two,
     paddingBottom: Spacing.two,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    gap: Spacing.one,
   },
   // Deliberately NOT `styles.item` plus an override: that style carries `flex: 1` for the row it
   // shares with the chevron, and react-native-web maps a `flex` shorthand to a flex-BASIS, which in
