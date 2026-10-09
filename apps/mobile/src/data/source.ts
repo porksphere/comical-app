@@ -247,10 +247,10 @@ export interface DataSource {
   markActivityRead(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   /** Scan the library for new chapters. `force` re-checks every entry (the user-facing
    *  "Check for updates"); without it the host skips recently-synced entries, and
-   *  `budgetMs`/`trackers: false` keep OS background windows short. `newChapters` is what the scan
+   *  `budgetMs` keeps OS background windows short. `newChapters` is what the scan
    *  added to the feed the reader sees, which isn't every chapter it found. */
   checkForUpdates(
-    opts?: { force?: boolean; budgetMs?: number; trackers?: boolean },
+    opts?: { force?: boolean; budgetMs?: number },
     signal?: AbortSignal,
   ): Promise<{ newChapters: number; partial: boolean }>;
   /** Empty the new-chapters feed (user "clear" action). */

@@ -58,7 +58,7 @@ export async function runChapterCheck(): Promise<BackgroundTask.BackgroundTaskRe
     if (!prefs.backgroundCheck || isMockActive()) return BackgroundTask.BackgroundTaskResult.Success;
     if (prefs.wifiOnly && !(await onWifi())) return BackgroundTask.BackgroundTaskResult.Success;
 
-    const res = await api.runBackgroundSync({ budgetMs: SYNC_BUDGET_MS, trackers: false });
+    const res = await api.runBackgroundSync({ budgetMs: SYNC_BUDGET_MS });
 
     const { announced } = feedCounts(res, prefs.caughtUpOnly);
     if (announced > 0 && prefs.notifications) await notifyNewChapters(announced);

@@ -1789,9 +1789,8 @@ export async function mockUnlinkTracker(bridgeId: string, seriesId: string, trac
   mockTrackerLinksByEntry.set(libKey(bridgeId, seriesId), links);
 }
 
-/** Simulates a real two-way sync: bumps the link's progress + `lastSyncAt`, mirroring the old fake
- *  local-state bump that used to live directly in the (now-deleted) mock stub panel. Always reports
- *  the pull side — the mock has no local read-state to be ahead of the tracker with. */
+/** Simulates the push-only sync: refreshes `lastSyncAt` and reports the tracker one chapter ahead
+ *  of the link's record, which is the "tracker is ahead, local untouched" outcome the panel shows. */
 export async function mockSyncTrackerLink(
   bridgeId: string,
   seriesId: string,
@@ -1799,10 +1798,11 @@ export async function mockSyncTrackerLink(
 ): Promise<TrackerLinkSyncResult> {
   await delay(TRACKER_ACTION_DELAY_MS);
   const link = seedMockTrackerLinks(bridgeId, seriesId).find((l) => l.trackerId === trackerId);
-  if (!link) return { updated: false, readSynced: 0, pushed: false, chaptersRead: 0 };
-  link.chaptersRead = (link.chaptersRead ?? 0) + 1;
+  if (!link) return { updated: false, pushed: false, chaptersRead: 0, trackerRead: 0 };
+  const local = link.chaptersRead ?? 0;
+  link.chaptersRead = local + 1;
   link.lastSyncAt = Date.now();
-  return { updated: true, readSynced: 1, pushed: false, chaptersRead: link.chaptersRead };
+  return { updated: true, pushed: false, chaptersRead: local, trackerRead: link.chaptersRead };
 }
 
 const mockRegistries: SavedRegistry[] = [];

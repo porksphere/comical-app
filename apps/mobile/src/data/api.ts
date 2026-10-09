@@ -1703,23 +1703,24 @@ export interface ApiSyncResult {
   partial: boolean;
 }
 
-/** Result of the per-row two-way tracker sync. */
+/** Result of the per-row tracker sync. Push-only: the tracker's state is recorded on the link but
+ *  never applied to local read flags. */
 export interface TrackerLinkSyncResult {
   /** False only when neither side had anything to move (nothing local read, nothing on the list). */
   updated: boolean;
-  /** Chapters newly marked read locally from the tracker's count (0 on a push). */
-  readSynced: number;
-  /** True when local was ahead and its count was written to the tracker instead. */
+  /** True when local was ahead and its count was written to the tracker. */
   pushed: boolean;
-  /** The winning read count — what both sides are at now. */
+  /** The chapter number both sides settle on — the pushed count, or the local one. */
   chaptersRead: number;
+  /** What the tracker holds for this entry (0 when it has none). Shown, never applied locally. */
+  trackerRead: number;
 }
 
 /** POST /library/sync → scan the library for new chapters. Bodyless/optionless calls let the
  *  host's staleness window skip recently-synced entries; `force` re-checks everything (the
- *  user-facing "Check for updates"); `budgetMs`/`trackers: false` keep background runs short. */
+ *  user-facing "Check for updates"); `budgetMs` keeps background runs short. */
 export function runBackgroundSync(
-  opts: { force?: boolean; budgetMs?: number; trackers?: boolean } = {},
+  opts: { force?: boolean; budgetMs?: number } = {},
   signal?: AbortSignal,
 ): Promise<ApiSyncResult> {
   return fetchPost('/library/sync', opts, signal) as Promise<ApiSyncResult>;
@@ -1844,10 +1845,9 @@ export function unlinkTracker(bridgeId: string, seriesId: string, trackerId: str
   );
 }
 
-/** POST /library/collected/series/{b}/{s}/tracker-links/{trackerId}/sync → TWO-WAY sync of one link with its
- *  tracker (the scoped, per-row counterpart to `updateTracker`'s whole-library resync). Whichever
- *  side has read further wins: `pushed` says the local count went up to the tracker, otherwise the
- *  tracker's state was applied locally and `readSynced` chapters were newly marked read. */
+/** POST /library/collected/series/{b}/{s}/tracker-links/{trackerId}/sync → push-only sync of one
+ *  link with its tracker: the link's record of the tracker is refreshed, and the local count is
+ *  pushed when it is ahead (`pushed`). Nothing is ever marked read locally from the tracker. */
 export function syncTrackerLink(
   bridgeId: string,
   seriesId: string,
