@@ -1780,26 +1780,29 @@ export function searchTrackerCatalog(
   return fetchJson(`/trackers/${encodeURIComponent(trackerId)}/search?${qs}`, signal);
 }
 
+/** Where the hosted relay page should send the provider's answer: back into the app's own
+ *  `comical://` scheme (a phone's auth session, the desktop shell) or to the browser popup that
+ *  opened it. Goes into the OAuth `state` so the relay can read it back. */
+export type OAuthReturnTo = 'native' | 'web';
+
 /** POST /trackers/{id}/oauth-start → begin an OAuth round trip for an `oauth-callback` setting
  *  field: the server stashes PKCE/state server-side and returns the provider's `authUrl` to open
- *  in a browser. The server's own `/oauth/callback` completes the exchange and persists the
- *  token blob — this call has no matching "finish" endpoint on the client. */
+ *  in a browser. The provider lands on the relay, which hands `code` + `state` back to the app,
+ *  and `completeOAuthCallback` finishes it. */
 export function startTrackerOAuth(
   trackerId: string,
   key: string,
+  returnTo: OAuthReturnTo,
   settings?: Record<string, string>,
   signal?: AbortSignal,
 ): Promise<{ authUrl: string }> {
-  return fetchPost(`/trackers/${encodeURIComponent(trackerId)}/oauth-start`, { key, settings }, signal);
+  return fetchPost(`/trackers/${encodeURIComponent(trackerId)}/oauth-start`, { key, settings, returnTo }, signal);
 }
 
 /** GET /oauth/callback → complete an in-flight `oauth-callback` round trip through the *active*
- *  transport. Only the embedded (on-device) Connect flow calls this directly: there's no real
- *  server to redirect to on-device, so the app intercepts the provider's redirect itself
- *  (`openAuthSessionAsync`'s native redirect detection) and finishes the exchange by hitting this
- *  same route through the in-process router instead. Remote mode never calls this — the OS browser
- *  navigates to the server's own `/oauth/callback` directly. The route renders an HTML page (meant
- *  for a real browser tab), not JSON, so this only checks the response status. */
+ *  transport — the same one `startTrackerOAuth` went through, which is what holds the pending
+ *  PKCE/state. The route renders an HTML page (it predates the relay and still serves a bare
+ *  browser tab), not JSON, so this only checks the response status. */
 export async function completeOAuthCallback(code: string, state: string, signal?: AbortSignal): Promise<void> {
   const qs = new URLSearchParams({ code, state }).toString();
   const res = await transport(`/oauth/callback?${qs}`, { signal });

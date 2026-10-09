@@ -318,6 +318,7 @@ export interface DataSource {
   startTrackerOAuth(
     trackerId: string,
     key: string,
+    returnTo: api.OAuthReturnTo,
     settings?: Record<string, string>,
     signal?: AbortSignal,
   ): Promise<{ authUrl: string }>;
@@ -933,7 +934,8 @@ const realDataSource: DataSource = {
   async uninstallTracker(trackerId, signal) {
     await api.uninstallTracker(trackerId, signal);
   },
-  startTrackerOAuth: (trackerId, key, settings, signal) => api.startTrackerOAuth(trackerId, key, settings, signal),
+  startTrackerOAuth: (trackerId, key, returnTo, settings, signal) =>
+    api.startTrackerOAuth(trackerId, key, returnTo, settings, signal),
 
   async getTrackerLinks(bridgeId, seriesId, signal) {
     const links = await api.getTrackerLinks(bridgeId, seriesId, signal);

@@ -77,7 +77,6 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
 
   const routerOpts: RouterOptions = {
     registry,
-    callbackBaseUrl: baseUrl,
     userAgent: DEFAULT_USER_AGENT,
     // The renderer is a file:// / app:// page talking to loopback, so it *is* cross-origin.
     // Locked to the loopback origin rather than the server's LAN-friendly "*" default.

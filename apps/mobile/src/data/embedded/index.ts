@@ -18,4 +18,3 @@ export {
   type DataSourceMode,
 } from './preference';
 export { swapDataSourceMode } from './apply-mode';
-export { embeddedOAuthCallbackUrl } from './oauth-callback';

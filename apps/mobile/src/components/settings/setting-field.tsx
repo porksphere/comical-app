@@ -12,13 +12,14 @@ import { ThemedText } from '@/components/themed-text';
 import { IntStepper } from '@/components/reader/int-stepper';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { completeOAuthCallback, getApiBase, type SettingDescriptor, type SettingValue } from '@/data/api';
-import { embeddedOAuthCallbackUrl, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
+import { completeOAuthCallback, type OAuthReturnTo, type SettingDescriptor, type SettingValue } from '@/data/api';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
+import { desktopShell } from '@/lib/desktop-shell';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
+import { awaitOAuthReturn, parseOAuthReturn, type OAuthReturn } from '@/lib/oauth-return';
 import { testId } from '@/lib/test-id';
 
 type FieldProps<D extends SettingDescriptor> = {
@@ -125,13 +126,11 @@ export function SettingFieldEditor({ descriptor, value, secretSet, trackerId, on
  *  browser round trip. Requires `trackerId` (only `tracker-settings.tsx` passes one; bridges
  *  never declare this field type).
  *
- *  Remote mode redirects to the server's own `/oauth/callback`, which does the whole exchange
- *  itself. On-device there's no server to redirect to, so the auth URL is built (server-side, at
- *  `oauth-start` time) around this app's own custom-scheme deep link instead
- *  (`embeddedOAuthCallbackUrl`) — `openAuthSessionAsync` intercepts that redirect itself, and the
- *  app finishes the exchange by hitting the *same* `/oauth/callback` route through the in-process
- *  embedded router (`completeOAuthCallback`). Either way the round trip completes without this
- *  component ever handling a token. */
+ *  The router builds the auth URL (`oauth-start`) around the hosted relay page, the relay hands
+ *  the provider's `code` + `state` back to this client (`runOAuthRound`), and the row finishes the
+ *  exchange by hitting `/oauth/callback` through the *same* transport that started it — a remote
+ *  server or the in-process router alike, since that's where the pending PKCE state lives. The
+ *  component never sees a token. */
 function OAuthCallbackRow({
   descriptor,
   secretSet,
@@ -144,8 +143,6 @@ function OAuthCallbackRow({
   const theme = useTheme();
   const ds = useDataSource();
   const queryClient = useQueryClient();
-  const [onDevice] = useEmbeddedEnabled();
-  const embeddedActive = onDevice && isEmbeddedRuntimeAvailable();
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -154,22 +151,12 @@ function OAuthCallbackRow({
     setError(null);
     setConnecting(true);
     try {
-      const { authUrl } = await ds.startTrackerOAuth(trackerId, descriptor.key);
-      if (embeddedActive) {
-        const result = await openAuthSessionAsync(authUrl, embeddedOAuthCallbackUrl);
-        if (result.type !== 'success') return;
-        const { queryParams } = Linking.parse(result.url);
-        const code = typeof queryParams?.code === 'string' ? queryParams.code : undefined;
-        const state = typeof queryParams?.state === 'string' ? queryParams.state : undefined;
-        if (!code || !state) throw new Error('Sign-in did not return an authorization code.');
-        await completeOAuthCallback(code, state);
-      } else {
-        // Don't trust the resolved session type — on web this just resolves when the popup closes
-        // (which the server's callback page does via `window.close()` once it's done), and on
-        // native it resolves on redirect. Either way the server already did the real work; just
-        // refetch and let "Connected" reflect whatever actually landed.
-        await openAuthSessionAsync(authUrl, `${getApiBase()}/oauth/callback`);
-      }
+      const { authUrl } = await ds.startTrackerOAuth(trackerId, descriptor.key, oauthReturnTo());
+      const r = await runOAuthRound(authUrl, 'oauth-callback');
+      if (!r) return;
+      if (r.error) throw new Error(r.error);
+      if (!r.code || !r.state) throw new Error('Sign-in did not return an authorization code.');
+      await completeOAuthCallback(r.code, r.state);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.trackerSettings(trackerId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trackers() }),
@@ -202,13 +189,34 @@ function OAuthCallbackRow({
 }
 
 /**
- * The custom-scheme deep link the native in-app auth session waits for. The provider's implicit
- * grant redirects to our https relay (`ANILIST_REDIRECT_URI` in the tracker), and the relay bounces
- * the token here as `comical://oauth-token#access_token=…`; `openAuthSessionAsync` intercepts the
- * `comical` scheme and hands us the URL. (On web this resolves to an http(s) URL and is unused — the
- * web path captures via a popup + `postMessage` instead.)
+ * Where this client takes the provider's answer back from the relay page
+ * (`public/oauth-relay.html`): through its own `comical://` scheme on a phone, where the in-app auth
+ * session intercepts the link, and in the desktop shell, which registers the scheme and hands the
+ * link in as a command (`lib/oauth-return`); through a popup's opener in a browser tab, which has
+ * no scheme to come back on. The relay reads it out of the OAuth `state`.
  */
-const NATIVE_OAUTH_CALLBACK = Linking.createURL('oauth-token');
+function oauthReturnTo(): OAuthReturnTo {
+  return Platform.OS !== 'web' || desktopShell() ? 'native' : 'web';
+}
+
+/**
+ * Open the authorize URL and wait for the relay to hand the provider's answer back. `null` when the
+ * user gave up — closed the auth session or the popup — so the row stays as it was. On web this must
+ * run from a user gesture or the browser blocks the popup.
+ */
+async function runOAuthRound(authUrl: string, callback: 'oauth-callback' | 'oauth-token'): Promise<OAuthReturn | null> {
+  if (Platform.OS !== 'web') {
+    const result = await openAuthSessionAsync(authUrl, Linking.createURL(callback));
+    return result.type === 'success' ? parseOAuthReturn(result.url) : null;
+  }
+  if (desktopShell()) {
+    // The shell sends every new window to the system browser, and the relay's `comical://` bounce
+    // comes back through `deliverOAuthReturn`.
+    void Linking.openURL(authUrl);
+    return awaitOAuthReturn();
+  }
+  return captureOAuthReturnWeb(authUrl);
+}
 
 /**
  * An implicit-grant `oauth-pin` (`response_type=token`, no `exchange`) is captured automatically —
@@ -220,31 +228,14 @@ function isImplicitCapture(descriptor: Extract<SettingDescriptor, { type: 'oauth
   return /[?&]response_type=token(?:&|$)/.test(descriptor.authUrl);
 }
 
-/** Append a query param to an authorize URL (used to tag the redirect with the capture platform,
- *  which the relay reads back out of the OAuth `state` echoed into the fragment). */
+/** Append a query param to an authorize URL. */
 function withParam(url: string, key: string, value: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}${key}=${encodeURIComponent(value)}`;
 }
 
-/** Pull an implicit-grant token out of an intercepted redirect URL's fragment
- *  (`comical://…#access_token=…&token_type=Bearer`). Parsed by hand — no `URL`/`URLSearchParams`
- *  reliance, which is spotty across JS engines (Hermes/JSC). */
-function tokenFromRedirect(url: string): string | undefined {
-  const hash = url.includes('#') ? url.slice(url.indexOf('#') + 1) : '';
-  for (const pair of hash.split('&')) {
-    const eq = pair.indexOf('=');
-    if (eq === -1) continue;
-    if (pair.slice(0, eq) === 'access_token') return decodeURIComponent(pair.slice(eq + 1));
-  }
-  return undefined;
-}
-
-type WebCaptureResult = { token?: string; error?: string; dismissed?: boolean };
-
-/** Web-only implicit capture: open the authorize URL as a popup and wait for our same-origin relay
- *  page to `postMessage` the token back (see `public/oauth-relay.html`). Resolves `dismissed` if the
- *  user closes the popup first. Must be called from a user gesture or the browser blocks the popup. */
-function captureImplicitTokenWeb(authUrl: string): Promise<WebCaptureResult> {
+/** Browser-tab capture: open the authorize URL as a popup and wait for the relay page to
+ *  `postMessage` the provider's answer back. `null` if the user closes the popup first. */
+function captureOAuthReturnWeb(authUrl: string): Promise<OAuthReturn | null> {
   return new Promise((resolve) => {
     const popup = window.open(authUrl, 'comical-oauth', 'width=520,height=680');
     if (!popup) {
@@ -252,21 +243,22 @@ function captureImplicitTokenWeb(authUrl: string): Promise<WebCaptureResult> {
       return;
     }
     let settled = false;
-    const finish = (r: WebCaptureResult) => {
+    const finish = (r: OAuthReturn | null) => {
       if (settled) return;
       settled = true;
       window.removeEventListener('message', onMessage);
       clearInterval(poll);
       resolve(r);
     };
+    const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
     const onMessage = (e: MessageEvent) => {
-      const data = e.data as { source?: string; access_token?: string | null; error?: string | null } | null;
+      const data = e.data as Record<string, unknown> | null;
       if (!data || data.source !== 'comical-oauth') return;
-      finish(data.error ? { error: data.error } : { token: data.access_token ?? undefined });
+      finish({ code: str(data.code), state: str(data.state), token: str(data.access_token), error: str(data.error) });
     };
     window.addEventListener('message', onMessage);
     const poll = setInterval(() => {
-      if (popup.closed) finish({ dismissed: true });
+      if (popup.closed) finish(null);
     }, 700);
   });
 }
@@ -307,23 +299,10 @@ function OAuthPinRow({
       setError(null);
       setConnecting(true);
       try {
-        let token: string | undefined;
-        if (Platform.OS === 'web') {
-          // The relay is served same-origin with the web client, so a popup can hand the token back.
-          const r = await captureImplicitTokenWeb(withParam(descriptor.authUrl, 'state', 'web'));
-          if (r.dismissed) return; // user closed the popup — leave state as-is
-          if (r.error) throw new Error(r.error);
-          token = r.token;
-        } else {
-          // Native: the relay bounces the token to `comical://oauth-token`, which the auth session
-          // intercepts. `state=native` tells the relay to redirect rather than postMessage.
-          const result = await openAuthSessionAsync(
-            withParam(descriptor.authUrl, 'state', 'native'),
-            NATIVE_OAUTH_CALLBACK,
-          );
-          if (result.type !== 'success') return; // user dismissed — leave state as-is
-          token = tokenFromRedirect(result.url);
-        }
+        const r = await runOAuthRound(withParam(descriptor.authUrl, 'state', oauthReturnTo()), 'oauth-token');
+        if (!r) return; // user gave up — leave state as-is
+        if (r.error) throw new Error(r.error);
+        const token = r.token;
         if (!token) throw new Error('Sign-in did not return an access token.');
         onChange(token);
         // In tracker settings `onCommit` persists the token immediately — signing in IS the save,

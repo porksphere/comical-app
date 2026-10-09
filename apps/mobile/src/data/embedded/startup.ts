@@ -56,7 +56,6 @@ import { applyImageCacheConfig } from '../image-cache';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { installedStore, installedTrackerStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings, asyncStorageTrackerSettings } from './settings-store';
-import { embeddedOAuthCallbackUrl } from './oauth-callback';
 
 // ONE store instance for the process: the router writes through it, and the legacy-entries
 // migration below reads and rebuilds through it. Two instances would each hold their own
@@ -105,10 +104,6 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     // real device build.
     installedTrackers: installedTrackerStore,
     trackerSettings: asyncStorageTrackerSettings,
-    // There's no real HTTP server on-device to redirect an OAuth provider back to — see
-    // `EmbeddedBootstrapConfig.oauthCallbackUrl`'s doc comment in host-rn for how the reused router
-    // completes the round trip against this custom-scheme URL instead.
-    oauthCallbackUrl: embeddedOAuthCallbackUrl,
     // Persist verified bundles to disk so cold starts don't re-download + re-verify every bridge.
     cache: fileSystemBundleCache,
     // An install/update/uninstall (or add/remove registry) changes what the runtime serves — refetch

@@ -13,7 +13,7 @@ export function registerLinkScheme(): void {
 }
 
 /** The app route a link names, the way expo-router reads its own scheme: `comical://add-registry?url=…`
- *  is `/add-registry?url=…`. */
+ *  is `/add-registry?url=…`. The fragment rides along: an implicit OAuth grant arrives there. */
 export function linkRoute(link: string): string | null {
   let url: URL;
   try {
@@ -22,7 +22,7 @@ export function linkRoute(link: string): string | null {
     return null;
   }
   if (url.protocol !== `${SCHEME}:`) return null;
-  return `/${(url.host + url.pathname).replace(/^\/+/, "")}${url.search}`;
+  return `/${(url.host + url.pathname).replace(/^\/+/, "")}${url.search}${url.hash}`;
 }
 
 /** Windows and Linux hand a link over as a command-line argument — to the first instance when it

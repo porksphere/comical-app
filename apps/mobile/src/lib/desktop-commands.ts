@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 
 import { desktopShell } from '@/lib/desktop-shell';
 import { router } from '@/lib/nav';
+import { deliverOAuthReturn } from '@/lib/oauth-return';
 import { closeSeriesPane, isSeriesPaneOpen } from '@/lib/series-pane';
 
 /**
@@ -32,8 +33,11 @@ export function useDesktopShellCommands(): void {
     const shell = desktopShell();
     if (!ready || !shell?.onShellCommand) return;
     const unsubscribe = shell.onShellCommand((command) => {
-      if (command.type === 'open') router.navigate(command.route as Parameters<typeof router.navigate>[0]);
-      else if (command.dir === 'back') goBack();
+      if (command.type === 'open') {
+        // A tracker sign-in bouncing back from the browser is an answer for the row that started
+        // it, not a page.
+        if (!deliverOAuthReturn(command.route)) router.navigate(command.route as Parameters<typeof router.navigate>[0]);
+      } else if (command.dir === 'back') goBack();
       else goForward();
     });
     // Windows and Linux route the mouse's side buttons to the shell; macOS hands them to the page.

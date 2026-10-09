@@ -50,29 +50,38 @@
       <p id="msg">One moment.</p>
     </div>
     <!--
-      OAuth relay for Comical's trackers (e.g. AniList).
+      OAuth relay for Comical's trackers — the ONE redirect URL every tracker registers with its
+      provider, because a provider accepts only https redirects (AniList) or only one redirect per
+      client (MyAnimeList), and a phone, the desktop app and a browser tab can't all be it.
 
-      AniList's implicit grant only redirects a token to a registered https URL — not a custom
-      app scheme — so the app registers THIS page as the tracker's OAuth "Redirect URL". AniList
-      lands here with the token in the URL fragment (#access_token=…); this page hands it back to
-      the app two ways, chosen by the `state` the app set on the authorize request:
+      The provider lands here with its result and this page hands it back to whichever Comical
+      client started the sign-in, chosen by the `state` the client put on the authorize request:
 
-        • state=native — an in-app auth session (iOS ASWebAuthenticationSession / Android Custom
-          Tab) is waiting for the app's own `comical://` scheme, so we bounce the whole fragment to
-          `comical://oauth-token#…`; the session intercepts it and the app reads the token.
-          (The scheme MUST match app.json `expo.scheme` — "comical".)
-        • state=web (or anything else) — we were opened as a popup by the web client, so we
-          postMessage the token back to the opener and close.
+        • state starting with "native" — an app is waiting on its own `comical://` scheme: a phone's
+          in-app auth session (iOS ASWebAuthenticationSession / Android Custom Tab) or the desktop
+          shell's protocol handler. We bounce the result into that scheme. (The scheme MUST match
+          app.json `expo.scheme` — "comical".)
+        • anything else ("web") — we were opened as a popup by the browser client, so we postMessage
+          the result back to the opener and close.
 
-      No client secret, no code exchange, no copy-paste. Static on purpose: it must load instantly
-      inside the auth session without pulling the app's JS bundle.
+      Two provider shapes arrive:
+
+        • implicit grant (AniList): the token is in the URL fragment (#access_token=…). It goes to
+          `comical://oauth-token#…` or is posted as `access_token`.
+        • authorization code (MyAnimeList): `?code=…&state=…` in the query. The code is worthless
+          on its own — the app's own server-side router exchanges it (PKCE) — so it goes to
+          `comical://oauth-callback?code=…&state=…` or is posted as `code` + `state`, and the app
+          calls its router's `/oauth/callback` with both.
+
+      No client secret, no copy-paste. Static on purpose: it must load instantly inside the auth
+      session without pulling the app's JS bundle.
     -->
     <script>
       (function () {
-        function parseFragment(h) {
+        function parsePairs(str) {
           var out = {};
-          (h || '')
-            .replace(/^#/, '')
+          (str || '')
+            .replace(/^[#?]/, '')
             .split('&')
             .forEach(function (kv) {
               if (!kv) return;
@@ -80,7 +89,7 @@
               var k = i < 0 ? kv : kv.slice(0, i);
               var v = i < 0 ? '' : kv.slice(i + 1);
               try {
-                out[decodeURIComponent(k)] = decodeURIComponent(v);
+                out[decodeURIComponent(k.replace(/\+/g, ' '))] = decodeURIComponent(v.replace(/\+/g, ' '));
               } catch (e) {
                 out[k] = v;
               }
@@ -90,15 +99,40 @@
 
         var title = document.getElementById('title');
         var msg = document.getElementById('msg');
-        var frag = parseFragment(location.hash);
-        var token = frag.access_token || null;
-        var error = frag.error ? frag.error_description || frag.error : null;
+        var frag = parsePairs(location.hash);
+        var query = parsePairs(location.search);
+        // The code flow answers in the query; the implicit flow in the fragment. A provider's error
+        // comes back the same way its success would have.
+        var fromQuery = !!(query.code || query.error);
+        var r = fromQuery ? query : frag;
+        var state = r.state || '';
+        var token = fromQuery ? null : r.access_token || null;
+        var code = fromQuery ? r.code || null : null;
+        // MyAnimeList describes an error in `message`; the OAuth spec says `error_description`.
+        var error = r.error ? r.error_description || r.message || r.error : null;
+        var toNative = state.indexOf('native') === 0;
 
-        // Native: bounce the token into the app's custom scheme; the in-app auth session grabs it.
-        if (frag.state === 'native') {
+        function pairs(obj) {
+          return Object.keys(obj)
+            .filter(function (k) {
+              return obj[k] != null;
+            })
+            .map(function (k) {
+              return encodeURIComponent(k) + '=' + encodeURIComponent(obj[k]);
+            })
+            .join('&');
+        }
+
+        // Native / desktop: bounce the result into the app's custom scheme; the auth session or the
+        // shell's protocol handler grabs it.
+        if (toNative) {
           title.textContent = error ? 'Sign-in failed' : 'Returning to Comical…';
           msg.textContent = error || 'You can close this window if it does not close itself.';
-          location.replace('comical://oauth-token#' + location.hash.replace(/^#/, ''));
+          if (fromQuery) {
+            location.replace('comical://oauth-callback?' + pairs({ code: code, state: state, error: error }));
+          } else {
+            location.replace('comical://oauth-token#' + location.hash.replace(/^#/, ''));
+          }
           return;
         }
 
@@ -106,7 +140,7 @@
         try {
           if (window.opener) {
             window.opener.postMessage(
-              { source: 'comical-oauth', access_token: token, error: error },
+              { source: 'comical-oauth', access_token: token, code: code, state: state, error: error },
               '*',
             );
           }
