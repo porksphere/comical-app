@@ -1,24 +1,32 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { useLocalSearchParams } from '@/lib/nav';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { SettingFieldEditor, isAutoPersistedField } from '@/components/settings/setting-field';
-import { SettingsSection } from '@/components/settings/settings-row';
+import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import type { SettingValue } from '@/data/api';
+import type { SettingValue, TrackerSettingsInfo } from '@/data/api';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
+import { useLocalSearchParams, useRouter } from '@/lib/nav';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
+
+/** The sign-in field(s) still empty, by label — the import needs an account before it can list anything. */
+function signInPending(data: TrackerSettingsInfo): string | null {
+  const secrets = data.settings.filter((d) => (d.type === 'string' && !!d.secret) || d.type === 'oauth-pin' || d.type === 'oauth-callback');
+  if (secrets.length === 0 || secrets.some((d) => data.secretsSet.includes(d.key))) return null;
+  return secrets.map((d) => d.label).join(' or ');
+}
 
 export default function TrackerSettingsScreen() {
   const { trackerId } = useLocalSearchParams<{ trackerId?: string }>();
+  const router = useRouter();
   const ds = useDataSource();
   const theme = useTheme();
   const contentPadding = useSettingsScrollPadding();
@@ -150,6 +158,27 @@ export default function TrackerSettingsScreen() {
                 )}
               </SettingsSection>
             )}
+
+            {data.info.capabilities.includes('library-sync') && (
+              <SettingsSection title="Library">
+                {signInPending(data) && (
+                  <ThemedText type="small" themeColor="textSecondary" style={styles.note}>
+                    Importing needs an account — {signInPending(data)} above.
+                  </ThemedText>
+                )}
+                <SettingsRow
+                  testID="settings.tracker.import"
+                  label="Import list into library"
+                  description="Link what's already here, add the rest"
+                  onPress={() =>
+                    router.push({
+                      pathname: '/tracker-import',
+                      params: { trackerId: trackerId!, trackerName: data.info.name },
+                    })
+                  }
+                />
+              </SettingsSection>
+            )}
           </>
         ) : null}
       </ScrollView>
@@ -167,6 +196,10 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
+  },
+  note: {
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.two,
   },
   center: {
     alignItems: 'center',

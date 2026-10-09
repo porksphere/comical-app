@@ -111,6 +111,23 @@ export interface DataSource {
     signal?: AbortSignal,
   ): Promise<api.FavoritesImportResult>;
 
+  /** A tracker's list classified against the library, for the import screen. Read-only. */
+  getTrackerImportPreview(trackerId: string, signal?: AbortSignal): Promise<api.TrackerImportPreview>;
+  /** Find each entry on one bridge (≤ `TRACKER_IMPORT_BATCH` per call — the screen slices). */
+  resolveTrackerImport(
+    trackerId: string,
+    bridgeId: string,
+    entries: api.TrackerImportResolveEntry[],
+    signal?: AbortSignal,
+  ): Promise<api.TrackerImportResolveResult[]>;
+  /** Collect + link the confirmed selection (≤ `TRACKER_IMPORT_BATCH` per call). */
+  importTrackerEntries(
+    trackerId: string,
+    items: api.TrackerImportItem[],
+    opts: { collectionIds?: string[]; seedProgress: boolean },
+    signal?: AbortSignal,
+  ): Promise<api.TrackerImportResult>;
+
   // ─── Collections ────────────────────────────────────────────────────────────
   /** The user's collections (ascending order); `[]` when no library store is mounted. */
   getCollections(signal?: AbortSignal): Promise<Collection[]>;
@@ -631,6 +648,10 @@ const realDataSource: DataSource = {
   },
   getFavoritesImportPreview: (bridgeId, signal) => api.getFavoritesImportPreview(bridgeId, signal),
   importBridgeFavorites: (bridgeId, items, signal) => api.importBridgeFavorites(bridgeId, items, signal),
+  getTrackerImportPreview: (trackerId, signal) => api.getTrackerImportPreview(trackerId, signal),
+  resolveTrackerImport: (trackerId, bridgeId, entries, signal) =>
+    api.resolveTrackerImport(trackerId, bridgeId, entries, signal),
+  importTrackerEntries: (trackerId, items, opts, signal) => api.importTrackerEntries(trackerId, items, opts, signal),
   async resetReadProgress(bridgeId, seriesId, signal) {
     await api.resetReadProgress(bridgeId, seriesId, signal);
   },
@@ -1029,6 +1050,9 @@ const mockDataSource: DataSource = {
   getLibrarySeries: (bridgeId, seriesId) => mock.mockGetLibrarySeries(bridgeId, seriesId),
   getFavoritesImportPreview: (bridgeId) => mock.mockGetFavoritesImportPreview(bridgeId),
   importBridgeFavorites: (bridgeId, items) => mock.mockImportBridgeFavorites(bridgeId, items),
+  getTrackerImportPreview: (trackerId) => mock.mockGetTrackerImportPreview(trackerId),
+  resolveTrackerImport: (trackerId, bridgeId, entries) => mock.mockResolveTrackerImport(bridgeId, entries),
+  importTrackerEntries: (trackerId, items, opts) => mock.mockImportTrackerEntries(trackerId, items, opts),
   recordChapterProgress: (bridgeId, seriesId, chapterId, update) =>
     mock.mockRecordChapterProgress(bridgeId, seriesId, chapterId, update),
   getChapterProgress: (bridgeId, seriesId) => mock.mockGetChapterProgress(bridgeId, seriesId),

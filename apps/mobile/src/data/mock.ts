@@ -38,6 +38,13 @@ import type {
   FavoritesImportItem,
   FavoritesImportPreview,
   FavoritesImportResult,
+  TrackerImportCandidate,
+  TrackerImportItem,
+  TrackerImportPreview,
+  TrackerImportResolveEntry,
+  TrackerImportResolveResult,
+  TrackerImportResult,
+  TrackerStatus,
   TrackerSummary,
   TrackerSettingsInfo,
   TrackerLinkSyncResult,
@@ -1152,6 +1159,144 @@ export async function mockImportBridgeFavorites(
   return { imported, skipped, linked };
 }
 
+// ─── Importing a tracker's list into the library ─────────────────────────────
+// The tracker's "list" is the shared title pool, so what it holds overlaps the library the same way
+// a real one would: some titles are already linked, some are held but unlinked, the rest are new.
+
+const TRACKER_IMPORT_STATUSES: TrackerStatus[] = ['reading', 'completed', 'reading', 'on-hold', 'planning', 'reading', 'dropped', 'rereading'];
+const TRACKER_IMPORT_LIST_SIZE = 12;
+
+const trackerExternalId = (trackerId: string, title: string) => String(10000 + (hash(`${trackerId}:${title}`) % 90000));
+
+function trackerImportState(trackerId: string, title: string): Pick<TrackerImportCandidate, 'status' | 'chaptersRead' | 'totalChapters'> {
+  const h = hash(`${trackerId}:${title}`);
+  const status = TRACKER_IMPORT_STATUSES[h % TRACKER_IMPORT_STATUSES.length]!;
+  const total = 40 + (h % 160);
+  if (status === 'planning') return { status };
+  if (status === 'completed') return { status, chaptersRead: total, totalChapters: total };
+  return { status, chaptersRead: 1 + (h % total), ...(h % 2 === 0 && { totalChapters: total }) };
+}
+
+/** Where the demo library stands on a series, in chapters — the real preview reads the progress set. */
+const mockLocalRead = (e: MockLibEntry) => Math.max(0, e.known - e.unread);
+
+export async function mockGetTrackerImportPreview(trackerId: string): Promise<TrackerImportPreview> {
+  await delay(400);
+  const items: TrackerImportCandidate[] = [];
+  const taken = new Set<string>();
+  const byTitle = new Map<string, MockLibEntry[]>();
+  for (const e of mockLibrary.values()) {
+    const k = foldTitle(e.title);
+    if (!k) continue;
+    const bucket = byTitle.get(k);
+    if (bucket) bucket.push(e);
+    else byTitle.set(k, [e]);
+  }
+
+  for (const e of mockLibrary.values()) {
+    const link = seedMockTrackerLinks(e.bridgeId, e.seriesId).find((l) => l.trackerId === trackerId);
+    if (!link || taken.has(foldTitle(e.title))) continue;
+    taken.add(foldTitle(e.title));
+    items.push({
+      externalId: link.externalId,
+      title: e.title,
+      thumbnailUrl: e.thumbnailUrl,
+      ...trackerImportState(trackerId, e.title),
+      match: 'linked',
+    });
+  }
+
+  for (const title of TITLES.slice(0, TRACKER_IMPORT_LIST_SIZE)) {
+    const k = foldTitle(title);
+    if (taken.has(k)) continue;
+    taken.add(k);
+    const held = byTitle.get(k) ?? [];
+    const h = hash(`${trackerId}:${title}`);
+    items.push({
+      externalId: trackerExternalId(trackerId, title),
+      title,
+      thumbnailUrl: cover(`tracker-${h}`),
+      ...trackerImportState(trackerId, title),
+      ...(held.length > 0
+        ? {
+            match: 'in-library' as const,
+            entries: held.map((e) => ({
+              key: libKey(e.bridgeId, e.seriesId),
+              bridgeId: e.bridgeId,
+              seriesId: e.seriesId,
+              title: e.title,
+              localRead: mockLocalRead(e),
+            })),
+          }
+        : { match: 'none' as const }),
+    });
+  }
+  return { items, truncated: false };
+}
+
+/** Stands in for a bridge search per entry: a title from the pool is found outright, every third
+ *  one only as a shortlist (so the picker is reachable in demo mode), anything else is a miss. */
+export async function mockResolveTrackerImport(
+  bridgeId: string,
+  entries: TrackerImportResolveEntry[],
+): Promise<TrackerImportResolveResult[]> {
+  await delay(300 + entries.length * 60);
+  return entries.map((entry) => {
+    const names = [entry.title, ...(entry.altTitles ?? [])].map(foldTitle);
+    const hit = TITLES.find((t) => names.includes(foldTitle(t)));
+    if (!hit) return { externalId: entry.externalId, candidates: [] };
+    const h = hash(`${bridgeId}:${hit}`);
+    const id = `${slugify(hit)}-${h % 1000}`;
+    const found = { id, title: hit, thumbnailUrl: cover(id) };
+    if (h % 3 !== 0) return { externalId: entry.externalId, exact: found, candidates: [] };
+    const others = items(`${bridgeId}-${hit}-alt`, 2, { bridgeId }).map((e) => ({ id: e.id, title: e.title, thumbnailUrl: e.cover }));
+    return { externalId: entry.externalId, candidates: [found, ...others] };
+  });
+}
+
+export async function mockImportTrackerEntries(
+  trackerId: string,
+  itemsToImport: TrackerImportItem[],
+  opts: { collectionIds?: string[]; seedProgress: boolean },
+): Promise<TrackerImportResult> {
+  await delay(200 + itemsToImport.length * 120);
+  const result: TrackerImportResult = { imported: 0, linked: 0, seeded: 0, pushed: 0, failed: [] };
+  const collectionId = opts.collectionIds?.[0] ?? (await mockDefaultCollectionId());
+  for (const item of itemsToImport) {
+    const key = libKey(item.bridgeId, item.seriesId);
+    const held = mockLibrary.get(key);
+    const remote = item.chaptersRead ?? 0;
+    if (!held) {
+      await mockAddToLibrary(
+        item.bridgeId,
+        item.seriesId,
+        { seriesTitle: item.title, ...(item.thumbnailUrl !== undefined && { thumbnailUrl: item.thumbnailUrl }) },
+        collectionId,
+      );
+      result.imported++;
+      if (opts.seedProgress && remote > 0) {
+        const chapters = mockChapters(item.seriesId, 40 + (hash(item.seriesId) % 160));
+        await mockSetChaptersRead(item.bridgeId, item.seriesId, chapters.filter((c) => c.number !== undefined && c.number <= remote), true);
+        result.seeded++;
+      }
+    }
+    const links = seedMockTrackerLinks(item.bridgeId, item.seriesId).filter((l) => l.trackerId !== trackerId);
+    const local = held ? mockLocalRead(held) : 0;
+    const pushed = held !== undefined && local > remote;
+    if (pushed) result.pushed++;
+    links.push({
+      trackerId,
+      externalId: String(item.externalId),
+      externalTitle: item.title,
+      chaptersRead: pushed ? local : remote,
+      lastSyncAt: Date.now(),
+    });
+    mockTrackerLinksByEntry.set(key, links);
+    result.linked++;
+  }
+  return result;
+}
+
 // ─── Collections (in-memory, dev/demo only) ──────────────────────────────────
 
 /** Somewhere for a BULK collect to land — the mock's favorites import, which has no user to ask.
@@ -1746,7 +1891,13 @@ export async function mockGetTrackers(): Promise<TrackerSummary[]> {
 }
 
 export async function mockGetTrackerSettings(trackerId: string): Promise<TrackerSettingsInfo> {
-  return { info: { id: trackerId, name: trackerId, capabilities: [] }, settings: [], values: {}, secretsSet: [] };
+  const service = TRACKER_SERVICES.find((s) => s.id === trackerId);
+  return {
+    info: { id: trackerId, name: service?.name ?? trackerId, capabilities: ['library-sync', 'search'] },
+    settings: [],
+    values: {},
+    secretsSet: [],
+  };
 }
 
 export async function mockPutTrackerSettings(_trackerId: string, _values: Record<string, SettingValue>): Promise<void> {}

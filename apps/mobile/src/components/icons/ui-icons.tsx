@@ -5,6 +5,7 @@ import {
   Asterisk,
   Bell,
   Blocks,
+  BookOpen,
   Bug,
   Check,
   CheckCheck,
@@ -85,6 +86,8 @@ export const CheckIcon = ({ color, size = 16 }: IconProps) => <Check color={colo
 /** A double check — "everything up to here", as distinct from `CheckIcon`'s single item. */
 export const CheckAllIcon = ({ color, size = 16 }: IconProps) => <CheckCheck color={color} size={size} />;
 export const ListPlusIcon = ({ color, size = 16 }: IconProps) => <ListPlus color={color} size={size} />;
+/** "Currently reading" — the tracker import's reading-only filter. */
+export const ReadingIcon = ({ color, size = 16 }: IconProps) => <BookOpen color={color} size={size} />;
 // Vertical 3-dot "more actions" trigger — the web series-card context-menu affordance.
 export const MoreVerticalIcon = ({ color, size = 16 }: IconProps) => <MoreVertical color={color} size={size} />;
 export const ChevronDownIcon = ({ color, size = 16 }: IconProps) => <ChevronDown color={color} size={size} />;

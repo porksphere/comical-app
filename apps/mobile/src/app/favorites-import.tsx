@@ -27,13 +27,13 @@
  */
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Holdable } from '@/components/context-menu';
+import { ImportCover, importStyles as styles } from '@/components/import/import-list';
 import { CheckIcon, ClearIcon, ListPlusIcon, StarIcon } from '@/components/icons/ui-icons';
 import { PILL_HEIGHT, SelectLead, SelectPillBar, useDragSelect, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
@@ -42,12 +42,11 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
-import { SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
+import { SettingsRowHeight, Spacing } from '@/constants/theme';
 import type { FavoritesImportCandidate, FavoritesImportItem } from '@/data/api';
 import { favoritesImportPreviewQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
@@ -55,9 +54,6 @@ import { hapticSelection } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
-
-/** Cover width in a row. Its 2:3 crop is 45px tall, which clears a 64px settings row's padding. */
-const THUMB_W = 30;
 
 export default function FavoritesImportScreen() {
   const params = useLocalSearchParams<{ bridgeId?: string; bridgeName?: string }>();
@@ -208,7 +204,7 @@ export default function FavoritesImportScreen() {
                     edgeOffset={sidePad}
                     {...(inLibrary ? {} : { gesture: dragSelect.gestureFor(index) })}
                   />
-                  <Cover url={item.thumbnailUrl} />
+                  <ImportCover url={item.thumbnailUrl} />
                 </>
               }
               // Suppress the chevron a pressable row would otherwise grow — nothing opens from here.
@@ -332,53 +328,3 @@ export default function FavoritesImportScreen() {
     </ThemedView>
   );
 }
-
-/** The row's cover. Split out so `useResolvedAsset` (a hook) runs per row, not in `renderItem`. */
-function Cover({ url }: { url?: string }) {
-  const theme = useTheme();
-  const thumb = useResolvedAsset(url);
-  if (!thumb) return <View style={[styles.thumb, { backgroundColor: theme.backgroundElement }]} />;
-  return <Image source={{ uri: thumb }} style={styles.thumb} contentFit="cover" cachePolicy="memory-disk" transition={150} />;
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  list: {
-    flex: 1,
-  },
-  banner: {
-    paddingTop: Spacing.two,
-  },
-  intro: {
-    paddingBottom: Spacing.four,
-  },
-  thumb: {
-    width: THUMB_W,
-    aspectRatio: 2 / 3,
-    borderRadius: 4,
-    backgroundColor: 'rgba(128,128,128,0.15)',
-  },
-  // The settings-standard inset divider (see the Downloads page): absolute so rows stay exactly one
-  // settings-row tall for the fixed-size list.
-  divider: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: -SettingsGutter,
-    height: StyleSheet.hairlineWidth,
-  },
-  state: {
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingTop: Spacing.five,
-  },
-  stateText: {
-    textAlign: 'center',
-  },
-  footerNote: {
-    paddingTop: Spacing.four,
-    textAlign: 'center',
-  },
-});

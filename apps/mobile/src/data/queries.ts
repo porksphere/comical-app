@@ -114,6 +114,10 @@ export const queryKeys = {
    *  an import so re-opening the dialog shows what just landed as "already in library". */
   favoritesImportPreview: (mock: boolean, bridgeId: string) =>
     ['favoritesImportPreview', mock, bridgeId] as const,
+  /** A tracker's list classified against the library, for the import screen. Same lifecycle as the
+   *  favorites preview. */
+  trackerImportPreview: (mock: boolean, trackerId: string) =>
+    ['trackerImportPreview', mock, trackerId] as const,
   history: (mock: boolean) => ['history', mock] as const,
   activity: (mock: boolean) => ['activity', mock] as const,
   /** The tab/app badge count — unread items across the whole feed. It only drops when a chapter
@@ -434,6 +438,23 @@ export function favoritesImportPreviewQuery(
     queryKey: queryKeys.favoritesImportPreview(mock, bridgeId),
     queryFn: ({ signal }) => ds.getFavoritesImportPreview(bridgeId, signal),
     enabled: !!bridgeId,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  };
+}
+
+/** `useQuery` options for a tracker's list-import preview — a per-open user action, like the
+ *  favorites preview above, so it's never served stale. */
+export function trackerImportPreviewQuery(
+  ds: DataSource,
+  mock: boolean,
+  trackerId: string,
+): UseQueryOptions<api.TrackerImportPreview, Error> {
+  return {
+    queryKey: queryKeys.trackerImportPreview(mock, trackerId),
+    queryFn: ({ signal }) => ds.getTrackerImportPreview(trackerId, signal),
+    enabled: !!trackerId,
     staleTime: 0,
     gcTime: 0,
     retry: false,

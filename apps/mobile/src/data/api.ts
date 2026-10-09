@@ -1692,6 +1692,110 @@ export function importBridgeFavorites(
   );
 }
 
+// ─── Importing a tracker's list into the library ─────────────────────────────
+
+/** A tracker's own reading status, as the contract names them. */
+export type TrackerStatus = 'reading' | 'completed' | 'on-hold' | 'dropped' | 'planning' | 'rereading';
+
+/** One entry of a tracker's list, classified against the library by the host. */
+export interface TrackerImportCandidate {
+  externalId: string | number;
+  title: string;
+  /** Other names the tracker lists the entry under, used when finding it on a bridge. */
+  altTitles?: string[];
+  thumbnailUrl?: string;
+  status: TrackerStatus;
+  chaptersRead?: number;
+  totalChapters?: number;
+  /** `linked`: a library series is already linked to this entry, nothing to do. `in-library`: the
+   *  library holds the series (by the tracker's id or by title) but it isn't linked to this tracker
+   *  yet. `none`: the library doesn't have it — a source has to be found first. */
+  match: 'linked' | 'in-library' | 'none';
+  /** Present for `in-library` — every library series the entry matched (cross-bridge copies make
+   *  more than one), with how far each has been read locally. */
+  entries?: { key: string; bridgeId: string; seriesId: string; title: string; localRead: number }[];
+}
+
+export interface TrackerImportPreview {
+  items: TrackerImportCandidate[];
+  /** True when the host's page cap stopped the walk, so this isn't the whole list. */
+  truncated: boolean;
+}
+
+/** A tracker entry to find on a bridge. */
+export interface TrackerImportResolveEntry {
+  externalId: string | number;
+  title: string;
+  altTitles?: string[];
+}
+
+/** What a bridge search turned up for one entry: the hit the host accepted on the user's behalf
+ *  (`exact`), or the ones they have to choose between (`candidates`). Neither for a miss. */
+export interface TrackerImportResolveResult {
+  externalId: string | number;
+  exact?: ApiSeriesEntry;
+  candidates: ApiSeriesEntry[];
+  /** Set when the bridge search itself failed for this entry. */
+  error?: string;
+}
+
+/** One entry to import: the tracker's state plus the bridge series it resolved to. */
+export interface TrackerImportItem {
+  externalId: string | number;
+  title: string;
+  thumbnailUrl?: string;
+  status: TrackerStatus;
+  chaptersRead?: number;
+  totalChapters?: number;
+  bridgeId: string;
+  seriesId: string;
+}
+
+export interface TrackerImportResult {
+  /** Series newly collected. */
+  imported: number;
+  /** Series newly linked to the tracker (new and already-held alike). */
+  linked: number;
+  /** Newly collected series whose chapters were marked read up to the tracker's progress. */
+  seeded: number;
+  /** Already-held series whose local progress was ahead and was sent to the tracker. */
+  pushed: number;
+  failed: { externalId: string | number; bridgeId: string; seriesId: string; error: string }[];
+}
+
+/** Most entries one resolve or import call takes — the host slices a longer list itself. */
+export const TRACKER_IMPORT_BATCH = 20;
+
+/** GET /library/import/trackers/{id}/preview → the tracker's whole list classified against the
+ *  library, for the import screen. Read-only: nothing is written until the POST below. */
+export function getTrackerImportPreview(trackerId: string, signal?: AbortSignal): Promise<TrackerImportPreview> {
+  return fetchJson(`/library/import/trackers/${encodeURIComponent(trackerId)}/preview`, signal);
+}
+
+/** POST /library/import/trackers/{id}/resolve → find each entry on one bridge. At most
+ *  `TRACKER_IMPORT_BATCH` entries per call. */
+export function resolveTrackerImport(
+  trackerId: string,
+  bridgeId: string,
+  entries: TrackerImportResolveEntry[],
+  signal?: AbortSignal,
+): Promise<TrackerImportResolveResult[]> {
+  return fetchPost(`/library/import/trackers/${encodeURIComponent(trackerId)}/resolve`, { bridgeId, entries }, signal);
+}
+
+/** POST /library/import/trackers/{id} → collect + link the confirmed selection. A series the
+ *  library already holds keeps its progress (and is pushed to the tracker when ahead); a new one
+ *  is marked read up to the tracker's progress only when `seedProgress` is set. At most
+ *  `TRACKER_IMPORT_BATCH` items per call. */
+export function importTrackerEntries(
+  trackerId: string,
+  items: TrackerImportItem[],
+  opts: { collectionIds?: string[]; seedProgress: boolean },
+  signal?: AbortSignal,
+): Promise<TrackerImportResult> {
+  return fetchPost(`/library/import/trackers/${encodeURIComponent(trackerId)}`, { items, ...opts }, signal);
+}
+
 /** Result of a library scan — the counters the UI/notifications care about. */
 export interface ApiSyncResult {
   updated: number;

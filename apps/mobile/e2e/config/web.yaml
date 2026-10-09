@@ -22,3 +22,4 @@ executionOrder:
     - downloads
     - registries-collections
     - favorites-import
+    - tracker-import

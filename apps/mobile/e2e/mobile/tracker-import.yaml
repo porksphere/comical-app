@@ -1,0 +1,81 @@
+# Import a tracker's list into the library: Settings -> Trackers -> AniList -> "Import list into
+# library" -> the pushed multi-select screen (app/tracker-import.tsx) -> "Find on…" a bridge for the
+# entries not in the library -> "Select all" -> the Import verb pill -> the result toast.
+#
+# The mock preview (mockGetTrackerImportPreview) is a deterministic cut of the shared TITLES pool
+# classified against the seeded mock library, so all four row kinds show up:
+#   - `linked`      — library entries whose seeded tracker links already name anilist; inert, bottom.
+#   - `in-library`  — a title held here but not linked to anilist; checked by default. Importing LINKS
+#                     it and never touches its local progress.
+#   - `none`        — titles the library doesn't hold. Not selectable until a bridge search finds
+#                     them (mockResolveTrackerImport: an exact hit for some, a 3-candidate pick for
+#                     others — the pick rows stay unresolved in this flow, which is fine: the
+#                     selection is still deterministic in SHAPE, and the toast asserts a pattern).
+# Which externalIds land in which kind is a hash of the title, so this flow anchors on the screen's
+# static chrome rather than on row ids.
+#
+# Selectors (confirmed against source):
+#   - trackers.row.anilist — the Trackers list row (same as trackers-uninstall.yaml).
+#   - settings.tracker.import — the "Library" section's row on the tracker's settings screen, gated on
+#     the `library-sync` capability (mockGetTrackerSettings advertises it).
+#   - tracker-import.find / tracker-import.find.<bridgeId> — the "Find on…" SettingsRow and the
+#     bridge rows in the context menu it opens. Panelfox: a mock bridge with `search`.
+#   - tracker-import.select-options / .menu.all — SelectPillBar's "…" staging trigger and the "Select
+#     all" row inside its menu (same shape as favorites-import.yaml).
+#   - tracker-import.confirm — the single "Import N series" verb pill; renders while the selection is
+#     non-empty, which it is by default (every actionable row seeds it).
+#   - The toast is importSummary(): "N added · M linked" after a run with finds; matched by pattern
+#     since the counts depend on the hashed pool.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.trackers"
+- tapOn:
+    id: "trackers.row.anilist"
+
+- assertVisible:
+    id: "settings.tracker.import"
+- tapOn:
+    id: "settings.tracker.import"
+
+# The mock preview resolves after a deliberate 400ms delay (mock.ts), so wait rather than assert.
+- extendedWaitUntil:
+    visible:
+      id: "tracker-import.find"
+    timeout: 10000
+- assertVisible:
+    id: "tracker-import.select-options"
+- takeScreenshot: tracker-import
+
+# Search one bridge for the entries the library doesn't hold. The resolve is batched with its own
+# mock delay; the row's description flips from "N not in your library yet…" to "Everything is
+# matched" or stays on a count once the search lands, so wait on the "Searching…" label clearing.
+- tapOn:
+    id: "tracker-import.find"
+- tapOn:
+    id: "tracker-import.find.panelfox"
+- extendedWaitUntil:
+    notVisible:
+      text: "Searching…"
+    timeout: 15000
+- takeScreenshot: tracker-import-resolved
+
+- tapOn:
+    id: "tracker-import.select-options"
+- tapOn:
+    id: "tracker-import.menu.all"
+- tapOn:
+    id: "tracker-import.confirm"
+
+# Exact finds are added, the held title is linked; the candidate-pick rows never entered the
+# selection. A successful import pops the screen, landing back on the tracker's settings.
+- extendedWaitUntil:
+    visible:
+      text: "\\d+ added · \\d+ linked.*"
+    timeout: 15000
+- assertVisible:
+    id: "settings.tracker.import"

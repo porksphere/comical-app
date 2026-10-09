@@ -1,0 +1,67 @@
+# Web copy of ../mobile/tracker-import.yaml, kept in sync by hand. Same journey and the same reasoning
+# for every step — see that file's header for the four row kinds, why AniList, and why the flow
+# anchors on the screen's chrome rather than on hashed row ids.
+#
+# It's a plain pushed screen (app/tracker-import.tsx), not an overlay, so the sheet-gesture caveat
+# that keeps series-trackers mobile-only does not apply here.
+#
+# Selectors hitting the web-only aria-label quirk (see ../README.md — an accessibilityLabel wins over
+# data-testid for Maestro's `id:` matcher on web):
+#   - tab bar: "Settings", not tab.settings (same as smoke.yaml / settings-walkthrough.yaml).
+#   - settings.category.trackers sets accessibilityLabel={title} — select by "Trackers".
+#   - the tracker row, the import row and the "Find on…" row are all SettingsRows, which set
+#     accessibilityLabel={label} — select by "AniList", "Import list into library" and "Find on…".
+#   - tracker-import.find.<bridgeId> / tracker-import.menu.all — context-menu rows carry a testID and
+#     NO accessibilityLabel (context-menu-material.tsx), so these ids resolve unchanged here.
+#   - "Selection options" — SelectOptionsButton's static aria-label (see ../web/downloads.yaml).
+#   - tracker-import.confirm — SelectPillBar's verb Pressable sets accessibilityLabel to the verb's
+#     DYNAMIC label ("Import N series"); match the label by regex.
+#   - the toast is matched by `text:` in both copies.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Settings"
+- tapOn:
+    id: "Trackers"
+- tapOn:
+    id: "AniList"
+
+- assertVisible:
+    id: "Import list into library"
+- tapOn:
+    id: "Import list into library"
+
+# The mock preview resolves after a deliberate 400ms delay (mock.ts), so wait rather than assert.
+- extendedWaitUntil:
+    visible:
+      id: "Find on…"
+    timeout: 10000
+- assertVisible:
+    id: "Selection options"
+- takeScreenshot: tracker-import
+
+- tapOn:
+    id: "Find on…"
+- tapOn:
+    id: "tracker-import.find.panelfox"
+- extendedWaitUntil:
+    notVisible:
+      text: "Searching…"
+    timeout: 15000
+- takeScreenshot: tracker-import-resolved
+
+- tapOn:
+    id: "Selection options"
+- tapOn:
+    id: "tracker-import.menu.all"
+- tapOn:
+    id: "^Import \\d+ series$"
+
+- extendedWaitUntil:
+    visible:
+      text: "\\d+ added · \\d+ linked.*"
+    timeout: 15000
+- assertVisible:
+    id: "Import list into library"
