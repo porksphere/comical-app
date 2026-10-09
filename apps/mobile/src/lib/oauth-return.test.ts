@@ -45,6 +45,14 @@ describe('deliverOAuthReturn', () => {
     expect(isOAuthReturnRoute('/oauth-token')).toBe(true);
   });
 
+  test('accepts the trailing slash Windows adds to a scheme link', async () => {
+    expect(isOAuthReturnRoute('/oauth-callback/?code=c')).toBe(true);
+    expect(isOAuthReturnRoute('/oauth-token/#access_token=t')).toBe(true);
+    const pending = awaitOAuthReturn();
+    deliverOAuthReturn('/oauth-token/#access_token=t&state=native');
+    expect(await pending).toEqual({ token: 't', state: 'native' });
+  });
+
   test('a newer sign-in replaces the older waiter', async () => {
     const first = awaitOAuthReturn();
     const second = awaitOAuthReturn();

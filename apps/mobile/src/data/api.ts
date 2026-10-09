@@ -1913,7 +1913,9 @@ export async function completeOAuthCallback(code: string, state: string, signal?
   const res = await transport(`/oauth/callback?${qs}`, { signal });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(text || `${res.status} ${res.statusText}`);
+    // The page's `<pre>` carries the one line worth showing on a settings row.
+    const reason = /<pre>([^<]*)<\/pre>/.exec(text)?.[1].trim() || text.replace(/<[^>]*>/g, '').trim();
+    throw new Error(reason || `${res.status} ${res.statusText}`);
   }
 }
 

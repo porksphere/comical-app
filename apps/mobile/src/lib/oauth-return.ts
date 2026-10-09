@@ -43,7 +43,8 @@ export function parseOAuthReturn(url: string): OAuthReturn {
   return r;
 }
 
-const RETURN_ROUTE = /^\/oauth-(?:callback|token)(?:[?#]|$)/;
+/** A trailing slash is allowed: Windows adds one to a `comical://` link's path on the way to the shell. */
+const RETURN_ROUTE = /^\/oauth-(?:callback|token)\/?(?:[?#]|$)/;
 
 export function isOAuthReturnRoute(route: string): boolean {
   return RETURN_ROUTE.test(route);

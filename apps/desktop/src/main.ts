@@ -145,6 +145,17 @@ function navigate(win: BrowserWindow, dir: NavDirection): void {
   if (win === mainWindow && commandsReady) win.webContents.send("shell-command", { type: "navigate", dir } satisfies ShellCommand);
 }
 
+/**
+ * The page's document has been swapped for another — a reload, a load — so whatever it had told the
+ * shell no longer holds. That is the navigation COMMITTING, not starting: the page opening an outside
+ * URL (a tracker's sign-in, a bridge's source site) starts a main-frame navigation too, which
+ * `will-navigate` cancels and hands to the browser, and the document the shell is talking to stays.
+ * Forgetting its subscription there parked a sign-in's return until the next reload.
+ */
+function onDocumentReplaced(win: BrowserWindow, fn: () => void): void {
+  win.webContents.on("did-navigate", () => fn());
+}
+
 /** Held until clicked or dismissed: a notice collected by the garbage collector loses its click
  *  handler on Windows while still sitting in the Action Center. */
 const notices = new Set<Notification>();
@@ -322,8 +333,8 @@ async function openWindow(): Promise<void> {
     if (command === "browser-backward") navigate(win, "back");
     else if (command === "browser-forward") navigate(win, "forward");
   });
-  win.webContents.on("did-start-navigation", (details) => {
-    if (details.isMainFrame && !details.isSameDocument) commandsReady = false;
+  onDocumentReplaced(win, () => {
+    commandsReady = false;
   });
   win.on("close", (e) => {
     if (quitting || !shellSettings().runInTray) return;
@@ -362,8 +373,8 @@ async function openWindow(): Promise<void> {
     ipcMain.on("caption-dim", onDim);
     win.on("closed", () => ipcMain.off("caption-dim", onDim));
     // A reload drops whatever screen asked for it without that screen ever saying so.
-    win.webContents.on("did-start-navigation", (details) => {
-      if (!details.isMainFrame || details.isSameDocument || !dimmed) return;
+    onDocumentReplaced(win, () => {
+      if (!dimmed) return;
       dimmed = false;
       paint();
     });
@@ -409,9 +420,7 @@ async function openWindow(): Promise<void> {
     stopEdgeWatch();
     ipcMain.off("top-edge-watch", onEdgeWatch);
   });
-  win.webContents.on("did-start-navigation", (details) => {
-    if (details.isMainFrame && !details.isSameDocument) stopEdgeWatch();
-  });
+  onDocumentReplaced(win, stopEdgeWatch);
 
   // Renderer diagnostics on stdout — the spike's only debugging channel, since there's no devtools
   // in a headless run. Off unless asked for.

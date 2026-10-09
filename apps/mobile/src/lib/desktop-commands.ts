@@ -2,7 +2,6 @@
  * What the desktop shell asks of the page: a route to open (a `comical://` link, a click on a
  * new-chapters notice) and the mouse's back and forward buttons.
  */
-import { useRootNavigationState } from 'expo-router';
 import { useEffect } from 'react';
 
 import { desktopShell } from '@/lib/desktop-shell';
@@ -26,12 +25,14 @@ function goBack(): void {
 const goForward = () => window.history.forward();
 
 export function useDesktopShellCommands(): void {
-  // Routing before the root navigator has mounted throws, and a link that launched the app is
-  // handed over the moment this subscribes.
-  const ready = !!useRootNavigationState()?.key;
+  // A link that launched the app is handed over the moment this subscribes, so it subscribes once
+  // the tree below — the root navigator — has mounted: this effect runs after its children's.
+  // (It used to wait on `useRootNavigationState().key`, but that hook is a plain snapshot now, not a
+  // subscription, so a first render without a key never re-rendered to see one, and nothing ever
+  // subscribed.) The imperative router queues an action dispatched before the container is ready.
   useEffect(() => {
     const shell = desktopShell();
-    if (!ready || !shell?.onShellCommand) return;
+    if (!shell?.onShellCommand) return;
     const unsubscribe = shell.onShellCommand((command) => {
       if (command.type === 'open') {
         // A tracker sign-in bouncing back from the browser is an answer for the row that started
@@ -51,5 +52,5 @@ export function useDesktopShellCommands(): void {
       unsubscribe();
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [ready]);
+  }, []);
 }

@@ -13,7 +13,11 @@ export function registerLinkScheme(): void {
 }
 
 /** The app route a link names, the way expo-router reads its own scheme: `comical://add-registry?url=…`
- *  is `/add-registry?url=…`. The fragment rides along: an implicit OAuth grant arrives there. */
+ *  is `/add-registry?url=…`. The fragment rides along: an implicit OAuth grant arrives there.
+ *
+ *  Windows canonicalizes a link on its way to the handler — `comical://oauth-callback?code=…` is
+ *  handed over as `comical://oauth-callback/?code=…` — so the path's trailing slash is dropped:
+ *  no route of ours ends in one, and the sign-in rows match their return on the exact route. */
 export function linkRoute(link: string): string | null {
   let url: URL;
   try {
@@ -22,7 +26,8 @@ export function linkRoute(link: string): string | null {
     return null;
   }
   if (url.protocol !== `${SCHEME}:`) return null;
-  return `/${(url.host + url.pathname).replace(/^\/+/, "")}${url.search}${url.hash}`;
+  const path = (url.host + url.pathname).replace(/^\/+/, "").replace(/\/+$/, "");
+  return `/${path}${url.search}${url.hash}`;
 }
 
 /** Windows and Linux hand a link over as a command-line argument — to the first instance when it
