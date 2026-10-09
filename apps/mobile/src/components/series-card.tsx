@@ -910,6 +910,11 @@ const styles = StyleSheet.create({
   card: {
     // A touch more breathing room between the thumbnail and its title.
     gap: Spacing.two,
+    // Web: the card is an <a>, and a mouse press leaves it focused. The next keypress — arrows or
+    // space to scroll, Ctrl+K — then flips the browser's focus-visible heuristic and rings the whole
+    // card (cover AND title) in a thin rectangle that stays until something else takes focus. The
+    // hover ring is the card's only highlight; this one just looked like a stuck selection.
+    ...(Platform.select({ web: { outlineStyle: 'none' } }) as ViewStyle | undefined),
   },
   cardActive: {
     zIndex: 10,

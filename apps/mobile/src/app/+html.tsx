@@ -54,4 +54,8 @@ body { background-color: #ffffff; }
      bounce and before the app has painted, so a mismatch reads as a flash. */
   body { background-color: #000000; }
 }
+/* Covers and pages render as <img>, and every card/row that navigates is a real <a> — both of
+   which the browser lets you pick up and drag as a ghost image. Nothing here is meant to be
+   dragged out of the app; a pointer drag means scroll, swipe or select. */
+img, a { -webkit-user-drag: none; }
 `;
