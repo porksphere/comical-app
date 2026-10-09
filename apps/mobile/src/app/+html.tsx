@@ -40,6 +40,7 @@ export default function Root({ children }: PropsWithChildren) {
         {/* Page background before hydration — light by default, dark when the OS
             prefers dark. Matches Colors.light/​dark.background. */}
         <style dangerouslySetInnerHTML={{ __html: rootStyle }} />
+        <script dangerouslySetInnerHTML={{ __html: inputModeScript }} />
       </head>
       <body>{children}</body>
     </html>
@@ -58,4 +59,19 @@ body { background-color: #ffffff; }
    which the browser lets you pick up and drag as a ghost image. Nothing here is meant to be
    dragged out of the app; a pointer drag means scroll, swipe or select. */
 img, a { -webkit-user-drag: none; }
+/* A mouse press leaves whatever it hit focused (a card's <a>, a toolbar button), and the next
+   keypress — arrows or space to scroll, Ctrl+K — flips the browser's focus-visible heuristic and
+   rings it until something else takes focus: a thin rectangle that reads as a stuck selection.
+   The latch below says which input is driving; only keyboard navigation gets the ring. */
+html[data-input="pointer"] :focus-visible { outline: none; }
+`;
+
+/* Inline so it is in place before hydration. Any pointer press means "pointer"; Tab is the one key
+   that moves focus, so it is the one that hands the ring back. */
+const inputModeScript = `
+(function () {
+  var root = document.documentElement;
+  addEventListener('pointerdown', function () { root.setAttribute('data-input', 'pointer'); }, true);
+  addEventListener('keydown', function (e) { if (e.key === 'Tab') root.removeAttribute('data-input'); }, true);
+})();
 `;
