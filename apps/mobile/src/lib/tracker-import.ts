@@ -144,6 +144,8 @@ export const localReadOf = (item: TrackerImportCandidate) => Math.max(0, ...(ite
  * The one-line outcome under the title: what importing this row will DO, not just what it is, so
  * the user can read the plan off the list before confirming it.
  */
+/** One line under the row's title saying what importing it DOES — outcome first, since a settings
+ *  row shows a single line and a phone fits about forty characters of it after the cover. */
 export function rowDescription(row: ImportRow, opts: { seed: boolean; nameOf: (bridgeId: string) => string }): string {
   const { item } = row;
   switch (row.kind) {
@@ -152,13 +154,16 @@ export function rowDescription(row: ImportRow, opts: { seed: boolean; nameOf: (b
     case 'in-library': {
       const local = localReadOf(item);
       const remote = item.chaptersRead ?? 0;
-      const held = local > 0 ? `In library (read ${local})` : 'In library';
-      return `${progressLabel(item)} · ${held} → ${local > remote ? 'updates tracker' : 'links'}`;
+      if (local > remote) return `Links · pushes ${local} read to tracker`;
+      if (local > 0) return `Links · read ${local} here, ${remote} on tracker`;
+      return remote > 0 ? `Links · ${remote} read on tracker` : 'Links';
     }
     case 'resolved': {
       const target = row.target!;
       const seeds = opts.seed && (item.chaptersRead ?? 0) > 0 ? ` · marks ${item.chaptersRead} read` : '';
-      return `Found on ${opts.nameOf(target.bridgeId)}: ${target.series.title}${seeds}`;
+      // The matched title is only worth the room when it isn't the tracker's own.
+      const as = sameTitle(target.series.title, item.title) ? '' : ` “${target.series.title}”`;
+      return `Adds${as} from ${opts.nameOf(target.bridgeId)}${seeds}`;
     }
     case 'unresolved': {
       const res = row.resolution;
@@ -166,11 +171,16 @@ export function rowDescription(row: ImportRow, opts: { seed: boolean; nameOf: (b
       const bridge = opts.nameOf(res.bridgeId);
       if (res.error) return `Couldn't search ${bridge}`;
       if (res.candidates.length > 0) {
-        return `${res.candidates.length} possible ${res.candidates.length === 1 ? 'match' : 'matches'} on ${bridge} — tap to choose`;
+        return `Tap to pick from ${res.candidates.length} on ${bridge}`;
       }
       return `Not found on ${bridge}`;
     }
   }
+}
+
+function sameTitle(a: string, b: string): boolean {
+  const fold = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  return fold(a) === fold(b);
 }
 
 /** The host's items for the checked rows: one per library copy for a held series, the chosen bridge
@@ -234,7 +244,10 @@ export function sumImportResults(results: readonly TrackerImportResult[]): Track
 export function importSummary(result: TrackerImportResult): string {
   const parts: string[] = [];
   if (result.imported > 0) parts.push(`${result.imported} added`);
-  if (result.linked > 0) parts.push(`${result.linked} linked`);
+  // `linked` counts every link made, the ones on freshly added series included; only the links on
+  // series the library already held are news here.
+  const held = Math.max(0, result.linked - result.imported);
+  if (held > 0) parts.push(`${held} linked`);
   if (result.pushed > 0) parts.push(`${result.pushed} updated on tracker`);
   if (result.failed.length > 0) parts.push(`${result.failed.length} failed`);
   return parts.length > 0 ? parts.join(' · ') : 'Nothing to import';

@@ -53,6 +53,12 @@ export function friendlyError(err: unknown, fallback = "This couldn't load right
   if (msg.includes('refusing to move')) {
     return "The new address doesn't list the bridges installed from this registry, so the move wasn't followed.";
   }
+  // A bridge or tracker refused to run without a setting it needs (the SDK's `requireString`) —
+  // for a tracker that is the sign-in. Nothing transient about it: the fix is on its settings
+  // screen, so don't send the user back to a retry that will fail the same way.
+  if (/setting "[^"]*" is required/.test(msg)) {
+    return 'A required setting is missing — sign in or fill it in on the settings screen first.';
+  }
   // Any other error thrown from inside a bridge (the core wraps these as "<method> threw: …"), or a
   // generic bridge failure — keep it vague rather than leaking a scrape assertion / stack noise.
   if (msg.includes('threw:') || msg.includes('bridge')) {

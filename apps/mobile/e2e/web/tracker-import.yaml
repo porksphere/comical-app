@@ -11,8 +11,8 @@
 #   - settings.category.trackers sets accessibilityLabel={title} — select by "Trackers".
 #   - the tracker row, the import row and the "Find on…" row are all SettingsRows, which set
 #     accessibilityLabel={label} — select by "AniList", "Import list into library" and "Find on…".
-#   - tracker-import.find.<bridgeId> / tracker-import.menu.all — context-menu rows carry a testID and
-#     NO accessibilityLabel (context-menu-material.tsx), so these ids resolve unchanged here.
+#   - tracker-import.find.<bridgeId> — context-menu rows carry a testID and NO accessibilityLabel
+#     (context-menu-material.tsx), so the id resolves unchanged here.
 #   - "Selection options" — SelectOptionsButton's static aria-label (see ../web/downloads.yaml).
 #   - tracker-import.confirm — SelectPillBar's verb Pressable sets accessibilityLabel to the verb's
 #     DYNAMIC label ("Import N series"); match the label by regex.
@@ -52,10 +52,7 @@ url: http://localhost:4000/comical-app
     timeout: 15000
 - takeScreenshot: tracker-import-resolved
 
-- tapOn:
-    id: "Selection options"
-- tapOn:
-    id: "tracker-import.menu.all"
+# Every actionable row is already checked by now (see the mobile copy), so skip the staging menu.
 - tapOn:
     id: "^Import \\d+ series$"
 

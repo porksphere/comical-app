@@ -1,6 +1,6 @@
 # Import a tracker's list into the library: Settings -> Trackers -> AniList -> "Import list into
 # library" -> the pushed multi-select screen (app/tracker-import.tsx) -> "Find on…" a bridge for the
-# entries not in the library -> "Select all" -> the Import verb pill -> the result toast.
+# entries not in the library -> the Import verb pill -> the result toast.
 #
 # The mock preview (mockGetTrackerImportPreview) is a deterministic cut of the shared TITLES pool
 # classified against the seeded mock library, so all four row kinds show up:
@@ -20,8 +20,8 @@
 #     the `library-sync` capability (mockGetTrackerSettings advertises it).
 #   - tracker-import.find / tracker-import.find.<bridgeId> — the "Find on…" SettingsRow and the
 #     bridge rows in the context menu it opens. Panelfox: a mock bridge with `search`.
-#   - tracker-import.select-options / .menu.all — SelectPillBar's "…" staging trigger and the "Select
-#     all" row inside its menu (same shape as favorites-import.yaml).
+#   - tracker-import.select-options — SelectPillBar's "…" staging trigger (same shape as
+#     favorites-import.yaml); only asserted, since every actionable row is checked without it.
 #   - tracker-import.confirm — the single "Import N series" verb pill; renders while the selection is
 #     non-empty, which it is by default (every actionable row seeds it).
 #   - The toast is importSummary(): "N added · M linked" after a run with finds; matched by pattern
@@ -52,7 +52,7 @@ appId: com.porksphere.comical
 - takeScreenshot: tracker-import
 
 # Search one bridge for the entries the library doesn't hold. The resolve is batched with its own
-# mock delay; the row's description flips from "N not in your library yet…" to "Everything is
+# mock delay; the row's description flips from "N not in library…" to "Everything is
 # matched" or stays on a count once the search lands, so wait on the "Searching…" label clearing.
 - tapOn:
     id: "tracker-import.find"
@@ -64,10 +64,8 @@ appId: com.porksphere.comical
     timeout: 15000
 - takeScreenshot: tracker-import-resolved
 
-- tapOn:
-    id: "tracker-import.select-options"
-- tapOn:
-    id: "tracker-import.menu.all"
+# Every actionable row is already checked by now — the held title by default, the exact finds as
+# they landed — so the staging menu's "all" row would read "Deselect all" here. Import straight away.
 - tapOn:
     id: "tracker-import.confirm"
 

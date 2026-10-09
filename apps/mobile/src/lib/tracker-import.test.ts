@@ -89,15 +89,21 @@ describe('mergeResolutions', () => {
 describe('rowDescription', () => {
   test('held: links when the library is behind, updates the tracker when ahead (furthest copy)', () => {
     const [row] = planRows([held], new Map());
-    expect(rowDescription(row!, { seed: true, nameOf })).toBe('Ch. 20/40 · In library (read 30) → updates tracker');
+    expect(rowDescription(row!, { seed: true, nameOf })).toBe('Links · pushes 30 read to tracker');
     const behind = { ...held, entries: [held.entries![0]!] };
-    expect(rowDescription(planRows([behind], new Map())[0]!, { seed: true, nameOf })).toBe('Ch. 20/40 · In library (read 12) → links');
+    expect(rowDescription(planRows([behind], new Map())[0]!, { seed: true, nameOf })).toBe('Links · read 12 here, 20 on tracker');
+    const unread = { ...held, entries: [{ ...held.entries![0]!, localRead: 0 }] };
+    expect(rowDescription(planRows([unread], new Map())[0]!, { seed: true, nameOf })).toBe('Links · 20 read on tracker');
+    const planning = { ...unread, status: 'planning' as const, chaptersRead: undefined };
+    expect(rowDescription(planRows([planning], new Map())[0]!, { seed: true, nameOf })).toBe('Links');
   });
 
-  test('resolved: names the bridge hit and the seed only when the toggle is on', () => {
+  test('resolved: names the bridge, the matched title only when it differs, the seed only when on', () => {
     const [row] = planRows([missing], new Map([['2', found]]));
-    expect(rowDescription(row!, { seed: true, nameOf })).toBe('Found on Bridge x: Missing (x) · marks 10 read');
-    expect(rowDescription(row!, { seed: false, nameOf })).toBe('Found on Bridge x: Missing (x)');
+    expect(rowDescription(row!, { seed: true, nameOf })).toBe('Adds “Missing (x)” from Bridge x · marks 10 read');
+    expect(rowDescription(row!, { seed: false, nameOf })).toBe('Adds “Missing (x)” from Bridge x');
+    const same = planRows([missing], new Map([['2', { ...found, exact: { id: 'm', title: 'MISSING!' } }]]))[0]!;
+    expect(rowDescription(same, { seed: false, nameOf })).toBe('Adds from Bridge x');
   });
 
   test('unresolved: before a search, after a miss, with candidates, after an error', () => {
@@ -105,7 +111,7 @@ describe('rowDescription', () => {
     const miss = new Map([['3', { bridgeId: 'x', candidates: [] }]]);
     expect(rowDescription(planRows([planned], miss)[0]!, { seed: true, nameOf })).toBe('Not found on Bridge x');
     const some = new Map([['3', { bridgeId: 'x', candidates: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }] }]]);
-    expect(rowDescription(planRows([planned], some)[0]!, { seed: true, nameOf })).toBe('2 possible matches on Bridge x — tap to choose');
+    expect(rowDescription(planRows([planned], some)[0]!, { seed: true, nameOf })).toBe('Tap to pick from 2 on Bridge x');
     const err = new Map([['3', { bridgeId: 'x', candidates: [], error: 'boom' }]]);
     expect(rowDescription(planRows([planned], err)[0]!, { seed: true, nameOf })).toBe("Couldn't search Bridge x");
   });
@@ -142,7 +148,8 @@ describe('batching + summary', () => {
       { imported: 0, linked: 1, seeded: 0, pushed: 1, failed: [{ externalId: 9, bridgeId: 'x', seriesId: 's', error: 'e' }] },
     ]);
     expect(total).toEqual({ imported: 1, linked: 3, seeded: 1, pushed: 1, failed: [{ externalId: 9, bridgeId: 'x', seriesId: 's', error: 'e' }] });
-    expect(importSummary(total)).toBe('1 added · 3 linked · 1 updated on tracker · 1 failed');
+    expect(importSummary(total)).toBe('1 added · 2 linked · 1 updated on tracker · 1 failed');
+    expect(importSummary({ imported: 2, linked: 2, seeded: 2, pushed: 0, failed: [] })).toBe('2 added');
     expect(importSummary({ imported: 0, linked: 0, seeded: 0, pushed: 0, failed: [] })).toBe('Nothing to import');
   });
 });

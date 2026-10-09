@@ -294,7 +294,7 @@ export default function TrackerImportScreen() {
     ? `Searching ${nameOf(resolving.bridgeId)} — ${resolving.done} of ${resolving.total}`
     : pending.length === 0
       ? 'Everything is matched'
-      : `${pending.length} not in your library yet — search a bridge for them`;
+      : `${pending.length} not in library — search a bridge`;
 
   const header =
     rows.length > 0 ? (
