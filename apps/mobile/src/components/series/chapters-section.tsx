@@ -41,6 +41,7 @@ import {
   PlusIcon,
   TrashIcon,
 } from '@/components/icons/ui-icons';
+import { coverRingColor, coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -1413,6 +1414,7 @@ export function PageThumb({
 }) {
   const ds = useDataSource();
   const mock = useMockActive();
+  const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const [loaded, setLoaded] = useState(() => resolvedThumbIds.has(thumbDelayKey(thumb)));
   // Real aspect of a plain `image` tile, learned from its own onLoad (see the
@@ -1623,7 +1625,7 @@ export function PageThumb({
             setBoxSize({ w: laidOutW, h: laidOutH });
           }
         }}>
-        <View style={styles.thumbClip}>
+        <View style={[styles.thumbClip, styles.thumbCorner]}>
           {/* Picture layer, scaled by `pictureStyle` to fake the shrink illusion; `pageNum` is a
               sibling so it never gets stretched. The Lightweight path skips the wrapper VIEW entirely
               (no animated style, one less view per tile) and renders straight into the clip — the
@@ -1641,10 +1643,11 @@ export function PageThumb({
             </View>
           )}
         </View>
-        {/* Hover ring (brighten, not dim) — same highlight treatment as SeriesCard's own hover/active
-         *  ring, since an opacity-dim over an image reads as broken. A child of the BOX, not the
-         *  shell: the shell is the constant 2:3 slot, taller than a page wider than that. */}
-        {hovered && <View style={[styles.thumbRing, { pointerEvents: 'none' }]} />}
+        {/* SeriesCard's hover ring, on this tile's corner. A child of the BOX, not the shell: the
+         *  shell is the constant 2:3 slot, taller than a page wider than that. */}
+        {hovered && (
+          <View style={[coverStyles.ring, styles.thumbCorner, { borderColor: coverRingColor(theme), pointerEvents: 'none' }]} />
+        )}
       </View>
     </Pressable>
     );
@@ -2111,18 +2114,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
   },
-  thumbRing: {
-    position: 'absolute',
-    // Drawn INSIDE the tile's edge, on its corner: the list paint-contains each cell, and a tile is
-    // flush with its cell's top, so a stroke outside it is cut off there.
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  thumbCorner: {
     ...ContinuousCorner,
     borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#60a5fa',
   },
   thumbShell: {
     // Constant slot — the 2:3 default, the vertical MAX a tile can occupy (clampThumbAspect floors
@@ -2142,8 +2136,6 @@ const styles = StyleSheet.create({
     // layer sits inside this, since clipping the SAME element being scaled
     // wouldn't actually contain overflow (the clip rect would scale too).
     flex: 1,
-    ...ContinuousCorner,
-    borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
   },

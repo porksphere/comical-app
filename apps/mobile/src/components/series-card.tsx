@@ -66,7 +66,23 @@ export const coverStyles = StyleSheet.create({
   cornerDesktop: {
     borderRadius: 20,
   },
+  /** The hover/active highlight ring, in `coverRingColor`. Any picture tile that highlights on hover
+   *  (a chapter's page thumbnail) draws this one over its clip, with its own corner, so every cover-like
+   *  thing in the app lights up the same way. Drawn INSIDE the edge: a virtualized list paint-contains
+   *  each item to its slot, and a slot ends exactly where an outer column's cover does, so a stroke
+   *  outside it is cut off there. */
+  ring: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 2,
+  },
 });
+
+/** The ring's colour — brighten, not dim: an opacity-dim over a picture reads as broken. */
+export const coverRingColor = (theme: ReturnType<typeof useTheme>) => theme.text;
 
 /**
  * A cover's real (capped) aspect ratio, learned from the visible `<Image>`'s own `onLoad`. Since
@@ -154,10 +170,10 @@ export function CoverFrame({
       {ring && (
         <View
           style={[
-            styles.ring,
+            coverStyles.ring,
             coverStyles.corner,
             desktop && coverStyles.cornerDesktop,
-            { borderColor: theme.text, pointerEvents: 'none' },
+            { borderColor: coverRingColor(theme), pointerEvents: 'none' },
           ]}
         />
       )}
@@ -945,16 +961,6 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
-  },
-  ring: {
-    position: 'absolute',
-    // Drawn INSIDE the cover's edge. A virtualized list paint-contains each item to its slot, and a
-    // slot ends exactly where an outer column's cover does, so a stroke outside it is cut off there.
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderWidth: 2,
   },
   picture: {
     // Top-aligned scale origin so the shrink illusion (`pictureStyle`) settles
