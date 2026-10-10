@@ -13,6 +13,26 @@ what the app shows under Settings → About → What's new. Keep the `## X.Y.Z �
 the extractor matches on the version field, and a section it can't find silently degrades to the
 release's title.
 
+## 0.5.1 — 2026-10-10
+
+- Hover rail overlays the row's trailing end on web/desktop (4e2878b1)
+- Reorderable lists: drag handle on web/desktop instead of the arrow mode (97ec6674)
+- Revert "History / Activity: two columns of rows on desktop" (1510f0dd)
+- History / Activity: two columns of rows on desktop (0b50e0f7)
+- Series back-swipe: let the page travel further under the finger (6ac8959f)
+- Tracker link form: search the series' own title as soon as it opens (6c9d46cc)
+- comical: merge same-named collections when a library joins (0f10929b)
+- desktop: deliver a tracker sign-in's return instead of spinning forever (4b1a0ab7)
+- Web: suppress mouse-origin focus rings app-wide, not just on cards (95fdbe09)
+- Web: no stuck focus ring on series cards, no dragging images/links (f2e8b052)
+- Tracker import: outcome-first row copy, honest summary, sign-in error (2fe3fce9)
+- Import a tracker's list into the library (cfbb28c1)
+- Push-only tracker sync: panel copy, sync result shape, background opts (a77c321a)
+- Bump comical: push-only tracker sync + tracker list import (cd66e910)
+- trackers: one relay page returns every sign-in to the client that started it (67bc3799)
+- Search: the library rows above the rails are desktop-only (bd76f786)
+- Library: the reading-state filter is its own button, not a section of Sort (d086f577)
+
 ## 0.5.0 — 2026-10-08
 
 - Reader dismiss: fade into the cover only once the page is let go (10e73fbd)
