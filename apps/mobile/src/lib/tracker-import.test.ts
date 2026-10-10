@@ -6,7 +6,9 @@ import {
   chunk,
   importSummary,
   itemsForImport,
-  mergeResolutions,
+  lookupOrder,
+  mergeLookup,
+  pickMatch,
   planRows,
   progressLabel,
   readingKeys,
@@ -71,18 +73,40 @@ describe('planRows', () => {
   });
 });
 
-describe('mergeResolutions', () => {
-  test('a later search replaces an earlier miss and drops a pick made on another bridge', () => {
-    const prev = new Map<string, Resolution>([['2', { bridgeId: 'x', candidates: [{ id: 'c', title: 'C' }], chosen: { id: 'c', title: 'C' } }]]);
-    const next = mergeResolutions(prev, 'y', [{ externalId: 2, exact: { id: 'e', title: 'E' }, candidates: [] }]);
-    expect(next.get('2')).toEqual({ bridgeId: 'y', exact: { id: 'e', title: 'E' }, candidates: [] });
+describe('mergeLookup', () => {
+  const c = { id: 'c', title: 'C' };
+  const e = { id: 'e', title: 'E' };
+
+  test('a later bridge only ever improves on an earlier one', () => {
+    const shortlist = new Map<string, Resolution>([['2', { bridgeId: 'x', candidates: [c] }]]);
+    expect(mergeLookup(shortlist, 'y', [{ externalId: 2, candidates: [] }]).get('2')?.bridgeId).toBe('x');
+    expect(mergeLookup(shortlist, 'y', [{ externalId: 2, candidates: [], error: 'down' }]).get('2')?.bridgeId).toBe('x');
+    expect(mergeLookup(shortlist, 'y', [{ externalId: 2, exact: e, candidates: [] }]).get('2')).toEqual({ bridgeId: 'y', exact: e, candidates: [] });
+    const miss = new Map<string, Resolution>([['2', { bridgeId: 'x', candidates: [] }]]);
+    expect(mergeLookup(miss, 'y', [{ externalId: 2, candidates: [c] }]).get('2')).toEqual({ bridgeId: 'y', candidates: [c] });
   });
 
-  test('a pick survives a re-search on the same bridge', () => {
-    const chosen = { id: 'c', title: 'C' };
-    const prev = new Map<string, Resolution>([['2', { bridgeId: 'x', candidates: [chosen], chosen }]]);
-    const next = mergeResolutions(prev, 'x', [{ externalId: '2', candidates: [chosen] }]);
-    expect(next.get('2')?.chosen).toEqual(chosen);
+  test('an exact hit or a pick is never replaced', () => {
+    const found = new Map<string, Resolution>([['2', { bridgeId: 'x', exact: e, candidates: [] }]]);
+    expect(mergeLookup(found, 'y', [{ externalId: 2, exact: c, candidates: [] }]).get('2')?.bridgeId).toBe('x');
+    const picked = pickMatch(new Map(), '2', 'x', c);
+    expect(mergeLookup(picked, 'y', [{ externalId: 2, exact: e, candidates: [] }]).get('2')?.chosen).toEqual(c);
+  });
+
+  test('a pick keeps what the lookup found on the same bridge, and nothing from another', () => {
+    const prev = new Map<string, Resolution>([['2', { bridgeId: 'x', exact: e, candidates: [c] }]]);
+    expect(pickMatch(prev, '2', 'x', c).get('2')).toEqual({ bridgeId: 'x', exact: e, candidates: [c], chosen: c });
+    expect(pickMatch(prev, '2', 'y', c).get('2')).toEqual({ bridgeId: 'y', candidates: [], chosen: c });
+    expect(planRows([missing], pickMatch(prev, '2', 'y', c))[0]?.target).toEqual({ bridgeId: 'y', series: c });
+  });
+});
+
+describe('lookupOrder', () => {
+  test('the bridges the library reads most come first, then the given order', () => {
+    const bridges = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+    const twoOnB = [held, { ...held, externalId: 9, entries: [{ key: 'b:x', bridgeId: 'b', seriesId: 'x', title: 'X', localRead: 0 }] }];
+    expect(lookupOrder(bridges, twoOnB).map((b) => b.id)).toEqual(['b', 'a', 'c', 'd']);
+    expect(lookupOrder(bridges, []).map((b) => b.id)).toEqual(['a', 'b', 'c', 'd']);
   });
 });
 
@@ -107,14 +131,13 @@ describe('rowDescription', () => {
   });
 
   test('unresolved: before a search, after a miss, with candidates, after an error, while searching', () => {
-    expect(rowDescription(planRows([planned], new Map())[0]!, { seed: true, nameOf })).toBe('Not in library — tap to find · Planning');
+    expect(rowDescription(planRows([planned], new Map())[0]!, { seed: true, nameOf })).toBe('Not in library — tap to search · Planning');
     const miss = new Map([['3', { bridgeId: 'x', candidates: [] }]]);
-    expect(rowDescription(planRows([planned], miss)[0]!, { seed: true, nameOf })).toBe('Not found on Bridge x');
-    expect(rowDescription(planRows([planned], miss)[0]!, { seed: true, nameOf, bridgeCount: 2 })).toBe('Not found on Bridge x — tap to try another');
+    expect(rowDescription(planRows([planned], miss)[0]!, { seed: true, nameOf })).toBe('Not found — tap to search');
     const some = new Map([['3', { bridgeId: 'x', candidates: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }] }]]);
-    expect(rowDescription(planRows([planned], some)[0]!, { seed: true, nameOf })).toBe('Tap to pick from 2 on Bridge x');
+    expect(rowDescription(planRows([planned], some)[0]!, { seed: true, nameOf })).toBe('2 possible on Bridge x — tap to choose');
     const err = new Map([['3', { bridgeId: 'x', candidates: [], error: 'boom' }]]);
-    expect(rowDescription(planRows([planned], err)[0]!, { seed: true, nameOf })).toBe("Couldn't search Bridge x — tap to retry");
+    expect(rowDescription(planRows([planned], err)[0]!, { seed: true, nameOf })).toBe("Couldn't search Bridge x — tap to search");
     expect(rowDescription(planRows([planned], err)[0]!, { seed: true, nameOf, searchingOn: 'y' })).toBe('Searching Bridge y…');
   });
 

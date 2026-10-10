@@ -1,22 +1,23 @@
 # Web copy of ../mobile/tracker-import.yaml, kept in sync by hand. Same journey and the same reasoning
 # for every step — see that file's header for the four row kinds, why AniList, and why the flow
-# anchors on the screen's chrome rather than on hashed row ids.
+# anchors on the screen's chrome and row copy rather than on hashed row ids.
 #
 # It's a plain pushed screen (app/tracker-import.tsx), not an overlay, so the sheet-gesture caveat
-# that keeps series-trackers mobile-only does not apply here.
+# that keeps series-trackers mobile-only does not apply here; a row's search opens as a dialog.
 #
 # Selectors hitting the web-only aria-label quirk (see ../README.md — an accessibilityLabel wins over
 # data-testid for Maestro's `id:` matcher on web):
 #   - tab bar: "Settings", not tab.settings (same as smoke.yaml / settings-walkthrough.yaml).
 #   - settings.category.trackers sets accessibilityLabel={title} — select by "Trackers".
-#   - the tracker row, the import row and the "Find on…" row are all SettingsRows, which set
-#     accessibilityLabel={label} — select by "AniList", "Import list into library" and "Find on…".
-#   - tracker-import.find.<bridgeId> — context-menu rows carry a testID and NO accessibilityLabel
-#     (context-menu-material.tsx), so the id resolves unchanged here.
+#   - the tracker row, the import row and the lookup's status row are all SettingsRows, which set
+#     accessibilityLabel={label} — select by "AniList", "Import list into library" and "Find on…"
+#     (the status row reads "Searching…" until the lookup settles).
+#   - tracker-import.search / tracker-import.result.<seriesId> — the search sheet's field and result
+#     rows carry a testID and NO accessibilityLabel, so the ids resolve unchanged here.
 #   - "Selection options" — SelectOptionsButton's static aria-label (see ../web/downloads.yaml).
 #   - tracker-import.confirm — SelectPillBar's verb Pressable sets accessibilityLabel to the verb's
 #     DYNAMIC label ("Import N series"); match the label by regex.
-#   - the toast is matched by `text:` in both copies.
+#   - the row tap and the toast are matched by `text:` in both copies.
 url: http://localhost:4000/comical-app
 ---
 - launchApp
@@ -33,26 +34,36 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "Import list into library"
 
-# The mock preview resolves after a deliberate 400ms delay (mock.ts), so wait rather than assert.
+# The preview lands after a deliberate 400ms delay (mock.ts), then the lookup runs bridge by bridge.
 - extendedWaitUntil:
     visible:
       id: "Find on…"
-    timeout: 10000
+    timeout: 25000
 - assertVisible:
     id: "Selection options"
 - takeScreenshot: tracker-import
 
 - tapOn:
-    id: "Find on…"
+    text: "Adds .*"
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: "tracker-import.search"
+    timeout: 5000
+- extendedWaitUntil:
+    visible:
+      id: "tracker-import\\.result\\..*"
+    timeout: 10000
+- takeScreenshot: tracker-import-search
 - tapOn:
-    id: "tracker-import.find.panelfox"
+    id: "tracker-import\\.result\\..*"
+    index: 0
 - extendedWaitUntil:
     notVisible:
-      text: "Searching…"
-    timeout: 15000
-- takeScreenshot: tracker-import-resolved
+      id: "tracker-import.search"
+    timeout: 5000
 
-# Every actionable row is already checked by now (see the mobile copy), so skip the staging menu.
+# Every actionable row is still checked (see the mobile copy), so skip the staging menu.
 - tapOn:
     id: "^Import \\d+ series$"
 

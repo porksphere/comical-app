@@ -5,10 +5,11 @@
  * one Import verb — plus two things a tracker list needs that a favorites list doesn't:
  *
  *   - A tracker entry isn't a bridge series. The host matches what it can against the library
- *     (`in-library`, `linked`); anything else has to be FOUND on a bridge first — the "Find on…" row
- *     runs one bridge's search over every unresolved entry, batched so a long list shows progress
- *     and can be cancelled; an unresolved row's own tap searches for just that one. A row with
- *     several possible matches is tapped to pick one.
+ *     (`in-library`, `linked`); anything else has to be FOUND on a bridge first. The screen looks
+ *     everything up as soon as the list loads, bridge after bridge (`lookupOrder`) for whatever is
+ *     still unmatched, batched so a long list shows progress and can be cancelled. Whatever the
+ *     lookup decided, a row's tap opens a search for that one entry, where the user picks the
+ *     series it should import as — a wrong guess is as easy to fix as a miss.
  *   - Sync is push-only. Importing never writes the tracker's progress into a series that is already
  *     here; it links it, and pushes if the library is further ahead. A series that ISN'T here yet is
  *     the one case the tracker may seed — the toggle above the list, default on.
@@ -20,7 +21,7 @@
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,9 +29,11 @@ import { Holdable } from '@/components/context-menu';
 import { openContextMenu } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { BridgesIcon, CheckIcon, ClearIcon, ListPlusIcon, ReadingIcon, SearchIcon } from '@/components/icons/ui-icons';
+import { BridgeMatchSheet } from '@/components/import/bridge-match-sheet';
 import { ImportCover, importStyles as styles } from '@/components/import/import-list';
 import { PILL_HEIGHT, SelectLead, SelectLeadGap, SelectPillBar, useDragSelect, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
+import { useOverlay } from '@/components/overlay/overlay';
 import { RowIcon } from '@/components/settings/row-icon';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsRow } from '@/components/settings/settings-row';
@@ -39,11 +42,13 @@ import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { SettingsRowHeight, Spacing } from '@/constants/theme';
-import { TRACKER_IMPORT_BATCH, type TrackerImportResolveResult, type TrackerImportResult } from '@/data/api';
+import { TRACKER_IMPORT_BATCH, type TrackerImportResult } from '@/data/api';
+import { useComicalExcludedIds } from '@/data/comical-home';
 import { resolveDefaultCollection } from '@/data/default-collection';
 import { getDefaultCollectionId, setDefaultCollectionId } from '@/data/default-collection-store';
+import { applyOrder, useBridgeOrder } from '@/data/list-order';
 import { collectionsQuery, queryKeys, trackerImportPreviewQuery } from '@/data/queries';
-import { useDataSource, useMockActive } from '@/data/source';
+import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
@@ -55,10 +60,15 @@ import { testId } from '@/lib/test-id';
 import {
   chunk,
   importSummary,
+  isSelectableKind,
   itemsForImport,
-  mergeResolutions,
+  lookupOrder,
+  mergeLookup,
+  pickMatch,
   planRows,
+  progressLabel,
   readingKeys,
+  rowKey,
   rowDescription,
   selectableKeys,
   sumImportResults,
@@ -83,14 +93,25 @@ export default function TrackerImportScreen() {
   const mock = useMockActive();
   const queryClient = useQueryClient();
   const { byId, nameOf } = useBridgeMap();
+  const overlay = useOverlay();
+  const bridgeOrder = useBridgeOrder();
+  const hideNsfw = useHideNsfw();
+  const excluded = useComicalExcludedIds();
 
   const sidePad = useSettingsSidePad(width);
 
   const { data, error, isLoading, refetch, isFetching } = useQuery(trackerImportPreviewQuery(ds, mock, trackerId));
 
-  // The screen's own facts on top of the host's classification: what a bridge search found per
-  // entry, and whether new series get their progress seeded.
+  // The screen's own facts on top of the host's classification: what the lookup found per entry or
+  // the user picked for it, and whether new series get their progress seeded.
   const [resolutions, setResolutions] = useState<ReadonlyMap<string, Resolution>>(() => new Map());
+  // Its latest value for the async lookup, which has to see what a merge changed — a pick made while
+  // the lookup runs must survive it. Only ever written together with the state.
+  const resolutionsRef = useRef<ReadonlyMap<string, Resolution>>(resolutions);
+  const writeResolutions = (next: ReadonlyMap<string, Resolution>) => {
+    resolutionsRef.current = next;
+    setResolutions(next);
+  };
   const [seed, setSeed] = useState(true);
 
   const rows = useMemo(() => planRows(data?.items ?? [], resolutions), [data, resolutions]);
@@ -134,35 +155,61 @@ export default function TrackerImportScreen() {
   const [banner, setBanner] = useState<string | null>(null);
 
   // ── Find on a bridge ────────────────────────────────────────────────────────────────────────────
-  // One search at a time, over the whole unresolved set (the header's "Find on…") or a single row
-  // (its own tap); `keys` is which rows it covers, so each can say it's being searched.
-  const [resolving, setResolving] = useState<(Progress & { bridgeId: string; keys: ReadonlySet<string> }) | null>(null);
+  // Every bridge that can search, in the order a lookup walks them. The automatic lookup leaves out
+  // the ones kept out of cross-bridge search; a row's own search offers them all.
+  const matchBridges = useMemo(
+    () =>
+      lookupOrder(
+        applyOrder([...byId.values()], bridgeOrder, (b) => b.id).filter((b) => b.capabilities.includes('search') && !(hideNsfw && b.nsfw)),
+        data?.items ?? [],
+      ),
+    [byId, bridgeOrder, hideNsfw, data],
+  );
+  const lookupBridges = useMemo(() => matchBridges.filter((b) => !excluded[b.id]).map((b) => b.id), [matchBridges, excluded]);
+
+  // One lookup at a time; `keys` is which rows the current bridge is searching, so each can say so.
+  const [resolving, setResolving] = useState<
+    (Progress & { bridgeId: string; step: number; steps: number; keys: ReadonlySet<string> }) | null
+  >(null);
   const resolveAbort = useRef<AbortController | null>(null);
   useEffect(() => () => resolveAbort.current?.abort(), []);
 
-  /** Search one bridge for `entries`; resolves to what it answered, or nothing if cancelled/failed. */
-  const resolveOn = async (bridgeId: string, entries: typeof pending): Promise<TrackerImportResolveResult[] | undefined> => {
-    if (resolving || entries.length === 0) return undefined;
+  /** Look `entries` up on each of `bridgeIds` in turn, each bridge only searching for what the ones
+   *  before it didn't find exactly. A bridge that fails is skipped, not fatal. */
+  const lookUp = async (bridgeIds: readonly string[], entries: typeof pending) => {
+    if (resolveAbort.current || entries.length === 0 || bridgeIds.length === 0) return;
     const ac = new AbortController();
     resolveAbort.current = ac;
     setBanner(null);
-    setResolving({ bridgeId, done: 0, total: entries.length, keys: new Set(entries.map((e) => String(e.externalId))) });
-    const all: TrackerImportResolveResult[] = [];
+    const failed: { bridgeId: string; error: unknown }[] = [];
+    let left = entries;
     try {
-      for (const batch of chunk(entries, TRACKER_IMPORT_BATCH)) {
-        const results = await ds.resolveTrackerImport(trackerId, bridgeId, batch, ac.signal);
-        if (ac.signal.aborted) return undefined;
-        all.push(...results);
-        setResolutions((prev) => mergeResolutions(prev, bridgeId, results));
-        // A fresh exact hit is what the user asked for — check it, as the preview's defaults were.
-        const hits = results.filter((r) => r.exact).map((r) => String(r.externalId));
-        if (hits.length > 0) ms.selectSet(new Set([...selectedRef.current, ...hits]));
-        setResolving((p) => (p ? { ...p, done: p.done + batch.length } : p));
+      for (const [i, bridgeId] of bridgeIds.entries()) {
+        if (left.length === 0) break;
+        setResolving({ bridgeId, step: i + 1, steps: bridgeIds.length, done: 0, total: left.length, keys: new Set(left.map((e) => rowKey(e.externalId))) });
+        try {
+          for (const batch of chunk(left, TRACKER_IMPORT_BATCH)) {
+            const results = await ds.resolveTrackerImport(trackerId, bridgeId, batch, ac.signal);
+            if (ac.signal.aborted) return;
+            const prev = resolutionsRef.current;
+            const next = mergeLookup(prev, bridgeId, results);
+            writeResolutions(next);
+            // A fresh exact hit is checked, as the preview's defaults were.
+            const hits = results.map((r) => rowKey(r.externalId)).filter((k) => next.get(k)?.exact && !prev.get(k)?.exact);
+            if (hits.length > 0) ms.selectSet(new Set([...selectedRef.current, ...hits]));
+            setResolving((p) => (p ? { ...p, done: p.done + batch.length } : p));
+          }
+        } catch (e) {
+          if (ac.signal.aborted) return;
+          failed.push({ bridgeId, error: e });
+        }
+        left = left.filter((e) => {
+          const res = resolutionsRef.current.get(rowKey(e.externalId));
+          return !res?.exact && !res?.chosen;
+        });
       }
-      return all;
-    } catch (e) {
-      if (!ac.signal.aborted) setBanner(friendlyError(e, `Could not search ${nameOf(bridgeId)}`));
-      return undefined;
+      if (failed.length === 1) setBanner(friendlyError(failed[0]!.error, `Could not search ${nameOf(failed[0]!.bridgeId)}`));
+      else if (failed.length > 1) setBanner(`Could not search ${failed.map((f) => nameOf(f.bridgeId)).join(', ')}`);
     } finally {
       if (resolveAbort.current === ac) resolveAbort.current = null;
       setResolving(null);
@@ -171,66 +218,64 @@ export default function TrackerImportScreen() {
 
   const cancelResolve = () => resolveAbort.current?.abort();
 
-  // Every configured bridge that can search, as a menu around `run`. With a single such bridge there
-  // is nothing to choose, so `direct` callers skip the menu.
-  const searchBridges = () => [...byId.values()].filter((b) => b.capabilities.includes('search'));
-  const openFindMenu = (title: string, x: number, y: number, direct: boolean, run: (bridgeId: string) => void) => {
-    const bridges = searchBridges();
-    if (bridges.length === 0) {
+  // The lookup starts on its own, once per loaded list — and only once the bridges are known.
+  const lookedUpRef = useRef<unknown>(null);
+  useEffect(() => {
+    if (!data || lookupBridges.length === 0 || lookedUpRef.current === data.items) return;
+    lookedUpRef.current = data.items;
+    void lookUp(lookupBridges, pending);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per loaded list; a bridge-list or selection change mid-lookup must not start another
+  }, [data, lookupBridges]);
+
+  // The header row: one more bridge over everything still unmatched.
+  const findRowRef = useRef<View>(null);
+  const openFindAllMenu = () => {
+    if (matchBridges.length === 0) {
       setBanner('No bridge can search — add one first.');
       return;
     }
-    if (direct && bridges.length === 1) {
-      run(bridges[0]!.id);
+    findRowRef.current?.measureInWindow((x, y, w) =>
+      openContextMenu({
+        title: `Find ${pending.length} on…`,
+        rows: matchBridges.map(
+          (b): MenuRowSpec => ({
+            label: b.name,
+            Icon: BridgesIcon,
+            loading: false,
+            onPress: () => void lookUp([b.id], pending),
+            testID: testId('tracker-import.find', b.id),
+          }),
+        ),
+        x: x + w / 2,
+        y,
+      }),
+    );
+  };
+
+  // A row's own search. Its sheet is rendered once, from this closure, so it is handed everything
+  // it needs up front and reports the pick back rather than reading the screen's state.
+  const openMatchSheet = (row: ImportRow) => {
+    if (matchBridges.length === 0) {
+      setBanner('No bridge can search — add one first.');
       return;
     }
-    const menuRows: MenuRowSpec[] = bridges.map((b) => ({
-      label: b.name,
-      Icon: BridgesIcon,
-      loading: false,
-      onPress: () => run(b.id),
-      testID: testId('tracker-import.find', b.id),
-    }));
-    openContextMenu({ title, rows: menuRows, x, y });
-  };
-
-  // The header row: one bridge over everything still unresolved.
-  const findRowRef = useRef<View>(null);
-  const openFindAllMenu = () =>
-    findRowRef.current?.measureInWindow((x, y, w) =>
-      openFindMenu(`Find ${pending.length} on…`, x + w / 2, y, false, (bridgeId) => void resolveOn(bridgeId, pending)),
+    overlay.openDialog(
+      () => (
+        <BridgeMatchSheet
+          title={row.item.title}
+          detail={`${progressLabel(row.item)} on ${trackerName}`}
+          bridges={matchBridges}
+          initialBridgeId={row.target?.bridgeId ?? row.resolution?.bridgeId ?? matchBridges[0]!.id}
+          current={row.target}
+          suggested={row.resolution && { bridgeId: row.resolution.bridgeId, series: row.resolution.candidates }}
+          onPick={(bridgeId, series) => {
+            writeResolutions(pickMatch(resolutionsRef.current, row.key, bridgeId, series));
+            ms.selectSet(new Set([...selectedRef.current, row.key]));
+          }}
+        />
+      ),
+      { accessibilityLabel: `Find ${row.item.title}` },
     );
-
-  // A row's own tap: that one entry. The user has already said which row they mean, so a shortlist
-  // opens its picker at once rather than waiting for a second tap.
-  const openFindRowMenu = (row: ImportRow, x: number, y: number) => {
-    openFindMenu(`Find “${row.item.title}” on…`, x, y, true, async (bridgeId) => {
-      const answer = (await resolveOn(bridgeId, unresolvedEntries([row])))?.[0];
-      if (answer && !answer.exact && answer.candidates.length > 0) {
-        openCandidatePicker({ ...row, resolution: { bridgeId, candidates: answer.candidates } }, x, y);
-      }
-    });
-  };
-
-  // A row with several possible matches: the user picks which one it is.
-  const openCandidatePicker = (row: ImportRow, x: number, y: number) => {
-    const res = row.resolution;
-    if (!res || res.candidates.length === 0) return;
-    openContextMenu({
-      title: row.item.title,
-      rows: res.candidates.map((c) => ({
-        label: c.title,
-        Icon: SearchIcon,
-        loading: false,
-        onPress: () => {
-          setResolutions((prev) => new Map(prev).set(row.key, { ...res, chosen: c }));
-          ms.selectSet(new Set([...selectedRef.current, row.key]));
-        },
-        testID: testId('tracker-import.candidate', row.key, c.id),
-      })),
-      x,
-      y,
-    });
   };
 
   // ── Import ──────────────────────────────────────────────────────────────────────────────────────
@@ -282,7 +327,9 @@ export default function TrackerImportScreen() {
         setBanner(`Nothing imported: ${total.failed[0]?.error ?? 'unknown error'}`);
         return;
       }
-      router.back();
+      // Opened from a link or a reloaded tab there's no screen to go back to; the refreshed list
+      // (everything now linked) is the result.
+      if (router.canGoBack()) router.back();
     } catch (e) {
       if (!ac.signal.aborted) setBanner(friendlyError(e, 'Could not import'));
     } finally {
@@ -320,10 +367,10 @@ export default function TrackerImportScreen() {
       : 'Import list';
 
   const findDescription = resolving
-    ? `Searching ${nameOf(resolving.bridgeId)} — ${resolving.done} of ${resolving.total}`
+    ? `${nameOf(resolving.bridgeId)}${resolving.steps > 1 ? ` (${resolving.step}/${resolving.steps})` : ''} — ${resolving.done} of ${resolving.total}`
     : pending.length === 0
       ? 'Everything is matched'
-      : `${pending.length} not in library — search a bridge`;
+      : `${pending.length} not matched — search a bridge`;
 
   const header =
     rows.length > 0 ? (
@@ -362,62 +409,57 @@ export default function TrackerImportScreen() {
       </View>
     ) : null;
 
-  const bridgeCount = searchBridges().length;
   const renderItem = ({ item: row, index }: { item: ImportRow; index: number }) => {
-    const selectable = row.kind === 'in-library' || row.kind === 'resolved';
+    const selectable = isSelectableKind(row.kind);
+    const findable = row.kind === 'resolved' || row.kind === 'unresolved';
     const searching = row.kind === 'unresolved' && resolving?.keys.has(row.key) ? resolving.bridgeId : undefined;
-    const pickable = row.kind === 'unresolved' && (row.resolution?.candidates.length ?? 0) > 0;
-    // An unresolved row's tap is a search for it: its first, a retry after an error, or another
-    // bridge after a miss (when there is another to try). While any search runs the row waits.
-    const findable =
-      row.kind === 'unresolved' && !pickable && !resolving && (!row.resolution || !!row.resolution.error || bridgeCount > 1);
+    const toggle = () => ms.toggle(row.key);
     return (
-      <RowAnchor divider={index < rows.length - 1}>
-        {(measure) => (
-          <Holdable
-            enabled={selectable}
-            onHold={() => {
-              hapticSelection();
-              ms.rangeFill(row.key);
-            }}>
-            {({ onLongPress }) => (
-              <SettingsRow
-                testID={`tracker-import.row.${row.key}`}
-                label={row.item.title}
-                description={rowDescription(row, { seed, nameOf, searchingOn: searching, bridgeCount })}
-                {...(pickable || findable ? { descriptionColor: theme.accent } : {})}
-                leading={
-                  <>
-                    {row.kind === 'unresolved' ? (
-                      // No circle: nothing a tap could check yet. The slot still grows with its
-                      // siblings' so the covers stay in one column.
-                      <SelectLeadGap progress={mode.progress} />
-                    ) : (
-                      <SelectLead
-                        progress={mode.progress}
-                        selected={ms.selected.has(row.key)}
-                        done={row.kind === 'linked'}
-                        itemKey={row.key}
-                        edgeOffset={sidePad}
-                        {...(selectable ? { gesture: dragSelect.gestureFor(index) } : {})}
-                      />
-                    )}
-                    <ImportCover url={row.target?.series.thumbnailUrl ?? row.item.thumbnailUrl} />
-                  </>
-                }
-                right={<View />}
-                {...(selectable
-                  ? { onPress: () => ms.toggle(row.key), onLongPress }
-                  : pickable
-                    ? { onPress: () => measure((x, y, w, h) => openCandidatePicker(row, x + w / 2, y + h / 2)) }
-                    : findable
-                      ? { onPress: () => measure((x, y, w, h) => openFindRowMenu(row, x + w / 2, y + h / 2)) }
-                      : {})}
-              />
-            )}
-          </Holdable>
-        )}
-      </RowAnchor>
+      <View>
+        <Holdable
+          enabled={selectable}
+          onHold={() => {
+            hapticSelection();
+            ms.rangeFill(row.key);
+          }}>
+          {({ onLongPress }) => (
+            <SettingsRow
+              testID={`tracker-import.row.${row.key}`}
+              label={row.item.title}
+              description={rowDescription(row, { seed, nameOf, searchingOn: searching })}
+              {...(row.kind === 'unresolved' && !searching ? { descriptionColor: theme.accent } : {})}
+              leading={
+                <>
+                  {row.kind === 'unresolved' ? (
+                    // No circle: nothing to check until a series is picked. The slot still grows
+                    // with its siblings' so the covers stay in one column.
+                    <SelectLeadGap progress={mode.progress} />
+                  ) : (
+                    <SelectLead
+                      progress={mode.progress}
+                      selected={ms.selected.has(row.key)}
+                      done={row.kind === 'linked'}
+                      itemKey={row.key}
+                      edgeOffset={sidePad}
+                      {...(selectable ? { gesture: dragSelect.gestureFor(index) } : {})}
+                      // A found row's own tap opens its search, so the circle is what checks it.
+                      {...(row.kind === 'resolved' ? { onPress: toggle, pressTestID: testId('tracker-import.check', row.key), accessibilityLabel: `Import ${row.item.title}` } : {})}
+                    />
+                  )}
+                  <ImportCover url={row.target?.series.thumbnailUrl ?? row.item.thumbnailUrl} />
+                </>
+              }
+              right={findable ? <SearchIcon color={theme.textSecondary} size={16} /> : <View />}
+              {...(findable
+                ? { onPress: () => openMatchSheet(row), ...(selectable ? { onLongPress } : {}) }
+                : selectable
+                  ? { onPress: toggle, onLongPress }
+                  : {})}
+            />
+          )}
+        </Holdable>
+        {index < rows.length - 1 && <View pointerEvents="none" style={[styles.divider, { backgroundColor: theme.hairline }]} />}
+      </View>
     );
   };
 
@@ -513,27 +555,5 @@ export default function TrackerImportScreen() {
         }
       />
     </ThemedView>
-  );
-}
-
-/**
- * A row that can say where it is: `SettingsRow`'s press carries no event, and a list row is recycled,
- * so a menu that should hang from the row gets the row's window rect measured at press time instead.
- */
-function RowAnchor({
-  children,
-  divider,
-}: {
-  children: (measure: (cb: (x: number, y: number, w: number, h: number) => void) => void) => ReactNode;
-  divider: boolean;
-}) {
-  const theme = useTheme();
-  const ref = useRef<View>(null);
-  return (
-    <View ref={ref} collapsable={false}>
-      {/* eslint-disable-next-line react-hooks/refs -- the render prop only hands this on to the row's press handler; the ref is read when the row is tapped, never while rendering */}
-      {children((cb) => ref.current?.measureInWindow(cb))}
-      {divider && <View pointerEvents="none" style={[styles.divider, { backgroundColor: theme.hairline }]} />}
-    </View>
   );
 }

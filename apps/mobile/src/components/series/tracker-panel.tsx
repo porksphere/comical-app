@@ -1,12 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Image } from 'expo-image';
-import { useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View, type TextStyle } from 'react-native';
-import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
-import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import { ClearIcon, SearchIcon, TrackersIcon } from '@/components/icons/ui-icons';
-import { useKeyboardAvoidingInput, useOverlay, useSheetScroll } from '@/components/overlay/overlay';
+import { CatalogResultRow, CatalogSearchField, catalogSearchStyles, SheetScroll, SourceTabs } from '@/components/catalog-search';
+import { TrackersIcon } from '@/components/icons/ui-icons';
+import { useOverlay } from '@/components/overlay/overlay';
 import { ACTION_ICON_SIZE, ActionButton } from '@/components/series/action-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -120,7 +118,7 @@ function TrackerMenu({ bridgeId, seriesId, title }: { bridgeId: string; seriesId
         Trackers
       </ThemedText>
 
-      <TrackerScroll>
+      <SheetScroll>
         {links === undefined ? (
           <ActivityIndicator />
         ) : linksQuery.isError ? (
@@ -183,7 +181,7 @@ function TrackerMenu({ bridgeId, seriesId, title }: { bridgeId: string; seriesId
             </ThemedView>
           </Pressable>
         )}
-      </TrackerScroll>
+      </SheetScroll>
     </View>
   );
 }
@@ -203,34 +201,6 @@ function syncSummary(res: TrackerLinkSyncResult): string {
   }
   if (res.updated) return `Already in sync at ${at}.`;
   return 'Nothing to sync yet — no read progress on either side.';
-}
-
-const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
-
-/** Caps the menu body so a long linked-tracker list (plus an open link form
- *  and its results) stays reachable inside the sheet instead of overflowing
- *  past the screen. Reports scroll offset to the enclosing overlay sheet (see
- *  `useSheetScroll`) so a downward drag at the top still chains into dismiss —
- *  same pattern as the filter sheet's `OptionList`. */
-function TrackerScroll({ children }: { children: ReactNode }) {
-  const sheet = useSheetScroll();
-  const localOffset = useSharedValue(0);
-  const offset = sheet?.scrollOffset ?? localOffset;
-  const onScroll = useAnimatedScrollHandler((e) => {
-    offset.value = e.contentOffset.y;
-  });
-  return (
-    <AnimatedScrollView
-      ref={sheet?.scrollRef as never}
-      onScroll={onScroll}
-      scrollEventThrottle={16}
-      style={styles.scroll}
-      contentContainerStyle={styles.scrollContent}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}>
-      {children}
-    </AnimatedScrollView>
-  );
 }
 
 function TrackerRow({
@@ -282,10 +252,6 @@ function RowButton({ label, onPress, disabled, testID }: { label: string; onPres
   );
 }
 
-// Suppress react-native-web's default focus outline (the field's own border
-// carries the focus highlight instead) — same trick as the browse search field.
-const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
-
 function LinkTrackerForm({
   trackers,
   title,
@@ -303,12 +269,9 @@ function LinkTrackerForm({
 }) {
   const theme = useTheme();
   const ds = useDataSource();
-  const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
   const [trackerId, setTrackerId] = useState(trackers[0]?.info.id ?? '');
   const [query, setQuery] = useState(title.trim());
   const [submittedQuery, setSubmittedQuery] = useState(title.trim());
-  const [focused, setFocused] = useState(false);
 
   const searchQuery = useQuery({
     queryKey: queryKeys.trackerCatalogSearch(trackerId, submittedQuery),
@@ -318,72 +281,33 @@ function LinkTrackerForm({
   });
   const results = submittedQuery ? searchQuery.data : undefined;
 
-  const search = () => setSubmittedQuery(query.trim());
-
   return (
-    <View style={styles.linkForm}>
-      <ThemedView type="backgroundElement" style={styles.serviceTabs}>
-        {trackers.map((t) => (
-          <Pressable
-            key={t.info.id}
-            testID={testId('series.tracker.service', t.info.id)}
-            onPress={() => {
-              setTrackerId(t.info.id);
-              setSubmittedQuery(query.trim());
-            }}
-            style={[styles.serviceTab, t.info.id === trackerId && { backgroundColor: theme.accent }]}>
-            <ThemedText
-              type="small"
-              numberOfLines={1}
-              style={t.info.id === trackerId ? { color: theme.accentOn } : { color: theme.textSecondary }}>
-              {t.info.name}
-            </ThemedText>
-          </Pressable>
-        ))}
-      </ThemedView>
+    <View style={catalogSearchStyles.form}>
+      <SourceTabs
+        sources={trackers.map((t) => t.info)}
+        activeId={trackerId}
+        onSelect={(id) => {
+          setTrackerId(id);
+          setSubmittedQuery(query.trim());
+        }}
+        testIDFor={(id) => testId('series.tracker.service', id)}
+      />
 
-      <ThemedView
-        type="backgroundElement"
-        style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
-        <SearchIcon color={theme.textSecondary} size={14} />
-        <TextInput
-          testID="series.tracker.search"
-          ref={inputRef}
-          value={query}
-          onChangeText={(t) => {
-            setQuery(t);
-            setSubmittedQuery('');
-          }}
-          onSubmitEditing={search}
-          onFocus={() => {
-            setFocused(true);
-            keyboardAvoiding.onFocus(inputRef.current);
-          }}
-          onBlur={() => {
-            setFocused(false);
-            keyboardAvoiding.onBlur();
-          }}
-          placeholder="Search title…"
-          placeholderTextColor={theme.textSecondary}
-          returnKeyType="search"
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!submitting}
-          style={[styles.searchInput, NO_OUTLINE, { color: theme.text }]}
-        />
-        {query.length > 0 && (
-          <Pressable
-            testID="series.tracker.search-clear"
-            onPress={() => {
-              setQuery('');
-              setSubmittedQuery('');
-            }}
-            hitSlop={8}
-            accessibilityLabel="Clear search">
-            <ClearIcon color={theme.textSecondary} size={12} />
-          </Pressable>
-        )}
-      </ThemedView>
+      <CatalogSearchField
+        testID="series.tracker.search"
+        clearTestID="series.tracker.search-clear"
+        value={query}
+        onChangeText={(t) => {
+          setQuery(t);
+          setSubmittedQuery('');
+        }}
+        onSubmit={() => setSubmittedQuery(query.trim())}
+        onClear={() => {
+          setQuery('');
+          setSubmittedQuery('');
+        }}
+        editable={!submitting}
+      />
 
       {submittedQuery && searchQuery.isLoading ? (
         <ActivityIndicator />
@@ -393,30 +317,22 @@ function LinkTrackerForm({
         </ThemedText>
       ) : (
         results && (
-          <View style={styles.results}>
+          <View style={catalogSearchStyles.results}>
             {results.length === 0 ? (
-              <ThemedText type="small" themeColor="textSecondary" style={styles.resultsEmpty}>
+              <ThemedText type="small" themeColor="textSecondary" style={catalogSearchStyles.resultsEmpty}>
                 No results.
               </ThemedText>
             ) : (
               results.map((r) => (
-                <Pressable
+                <CatalogResultRow
                   key={r.externalId}
                   testID={testId('series.tracker.result', r.externalId)}
+                  thumbnailUrl={r.thumbnailUrl}
+                  title={r.title}
+                  subtitle={r.externalId}
                   disabled={submitting}
-                  onPress={() => onLink(trackerId, r)}>
-                  <ThemedView type="backgroundElement" style={styles.resultRow}>
-                    <Image source={r.thumbnailUrl ? { uri: r.thumbnailUrl } : undefined} style={styles.resultThumb} />
-                    <View style={styles.resultText}>
-                      <ThemedText type="small" numberOfLines={1} style={styles.rowName}>
-                        {r.title}
-                      </ThemedText>
-                      <ThemedText type="small" themeColor="textSecondary">
-                        {r.externalId}
-                      </ThemedText>
-                    </View>
-                  </ThemedView>
-                </Pressable>
+                  onPress={() => onLink(trackerId, r)}
+                />
               ))
             )}
           </View>
@@ -432,13 +348,6 @@ const styles = StyleSheet.create({
   },
   title: {
     marginBottom: -Spacing.one,
-  },
-  scroll: {
-    maxHeight: 420,
-  },
-  scrollContent: {
-    gap: Spacing.three,
-    paddingBottom: Spacing.one,
   },
   list: {
     gap: Spacing.one,
@@ -481,67 +390,5 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     borderRadius: 7,
     alignItems: 'center',
-  },
-  linkForm: {
-    gap: Spacing.two,
-  },
-  // Tracker-service picker: a segmented control, same shape as the chapters
-  // overview/all/read/unread tabs (a filled bar, equal-width pressable
-  // segments, the active one filled with the accent colour).
-  serviceTabs: {
-    flexDirection: 'row',
-    ...ContinuousCorner,
-    borderRadius: 10,
-    padding: 3,
-    gap: 2,
-  },
-  serviceTab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
-    ...ContinuousCorner,
-    borderRadius: 8,
-  },
-  search: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.two,
-    ...ContinuousCorner,
-    borderRadius: Spacing.two,
-    borderWidth: 1,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    padding: 0,
-  },
-  results: {
-    gap: Spacing.one,
-  },
-  resultsEmpty: {
-    paddingVertical: Spacing.two,
-  },
-  resultRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    ...ContinuousCorner,
-    borderRadius: 8,
-  },
-  resultThumb: {
-    width: 28,
-    height: 42,
-    borderRadius: 4,
-    backgroundColor: 'rgba(128,128,128,0.15)',
-  },
-  resultText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
   },
 });

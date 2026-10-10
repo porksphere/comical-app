@@ -131,6 +131,9 @@ export function SelectLead({
   edgeOffset,
   itemKey,
   gesture,
+  onPress,
+  pressTestID,
+  accessibilityLabel,
 }: {
   progress: SharedValue<number>;
   selected: boolean;
@@ -146,6 +149,11 @@ export function SelectLead({
   /** The drag-select pan for this row (`useDragSelect().gestureFor(index)`) — pass it only while
    *  select mode is on, so the collapsed slot never steals scrolls in normal mode. */
   gesture?: PanGesture;
+  /** Toggle from the circle itself — for a row whose own tap does something else. Unset, the
+   *  circle is only a picture and the row's tap is what selects. */
+  onPress?: () => void;
+  pressTestID?: string;
+  accessibilityLabel?: string;
 }) {
   const slot = useAnimatedStyle(() => ({
     width: Math.max(0, progress.value) * CIRCLE_SLOT,
@@ -154,10 +162,23 @@ export function SelectLead({
     opacity: Math.min(1, Math.max(0, progress.value)),
     transform: [{ translateX: (progress.value - 1) * (CIRCLE_SLOT + edgeOffset) }],
   }));
+  const mark = <SelectCircle key={itemKey} selected={selected} done={done} />;
   const lead = (
     <Animated.View style={[styles.selectLead, slot]}>
       <Animated.View style={circle}>
-        <SelectCircle key={itemKey} selected={selected} done={done} />
+        {onPress ? (
+          <Pressable
+            testID={pressTestID}
+            onPress={onPress}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 4 }}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: selected }}
+            {...(accessibilityLabel ? { accessibilityLabel } : {})}>
+            {mark}
+          </Pressable>
+        ) : (
+          mark
+        )}
       </Animated.View>
     </Animated.View>
   );

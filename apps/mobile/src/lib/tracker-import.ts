@@ -4,15 +4,13 @@
  * turns into for the host.
  *
  * The host classifies every tracker entry against the library (`TrackerImportCandidate.match`); the
- * screen adds one more fact per `none` entry — whether a bridge search has found it (`Resolution`)
- * — and the two together decide the row's kind:
+ * screen adds one more fact per `none` entry — what the bridge lookup found for it, or what the user
+ * picked (`Resolution`) — and the two together decide the row's kind:
  *   - `in-library`  — held here but not linked to this tracker. Importing links it; the library's own
  *                     progress is never touched (it's pushed to the tracker if it's further ahead).
- *   - `resolved`    — not held; a bridge search found it (or the user picked a candidate). Importing
- *                     collects it, links it, and — new series only — may seed its read progress.
- *   - `unresolved`  — not held and not yet found. Not selectable; a bridge search (the "Find on…"
- *                     row for all of them, the row's own tap for one) or a candidate pick turns it
- *                     into `resolved`.
+ *   - `resolved`    — not held; the lookup found it exactly, or the user picked a series for it.
+ *                     Importing collects it, links it, and — new series only — may seed its progress.
+ *   - `unresolved`  — not held and not matched yet. Not selectable until the user picks a series.
  *   - `linked`      — already linked to this tracker. Inert.
  */
 import type {
@@ -100,9 +98,12 @@ export const unresolvedEntries = (rows: readonly ImportRow[]) =>
       ...(r.item.altTitles && r.item.altTitles.length > 0 && { altTitles: r.item.altTitles }),
     }));
 
-/** Fold one bridge's search answers into the resolution map. A later search for the same entry
- *  replaces the earlier miss; a user's pick survives only while the entry stays on the same bridge. */
-export function mergeResolutions(
+/**
+ * Fold one bridge's lookup answers into the resolution map. The lookup walks bridge after bridge, so
+ * an answer only ever improves on what an earlier bridge said: an exact hit wins over anything short
+ * of one, a shortlist over a miss, and a user's own pick over all of it.
+ */
+export function mergeLookup(
   prev: ReadonlyMap<string, Resolution>,
   bridgeId: string,
   results: readonly TrackerImportResolveResult[],
@@ -111,15 +112,46 @@ export function mergeResolutions(
   for (const r of results) {
     const key = rowKey(r.externalId);
     const old = prev.get(key);
+    if (old && (old.chosen || old.exact)) continue;
+    if (old && !r.exact && old.candidates.length > 0) continue;
     next.set(key, {
       bridgeId,
       candidates: r.candidates,
       ...(r.exact && { exact: r.exact }),
       ...(r.error && { error: r.error }),
-      ...(old?.chosen && old.bridgeId === bridgeId && { chosen: old.chosen }),
     });
   }
   return next;
+}
+
+/** The user's own pick for an entry, from the row's search — it outranks anything a lookup found. */
+export function pickMatch(
+  prev: ReadonlyMap<string, Resolution>,
+  key: string,
+  bridgeId: string,
+  series: ApiSeriesEntry,
+): Map<string, Resolution> {
+  const old = prev.get(key);
+  return new Map(prev).set(key, {
+    bridgeId,
+    candidates: old?.bridgeId === bridgeId ? old.candidates : [],
+    ...(old?.bridgeId === bridgeId && old.exact && { exact: old.exact }),
+    chosen: series,
+  });
+}
+
+/**
+ * The bridges an automatic lookup walks, in the order it walks them: the ones the library already
+ * reads the most from first (a list is most likely to be found where its neighbours were), then the
+ * user's own bridge order.
+ */
+export function lookupOrder<B extends { id: string }>(bridges: readonly B[], items: readonly TrackerImportCandidate[]): B[] {
+  const uses = new Map<string, number>();
+  for (const item of items) for (const e of item.entries ?? []) uses.set(e.bridgeId, (uses.get(e.bridgeId) ?? 0) + 1);
+  return bridges
+    .map((b, i) => ({ b, i, n: uses.get(b.id) ?? 0 }))
+    .sort((x, y) => y.n - x.n || x.i - y.i)
+    .map((x) => x.b);
 }
 
 const STATUS_LABEL: Record<TrackerStatus, string> = {
@@ -141,10 +173,6 @@ export function progressLabel(item: Pick<TrackerImportCandidate, 'status' | 'cha
  *  what decides whether the tracker is updated. */
 export const localReadOf = (item: TrackerImportCandidate) => Math.max(0, ...(item.entries ?? []).map((e) => e.localRead));
 
-/**
- * The one-line outcome under the title: what importing this row will DO, not just what it is, so
- * the user can read the plan off the list before confirming it.
- */
 /** One line under the row's title saying what importing it DOES — outcome first, since a settings
  *  row shows a single line and a phone fits about forty characters of it after the cover. */
 export function rowDescription(
@@ -154,8 +182,6 @@ export function rowDescription(
     nameOf: (bridgeId: string) => string;
     /** The bridge currently searching for this row, if one is. */
     searchingOn?: string | undefined;
-    /** How many bridges can search — a miss only offers "another" when there is one. */
-    bridgeCount?: number;
   },
 ): string {
   const { item } = row;
@@ -179,16 +205,13 @@ export function rowDescription(
     }
     case 'unresolved': {
       // Every unresolved row is a tap away from being importable, and says so: the row can't be
-      // checked until a bridge has found it, which looks like a dead row unless the line says why.
+      // checked until a series is picked for it, which looks like a dead row unless the line says why.
+      // The hint leads — a phone's line clips the tail.
       const res = row.resolution;
-      // Hint before progress: a phone's line clips the tail, and the tail should be the number.
-      if (!res) return `Not in library — tap to find · ${progressLabel(item)}`;
-      const bridge = opts.nameOf(res.bridgeId);
-      if (res.error) return `Couldn't search ${bridge} — tap to retry`;
-      if (res.candidates.length > 0) {
-        return `Tap to pick from ${res.candidates.length} on ${bridge}`;
-      }
-      return (opts.bridgeCount ?? 1) > 1 ? `Not found on ${bridge} — tap to try another` : `Not found on ${bridge}`;
+      if (!res) return `Not in library — tap to search · ${progressLabel(item)}`;
+      if (res.candidates.length > 0) return `${res.candidates.length} possible on ${opts.nameOf(res.bridgeId)} — tap to choose`;
+      if (res.error) return `Couldn't search ${opts.nameOf(res.bridgeId)} — tap to search`;
+      return 'Not found — tap to search';
     }
   }
 }
