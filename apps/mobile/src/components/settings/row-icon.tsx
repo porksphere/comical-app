@@ -17,13 +17,23 @@ const ICON_SIZE = 28;
  * SOME rows carry artwork would have the rest of its labels start at a different x, which reads as
  * broken rather than as sparse.
  */
-export function RowIcon({ uri, fallback }: { uri?: string; fallback: (color: string, size: number) => ReactNode }) {
+export function RowIcon({
+  uri,
+  fallback,
+  size = ICON_SIZE,
+}: {
+  uri?: string | undefined;
+  fallback: (color: string, size: number) => ReactNode;
+  /** A smaller tile for an icon inline in a row's content rather than leading it. */
+  size?: number;
+}) {
   const theme = useTheme();
+  const box = size === ICON_SIZE ? null : { width: size, height: size, borderRadius: Math.round(size * (Spacing.two / ICON_SIZE)) };
   if (uri) {
     return (
       <Image
         source={{ uri }}
-        style={[styles.tile, { backgroundColor: theme.backgroundElement }]}
+        style={[styles.tile, box, { backgroundColor: theme.backgroundElement }]}
         contentFit="cover"
         // Icons are tiny and near-always cached; a transition here just makes the list flicker on
         // every scroll-back.
@@ -33,8 +43,8 @@ export function RowIcon({ uri, fallback }: { uri?: string; fallback: (color: str
     );
   }
   return (
-    <View style={[styles.tile, styles.fallback, { backgroundColor: theme.backgroundElement }]}>
-      {fallback(theme.textSecondary, 16)}
+    <View style={[styles.tile, box, styles.fallback, { backgroundColor: theme.backgroundElement }]}>
+      {fallback(theme.textSecondary, Math.round(size * (16 / ICON_SIZE)))}
     </View>
   );
 }

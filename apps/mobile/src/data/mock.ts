@@ -1883,7 +1883,12 @@ export async function mockPutBridgePrefs(
 
 export async function mockGetTrackers(): Promise<TrackerSummary[]> {
   return TRACKER_SERVICES.map((s) => ({
-    info: { id: s.id, name: s.name, capabilities: ['library-sync', 'search'] },
+    info: {
+      id: s.id,
+      name: s.name,
+      capabilities: ['library-sync', 'search'],
+      iconUrl: MOCK_THUMBS[hash(`tracker-${s.id}`) % MOCK_THUMBS.length]!,
+    },
     configured: true,
     missingRequired: [],
     source: 'registry' as const,

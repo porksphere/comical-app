@@ -1,5 +1,6 @@
 import {
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   ArrowUpDown,
   Asterisk,
@@ -97,6 +98,7 @@ export const ChevronRightIcon = ({ color, size = 16, strokeWidth }: IconProps) =
 export const ChevronUpIcon = ({ color, size = 16 }: IconProps) => <ChevronUp color={color} size={size} />;
 export const ArrowUpIcon = ({ color, size = 16 }: IconProps) => <ArrowUp color={color} size={size} />;
 export const ArrowDownIcon = ({ color, size = 16 }: IconProps) => <ArrowDown color={color} size={size} />;
+export const ArrowRightIcon = ({ color, size = 16 }: IconProps) => <ArrowRight color={color} size={size} />;
 // Sort affordance — the Library top bar's sort menu trigger.
 export const SortIcon = ({ color, size = 16 }: IconProps) => <ArrowUpDown color={color} size={size} />;
 // Filter affordance — the Library top bar's reading-state filter, beside the sort. A funnel, not

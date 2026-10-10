@@ -30,7 +30,7 @@ import { openContextMenu } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { BridgesIcon, CheckIcon, ClearIcon, ListPlusIcon, ReadingIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { BridgeMatchSheet } from '@/components/import/bridge-match-sheet';
-import { ImportCover, importStyles as styles } from '@/components/import/import-list';
+import { ImportCover, MatchRoute, importStyles as styles } from '@/components/import/import-list';
 import { PILL_HEIGHT, SelectLead, SelectLeadGap, SelectPillBar, useDragSelect, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useOverlay } from '@/components/overlay/overlay';
@@ -68,6 +68,7 @@ import {
   planRows,
   progressLabel,
   readingKeys,
+  rowBridgeIds,
   rowKey,
   rowDescription,
   selectableKeys,
@@ -101,6 +102,8 @@ export default function TrackerImportScreen() {
   const sidePad = useSettingsSidePad(width);
 
   const { data, error, isLoading, refetch, isFetching } = useQuery(trackerImportPreviewQuery(ds, mock, trackerId));
+  const { data: trackers } = useQuery({ queryKey: queryKeys.trackers(), queryFn: ({ signal }) => ds.getTrackers(signal) });
+  const trackerIcon = trackers?.find((t) => t.info.id === trackerId)?.info.iconUrl;
 
   // The screen's own facts on top of the host's classification: what the lookup found per entry or
   // the user picked for it, and whether new series get their progress seeded.
@@ -121,7 +124,10 @@ export default function TrackerImportScreen() {
 
   const mode = useSelectMode(true);
   const ms = useMultiSelect(allKeys);
-  const listExtra = useMemo(() => ({ selected: ms.selected, resolutions, seed }), [ms.selected, resolutions, seed]);
+  const listExtra = useMemo(
+    () => ({ selected: ms.selected, resolutions, seed, trackerIcon, byId }),
+    [ms.selected, resolutions, seed, trackerIcon, byId],
+  );
 
   // Seed ONCE per resolved preview: everything actionable checked. Keyed on the items array identity
   // so a refetch re-seeds but the user unchecking everything is never undone by a re-render.
@@ -414,6 +420,16 @@ export default function TrackerImportScreen() {
     const findable = row.kind === 'resolved' || row.kind === 'unresolved';
     const searching = row.kind === 'unresolved' && resolving?.keys.has(row.key) ? resolving.bridgeId : undefined;
     const toggle = () => ms.toggle(row.key);
+    const bridgeIds = rowBridgeIds(row);
+    // Where the entry lands, once it lands anywhere; until then the row's tap is a search and says so.
+    const right =
+      bridgeIds.length > 0 ? (
+        <MatchRoute fromIcon={trackerIcon} toIcons={bridgeIds.map((id) => byId.get(id)?.thumbnail)} />
+      ) : findable ? (
+        <SearchIcon color={theme.textSecondary} size={16} />
+      ) : (
+        <View />
+      );
     return (
       <View>
         <Holdable
@@ -449,7 +465,7 @@ export default function TrackerImportScreen() {
                   <ImportCover url={row.target?.series.thumbnailUrl ?? row.item.thumbnailUrl} />
                 </>
               }
-              right={findable ? <SearchIcon color={theme.textSecondary} size={16} /> : <View />}
+              right={right}
               {...(findable
                 ? { onPress: () => openMatchSheet(row), ...(selectable ? { onLongPress } : {}) }
                 : selectable

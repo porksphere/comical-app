@@ -12,6 +12,7 @@ import {
   planRows,
   progressLabel,
   readingKeys,
+  rowBridgeIds,
   rowDescription,
   selectableKeys,
   sumImportResults,
@@ -70,6 +71,15 @@ describe('planRows', () => {
       { externalId: '2', title: 'Missing', altTitles: ['Alt'] },
       { externalId: 3, title: 'Planned' },
     ]);
+  });
+
+  test('rowBridgeIds: the find for a resolved row, each distinct library copy, nothing otherwise', () => {
+    const twice = { ...held, entries: [...held.entries!, { key: 'a:held-2', bridgeId: 'a', seriesId: 'held-2', title: 'Held', localRead: 0 }] };
+    const byKey = new Map(planRows([twice, missing, planned, linked], new Map([['2', found]])).map((r) => [r.key, rowBridgeIds(r)]));
+    expect(byKey.get('1')).toEqual(['a', 'b']);
+    expect(byKey.get('2')).toEqual(['x']);
+    expect(byKey.get('3')).toEqual([]);
+    expect(byKey.get('4')).toEqual([]);
   });
 });
 

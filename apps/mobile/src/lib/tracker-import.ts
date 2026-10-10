@@ -80,6 +80,13 @@ export function planRows(items: readonly TrackerImportCandidate[], resolutions: 
   return [...actionable, ...unresolved, ...linked];
 }
 
+/** The bridges a row's series comes from: the match it imports as, or every library copy it links. */
+export function rowBridgeIds(row: ImportRow): string[] {
+  if (row.kind === 'resolved') return [row.target!.bridgeId];
+  if (row.kind === 'in-library') return [...new Set((row.item.entries ?? []).map((e) => e.bridgeId))];
+  return [];
+}
+
 export const selectableKeys = (rows: readonly ImportRow[]) => rows.filter((r) => isSelectableKind(r.kind)).map((r) => r.key);
 
 /** Selectable rows the tracker says are being read right now. */

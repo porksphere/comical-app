@@ -942,6 +942,8 @@ export interface TrackerInfo {
   id: string;
   name: string;
   capabilities: string[];
+  /** The service's icon, when the tracker declares one. */
+  iconUrl?: string;
 }
 
 /** GET /trackers → one entry per mounted tracker (mirrors `BridgeSummary`'s shape). */

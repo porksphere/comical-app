@@ -7,6 +7,9 @@
 import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 
+import { ArrowRightIcon, BridgesIcon, TrackersIcon } from '@/components/icons/ui-icons';
+import { RowIcon } from '@/components/settings/row-icon';
+import { ThemedText } from '@/components/themed-text';
 import { SettingsGutter, Spacing } from '@/constants/theme';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
@@ -24,7 +27,40 @@ export function ImportCover({ url }: { url?: string }) {
   );
 }
 
+const ROUTE_ICON = 18;
+/** Past this many sources the row says "+N" instead of drawing more icons — the title needs the room. */
+const ROUTE_MAX_TO = 2;
+
+/**
+ * Where a row's entry goes, as icons: the service it comes from, an arrow, and the source (or
+ * sources, for a series the library holds on several) it lands on.
+ */
+export function MatchRoute({ fromIcon, toIcons }: { fromIcon?: string | undefined; toIcons: readonly (string | undefined)[] }) {
+  const theme = useTheme();
+  const shown = toIcons.slice(0, ROUTE_MAX_TO);
+  const more = toIcons.length - shown.length;
+  return (
+    <View style={importStyles.route} accessible={false}>
+      <RowIcon uri={fromIcon} size={ROUTE_ICON} fallback={(color, size) => <TrackersIcon color={color} size={size} />} />
+      <ArrowRightIcon color={theme.textSecondary} size={12} />
+      {shown.map((uri, i) => (
+        <RowIcon key={i} uri={uri} size={ROUTE_ICON} fallback={(color, size) => <BridgesIcon color={color} size={size} />} />
+      ))}
+      {more > 0 && (
+        <ThemedText type="small" themeColor="textSecondary">
+          +{more}
+        </ThemedText>
+      )}
+    </View>
+  );
+}
+
 export const importStyles = StyleSheet.create({
+  route: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+  },
   container: {
     flex: 1,
   },
