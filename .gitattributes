@@ -3,3 +3,5 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 nginx.conf text eol=lf
+# bun applies these against the LF files it unpacks; a CRLF checkout would stop them matching.
+*.patch text eol=lf
