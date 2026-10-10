@@ -1,6 +1,7 @@
 import { useIsLastItem } from "@legendapp/list/react-native";
 import { StyleSheet, View } from "react-native";
 
+import { useIsDesktop } from "@/hooks/use-responsive";
 import { useTheme } from "@/hooks/use-theme";
 
 /**
@@ -12,11 +13,15 @@ import { useTheme } from "@/hooks/use-theme";
  * floors sizes to and the `1/PixelRatio + 0.01` delta under which it discards a re-measure. A row
  * that re-measures mid-animation can lose its divider and that pixel of height with it. Absolutely
  * positioned it measures as nothing, so there is nothing left to lose.
+ *
+ * Not drawn on desktop: there the rows have the room to separate themselves, and a line that stops
+ * at the content column's edge reads as a rule that ran out, not as a divider.
  */
 export function RowHairline() {
   const theme = useTheme();
   const isLast = useIsLastItem();
-  return isLast ? null : (
+  const desktop = useIsDesktop();
+  return isLast || desktop ? null : (
     <View style={[styles.line, { backgroundColor: theme.hairline }]} />
   );
 }
