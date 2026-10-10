@@ -11,14 +11,19 @@
 #                                    hash of the series id), so at least one is always still
 #                                    available to link.
 #   - series.tracker.search         The catalog-search TextInput. No accessibilityLabel either.
-#     Search only fires on submit (onSubmitEditing sets submittedQuery — onChangeText resets it,
-#     so typing alone does nothing), hence `pressKey: Enter` after `inputText`.
+#     It opens PREFILLED with the series' own title and that search already running, so a result
+#     row is asserted before anything is typed. After that, a manual search only fires on submit
+#     (onSubmitEditing sets submittedQuery — onChangeText resets it, so typing alone does
+#     nothing), hence `pressKey: Enter` after `inputText`.
+#   - series.tracker.search-clear   Empties the prefilled field first — `inputText` appends.
 #   - series.tracker.result.<externalId>   Matched broadly by regex (like series.chapter.* in
 #     browse-to-reader.yaml) since externalId is a hash, not a value worth reproducing here.
 #
 # Query "Silent" is a deliberately unique substring: of the whole TITLES pool (data/mock.ts) only
 # "The Silent Sea" contains it (checked against every title, including the long-title fixture), so
 # the result list is always exactly one row — no dependency on which series/tracker-tab is active.
+# The prefilled search's row count isn't asserted: the opened series' title is in that same pool,
+# so it always finds at least itself, which is all the auto-search promises.
 #
 # The sheet is explicitly closed at the end via a backdrop tap (point: "50%, 8%", same established
 # pattern as reader-navigation.yaml/swipe-dismiss-webtoon.yaml's settings-sheet dismissal). This
@@ -66,6 +71,12 @@ appId: com.porksphere.comical
 
 - assertVisible:
     id: "series.tracker.search"
+# Prefilled with the series title and already searching — a result shows up unprompted.
+- assertVisible:
+    id: "series\\.tracker\\.result\\..*"
+
+- tapOn:
+    id: "series.tracker.search-clear"
 - tapOn:
     id: "series.tracker.search"
 - inputText: "Silent"

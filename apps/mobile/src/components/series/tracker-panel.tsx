@@ -30,7 +30,7 @@ import { testId } from '@/lib/test-id';
 // series — see trackers.tsx), but a *link* is per library entry, so every call here is scoped to
 // this series' bridgeId+seriesId.
 
-export function TrackerButton({ bridgeId, seriesId }: { bridgeId: string; seriesId: string }) {
+export function TrackerButton({ bridgeId, seriesId, title }: { bridgeId: string; seriesId: string; title: string }) {
   const { open } = useOverlay();
   const theme = useTheme();
   return (
@@ -39,12 +39,12 @@ export function TrackerButton({ bridgeId, seriesId }: { bridgeId: string; series
       label="Trackers"
       leading={<TrackersIcon color={theme.text} size={ACTION_ICON_SIZE} />}
       caret
-      onPress={() => open(() => <TrackerMenu bridgeId={bridgeId} seriesId={seriesId} />)}
+      onPress={() => open(() => <TrackerMenu bridgeId={bridgeId} seriesId={seriesId} title={title} />)}
     />
   );
 }
 
-function TrackerMenu({ bridgeId, seriesId }: { bridgeId: string; seriesId: string }) {
+function TrackerMenu({ bridgeId, seriesId, title }: { bridgeId: string; seriesId: string; title: string }) {
   const theme = useTheme();
   const ds = useDataSource();
   const mock = useMockActive();
@@ -162,6 +162,7 @@ function TrackerMenu({ bridgeId, seriesId }: { bridgeId: string; seriesId: strin
         {linking && (
           <LinkTrackerForm
             trackers={availableToLink}
+            title={title}
             submitting={linkMutation.isPending}
             onLink={(trackerId, result) => linkMutation.mutate({ trackerId, result })}
           />
@@ -287,11 +288,15 @@ const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextSty
 
 function LinkTrackerForm({
   trackers,
+  title,
   submitting,
   onLink,
 }: {
   /** Configured, not-yet-linked trackers — already filtered by the caller. */
   trackers: TrackerSummary[];
+  /** The series' own title: the search the user would type nine times out of ten, so it is
+   *  typed and run for them when the form opens, and re-run whenever they switch tracker. */
+  title: string;
   /** True while a link request from a previous result tap is in flight. */
   submitting: boolean;
   onLink: (trackerId: string, result: TrackerSearchResult) => void;
@@ -301,8 +306,8 @@ function LinkTrackerForm({
   const keyboardAvoiding = useKeyboardAvoidingInput();
   const inputRef = useRef<TextInput>(null);
   const [trackerId, setTrackerId] = useState(trackers[0]?.info.id ?? '');
-  const [query, setQuery] = useState('');
-  const [submittedQuery, setSubmittedQuery] = useState('');
+  const [query, setQuery] = useState(title.trim());
+  const [submittedQuery, setSubmittedQuery] = useState(title.trim());
   const [focused, setFocused] = useState(false);
 
   const searchQuery = useQuery({
@@ -324,7 +329,7 @@ function LinkTrackerForm({
             testID={testId('series.tracker.service', t.info.id)}
             onPress={() => {
               setTrackerId(t.info.id);
-              setSubmittedQuery('');
+              setSubmittedQuery(query.trim());
             }}
             style={[styles.serviceTab, t.info.id === trackerId && { backgroundColor: theme.accent }]}>
             <ThemedText

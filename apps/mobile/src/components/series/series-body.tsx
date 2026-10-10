@@ -634,7 +634,7 @@ export function SeriesBody({
           action, below the ones that act on the series itself. The old "Add to collection" button
           stood beside it and is gone — it was the Save button above with extra steps. */}
       {Array.isArray(trackers) && trackers.length > 0 && bridgeId && (
-        <TrackerButton bridgeId={bridgeId} seriesId={series.id} />
+        <TrackerButton bridgeId={bridgeId} seriesId={series.id} title={series.title} />
       )}
       {series.newCount != null && <NewBadge count={series.newCount} />}
     </View>
