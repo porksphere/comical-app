@@ -40,17 +40,10 @@ export function HistoryRow({
   progress,
   thumbRef,
   coverHidden,
-  uniform,
   testID,
 }: {
   thumbnailUrl?: string;
   title: string;
-  /** Keep the row at the thumbnail's height whatever its text — for a list laid out in columns,
-   *  where a row taller than its neighbour across the gap draws its divider on a different line.
-   *  The thumbnail holds three lines of text, so the title wraps only to what `sub` and `detail`
-   *  leave of them: two lines beside one secondary line, one beside two. Off (the default) the
-   *  title may always take two and the row grows to fit. */
-  uniform?: boolean;
   sub?: string;
   /** Tapping the thumbnail/body. */
   onPress: () => void;
@@ -83,8 +76,6 @@ export function HistoryRow({
   const theme = useTheme();
   const resolvedThumb = useResolvedAsset(thumbnailUrl);
   const base = testID ?? testId('history-row', title);
-  // `uniform`: the thumbnail is THUMB_LINES of text tall; the title gets what the secondary lines leave.
-  const titleLines = uniform ? Math.max(1, THUMB_LINES - (sub ? 1 : 0) - (detail ? 1 : 0)) : 2;
   return (
     <View style={[styles.row, dimmed && styles.dimmed]}>
       <Pressable
@@ -116,7 +107,7 @@ export function HistoryRow({
         <View style={styles.body}>
           <View style={styles.titleRow}>
             {unread && <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} />}
-            <ThemedText type="smallBold" numberOfLines={titleLines} style={styles.titleText}>
+            <ThemedText type="smallBold" numberOfLines={2} style={styles.titleText}>
               {title}
             </ThemedText>
           </View>
@@ -165,9 +156,6 @@ export function HistoryRow({
 }
 
 const THUMB_W = 46;
-/** Lines of `small` text (20pt line height, 2pt gaps) that fit beside the 2:3 thumbnail (69pt):
- *  three take 64, four would take 86 and push the row past it. See `uniform`. */
-const THUMB_LINES = 3;
 
 const styles = StyleSheet.create({
   row: {

@@ -3,7 +3,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,16 +28,16 @@ import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useContentWidth } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
-import { useRowColumns } from '@/hooks/use-row-columns';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
@@ -77,9 +77,8 @@ export default function ActivityScreen() {
   const mock = useMockActive();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  // One column of rows on a phone or tablet; a desktop's capped content column splits in two — see
-  // use-row-columns (shared with History, so the two feeds split alike).
-  const grid = useRowColumns();
+  // The content column, not the window — the sidebar's inset is already out of it.
+  const width = useContentWidth();
   const filter = useTabFilter();
   const query = filter.query;
   const queryClient = useQueryClient();
@@ -221,9 +220,8 @@ export default function ActivityScreen() {
   const unreadTotal = rows.reduce((n, r) => n + r.newCount, 0);
 
   // Reading reorders this list, so a series opened from partway down can end up above the viewport
-  // by the time the page closes — see useZoomSurfaceList. `xAtIndex`: in two columns a row's x is
-  // its column's, not 0.
-  useZoomSurfaceList(zoomSurface, rows, activitySeriesId, listRef, { xAtIndex: grid.xAtIndex });
+  // by the time the page closes — see useZoomSurfaceList.
+  useZoomSurfaceList(zoomSurface, rows, activitySeriesId, listRef);
 
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
@@ -231,7 +229,7 @@ export default function ActivityScreen() {
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
   // explicit paddingLeft/Right is the reliable lever. Only the centring inset (web); the row owns its
   // own horizontal gutter so the swipe-to-clear reaches the edge (see history-row / history).
-  const sidePad = grid.sidePad;
+  const sidePad = topLevelCenterInset(width);
 
   // See history.tsx's `openDetail` — the same control, opening the same combined page on its
   // details side.
@@ -301,7 +299,6 @@ export default function ActivityScreen() {
             data={rows}
             keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
             recycleItems={false}
-            numColumns={grid.columns}
             itemLayoutAnimation={ROW_REORDER_TRANSITION}
             // Don't retro-correct offsets from measurements — a visible jitter while flinging otherwise.
             maintainVisibleContentPosition={{ data: false, size: false }}
@@ -321,7 +318,7 @@ export default function ActivityScreen() {
               paddingLeft: sidePad,
               paddingRight: sidePad,
             }}
-            renderItem={({ item, index }) => (
+            renderItem={({ item }) => (
               <ActivityItem
                 item={item}
                 onRead={() => read(item)}
@@ -330,8 +327,6 @@ export default function ActivityScreen() {
                 onRemove={() => removeMutation.mutate(item)}
                 bridge={nameOf(item.bridgeId)}
                 direct={directOf(item.bridgeId)}
-                cell={grid.cell(index, rows.length)}
-                uniform={grid.uniform}
               />
             )}
             // Opens the feed with where you stand, so the answer to "is there more to read" is the
@@ -396,8 +391,6 @@ function ActivityItem({
   onRemove,
   bridge,
   direct,
-  cell,
-  uniform,
 }: {
   item: SeriesActivity;
   onRead: () => void;
@@ -406,9 +399,6 @@ function ActivityItem({
   onRemove: () => void;
   bridge: string;
   direct: boolean;
-  /** This row's place in the list's columns — see useRowColumns. */
-  cell: { style: ViewStyle | undefined; lastRow: boolean };
-  uniform: boolean;
 }) {
   const thumbRef = useRef<View>(null);
   // The row's thumbnail is the zoom transition's source rect,
@@ -454,10 +444,9 @@ function ActivityItem({
       actions={[]}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}
-      uniform={uniform}
     />
   );
-  const row = (
+  return (
     <>
       <SwipeableRow
         name={item.title}
@@ -489,12 +478,9 @@ function ActivityItem({
           </SeriesCardMenu>
         )}
       </SwipeableRow>
-      <RowHairline hidden={cell.lastRow} />
+      <RowHairline />
     </>
   );
-  // In columns the row is boxed so the divider (absolute, edge to edge of its parent) stops at the
-  // column gap instead of running on into the neighbour's; a single column has no box to add.
-  return cell.style ? <View style={cell.style}>{row}</View> : row;
 }
 
 /** Row secondary line: `N new chapters · when` when several coalesce, else `chapter · when`. */

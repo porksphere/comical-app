@@ -13,12 +13,10 @@ import { useTheme } from "@/hooks/use-theme";
  * that re-measures mid-animation can lose its divider and that pixel of height with it. Absolutely
  * positioned it measures as nothing, so there is nothing left to lose.
  */
-export function RowHairline({ hidden }: { hidden?: boolean } = {}) {
+export function RowHairline() {
   const theme = useTheme();
-  // The last item carries no divider — nor, in a multi-column list, do the rest of its row, which
-  // `useIsLastItem` can't tell apart from the row above; the list says so via `hidden`.
   const isLast = useIsLastItem();
-  return isLast || hidden ? null : (
+  return isLast ? null : (
     <View style={[styles.line, { backgroundColor: theme.hairline }]} />
   );
 }
