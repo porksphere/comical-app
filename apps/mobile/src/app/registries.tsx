@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
-import { CheckIcon, ClearIcon, GripIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, ClearIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SelectLead, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
@@ -17,7 +17,7 @@ import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { TopBar, TopBarButton } from '@/components/top-bar';
+import { TopBar } from '@/components/top-bar';
 import { SettingsGutter, Spacing } from '@/constants/theme';
 import type { SavedRegistry } from '@/data/api';
 import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-order';
@@ -41,8 +41,6 @@ export default function RegistriesScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { openDialog } = useOverlay();
-  // Web-only reorder mode (▲/▼). Native reorders in place via long-press drag.
-  const [editing, setEditing] = useState(false);
 
   const { data: registries, error, isLoading, refetch } = useQuery({
     queryKey: queryKeys.registries(),
@@ -52,7 +50,6 @@ export default function RegistriesScreen() {
   // Registries are keyed by url; apply the saved order the same way bridges/trackers do.
   const order = useRegistryOrder();
   const ordered = Array.isArray(registries) ? applyOrder(registries, order, (r) => r.url) : registries;
-  const canReorder = Array.isArray(ordered) && ordered.length >= 2;
 
   // Refresh each registry's operator label (the pull-to-refresh handler). `getRegistries` (the list)
   // never fetches indexes, so a relabelled registry wouldn't show its new name on its own. Browsing
@@ -228,20 +225,12 @@ export default function RegistriesScreen() {
         right={
           // `null` = this server has no registry support at all, so there's nothing to add to.
           registries !== null &&
-          (editing ? (
-            <TopBarButton testID="registries.done" icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
-          ) : selecting ? (
+          (selecting ? (
             <SelectToggle selecting onToggle={toggleSelecting} testID="registries.select-toggle" />
           ) : (
             // The + add button now lives in the floating FAB below (hidden in select mode); the
             // top-right holds the select toggle where the + used to be.
-            <View style={styles.topActions}>
-              {/* Reorder button only on web (native reorders in place — long-press a row). */}
-              {IS_WEB && canReorder && (
-                <TopBarButton testID="registries.reorder" icon={<GripIcon color={theme.text} size={22} />} label="Reorder registries" onPress={() => setEditing(true)} />
-              )}
-              {allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="registries.select-toggle" />}
-            </View>
+            allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="registries.select-toggle" />
           ))
         }
       />
@@ -267,20 +256,11 @@ export default function RegistriesScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ReorderableList
-          data={ordered}
-          keyOf={(r) => r.url}
-          renderRow={renderRow}
-          label={(r) => (r.displayName ? `${r.displayName} — ${r.name}` : r.name)}
-          onReorder={(urls) => setRegistryOrder(urls)}
-          editing={editing}
-          dragEnabled={!selecting}
-          refresh={reconcileLabels}
-        />
+        <ReorderableList data={ordered} keyOf={(r) => r.url} renderRow={renderRow} onReorder={(urls) => setRegistryOrder(urls)} dragEnabled={!selecting} refresh={reconcileLabels} />
       )}
 
-      {/* The + add affordance: a floating FAB in normal mode, hidden while selecting/reordering. */}
-      {Array.isArray(ordered) && !selecting && !editing && (
+      {/* The + add affordance: a floating FAB in normal mode, hidden while selecting. */}
+      {Array.isArray(ordered) && !selecting && (
         <AddFab
           onPress={() => openDialog(() => <AddRegistryForm />, { accessibilityLabel: 'Add registry' })}
           testID="registries.add"
@@ -430,10 +410,6 @@ function AddRegistryForm() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  topActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   stateHost: {
     flex: 1,

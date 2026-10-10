@@ -1,9 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
-import { ArrowUpIcon, CheckIcon, GripIcon, PlusIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { ArrowUpIcon, PlusIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
 import { useBrowseRegistry } from '@/components/settings/browse-registry';
@@ -47,8 +46,6 @@ export default function TrackersScreen() {
   // Live registry update check (id → newer version) — the authoritative signal for a row's update
   // dot / swipe-Update, so a pending update shows even before the summary annotation catches up.
   const updateMap = useTrackerUpdateMap();
-  // Web-only reorder mode (▲/▼). Native reorders in place via long-press drag.
-  const [editing, setEditing] = useState(false);
 
   // `data === undefined` = still loading; `null` = this server has no tracker support (an expected
   // state, not an error).
@@ -60,7 +57,6 @@ export default function TrackersScreen() {
   // Apply the saved order. Trackers have no NSFW filter, so the whole list reorders directly.
   const order = useTrackerOrder();
   const ordered = Array.isArray(trackers) ? applyOrder(trackers, order, (t) => t.info.id) : trackers;
-  const canReorder = Array.isArray(ordered) && ordered.length >= 2;
 
   const { checking, recheck } = useRecheckRegistryUpdates();
   const checkForUpdates = async () => {
@@ -148,10 +144,7 @@ export default function TrackersScreen() {
       <TopBar
         title="Trackers"
         right={
-          trackers !== null &&
-          (editing ? (
-            <TopBarButton testID="trackers.done" icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
-          ) : (
+          trackers !== null && (
             <View style={styles.topActions}>
               {/* Web has no pull-to-refresh on this list, so the check gets a button there. */}
               {IS_WEB && Array.isArray(ordered) && ordered.length > 0 && (
@@ -162,15 +155,11 @@ export default function TrackersScreen() {
                   onPress={() => void checkForUpdates()}
                 />
               )}
-              {/* Reorder button only on web (native reorders in place — long-press a row). */}
-              {IS_WEB && canReorder && (
-                <TopBarButton testID="trackers.reorder" icon={<GripIcon color={theme.text} size={22} />} label="Reorder trackers" onPress={() => setEditing(true)} />
-              )}
               {browseRegistry && (
                 <TopBarButton testID="trackers.install" icon={<PlusIcon color={theme.text} size={22} />} label="Install a tracker" onPress={browseRegistry} />
               )}
             </View>
-          ))
+          )
         }
       />
       {isError ? (
@@ -195,15 +184,7 @@ export default function TrackersScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ReorderableList
-          data={ordered}
-          keyOf={(t) => t.info.id}
-          renderRow={renderRow}
-          label={(t) => t.info.name}
-          onReorder={(keys) => setTrackerOrder(keys)}
-          editing={editing}
-          refresh={() => refetch()}
-        />
+        <ReorderableList data={ordered} keyOf={(t) => t.info.id} renderRow={renderRow} onReorder={(keys) => setTrackerOrder(keys)} refresh={() => refetch()} />
       )}
     </ThemedView>
   );

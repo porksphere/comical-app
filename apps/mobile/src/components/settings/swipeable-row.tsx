@@ -68,8 +68,8 @@ const IS_WEB = Platform.OS === 'web';
 
 // Whether this web client has a hovering pointer at all. A touchscreen laptop/tablet on web fires no
 // hover events ever, so hover-revealed actions would be permanently invisible there — those clients
-// get them shown outright instead.
-const CAN_HOVER = IS_WEB && typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover)').matches;
+// get them shown outright instead. Shared with the reorder handle, which reveals on the same terms.
+export const CAN_HOVER = IS_WEB && typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover)').matches;
 
 // react-native-web maps these onto the underlying div so the action's opacity change eases; they
 // aren't part of RN's ViewStyle, hence the cast (mirrors app-tabs.tsx's FADE_TRANSITION). Web only.
@@ -78,8 +78,8 @@ const WEB_ACTION_TRANSITION = {
   transitionDuration: '120ms',
 } as unknown as ViewStyle;
 
-/** Width of one hover-action lane on web. */
-const WEB_LANE = 34;
+/** Width of one hover-action lane on web — also the reorder handle's lane, so the rail stays even. */
+export const WEB_LANE = 34;
 
 /** One trailing swipe/hover action. The `icon` is a glyph component from `@/components/icons/ui-icons`
  *  (they all take `{ color, size }`). `destructive` paints the action in the danger colour (a delete);

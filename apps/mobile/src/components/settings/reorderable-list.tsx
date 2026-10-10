@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   type AnimatedRef,
@@ -13,10 +13,13 @@ import Animated, {
   useFrameCallback,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { GripIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
+import { CAN_HOVER, WEB_LANE } from '@/components/settings/swipeable-row';
 import { SettingsGutter, SettingsRowHeight } from '@/constants/theme';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
@@ -24,13 +27,16 @@ import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { ROW_SPRING } from '@/lib/row-motion';
 import { hapticImpactLight } from '@/lib/haptics';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
+import { testId } from '@/lib/test-id';
 
 import type { ReorderableListProps } from './reorderable-list.types';
 
 /**
- * Our own in-place reorderable list — no external DnD library. The live list IS the drag surface: a
- * ~200ms long-press on any row lifts it and drags it into place. Built on the primitives the app
- * already owns (reanimated + gesture-handler + `usePullToRefresh` + the swipe row):
+ * Our own in-place reorderable list — no external DnD library. The live list IS the drag surface:
+ * on a touch screen a ~200ms long-press on any row lifts it and drags it into place; with a mouse
+ * the row is dragged by a grip handle in a lane beside it. Built on the primitives the app already
+ * owns (reanimated + gesture-handler + `usePullToRefresh` + the swipe row):
  *
  *  - **Exact swipe-to-uninstall.** `renderRow` (the real `SwipeableSettingsRow`) is wrapped
  *    UNCHANGED; the drag pan (long-press) and swipe pan (quick horizontal) coexist by activation:
@@ -38,6 +44,12 @@ import type { ReorderableListProps } from './reorderable-list.types';
  *  - **Pull-to-refresh** on the same scroll (the shared `usePullToRefresh` + `PullIndicator`), and
  *    the content fills the viewport so the pull is reachable from anywhere, not just over the rows.
  *  - **Edge autoscroll** while dragging; **lift** = scale + shadow, neighbours spring apart.
+ *
+ * On web the long-press is replaced, not added to: a mouse held still on a row is not a gesture
+ * anyone makes, and the row's own actions already live in hover lanes to its right (see
+ * `SwipeableRow`'s web half), so the handle is one more lane of the same rail — the same width,
+ * shown on the same hover, gone with the same select mode. The drag it starts is the native one;
+ * only where the finger lands differs.
  *
  * Rows are a fixed `SettingsRowHeight` — the same constant every other settings row uses — so the
  * slot math is a simple `index * ROW` and rows never overlap. Reusable for any settings list (Bridges,
@@ -47,6 +59,9 @@ const ROW = SettingsRowHeight;
 const LIFT_SCALE = 1.03;
 const EDGE = 72; // px from a viewport edge where autoscroll kicks in
 const MAX_STEP = 12; // max px/frame autoscroll speed
+
+// Constant for the process, so each platform only ever renders one shape of row.
+const IS_WEB = Platform.OS === 'web';
 
 /** The slot Y for `id` in the current order. */
 function slotY(order: string[], id: string): number {
@@ -129,6 +144,7 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh,
         // Fill the viewport even for a short list + always allow the bounce, so a pull anywhere on the
         // page engages the refresh — not only over the rows.
         alwaysBounceVertical
+        style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[contentPadding, styles.grow]}>
         <Animated.View style={[styles.grow, { minHeight: contentHeight }, pull.listStyle]}>
           {data.map((item, i) => (
@@ -196,8 +212,6 @@ function DragRow({
     // Off while another mode (multi-select) owns row interaction — its own long-presses (range fill)
     // must not lift rows. A fresh recognizer is built every render, so the flag re-applies cleanly.
     .enabled(dragEnabled)
-    // Long-press to lift, so a plain vertical drag still scrolls and a quick horizontal is the swipe.
-    .activateAfterLongPress(200)
     .onStart((e) => {
       const m = measure(scrollRef);
       if (m) {
@@ -222,6 +236,9 @@ function DragRow({
       activeId.set(null);
       runOnJS(onCommit)(order.value);
     });
+  // Long-press to lift on a touch screen, so a plain vertical drag still scrolls and a quick
+  // horizontal is the swipe. The handle is the only thing a mouse can drag, so there it lifts at once.
+  if (!IS_WEB) pan.activateAfterLongPress(200);
 
   const style = useAnimatedStyle(() => {
     const active = activeId.value === id;
@@ -237,10 +254,43 @@ function DragRow({
     };
   });
 
+  // Hover over the whole row — body and handle lane alike — so the handle appears beside whatever
+  // the pointer is on, the way the row's own action lanes do (they listen on their own element,
+  // which this one contains, so the two reveal together).
+  const [hovered, setHovered] = useState(false);
+  const handleStyle = useAnimatedStyle(() => {
+    // Lifted, the row follows the pointer and the hover can lag it: the handle stays while dragging.
+    const shown = !CAN_HOVER || hovered || activeId.value === id;
+    return { opacity: withTiming(shown ? 1 : 0, { duration: 120 }) };
+  });
+
+  if (!IS_WEB) {
+    return (
+      <Animated.View style={[styles.rowAbs, style]}>
+        <GestureDetector gesture={pan}>{children}</GestureDetector>
+        {/* The same hairline SettingsSection draws between rows (left at the gutter, off the right). */}
+        {divider && <View style={[styles.divider, { backgroundColor: theme.hairline }]} pointerEvents="none" />}
+      </Animated.View>
+    );
+  }
   return (
-    <Animated.View style={[styles.rowAbs, style]}>
-      <GestureDetector gesture={pan}>{children}</GestureDetector>
-      {/* The same hairline SettingsSection draws between rows (left at the gutter, off the right). */}
+    <Animated.View
+      style={[styles.rowAbs, styles.webRow, style]}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}>
+      <View style={styles.webBody}>{children}</View>
+      {/* Select mode: the body stays, the lane goes — the same as the row's action lanes. */}
+      {dragEnabled && (
+        <GestureDetector gesture={pan}>
+          <Animated.View
+            testID={testId('reorder-handle', id)}
+            style={[styles.handleLane, styles.grabCursor, handleStyle]}
+            accessibilityRole="button"
+            accessibilityLabel={`Reorder ${id}`}>
+            <GripIcon color={theme.textSecondary} size={18} />
+          </Animated.View>
+        </GestureDetector>
+      )}
       {divider && <View style={[styles.divider, { backgroundColor: theme.hairline }]} pointerEvents="none" />}
     </Animated.View>
   );
@@ -266,4 +316,28 @@ const styles = StyleSheet.create({
     right: -SettingsGutter,
     height: StyleSheet.hairlineWidth,
   },
+  webRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  webBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  // One more lane of the row's action rail, past its edge lane: the row escapes the gutter on both
+  // sides (`marginHorizontal: -SettingsGutter`), so the body's right edge runs a gutter PAST its
+  // flex box — the lane steps aside by that much, then escapes the gutter itself so the grip sits
+  // inset from the screen's edge exactly as the actions' edge lane does.
+  handleLane: {
+    marginLeft: SettingsGutter,
+    marginRight: -SettingsGutter,
+    width: WEB_LANE + SettingsGutter,
+    paddingRight: SettingsGutter,
+    justifyContent: 'center',
+    alignItems: 'center',
+    userSelect: 'none',
+  },
+  // `grab` is a web cursor RN's `CursorValue` doesn't model (auto/pointer only) — cast like
+  // `sidebar-resizer`'s `col-resize`. Web only.
+  grabCursor: { cursor: 'grab' } as unknown as ViewStyle,
 });

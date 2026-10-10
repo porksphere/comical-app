@@ -1,42 +1,34 @@
-import { useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { NamePromptForm } from '@/app/custom-pages';
-import { CheckIcon, GripIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { useOverlay } from '@/components/overlay/overlay';
 import { ReorderableList } from '@/components/settings/reorderable-list';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, TopBarButton } from '@/components/top-bar';
+import { TopBar } from '@/components/top-bar';
 import { showToast } from '@/components/toast';
 import { SettingsGutter, Spacing } from '@/constants/theme';
 import type { Collection } from '@/data/types';
 import { useCollections } from '@/hooks/use-collections';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
-
-const IS_WEB = Platform.OS === 'web';
 
 /**
  * The collections manager, pushed from the Library tab's selector ("Manage collections…"). Create,
- * rename, delete, and reorder collections. Reorder is the app's standard `ReorderableList`: native
- * long-press drag (styled lift + neighbours spring apart), and a web ▲/▼ editing mode toggled from
- * the top bar (the drag library is native-only). Deleting a collection strips it from every member
- * and PRUNES series/chapter favorites left with none (the backend cascades). Mirrors
- * `custom-pages.tsx`.
+ * rename, delete, and reorder collections. Reorder is the app's standard `ReorderableList` (styled
+ * lift + neighbours spring apart, from a long-press on touch or the hover handle with a mouse).
+ * Deleting a collection strips it from every member and PRUNES series/chapter favorites left with
+ * none (the backend cascades). Mirrors `custom-pages.tsx`.
  */
 export default function ManageCollectionsScreen() {
   const router = useRouter();
-  const theme = useTheme();
   const contentPadding = useSettingsScrollPadding();
   const { open } = useOverlay();
-  const [editing, setEditing] = useState(false);
   const { collections, createCollection, renameCollection, reorderCollections, deleteCollection } = useCollections();
-  const canReorder = collections.length >= 2;
 
   const openCreate = () =>
     open(() => (
@@ -95,27 +87,7 @@ export default function ManageCollectionsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar
-        title="Manage Collections"
-        onBack={() => router.back()}
-        right={
-          editing ? (
-            <TopBarButton
-              testID="manage-collections.done"
-              icon={<CheckIcon color={theme.text} size={22} />}
-              label="Done reordering"
-              onPress={() => setEditing(false)}
-            />
-          ) : IS_WEB && canReorder ? (
-            <TopBarButton
-              testID="manage-collections.reorder"
-              icon={<GripIcon color={theme.text} size={22} />}
-              label="Reorder collections"
-              onPress={() => setEditing(true)}
-            />
-          ) : undefined
-        }
-      />
+      <TopBar title="Manage Collections" onBack={() => router.back()} />
 
       {collections.length === 0 ? (
         <View style={[styles.empty, contentPadding]}>
@@ -125,19 +97,10 @@ export default function ManageCollectionsScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ReorderableList
-          data={collections}
-          keyOf={(l) => l.id}
-          renderRow={renderRow}
-          label={(l) => l.name}
-          onReorder={reorderCollections}
-          editing={editing}
-        />
+        <ReorderableList data={collections} keyOf={(l) => l.id} renderRow={renderRow} onReorder={reorderCollections} />
       )}
 
-      {!editing && (
-        <AddFab onPress={openCreate} testID="manage-collections.add" label="New collection" right={SettingsGutter} bottom={Spacing.five} />
-      )}
+      <AddFab onPress={openCreate} testID="manage-collections.add" label="New collection" right={SettingsGutter} bottom={Spacing.five} />
     </ThemedView>
   );
 }

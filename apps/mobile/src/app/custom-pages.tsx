@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
-import { CheckIcon, ClearIcon, GripIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, ClearIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SelectLead, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
@@ -13,7 +13,7 @@ import { ReorderableList } from '@/components/settings/reorderable-list';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, TopBarButton } from '@/components/top-bar';
+import { TopBar } from '@/components/top-bar';
 import { SettingsGutter, Spacing } from '@/constants/theme';
 import { showToast } from '@/components/toast';
 import { addPage, deletePage, renamePage, reorderPages, useCustomPages, type CustomPage } from '@/data/custom-pages';
@@ -22,8 +22,6 @@ import { useTheme } from '@/hooks/use-theme';
 import { hapticSelection } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
-
-const IS_WEB = Platform.OS === 'web';
 
 /**
  * The top-level custom-pages editor: a reorderable list of the pages the user has composed for the
@@ -37,11 +35,8 @@ export default function CustomPagesScreen() {
   const contentPadding = useSettingsScrollPadding();
   const insets = useSafeAreaInsets();
   const { open } = useOverlay();
-  // Web-only reorder mode (▲/▼). Native reorders in place via long-press drag.
-  const [editing, setEditing] = useState(false);
 
   const pages = useCustomPages();
-  const canReorder = pages.length >= 2;
 
   // ── Multi-select mode (the shared select-mode chrome) — bulk-delete pages ──
   const mode = useSelectMode();
@@ -145,31 +140,12 @@ export default function CustomPagesScreen() {
       <TopBar
         title={selecting ? `${ms.count} selected` : 'Custom Pages'}
         right={
-          editing ? (
-            <TopBarButton
-              testID="custom-pages.done"
-              icon={<CheckIcon color={theme.text} size={22} />}
-              label="Done reordering"
-              onPress={() => setEditing(false)}
-            />
-          ) : selecting ? (
+          selecting ? (
             <SelectToggle selecting onToggle={toggleSelecting} testID="custom-pages.select-toggle" />
           ) : (
             // The + add button now lives in the floating FAB below (hidden in select mode); the
             // top-right holds the select toggle where the + used to be.
-            <View style={styles.topActions}>
-              {IS_WEB && canReorder && (
-                <TopBarButton
-                  testID="custom-pages.reorder"
-                  icon={<GripIcon color={theme.text} size={22} />}
-                  label="Reorder pages"
-                  onPress={() => setEditing(true)}
-                />
-              )}
-              {allKeys.length > 0 && (
-                <SelectToggle selecting={false} onToggle={toggleSelecting} testID="custom-pages.select-toggle" />
-              )}
-            </View>
+            allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="custom-pages.select-toggle" />
           )
         }
       />
@@ -181,19 +157,11 @@ export default function CustomPagesScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ReorderableList
-          data={pages}
-          keyOf={(p) => p.id}
-          renderRow={renderRow}
-          label={(p) => p.name}
-          onReorder={reorderPages}
-          editing={editing}
-          dragEnabled={!selecting}
-        />
+        <ReorderableList data={pages} keyOf={(p) => p.id} renderRow={renderRow} onReorder={reorderPages} dragEnabled={!selecting} />
       )}
 
       {/* The + add affordance: a floating FAB in normal mode, hidden while selecting. */}
-      {!selecting && !editing && (
+      {!selecting && (
         <AddFab
           onPress={openAddPage}
           testID="custom-pages.add"
@@ -325,10 +293,6 @@ export { renamePage };
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  topActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   stateHost: {
     flex: 1,

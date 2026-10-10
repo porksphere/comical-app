@@ -1,12 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
-import { ArrowUpIcon, BridgesIcon, CheckIcon, ClearIcon, GripIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { ArrowUpIcon, BridgesIcon, CheckIcon, ClearIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SelectLead, SelectLeadGap, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { ReorderableList } from '@/components/settings/reorderable-list';
@@ -62,9 +62,6 @@ export default function BridgesScreen() {
   // annotation hasn't been persisted back yet (see useBridgeUpdateMap). Served from the pip's cache.
   const updateMap = useBridgeUpdateMap();
 
-  // Web-only reorder mode (▲/▼). Native reorders in place via long-press drag — no mode.
-  const [editing, setEditing] = useState(false);
-
   const { data: bridges, isError, error, refetch } = useQuery({
     queryKey: queryKeys.bridgeSummaries(),
     queryFn: ({ signal }) => ds.getBridgeSummaries(signal),
@@ -82,8 +79,6 @@ export default function BridgesScreen() {
     const rest = (ordered ?? []).map((b) => b.info.id).filter((id) => !shown.has(id));
     setBridgeOrder([...keys, ...rest]);
   };
-
-  const canReorder = (visible?.length ?? 0) >= 2;
 
   const { checking, recheck } = useRecheckRegistryUpdates();
   const checkForUpdates = async () => {
@@ -262,9 +257,7 @@ export default function BridgesScreen() {
       <TopBar
         title={selecting ? `${ms.count} selected` : 'Bridges'}
         right={
-          editing ? (
-            <TopBarButton testID="bridges.done" icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
-          ) : selecting ? (
+          selecting ? (
             <SelectToggle selecting onToggle={toggleSelecting} testID="bridges.select-toggle" />
           ) : (
             // The + install button now lives in the floating FAB below (hidden in select mode); the
@@ -278,10 +271,6 @@ export default function BridgesScreen() {
                   label="Check for bridge updates"
                   onPress={() => void checkForUpdates()}
                 />
-              )}
-              {/* Reorder button only on web (native reorders in place — long-press a row). */}
-              {IS_WEB && canReorder && (
-                <TopBarButton testID="bridges.reorder" icon={<GripIcon color={theme.text} size={22} />} label="Reorder bridges" onPress={() => setEditing(true)} />
               )}
               {allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="bridges.select-toggle" />}
             </View>
@@ -314,23 +303,13 @@ export default function BridgesScreen() {
           )}
         </View>
       ) : (
-        // The live list IS the reorderable list: native = long-press drag in place, web = normal rows
-        // (or ▲/▼ while `editing`). It owns its own scroll, so there's no pull-to-refresh wrapper here.
-        <ReorderableList
-          data={visible}
-          keyOf={(b) => b.info.id}
-          renderRow={renderRow}
-          label={(b) => b.info.name}
-          leading={(b) => <RowIcon uri={b.info.iconUrl} fallback={(color, size) => <BridgesIcon color={color} size={size} />} />}
-          onReorder={onReorder}
-          editing={editing}
-          dragEnabled={!selecting}
-          refresh={() => refetch()}
-        />
+        // The live list IS the reorderable list (long-press drag on touch, a hover handle with a
+        // mouse). It owns its own scroll, so there's no pull-to-refresh wrapper here.
+        <ReorderableList data={visible} keyOf={(b) => b.info.id} renderRow={renderRow} onReorder={onReorder} dragEnabled={!selecting} refresh={() => refetch()} />
       )}
 
-      {/* The + install affordance: a floating FAB in normal mode, hidden while selecting/reordering. */}
-      {browseRegistry && !selecting && !editing && (
+      {/* The + install affordance: a floating FAB in normal mode, hidden while selecting. */}
+      {browseRegistry && !selecting && (
         <AddFab
           onPress={browseRegistry}
           testID="bridges.add"

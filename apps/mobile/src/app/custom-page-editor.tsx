@@ -1,12 +1,12 @@
 
-import { useMemo, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
-import { CheckIcon, ClearIcon, GripIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, ClearIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SelectLead, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useOverlay } from '@/components/overlay/overlay';
@@ -15,7 +15,7 @@ import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { TopBar, TopBarButton } from '@/components/top-bar';
+import { TopBar } from '@/components/top-bar';
 import { SettingsGutter, Spacing } from '@/constants/theme';
 import { NamePromptForm } from '@/app/custom-pages';
 import {
@@ -34,8 +34,6 @@ import { hapticSelection } from '@/lib/haptics';
 import {useLocalSearchParams, useRouter} from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
-const IS_WEB = Platform.OS === 'web';
-
 /**
  * Editor for ONE custom page's sections: a reorderable list where each row pins a bridge's list as a
  * rail or grid. Section titles resolve dynamically (a section with no explicit name shows the live
@@ -50,7 +48,6 @@ export default function CustomPageEditorScreen() {
   const contentPadding = useSettingsScrollPadding();
   const insets = useSafeAreaInsets();
   const { open } = useOverlay();
-  const [editing, setEditing] = useState(false);
 
   const page = useCustomPage(pageId);
   const { nameOf } = useBridgeMap();
@@ -66,7 +63,6 @@ export default function CustomPageEditorScreen() {
   const ms = useMultiSelect(allKeys);
 
   const titleOf = (s: CustomSection) => s.name ?? resolver.listOf(s.bridgeId, s.listId)?.name ?? nameOf(s.bridgeId);
-  const canReorder = sections.length >= 2;
 
   if (!pageId || !page) {
     return (
@@ -165,30 +161,11 @@ export default function CustomPageEditorScreen() {
       <TopBar
         title={selecting ? `${ms.count} selected` : page.name}
         right={
-          editing ? (
-            <TopBarButton
-              testID="custom-page-editor.done"
-              icon={<CheckIcon color={theme.text} size={22} />}
-              label="Done reordering"
-              onPress={() => setEditing(false)}
-            />
-          ) : selecting ? (
+          selecting ? (
             <SelectToggle selecting onToggle={toggleSelecting} testID="custom-page-editor.select-toggle" />
           ) : (
             // + add button now lives in the floating FAB below; the top-right holds the select toggle.
-            <View style={styles.topActions}>
-              {IS_WEB && canReorder && (
-                <TopBarButton
-                  testID="custom-page-editor.reorder"
-                  icon={<GripIcon color={theme.text} size={22} />}
-                  label="Reorder sections"
-                  onPress={() => setEditing(true)}
-                />
-              )}
-              {allKeys.length > 0 && (
-                <SelectToggle selecting={false} onToggle={toggleSelecting} testID="custom-page-editor.select-toggle" />
-              )}
-            </View>
+            allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="custom-page-editor.select-toggle" />
           )
         }
       />
@@ -199,19 +176,11 @@ export default function CustomPageEditorScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ReorderableList
-          data={sections}
-          keyOf={(s) => s.id}
-          renderRow={renderRow}
-          label={(s) => titleOf(s)}
-          onReorder={(ids) => reorderSections(page.id, ids)}
-          editing={editing}
-          dragEnabled={!selecting}
-        />
+        <ReorderableList data={sections} keyOf={(s) => s.id} renderRow={renderRow} onReorder={(ids) => reorderSections(page.id, ids)} dragEnabled={!selecting} />
       )}
 
       {/* The + add affordance: a floating FAB in normal mode, hidden while selecting. */}
-      {!selecting && !editing && (
+      {!selecting && (
         <AddFab
           onPress={() => openSection()}
           testID="custom-page-editor.add-section"
@@ -252,10 +221,6 @@ export default function CustomPageEditorScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  topActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   stateHost: {
     flex: 1,
