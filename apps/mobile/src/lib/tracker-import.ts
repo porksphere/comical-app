@@ -10,8 +10,9 @@
  *                     progress is never touched (it's pushed to the tracker if it's further ahead).
  *   - `resolved`    — not held; a bridge search found it (or the user picked a candidate). Importing
  *                     collects it, links it, and — new series only — may seed its read progress.
- *   - `unresolved`  — not held and not yet found. Not selectable; "Find on…" or a candidate pick
- *                     turns it into `resolved`.
+ *   - `unresolved`  — not held and not yet found. Not selectable; a bridge search (the "Find on…"
+ *                     row for all of them, the row's own tap for one) or a candidate pick turns it
+ *                     into `resolved`.
  *   - `linked`      — already linked to this tracker. Inert.
  */
 import type {
@@ -146,8 +147,19 @@ export const localReadOf = (item: TrackerImportCandidate) => Math.max(0, ...(ite
  */
 /** One line under the row's title saying what importing it DOES — outcome first, since a settings
  *  row shows a single line and a phone fits about forty characters of it after the cover. */
-export function rowDescription(row: ImportRow, opts: { seed: boolean; nameOf: (bridgeId: string) => string }): string {
+export function rowDescription(
+  row: ImportRow,
+  opts: {
+    seed: boolean;
+    nameOf: (bridgeId: string) => string;
+    /** The bridge currently searching for this row, if one is. */
+    searchingOn?: string | undefined;
+    /** How many bridges can search — a miss only offers "another" when there is one. */
+    bridgeCount?: number;
+  },
+): string {
   const { item } = row;
+  if (row.kind === 'unresolved' && opts.searchingOn) return `Searching ${opts.nameOf(opts.searchingOn)}…`;
   switch (row.kind) {
     case 'linked':
       return 'Already linked';
@@ -166,14 +178,17 @@ export function rowDescription(row: ImportRow, opts: { seed: boolean; nameOf: (b
       return `Adds${as} from ${opts.nameOf(target.bridgeId)}${seeds}`;
     }
     case 'unresolved': {
+      // Every unresolved row is a tap away from being importable, and says so: the row can't be
+      // checked until a bridge has found it, which looks like a dead row unless the line says why.
       const res = row.resolution;
-      if (!res) return `${progressLabel(item)} · Not in library`;
+      // Hint before progress: a phone's line clips the tail, and the tail should be the number.
+      if (!res) return `Not in library — tap to find · ${progressLabel(item)}`;
       const bridge = opts.nameOf(res.bridgeId);
-      if (res.error) return `Couldn't search ${bridge}`;
+      if (res.error) return `Couldn't search ${bridge} — tap to retry`;
       if (res.candidates.length > 0) {
         return `Tap to pick from ${res.candidates.length} on ${bridge}`;
       }
-      return `Not found on ${bridge}`;
+      return (opts.bridgeCount ?? 1) > 1 ? `Not found on ${bridge} — tap to try another` : `Not found on ${bridge}`;
     }
   }
 }

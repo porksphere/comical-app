@@ -106,14 +106,16 @@ describe('rowDescription', () => {
     expect(rowDescription(same, { seed: false, nameOf })).toBe('Adds from Bridge x');
   });
 
-  test('unresolved: before a search, after a miss, with candidates, after an error', () => {
-    expect(rowDescription(planRows([planned], new Map())[0]!, { seed: true, nameOf })).toBe('Planning · Not in library');
+  test('unresolved: before a search, after a miss, with candidates, after an error, while searching', () => {
+    expect(rowDescription(planRows([planned], new Map())[0]!, { seed: true, nameOf })).toBe('Not in library — tap to find · Planning');
     const miss = new Map([['3', { bridgeId: 'x', candidates: [] }]]);
     expect(rowDescription(planRows([planned], miss)[0]!, { seed: true, nameOf })).toBe('Not found on Bridge x');
+    expect(rowDescription(planRows([planned], miss)[0]!, { seed: true, nameOf, bridgeCount: 2 })).toBe('Not found on Bridge x — tap to try another');
     const some = new Map([['3', { bridgeId: 'x', candidates: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }] }]]);
     expect(rowDescription(planRows([planned], some)[0]!, { seed: true, nameOf })).toBe('Tap to pick from 2 on Bridge x');
     const err = new Map([['3', { bridgeId: 'x', candidates: [], error: 'boom' }]]);
-    expect(rowDescription(planRows([planned], err)[0]!, { seed: true, nameOf })).toBe("Couldn't search Bridge x");
+    expect(rowDescription(planRows([planned], err)[0]!, { seed: true, nameOf })).toBe("Couldn't search Bridge x — tap to retry");
+    expect(rowDescription(planRows([planned], err)[0]!, { seed: true, nameOf, searchingOn: 'y' })).toBe('Searching Bridge y…');
   });
 
   test('linked rows are inert', () => {

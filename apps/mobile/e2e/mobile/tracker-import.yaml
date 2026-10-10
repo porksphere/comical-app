@@ -8,7 +8,8 @@
 #   - `in-library`  — a title held here but not linked to anilist; checked by default. Importing LINKS
 #                     it and never touches its local progress.
 #   - `none`        — titles the library doesn't hold. Not selectable until a bridge search finds
-#                     them (mockResolveTrackerImport: an exact hit for some, a 3-candidate pick for
+#                     them — the "Find on…" row searches all of them at once, a row's own tap just
+#                     that one (mockResolveTrackerImport: an exact hit for some, a 3-candidate pick for
 #                     others — the pick rows stay unresolved in this flow, which is fine: the
 #                     selection is still deterministic in SHAPE, and the toast asserts a pattern).
 # Which externalIds land in which kind is a hash of the title, so this flow anchors on the screen's
