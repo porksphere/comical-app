@@ -163,7 +163,9 @@ export async function resolveAssetSource(url: string): Promise<string> {
   if (!url.startsWith('/')) return url;
   if (getResolvedModeSync() !== 'embedded') return `${getApiBase()}${url}`;
   try {
-    const res = await transport(url);
+    // Not `transport`: a cover that won't resolve already shows its placeholder, and reporting every
+    // one would bury the failures someone acted on.
+    const res = await activeTransport(url);
     const location = res.headers.get('Location');
     if (location && res.status >= 300 && res.status < 400) return location;
     if (!res.ok) {
@@ -431,11 +433,11 @@ export type Transport = (path: string, init?: RequestInit) => Promise<Response>;
 /** The default transport: plain HTTP against `getApiBase()`. */
 export const remoteTransport: Transport = (path, init) => fetch(`${getApiBase()}${path}`, init);
 
-let transport: Transport = remoteTransport;
+let activeTransport: Transport = remoteTransport;
 
 /** Swap the active transport. Passing `null` restores the remote HTTP transport. */
 export function setTransport(next: Transport | null): void {
-  transport = next ?? remoteTransport;
+  activeTransport = next ?? remoteTransport;
 }
 
 /** True for an aborted-request error, so callers can ignore unmount cancels. */
@@ -443,12 +445,33 @@ export function isAbort(e: unknown): boolean {
   return e instanceof Error && e.name === 'AbortError';
 }
 
+let requestErrorListener: ((error: Error) => void) | null = null;
+
+/** Hear every request that fails — unreachable, or answered with an error — but never a cancel. */
+export function setRequestErrorListener(listener: ((error: Error) => void) | null): void {
+  requestErrorListener = listener;
+}
+
+function reportRequestError<E>(e: E): E {
+  if (e instanceof Error && !isAbort(e)) requestErrorListener?.(e);
+  return e;
+}
+
+/** The active transport, with a request that never got an answer reported on its way out. */
+const transport: Transport = (path, init) =>
+  activeTransport(path, init).catch((e: unknown) => {
+    throw reportRequestError(e);
+  });
+
+/** The error an unsuccessful response becomes: the route's own `{ error }` where it gave one. */
+async function responseError(res: Response): Promise<Error> {
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  return reportRequestError(new Error(body.error ?? `${res.status} ${res.statusText}`));
+}
+
 async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await transport(path, { signal });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await responseError(res);
   return res.json() as Promise<T>;
 }
 
@@ -458,10 +481,7 @@ async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
 async function fetchJsonOptional<T>(path: string, signal?: AbortSignal): Promise<T | null> {
   const res = await transport(path, { signal });
   if (res.status === 404) return null;
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await responseError(res);
   return res.json() as Promise<T>;
 }
 
@@ -636,10 +656,7 @@ export async function isFavorite(bridgeId: string, seriesId: string, signal?: Ab
 
 async function fetchOk(path: string, method: 'PUT' | 'POST' | 'DELETE', signal?: AbortSignal): Promise<void> {
   const res = await transport(path, { method, signal });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await responseError(res);
 }
 
 /** PUT /bridges/{id}/favorites/{seriesId} → add a series to favorites. */
@@ -1029,10 +1046,7 @@ async function fetchPut<T>(path: string, body: unknown, signal?: AbortSignal): P
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok) {
-    const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await responseError(res);
   return res.json() as Promise<T>;
 }
 
@@ -1043,10 +1057,7 @@ async function fetchPost<T>(path: string, body: unknown, signal?: AbortSignal): 
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok) {
-    const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await responseError(res);
   return res.json() as Promise<T>;
 }
 
@@ -1057,20 +1068,14 @@ async function fetchPatch<T>(path: string, body: unknown, signal?: AbortSignal):
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok) {
-    const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await responseError(res);
   return res.json() as Promise<T>;
 }
 
 /** DELETE returning a JSON body (the downloads delete routes hand back the blob `files` to remove). */
 async function fetchDelete<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await transport(path, { method: 'DELETE', signal });
-  if (!res.ok) {
-    const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await responseError(res);
   return res.json() as Promise<T>;
 }
 
@@ -1283,10 +1288,7 @@ export async function getLibrarySeries(
     { signal },
   );
   if (res.status === 404) return null;
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await responseError(res);
   return ((await res.json()) as { series: ApiCollectedSeries }).series;
 }
 
@@ -1917,7 +1919,7 @@ export async function completeOAuthCallback(code: string, state: string, signal?
     const text = await res.text().catch(() => '');
     // The page's `<pre>` carries the one line worth showing on a settings row.
     const reason = /<pre>([^<]*)<\/pre>/.exec(text)?.[1].trim() || text.replace(/<[^>]*>/g, '').trim();
-    throw new Error(reason || `${res.status} ${res.statusText}`);
+    throw reportRequestError(new Error(reason || `${res.status} ${res.statusText}`));
   }
 }
 

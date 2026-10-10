@@ -44,6 +44,7 @@ import { installActivityAutoCheck } from '@/data/activity/auto-check';
 import { installDesktopChapterCheck } from '@/data/activity/desktop-check';
 import { installDesktopSyncRefresh } from '@/data/sync/desktop';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
+import { installErrorToasts } from '@/data/error-toasts';
 import { installAppUpdateAutoCheck } from '@/data/use-app-update';
 import { useDesktopShellCommands } from '@/lib/desktop-commands';
 import { useFrameTrace } from '@/lib/frame-trace';
@@ -66,6 +67,9 @@ installDesktopSyncRefresh();
 // App-update auto-check on launch + foreground return — see data/use-app-update.ts. No-ops on
 // internal/dev build channels.
 installAppUpdateAutoCheck();
+
+// Red toasts for failed requests, when Settings → General turns them on.
+installErrorToasts();
 
 // DevProfiler is profiling-only tooling; require it behind `PROFILING_ENABLED` (dev, or a CI
 // profiling-release build) so its module — and the react-native-release-profiler dependency it

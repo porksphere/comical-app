@@ -27,6 +27,7 @@ import { applyBackgroundDownloads } from '@/data/downloads/background';
 import { kickDownloads } from '@/data/downloads/engine';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } from '@/data/embedded';
+import { errorToasts$, useErrorToasts } from '@/data/error-toasts';
 import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
@@ -84,6 +85,7 @@ export default function GeneralSettingsScreen() {
   const [apiBase] = useApiBase();
   const lightCards = useLightCards();
   const feedTint = useFeedTint();
+  const errorToasts = useErrorToasts();
   const [runInTray, setRunInTray] = useRunInTray();
   const [openAtLogin, setOpenAtLogin] = useOpenAtLogin();
   // Gated on hydration: the static web render has no shell, so the row would otherwise appear only
@@ -174,6 +176,12 @@ export default function GeneralSettingsScreen() {
               }
             />
           )}
+          <SettingsToggleRow
+            label="Show request errors"
+            description="Flash a red toast with the error when a request fails."
+            value={errorToasts}
+            onChange={(v) => errorToasts$.on.set(v)}
+          />
           {desktop && (
             <SettingsToggleRow
               label={`Keep running in the ${trayName()}`}

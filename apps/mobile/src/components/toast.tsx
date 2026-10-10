@@ -41,7 +41,13 @@ type ToastRequest = {
   id: number;
   message: string;
   durationMs: number;
+  tone: ToastTone;
 };
+
+/** `error` is the red pill for something that failed — still transient, still no action in it. */
+export type ToastTone = 'default' | 'error';
+/** Near-opaque, unlike the glass fill: red has to read as red over any cover behind it. */
+const ERROR_FILL_ALPHA = 'E6';
 
 // The currently-shown toast — a plain module store read via useSyncExternalStore, exactly the
 // confirm-popup pattern (see its note on why not a Legend State observable).
@@ -55,8 +61,8 @@ function setToast(req: ToastRequest | null): void {
 
 /** Show a transient notice, e.g. "NSFW enabled until the app is closed". Replaces any toast
  *  already showing. `duration` is the visible time before auto-dismiss. */
-export function showToast(message: string, opts?: { durationMs?: number }): void {
-  setToast({ id: nextId++, message, durationMs: opts?.durationMs ?? DEFAULT_DURATION_MS });
+export function showToast(message: string, opts?: { durationMs?: number; tone?: ToastTone }): void {
+  setToast({ id: nextId++, message, durationMs: opts?.durationMs ?? DEFAULT_DURATION_MS, tone: opts?.tone ?? 'default' });
 }
 
 function useToast(): ToastRequest | null {
@@ -83,6 +89,7 @@ function HostToast({ req }: { req: ToastRequest }) {
   const scheme = useActiveColorScheme();
   const insets = useSafeAreaInsets();
   const progress = useSharedValue(0);
+  const error = req.tone === 'error';
 
   const close = () => {
     // Only clear if this pill is still the current one — a replacement already owns the slot.
@@ -121,15 +128,18 @@ function HostToast({ req }: { req: ToastRequest }) {
           tint={scheme}
           intensity={TOAST_BLUR}
           experimentalBlurMethod={ANDROID_BLUR}
-          style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
-          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: TOAST_FILL[scheme] }]} />
+          style={[styles.pill, { borderColor: error ? theme.danger : theme.backgroundSelected }]}>
+          <View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { backgroundColor: error ? `${theme.danger}${ERROR_FILL_ALPHA}` : TOAST_FILL[scheme] }]}
+          />
           <Pressable
-            testID="toast.dismiss"
+            testID={error ? 'toast.error' : 'toast.dismiss'}
             onPress={dismiss}
             style={styles.pillPress}
             accessibilityRole="alert"
             accessibilityLabel={req.message}>
-            <ThemedText type="small" style={styles.message}>
+            <ThemedText type="small" style={[styles.message, error && styles.errorMessage]}>
               {req.message}
             </ThemedText>
           </Pressable>
@@ -172,5 +182,9 @@ const styles = StyleSheet.create({
   },
   message: {
     textAlign: 'center',
+  },
+  errorMessage: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });

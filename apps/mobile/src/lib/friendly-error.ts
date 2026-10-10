@@ -1,3 +1,32 @@
+/** Longest an error is shown raw before it is cut — a toast line, not a stack trace. */
+export const SHORT_ERROR_MAX = 90;
+
+// A Windows drive path, or a POSIX one of two or more segments that doesn't sit inside a URL.
+const ABSOLUTE_PATH = /(?<![\w:/])(?:[A-Za-z]:[\\/][^\s"'`]*|\/[^\s"'`/]+(?:\/[^\s"'`/]+)+\/?)/g;
+
+/** A server's own data directory says nothing to the reader and would fill the toast on its own. */
+function shortenPaths(text: string): string {
+  return text.replace(ABSOLUTE_PATH, (path) => {
+    const sep = path.includes('\\') ? '\\' : '/';
+    const last = path.split(/[\\/]/).filter(Boolean).pop();
+    return last ? `…${sep}${last}` : path;
+  });
+}
+
+/**
+ * The raw error, cut down to one line that fits a toast: its first line, whitespace collapsed, a
+ * leading `Error:` dropped, file paths down to their last segment, and truncated with an ellipsis.
+ * Unlike {@link friendlyError} this keeps what actually went wrong — it's for someone who asked to
+ * see the failures.
+ */
+export function shortError(err: unknown, max = SHORT_ERROR_MAX): string {
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+  const first = (raw.split('\n').find((l) => l.trim()) ?? '').replace(/^\s*Error:\s*/i, '');
+  const line = shortenPaths(first).replace(/\s+/g, ' ').trim();
+  if (!line) return 'Request failed';
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
 /**
  * Maps a raw fetch/bridge error into a short, user-facing sentence for a RetryBlock.
  *
