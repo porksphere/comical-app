@@ -258,31 +258,48 @@ async function boot(): Promise<void> {
   // The renderer's requests — page load, JS, and every API call — carry the launch token; nothing
   // else on the machine has it, so the open port isn't an open door.
   //
-  // The images it asks other hosts for are covers, straight off a source's CDN, and to a CDN with
-  // hotlink protection an <img> on a loopback page is a hotlink: `Sec-Fetch-Site: cross-site` with
-  // `Sec-Fetch-Mode: no-cors` is answered with an HTML 403 (which surfaces as an ORB block, not a
-  // status), and a cover that is served can still carry `Cross-Origin-Resource-Policy: same-site`
+  // The images it asks other hosts for are covers and pages, straight off a source's CDN, and to a
+  // CDN with hotlink protection an <img> on a loopback page is a hotlink: `Sec-Fetch-Site: cross-site`
+  // with `Sec-Fetch-Mode: no-cors` is answered with an HTML 403 (which surfaces as an ORB block, not
+  // a status), and a cover that is served can still carry `Cross-Origin-Resource-Policy: same-site`
   // and be dropped on arrival. The native apps send no such headers and enforce no such policy, so
-  // desktop asks the way they do. Both jobs share a listener because a session keeps only one per
-  // event — a second registration replaces the first, and with it the token.
+  // desktop asks the way they do.
+  //
+  // The reader asks for a page's bytes over XHR first, to show how much of it has arrived, and a
+  // browser only lets a page READ a cross-origin response the server has allowed with
+  // `Access-Control-Allow-Origin` — which a source's CDN never sends, so on the web that page falls
+  // back to a plain <img> and no percentage. The shell owns the network layer, so it grants that
+  // allowance itself on every response the renderer fetches from another host: this app sends no
+  // credentials anywhere (see data/api.ts), so the wildcard is both sufficient and safe. Those
+  // fetches get the same hotlink treatment as the <img>s — same bytes, same CDN.
+  //
+  // Both jobs share a listener because a session keeps only one per event — a second registration
+  // replaces the first, and with it the token.
   const bearer = `Bearer ${server.token}`;
   const own = `${server.origin}/`;
   const { webRequest } = session.defaultSession;
+  const isPicture = (type: string) => type === "image" || type === "xhr";
   webRequest.onBeforeSendHeaders((details, callback) => {
     if (details.url.startsWith(own)) {
       callback({ requestHeaders: { ...details.requestHeaders, Authorization: bearer } });
-    } else if (details.resourceType === "image") {
+    } else if (isPicture(details.resourceType)) {
       callback({ requestHeaders: withoutHeaders(details.requestHeaders, /^(referer|sec-fetch-.+)$/i) });
     } else {
       callback({});
     }
   });
   webRequest.onHeadersReceived((details, callback) => {
-    if (details.url.startsWith(own) || details.resourceType !== "image" || !details.responseHeaders) {
+    if (details.url.startsWith(own) || !isPicture(details.resourceType) || !details.responseHeaders) {
       callback({});
       return;
     }
-    callback({ responseHeaders: withoutHeaders(details.responseHeaders, /^cross-origin-resource-policy$/i) });
+    const dropped =
+      details.resourceType === "xhr"
+        ? /^(cross-origin-resource-policy|access-control-allow-origin)$/i
+        : /^cross-origin-resource-policy$/i;
+    const responseHeaders = withoutHeaders(details.responseHeaders, dropped);
+    if (details.resourceType === "xhr") responseHeaders["Access-Control-Allow-Origin"] = ["*"];
+    callback({ responseHeaders });
   });
 
   await openWindow();
