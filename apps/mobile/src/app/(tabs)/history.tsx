@@ -3,7 +3,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
@@ -25,15 +25,15 @@ import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { historyQuery, libraryQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useContentWidth } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useRowColumns } from '@/hooks/use-row-columns';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
@@ -47,8 +47,9 @@ export default function HistoryScreen() {
   const mock = useMockActive();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  // The content column, not the window — the sidebar's inset is already out of it.
-  const width = useContentWidth();
+  // One column of rows on a phone or tablet; a desktop's capped content column splits in two — see
+  // use-row-columns (shared with Activity, so the two feeds split alike).
+  const grid = useRowColumns();
   const filter = useTabFilter();
   const query = filter.query;
   const queryClient = useQueryClient();
@@ -115,8 +116,9 @@ export default function HistoryScreen() {
   }, [byId, hideNsfw, items, query]);
 
   // Reading reorders this list, so a series opened from partway down can end up above the viewport
-  // by the time the page closes — see useZoomSurfaceList.
-  useZoomSurfaceList(zoomSurface, visible, historySeriesId, listRef);
+  // by the time the page closes — see useZoomSurfaceList. `xAtIndex`: in two columns a row's x is
+  // its column's, not 0.
+  useZoomSurfaceList(zoomSurface, visible, historySeriesId, listRef, { xAtIndex: grid.xAtIndex });
 
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
@@ -125,7 +127,7 @@ export default function HistoryScreen() {
   // explicit paddingLeft/Right is the reliable lever. See library.tsx.
   // Only the centring inset (web) — the row owns its own horizontal gutter, so it spans the full
   // content width and the swipe-to-delete reaches the edge instead of being cut off inside a side inset.
-  const sidePad = topLevelCenterInset(width);
+  const sidePad = grid.sidePad;
 
   // The 3-dot opens the SERIES side of that same page — no `reader` param, so it lands on
   // the details with the reader as the strip, which is exactly a browse open. Same zoom off this
@@ -197,6 +199,7 @@ export default function HistoryScreen() {
           data={visible}
           keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
           recycleItems={false}
+          numColumns={grid.columns}
           itemLayoutAnimation={ROW_REORDER_TRANSITION}
           contentContainerStyle={{
             // Fill the viewport even with few rows, so the empty space below them is still part of
@@ -209,7 +212,7 @@ export default function HistoryScreen() {
             paddingLeft: sidePad,
             paddingRight: sidePad,
           }}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <HistoryItem
               item={item}
               onResume={() => resume(item)}
@@ -218,6 +221,8 @@ export default function HistoryScreen() {
               bridge={nameOf(item.bridgeId)}
               direct={directOf(item.bridgeId)}
               chapters={chaptersOf.get(`${item.bridgeId}:${item.seriesId}`)}
+              cell={grid.cell(index, visible?.length ?? 0)}
+              uniform={grid.uniform}
             />
           )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
@@ -260,6 +265,8 @@ function HistoryItem({
   bridge,
   direct,
   chapters,
+  cell,
+  uniform,
 }: {
   item: HistoryEntry;
   onResume: () => void;
@@ -269,6 +276,9 @@ function HistoryItem({
   direct: boolean;
   /** Chapters read of those known; undefined for a series not in the library. */
   chapters?: { read: number; known: number };
+  /** This row's place in the list's columns — see useRowColumns. */
+  cell: { style: ViewStyle | undefined; lastRow: boolean };
+  uniform: boolean;
 }) {
   // The row's bar: pages seen of the chapter being read. A page count the reader hasn't learned
   // yet (or a direct read, which has no chapter) leaves it off.
@@ -324,9 +334,10 @@ function HistoryItem({
       progress={progress}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}
+      uniform={uniform}
     />
   );
-  return (
+  const row = (
     <>
       <SwipeableRow
         name={item.title}
@@ -350,9 +361,12 @@ function HistoryItem({
           </SeriesCardMenu>
         )}
       </SwipeableRow>
-      <RowHairline />
+      <RowHairline hidden={cell.lastRow} />
     </>
   );
+  // In columns the row is boxed so the divider (absolute, edge to edge of its parent) stops at the
+  // column gap instead of running on into the neighbour's; a single column has no box to add.
+  return cell.style ? <View style={cell.style}>{row}</View> : row;
 }
 
 /** Build the row's secondary line: `chapter · X / N · when`, omitting absent parts. */
