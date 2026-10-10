@@ -39,6 +39,8 @@ import {
 
 import { serializeAsyncMethods } from '@/lib/serialize-methods';
 
+import { parseStored } from './quarantine';
+
 const NS = 'comical:lib';
 const COLLECTIONS = `${NS}:collections`;
 // Collection items sit in ONE DOCUMENT PER SERIES, not one document overall. As a single doc every
@@ -61,11 +63,7 @@ const cachedChaptersKey = (key: string) => `${NS}:chapters:${encodeURIComponent(
 async function read<T>(storageKey: string, fallback: T): Promise<T> {
   const raw = await AsyncStorage.getItem(storageKey);
   if (raw == null) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
+  return parseStored(storageKey, raw, fallback);
 }
 
 async function write(storageKey: string, value: unknown): Promise<void> {
@@ -167,14 +165,9 @@ export class AsyncStorageLibraryStore implements LibraryStore {
     if (keys.length === 0) return [];
     const pairs = await AsyncStorage.multiGet(keys);
     const out: CollectionItem[] = [];
-    for (const [, raw] of pairs) {
+    for (const [key, raw] of pairs) {
       if (!raw) continue;
-      let shard: Record<string, CollectionItem>;
-      try {
-        shard = JSON.parse(raw) as Record<string, CollectionItem>;
-      } catch {
-        continue;
-      }
+      const shard = await parseStored<Record<string, CollectionItem>>(key, raw, {});
       for (const item of Object.values(shard)) {
         if (scope?.type !== undefined && item.type !== scope.type) continue;
         if (scope?.bridgeId !== undefined && item.bridgeId !== scope.bridgeId) continue;

@@ -8,6 +8,8 @@
  *                              registry no longer activates all its bridges.
  *   - `installedTrackerStore` — the *installed* trackers (pinned records). Trackers are
  *                              registry-installed exactly like bridges, not a static app-bundled map.
+ *   - `retiredStore`         — bridges the user uninstalled: what the library still needs to name and
+ *                              filter their series, which stay. Cleared on reinstall.
  *
  * Published builds start empty. For local dev, `EXPO_PUBLIC_COMICAL_REGISTRY` (a gitignored
  * `.env.local` value) pre-*adds* that registry so you can browse and install from it — but nothing is
@@ -17,20 +19,22 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { registryDisplayName, resolveRegistryUrl } from '@comical/registry/url';
-import type { SavedRegistry } from '@comical/registry/schema';
+import type { RetiredBridge, SavedRegistry } from '@comical/registry/schema';
 import type {
   InstalledBridgeRecord,
   InstalledStore,
   InstalledTrackerRecord,
   InstalledTrackerStore,
+  RetiredStore,
   SavedRegistryStore,
 } from '@comical/host-rn';
 
-import { logDiagnostic } from '@/lib/diagnostics';
+import { parseStored } from './quarantine';
 
 const REGISTRIES_KEY = 'comical:embedded:registries';
 const INSTALLED_KEY = 'comical:embedded:installed';
 const INSTALLED_TRACKERS_KEY = 'comical:embedded:installed-trackers';
+const RETIRED_KEY = 'comical:embedded:retired';
 
 /** Dev-only: pre-add the configured registry (browsable), without installing any of its bridges. */
 const ENV_REGISTRY = process.env.EXPO_PUBLIC_COMICAL_REGISTRY;
@@ -53,8 +57,8 @@ function seedRegistries(): SavedRegistry[] {
  * against an unhydrated mirror.
  *
  * A *malformed* stored value is the other half, and needs the opposite treatment: those bytes are
- * unrecoverable, so refusing forever would wedge the store permanently. It's quarantined under
- * `<key>:corrupt` (still inspectable, and logged) and the store starts fresh.
+ * unrecoverable, so refusing forever would wedge the store permanently. It's quarantined
+ * (`quarantine.ts` — still inspectable, and logged) and the store starts fresh.
  */
 export class AsyncKeyedStore<T> {
   private items: T[];
@@ -81,17 +85,8 @@ export class AsyncKeyedStore<T> {
     if (this.hydration) return this.hydration;
     const attempt = AsyncStorage.getItem(this.storageKey)
       .then(async (stored) => {
-        if (stored !== null) {
-          // nothing persisted yet (null) keeps the seed; anything else must parse as an array
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(stored);
-          } catch {
-            parsed = undefined;
-          }
-          if (Array.isArray(parsed)) this.items = parsed as T[];
-          else await this.quarantine(stored);
-        }
+        // nothing persisted yet (null) keeps the seed; anything else must parse as an array
+        if (stored !== null) this.items = await parseStored(this.storageKey, stored, this.items);
         this.hydrated = true;
       })
       .finally(() => {
@@ -99,18 +94,6 @@ export class AsyncKeyedStore<T> {
       });
     this.hydration = attempt;
     return attempt;
-  }
-
-  /** Park an unparseable stored value under a sibling key rather than overwriting it unseen. */
-  private async quarantine(raw: string): Promise<void> {
-    logDiagnostic('storage', `discarded a malformed value for ${this.storageKey}`, {
-      context: `${raw.length} bytes preserved at ${this.storageKey}:corrupt`,
-    });
-    try {
-      await AsyncStorage.setItem(`${this.storageKey}:corrupt`, raw);
-    } catch {
-      /* best effort — the store starts fresh either way */
-    }
   }
 
   /**
@@ -169,3 +152,5 @@ export const installedTrackerStore: InstalledTrackerStore = new AsyncKeyedStore<
   (t) => t.id,
   [],
 );
+
+export const retiredStore: RetiredStore = new AsyncKeyedStore<RetiredBridge>(RETIRED_KEY, (r) => r.id, []);

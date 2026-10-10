@@ -54,7 +54,7 @@ import { migrateLegacyEntries } from '../migrations/legacy-entries';
 import { getResolvedModeSync, whenEmbeddedPrefLoaded } from './preference';
 import { applyImageCacheConfig } from '../image-cache';
 import { logDiagnostic } from '@/lib/diagnostics';
-import { installedStore, installedTrackerStore, savedRegistryStore } from './stores';
+import { installedStore, installedTrackerStore, retiredStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings, asyncStorageTrackerSettings } from './settings-store';
 
 // ONE store instance for the process: the router writes through it, and the legacy-entries
@@ -76,6 +76,7 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     fetcher: { fetchIndex, downloadBundle },
     installed: installedStore,
     registries: savedRegistryStore,
+    retired: retiredStore,
     setTransport,
     settings: asyncStorageSettings,
     // On-device library persistence — mounts the router's `/library*` endpoints in embedded mode so

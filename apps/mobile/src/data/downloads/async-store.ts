@@ -34,6 +34,8 @@ import {
   type DownloadsStore,
 } from '@comical/downloads';
 
+import { parseStored } from '@/data/embedded/quarantine';
+
 const NS = 'comical:dl';
 const SERIES = `${NS}:series`;
 const PREFS = `${NS}:prefs`;
@@ -43,11 +45,7 @@ const pagesKey = (key: string, chapterId: string) => `${NS}:pages:${encodeURICom
 async function read<T>(storageKey: string, fallback: T): Promise<T> {
   const raw = await AsyncStorage.getItem(storageKey);
   if (raw == null) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
+  return parseStored(storageKey, raw, fallback);
 }
 
 async function write(storageKey: string, value: unknown): Promise<void> {
@@ -160,13 +158,7 @@ export class AsyncStorageDownloadsStore implements DownloadsStore {
   // ── Preferences ────────────────────────────────────────────────────────────
   getPrefs(): Promise<DownloadPrefs | undefined> {
     return this.run(async () => {
-      const raw = await AsyncStorage.getItem(PREFS);
-      if (raw == null) return undefined;
-      try {
-        return JSON.parse(raw) as DownloadPrefs;
-      } catch {
-        return undefined;
-      }
+      return read<DownloadPrefs | undefined>(PREFS, undefined);
     });
   }
   setPrefs(prefs: DownloadPrefs): Promise<void> {

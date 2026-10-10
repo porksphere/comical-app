@@ -16,17 +16,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SettingValue } from '@comical/contract';
 import type { SettingsStore } from '@comical/host-rn';
 
+import { parseStored } from './quarantine';
+
 function makeAsyncStorageSettings(namespace: string): SettingsStore {
   const keyFor = (id: string): string => `comical:embedded:${namespace}:${id}`;
   return {
     async get(id) {
       const raw = await AsyncStorage.getItem(keyFor(id));
       if (!raw) return {};
-      try {
-        return JSON.parse(raw) as Record<string, SettingValue>;
-      } catch {
-        return {};
-      }
+      return parseStored<Record<string, SettingValue>>(keyFor(id), raw, {});
     },
     async set(id, values) {
       await AsyncStorage.setItem(keyFor(id), JSON.stringify(values));

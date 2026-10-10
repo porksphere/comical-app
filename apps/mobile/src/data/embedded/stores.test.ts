@@ -34,6 +34,8 @@ const { AsyncKeyedStore } = await import('./stores');
 type Rec = { id: string; version: string };
 const rec = (id: string, version = '1.0.0'): Rec => ({ id, version });
 const newStore = (key = 'k', seed: Rec[] = []) => new AsyncKeyedStore<Rec>(key, (r) => r.id, seed);
+const parked = (key: string) =>
+  [...mem].filter(([k]) => k.startsWith(`comical:corrupt:${key}:`)).map(([, v]) => v);
 
 describe('AsyncKeyedStore', () => {
   test('round-trips through storage', async () => {
@@ -94,7 +96,7 @@ describe('AsyncKeyedStore', () => {
     const store = newStore();
     expect(await store.all()).toEqual([]); // unrecoverable bytes — start fresh rather than wedge
     await store.add(rec('gamma'));
-    expect(mem.get('k:corrupt')).toBe('{"not":"an array"');
+    expect(parked('k')).toEqual(['{"not":"an array"']);
   });
 
   test('a non-array JSON value is quarantined as well', async () => {
@@ -102,7 +104,7 @@ describe('AsyncKeyedStore', () => {
     mem.set('k', '{"id":"alpha"}');
     const store = newStore();
     expect(await store.all()).toEqual([]);
-    expect(mem.get('k:corrupt')).toBe('{"id":"alpha"}');
+    expect(parked('k')).toEqual(['{"id":"alpha"}']);
   });
 
   test('keeps the seed when nothing is persisted yet', async () => {
