@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
@@ -198,6 +199,11 @@ export default function HistoryScreen() {
           keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
           recycleItems={false}
           itemLayoutAnimation={ROW_REORDER_TRANSITION}
+          // WEB ONLY: routes the reanimated scroll bridge through scrollEventThrottle:1 so onScroll
+          // fires mid-drag (see recycler-list.tsx for the full root-cause note). Without it the list
+          // only hears the wheel at gesture start and after it stops, so rows mount after a scroll,
+          // never during one.
+          renderScrollComponent={Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined}
           contentContainerStyle={{
             // Fill the viewport even with few rows, so the empty space below them is still part of
             // the scroller and a drag can be started there (see SeriesGrid's note).
