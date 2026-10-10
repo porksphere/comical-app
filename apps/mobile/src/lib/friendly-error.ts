@@ -27,6 +27,11 @@ export function shortError(err: unknown, max = SHORT_ERROR_MAX): string {
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
 }
 
+/** An error whose message was written for the user — {@link friendlyError} shows it as is. */
+export class UserFacingError extends Error {
+  override name = 'UserFacingError';
+}
+
 /**
  * Maps a raw fetch/bridge error into a short, user-facing sentence for a RetryBlock.
  *
@@ -38,6 +43,7 @@ export function shortError(err: unknown, max = SHORT_ERROR_MAX): string {
  * user sees.
  */
 export function friendlyError(err: unknown, fallback = "This couldn't load right now. Try again."): string {
+  if (err instanceof UserFacingError) return err.message;
   const raw = (err instanceof Error ? err.message : String(err ?? '')).toLowerCase();
   if (!raw) return fallback;
   // Match against the message with URLs removed. Several of the checks below key off a bare word

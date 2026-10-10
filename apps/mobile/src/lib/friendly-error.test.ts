@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { shortError } from './friendly-error';
+import { friendlyError, shortError, UserFacingError } from './friendly-error';
 
 describe('shortError', () => {
   test('keeps a short message as it is', () => {
@@ -31,5 +31,12 @@ describe('shortError', () => {
     expect(shortError('plain')).toBe('plain');
     expect(shortError(new Error('   '))).toBe('Request failed');
     expect(shortError(undefined)).toBe('Request failed');
+  });
+});
+
+describe('friendlyError', () => {
+  test('a message written for the user is shown as it is, even when it names a bridge', () => {
+    expect(friendlyError(new UserFacingError("Couldn't uninstall Gone Bridge"))).toBe("Couldn't uninstall Gone Bridge");
+    expect(friendlyError(new Error("Couldn't uninstall Gone Bridge"))).toBe("This bridge couldn't load its content right now. Try again.");
   });
 });

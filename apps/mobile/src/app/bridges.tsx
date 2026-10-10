@@ -30,7 +30,8 @@ import { useDataSource, useHideNsfw } from '@/data/source';
 import { useBridgeUpdateMap, useRecheckRegistryUpdates } from '@/data/use-settings-badge';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
-import { friendlyError } from '@/lib/friendly-error';
+import { UNINSTALL_ONE_MESSAGE } from '@/lib/bridge-uninstall';
+import { friendlyError, UserFacingError } from '@/lib/friendly-error';
 import { hapticSelection } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
@@ -117,31 +118,50 @@ export default function BridgesScreen() {
     },
   ];
 
-  const uninstallSelected = async () => {
-    const ids = allKeys.filter((id) => ms.selected.has(id));
-    for (const id of ids) await ds.uninstallBridge(id);
-    bumpDataEpoch();
-    // Broad invalidate — Browse's bridge selector and Library/History/Activity's bridge map are
-    // all react-query-backed and need to drop these bridges immediately, not just this list.
-    await queryClient.invalidateQueries();
-    ms.clear();
-    mode.exit();
-    showToast(ids.length === 1 ? 'Bridge uninstalled' : `${ids.length} bridges uninstalled`);
-  };
-  const confirmUninstallSelected = () =>
+  // Retry re-runs the same `onConfirm`, so `pending` lives in its closure and shrinks as bridges go:
+  // a retry only redoes the ones that failed. Uninstall is idempotent on every host, so one already
+  // gone counts as done.
+  const confirmUninstallSelected = () => {
+    const names = new Map((visible ?? []).map((b) => [b.info.id, b.info.name]));
+    let pending = allKeys.filter((id) => ms.selected.has(id));
+    const total = pending.length;
     openConfirm({
-      message: `${ms.count === 1 ? 'This bridge' : `These ${ms.count} bridges`} and their settings will be removed, and their series disappear from your library until installed again.`,
-      confirmLabel: ms.count === 1 ? 'Uninstall Bridge' : `Uninstall ${ms.count} Bridges`,
+      message: `${total === 1 ? 'This bridge' : `These ${total} bridges`} will be uninstalled. Their series stay in your library, greyed out, with your reading progress. Their settings are kept in case you reinstall.`,
+      confirmLabel: total === 1 ? 'Uninstall Bridge' : `Uninstall ${total} Bridges`,
       pendingLabel: 'Uninstalling…',
       errorFallback: 'Failed to uninstall bridges',
-      onConfirm: uninstallSelected,
+      onConfirm: async () => {
+        const failed: string[] = [];
+        try {
+          for (const id of pending) {
+            try {
+              await ds.uninstallBridge(id);
+            } catch {
+              failed.push(id);
+            }
+          }
+        } finally {
+          pending = failed;
+          ms.selectOnly(failed);
+          bumpDataEpoch();
+          // Broad invalidate — Browse's bridge selector and Library/History/Activity's bridge map
+          // are all react-query-backed and need to drop these bridges immediately, not just this list.
+          await queryClient.invalidateQueries();
+        }
+        if (failed.length > 0) {
+          throw new UserFacingError(`Couldn't uninstall ${failed.map((id) => names.get(id) ?? id).join(', ')}`);
+        }
+        mode.exit();
+        showToast(total === 1 ? 'Bridge uninstalled' : `${total} bridges uninstalled`);
+      },
     });
+  };
   // The single-row (swipe action) confirm — same popup, with the bridge's name as the title since
   // the row is covered by the backdrop when this opens.
   const confirmUninstallOne = (b: BridgeSummary) =>
     openConfirm({
       title: `Uninstall ${b.info.name}?`,
-      message: 'Its settings are removed, and series from it disappear from your library until you install it again.',
+      message: UNINSTALL_ONE_MESSAGE,
       confirmLabel: 'Uninstall Bridge',
       pendingLabel: 'Uninstalling…',
       errorFallback: 'Failed to uninstall bridge',

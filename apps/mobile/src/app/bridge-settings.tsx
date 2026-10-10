@@ -10,6 +10,7 @@ import {
   MaxContentRatingControl,
   TagExclusionsControl,
 } from '@/components/settings/bridge-extras';
+import { openConfirm } from '@/components/confirm-popup';
 import { SettingFieldEditor } from '@/components/settings/setting-field';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
@@ -21,6 +22,7 @@ import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { UNINSTALL_ONE_MESSAGE } from '@/lib/bridge-uninstall';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
 import {useLocalSearchParams, useRouter} from '@/lib/nav';
@@ -110,15 +112,21 @@ export default function BridgeSettingsScreen() {
       // Library/History/Activity's bridge map are all react-query-backed and need to drop this
       // bridge immediately, not just this screen's own queryKeys.bridgeSettings(bridgeId ?? '') query.
       await queryClient.invalidateQueries();
-      router.back();
     },
   });
-  const uninstalling = uninstallMutation.isPending;
-  const uninstallError = uninstallMutation.isError
-    ? (uninstallMutation.error as Error).message || 'Failed to uninstall bridge'
-    : null;
   const uninstall = () => {
-    if (bridgeId) uninstallMutation.mutate();
+    if (!bridgeId) return;
+    openConfirm({
+      title: `Uninstall ${data?.info.name ?? bridgeId}?`,
+      message: UNINSTALL_ONE_MESSAGE,
+      confirmLabel: 'Uninstall Bridge',
+      pendingLabel: 'Uninstalling…',
+      errorFallback: 'Failed to uninstall bridge',
+      onConfirm: async () => {
+        await uninstallMutation.mutateAsync();
+        router.back();
+      },
+    });
   };
 
   const updateMutation = useMutation({
@@ -243,22 +251,11 @@ export default function BridgeSettingsScreen() {
             <ComicalHomeToggle bridgeId={bridgeId!} />
 
             {source === 'registry' && (
-              <>
-                {uninstallError && (
-                  <ThemedText type="small" style={{ color: theme.danger }}>
-                    {uninstallError}
-                  </ThemedText>
-                )}
-                <Pressable testID="settings.bridge.uninstall" onPress={uninstall} disabled={uninstalling} style={styles.uninstallRow}>
-                  {uninstalling ? (
-                    <ActivityIndicator size="small" />
-                  ) : (
-                    <ThemedText type="small" style={{ color: theme.danger }}>
-                      Uninstall this bridge
-                    </ThemedText>
-                  )}
-                </Pressable>
-              </>
+              <Pressable testID="settings.bridge.uninstall" onPress={uninstall} style={styles.uninstallRow}>
+                <ThemedText type="small" style={{ color: theme.danger }}>
+                  Uninstall this bridge
+                </ThemedText>
+              </Pressable>
             )}
           </>
         ) : null}
