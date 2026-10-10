@@ -408,16 +408,17 @@ const ZOOM_THUMB_PAINT_WAIT_MS = 400;
 // the same mask, transform and cross-fade the chevron plays, just with its progress on the end of
 // a thumb, finishing from wherever it was let go.
 //
-// The follow is the library's zoom/drag.ts resistance, verbatim — a rubber-banded travel along the
-// drag axis and a loose one across it. What is NOT ported is that file's separate shrink
-// (`resolveZoomDragScale`) and release curve (`resolveZoomDismissContentScale`): those exist
-// because there the transition progress stays pinned at 1 for the whole drag, so the shrink has to
-// be a second, parallel scale that a Bézier then hands back to the collapse. Driving the progress
-// directly makes both unnecessary — and here actively wrong, since our collapsed content scale is
-// ~0.91, above that file's 0.5 drag floor, so the two would fight over which way to scale.
-const ZOOM_PRIMARY_DRAG_TRANSLATION_SCALE = 0.8;
-const ZOOM_PRIMARY_DRAG_RESISTANCE = 2;
-const ZOOM_HORIZONTAL_DRAG_DISTANCE_SCALE = 1.5;
+// Along the drag's axis the page sits at the follow's own resisted distance (`zoomDragFollow`) —
+// there is no second band on top of it. There was: the library's zoom/drag.ts rubber band, ported
+// verbatim, ran AFTER the follow, and two resistances compounded put the page at ~115pt for a
+// 400pt swipe and barely further for anything longer — the "it stops" the back-swipe was known
+// for. Across the axis the loose band below is kept, since nothing else limits that direction.
+// What is NOT ported either is that file's separate shrink (`resolveZoomDragScale`) and release
+// curve (`resolveZoomDismissContentScale`): those exist because there the transition progress
+// stays pinned at 1 for the whole drag, so the shrink has to be a second, parallel scale that a
+// Bézier then hands back to the collapse. Driving the progress directly makes both unnecessary —
+// and here actively wrong, since our collapsed content scale is ~0.91, above that file's 0.5 drag
+// floor, so the two would fight over which way to scale.
 const ZOOM_CROSS_AXIS_DRAG_TRANSLATION_SCALE = 0.35;
 const ZOOM_CROSS_AXIS_DRAG_RESISTANCE = 0.05;
 /**
@@ -488,23 +489,6 @@ function zoomThrowSpeed(pxPerSecond: number, span: number, remaining: number): n
 // Back-swipe activation lives in lib/back-swipe.ts — shared with the SEARCH layer below, because
 // the one thing that must never differ between two surfaces both pretending to have a back-swipe
 // is what counts as one.
-
-/** `resolveZoomPrimaryDragTranslation` — exponential resistance along the drag's own axis. */
-function zoomPrimaryDrag(translation: number, dimension: number): number {
-  'worklet';
-  const direction = translation < 0 ? -1 : 1;
-  const baseDistance = Math.max(1, dimension);
-  const normalized = Math.abs(translation) / baseDistance;
-  const resistance = ZOOM_PRIMARY_DRAG_RESISTANCE * 0.85;
-  const resisted = (baseDistance * (1 - Math.exp(-resistance * normalized))) / resistance;
-  return direction * Math.min(baseDistance, resisted * ZOOM_PRIMARY_DRAG_TRANSLATION_SCALE);
-}
-
-/** `resolveZoomHorizontalDragTranslation` — the primary axis, when that axis is horizontal. */
-function zoomHorizontalDrag(translation: number, dimension: number): number {
-  'worklet';
-  return zoomPrimaryDrag(translation, dimension) * ZOOM_HORIZONTAL_DRAG_DISTANCE_SCALE;
-}
 
 /**
  * How far the DESTINATION BOUND has travelled since it was measured, because the details SCROLLED
@@ -788,6 +772,20 @@ function zoomDetach(start: number, size: number, home: number, span: number): nu
  */
 const ZOOM_DRAG_FOLLOW_REACH = 0.53;
 const ZOOM_DRAG_FOLLOW_GRIP = 0.6;
+/**
+ * The series BACK-SWIPE's own pair — longer and livelier than the reader's. The reader measures a
+ * dismiss over the screen's height and has a whole page of chapter art under the drag; the
+ * back-swipe measures over the width, and a swipe here is a page being put back, which the hand
+ * expects to go WITH it. At 0.53/0.6 — and with the second band that used to run on top (see the
+ * note above ZOOM_CROSS_AXIS_DRAG_TRANSLATION_SCALE) — a 400pt swipe moved the page 116pt and a
+ * 600pt one 133pt: it ran out of road at about a third of the screen and read as stuck. At
+ * 0.6/0.8, riding the follow alone, those are 154pt and 183pt, a first pixel that moves
+ * 0.8 of the thumb instead of 0.6, and a tail that is still giving at the far edge. The floor is
+ * `zoom` 0.4, so a drag still can never finish the collapse, and the furthest an actual swipe
+ * carries it (~0.63 at 600pt) keeps the page's own fade on the `cover` path above 0.87.
+ */
+const ZOOM_BACK_SWIPE_FOLLOW_REACH = 0.6;
+const ZOOM_BACK_SWIPE_FOLLOW_GRIP = 0.8;
 /**
  * The `zoom` by which the window's corners are FULLY rounded on the way out — reached in the first
  * TWELFTH of the collapse, not carried linearly across all of it.
@@ -2620,9 +2618,9 @@ function SeriesReaderInstance({
         // playing out on the wrong side of the screen, aimed at a card it was never going to reach.
         const forward = Math.max(0, tx);
         // ONE resisted distance drives both the size and the position — see the reader's copy.
-        const held = zoomDragFollow(forward, ZOOM_DRAG_FOLLOW_REACH * travel, ZOOM_DRAG_FOLLOW_GRIP);
+        const held = zoomDragFollow(forward, ZOOM_BACK_SWIPE_FOLLOW_REACH * travel, ZOOM_BACK_SWIPE_FOLLOW_GRIP);
         zoom.set(1 - Math.min(1, held / travel));
-        dragX.set(zoomHorizontalDrag(held, width));
+        dragX.set(held);
         // The cross axis rides the forward one PROPORTIONALLY, not as an on/off gate. Vertical play
         // is earned by horizontal travel: none at rest, all of it by the distance that would commit
         // the dismissal, linear in between. Two things fall out of that. A page dragged back toward

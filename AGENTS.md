@@ -297,6 +297,13 @@ rate is freed from the asymptote: `reach·d / (reach/grip + d)`, rate `grip·(S/
 ever get, and neither moves the other** — which is the whole reason a single-parameter band could
 never be tuned into this.
 
+The two surfaces have their OWN pairs. The reader's dismiss keeps 0.53/0.6; the series back-swipe
+runs 0.6/0.8 (`ZOOM_BACK_SWIPE_FOLLOW_*`) and its position IS `held` — nothing runs after the
+follow. It used to: the library's exponential rubber band was applied to `held` on the way to
+`dragX`, and two resistances compounded had the page at 116pt for a 400pt swipe and 133pt for 600,
+which is "the swipe stops a third of the way across". One band, reaching further, gives 154 and
+183 and is still moving at the edge. A page put back by hand is expected to go with the hand.
+
 **The series page's dismissal is RIGHTWARD ONLY, and the clamp belongs on the follow as well as the
 collapse.** `backSwipePan` can only activate rightward, but `tx` is measured from the activation
 point, so a finger that starts right and comes back left goes negative; with only the collapse
