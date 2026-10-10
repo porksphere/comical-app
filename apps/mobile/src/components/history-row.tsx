@@ -7,7 +7,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
+import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { absTime, relTimeLong } from '@/lib/rel-time';
 import { testId } from '@/lib/test-id';
 
 /** A single action on a row (Read / Read again …). */
@@ -24,6 +26,12 @@ export type RowAction = {
  * `onPress` (History resumes; Activity opens the series). Optional trailing text `actions` (Activity's
  * "Read") and/or a 3-dot `onMore` button (History's "open the series page"). Mirrors comical-web's
  * `.history-item` rows so both feeds read the same on every platform.
+ *
+ * On desktop the row is wider than it is tall, and lays out accordingly: a larger cover, a bigger
+ * title, and the moment (`when`) as a column of its own at the trailing end — relative age over the
+ * exact time — rather than the tail of the secondary line, where it was the last and smallest thing
+ * in a stack. A phone row has no spare width, so there the caller keeps the age inside `sub`/`detail`
+ * and `when` is not drawn.
  */
 export function HistoryRow({
   thumbnailUrl,
@@ -38,6 +46,7 @@ export function HistoryRow({
   dimmed,
   unread,
   progress,
+  when,
   thumbRef,
   coverHidden,
   testID,
@@ -65,6 +74,8 @@ export function HistoryRow({
   /** Pages seen of the chapter being read, 0–1 — a thin bar along the thumbnail's bottom edge.
    *  Omitted while the chapter's length isn't known. */
   progress?: number;
+  /** The row's moment (last read / latest chapter), drawn as the desktop time column — see above. */
+  when?: number;
   /** Ref on the thumbnail — the anchor for the long-press preview's lift (see SeriesCardMenu). */
   thumbRef?: RefObject<View | null>;
   /** Blank just the thumbnail while this row's long-press menu is open (its lifted preview is a copy). */
@@ -74,27 +85,32 @@ export function HistoryRow({
   testID?: string;
 }) {
   const theme = useTheme();
+  const desktop = useIsDesktop();
   const resolvedThumb = useResolvedAsset(thumbnailUrl);
   const base = testID ?? testId('history-row', title);
+  const thumbStyle = [styles.thumb, desktop && styles.thumbDesktop];
   return (
-    <View style={[styles.row, dimmed && styles.dimmed]}>
+    <View style={[styles.row, desktop && styles.rowDesktop, dimmed && styles.dimmed]}>
       <Pressable
         testID={base}
-        style={styles.main}
+        style={[styles.main, desktop && styles.mainDesktop]}
         onPress={onPress}
         onPressIn={onPressIn}
         accessibilityRole="button">
-        <View ref={thumbRef} collapsable={false} style={[styles.thumbWrap, coverHidden && styles.thumbHidden]}>
+        <View
+          ref={thumbRef}
+          collapsable={false}
+          style={[styles.thumbWrap, desktop && styles.thumbWrapDesktop, coverHidden && styles.thumbHidden]}>
           {resolvedThumb ? (
             <Image
               source={{ uri: resolvedThumb }}
-              style={styles.thumb}
+              style={thumbStyle}
               contentFit="cover"
               cachePolicy="memory-disk"
               transition={150}
             />
           ) : (
-            <View style={[styles.thumb, { backgroundColor: theme.backgroundElement }]} />
+            <View style={[thumbStyle, { backgroundColor: theme.backgroundElement }]} />
           )}
           {progress !== undefined && (
             <View style={styles.progressTrack} testID={testId(base, 'progress')}>
@@ -104,10 +120,10 @@ export function HistoryRow({
             </View>
           )}
         </View>
-        <View style={styles.body}>
+        <View style={[styles.body, desktop && styles.bodyDesktop]}>
           <View style={styles.titleRow}>
             {unread && <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} />}
-            <ThemedText type="smallBold" numberOfLines={2} style={styles.titleText}>
+            <ThemedText type="smallBold" numberOfLines={2} style={[styles.titleText, desktop && styles.titleDesktop]}>
               {title}
             </ThemedText>
           </View>
@@ -122,6 +138,16 @@ export function HistoryRow({
             </ThemedText>
           ) : null}
         </View>
+        {desktop && when !== undefined && (
+          <View style={styles.when} testID={testId(base, 'when')}>
+            <ThemedText type="small" numberOfLines={1}>
+              {relTimeLong(when)}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+              {absTime(when)}
+            </ThemedText>
+          </View>
+        )}
       </Pressable>
       <View style={styles.actions}>
         {actions.map((a) => (
@@ -156,6 +182,8 @@ export function HistoryRow({
 }
 
 const THUMB_W = 46;
+/** Desktop: the row has the width for a cover one can actually recognise. */
+const THUMB_W_DESKTOP = 72;
 
 const styles = StyleSheet.create({
   row: {
@@ -167,6 +195,10 @@ const styles = StyleSheet.create({
     // content width — the swipe-to-delete then reaches the screen edge instead of being cut off inside
     // a side inset. The list only pads the centring inset (web); see history/activity.
     paddingHorizontal: Spacing.four,
+  },
+  rowDesktop: {
+    gap: Spacing.four,
+    paddingVertical: Spacing.three,
   },
   dimmed: {
     opacity: 0.55,
@@ -181,8 +213,14 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     minWidth: 0,
   },
+  mainDesktop: {
+    gap: Spacing.four,
+  },
   thumbWrap: {
     width: THUMB_W,
+  },
+  thumbWrapDesktop: {
+    width: THUMB_W_DESKTOP,
   },
   thumb: {
     width: THUMB_W,
@@ -190,6 +228,9 @@ const styles = StyleSheet.create({
     ...ContinuousCorner,
     borderRadius: 6,
     backgroundColor: 'rgba(128,128,128,0.15)',
+  },
+  thumbDesktop: {
+    width: THUMB_W_DESKTOP,
   },
   // Inset from the cover's rounded edge rather than clipped by it, so the fill never has to agree
   // with the corner's curve — and the track reads over any cover, light or dark.
@@ -211,6 +252,21 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
+  },
+  bodyDesktop: {
+    gap: Spacing.one,
+  },
+  titleDesktop: {
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  // Right-aligned so the ages line up down the list, and wide enough that "just now" over
+  // "Sep 30, 11:48 PM" never wraps or shifts the column between rows.
+  when: {
+    alignItems: 'flex-end',
+    minWidth: 128,
+    flexShrink: 0,
+    gap: Spacing.half,
   },
   titleRow: {
     flexDirection: 'row',

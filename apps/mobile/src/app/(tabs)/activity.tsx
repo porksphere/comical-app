@@ -37,7 +37,7 @@ import { useContentWidth } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
-import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
@@ -401,6 +401,8 @@ function ActivityItem({
   direct: boolean;
 }) {
   const thumbRef = useRef<View>(null);
+  // On desktop the time is the row's own column (`when`), so the secondary line drops it.
+  const desktop = useIsDesktop();
   // The row's thumbnail is the zoom transition's source rect,
   // captured on press-IN because `measureInWindow` answers asynchronously — measuring at press
   // would put a native round trip in front of the navigation. And while its copy is in the air the
@@ -434,7 +436,7 @@ function ActivityItem({
     <HistoryRow
       thumbnailUrl={item.thumbnailUrl}
       title={item.title}
-      sub={activitySub(item)}
+      sub={activitySub(item, !desktop)}
       dimmed={!item.hasUnread}
       unread={item.hasUnread}
       onPress={onRead}
@@ -442,6 +444,7 @@ function ActivityItem({
       onMore={onOpenDetail}
       onMorePressIn={onMorePressIn}
       actions={[]}
+      when={item.latestAt}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}
     />
@@ -484,12 +487,12 @@ function ActivityItem({
 }
 
 /** Row secondary line: `N new chapters · when` when several coalesce, else `chapter · when`. */
-function activitySub(g: SeriesActivity): string {
+function activitySub(g: SeriesActivity, withTime: boolean): string {
   const chapter =
     g.newCount > 1
       ? `${g.newCount} new chapters`
       : (g.chapterName ?? (g.number !== undefined ? `Chapter ${g.number}` : 'New chapter'));
-  return `${chapter}  ·  ${relTime(g.latestAt)}`;
+  return withTime ? `${chapter}  ·  ${relTime(g.latestAt)}` : chapter;
 }
 
 const styles = StyleSheet.create({

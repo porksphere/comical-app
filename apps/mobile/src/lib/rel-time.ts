@@ -14,3 +14,27 @@ export function relTime(ms: number, now = Date.now()): string {
   if (days < 7) return `${days}d ago`;
   return new Date(ms).toLocaleDateString();
 }
+
+/**
+ * `relTime` that keeps counting past a week — weeks, months, years — for a surface that shows the
+ * exact date beside it anyway (see `absTime`). A bare `10/2/2026` in the age slot made the reader
+ * do the subtraction; "3w ago" is the answer.
+ */
+export function relTimeLong(ms: number, now = Date.now()): string {
+  const days = Math.round((now - ms) / 86_400_000);
+  if (days < 7) return relTime(ms, now);
+  if (days < 30) return `${Math.round(days / 7)}w ago`;
+  if (days < 365) return `${Math.max(1, Math.round(days / 30))}mo ago`;
+  return `${Math.max(1, Math.round(days / 365))}y ago`;
+}
+
+/** The moment itself, to sit under a relative age: "Oct 4, 2:14 PM" within the year, "Oct 4, 2025" past it. */
+export function absTime(ms: number, now = Date.now()): string {
+  const d = new Date(ms);
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? { hour: 'numeric', minute: '2-digit' } : { year: 'numeric' }),
+  });
+}

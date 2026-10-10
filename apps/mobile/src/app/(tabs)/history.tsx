@@ -33,7 +33,7 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { useContentWidth } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
-import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
@@ -274,10 +274,12 @@ function HistoryItem({
   // yet (or a direct read, which has no chapter) leaves it off.
   const progress = item.lastPage !== undefined && item.pageCount ? (item.lastPage + 1) / item.pageCount : undefined;
   // The series standing takes the time with it onto a second line; without one the time stays on
-  // the first, as it always has.
+  // the first, as it always has. On desktop the time is the row's own column (`when`), so neither
+  // line carries it, and the page reads as words rather than a fraction.
+  const desktop = useIsDesktop();
   const standing = chapters ? `${chapters.read} of ${chapters.known} chapters` : undefined;
-  const sub = historySub(item, !standing);
-  const detail = standing ? [standing, relTime(item.lastReadAt)].join('  ·  ') : undefined;
+  const sub = historySub(item, { withTime: !standing && !desktop, long: desktop });
+  const detail = standing ? (desktop ? standing : [standing, relTime(item.lastReadAt)].join('  ·  ')) : undefined;
   const thumbRef = useRef<View>(null);
   // The row's thumbnail is the zoom transition's source rect,
   // captured on press-IN because `measureInWindow` answers asynchronously — measuring at press
@@ -322,6 +324,7 @@ function HistoryItem({
       onMorePressIn={onMorePressIn}
       actions={[]}
       progress={progress}
+      when={item.lastReadAt}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}
     />
@@ -355,12 +358,23 @@ function HistoryItem({
   );
 }
 
-/** Build the row's secondary line: `chapter · X / N · when`, omitting absent parts. */
-function historySub(h: HistoryEntry, withTime: boolean): string {
+/**
+ * Build the row's secondary line: `chapter · X / N · when`, omitting absent parts. `long` spells the
+ * page out (`Page X of N`) for a row with the width for it.
+ */
+function historySub(h: HistoryEntry, { withTime, long }: { withTime: boolean; long: boolean }): string {
   const isDirect = h.chapterId === DIRECT_CHAPTER_ID;
   const chapter = !isDirect && h.chapterName ? h.chapterName : '';
   const page =
-    h.lastPage !== undefined ? (h.pageCount ? `${h.lastPage + 1} / ${h.pageCount}` : `${h.lastPage + 1}`) : '';
+    h.lastPage === undefined
+      ? ''
+      : long
+        ? h.pageCount
+          ? `Page ${h.lastPage + 1} of ${h.pageCount}`
+          : `Page ${h.lastPage + 1}`
+        : h.pageCount
+          ? `${h.lastPage + 1} / ${h.pageCount}`
+          : `${h.lastPage + 1}`;
   return [chapter, page, withTime ? relTime(h.lastReadAt) : ''].filter(Boolean).join('  ·  ');
 }
 
