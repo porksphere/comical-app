@@ -31,7 +31,7 @@ import { FileLibraryStore } from "@comical/host-server/library-store";
 import { createServerPageFetcher, createServerPageResolver } from "@comical/host-server/page-fetcher";
 import { createRouter, type RouterOptions } from "@comical/host-server/router";
 import { SettingsStore } from "@comical/host-server/settings-store";
-import { createSyncHost } from "@comical/host-server/sync-host";
+import { createSyncHost, dropStaleLoads } from "@comical/host-server/sync-host";
 import { TrackerManager } from "@comical/host-server/tracker-manager";
 
 export interface DesktopHostOptions {
@@ -83,7 +83,8 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
     origin: baseUrl,
   };
 
-  routerOpts.trackers = new TrackerManager({ dataDir, settings, registry });
+  const trackerManager = new TrackerManager({ dataDir, settings, registry });
+  routerOpts.trackers = trackerManager;
 
   // Late-bound in-process fetch: the download engine and the cover capture both drive the router
   // directly, but the router can't exist until the options that reference them are assembled.
@@ -107,6 +108,7 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
       installedTrackers: () => manifest.allInstalledTrackers(),
     },
     onApplied: opts.onSynced,
+    onRegistryApplied: dropStaleLoads(manager, trackerManager),
   });
   routerOpts.sync = sync.backend;
   // The router's installs are recorded; the managers keep the plain one, they only read.

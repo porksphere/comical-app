@@ -1989,7 +1989,10 @@ export function addRegistry(
   return fetchPost('/registries', body, signal);
 }
 
-/** DELETE /registries/{encodedUrl} → remove a registry (orphans its installed bridges/trackers). */
+/**
+ * DELETE /registries/{encodedUrl} → remove a registry. Its installed bridges/trackers keep working;
+ * they just stop receiving updates.
+ */
 export function removeRegistry(url: string, signal?: AbortSignal): Promise<void> {
   return fetchOk(`/registries/${encodeURIComponent(url)}`, 'DELETE', signal);
 }
