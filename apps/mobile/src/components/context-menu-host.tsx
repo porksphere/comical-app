@@ -13,15 +13,24 @@
  *    menu at the finger and keeps reporting it so the SAME uninterrupted touch can pick a row
  *    (`activateAfterLongPress` keeps the finger; a GH LongPress would cancel on travel — see the
  *    card's identical reasoning). On web it degrades to the child Pressable's own `onLongPress`
- *    (RNW suppresses the click after its own long-press; a wrapping gesture can't).
+ *    (RNW suppresses the click after its own long-press; a wrapping gesture can't), plus an
+ *    `onContextMenu` so a right-click opens the same menu in place of the browser's.
  *
- * Web opens the same object from a click (a series card's 3-dot button, a chapter row's long-press):
- * no hold to peek through, but the same panel, rows and placement, so a menu looks like one menu on
- * every platform.
+ * Web opens the same object from a click (a series card's 3-dot button, a chapter row's long-press or
+ * right-click): no hold to peek through, but the same panel, rows and placement, so a menu looks like
+ * one menu on every platform.
  */
 import { observable, ObservableHint, type OpaqueObject } from '@legendapp/state';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useMemo, useSyncExternalStore, type ReactElement, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+  type MouseEvent,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import { BackHandler, Platform, StyleSheet, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -147,10 +156,17 @@ function selectionTick(): void {
 }
 
 /**
+ * Where a hold menu was asked for. A right-click adds `anchor: 'fixed'`: a pointer menu hangs from
+ * the cursor's top-left corner, like the browser's own would, where a finger's floats centred on
+ * the press point. Spread it straight into the `openContextMenu` request.
+ */
+export type ContextMenuPoint = { x: number; y: number; anchor?: ContextMenuRequest['anchor'] };
+
+/**
  * The hold gesture a menu-owning row wears. Native: a Pan-after-long-press that opens the menu at
  * the finger, keeps reporting it for the peek, and commits the hovered row on lift. Web: hands the
- * child Pressable a plain `onLongPress` through the render prop (consumers open their web
- * affordance from it) — see the module docstring for why the two must differ.
+ * child Pressable a plain `onLongPress` and an `onContextMenu` through the render prop (consumers
+ * open their web affordance from them) — see the module docstring for why the two must differ.
  */
 export function ContextMenuHold({
   enabled = true,
@@ -158,8 +174,13 @@ export function ContextMenuHold({
   children,
 }: {
   enabled?: boolean;
-  onOpen: (point: { x: number; y: number }) => void;
-  children: (api: { onLongPress?: (e: GestureResponderEvent) => void }) => ReactNode;
+  onOpen: (point: ContextMenuPoint) => void;
+  children: (api: {
+    onLongPress?: (e: GestureResponderEvent) => void;
+    /** react-native-web forwards this to the element; react-native's types don't know it, so the
+     *  consumer spreads it as `ViewProps`. */
+    onContextMenu?: (e: MouseEvent) => void;
+  }) => ReactNode;
 }) {
   const originX = useSharedValue(0);
   const originY = useSharedValue(0);
@@ -207,11 +228,17 @@ export function ContextMenuHold({
   if (Platform.OS === 'web') {
     return (
       <>
-        {children({
-          onLongPress: enabled
-            ? (e) => onOpen({ x: e.nativeEvent.pageX, y: e.nativeEvent.pageY })
-            : undefined,
-        })}
+        {children(
+          enabled
+            ? {
+                onLongPress: (e) => onOpen({ x: e.nativeEvent.pageX, y: e.nativeEvent.pageY }),
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  onOpen({ x: e.clientX, y: e.clientY, anchor: 'fixed' });
+                },
+              }
+            : {},
+        )}
       </>
     );
   }

@@ -12,6 +12,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type StyleProp,
+  type ViewProps,
   type ViewStyle,
 } from 'react-native';
 import Animated, {
@@ -28,7 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
 import { openCollectionPicker } from '@/components/collection-picker';
-import { ContextMenuHold, openContextMenu } from '@/components/context-menu-host';
+import { ContextMenuHold, openContextMenu, type ContextMenuPoint } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
 import {
@@ -599,18 +600,17 @@ export function ChapterScrollList({
     return out;
   }, [loading, hasChapters, groups, collapsible, hiddenCount]);
 
-  // Long-press a row → the per-chapter download menu, in the series card popup's menu system
-  // (frosted point-anchored menu, peek-and-commit) on every platform.
+  // Long-press (or, on web, right-click) a row → the per-chapter menu, in the series card popup's
+  // menu system (frosted point-anchored menu, peek-and-commit) on every platform.
   const manifest = useMemo(() => dl?.chapters ?? [], [dl]);
-  const openChapterMenu = (g: ChapterGroup, at: { x: number; y: number }) => {
+  const openChapterMenu = (g: ChapterGroup, at: ContextMenuPoint) => {
     if (!bridgeId) return;
     // Built per open, so the "Mark as read/unread" label reflects current state.
     const readArgs = { ds, bridgeId, seriesId: seed, chapters, group: g, onChanged: invalidateReadState };
     openContextMenu({
       // No title line — the pressed row is right there naming the chapter; rows only, like the
       // series popup's own menu.
-      x: at.x,
-      y: at.y,
+      ...at,
       rows: chapterMenuRows({
         bridgeId,
         seriesId: seed,
@@ -829,8 +829,8 @@ function ChapterRow({
   group: ChapterGroup;
   preferredGroup?: string;
   onOpen: (v: Chapter) => void;
-  /** Long-press: the per-chapter download menu (download this / from here / delete). */
-  onMenu?: (group: ChapterGroup, at: { x: number; y: number }) => void;
+  /** Long-press / right-click: the per-chapter menu (read state, collections, downloads). */
+  onMenu?: (group: ChapterGroup, at: ContextMenuPoint) => void;
   /** Download indicator for this logical chapter (best state across versions), if any. */
   dlState?: { state: DownloadState; fraction: number } | null;
   /** Rendering offline and not downloaded — unreadable, so the row dims and its press disables. */
@@ -849,7 +849,7 @@ function ChapterRow({
     <ContextMenuHold
       enabled={!!onMenu && !dimmed}
       onOpen={(pt) => onMenu?.(group, pt)}>
-      {({ onLongPress }) => (
+      {({ onLongPress, onContextMenu }) => (
     // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
     // list you still have to get through, so they are the ones drawn at full strength.
     <View style={dimmed ? styles.rowDimmed : read && !PLATED_ROWS ? styles.rowRead : undefined}>
@@ -857,6 +857,7 @@ function ChapterRow({
         testID={testId('series.chapter', group.key)}
         onPress={() => onOpen(def)}
         onLongPress={onLongPress}
+        {...({ onContextMenu } as ViewProps)}
         disabled={dimmed}
         onHoverIn={rowHover.onHoverIn}
         onHoverOut={rowHover.onHoverOut}
