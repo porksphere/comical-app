@@ -209,15 +209,17 @@ export default function ActivityScreen() {
         number: rep.number,
       });
     }
-    // Newest update first. (Insertion order is already close to this, but ties/interleaving make the
-    // explicit sort the source of truth.)
-    out.sort((a, b) => b.latestAt - a.latestAt);
+    // Everything still unread first, newest update first within each half — so what's left to read
+    // is one block at the top and the dimmed rows a trail beneath it, rather than the two mixed in
+    // date order where an unread row could sit under a page of finished ones. (Insertion order is
+    // already close to the date order, but ties/interleaving make the explicit sort the source of
+    // truth.)
+    out.sort((a, b) => Number(b.hasUnread) - Number(a.hasUnread) || b.latestAt - a.latestAt);
     // A filter over rows already grouped, not a query: applied after coalescing so a match keeps the
     // whole series' row rather than splitting its entries.
     const q = query.trim().toLowerCase();
     return q ? out.filter((r) => r.title.toLowerCase().includes(q)) : out;
   }, [visible, query]);
-  const unreadTotal = rows.reduce((n, r) => n + r.newCount, 0);
 
   // Reading reorders this list, so a series opened from partway down can end up above the viewport
   // by the time the page closes — see useZoomSurfaceList.
@@ -329,20 +331,6 @@ export default function ActivityScreen() {
                 direct={directOf(item.bridgeId)}
               />
             )}
-            // Opens the feed with where you stand, so the answer to "is there more to read" is the
-            // first thing seen rather than the last — a long feed buried it under the fold. Only
-            // for the whole feed — a filtered view is a subset.
-            ListHeaderComponent={
-              query.trim() ? undefined : (
-                <View style={styles.standing}>
-                  <ThemedText type="small" themeColor="textSecondary" testID="activity.standing">
-                    {unreadTotal === 0
-                      ? 'You’re all caught up'
-                      : `${unreadTotal} unread ${unreadTotal === 1 ? 'chapter' : 'chapters'} left`}
-                  </ThemedText>
-                </View>
-              )
-            }
             showsVerticalScrollIndicator={Platform.OS === 'web'}
             // Suppress Android's edge glow so it doesn't fight the custom pull; iOS keeps its bounce
             // (that's what sources the pull there) and fires the refresh via onScrollEndDrag.
@@ -514,12 +502,6 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: 'center',
     maxWidth: 340,
-  },
-  standing: {
-    alignItems: 'center',
-    paddingTop: Spacing.three,
-    paddingBottom: Spacing.two,
-    paddingHorizontal: Spacing.four,
   },
   list: {
     flex: 1,
