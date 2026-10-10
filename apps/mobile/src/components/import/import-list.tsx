@@ -5,6 +5,7 @@
  * styles live here rather than in two copies that would drift.
  */
 import { Image } from 'expo-image';
+import { type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ArrowRightIcon, BridgesIcon, TrackersIcon } from '@/components/icons/ui-icons';
@@ -27,30 +28,35 @@ export function ImportCover({ url }: { url?: string }) {
   );
 }
 
-const ROUTE_ICON = 18;
-/** Past this many sources the row says "+N" instead of drawing more icons — the title needs the room. */
-const ROUTE_MAX_TO = 2;
-
 /**
- * Where a row's entry goes, as icons: the service it comes from, an arrow, and the source (or
- * sources, for a series the library holds on several) it lands on.
+ * Where a row's entry goes, as icons leading the row: the service it comes from, an arrow, and the
+ * source it lands on. A series the library holds on several sources shows the first with a "+N"
+ * badge; a row with no source yet shows `pending` in that tile, so every row's route is the same
+ * width and the covers stay in one column.
  */
-export function MatchRoute({ fromIcon, toIcons }: { fromIcon?: string | undefined; toIcons: readonly (string | undefined)[] }) {
+export function MatchRoute({
+  fromIcon,
+  toIcons,
+  pending,
+}: {
+  fromIcon?: string | undefined;
+  toIcons: readonly (string | undefined)[];
+  pending: (color: string, size: number) => ReactNode;
+}) {
   const theme = useTheme();
-  const shown = toIcons.slice(0, ROUTE_MAX_TO);
-  const more = toIcons.length - shown.length;
+  const more = toIcons.length - 1;
   return (
     <View style={importStyles.route} accessible={false}>
-      <RowIcon uri={fromIcon} size={ROUTE_ICON} fallback={(color, size) => <TrackersIcon color={color} size={size} />} />
-      <ArrowRightIcon color={theme.textSecondary} size={12} />
-      {shown.map((uri, i) => (
-        <RowIcon key={i} uri={uri} size={ROUTE_ICON} fallback={(color, size) => <BridgesIcon color={color} size={size} />} />
-      ))}
-      {more > 0 && (
-        <ThemedText type="small" themeColor="textSecondary">
-          +{more}
-        </ThemedText>
-      )}
+      <RowIcon uri={fromIcon} fallback={(color, size) => <TrackersIcon color={color} size={size} />} />
+      <ArrowRightIcon color={theme.textSecondary} size={14} />
+      <View>
+        <RowIcon uri={toIcons[0]} fallback={toIcons.length > 0 ? (color, size) => <BridgesIcon color={color} size={size} /> : pending} />
+        {more > 0 && (
+          <View style={[importStyles.routeBadge, { backgroundColor: theme.backgroundSelected, borderColor: theme.background }]}>
+            <ThemedText style={[importStyles.routeBadgeText, { color: theme.text }]}>+{more}</ThemedText>
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -60,6 +66,23 @@ export const importStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
+  },
+  routeBadge: {
+    position: 'absolute',
+    right: -Spacing.one - 2,
+    bottom: -Spacing.one - 2,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    borderRadius: 8,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routeBadgeText: {
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '700',
   },
   container: {
     flex: 1,

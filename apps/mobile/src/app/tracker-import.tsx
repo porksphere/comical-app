@@ -420,16 +420,6 @@ export default function TrackerImportScreen() {
     const findable = row.kind === 'resolved' || row.kind === 'unresolved';
     const searching = row.kind === 'unresolved' && resolving?.keys.has(row.key) ? resolving.bridgeId : undefined;
     const toggle = () => ms.toggle(row.key);
-    const bridgeIds = rowBridgeIds(row);
-    // Where the entry lands, once it lands anywhere; until then the row's tap is a search and says so.
-    const right =
-      bridgeIds.length > 0 ? (
-        <MatchRoute fromIcon={trackerIcon} toIcons={bridgeIds.map((id) => byId.get(id)?.thumbnail)} />
-      ) : findable ? (
-        <SearchIcon color={theme.textSecondary} size={16} />
-      ) : (
-        <View />
-      );
     return (
       <View>
         <Holdable
@@ -462,10 +452,18 @@ export default function TrackerImportScreen() {
                       {...(row.kind === 'resolved' ? { onPress: toggle, pressTestID: testId('tracker-import.check', row.key), accessibilityLabel: `Import ${row.item.title}` } : {})}
                     />
                   )}
+                  <MatchRoute
+                    fromIcon={trackerIcon}
+                    toIcons={rowBridgeIds(row).map((id) => byId.get(id)?.thumbnail)}
+                    // No source yet: the tile says what the row's tap does.
+                    pending={(color, size) =>
+                      row.kind === 'linked' ? <CheckIcon color={color} size={size} /> : <SearchIcon color={color} size={size} />
+                    }
+                  />
                   <ImportCover url={row.target?.series.thumbnailUrl ?? row.item.thumbnailUrl} />
                 </>
               }
-              right={right}
+              right={<View />}
               {...(findable
                 ? { onPress: () => openMatchSheet(row), ...(selectable ? { onLongPress } : {}) }
                 : selectable
