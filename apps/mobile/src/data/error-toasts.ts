@@ -5,8 +5,8 @@ import { setRequestErrorListener } from '@/data/api';
 import { shortError } from '@/lib/friendly-error';
 import { persisted$ } from '@/lib/observable';
 
-/** Off by default. An object, not a bare boolean — see `lightCards$` for why a persisted `false` crashes. */
-export const errorToasts$ = persisted$('comical:error-toasts', { on: false });
+/** An object, not a bare boolean — see `lightCards$` for why a persisted `false` crashes. */
+export const errorToasts$ = persisted$('comical:error-toasts', { on: true });
 
 export function useErrorToasts(): boolean {
   return useSyncExternalStore(

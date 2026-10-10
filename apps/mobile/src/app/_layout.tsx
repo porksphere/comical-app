@@ -68,7 +68,7 @@ installDesktopSyncRefresh();
 // internal/dev build channels.
 installAppUpdateAutoCheck();
 
-// Red toasts for failed requests, when Settings → General turns them on.
+// Red toasts for failed requests, unless Settings → General turns them off.
 installErrorToasts();
 
 // DevProfiler is profiling-only tooling; require it behind `PROFILING_ENABLED` (dev, or a CI
