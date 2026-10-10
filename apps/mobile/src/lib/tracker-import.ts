@@ -80,10 +80,14 @@ export function planRows(items: readonly TrackerImportCandidate[], resolutions: 
   return [...actionable, ...unresolved, ...linked];
 }
 
-/** The bridges a row's series comes from: the match it imports as, or every library copy it links. */
-export function rowBridgeIds(row: ImportRow): string[] {
-  if (row.kind === 'resolved') return [row.target!.bridgeId];
-  if (row.kind === 'in-library') return [...new Set((row.item.entries ?? []).map((e) => e.bridgeId))];
+/** The bridge series a row lands on: the match it imports as, or every library copy it links. A
+ *  library copy carries no cover here — the screen looks it up in the library. */
+export function rowDestinations(row: ImportRow): { bridgeId: string; seriesId: string; thumbnailUrl?: string }[] {
+  if (row.kind === 'resolved') {
+    const { bridgeId, series } = row.target!;
+    return [{ bridgeId, seriesId: series.id, ...(series.thumbnailUrl && { thumbnailUrl: series.thumbnailUrl }) }];
+  }
+  if (row.kind === 'in-library') return (row.item.entries ?? []).map(({ bridgeId, seriesId }) => ({ bridgeId, seriesId }));
   return [];
 }
 

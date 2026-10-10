@@ -30,7 +30,7 @@ import { openContextMenu } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { BridgesIcon, CheckIcon, ClearIcon, ListPlusIcon, ReadingIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { BridgeMatchSheet } from '@/components/import/bridge-match-sheet';
-import { ImportCover, MatchRoute, importStyles as styles } from '@/components/import/import-list';
+import { CoverRoute, importStyles as styles } from '@/components/import/import-list';
 import { PILL_HEIGHT, SelectLead, SelectLeadGap, SelectPillBar, useDragSelect, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useOverlay } from '@/components/overlay/overlay';
@@ -47,7 +47,7 @@ import { useComicalExcludedIds } from '@/data/comical-home';
 import { resolveDefaultCollection } from '@/data/default-collection';
 import { getDefaultCollectionId, setDefaultCollectionId } from '@/data/default-collection-store';
 import { applyOrder, useBridgeOrder } from '@/data/list-order';
-import { collectionsQuery, queryKeys, trackerImportPreviewQuery } from '@/data/queries';
+import { collectionsQuery, libraryQuery, queryKeys, trackerImportPreviewQuery } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
@@ -68,7 +68,7 @@ import {
   planRows,
   progressLabel,
   readingKeys,
-  rowBridgeIds,
+  rowDestinations,
   rowKey,
   rowDescription,
   selectableKeys,
@@ -102,8 +102,12 @@ export default function TrackerImportScreen() {
   const sidePad = useSettingsSidePad(width);
 
   const { data, error, isLoading, refetch, isFetching } = useQuery(trackerImportPreviewQuery(ds, mock, trackerId));
-  const { data: trackers } = useQuery({ queryKey: queryKeys.trackers(), queryFn: ({ signal }) => ds.getTrackers(signal) });
-  const trackerIcon = trackers?.find((t) => t.info.id === trackerId)?.info.iconUrl;
+  // The preview names a library copy but not its cover; the library list has it.
+  const { data: library } = useQuery(libraryQuery(ds, mock, '', 'added'));
+  const libraryCovers = useMemo(
+    () => new Map((library ?? []).map((i) => [`${i.bridgeId}:${i.seriesId}`, i.thumbnailUrl])),
+    [library],
+  );
 
   // The screen's own facts on top of the host's classification: what the lookup found per entry or
   // the user picked for it, and whether new series get their progress seeded.
@@ -125,8 +129,8 @@ export default function TrackerImportScreen() {
   const mode = useSelectMode(true);
   const ms = useMultiSelect(allKeys);
   const listExtra = useMemo(
-    () => ({ selected: ms.selected, resolutions, seed, trackerIcon, byId }),
-    [ms.selected, resolutions, seed, trackerIcon, byId],
+    () => ({ selected: ms.selected, resolutions, seed, libraryCovers }),
+    [ms.selected, resolutions, seed, libraryCovers],
   );
 
   // Seed ONCE per resolved preview: everything actionable checked. Keyed on the items array identity
@@ -420,6 +424,7 @@ export default function TrackerImportScreen() {
     const findable = row.kind === 'resolved' || row.kind === 'unresolved';
     const searching = row.kind === 'unresolved' && resolving?.keys.has(row.key) ? resolving.bridgeId : undefined;
     const toggle = () => ms.toggle(row.key);
+    const dest = rowDestinations(row);
     return (
       <View>
         <Holdable
@@ -452,15 +457,18 @@ export default function TrackerImportScreen() {
                       {...(row.kind === 'resolved' ? { onPress: toggle, pressTestID: testId('tracker-import.check', row.key), accessibilityLabel: `Import ${row.item.title}` } : {})}
                     />
                   )}
-                  <MatchRoute
-                    fromIcon={trackerIcon}
-                    toIcons={rowBridgeIds(row).map((id) => byId.get(id)?.thumbnail)}
-                    // No source yet: the tile says what the row's tap does.
-                    pending={(color, size) =>
-                      row.kind === 'linked' ? <CheckIcon color={color} size={size} /> : <SearchIcon color={color} size={size} />
-                    }
+                  <CoverRoute
+                    from={row.item.thumbnailUrl}
+                    to={dest[0] && (dest[0].thumbnailUrl ?? libraryCovers.get(`${dest[0].bridgeId}:${dest[0].seriesId}`))}
+                    more={dest.length - 1}
+                    // Nothing to land on yet: the tile says what the row's tap does.
+                    {...(dest.length === 0
+                      ? {
+                          pending: (color: string, size: number) =>
+                            row.kind === 'linked' ? <CheckIcon color={color} size={size} /> : <SearchIcon color={color} size={size} />,
+                        }
+                      : {})}
                   />
-                  <ImportCover url={row.target?.series.thumbnailUrl ?? row.item.thumbnailUrl} />
                 </>
               }
               right={<View />}

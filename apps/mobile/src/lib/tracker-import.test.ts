@@ -12,7 +12,7 @@ import {
   planRows,
   progressLabel,
   readingKeys,
-  rowBridgeIds,
+  rowDestinations,
   rowDescription,
   selectableKeys,
   sumImportResults,
@@ -73,11 +73,14 @@ describe('planRows', () => {
     ]);
   });
 
-  test('rowBridgeIds: the find for a resolved row, each distinct library copy, nothing otherwise', () => {
-    const twice = { ...held, entries: [...held.entries!, { key: 'a:held-2', bridgeId: 'a', seriesId: 'held-2', title: 'Held', localRead: 0 }] };
-    const byKey = new Map(planRows([twice, missing, planned, linked], new Map([['2', found]])).map((r) => [r.key, rowBridgeIds(r)]));
-    expect(byKey.get('1')).toEqual(['a', 'b']);
-    expect(byKey.get('2')).toEqual(['x']);
+  test('rowDestinations: the find (with its cover) for a resolved row, every library copy, nothing otherwise', () => {
+    const withCover: Resolution = { ...found, exact: { id: 'm', title: 'Missing (x)', thumbnailUrl: 'cover' } };
+    const byKey = new Map(planRows([held, missing, planned, linked], new Map([['2', withCover]])).map((r) => [r.key, rowDestinations(r)]));
+    expect(byKey.get('1')).toEqual([
+      { bridgeId: 'a', seriesId: 'held' },
+      { bridgeId: 'b', seriesId: 'held-b' },
+    ]);
+    expect(byKey.get('2')).toEqual([{ bridgeId: 'x', seriesId: 'm', thumbnailUrl: 'cover' }]);
     expect(byKey.get('3')).toEqual([]);
     expect(byKey.get('4')).toEqual([]);
   });

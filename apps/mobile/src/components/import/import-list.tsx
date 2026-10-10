@@ -8,8 +8,7 @@ import { Image } from 'expo-image';
 import { type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { ArrowRightIcon, BridgesIcon, TrackersIcon } from '@/components/icons/ui-icons';
-import { RowIcon } from '@/components/settings/row-icon';
+import { ArrowRightIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { SettingsGutter, Spacing } from '@/constants/theme';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
@@ -19,7 +18,7 @@ import { useTheme } from '@/hooks/use-theme';
 export const IMPORT_THUMB_W = 30;
 
 /** The row's cover. A component so `useResolvedAsset` (a hook) runs per row, not in `renderItem`. */
-export function ImportCover({ url }: { url?: string }) {
+export function ImportCover({ url }: { url?: string | undefined }) {
   const theme = useTheme();
   const thumb = useResolvedAsset(url);
   if (!thumb) return <View style={[importStyles.thumb, { backgroundColor: theme.backgroundElement }]} />;
@@ -29,28 +28,34 @@ export function ImportCover({ url }: { url?: string }) {
 }
 
 /**
- * Where a row's entry goes, as icons leading the row: the service it comes from, an arrow, and the
- * source it lands on. A series the library holds on several sources shows the first with a "+N"
- * badge; a row with no source yet shows `pending` in that tile, so every row's route is the same
- * width and the covers stay in one column.
+ * A row's entry and the series it lands on, cover to cover. A series the library holds on several
+ * sources shows the first with a "+N" badge; a row with nothing to land on yet shows `pending` in a
+ * cover-shaped tile, so every row's pair is the same width and the titles start in one column.
  */
-export function MatchRoute({
-  fromIcon,
-  toIcons,
+export function CoverRoute({
+  from,
+  to,
+  more = 0,
   pending,
 }: {
-  fromIcon?: string | undefined;
-  toIcons: readonly (string | undefined)[];
-  pending: (color: string, size: number) => ReactNode;
+  from?: string | undefined;
+  to?: string | undefined;
+  more?: number;
+  pending?: ((color: string, size: number) => ReactNode) | undefined;
 }) {
   const theme = useTheme();
-  const more = toIcons.length - 1;
   return (
     <View style={importStyles.route} accessible={false}>
-      <RowIcon uri={fromIcon} fallback={(color, size) => <TrackersIcon color={color} size={size} />} />
+      <ImportCover url={from} />
       <ArrowRightIcon color={theme.textSecondary} size={14} />
       <View>
-        <RowIcon uri={toIcons[0]} fallback={toIcons.length > 0 ? (color, size) => <BridgesIcon color={color} size={size} /> : pending} />
+        {pending ? (
+          <View style={[importStyles.thumb, importStyles.pending, { backgroundColor: theme.backgroundElement }]}>
+            {pending(theme.textSecondary, 14)}
+          </View>
+        ) : (
+          <ImportCover url={to} />
+        )}
         {more > 0 && (
           <View style={[importStyles.routeBadge, { backgroundColor: theme.backgroundSelected, borderColor: theme.background }]}>
             <ThemedText style={[importStyles.routeBadgeText, { color: theme.text }]}>+{more}</ThemedText>
@@ -66,6 +71,10 @@ export const importStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
+  },
+  pending: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   routeBadge: {
     position: 'absolute',
