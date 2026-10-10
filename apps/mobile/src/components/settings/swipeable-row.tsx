@@ -1,4 +1,4 @@
-import { type ComponentType, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentType, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -6,7 +6,6 @@ import {
   View,
   type GestureResponderEvent,
   type LayoutChangeEvent,
-  type ViewStyle,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -18,6 +17,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
+import { HOVER_RAIL_FADE, HoverRailContext } from '@/components/settings/hover-rail';
 import { SettingsRow } from '@/components/settings/settings-row';
 import { ContinuousCorner, SettingsGutter, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
@@ -70,13 +70,6 @@ const IS_WEB = Platform.OS === 'web';
 // hover events ever, so hover-revealed actions would be permanently invisible there — those clients
 // get them shown outright instead. Shared with the reorder handle, which reveals on the same terms.
 export const CAN_HOVER = IS_WEB && typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover)').matches;
-
-// react-native-web maps these onto the underlying div so the action's opacity change eases; they
-// aren't part of RN's ViewStyle, hence the cast (mirrors app-tabs.tsx's FADE_TRANSITION). Web only.
-const WEB_ACTION_TRANSITION = {
-  transitionProperty: 'opacity',
-  transitionDuration: '120ms',
-} as unknown as ViewStyle;
 
 /** Width of one hover-action lane on web — also the reorder handle's lane, so the rail stays even. */
 export const WEB_LANE = 34;
@@ -136,8 +129,14 @@ type SwipeableRowProps = {
   /** The most actions any row of this list can carry, when that varies row to row. On web the actions
    *  sit in lanes BESIDE the content, so a row with fewer of them is a wider row, and its trailing
    *  control lands further right than its neighbours'; a row short of this count pads the difference.
-   *  Native ignores it — a swipe uncovers its actions from beneath a row that is always full width. */
+   *  Native ignores it — a swipe uncovers its actions from beneath a row that is always full width.
+   *  Moot under `overlay`, where nothing is beside the content. */
   lanes?: number;
+  /** Web: draw the hover actions OVER the row's trailing end instead of in lanes beside it, so the
+   *  row is full width at rest (see `HoverRailContext`). Only for a row whose trailing end is
+   *  decorative — a chevron — since the rail covers it while shown; a row with live controls there
+   *  (History's ⋯ button) keeps its lanes. Native ignores it. */
+  overlay?: boolean;
   /** The row's own content (rendered as the swipeable surface / hover body). */
   children: ReactNode;
 };
@@ -164,6 +163,7 @@ export function SwipeableRow({
   recycleKey,
   swipeEnabled = true,
   lanes = 0,
+  overlay = false,
   children,
 }: SwipeableRowProps) {
   // Nothing to act on: plain content in the same escaped layout, no gesture/lanes. Checked BEFORE
@@ -173,7 +173,7 @@ export function SwipeableRow({
   // which made entering a big list's select mode visibly stall — the row stays mounted and its
   // gesture is switched off instead.
   if (actions.length === 0) {
-    const reserved = IS_WEB && swipeEnabled && lanes > 0 ? edgeInset + lanes * WEB_LANE : 0;
+    const reserved = IS_WEB && !overlay && swipeEnabled && lanes > 0 ? edgeInset + lanes * WEB_LANE : 0;
     return <View style={{ marginHorizontal: -edgeInset, paddingRight: reserved }}>{children}</View>;
   }
   // Delegated so the action-less early return above stays hook-free.
@@ -184,7 +184,8 @@ export function SwipeableRow({
       edgeInset={edgeInset}
       recycleKey={recycleKey}
       swipeEnabled={swipeEnabled}
-      lanes={lanes}>
+      lanes={lanes}
+      overlay={overlay}>
       {children}
     </CollapsingRow>
   );
@@ -207,6 +208,7 @@ function CollapsingRow({
   recycleKey,
   swipeEnabled,
   lanes,
+  overlay,
   children,
 }: {
   name: string;
@@ -215,6 +217,7 @@ function CollapsingRow({
   recycleKey?: string;
   swipeEnabled: boolean;
   lanes: number;
+  overlay: boolean;
   children: ReactNode;
 }) {
   // Mirrors the natural height while idle, so a fold starts where the row already sits.
@@ -261,7 +264,8 @@ function CollapsingRow({
           edgeInset={edgeInset}
           recycleKey={recycleKey}
           enabled={swipeEnabled}
-          lanes={lanes}>
+          lanes={lanes}
+          overlay={overlay}>
           {children}
         </HoverActionsRow>
       ) : (
@@ -274,7 +278,8 @@ function CollapsingRow({
 }
 
 /** A `SettingsRow` with trailing swipe/hover actions — the settings-screen flavour of `SwipeableRow`
- *  (escapes the settings gutter so pills reach the screen edge). Existing settings callers use this. */
+ *  (escapes the settings gutter so pills reach the screen edge). On web the actions overlay the
+ *  row's trailing end on hover, where its chevron sits. Existing settings callers use this. */
 export function SwipeableSettingsRow({
   label,
   labelBold,
@@ -288,7 +293,6 @@ export function SwipeableSettingsRow({
   actions,
   recycleKey,
   swipeEnabled,
-  lanes,
   testID,
 }: {
   label: string;
@@ -298,7 +302,8 @@ export function SwipeableSettingsRow({
   /** Indents the row's content under a parent (see `SettingsRow.contentInset`). */
   contentInset?: number;
   leading?: ReactNode;
-  /** Trailing content on the row's right (overrides the auto chevron a pressable row would grow). */
+  /** Trailing content on the row's right (overrides the auto chevron a pressable row would grow).
+   *  Decorative only — on web the hover actions cover this slot while shown. */
   right?: ReactNode;
   /** Tapping the row body (e.g. opening the item's detail page). Suppressed while the row is open. */
   onPress?: () => void;
@@ -309,8 +314,6 @@ export function SwipeableSettingsRow({
   recycleKey?: string;
   /** See `SwipeableRow.swipeEnabled` — false renders the row without its actions. */
   swipeEnabled?: boolean;
-  /** See `SwipeableRow.lanes`. */
-  lanes?: number;
   /** Automation selector forwarded to the inner row. */
   testID?: string;
 }) {
@@ -320,7 +323,7 @@ export function SwipeableSettingsRow({
       actions={actions}
       edgeInset={SettingsGutter}
       recycleKey={recycleKey}
-      lanes={lanes}
+      overlay
       {...(swipeEnabled !== undefined ? { swipeEnabled } : {})}>
       <SettingsRow
         label={label}
@@ -673,31 +676,47 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   );
 }
 
-function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, lanes, children }: RowImplProps & { lanes: number }) {
+function HoverActionsRow({
+  name,
+  actions,
+  edgeInset,
+  recycleKey,
+  enabled,
+  lanes,
+  overlay,
+  children,
+}: RowImplProps & { lanes: number; overlay: boolean }) {
   const theme = useTheme();
-  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  const { hovered: ownHovered, onHoverIn, onHoverOut } = useHovered();
   // Drop any lingering hover when a recycling list reuses this row for a different item (see SwipeRow).
   useEffect(() => {
     onHoverOut();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recycleKey]);
+  // Inside a reorderable row the hover region is that row (body, these actions AND its grip), so the
+  // rail reveals as one whatever the pointer is on; it says how much of the edge its grip holds.
+  const outer = useContext(HoverRailContext);
+  const hovered = outer ? outer.hovered : ownHovered;
+  const inset = outer?.inset ?? 0;
+  // A touch screen never hovers: the actions are simply there.
+  const shown = !CAN_HOVER || hovered;
   // Hover the WHOLE row (body + action lanes) via pointer enter/leave on the outer element — reliably
   // fires for the entire subtree, unlike an `onHoverIn` on a wrapper the inner row's own Pressable
   // would swallow. Each action is a SIBLING of the content (not nested inside it): react-native-web
   // renders an accessibilityRole="button" Pressable as a real <button>, and a <button> inside a
-  // <button> is invalid HTML, so the actions get their own lanes to the row's right.
+  // <button> is invalid HTML, so the actions get their own lanes — beside the content, or (`overlay`)
+  // over its trailing end.
   const lastIndex = actions.length - 1;
-  const spareLanes = Math.max(0, lanes - actions.length);
-  return (
-    <View style={[styles.webRow, { marginHorizontal: -edgeInset }]} onPointerEnter={onHoverIn} onPointerLeave={onHoverOut}>
-      <View style={styles.webRowBody}>{children}</View>
+  const spareLanes = overlay ? 0 : Math.max(0, lanes - actions.length);
+  // Disabled (select mode): the body stays, the lanes go — no actions to hover.
+  const rail = enabled && (
+    <>
       {/* On the inner side, so the actions a short row does have stay against the edge. */}
-      {enabled && spareLanes > 0 && <View style={{ width: spareLanes * WEB_LANE }} />}
-      {/* Disabled (select mode): the body stays, the lanes go — no actions to hover. */}
-      {enabled &&
-        actions.map((a, i) => {
+      {spareLanes > 0 && <View style={{ width: spareLanes * WEB_LANE }} />}
+      {actions.map((a, i) => {
         const Icon = a.icon;
-        const isEdge = i === lastIndex;
+        // The edge lane pads out to the screen inset — unless an outer rail already holds that edge.
+        const isEdge = i === lastIndex && inset === 0;
         return (
           <Pressable
             key={a.key ?? a.label}
@@ -705,16 +724,37 @@ function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, lanes,
             onPress={a.onPress}
             style={[
               styles.webAction,
-              WEB_ACTION_TRANSITION,
+              HOVER_RAIL_FADE,
               isEdge ? { width: edgeInset + WEB_LANE, paddingRight: edgeInset } : { width: WEB_LANE },
-              CAN_HOVER && !hovered && styles.webActionIdle,
+              !shown && styles.webActionIdle,
             ]}
             accessibilityRole="button"
             accessibilityLabel={`${a.label} ${name}`}>
             <Icon color={a.destructive ? theme.danger : theme.accent} size={18} />
           </Pressable>
         );
-        })}
+      })}
+    </>
+  );
+  if (!overlay) {
+    return (
+      <View style={[styles.webRow, { marginHorizontal: -edgeInset }]} onPointerEnter={onHoverIn} onPointerLeave={onHoverOut}>
+        <View style={styles.webRowBody}>{children}</View>
+        {rail}
+      </View>
+    );
+  }
+  return (
+    <View style={[styles.webRow, { marginHorizontal: -edgeInset }]} onPointerEnter={onHoverIn} onPointerLeave={onHoverOut}>
+      {/* The row lights on the rail's hover and hides what the rail covers. With the rail gone
+          (select mode) it is told nothing, and shows its trailing slot. */}
+      <HoverRailContext.Provider value={{ hovered: enabled && shown, inset: 0 }}>
+        <View style={styles.webRowBody}>{children}</View>
+      </HoverRailContext.Provider>
+      {/* An idle rail is invisible and must not take the clicks meant for the row under it. */}
+      <View style={[styles.webRailOverlay, { right: inset }]} pointerEvents={shown ? 'auto' : 'none'}>
+        {rail}
+      </View>
     </View>
   );
 }
@@ -777,6 +817,15 @@ const styles = StyleSheet.create({
     // A fixed lane, so the action occupies the same space whether or not it's currently shown and the
     // row's content never reflows as it fades in. The edge lane also pads out to the screen inset.
     cursor: 'pointer',
+  },
+  // The overlay rail: pinned to the row's trailing end (`right` is set inline — an outer grip lane
+  // may hold the edge), spanning its height, its lanes laid out as they are beside a row.
+  webRailOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'stretch',
   },
   webActionIdle: {
     opacity: 0,

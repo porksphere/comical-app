@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GripIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
+import { HoverRailContext } from '@/components/settings/hover-rail';
 import { CAN_HOVER, WEB_LANE } from '@/components/settings/swipeable-row';
 import { SettingsGutter, SettingsRowHeight } from '@/constants/theme';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -46,10 +47,10 @@ import type { ReorderableListProps } from './reorderable-list.types';
  *  - **Edge autoscroll** while dragging; **lift** = scale + shadow, neighbours spring apart.
  *
  * On web the long-press is replaced, not added to: a mouse held still on a row is not a gesture
- * anyone makes, and the row's own actions already live in hover lanes to its right (see
- * `SwipeableRow`'s web half), so the handle is one more lane of the same rail — the same width,
- * shown on the same hover, gone with the same select mode. The drag it starts is the native one;
- * only where the finger lands differs.
+ * anyone makes, and the row's own actions already reveal on hover over its trailing end (see
+ * `SwipeableRow`'s web half and `HoverRailContext`), so the handle is one more lane of that rail —
+ * at the edge, the same width, shown on the same hover, gone with the same select mode. The drag
+ * it starts is the native one; only where the finger lands differs.
  *
  * Rows are a fixed `SettingsRowHeight` — the same constant every other settings row uses — so the
  * slot math is a simple `index * ROW` and rows never overlap. Reusable for any settings list (Bridges,
@@ -254,14 +255,14 @@ function DragRow({
     };
   });
 
-  // Hover over the whole row — body and handle lane alike — so the handle appears beside whatever
-  // the pointer is on, the way the row's own action lanes do (they listen on their own element,
-  // which this one contains, so the two reveal together).
+  // This row owns the hover: body, the row's own action lanes and the grip are one region, published
+  // through the rail context so the row's actions reveal with the grip and the row stays lit under
+  // the pointer wherever on the rail it is.
   const [hovered, setHovered] = useState(false);
+  const shown = !CAN_HOVER || hovered;
   const handleStyle = useAnimatedStyle(() => {
     // Lifted, the row follows the pointer and the hover can lag it: the handle stays while dragging.
-    const shown = !CAN_HOVER || hovered || activeId.value === id;
-    return { opacity: withTiming(shown ? 1 : 0, { duration: 120 }) };
+    return { opacity: withTiming(shown || activeId.value === id ? 1 : 0, { duration: 120 }) };
   });
 
   if (!IS_WEB) {
@@ -274,17 +275,18 @@ function DragRow({
     );
   }
   return (
-    <Animated.View
-      style={[styles.rowAbs, styles.webRow, style]}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}>
-      <View style={styles.webBody}>{children}</View>
-      {/* Select mode: the body stays, the lane goes — the same as the row's action lanes. */}
+    <Animated.View style={[styles.rowAbs, style]} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
+      {/* Select mode: the grip goes and holds no edge — the row's own rail (also gone) is told so. */}
+      <HoverRailContext.Provider value={{ hovered: shown, inset: dragEnabled ? WEB_LANE + SettingsGutter : 0 }}>
+        {children}
+      </HoverRailContext.Provider>
       {dragEnabled && (
         <GestureDetector gesture={pan}>
           <Animated.View
             testID={testId('reorder-handle', id)}
             style={[styles.handleLane, styles.grabCursor, handleStyle]}
+            // An idle grip is invisible and must not take the clicks meant for the row under it.
+            pointerEvents={shown ? 'auto' : 'none'}
             accessibilityRole="button"
             accessibilityLabel={`Reorder ${id}`}>
             <GripIcon color={theme.textSecondary} size={18} />
@@ -316,21 +318,15 @@ const styles = StyleSheet.create({
     right: -SettingsGutter,
     height: StyleSheet.hairlineWidth,
   },
-  webRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-  },
-  webBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  // One more lane of the row's action rail, past its edge lane: the row escapes the gutter on both
-  // sides (`marginHorizontal: -SettingsGutter`), so the body's right edge runs a gutter PAST its
-  // flex box — the lane steps aside by that much, then escapes the gutter itself so the grip sits
-  // inset from the screen's edge exactly as the actions' edge lane does.
+  // The edge lane of the row's rail, over its trailing end: the row escapes the gutter
+  // (`marginHorizontal: -SettingsGutter`) so this box's right edge is a gutter short of the
+  // screen's — the lane escapes it too, and the grip sits inset from the edge exactly where the
+  // row's chevron does.
   handleLane: {
-    marginLeft: SettingsGutter,
-    marginRight: -SettingsGutter,
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: -SettingsGutter,
     width: WEB_LANE + SettingsGutter,
     paddingRight: SettingsGutter,
     justifyContent: 'center',

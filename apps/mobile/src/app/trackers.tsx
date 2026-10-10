@@ -133,7 +133,6 @@ export default function TrackersScreen() {
         right={hasUpdate ? <UpdateDot /> : undefined}
         onPress={openTracker}
         actions={rowActions}
-        lanes={2}
         testID={testId('trackers.row', t.info.id)}
       />
     );

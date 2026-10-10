@@ -206,7 +206,6 @@ export default function RegistriesScreen() {
                 : () => router.push({ pathname: '/registry-browse', params: { url: r.url } })
           }
           onLongPress={selecting ? onLongPress : undefined}
-          lanes={2}
           actions={[
             ...(r.pendingMove
               ? [{ label: 'Ignore', icon: ClearIcon, onPress: () => ignoreMove(r) }]

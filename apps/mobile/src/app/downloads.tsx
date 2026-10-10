@@ -333,7 +333,6 @@ export default function DownloadsScreen() {
               }
               onPress={selecting ? () => ms.toggle(item.key) : () => openSeries(s)}
               onLongPress={selecting ? onLongPress : undefined}
-              lanes={2}
               actions={seriesActions(state, {
                 onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
                 onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),

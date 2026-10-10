@@ -1,7 +1,8 @@
-import { Children, Fragment, type ReactNode } from 'react';
+import { Children, Fragment, type ReactNode, useContext } from 'react';
 import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
+import { HOVER_RAIL_FADE, HoverRailContext } from '@/components/settings/hover-rail';
 import { ThemedText } from '@/components/themed-text';
 import { SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
@@ -157,9 +158,13 @@ export function SettingsRow({
 }) {
   const theme = useTheme();
   const { hovered, onHoverIn: markHovered, onHoverOut: markUnhovered } = useHovered();
+  // Web, inside a hover rail: the row stays lit while the pointer is on the rail's buttons (siblings,
+  // so its own hover has ended), and its trailing slot fades out under them as they fade in.
+  const rail = useContext(HoverRailContext);
   const rowTestID = testID ?? testId('settings.row', label);
   // On a pressable row the id lives on the Pressable; on a static row it lives on the root View — never
   // both, so a locator resolves to exactly one node.
+  const trailing = right ?? (onPress && <ChevronRightIcon color={theme.textSecondary} size={18} />);
   const content = (highlighted?: boolean, rootTestID?: string) => (
     <View
       testID={rootTestID}
@@ -187,7 +192,11 @@ export function SettingsRow({
           </ThemedText>
         )}
       </View>
-      {right ?? (onPress && <ChevronRightIcon color={theme.textSecondary} size={18} />)}
+      {rail ? (
+        <View style={[HOVER_RAIL_FADE, rail.hovered && styles.trailingCovered]}>{trailing}</View>
+      ) : (
+        trailing
+      )}
     </View>
   );
   if (!onPress) return content(undefined, rowTestID);
@@ -210,7 +219,7 @@ export function SettingsRow({
       android_ripple={{ color: theme.backgroundSelected }}
       accessibilityRole="button"
       accessibilityLabel={label}>
-      {({ pressed }) => content(pressed || hovered)}
+      {({ pressed }) => content(pressed || hovered || !!rail?.hovered)}
     </Pressable>
   );
 }
@@ -234,6 +243,9 @@ const styles = StyleSheet.create({
   sectionTitle: {
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  trailingCovered: {
+    opacity: 0,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
