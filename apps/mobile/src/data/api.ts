@@ -44,7 +44,7 @@ import { use$ } from '@legendapp/state/react';
 import type { Pairing } from '@comical/sync';
 
 import { getResolvedModeSync } from './embedded/preference';
-import type { Bridge, BridgeList } from './types';
+import type { Bridge, BridgeList, MissingBridge } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { persisted$ } from '@/lib/observable';
 
@@ -497,6 +497,12 @@ export async function getBridges(signal?: AbortSignal): Promise<Bridge[]> {
     ratings: b.info.ratings ?? false,
     thumbnail: b.info.iconUrl,
   }));
+}
+
+/** GET /library/missing-bridges → bridges the library still has series, history or progress for
+ *  but that aren't installed. A host without the route (older server, no library) has none. */
+export async function getMissingBridges(signal?: AbortSignal): Promise<MissingBridge[]> {
+  return (await fetchJsonOptional<MissingBridge[]>('/library/missing-bridges', signal)) ?? [];
 }
 
 /** One entry of the raw `GET /bridges` response — unlike `getBridges()` above (which discards

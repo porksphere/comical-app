@@ -173,7 +173,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
     placeholderData: keepPreviousData,
   });
   const visibleLibrary = useVisibleByBridge(libraryTerm ? (libraryMatches.data ?? undefined) : undefined);
-  const { byId: bridgeById } = useBridgeMap();
+  const { knownById: bridgeById } = useBridgeMap();
 
   const {
     filterDefs,

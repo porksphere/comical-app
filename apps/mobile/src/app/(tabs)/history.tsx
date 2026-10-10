@@ -28,9 +28,10 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { historyQuery, libraryQuery, queryKeys } from '@/data/queries';
-import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
+import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useContentWidth } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -53,8 +54,7 @@ export default function HistoryScreen() {
   const filter = useTabFilter();
   const query = filter.query;
   const queryClient = useQueryClient();
-  const hideNsfw = useHideNsfw();
-  const { byId, nameOf, directOf } = useBridgeMap();
+  const { nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('history', listRef);
 
@@ -107,13 +107,15 @@ export default function HistoryScreen() {
 
   // Memoized so the identity only changes when the ORDER can have: a fresh array every render
   // would tell every collapse in flight that the list moved (see the notice below).
+  const safe = useVisibleByBridge(items);
   const visible = useMemo(() => {
-    const shown = items?.filter((h) => !h.hidden && !(hideNsfw && byId.get(h.bridgeId)?.nsfw));
+    if (!items) return undefined;
+    const shown = safe.filter((h) => !h.hidden);
     // A filter over rows already loaded, not a query: this list is fetched whole, so narrowing it
     // costs nothing and needs no server support.
     const q = query.trim().toLowerCase();
-    return q && shown ? shown.filter((h) => h.title.toLowerCase().includes(q)) : shown;
-  }, [byId, hideNsfw, items, query]);
+    return q ? shown.filter((h) => h.title.toLowerCase().includes(q)) : shown;
+  }, [items, safe, query]);
 
   // Reading reorders this list, so a series opened from partway down can end up above the viewport
   // by the time the page closes — see useZoomSurfaceList.

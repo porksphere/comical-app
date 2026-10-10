@@ -31,6 +31,8 @@ export type SeriesEntry = {
   /** Matched the user's persistent tag/genre exclusions — render as a redacted,
    *  non-interactive "Hidden" placeholder instead of the real cover/title. */
   excluded?: boolean;
+  /** Its bridge isn't installed: the card is washed out, and still opens to what's cached. */
+  unavailable?: boolean;
 };
 
 export type TagGroup = {
@@ -314,6 +316,18 @@ export type Bridge = {
    *  no rating UI for the bridge — not even an empty one. */
   ratings?: boolean;
   thumbnail?: string;
+  /** False for a bridge the library still references but that isn't installed (see
+   *  `useBridgeMap().knownById`). Absent on the installed list. */
+  installed?: false;
+};
+/** A bridge the library references but that isn't installed — `GET /library/missing-bridges`. The
+ *  host fills in what it remembers about it; an id it never knew comes back bare. */
+export type MissingBridge = {
+  id: string;
+  name?: string;
+  nsfw?: boolean;
+  capabilities?: string[];
+  registryUrl?: string;
 };
 /** One of a bridge's browsable lists (home section or standalone page). */
 export type BridgeList = {

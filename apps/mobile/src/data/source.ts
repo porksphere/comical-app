@@ -41,6 +41,7 @@ import type {
   Collection,
   MetaCell,
   MetaCredit,
+  MissingBridge,
   PageThumbSource,
   RailKind,
   RailSection,
@@ -61,6 +62,8 @@ export type QueryOpts = { query?: string; filters?: api.ApiFilterValue[]; sort?:
 
 export interface DataSource {
   getBridges(signal?: AbortSignal): Promise<Bridge[]>;
+  /** Bridges the library still references but that aren't installed. */
+  getMissingBridges(signal?: AbortSignal): Promise<MissingBridge[]>;
   getBridgeLists(bridgeId: string, signal?: AbortSignal): Promise<BridgeList[]>;
   getHomeSections(
     bridgeId: string,
@@ -527,6 +530,7 @@ function toPageThumbSource(t: api.ApiPageThumbnail | undefined): PageThumbSource
 
 const realDataSource: DataSource = {
   getBridges: (signal) => api.getBridges(signal),
+  getMissingBridges: (signal) => api.getMissingBridges(signal),
   getBridgeLists: (bridgeId, signal) => api.getBridgeLists(bridgeId, signal),
 
   async getHomeSections(bridgeId, signal) {
@@ -1007,6 +1011,7 @@ const realDataSource: DataSource = {
 
 const mockDataSource: DataSource = {
   getBridges: () => mock.mockGetBridges(),
+  getMissingBridges: async () => [],
   getBridgeLists: (bridgeId) => mock.mockGetBridgeLists(bridgeId),
   getHomeSections: (bridgeId) => mock.mockGetHomeSections(bridgeId),
   getGridPage: (bridgeId, listId, cursor) => mock.mockGetGridPage(bridgeId, listId, cursor),

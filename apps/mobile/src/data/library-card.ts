@@ -10,11 +10,14 @@ export type LibraryGridItem = SeriesGridItem & { collectedAt?: number; lastReadA
 
 /** Map a cross-bridge library entry to a grid card, resolving its bridge's display name + direct-ness. */
 export function toLibraryCard(e: LibraryItem, bridge?: Bridge): LibraryGridItem {
+  const unavailable = bridge?.installed === false;
+  const name = bridge?.name ?? e.bridgeId;
   return {
     id: e.seriesId,
     title: e.title,
     cover: e.thumbnailUrl ?? '',
-    sub: bridge?.name ?? e.bridgeId,
+    sub: unavailable ? `${name} · Not installed` : name,
+    ...(unavailable && { unavailable }),
     ...(e.unread > 0 && { unread: e.unread }),
     bridgeId: e.bridgeId,
     ...(bridge?.name && { bridge: bridge.name }),

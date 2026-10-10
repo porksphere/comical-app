@@ -30,9 +30,10 @@ import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { activityQuery, queryKeys } from '@/data/queries';
-import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
+import { useDataSource, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useContentWidth } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -82,8 +83,7 @@ export default function ActivityScreen() {
   const filter = useTabFilter();
   const query = filter.query;
   const queryClient = useQueryClient();
-  const hideNsfw = useHideNsfw();
-  const { byId, nameOf, directOf } = useBridgeMap();
+  const { nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('activity', listRef);
 
@@ -174,10 +174,8 @@ export default function ActivityScreen() {
 
   // Memoized so the identity only changes when the ORDER can have: a fresh array every render
   // would tell every collapse in flight that the list moved (see the notice below).
-  const visible = useMemo(
-    () => (items && hideNsfw ? items.filter((a) => !byId.get(a.bridgeId)?.nsfw) : items),
-    [byId, hideNsfw, items],
-  );
+  const safe = useVisibleByBridge(items);
+  const visible = items ? safe : undefined;
 
 
   // Coalesce the flat per-chapter feed into one row per series. `visible` is already newest-first, so a

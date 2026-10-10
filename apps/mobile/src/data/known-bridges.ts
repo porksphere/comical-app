@@ -1,0 +1,20 @@
+import type { Bridge, MissingBridge } from './types';
+
+/** The installed bridges plus the ones the library still references, the latter marked
+ *  `installed: false`. An installed entry always wins: the two lists are fetched independently, so a
+ *  just-reinstalled bridge can briefly be in both. */
+export function knownBridges(installed: Bridge[], missing: MissingBridge[]): Map<string, Bridge> {
+  const known = new Map<string, Bridge>();
+  for (const b of installed) known.set(b.id, b);
+  for (const m of missing) {
+    if (known.has(m.id)) continue;
+    known.set(m.id, {
+      id: m.id,
+      name: m.name ?? m.id,
+      nsfw: m.nsfw ?? false,
+      capabilities: m.capabilities ?? [],
+      installed: false,
+    });
+  }
+  return known;
+}

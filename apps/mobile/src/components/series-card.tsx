@@ -655,7 +655,11 @@ export function SeriesCard({
     // `titleWrap` exists only for web's measured-clamp copy + in-card peek popover (both web-only),
     // so bare-rendering it drops another host view per card on the platform that scrolls these grids.
     const titleText = (
-      <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={[styles.title, titleSize]}>
+      <ThemedText
+        type="small"
+        numberOfLines={MAX_TITLE_LINES}
+        themeColor={entry.unavailable ? 'textSecondary' : undefined}
+        style={[styles.title, titleSize]}>
         {entry.title}
       </ThemedText>
     );
@@ -718,6 +722,11 @@ export function SeriesCard({
           <View style={styles.rank}>
             <ThemedText style={styles.rankText}>{rank}</ThemedText>
           </View>
+        )}
+        {/* A wash in the page colour, not an opacity dim: here "broken" is the message, but the
+            badges above still have to read. */}
+        {entry.unavailable && (
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.unavailableWash, { backgroundColor: theme.background }]} />
         )}
         {/* Native held cue: a subtle scrim over the cover while pressed (web uses the ring instead). */}
         {active && !isWeb && <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.heldScrim]} />}
@@ -983,6 +992,9 @@ const styles = StyleSheet.create({
     // wrapped together (so the whole group can be nudged by `trailingStyle`),
     // this reproduces that spacing internally.
     gap: Spacing.two,
+  },
+  unavailableWash: {
+    opacity: 0.6,
   },
   heldScrim: {
     // Non-scaling press feedback on native — a light dark wash over the cover. Sits inside

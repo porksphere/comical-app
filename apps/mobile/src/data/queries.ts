@@ -167,6 +167,9 @@ export const queryKeys = {
   // different bridge list, and without `mock` in the key the dev toggle left the previous mode's
   // cached (possibly empty) list on screen until a full restart.
   bridges: (mock: boolean) => ['bridges', mock] as const,
+  // Under `bridges` on purpose: everything that invalidates the installed list (install, uninstall,
+  // a registry change) changes which bridges are missing too.
+  missingBridges: (mock: boolean) => ['bridges', mock, 'missing'] as const,
 
   // ─── Server-infra reads (Settings / registry screens) ──────────────────────
   // These are mock-agnostic — the registry/bridge/tracker plumbing is the same regardless of the

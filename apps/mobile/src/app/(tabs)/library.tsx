@@ -99,7 +99,7 @@ export default function LibraryScreen() {
 
   // Bridges resolve each entry's display name + direct-ness (each library card
   // carries its own bridge, unlike the Browse grid's single-bridge view).
-  const { byId: bridgeById } = useBridgeMap();
+  const { knownById: bridgeById } = useBridgeMap();
   const { collections } = useCollections();
   // What the bar calls the current view: a collection by its name, the library grid by the tab's.
   const viewName = collectionFilter ? (collections.find((c) => c.id === collectionFilter)?.name ?? 'Library') : 'Library';
