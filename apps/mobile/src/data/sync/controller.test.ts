@@ -149,7 +149,7 @@ describe('createLibrarySync', () => {
 
     // b already has the same collection under an older name.
     const b = device(hub);
-    await b.raw.putCollections([{ ...c, name: 'Stale name' }]);
+    await b.raw.updateCollections(() => [{ ...c, name: 'Stale name' }]);
     await b.sync.enable();
     expect(await names(b.library)).toEqual(['Hub name']);
   });
@@ -167,7 +167,7 @@ describe('createLibrarySync', () => {
       pull: (request) => (online ? hub.pull(request) : Promise.reject(new Error('offline'))),
     };
     const b = device(flaky);
-    await b.raw.putCollections([{ ...c, name: 'Stale name' }]);
+    await b.raw.updateCollections(() => [{ ...c, name: 'Stale name' }]);
     await b.sync.enable();
     expect(b.sync.status().lastError).toBe('offline');
     expect(b.saved()?.adopted).toBe(false);

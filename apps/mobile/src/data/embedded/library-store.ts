@@ -247,8 +247,10 @@ export class AsyncStorageLibraryStore implements LibraryStore {
   async listCollections(): Promise<Collection[]> {
     return read<Collection[]>(COLLECTIONS, []);
   }
-  async putCollections(collections: Collection[]): Promise<void> {
-    await write(COLLECTIONS, collections);
+  // Atomic because this whole class is serialized; it reads through `read`, never
+  // `this.listCollections()`, which would queue behind this very call.
+  async updateCollections(next: (current: Collection[]) => Collection[]): Promise<void> {
+    await write(COLLECTIONS, next(await read<Collection[]>(COLLECTIONS, [])));
   }
 
   // ── Groups ─────────────────────────────────────────────────────────────────

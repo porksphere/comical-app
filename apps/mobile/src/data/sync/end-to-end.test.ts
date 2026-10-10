@@ -276,6 +276,12 @@ describe('library sync, phone ↔ host-server ↔ phone', () => {
     // Meanwhile the server's own library moved on, under a stamp the phone has never seen.
     await server.api('POST', '/library/collections', { name: 'Server side' });
     await until(async () => (await server.api<unknown[]>('GET', '/library/collections')).length === 3);
+    // The server pushes its own write to the hub on its own schedule; the phone can only
+    // carry over what has reached the hub.
+    const hub = new HttpBackend({ baseUrl: server.url, fetch: (u, init) => fetch(u, init) });
+    await until(async () =>
+      (await hub.pull({ device: 'probe', name: 'A probe', have: {} })).segments.some((s) => s.device.startsWith('hub-')),
+    );
 
     await a.library.createCollection('Three');
     const stats = await a.sync.syncNow();
