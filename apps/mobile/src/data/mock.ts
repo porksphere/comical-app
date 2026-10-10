@@ -601,7 +601,7 @@ export function mockSeries(
   if (direct) {
     // Static/known-from-info parts render right away; the grid streams in later
     // (matches real, which sets these inline for a direct series and defers pageThumbs).
-    base.readLabel = '▶  Read';
+    base.readLabel = 'Read';
     base.chapterCount = MOCK_DIRECT_PAGE_COUNT;
   }
   // Chaptered: readLabel/chapterCount aren't known until the list loads — getSeriesList fills them.
@@ -800,7 +800,7 @@ export async function mockGetSeriesList(
     return {
       pageThumbs: mockPageThumbs(seed, MOCK_DIRECT_PAGE_COUNT),
       chapterCount: MOCK_DIRECT_PAGE_COUNT,
-      readLabel: '▶  Read',
+      readLabel: 'Read',
     };
   }
   const chapterCount = 40 + (hash(seed) % 160);
@@ -809,7 +809,7 @@ export async function mockGetSeriesList(
   return {
     chapters,
     chapterCount: chapters.length,
-    readLabel: first ? `▶  ${first.name}` : undefined,
+    readLabel: first ? first.name : undefined,
   };
 }
 

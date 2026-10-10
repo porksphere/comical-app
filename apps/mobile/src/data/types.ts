@@ -135,7 +135,7 @@ export type PageThumbSource = { kind: 'image'; url: string } | SpriteThumb;
 export type SeriesDetail = SeriesEntry & {
   bridge: string;
   chapterCount?: number;
-  /** Primary read affordance label (e.g. "▶ Chapter 1 — …"). */
+  /** Primary read affordance label (e.g. "Chapter 1 — …"); the button draws its own play glyph. */
   readLabel?: string;
   /** All taxonomies as labeled groups; genres are the `kind: "genre"` group (no separate field). */
   tagGroups?: TagGroup[];

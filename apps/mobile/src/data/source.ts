@@ -774,7 +774,7 @@ const realDataSource: DataSource = {
     }
     if (opts.direct) {
       // Static/known-from-info parts render right away; the grid streams in later.
-      base.readLabel = '▶  Read';
+      base.readLabel = 'Read';
       base.chapterCount = info.pageCount;
     }
     // Chaptered: readLabel/chapterCount aren't known until the chapter list loads —
@@ -794,7 +794,7 @@ const realDataSource: DataSource = {
         if (!local) return undefined;
         return {
           chapterCount: local.length,
-          readLabel: '▶  Read',
+          readLabel: 'Read',
           pageThumbs: local.map((url): PageThumbSource => ({ kind: 'image', url })),
         };
       };
@@ -809,7 +809,7 @@ const realDataSource: DataSource = {
         throw e;
       }
 
-      const result: SeriesListResult = { chapterCount: pages.length, readLabel: '▶  Read' };
+      const result: SeriesListResult = { chapterCount: pages.length, readLabel: 'Read' };
       // Mirrors comical-web: only show the preview grid when the bridge actually supplies cheap
       // thumbnails somewhere in the list — never bulk-load full-resolution page images as a
       // stand-in. Sorted by index so array position lines up with the reader's page index (the
@@ -857,7 +857,7 @@ const realDataSource: DataSource = {
     return {
       chapters,
       chapterCount: chapters.length,
-      readLabel: first ? `▶  ${first.name}` : undefined,
+      readLabel: first ? first.name : undefined,
     };
   },
 
