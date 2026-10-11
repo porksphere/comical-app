@@ -445,33 +445,34 @@ export function isAbort(e: unknown): boolean {
   return e instanceof Error && e.name === 'AbortError';
 }
 
-let requestErrorListener: ((error: Error) => void) | null = null;
+type RequestErrorListener = (error: Error, path?: string) => void;
+let requestErrorListener: RequestErrorListener | null = null;
 
 /** Hear every request that fails — unreachable, or answered with an error — but never a cancel. */
-export function setRequestErrorListener(listener: ((error: Error) => void) | null): void {
+export function setRequestErrorListener(listener: RequestErrorListener | null): void {
   requestErrorListener = listener;
 }
 
-function reportRequestError<E>(e: E): E {
-  if (e instanceof Error && !isAbort(e)) requestErrorListener?.(e);
+function reportRequestError<E>(e: E, path?: string): E {
+  if (e instanceof Error && !isAbort(e)) requestErrorListener?.(e, path);
   return e;
 }
 
 /** The active transport, with a request that never got an answer reported on its way out. */
 const transport: Transport = (path, init) =>
   activeTransport(path, init).catch((e: unknown) => {
-    throw reportRequestError(e);
+    throw reportRequestError(e, path);
   });
 
 /** The error an unsuccessful response becomes: the route's own `{ error }` where it gave one. */
-async function responseError(res: Response): Promise<Error> {
+async function responseError(res: Response, path?: string): Promise<Error> {
   const body = (await res.json().catch(() => ({}))) as { error?: string };
-  return reportRequestError(new Error(body.error ?? `${res.status} ${res.statusText}`));
+  return reportRequestError(new Error(body.error ?? `${res.status} ${res.statusText}`), path);
 }
 
 async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await transport(path, { signal });
-  if (!res.ok) throw await responseError(res);
+  if (!res.ok) throw await responseError(res, path);
   return res.json() as Promise<T>;
 }
 
@@ -481,7 +482,7 @@ async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
 async function fetchJsonOptional<T>(path: string, signal?: AbortSignal): Promise<T | null> {
   const res = await transport(path, { signal });
   if (res.status === 404) return null;
-  if (!res.ok) throw await responseError(res);
+  if (!res.ok) throw await responseError(res, path);
   return res.json() as Promise<T>;
 }
 
@@ -662,7 +663,7 @@ export async function isFavorite(bridgeId: string, seriesId: string, signal?: Ab
 
 async function fetchOk(path: string, method: 'PUT' | 'POST' | 'DELETE', signal?: AbortSignal): Promise<void> {
   const res = await transport(path, { method, signal });
-  if (!res.ok) throw await responseError(res);
+  if (!res.ok) throw await responseError(res, path);
 }
 
 /** PUT /bridges/{id}/favorites/{seriesId} → add a series to favorites. */
@@ -1065,7 +1066,7 @@ async function fetchPut<T>(path: string, body: unknown, signal?: AbortSignal): P
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok) throw await responseError(res);
+  if (!res.ok) throw await responseError(res, path);
   return res.json() as Promise<T>;
 }
 
@@ -1076,7 +1077,7 @@ async function fetchPost<T>(path: string, body: unknown, signal?: AbortSignal): 
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok) throw await responseError(res);
+  if (!res.ok) throw await responseError(res, path);
   return res.json() as Promise<T>;
 }
 
@@ -1087,14 +1088,14 @@ async function fetchPatch<T>(path: string, body: unknown, signal?: AbortSignal):
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok) throw await responseError(res);
+  if (!res.ok) throw await responseError(res, path);
   return res.json() as Promise<T>;
 }
 
 /** DELETE returning a JSON body (the downloads delete routes hand back the blob `files` to remove). */
 async function fetchDelete<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await transport(path, { method: 'DELETE', signal });
-  if (!res.ok) throw await responseError(res);
+  if (!res.ok) throw await responseError(res, path);
   return res.json() as Promise<T>;
 }
 

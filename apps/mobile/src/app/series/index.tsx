@@ -44,6 +44,7 @@ import { CollectPageControl } from '@/components/reader/collect-page-control';
 import { SettingsControl } from '@/components/reader/settings-panel';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
 import { RetryBlock } from '@/components/retry-block';
+import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
@@ -60,6 +61,7 @@ import {
 } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
+import { useMissingBridge } from '@/hooks/use-bridges';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
 import { useReaderSettings, setFitOverride, useFitOverride } from '@/hooks/use-reader-settings';
@@ -1217,6 +1219,8 @@ function SeriesReaderInstance({
   // which goes first. Nothing here delays a request that is ready to go.
 
   const error = !sequence && queryError ? (queryError as Error).message || 'Failed to load pages' : null;
+  // The bridge's own error for a bridge that isn't there is a server path and a Retry that can't work.
+  const missingBridge = useMissingBridge(sequence ? undefined : bridgeId);
 
   // ── Adjacent chapters (chaptered only; no stitching — see the header comment) ──
   const currentChapter = useMemo(
@@ -3726,9 +3730,22 @@ function SeriesReaderInstance({
           <View style={styles.readerClip}>
           {error ? (
             <>
-              <View style={styles.centerFill}>
-                <RetryBlock message={error} onRetry={refetch} />
-              </View>
+              {!missingBridge ? (
+                <View style={styles.centerFill}>
+                  <RetryBlock message={error} onRetry={refetch} />
+                </View>
+              ) : (
+                // The details page already says it, and shows through this card's top while it's up.
+                !detailsActive && (
+                  <View style={styles.centerFill}>
+                    <BridgeMissingNotice
+                      bridge={missingBridge}
+                      message={`${missingBridge.name} isn't installed and this chapter isn't downloaded, so it can't be opened.`}
+                      testID="series-page.reader.bridgeMissing"
+                    />
+                  </View>
+                )
+              )}
               {dimOverlays}
             </>
           ) : !readerReady ? (

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { knownBridges } from './known-bridges';
+import { bridgeIdOfRequest, isMissingBridgeRequest, knownBridges } from './known-bridges';
 import { toLibraryCard } from './library-card';
 import type { Bridge, LibraryItem } from './types';
 
@@ -29,6 +29,7 @@ describe('knownBridges', () => {
       nsfw: true,
       capabilities: ['direct'],
       installed: false,
+      registryUrl: 'https://r.example/index.json',
     });
   });
 
@@ -69,5 +70,26 @@ describe('toLibraryCard', () => {
     const card = toLibraryCard(item('mystery'));
     expect(card.sub).toBe('mystery');
     expect(card.unavailable).toBeUndefined();
+  });
+});
+
+describe('isMissingBridgeRequest', () => {
+  const missing = [{ id: 'gone.scope' }];
+
+  test('a request to an uninstalled bridge', () => {
+    expect(bridgeIdOfRequest('/bridges/gone.scope/series/s1/chapters/c1/pages')).toBe('gone.scope');
+    expect(bridgeIdOfRequest('/bridges/a%2Fb?x=1')).toBe('a/b');
+    expect(isMissingBridgeRequest('/bridges/gone.scope/series/s1', [installed], missing)).toBe(true);
+  });
+
+  test('installed bridges, other routes and unknown paths still report', () => {
+    expect(isMissingBridgeRequest('/bridges/panelfox/series/s1', [installed], missing)).toBe(false);
+    // Reinstalled, while the missing list hasn't refetched yet.
+    expect(isMissingBridgeRequest('/bridges/gone.scope/x', [installed, { ...installed, id: 'gone.scope' }], missing)).toBe(
+      false,
+    );
+    expect(isMissingBridgeRequest('/library/collected/series/gone.scope/s1', [installed], missing)).toBe(false);
+    expect(isMissingBridgeRequest(undefined, [installed], missing)).toBe(false);
+    expect(bridgeIdOfRequest('/bridges')).toBeUndefined();
   });
 });

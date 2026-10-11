@@ -319,6 +319,8 @@ export type Bridge = {
   /** False for a bridge the library still references but that isn't installed (see
    *  `useBridgeMap().knownById`). Absent on the installed list. */
   installed?: false;
+  /** Where a not-installed bridge was installed from, when the host remembers — what Reinstall uses. */
+  registryUrl?: string;
 };
 /** A bridge the library references but that isn't installed — `GET /library/missing-bridges`. The
  *  host fills in what it remembers about it; an id it never knew comes back bare. */

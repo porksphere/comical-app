@@ -61,3 +61,11 @@ export function useBridgeMap(): {
     };
   }, [bridges, missing]);
 }
+
+/** A series' bridge when the library remembers it but it isn't installed — what the series page
+ *  explains instead of the bridge's own errors. Undefined while it is installed or still loading. */
+export function useMissingBridge(bridgeId?: string): Bridge | undefined {
+  const { knownById } = useBridgeMap();
+  const bridge = bridgeId ? knownById.get(bridgeId) : undefined;
+  return bridge?.installed === false ? bridge : undefined;
+}

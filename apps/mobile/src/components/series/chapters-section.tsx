@@ -46,6 +46,7 @@ import { coverRingColor, coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { showToast } from '@/components/toast';
 import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
@@ -458,6 +459,7 @@ export function ChapterScrollList({
   title,
   bridgeId,
   offline,
+  missingBridgeName,
   header,
   footer,
   isLarge,
@@ -478,6 +480,9 @@ export function ChapterScrollList({
   title: string;
   bridgeId?: string;
   offline?: boolean;
+  /** Set when the series' bridge isn't installed: only downloaded chapters can be read, and a tap on
+   *  any other says why instead of opening a reader that can only fail. */
+  missingBridgeName?: string;
   /** Series hero / meta / description — the list header (this component owns the scroll). On large
    *  screens this is the two-column hero (cover+actions | meta/description); the chapter rows below
    *  are full-width, so LegendList virtualizes them and the rails footer spans the full column. */
@@ -621,12 +626,14 @@ export function ChapterScrollList({
         preferredGroup,
         collected: collectedChapterIds,
         read: readArgs,
+        canDownload: missingBridgeName === undefined,
       }),
     });
   };
 
   const renderRow = (g: ChapterGroup) => {
     const dlState = groupDownloadState(g, dlByChapter);
+    const readable = dlState?.state === 'complete';
     return (
       <ChapterRow
         group={g}
@@ -634,8 +641,12 @@ export function ChapterScrollList({
         onOpen={openVersion}
         onMenu={bridgeId ? openChapterMenu : undefined}
         dlState={dlState}
-        // Offline, only a fully-downloaded chapter is readable — the rest dim and disable.
-        dimmed={offline === true && dlState?.state !== 'complete'}
+        {...(readable
+          ? {}
+          : missingBridgeName !== undefined
+            ? { unavailable: `Reinstall ${missingBridgeName} to read this chapter` }
+            : // Offline, only a fully-downloaded chapter is readable — the rest dim and disable.
+              { dimmed: offline === true })}
       />
     );
   };
@@ -825,6 +836,7 @@ function ChapterRow({
   onMenu,
   dlState,
   dimmed,
+  unavailable,
 }: {
   group: ChapterGroup;
   preferredGroup?: string;
@@ -835,6 +847,9 @@ function ChapterRow({
   dlState?: { state: DownloadState; fraction: number } | null;
   /** Rendering offline and not downloaded — unreadable, so the row dims and its press disables. */
   dimmed?: boolean;
+  /** Can't be read, but the row stays live: a tap shows this instead, and the menu (read state,
+   *  collections) still works. */
+  unavailable?: string;
 }) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
@@ -844,6 +859,7 @@ function ChapterRow({
   // A logical chapter reads as "read" only once every version of it is read.
   const read = group.versions.every((v) => v.read);
   const multi = group.versions.length > 1;
+  const open = (v: Chapter) => (unavailable ? showToast(unavailable) : onOpen(v));
 
   return (
     <ContextMenuHold
@@ -852,10 +868,10 @@ function ChapterRow({
       {({ onLongPress, onContextMenu }) => (
     // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
     // list you still have to get through, so they are the ones drawn at full strength.
-    <View style={dimmed ? styles.rowDimmed : read && !PLATED_ROWS ? styles.rowRead : undefined}>
+    <View style={dimmed || unavailable ? styles.rowDimmed : read && !PLATED_ROWS ? styles.rowRead : undefined}>
       <Pressable
         testID={testId('series.chapter', group.key)}
-        onPress={() => onOpen(def)}
+        onPress={() => open(def)}
         onLongPress={onLongPress}
         {...({ onContextMenu } as ViewProps)}
         disabled={dimmed}
@@ -910,7 +926,7 @@ function ChapterRow({
         <Disclosure open={expanded}>
           <View style={styles.versionList}>
             {group.versions.map((v) => (
-              <VersionRow key={v.id} v={v} active={v.id === def.id} onPress={() => onOpen(v)} />
+              <VersionRow key={v.id} v={v} active={v.id === def.id} onPress={() => open(v)} />
             ))}
           </View>
         </Disclosure>
@@ -1030,7 +1046,10 @@ function chapterMenuActions(args: {
  * menu's rule, nothing is coloured.
  */
 function chapterMenuRows(
-  args: Parameters<typeof chapterMenuActions>[0] & { read: Parameters<typeof chapterReadActions>[0] },
+  args: Parameters<typeof chapterMenuActions>[0] & {
+    read: Parameters<typeof chapterReadActions>[0];
+    canDownload: boolean;
+  },
 ): MenuRowSpec[] {
   const { entry, span, downloadedVersions, collected, collect, downloadThis, downloadFromHere, deleteDownload } =
     chapterMenuActions(args);
@@ -1063,6 +1082,8 @@ function chapterMenuRows(
       testID: testId('series.chapter-menu', 'collect'),
       onPress: collect,
     },
+  );
+  if (args.canDownload) rows.push(
     {
       label: entry?.settled ? 'Already saved' : 'Download chapter',
       Icon: DownloadsIcon,

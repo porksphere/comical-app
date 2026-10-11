@@ -20,6 +20,7 @@ import {
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
+import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { TagGroupRow } from '@/components/chip';
 import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton } from '@/components/rail';
@@ -35,7 +36,7 @@ import { librarySeriesQuery, queryKeys, relatedGroupsQuery, savedSeriesListQuery
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
 import { type Chapter, type MetaCredit, type SeriesDetail, type TagGroup } from '@/data/types';
-import { useBridgeMap } from '@/hooks/use-bridges';
+import { useBridgeMap, useMissingBridge } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useHovered } from '@/hooks/use-hovered';
@@ -407,6 +408,7 @@ export function SeriesBody({
   // behind "Show all" for nothing — the page thumbnails past the first
   // `cols * COLLAPSED_ROWS` (20 on wide screens) appeared cut off.
   const { byId: bridgeById, ratingsOf } = useBridgeMap();
+  const missingBridge = useMissingBridge(bridgeId);
   const relatedCapable = bridgeId
     ? (bridgeById.get(bridgeId)?.capabilities.includes('related-series') ?? false)
     : false;
@@ -589,7 +591,7 @@ export function SeriesBody({
         caret
         onPress={save.onPress}
       />
-      {bridgeId && (
+      {bridgeId && !missingBridge && (
         <SeriesDownloadButton
           bridgeId={bridgeId}
           seriesId={series.id}
@@ -724,6 +726,14 @@ export function SeriesBody({
   // or stacked below the hero row (small).
   const contentEl = (
     <>
+      {missingBridge && (
+        <BridgeMissingNotice
+          plate
+          bridge={missingBridge}
+          message={`${missingBridge.name} isn't installed. Your saved details and reading progress are kept — reinstall it to read chapters you haven't downloaded.`}
+          testID="series.bridgeMissing"
+        />
+      )}
       {series.tagGroups?.length ? (
         <View style={styles.tagsBlock}>
           {/* Genres are just the `kind: "genre"` group here — one path renders every taxonomy.
@@ -885,6 +895,7 @@ export function SeriesBody({
       title={series.title}
       bridgeId={bridgeId}
       offline={series.cached === true}
+      {...(missingBridge && { missingBridgeName: missingBridge.name })}
       header={chapterHeader}
       footer={relatedRailsEl}
       isLarge={isLarge}
