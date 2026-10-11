@@ -67,16 +67,19 @@ describe('mock collected pages', () => {
     expect(after?.seriesTitle).toBe('Renamed'); // a SUPPLIED field still wins as the fresher value
   });
 
-  // Pure collections: an item exists only as a member, so emptying memberships is a removal —
-  // not a "filed nowhere" state. The reader's heart depends on this to go hollow.
-  test('emptying memberships removes the item', async () => {
+  // Saved is existence, not membership: unticking the last collection leaves the page saved and
+  // unfiled, and only an explicit uncollect removes it.
+  test('emptying memberships keeps the item; uncollecting removes it', async () => {
     await mockCollectPage(B, S, C, 6, snap);
     await mockSetPageCollections(B, S, C, 6, ['coll-x']);
-    expect(await mockGetChapterPageIndices(B, S, C)).toEqual([6]);
 
     await mockSetPageCollections(B, S, C, 6, []);
+    expect(await mockGetChapterPageIndices(B, S, C)).toEqual([6]);
+    const [unfiled] = await mockGetCollectedItems({ type: 'page' });
+    expect(unfiled?.collectionIds).toEqual([]);
+
+    await mockUncollectPage(B, S, C, 6);
     expect(await mockGetChapterPageIndices(B, S, C)).toEqual([]);
-    expect(await mockGetCollectedItems({ type: 'page' })).toEqual([]);
   });
 
   // Omitting `type` returns the MIXED union — a page grid that forgets `type: 'page'` renders

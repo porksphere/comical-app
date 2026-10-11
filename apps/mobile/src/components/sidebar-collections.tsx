@@ -6,36 +6,34 @@
  * moves the shared selection and then goes to Library — a scope change you can't see is
  * indistinguishable from nothing happening.
  *
- * The `null` row is the front door, exactly as the synthetic `Comical` bridge is for Bridges: the
- * library's own grid is not a collection, but it is where "no collection" lands, and a group you can
- * leave without being able to return to is a dead end.
+ * The All Series row is the front door, exactly as the synthetic `Comical` bridge is for Bridges:
+ * the library's own grid is not a collection, but it is where "no collection" lands, and a group you
+ * can leave without being able to return to is a dead end.
  */
 
 import { StyleSheet } from 'react-native';
 
 import { SidebarSubItem, SidebarThumbRadius, SidebarThumbSize } from '@/components/app-sidebar';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
-import { setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
+import { libraryViews, setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
 import { useCollections } from '@/hooks/use-collections';
+import { useSavedItemKinds } from '@/hooks/use-saved-item-kinds';
 import { router } from '@/lib/nav';
 
 export function SidebarCollections({ active, onNavigate }: { active?: boolean; onNavigate?: () => void }) {
   const selected = useSelectedCollectionId();
   const { collections } = useCollections();
-
-  const rows: { id: string | null; name: string }[] = [{ id: null, name: 'All' }, ...collections];
+  const kinds = useSavedItemKinds();
 
   return (
     <>
-      {rows.map((row) => (
+      {libraryViews(collections, kinds, selected).map((row) => (
         <SidebarSubItem
           key={row.id ?? 'all'}
-          testID={`sidebar.collection.${row.id ?? 'all'}`}
+          testID={`sidebar.collection.${row.testKey}`}
           label={row.name}
           active={active === true && row.id === selected}
-          thumbnail={
-            <CollectionThumb name={row.id === null ? null : row.name} size={SidebarThumbSize} style={styles.thumb} />
-          }
+          thumbnail={<CollectionThumb view={row.id} name={row.name} size={SidebarThumbSize} style={styles.thumb} />}
           onPress={() => {
             setSelectedCollection(row.id);
             router.navigate('/library');

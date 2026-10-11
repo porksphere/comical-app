@@ -1188,8 +1188,8 @@ export function getLibrary(
 // ─── Collections ─────────────────────────────────────────────────────────────
 // User-defined groupings (e.g. "Reading"). These replaced the library's custom lists: a collection
 // groups ITEMS (series/chapter/page), so membership no longer lives on the library entry — a series
-// belongs to a collection by way of a SERIES ITEM pointing at it (see below). An item exists ONLY
-// as a member: empty memberships removes it. All require a mounted library store; with none the
+// belongs to a collection by way of a SERIES ITEM pointing at it (see below). An item with no
+// memberships is saved, unfiled. All require a mounted library store; with none the
 // routes 404 (getCollections maps that to `[]`).
 
 /** GET /library/collections → the user's collections (ascending `order`), or `[]` with no library store. */
@@ -1235,11 +1235,9 @@ export type LibrarySnapshot = {
 /**
  * PUT /library/collected/series/{b}/{s} → collect a series, i.e. put it in the library.
  *
- * There is no "add to library" separate from filing any more: the library dissolved into
- * collections, so being in the library IS being a series item in at least one collection. This one
- * idempotent PUT does both — `collectionIds` files it in the same call, which matters because a
- * series nobody filed is only transiently collected (the next thing to re-file it to zero sweeps
- * it). Re-collecting merges: a supplied field wins, an omitted one is preserved.
+ * Being in the library IS being a series item; collections are optional filing on top. A non-empty
+ * `collectionIds` files it in the same call (an empty one leaves memberships alone). Re-collecting
+ * merges: a supplied field wins, an omitted one is preserved.
  *
  * Answers `200 { item, autoLinked?, trackerSuggestions? }` — the runtime envelope, not the bare
  * item (`autoLinked` when matching `externalIds` joined it to an existing series, and there is no
@@ -1259,8 +1257,7 @@ export function collectSeries(
 }
 
 /** DELETE /library/collected/series/{b}/{s} → uncollect a series: out of the library, out of every
- *  collection. Equivalent to `setSeriesCollections(…, [])` (an item exists only as a member, so
- *  emptying memberships removes it server-side), but it doesn't need the item to exist first.
+ *  collection.
  *
  *  CASCADES to the offline detail, cached chapter list, cover blob, activity feed and group
  *  membership — all caches the next sync refills. **Read progress and tracker links survive**, so
@@ -1409,8 +1406,7 @@ export function uncollectPage(
 }
 
 /** PUT /library/collected/page/{b}/{s}/{c}/{i}/collections → replace a page's memberships.
- *  An EMPTY array removes the item and the route reports `{ removed: true }` instead of it — an
- *  item exists only as a member of something. */
+ *  An EMPTY array leaves it saved, unfiled. */
 export function setPageCollections(
   bridgeId: string,
   seriesId: string,
@@ -1458,7 +1454,7 @@ export function uncollectChapter(
 }
 
 /** PUT /library/collected/chapter/{b}/{s}/{c}/collections → replace a chapter's memberships.
- *  An EMPTY array removes the item. */
+ *  An EMPTY array leaves it saved, unfiled. */
 export function setChapterCollections(
   bridgeId: string,
   seriesId: string,
@@ -1477,20 +1473,19 @@ function collectedPagePath(bridgeId: string, seriesId: string, chapterId: string
   return `/library/collected/page/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/${encodeURIComponent(chapterId)}`;
 }
 
-/** GET /library/collected?type=series&series={b}:{s} → a series' collection memberships, or `[]`
- *  when it isn't filed anywhere. Replaces reading the old `entry.listIds`, which no longer exists:
- *  memberships live on the series ITEM, not on the library entry — so this is independent
- *  of whether the series is in the library at all. Seeds the collection picker's checkboxes. */
+/** GET /library/collected?type=series&series={b}:{s} → a series' collection memberships: `[]` when
+ *  saved unfiled, `null` when it isn't saved at all. Seeds the collection picker's checkboxes. */
 export async function getSeriesCollections(
   bridgeId: string,
   seriesId: string,
   signal?: AbortSignal,
-): Promise<string[]> {
+): Promise<string[] | null> {
   const items = await fetchJsonOptional<{ collectionIds?: string[] }[]>(
     `/library/collected?type=series&series=${encodeURIComponent(`${bridgeId}:${seriesId}`)}`,
     signal,
   );
-  return items?.[0]?.collectionIds ?? [];
+  const item = items?.[0];
+  return item ? (item.collectionIds ?? []) : null;
 }
 
 /** GET /library/collected/series/{b}/{s}/progress → persisted read state for one series' chapters,

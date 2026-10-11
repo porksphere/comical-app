@@ -1,20 +1,24 @@
 import type { ImageStyle, StyleProp } from 'react-native';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
+import { ChapterItemIcon, PageItemIcon } from '@/components/icons/collection-icons';
 import { AsteriskIcon } from '@/components/icons/ui-icons';
+import { allItemsType } from '@/data/selected-collection';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
- * A collection's tile — the letter tile a bridge with no art gets, so Library's scopes are marked
- * the way Browse's are wherever either is listed. `name` is `null` for "All": it is not a
- * collection, so it takes a mark where the others take an initial.
+ * A Library view's tile — the letter tile a bridge with no art gets, so Library's scopes are marked
+ * the way Browse's are wherever either is listed. `view` is the selection (`null` = All Series, the
+ * all-of-a-kind sentinels, or a collection id); only a collection takes an initial, from `name`.
  */
 export function CollectionThumb({
+  view,
   name,
   size,
   style,
 }: {
-  name: string | null;
+  view: string | null;
+  name: string;
   size: number;
   style?: StyleProp<ImageStyle>;
 }) {
@@ -24,12 +28,14 @@ export function CollectionThumb({
   // split is the only thing that could put it off the tile's. The asterisk spans half its box, so
   // a box nearly the tile's size is what stands it as tall as the others' initials.
   const mark = size - 2 * Math.round(size * 0.07);
-  return (
-    <BridgeThumb
-      label={name ?? 'All'}
-      glyph={name === null ? <AsteriskIcon color={theme.text} size={mark} strokeWidth={2.5} /> : undefined}
-      size={size}
-      style={style}
-    />
-  );
+  const kind = allItemsType(view);
+  const glyph =
+    view === null ? (
+      <AsteriskIcon color={theme.text} size={mark} strokeWidth={2.5} />
+    ) : kind === 'chapter' ? (
+      <ChapterItemIcon color={theme.text} size={Math.round(size * 0.6)} />
+    ) : kind === 'page' ? (
+      <PageItemIcon color={theme.text} size={Math.round(size * 0.6)} />
+    ) : undefined;
+  return <BridgeThumb label={name} glyph={glyph} size={size} style={style} />;
 }

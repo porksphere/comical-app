@@ -26,7 +26,6 @@ import type {
   TrackerService,
 } from './types';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
-import { DEFAULT_COLLECTION } from './default-collection';
 import type {
   ApiBridgeInfo,
   ApiFilter,
@@ -1040,18 +1039,16 @@ export async function mockGetLibrarySeries(bridgeId: string, seriesId: string): 
   return mockLibrary.get(libKey(bridgeId, seriesId)) ?? null;
 }
 
-/** Collect a series INTO a collection — under the dissolution there is no add-to-library separate
- *  from filing, so the caller resolves the default collection and passes its id. Idempotent on the
- *  entry, but it always files: re-adding a series that lost its memberships puts it back. */
+/** Collect a series, optionally filing it into `collectionId` too. Idempotent on the entry. */
 export async function mockAddToLibrary(
   bridgeId: string,
   seriesId: string,
   snap: { seriesTitle?: string; thumbnailUrl?: string; author?: string },
-  collectionId: string,
+  collectionId?: string,
 ): Promise<void> {
   const key = libKey(bridgeId, seriesId);
   const already = mockSeriesCollections.get(key) ?? [];
-  if (!already.includes(collectionId)) mockSeriesCollections.set(key, [...already, collectionId]);
+  if (collectionId && !already.includes(collectionId)) mockSeriesCollections.set(key, [...already, collectionId]);
   if (mockLibrary.has(key)) return;
   mockLibrary.set(key, {
     bridgeId,
@@ -1066,8 +1063,7 @@ export async function mockAddToLibrary(
   });
 }
 
-/** Uncollect: out of the library AND every collection, since a series item exists only as a member.
- *  Read progress (`mockProgress`) deliberately survives, exactly as the runtime's cascade does. */
+/** Uncollect: out of the library and every collection. Read progress (`mockProgress`) survives. */
 export async function mockRemoveFromLibrary(bridgeId: string, seriesId: string): Promise<void> {
   const key = libKey(bridgeId, seriesId);
   mockLibrary.delete(key);
@@ -1151,7 +1147,7 @@ export async function mockImportBridgeFavorites(
       bridgeId,
       item.seriesId,
       { seriesTitle: item.title, ...(item.thumbnailUrl !== undefined && { thumbnailUrl: item.thumbnailUrl }) },
-      opts.collectionIds?.[0] ?? (await mockDefaultCollectionId()),
+      opts.collectionIds?.[0],
     );
     imported++;
     // The mock library has no series-group model, so a confirmed link is only counted, not stored.
@@ -1262,7 +1258,7 @@ export async function mockImportTrackerEntries(
 ): Promise<TrackerImportResult> {
   await delay(200 + itemsToImport.length * 120);
   const result: TrackerImportResult = { imported: 0, linked: 0, seeded: 0, pushed: 0, failed: [] };
-  const collectionId = opts.collectionIds?.[0] ?? (await mockDefaultCollectionId());
+  const collectionId = opts.collectionIds?.[0];
   for (const item of itemsToImport) {
     const key = libKey(item.bridgeId, item.seriesId);
     const held = mockLibrary.get(key);
@@ -1300,15 +1296,6 @@ export async function mockImportTrackerEntries(
 
 // ─── Collections (in-memory, dev/demo only) ──────────────────────────────────
 
-/** Somewhere for a BULK collect to land — the mock's favorites import, which has no user to ask.
- *  Its own find-or-create rather than `resolveDefaultCollection`, whose remembered-id and
- *  adopt-a-migrated-shelf steps mean nothing to an in-memory demo. The NAME still comes from the
- *  one constant, so the demo can't drift from the real thing. */
-async function mockDefaultCollectionId(): Promise<string> {
-  const existing = mockCollections.find((c) => c.name === DEFAULT_COLLECTION);
-  return existing ? existing.id : (await mockCreateCollection(DEFAULT_COLLECTION)).id;
-}
-
 export async function mockGetCollections(): Promise<MockCollection[]> {
   return [...mockCollections].sort((a, b) => a.order - b.order);
 }
@@ -1338,12 +1325,10 @@ export async function mockReorderCollections(orderedIds: string[]): Promise<void
 
 export async function mockDeleteCollection(id: string): Promise<void> {
   mockCollections = mockCollections.filter((c) => c.id !== id);
-  // Strip the id from every series' memberships, and PRUNE any left with none — the host does
-  // exactly this for series/chapter favorites, which only ever existed as collection members.
-  for (const [key, ids] of mockSeriesCollections) {
-    const next = ids.filter((x) => x !== id);
-    if (next.length === 0) mockSeriesCollections.delete(key);
-    else mockSeriesCollections.set(key, next);
+  // Members stay saved, unfiled — the runtime only strips the id.
+  for (const [key, ids] of mockSeriesCollections) mockSeriesCollections.set(key, ids.filter((x) => x !== id));
+  for (const items of [mockPageItems, mockChapterItems] as Map<string, { collectionIds: string[] }>[]) {
+    for (const item of items.values()) item.collectionIds = item.collectionIds.filter((x) => x !== id);
   }
 }
 
@@ -1351,19 +1336,15 @@ export async function mockSetSeriesCollections(
   bridgeId: string,
   seriesId: string,
   collectionIds: string[],
+  snap: { seriesTitle?: string; thumbnailUrl?: string; author?: string },
 ): Promise<void> {
-  const key = libKey(bridgeId, seriesId);
-  // Empty means the series item is GONE — it exists only as a member, so un-filing the last
-  // collection uncollects it outright (the runtime's cascade). Read progress survives.
-  if (collectionIds.length === 0) {
-    mockSeriesCollections.delete(key);
-    mockLibrary.delete(key);
-  } else mockSeriesCollections.set(key, [...collectionIds]);
+  await mockAddToLibrary(bridgeId, seriesId, snap);
+  mockSeriesCollections.set(libKey(bridgeId, seriesId), [...collectionIds]);
 }
 
 // ─── Collected page items (in-memory, dev/demo only) ─────────────────────────
-// Keyed by the same coordinate tuple the real ids encode. Memberships live on the record, and an
-// empty membership array removes it — pure collections, same as the runtime.
+// Keyed by the same coordinate tuple the real ids encode. Memberships live on the record; an empty
+// membership array leaves it saved and unfiled, same as the runtime.
 
 type MockPageItem = {
   type: 'page';
@@ -1458,7 +1439,7 @@ type MockSeriesItem = {
 function seriesItems(): MockSeriesItem[] {
   const out: MockSeriesItem[] = [];
   // Driven by the LIBRARY, not by the membership map: every collected series is a series item,
-  // including one transiently filed nowhere (legal, and what `?uncollected=true` lists).
+  // including one filed nowhere (what `?uncollected=true` lists).
   for (const [key, entry] of mockLibrary) {
     const [bridgeId = '', seriesId = ''] = key.split(':');
     out.push({
@@ -1562,13 +1543,10 @@ export async function mockSetPageCollections(
   const key = pageItemKey(bridgeId, seriesId, chapterId, pageIndex);
   const item = mockPageItems.get(key);
   if (!item) return;
-  // Empty memberships removes the item, exactly as the real route does.
-  if (collectionIds.length === 0) mockPageItems.delete(key);
-  else mockPageItems.set(key, { ...item, collectionIds: [...collectionIds] });
+  mockPageItems.set(key, { ...item, collectionIds: [...collectionIds] });
 }
 
-// Chapter items. Same store shape as pages, minus the page index — and the same rule that an item
-// with no memberships doesn't exist.
+// Chapter items. Same store shape as pages, minus the page index.
 
 type MockChapterItem = {
   type: 'chapter';
@@ -1633,12 +1611,12 @@ export async function mockSetChapterCollections(
   const key = chapterItemKey(bridgeId, seriesId, chapterId);
   const item = mockChapterItems.get(key);
   if (!item) return;
-  if (collectionIds.length === 0) mockChapterItems.delete(key);
-  else mockChapterItems.set(key, { ...item, collectionIds: [...collectionIds] });
+  mockChapterItems.set(key, { ...item, collectionIds: [...collectionIds] });
 }
 
-export async function mockGetSeriesCollections(bridgeId: string, seriesId: string): Promise<string[]> {
-  return [...(mockSeriesCollections.get(libKey(bridgeId, seriesId)) ?? [])];
+export async function mockGetSeriesCollections(bridgeId: string, seriesId: string): Promise<string[] | null> {
+  const key = libKey(bridgeId, seriesId);
+  return mockLibrary.has(key) ? [...(mockSeriesCollections.get(key) ?? [])] : null;
 }
 
 /** Upsert a history row (used by both a library progress write and a non-library read log). */

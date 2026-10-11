@@ -139,9 +139,7 @@ export interface DataSource {
   renameCollection(id: string, name: string, signal?: AbortSignal): Promise<void>;
   reorderCollections(orderedIds: string[], signal?: AbortSignal): Promise<void>;
   deleteCollection(id: string, signal?: AbortSignal): Promise<void>;
-  /** Replace a series' collection memberships. Writes the series ITEM first (idempotent), since
-   *  memberships hang off that item rather than the library entry. Passing an EMPTY array removes
-   *  the item — an item exists only as a member of something. */
+  /** Save a series and replace its collection memberships. An empty array saves it unfiled. */
   setSeriesCollections(
     bridgeId: string,
     seriesId: string,
@@ -149,8 +147,10 @@ export interface DataSource {
     snap: { seriesTitle: string; thumbnailUrl?: string; author?: string },
     signal?: AbortSignal,
   ): Promise<void>;
-  /** A series' current collection memberships; `[]` when it isn't filed anywhere. */
-  getSeriesCollections(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[]>;
+  /** A series' collection memberships: `[]` when saved unfiled, `null` when not saved at all. */
+  getSeriesCollections(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[] | null>;
+  /** Remove a series from the library. Read progress survives. */
+  uncollectSeries(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
 
   // ─── Collected page items ───────────────────────────────────────────────────
   /** Collected items, or `null` when no library store is mounted. **Pass `type: 'page'`** for a
@@ -188,7 +188,7 @@ export interface DataSource {
   ): Promise<void>;
   /** Remove a collected chapter. */
   uncollectChapter(bridgeId: string, seriesId: string, chapterId: string, signal?: AbortSignal): Promise<void>;
-  /** Replace a chapter's collection memberships; an empty array removes the item. */
+  /** Replace a chapter's collection memberships; an empty array leaves it saved, unfiled. */
   setChapterCollections(
     bridgeId: string,
     seriesId: string,
@@ -196,7 +196,7 @@ export interface DataSource {
     collectionIds: string[],
     signal?: AbortSignal,
   ): Promise<void>;
-  /** Replace a page's collection memberships; an empty array removes the item. */
+  /** Replace a page's collection memberships; an empty array leaves it saved, unfiled. */
   setPageCollections(
     bridgeId: string,
     seriesId: string,
@@ -638,18 +638,12 @@ const realDataSource: DataSource = {
     await api.deleteCollection(id, signal);
   },
   async setSeriesCollections(bridgeId, seriesId, collectionIds, snap, signal) {
-    // Empty memberships means the item is gone: with pure collections an item exists only as a
-    // member, so there is nothing to leave behind. (PUT collections: [] does the same server-side
-    // and reports `{ removed: true }`; DELETE avoids needing the item to exist first.)
-    if (collectionIds.length === 0) {
-      await api.uncollectSeries(bridgeId, seriesId, signal);
-      return;
-    }
-    // ONE call: the collect PUT files in the same request. Idempotent, so repeating it on every
-    // membership change is safe and keeps the snapshot fresh.
     await api.collectSeries(bridgeId, seriesId, { ...snap, collectionIds }, signal);
+    // The collect PUT treats an empty list as "leave memberships alone", so clearing is explicit.
+    if (collectionIds.length === 0) await api.setSeriesCollections(bridgeId, seriesId, [], signal);
   },
   getSeriesCollections: (bridgeId, seriesId, signal) => api.getSeriesCollections(bridgeId, seriesId, signal),
+  uncollectSeries: (bridgeId, seriesId, signal) => api.uncollectSeries(bridgeId, seriesId, signal),
   getCollectedItems: (query, signal) => api.getCollectedItems(query, signal),
   getChapterPageIndices: (bridgeId, seriesId, chapterId, signal) =>
     api.getChapterPageIndices(bridgeId, seriesId, chapterId, signal),
@@ -1043,10 +1037,11 @@ const mockDataSource: DataSource = {
   renameCollection: (id, name) => mock.mockRenameCollection(id, name),
   reorderCollections: (orderedIds) => mock.mockReorderCollections(orderedIds),
   deleteCollection: (id) => mock.mockDeleteCollection(id),
-  setSeriesCollections: (bridgeId, seriesId, collectionIds) =>
-    mock.mockSetSeriesCollections(bridgeId, seriesId, collectionIds),
+  setSeriesCollections: (bridgeId, seriesId, collectionIds, snap) =>
+    mock.mockSetSeriesCollections(bridgeId, seriesId, collectionIds, snap),
   resetReadProgress: (bridgeId, seriesId) => mock.mockResetReadProgress(bridgeId, seriesId),
   getSeriesCollections: (bridgeId, seriesId) => mock.mockGetSeriesCollections(bridgeId, seriesId),
+  uncollectSeries: (bridgeId, seriesId) => mock.mockRemoveFromLibrary(bridgeId, seriesId),
   getCollectedItems: (query) => mock.mockGetCollectedItems(query),
   getChapterPageIndices: (bridgeId, seriesId, chapterId) =>
     mock.mockGetChapterPageIndices(bridgeId, seriesId, chapterId),

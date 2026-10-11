@@ -53,7 +53,13 @@ import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
-import { dlDeleteChapter, dlGetSeries, peekResolvedAssetSource, resolveAssetSourceCached } from '@/data/api';
+import {
+  dlDeleteChapter,
+  dlGetSeries,
+  peekResolvedAssetSource,
+  resolveAssetSourceCached,
+  type ApiCollectionItem,
+} from '@/data/api';
 import { enqueueChapters } from '@/data/downloads/engine';
 import { forgetChapter } from '@/data/downloads/index-cache';
 import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
@@ -70,6 +76,7 @@ import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/
 import { applyReadState, groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
+import { hapticSelection } from '@/lib/haptics';
 import { DISCLOSE_TIMING } from '@/lib/disclose';
 import { testId } from '@/lib/test-id';
 
@@ -539,14 +546,16 @@ export function ChapterScrollList({
   // Which chapters are filed in a collection, for the long-press menu's row. ONE query for the
   // roster rather than a membership check per chapter: `getCollectedItems` is already scoped to a
   // series, and the menu is built fresh on every open, so it reads a set that is already warm.
-  const { data: collectedChapters } = useQuery({
-    ...collectionItemsQuery(ds, mock, { type: 'chapter', series: `${bridgeId}:${seed}` }),
-    enabled: !!bridgeId && !!seed,
-  });
-  const collectedChapterIds = useMemo(
-    () => new Set((collectedChapters ?? []).map((i) => (i.type === 'chapter' ? i.chapterId : ''))),
-    [collectedChapters],
-  );
+  const rosterQuery = collectionItemsQuery(ds, mock, { type: 'chapter', series: `${bridgeId}:${seed}` });
+  useQuery({ ...rosterQuery, enabled: !!bridgeId && !!seed });
+  // Read from the cache at open time, not from render: the list keeps a row's first `onMenu`
+  // closure, so a captured roster would still say "unsaved" after the row's own save.
+  const collectedChapterIds = () =>
+    new Set(
+      (queryClient.getQueryData<ApiCollectionItem[] | null>(rosterQuery.queryKey) ?? []).map((i) =>
+        i.type === 'chapter' ? i.chapterId : '',
+      ),
+    );
   const chapters = useMemo(() => applyReadState(rawChapters, progress ?? []), [rawChapters, progress]);
 
   // Unread counts (the Library grid's badge, the Activity feed and its tab badge) are all derived
@@ -617,6 +626,8 @@ export function ChapterScrollList({
       // series popup's own menu.
       ...at,
       rows: chapterMenuRows({
+        ds,
+        mock,
         bridgeId,
         seriesId: seed,
         title,
@@ -624,7 +635,7 @@ export function ChapterScrollList({
         manifest,
         group: g,
         preferredGroup,
-        collected: collectedChapterIds,
+        collected: collectedChapterIds(),
         read: readArgs,
         canDownload: missingBridgeName === undefined,
       }),
@@ -983,6 +994,8 @@ function chapterReadActions(args: {
 /** The chapter menu's actions + coverage, computed once and shared by both presentations (the
  *  native hold menu's rows and the web overlay's). */
 function chapterMenuActions(args: {
+  ds: DataSource;
+  mock: boolean;
   bridgeId: string;
   seriesId: string;
   title: string;
@@ -993,7 +1006,7 @@ function chapterMenuActions(args: {
   /** The series' collected chapter ids — see `collectedChapterIds`. */
   collected: Set<string>;
 }) {
-  const { bridgeId, seriesId, title, chapters, manifest, group, preferredGroup } = args;
+  const { ds, mock, bridgeId, seriesId, title, chapters, manifest, group, preferredGroup } = args;
   const sel = selectableGroups(chapters, manifest);
   const entry = sel.find((s) => s.group.key === group.key);
   const chapterId = pickVersion(group, preferredGroup).id;
@@ -1001,30 +1014,43 @@ function chapterMenuActions(args: {
   const snap = { bridgeId, seriesId, title };
   const completeIds = new Set(manifest.filter((c) => c.state === 'complete').map((c) => c.chapterId));
   const downloadedVersions = group.versions.filter((v) => completeIds.has(v.id));
+  const collected = args.collected.has(chapterId);
+  const itemSnapshot = () => ({
+    seriesTitle: title,
+    chapterName: group.name,
+    ...(group.number !== undefined && { number: group.number }),
+    ...(group.languageCode !== undefined && { languageCode: group.languageCode }),
+  });
   return {
     entry,
     span,
     downloadedVersions,
-    collected: args.collected.has(chapterId),
-    // Straight to the picker, with no one-tap default the way a SERIES has. Filing a chapter is a
-    // deliberate act already three gestures deep (long-press, read the row, tap it), so there is no
-    // reflex for a last-used destination to speed up — and a silent destination would be the one
-    // thing the row can't show. The label is the series card's convention (＋ / ✓), so a chapter
-    // filed anywhere reads the same as a series filed anywhere.
-    collect: () =>
-      openCollectionPicker({
-        kind: 'chapter',
-        bridgeId,
-        seriesId,
-        chapterId,
-        title: `${title} — ${group.name}`,
-        snapshot: () => ({
-          seriesTitle: title,
-          chapterName: group.name,
-          ...(group.number !== undefined && { number: group.number }),
-          ...(group.languageCode !== undefined && { languageCode: group.languageCode }),
-        }),
-      }),
+    collected,
+    // The series save button's rule: the first tap saves unfiled, a saved chapter opens the picker.
+    collect: () => {
+      if (collected) {
+        openCollectionPicker({
+          kind: 'chapter',
+          bridgeId,
+          seriesId,
+          chapterId,
+          title: `${title} — ${group.name}`,
+          snapshot: itemSnapshot,
+        });
+        return;
+      }
+      hapticSelection();
+      void ds
+        .collectChapter(bridgeId, seriesId, chapterId, itemSnapshot())
+        .then(() => showToast('Chapter saved'))
+        .catch(() => showToast('Couldn’t save chapter'))
+        .finally(() => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.collectionItemsAll(mock) });
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.chapterCollections(mock, bridgeId, seriesId, chapterId),
+          });
+        });
+    },
     downloadThis: () => enqueueChapters(snap, toEnqueue([group], preferredGroup)),
     downloadFromHere: () => enqueueChapters(snap, toEnqueue(span, preferredGroup)),
     deleteDownload: async () => {
@@ -1075,9 +1101,9 @@ function chapterMenuRows(
   );
   rows.push(
     {
-      // The one place a chapter can be filed, now that the reader's settings sheet is settings only.
-      label: collected ? 'In collections' : 'Add to collection',
+      label: collected ? 'Collections…' : 'Save chapter',
       Icon: collected ? CheckIcon : PlusIcon,
+      active: collected,
       loading: false,
       testID: testId('series.chapter-menu', 'collect'),
       onPress: collect,

@@ -319,9 +319,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
   // Collections for the Save row's submenu: the set itself (the expanded rows) + this series'
   // live memberships (the checkmarks, optimistic). Both queries run
-  // once per open — this component mounts only while the menu is up, never per card. Each gates its
-  // own surface while loading: the ROW is inert until the set resolves (otherwise a quick tap reads
-  // a still-loading [] as "no collections" and wrongly takes the ＋→manage path), and the submenu
+  // once per open — this component mounts only while the menu is up, never per card. The submenu
   // rows are inert until the memberships resolve (a toggle then would REPLACE unknown memberships).
   const { collections } = useCollections();
   const snapshot = () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) });
@@ -329,6 +327,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     collectionIds,
     loading: membershipsLoading,
     setCollections,
+    remove: removeSeries,
   } = useItemCollections({ kind: 'series', bridgeId, seriesId: entry.id, snapshot });
   // Reads the same two queries this menu already runs, so the merged Save row costs nothing extra.
   const save = useSeriesSave(bridgeId, entry.id, snapshot, entry.title);
@@ -1106,22 +1105,29 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // The Save row's picker, in place — better here than the root picker sheet, which would have to
   // render over this menu. Built fresh every render so the checkmarks track the optimistic
   // memberships as they're toggled (a snapshot taken at open would freeze them).
-  const hasCollections = collections.length > 0;
   const collectionsSubmenu = (): SubmenuSpec => ({
     label: 'Save to collection',
     testID: 'series.card-menu.collections.submenu',
-    rows: collections.map((c) => ({
-      label: c.name,
-      active: collectionIds.includes(c.id),
-      loading: membershipsLoading,
-      onPress: () =>
-        setCollections(
-          collectionIds.includes(c.id)
-            ? collectionIds.filter((x: string) => x !== c.id)
-            : [...collectionIds, c.id],
-        ),
-      testID: `series.card-menu.collections.${c.id}`,
-    })),
+    rows: [
+      ...collections.map((c) => ({
+        label: c.name,
+        active: collectionIds.includes(c.id),
+        loading: membershipsLoading,
+        onPress: () =>
+          setCollections(
+            collectionIds.includes(c.id)
+              ? collectionIds.filter((x: string) => x !== c.id)
+              : [...collectionIds, c.id],
+          ),
+        testID: `series.card-menu.collections.${c.id}`,
+      })),
+      {
+        label: 'Remove from Library',
+        loading: membershipsLoading,
+        onPress: () => act(removeSeries),
+        testID: 'series.card-menu.collections.remove',
+      },
+    ],
   });
   // The Save row's position in `rows` below — the submenu anchors at exactly that row's slot.
   // Was 2 while "Add to Library" sat above it; merging the two moved it up.
@@ -1141,25 +1147,19 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         reading.start();
       },
     },
-    // ONE row where there were two — "Add to Library" and "Add to collection" became the same
-    // action when the library dissolved into collections. A tap saves into the last-used collection
-    // and the label then names it; once saved (or with nowhere to put it), a tap opens the submenu
-    // to choose. See useSeriesSave.
+    // Unsaved → ＋, and the tap saves it unfiled. Saved → ✓, and the tap expands the in-place
+    // submenu to file it or remove it (iOS Files' "Open With ›"). See useSeriesSave.
     {
       label: save.menuLabel,
-      // Unsaved → ＋, and the tap commits: into the `Library` collection, created if it's the
-      // user's first. Saved → ✓, and the tap expands the in-place submenu to re-file it (iOS
-      // Files' "Open With ›"). The glyph IS the affordance either way.
       Icon: save.saved ? CheckIcon : PlusIcon,
       loading: save.saved === null,
       active: !!save.saved,
       testID: 'series.card-menu.save',
-      ...(save.saved && hasCollections && { submenu: collectionsSubmenu }),
-      onPress:
-        save.saved && hasCollections
-          ? // Do NOT close the menu — the submenu expands over it while the rest pushes back.
-            () => openSubmenu(SAVE_ROW_INDEX, collectionsSubmenu())
-          : () => act(save.onPress),
+      ...(save.saved && { submenu: collectionsSubmenu }),
+      onPress: save.saved
+        ? // Do NOT close the menu — the submenu expands over it while the rest pushes back.
+          () => openSubmenu(SAVE_ROW_INDEX, collectionsSubmenu())
+        : () => act(save.onPress),
     },
     // Same faces as the series page's star (see there): absent without the capability, a way into
     // the bridge's settings when it needs a login, dimmed only while genuinely unknown.

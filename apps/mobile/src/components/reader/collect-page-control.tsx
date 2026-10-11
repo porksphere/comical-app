@@ -10,10 +10,8 @@ import { hapticImpactLight } from '@/lib/haptics';
  * The reader chrome's save-this-page button, left of the settings gear in the toolbar's trailing
  * slot.
  *
- * **Tap** files the page into whichever collection pages were last filed into, and tapping again
- * removes it. **Long press** opens the picker to choose. When there is no last-used collection yet
- * — the first ever save, or the remembered one has been deleted — a tap opens the picker too, since
- * there is nowhere sensible to put it and nothing is ever auto-created.
+ * **Tap** saves the page, unfiled; on a saved page it opens the picker, where it is filed or
+ * removed. **Long press** opens the picker outright.
  *
  * Like the rest of the reader chrome this is deliberately UNTHEMED — white on the dark gradient,
  * never `useTheme()`, because the reader stays dark whatever the app theme is.
@@ -87,10 +85,7 @@ export function CollectPageControl({
       testID="reader.toolbar.collect-page"
       onPress={() => {
         onPress?.();
-        // A tap with no remembered destination isn't a failure — it's the first one, so ask.
-        void toggle().then((result) => {
-          if (result === 'needs-pick') openPicker();
-        });
+        if (toggle() === 'pick') openPicker();
       }}
       onLongPress={() => {
         onPress?.();
@@ -102,7 +97,7 @@ export function CollectPageControl({
       style={styles.button}
       accessibilityRole="button"
       accessibilityState={{ selected: !!collected }}
-      accessibilityLabel={collected ? 'Remove page from collection' : 'Save page to collection'}>
+      accessibilityLabel={collected ? 'Saved page — choose collections' : 'Save page'}>
       <BookmarkIcon
         color={collected === null ? 'rgba(255,255,255,0.3)' : '#fff'}
         size={20}

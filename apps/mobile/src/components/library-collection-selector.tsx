@@ -6,27 +6,26 @@ import { OptionActionRow, OptionMenu, OptionRow } from '@/components/overlay/opt
 import { useOptionThumbBox } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
+import { ALL_VIEW_NAMES, allItemsType, libraryViews } from '@/data/selected-collection';
 import type { Collection } from '@/data/types';
 import { useHover } from '@/hooks/use-hover';
+import { useSavedItemKinds } from '@/hooks/use-saved-item-kinds';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 
 /**
- * The Library tab's top-bar view selector — the bridge-selector shape, reading "Library" (the tab,
- * i.e. everything collected) by default and opening a menu to switch to any collection. The menu's
- * own row for that view says "All", since "Library" there would collide with the default
- * collection sitting one row below it. One flat list, deliberately:
- * picking a collection shows THAT COLLECTION'S CONTENTS (its series, chapters and saved pages,
- * mixed), so there is nothing to split into per-type views — an earlier two-section version
- * ("collections" vs "saved pages") read as two competing lists of the same names and was cut.
- * A trailing "Manage collections…" action pushes the manage screen.
+ * The Library tab's top-bar view selector — the bridge-selector shape, reading "Library" for the
+ * series grid and opening a menu to switch views. The saved kinds lead it (All Series, then All
+ * Chapters / All Pages once any exist — each lists that kind whatever its collections, so unfiled
+ * items have a home), then the collections, each showing its mixed contents. A trailing "Manage
+ * collections…" action pushes the manage screen.
  */
 export function LibraryCollectionSelector({
   value,
   collections,
   onChange,
 }: {
-  /** `null` = the library grid; a collection id = that collection's contents. */
+  /** See `selected-collection.ts`. */
   value: string | null;
   collections: Collection[];
   onChange: (value: string | null) => void;
@@ -34,8 +33,17 @@ export function LibraryCollectionSelector({
   const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
+  const kinds = useSavedItemKinds();
 
-  const currentLabel = value ? (collections.find((c) => c.id === value)?.name ?? 'Library') : 'Library';
+  const kind = allItemsType(value);
+  const currentLabel =
+    value === null
+      ? 'Library'
+      : kind
+        ? ALL_VIEW_NAMES[kind]
+        : (collections.find((c) => c.id === value)?.name ?? 'Library');
+  // Rows, not collections: every view plus "Manage collections…".
+  const rowCount = libraryViews(collections, kinds, value).length + 1;
 
   return (
     <Pressable
@@ -45,10 +53,8 @@ export function LibraryCollectionSelector({
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
         openAt(
-          () => <CollectionMenu value={value} collections={collections} onChange={onChange} />,
-          // +2 for the built-in All/Reading rows, +1 for "Manage collections…" — the count that
-          // decides this is the number of ROWS, not the number of collections.
-          { popover: collections.length + 3 <= MENU_MAX_ROWS },
+          () => <CollectionMenu value={value} collections={collections} kinds={kinds} onChange={onChange} />,
+          { popover: rowCount <= MENU_MAX_ROWS },
         )
       }>
       <ThemedText numberOfLines={1} style={styles.triggerLabel}>
@@ -64,10 +70,12 @@ export function LibraryCollectionSelector({
 function CollectionMenu({
   value,
   collections,
+  kinds,
   onChange,
 }: {
   value: string | null;
   collections: Collection[];
+  kinds: { chapter: boolean; page: boolean };
   onChange: (value: string | null) => void;
 }) {
   const { closeTop } = useOverlay();
@@ -79,27 +87,19 @@ function CollectionMenu({
     closeTop();
   };
 
+  const views = libraryViews(collections, kinds, value);
+
   return (
     <OptionMenu title="Library">
       <OptionList>
-        {/* NOT "Library": the default collection is an ordinary row below, and while a freshly
-            migrated shelf is the only thing in it, both rows list exactly the same series. Two rows,
-            one word, one list. */}
-        <OptionRow
-          testID="library.collection.all"
-          label="All"
-          selected={value === null}
-          leading={<CollectionThumb name={null} size={thumb.size} style={thumb.style} />}
-          onPress={() => pick(null)}
-        />
-        {collections.map((c) => (
+        {views.map((v) => (
           <OptionRow
-            key={c.id}
-            testID={`library.collection.${c.id}`}
-            label={c.name}
-            selected={value === c.id}
-            leading={<CollectionThumb name={c.name} size={thumb.size} style={thumb.style} />}
-            onPress={() => pick(c.id)}
+            key={v.id ?? 'all'}
+            testID={`library.collection.${v.testKey}`}
+            label={v.name}
+            selected={value === v.id}
+            leading={<CollectionThumb view={v.id} name={v.name} size={thumb.size} style={thumb.style} />}
+            onPress={() => pick(v.id)}
           />
         ))}
         <OptionActionRow

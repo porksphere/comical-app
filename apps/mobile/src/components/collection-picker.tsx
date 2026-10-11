@@ -5,11 +5,10 @@
  * context-menu host so it STACKS on top of it — the "nested menus like X" behavior); anything opens
  * it via `openCollectionPicker`.
  *
- * Toggling a row persists immediately (optimistic, via `useSeriesCollections`) — filing a series
- * into any collection adds it to the library first if it wasn't there, and clearing the LAST
- * collection removes the series item outright — an item exists only as a member. A "New
- * collection…" row creates one inline and files the series into it. Tapping the backdrop or Done
- * dismisses back to whatever is underneath.
+ * Toggling a row persists immediately (optimistic, via `useItemCollections`) — filing an item saves
+ * it if it wasn't saved, and clearing every collection leaves it saved, unfiled. Removal is its own
+ * row at the bottom, shown only for a saved item. A "New collection…" row creates one inline and
+ * files the item into it. Tapping the backdrop or Done dismisses back to whatever is underneath.
  */
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
@@ -34,7 +33,7 @@ import {
   MENU_BLUR,
   MENU_FILL,
 } from '@/components/context-menu-material';
-import { CheckIcon, PlusIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useItemCollections, type ItemTarget } from '@/hooks/use-item-collections';
@@ -103,7 +102,7 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
   const progress = useSharedValue(0);
 
   const { collections, createCollection } = useCollections();
-  const { collectionIds, setCollections } = useItemCollections(req);
+  const { saved, collectionIds, setCollections, remove } = useItemCollections(req);
   const selected = new Set(collectionIds);
 
   const [creating, setCreating] = useState(false);
@@ -282,6 +281,25 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
                 </Pressable>
               )}
             </ScrollView>
+
+            {saved ? (
+              <Pressable
+                testID="collection-picker.remove"
+                onPress={() => {
+                  hapticImpactLight();
+                  remove();
+                  dismiss();
+                }}
+                style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.backgroundSelected }]}
+                accessibilityRole="button">
+                <View style={styles.newIcon}>
+                  <TrashIcon color={theme.danger} size={16} />
+                </View>
+                <ThemedText style={[styles.rowLabel, { color: theme.danger }]}>
+                  {req.kind === 'series' ? 'Remove from Library' : 'Remove'}
+                </ThemedText>
+              </Pressable>
+            ) : null}
 
             <Pressable
               testID="collection-picker.done"

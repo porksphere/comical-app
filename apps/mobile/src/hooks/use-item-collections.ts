@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { ChapterItemSnapshotBody, LibrarySnapshot, PageItemSnapshotBody } from '@/data/api';
-import { setLastCollectionId } from '@/data/last-collection';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 
@@ -26,17 +25,11 @@ export type ItemTarget =
     };
 
 /**
- * One item's collection memberships + an optimistic setter, for the picker and for one-tap saves.
+ * One item's saved state + collection memberships, with optimistic writes, for the picker and the
+ * save buttons.
  *
- * Handles series and page targets through one interface because the rules are the same for both:
- * an item exists ONLY as a member of a collection, so writing memberships creates it and clearing
- * them removes it. What differs is only which routes carry the write.
- *
- * `[]` means "not filed anywhere", which for a page also means "not saved" — there is no separate
- * saved-but-uncollected state.
- *
- * Filing also records the collection as that TYPE's last-used, which is what makes a subsequent
- * one-tap save land somewhere sensible without asking (see `data/last-collection.ts`).
+ * Saved and filed are separate: an item with no memberships is saved, unfiled. The query holds
+ * `null` for "not saved", so `setCollections([])` saves (or un-files) and only `remove()` deletes.
  */
 export function useItemCollections(target: ItemTarget) {
   const ds = useDataSource();
@@ -54,7 +47,7 @@ export function useItemCollections(target: ItemTarget) {
 
   const { data, isLoading } = useQuery({
     queryKey: key,
-    queryFn: async ({ signal }) => {
+    queryFn: async ({ signal }): Promise<string[] | null> => {
       if (kind === 'series') return ds.getSeriesCollections(bridgeId!, seriesId, signal);
       // There is no per-coordinate item GET, so read this series' items of that type and pick ours
       // out. Scoped to one series, so it stays off the whole-library path.
@@ -64,52 +57,39 @@ export function useItemCollections(target: ItemTarget) {
           ? i.type === 'chapter' && i.chapterId === target.chapterId
           : i.type === 'page' && i.chapterId === target.chapterId && i.pageIndex === target.pageIndex,
       );
-      return mine?.collectionIds ?? [];
+      return mine ? mine.collectionIds : null;
     },
     enabled,
   });
-  const collectionIds = data ?? [];
 
   const mutation = useMutation({
-    mutationFn: async (next: string[]) => {
+    /** `null` removes the item; an array saves it with exactly those memberships. */
+    mutationFn: async (next: string[] | null) => {
       if (kind === 'series') {
-        // ONE call — the collect PUT carries the memberships, so a series the user just filed is
-        // never briefly collected-but-unfiled. No separate add-to-library step: filing a series IS
-        // putting it in the library.
+        if (next === null) return ds.uncollectSeries(bridgeId!, seriesId);
         const snap = target.snapshot();
         await ds.setSeriesCollections(bridgeId!, seriesId, next, {
           ...snap,
           seriesTitle: snap.seriesTitle ?? seriesId,
         });
       } else if (kind === 'chapter') {
-        if (next.length === 0) {
-          await ds.uncollectChapter(bridgeId!, seriesId, target.chapterId);
-        } else {
-          await ds.collectChapter(bridgeId!, seriesId, target.chapterId, target.snapshot());
-          await ds.setChapterCollections(bridgeId!, seriesId, target.chapterId, next);
-        }
-      } else if (next.length === 0) {
-        await ds.uncollectPage(bridgeId!, seriesId, target.chapterId, target.pageIndex);
+        if (next === null) return ds.uncollectChapter(bridgeId!, seriesId, target.chapterId);
+        await ds.collectChapter(bridgeId!, seriesId, target.chapterId, target.snapshot());
+        await ds.setChapterCollections(bridgeId!, seriesId, target.chapterId, next);
       } else {
-        // Write the item, then its memberships. An item with no memberships is only transiently
-        // legal — the server reads empty as "remove me" — so these two must not be separated by
-        // anything slow.
+        if (next === null) return ds.uncollectPage(bridgeId!, seriesId, target.chapterId, target.pageIndex);
         await ds.collectPage(bridgeId!, seriesId, target.chapterId, target.pageIndex, target.snapshot());
         await ds.setPageCollections(bridgeId!, seriesId, target.chapterId, target.pageIndex, next);
       }
-      // Remember where this TYPE was last filed, so the next one-tap save has a destination.
-      // Only on a real filing — clearing memberships shouldn't repoint the default.
-      const added = next.find((id) => !collectionIds.includes(id)) ?? next[next.length - 1];
-      if (added) setLastCollectionId(kind, added);
     },
-    onMutate: async (next: string[]) => {
+    onMutate: async (next: string[] | null) => {
       await queryClient.cancelQueries({ queryKey: key });
-      const prev = queryClient.getQueryData<string[]>(key);
+      const prev = queryClient.getQueryData<string[] | null>(key);
       queryClient.setQueryData(key, next);
       return { prev };
     },
     onError: (_e, _next, ctx) => {
-      if (ctx) queryClient.setQueryData(key, ctx.prev ?? []);
+      if (ctx) queryClient.setQueryData(key, ctx.prev ?? null);
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: key });
@@ -128,11 +108,17 @@ export function useItemCollections(target: ItemTarget) {
   });
 
   return {
-    collectionIds,
+    /** `null` while loading. */
+    saved: isLoading || data === undefined ? null : data !== null,
+    collectionIds: data ?? [],
     loading: isLoading,
     setCollections: (next: string[]) => {
       if (!bridgeId) return;
       mutation.mutate(next);
+    },
+    remove: () => {
+      if (!bridgeId) return;
+      mutation.mutate(null);
     },
   };
 }

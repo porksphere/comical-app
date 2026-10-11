@@ -44,10 +44,8 @@ import { TopBar } from '@/components/top-bar';
 import { SettingsRowHeight, Spacing } from '@/constants/theme';
 import { TRACKER_IMPORT_BATCH, type TrackerImportResult } from '@/data/api';
 import { useComicalExcludedIds } from '@/data/comical-home';
-import { resolveDefaultCollection } from '@/data/default-collection';
-import { getDefaultCollectionId, setDefaultCollectionId } from '@/data/default-collection-store';
 import { applyOrder, useBridgeOrder } from '@/data/list-order';
-import { collectionsQuery, libraryQuery, queryKeys, trackerImportPreviewQuery } from '@/data/queries';
+import { libraryQuery, queryKeys, trackerImportPreviewQuery } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
@@ -302,21 +300,9 @@ export default function TrackerImportScreen() {
     setBanner(null);
     setImporting({ done: 0, total: items.length });
     try {
-      // New series are filed where a single Save would put them, so an import never leaves a pile
-      // of unfiled series behind.
-      const collectionId = await resolveDefaultCollection(
-        {
-          list: () => queryClient.fetchQuery(collectionsQuery(ds, mock)),
-          create: (name) => ds.createCollection(name),
-          rename: (id, name) => ds.renameCollection(id, name),
-          storedId: getDefaultCollectionId,
-          remember: setDefaultCollectionId,
-        },
-        ac.signal,
-      );
       const results: TrackerImportResult[] = [];
       for (const batch of chunk(items, TRACKER_IMPORT_BATCH)) {
-        results.push(await ds.importTrackerEntries(trackerId, batch, { collectionIds: [collectionId], seedProgress: seed }, ac.signal));
+        results.push(await ds.importTrackerEntries(trackerId, batch, { seedProgress: seed }, ac.signal));
         if (ac.signal.aborted) return;
         setImporting((p) => (p ? { ...p, done: p.done + batch.length } : p));
       }

@@ -27,7 +27,12 @@ import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import { useCollectedView } from '@/data/collected-view';
 import { collectionItemsQuery, libraryQuery } from '@/data/queries';
-import { setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
+import {
+  ALL_VIEW_NAMES,
+  allItemsType,
+  setSelectedCollection,
+  useSelectedCollectionId,
+} from '@/data/selected-collection';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
 import { DIRECT_CHAPTER_ID, type ReadState } from '@/data/types';
@@ -74,14 +79,13 @@ export default function LibraryScreen() {
   // this flips, the list holds empty data and the header shows a skeleton.
   const ready = useDeferredMount();
 
-  // What the tab is showing: `null` = the library's series grid; a collection id = that
-  // collection's CONTENTS — its series, chapters and saved pages, mixed. One axis, deliberately:
-  // an earlier version split "collection" and "saved pages" into two selector sections, which read
-  // as two competing lists of the same names.
+  // What the tab is showing: `null` = the library's series grid; All Chapters / All Pages = every
+  // saved item of that kind; a collection id = that collection's CONTENTS, mixed.
   // Shared, not local: the sidebar's Collections group moves this too (see `selected-collection.ts`).
   const collectionFilter = useSelectedCollectionId();
   const setCollectionFilter = setSelectedCollection;
   const showingCollected = collectionFilter !== null;
+  const allType = allItemsType(collectionFilter);
   // Asked of the layout, not derived from width — see `useHasSidebar`.
   const railNav = useHasSidebar();
   // The library grid's sort + grouping (they only apply there; a collection view has its own axes
@@ -103,7 +107,12 @@ export default function LibraryScreen() {
   const { knownById: bridgeById } = useBridgeMap();
   const { collections } = useCollections();
   // What the bar calls the current view: a collection by its name, the library grid by the tab's.
-  const viewName = collectionFilter ? (collections.find((c) => c.id === collectionFilter)?.name ?? 'Library') : 'Library';
+  const viewName =
+    collectionFilter === null
+      ? 'Library'
+      : allType
+        ? ALL_VIEW_NAMES[allType]
+        : (collections.find((c) => c.id === collectionFilter)?.name ?? 'Library');
 
   // Search + sort both fold into this one query and re-render the grid in place.
   const { data: items = undefined, error, isLoading, refetch } = useQuery({
@@ -114,24 +123,25 @@ export default function LibraryScreen() {
     placeholderData: keepPreviousData,
   });
 
-  // Saved pages. `type: 'page'` is NOT optional — a bare collected query returns the mixed
-  // series/chapter/page union, and a grid that forgets it renders the wrong things silently.
+  // A collection's WHOLE contents — no type filter, since hiding two of the three kinds would make a
+  // collection look emptier than it is. A kind view is the reverse: that type, every collection.
+  const scope: { type?: 'chapter' | 'page'; collection?: string } = allType
+    ? { type: allType }
+    : { collection: collectionFilter ?? '' };
   const collected = useQuery({
     ...collectionItemsQuery(ds, mock, {
-      // The collection's WHOLE contents — no type filter. Hiding two of the three kinds would make
-      // a collection look emptier than it is.
-      collection: collectionFilter ?? '',
+      ...scope,
       sort: collectedView.sort,
       dir: collectedView.dir,
       ...(term ? { q: term } : {}),
     }),
     enabled: showingCollected,
-    // Held across a refined filter, not across a switch of collection — that would show the last
-    // collection's contents under the new one's name.
-    placeholderData: (prev, prevQuery) =>
-      (prevQuery?.queryKey[2] as { collection?: string } | undefined)?.collection === (collectionFilter ?? '')
-        ? prev
-        : undefined,
+    // Held across a refined filter, not across a switch of view — that would show the last view's
+    // contents under the new one's name.
+    placeholderData: (prev, prevQuery) => {
+      const was = prevQuery?.queryKey[2] as { collection?: string; type?: string } | undefined;
+      return was?.collection === scope.collection && was?.type === scope.type ? prev : undefined;
+    },
   });
 
   // Reflect adds/removes made on the series detail (or a mode switch) when the
@@ -199,7 +209,18 @@ export default function LibraryScreen() {
     }
     if (visibleCollected.length === 0) {
       if (term) {
-        return <EmptyState title="No matches" detail="Nothing in this collection matches your filter." />;
+        return (
+          <EmptyState
+            title="No matches"
+            detail={`Nothing in ${allType ? 'your saved ' + (allType === 'chapter' ? 'chapters' : 'pages') : 'this collection'} matches your filter.`}
+          />
+        );
+      }
+      if (allType === 'chapter') {
+        return <EmptyState title="No saved chapters" detail="Long-press a chapter on a series page and tap “Save chapter”." />;
+      }
+      if (allType === 'page') {
+        return <EmptyState title="No saved pages" detail="While reading, tap the bookmark in the top bar to save a page." />;
       }
       return (
         <EmptyState
@@ -313,7 +334,8 @@ export default function LibraryScreen() {
                 pathname: '/series',
                 params: {
                   seq: '1',
-                  seqCollection: collectionFilter ?? '',
+                  // Empty for All Pages: the sequence keeps only pages, so the unscoped listing is it.
+                  seqCollection: allType ? '' : (collectionFilter ?? ''),
                   seqSort: collectedView.sort,
                   seqDir: collectedView.dir,
                   ...(term ? { seqQ: term } : {}),
@@ -372,7 +394,8 @@ export default function LibraryScreen() {
           filter.open ? undefined : (
             <HoldActionTarget testID="library.nsfw-hold" size={BridgeThumbSize}>
               <CollectionThumb
-                name={collectionFilter === null ? null : viewName}
+                view={collectionFilter}
+                name={viewName}
                 size={BridgeThumbSize}
                 style={styles.barThumb}
               />

@@ -51,9 +51,8 @@ export function CollectedItemMenu({
         }),
     },
     {
-      // Always "in": a tile only exists while its item is filed somewhere. Unticking the last
-      // collection in the picker is how it is removed.
-      label: 'In collections',
+      // Always saved: a tile only exists while its item does. The picker's Remove row deletes it.
+      label: 'Collections…',
       Icon: CheckIcon,
       active: true,
       loading: false,

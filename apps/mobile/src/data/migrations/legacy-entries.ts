@@ -21,8 +21,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Library, type LibraryStore } from '@comical/library';
 
-import { DEFAULT_COLLECTION } from '../default-collection';
-
 /** The pre-collections document: `{ [entryKey]: LibraryEntry }`. Not a `library-store.ts` constant
  *  any more — that store no longer has an entries concept, and this is the only reader left. */
 const ENTRIES = 'comical:lib:entries';
@@ -32,7 +30,7 @@ const ENTRIES = 'comical:lib:entries';
  *  figure — honest, since it's real bytes, and it's the nudge to eventually drop it. */
 const MIGRATED = 'comical:lib:entries.migrated';
 
-export type LegacyEntriesMigration = { imported: number; skipped: number; collectionId: string };
+export type LegacyEntriesMigration = { imported: number; skipped: number };
 
 /**
  * Import the legacy entries document if it's still there, then park it under `MIGRATED`.
@@ -40,9 +38,6 @@ export type LegacyEntriesMigration = { imported: number; skipped: number; collec
  * Returns `undefined` when there was nothing to do, which is the steady state — every launch after
  * the first. Safe to run unconditionally: `importLegacyEntries` skips coordinates that are already
  * collected, so a re-run after a crash can't clobber anything written since.
- *
- * Requires `installWebCryptoShim()` to have run — the import mints a collection id with
- * `crypto.randomUUID`, which Hermes doesn't ship.
  */
 export async function migrateLegacyEntries(store: LibraryStore): Promise<LegacyEntriesMigration | undefined> {
   const raw = await AsyncStorage.getItem(ENTRIES);
@@ -60,12 +55,8 @@ export async function migrateLegacyEntries(store: LibraryStore): Promise<LegacyE
   if (rows.length === 0) return undefined;
 
   // Rows are validated individually inside; a half-corrupt document yields the entries it can.
-  const { imported, skipped, collectionId } = await new Library(store).importLegacyEntries(rows, DEFAULT_COLLECTION);
-  // Filed under DEFAULT_COLLECTION's own name, which is what makes the rebuilt shelf the device's
-  // default without writing anything here: `resolveDefaultCollection` finds it by that name on the
-  // first save and pins its id from then on. Deliberately not pinned HERE — a persisted write at
-  // startup lands inside the window where Legend State drops it, silently.
+  const { imported, skipped } = await new Library(store).importLegacyEntries(rows);
   await AsyncStorage.setItem(MIGRATED, raw);
   await AsyncStorage.removeItem(ENTRIES);
-  return { imported, skipped, collectionId };
+  return { imported, skipped };
 }

@@ -1,31 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { PageItemSnapshotBody } from '@/data/api';
-import { resolveLastCollection, setLastCollectionId } from '@/data/last-collection';
-import { chapterPageIndicesQuery, collectionsQuery, queryKeys } from '@/data/queries';
+import { chapterPageIndicesQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { hapticSelection } from '@/lib/haptics';
 import { hashPageFromCache } from '@/lib/page-hash';
 
 /**
- * Whether the currently visible page is saved to any collection, plus the reader's one-tap save.
+ * Whether the currently visible page is saved, plus the reader's one-tap save.
  *
- * **The Google Maps "Save" model.** A tap files the page into whichever collection pages were last
- * filed into; a long press opens the picker to choose. Nothing is auto-created and there is no
- * implicit "Favorites" — an item exists only as a member of a collection the user made. When there
- * is no last-used collection yet (first save ever, or it has since been deleted), a tap has nowhere
- * to go, so it defers to the caller via `needsPick` and the picker opens instead.
+ * Same model as the series button: a tap on an unsaved page saves it, unfiled; a tap on a saved one
+ * asks the caller to open the picker (`'pick'`), which is where filing and removal live.
  *
  * Reads **one** query per chapter — the chapter's collected page indices — and derives the button
  * from it, so flipping pages costs zero requests and the state is correct instantly while scrubbing.
- * A per-page status check would fire a request per page turn, which is precisely why the indices
- * route exists. Stale items are already excluded server-side, so an index here is always safe to
- * navigate to.
- *
- * **Saving is two writes, and both matter.** `collectPage` writes the item, then it is filed. An
- * item with no memberships is only *transiently* legal — the server treats empty memberships as
- * "remove me" — so the file-in must follow promptly, not wait on anything slow (the `contentHash`
- * follow-up PUT deliberately runs after, and separately, for that reason).
+ * Stale items are already excluded server-side, so an index here is always safe to navigate to.
  */
 export function usePageCollected(
   bridgeId: string | undefined,
@@ -55,17 +44,8 @@ export function usePageCollected(
   const collected = indices === null ? null : indices.includes(pageIndex);
 
   const mutation = useMutation({
-    mutationFn: async (collectionId: string | null) => {
-      if (collectionId === null) {
-        await ds.uncollectPage(bridgeId!, seriesId, chapterId!, pageIndex);
-        return;
-      }
+    mutationFn: async () => {
       await ds.collectPage(bridgeId!, seriesId, chapterId!, pageIndex, snapshot());
-      // File it immediately — an item with no memberships is removed, so leaving it bare would
-      // undo the tap. This must not wait on anything slow, which is why the hash comes after.
-      await ds.setPageCollections(bridgeId!, seriesId, chapterId!, pageIndex, [collectionId]);
-      setLastCollectionId('page', collectionId);
-
       // Second PUT, carrying the content hash. Deliberately after the save has already landed:
       // SHA-256 over a ~1MB page through Hermes' JS crypto shim is slow enough to feel. Safe to
       // send partially — the route MERGES, so `chapterName`/`pageCount`/`sourceUrl` survive
@@ -78,17 +58,10 @@ export function usePageCollected(
         });
       }
     },
-    onMutate: async (collectionId: string | null) => {
+    onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: key });
       const prev = queryClient.getQueryData<number[]>(key);
-      if (prev) {
-        queryClient.setQueryData(
-          key,
-          collectionId === null
-            ? prev.filter((i) => i !== pageIndex)
-            : [...prev, pageIndex].sort((a, b) => a - b),
-        );
-      }
+      if (prev) queryClient.setQueryData(key, [...prev, pageIndex].sort((a, b) => a - b));
       return { prev };
     },
     onError: (_e, _next, ctx) => {
@@ -96,39 +69,23 @@ export function usePageCollected(
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: key });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.pageCollections(mock, bridgeId ?? '', seriesId, chapterId ?? '', pageIndex),
+      });
       // Prefix key: refreshes every collected grid whatever its type/sort/dir/collection.
       void queryClient.invalidateQueries({ queryKey: queryKeys.collectionItemsAll(mock) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.collections(mock) });
     },
   });
 
   return {
     /** `null` while unknown — the button stays disabled rather than showing a wrong state. */
     collected,
-    /**
-     * One-tap save/unsave. Resolves the destination from the last collection pages were filed into;
-     * returns **`'needs-pick'`** when there isn't a usable one, which the caller answers by opening
-     * the picker. Never invents a collection.
-     */
-    toggle: async (): Promise<'saved' | 'removed' | 'needs-pick' | 'noop'> => {
+    /** Saves an unsaved page; for a saved one returns `'pick'` for the caller to open the picker. */
+    toggle: (): 'saved' | 'pick' | 'noop' => {
       if (!enabled || collected === null) return 'noop';
-      if (collected) {
-        hapticSelection();
-        mutation.mutate(null);
-        return 'removed';
-      }
-      // Validated against the live list, so a deleted collection falls through to the picker
-      // instead of resurrecting itself. Through `fetchQuery`, NOT a bare `ds.getCollections()`:
-      // the collections list is server state, so it belongs in the query cache — this reuses the
-      // entry the selector and picker already populated (and respects its staleTime) instead of
-      // putting a network round trip in front of every tap.
-      const destination = resolveLastCollection(
-        'page',
-        await queryClient.fetchQuery(collectionsQuery(ds, mock)),
-      );
-      if (!destination) return 'needs-pick';
+      if (collected) return 'pick';
       hapticSelection();
-      mutation.mutate(destination);
+      mutation.mutate();
       return 'saved';
     },
   };

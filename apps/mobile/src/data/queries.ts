@@ -88,16 +88,18 @@ export const queryKeys = {
     ['library', mock, q, sort, collection, readState] as const,
   /** The user's collections. */
   collections: (mock: boolean) => ['collections', mock] as const,
+  // The membership keys hold `string[] | null` (null = not saved). They were renamed when `[]` stopped
+  // meaning "not saved", so a persisted cache from before can't be misread.
   /** One series' collection memberships (for the assign picker). */
   seriesCollections: (mock: boolean, bridgeId: string, seriesId: string) =>
-    ['seriesCollections', mock, bridgeId, seriesId] as const,
+    ['seriesMemberships', mock, bridgeId, seriesId] as const,
   /** One CHAPTER's collection memberships (for the assign picker). */
   chapterCollections: (mock: boolean, bridgeId: string, seriesId: string, chapterId: string) =>
-    ['chapterCollections', mock, bridgeId, seriesId, chapterId] as const,
+    ['chapterMemberships', mock, bridgeId, seriesId, chapterId] as const,
   /** One PAGE's collection memberships (for the assign picker). Separate from the chapter's index
    *  set, which is what the reader's save button reads. */
   pageCollections: (mock: boolean, bridgeId: string, seriesId: string, chapterId: string, pageIndex: number) =>
-    ['pageCollections', mock, bridgeId, seriesId, chapterId, pageIndex] as const,
+    ['pageMemberships', mock, bridgeId, seriesId, chapterId, pageIndex] as const,
   /** A scoped collected-items listing. Every variant sits under the `collectionItems` prefix so one
    *  write can invalidate them all — see `collectionItemsAll`. */
   collectionItems: (mock: boolean, query: api.CollectedItemsQuery) =>

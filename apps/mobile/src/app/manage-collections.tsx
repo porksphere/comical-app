@@ -21,8 +21,8 @@ import { useRouter } from '@/lib/nav';
  * The collections manager, pushed from the Library tab's selector ("Manage collections…"). Create,
  * rename, delete, and reorder collections. Reorder is the app's standard `ReorderableList` (styled
  * lift + neighbours spring apart, from a long-press on touch or the hover handle with a mouse).
- * Deleting a collection strips it from every member and PRUNES series/chapter favorites left with
- * none (the backend cascades). Mirrors `custom-pages.tsx`.
+ * Deleting a collection only strips it from its members — they stay saved, unfiled. Mirrors
+ * `custom-pages.tsx`.
  */
 export default function ManageCollectionsScreen() {
   const router = useRouter();
@@ -56,15 +56,7 @@ export default function ManageCollectionsScreen() {
 
   const confirmDelete = (id: string, name: string) =>
     openConfirm({
-      // There is no longer any asymmetry to explain: the library dissolved into collections, so a
-      // series is in the library by virtue of being in one — and anything whose last collection
-      // this was goes with it, series included. The host runs that cascade; the user should know
-      // first.
-      //
-      // What this must NOT say is that they lose their place. Read progress deliberately survives
-      // the cascade — precisely because tidying shelves can now remove a series, and that is the
-      // one thing the user can't get back. Re-add the series and the reader is where it was.
-      message: `“${name}” will be removed. Anything in it that isn’t in another collection — series, chapters and saved pages — leaves your library. Your reading progress is kept.`,
+      message: `“${name}” will be removed. Everything in it stays in your library.`,
       confirmLabel: 'Delete Collection',
       onConfirm: () => {
         deleteCollection(id);

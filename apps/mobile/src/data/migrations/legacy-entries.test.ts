@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, test, mock } from 'bun:test';
 
 // AsyncStorage reaches react-native, which bun can't parse (Flow-typed `react-native/index.js`).
 // An in-memory stand-in, as `asset-resolve.test.ts` does. It is the migration's ONLY platform
-// dependency — the default collection is reached by name, not through a persisted store.
+// dependency.
 let disk: Record<string, string> = {};
 mock.module('@react-native-async-storage/async-storage', () => ({
   default: {
@@ -25,7 +25,6 @@ mock.module('@react-native-async-storage/async-storage', () => ({
 }));
 const { InMemoryLibraryStore } = await import('@comical/library');
 const { migrateLegacyEntries } = await import('./legacy-entries');
-const { DEFAULT_COLLECTION } = await import('../default-collection');
 
 const ENTRIES = 'comical:lib:entries';
 const MIGRATED = 'comical:lib:entries.migrated';
@@ -49,7 +48,7 @@ describe('migrateLegacyEntries', () => {
     disk = {};
   });
 
-  test('rebuilds the shelf, parks the source, and files into the default collection', async () => {
+  test('rebuilds the shelf unfiled and parks the source', async () => {
     disk[ENTRIES] = doc(entry(), entry({ seriesId: 's2', title: 'Series Two' }));
     const store = new InMemoryLibraryStore();
 
@@ -58,15 +57,8 @@ describe('migrateLegacyEntries', () => {
 
     const items = await store.listCollectionItems({ type: 'series' });
     expect(items.map((i) => i.seriesId).sort()).toEqual(['s1', 's2']);
-    // Filed, because an unfiled series is swept by the next thing that touches it.
-    const collections = await store.listCollections();
-    expect(collections).toHaveLength(1);
-    expect(collections[0]?.name).toBe(DEFAULT_COLLECTION);
-    expect(items.every((i) => i.collectionIds.includes(collections[0]!.id))).toBe(true);
-    // Filing under the default collection's own NAME is what makes the rebuilt shelf this device's
-    // default — `resolveDefaultCollection` finds it there on the first save and pins its id from
-    // then on. Deliberately not pinned here: a persisted write at startup lands inside the window
-    // where Legend State drops it, silently.
+    expect(await store.listCollections()).toHaveLength(0);
+    expect(items.every((i) => i.collectionIds.length === 0)).toBe(true);
 
     // The source survives, renamed — it is the only copy of the shelf until a device confirms it.
     expect(disk[ENTRIES]).toBeUndefined();
