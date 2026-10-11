@@ -98,7 +98,14 @@ export default function BridgeSettingsScreen() {
       const body = buildSettingsBody(s.data.settings, s.data.values, s.edits);
       void s.ds
         .putBridgeSettings(s.bridgeId, body)
-        .then(() => s.queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(s.bridgeId!) }))
+        // The summaries too: their `secretsSet` is what every favorite star gates on, so a login
+        // saved here would otherwise leave the stars reading "Log in" until the cache went stale.
+        .then(() =>
+          Promise.all([
+            s.queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(s.bridgeId!) }),
+            s.queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSummaries() }),
+          ]),
+        )
         .catch(() => {}); // best-effort; the screen is gone, and a bad value surfaces next time it's opened
     },
     [],
