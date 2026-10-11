@@ -1133,6 +1133,7 @@ export async function mockGetFavoritesImportPreview(bridgeId: string): Promise<F
 export async function mockImportBridgeFavorites(
   bridgeId: string,
   items?: FavoritesImportItem[],
+  opts: { collectionIds?: string[] } = {},
 ): Promise<FavoritesImportResult> {
   await delay(500);
   const selection: FavoritesImportItem[] =
@@ -1150,7 +1151,7 @@ export async function mockImportBridgeFavorites(
       bridgeId,
       item.seriesId,
       { seriesTitle: item.title, ...(item.thumbnailUrl !== undefined && { thumbnailUrl: item.thumbnailUrl }) },
-      await mockDefaultCollectionId(),
+      opts.collectionIds?.[0] ?? (await mockDefaultCollectionId()),
     );
     imported++;
     // The mock library has no series-group model, so a confirmed link is only counted, not stored.

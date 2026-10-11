@@ -1707,11 +1707,12 @@ export function getFavoritesImportPreview(
 export function importBridgeFavorites(
   bridgeId: string,
   items?: FavoritesImportItem[],
+  opts: { collectionIds?: string[] } = {},
   signal?: AbortSignal,
 ): Promise<FavoritesImportResult> {
   return fetchPost(
     `/library/import/bridges/${encodeURIComponent(bridgeId)}/favorites`,
-    items ? { items } : {},
+    { ...(items && { items }), ...opts },
     signal,
   );
 }

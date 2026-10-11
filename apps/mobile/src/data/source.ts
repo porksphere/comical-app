@@ -111,6 +111,7 @@ export interface DataSource {
   importBridgeFavorites(
     bridgeId: string,
     items?: api.FavoritesImportItem[],
+    opts?: { collectionIds?: string[] },
     signal?: AbortSignal,
   ): Promise<api.FavoritesImportResult>;
 
@@ -676,7 +677,7 @@ const realDataSource: DataSource = {
     return entry === null ? null : toLibraryItem(entry);
   },
   getFavoritesImportPreview: (bridgeId, signal) => api.getFavoritesImportPreview(bridgeId, signal),
-  importBridgeFavorites: (bridgeId, items, signal) => api.importBridgeFavorites(bridgeId, items, signal),
+  importBridgeFavorites: (bridgeId, items, opts, signal) => api.importBridgeFavorites(bridgeId, items, opts, signal),
   getTrackerImportPreview: (trackerId, signal) => api.getTrackerImportPreview(trackerId, signal),
   resolveTrackerImport: (trackerId, bridgeId, entries, signal) =>
     api.resolveTrackerImport(trackerId, bridgeId, entries, signal),
@@ -1066,7 +1067,7 @@ const mockDataSource: DataSource = {
   isInLibrary: (bridgeId, seriesId) => mock.mockIsInLibrary(bridgeId, seriesId),
   getLibrarySeries: (bridgeId, seriesId) => mock.mockGetLibrarySeries(bridgeId, seriesId),
   getFavoritesImportPreview: (bridgeId) => mock.mockGetFavoritesImportPreview(bridgeId),
-  importBridgeFavorites: (bridgeId, items) => mock.mockImportBridgeFavorites(bridgeId, items),
+  importBridgeFavorites: (bridgeId, items, opts) => mock.mockImportBridgeFavorites(bridgeId, items, opts),
   getTrackerImportPreview: (trackerId) => mock.mockGetTrackerImportPreview(trackerId),
   resolveTrackerImport: (trackerId, bridgeId, entries) => mock.mockResolveTrackerImport(bridgeId, entries),
   importTrackerEntries: (trackerId, items, opts) => mock.mockImportTrackerEntries(trackerId, items, opts),

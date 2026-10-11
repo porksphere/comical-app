@@ -44,7 +44,9 @@ import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { SettingsRowHeight, Spacing } from '@/constants/theme';
 import type { FavoritesImportCandidate, FavoritesImportItem } from '@/data/api';
-import { favoritesImportPreviewQuery, queryKeys } from '@/data/queries';
+import { resolveDefaultCollection } from '@/data/default-collection';
+import { getDefaultCollectionId, setDefaultCollectionId } from '@/data/default-collection-store';
+import { collectionsQuery, favoritesImportPreviewQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
@@ -116,7 +118,7 @@ export default function FavoritesImportScreen() {
   const [importError, setImportError] = useState<string | null>(null);
 
   const importMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const chosen: FavoritesImportItem[] = rows
         .filter((i) => ms.selected.has(i.seriesId))
         .map((i) => ({
@@ -128,7 +130,16 @@ export default function FavoritesImportScreen() {
           // among them isn't worth a second decision on this screen.
           ...(i.status === 'duplicate' && i.matches?.[0] && { linkTo: i.matches[0].key }),
         }));
-      return ds.importBridgeFavorites(bridgeId, chosen);
+      // Filed where a single Save would put them: the Library button reads "saved" as "in a
+      // collection", so an unfiled import shows as not in the library at all.
+      const collectionId = await resolveDefaultCollection({
+        list: () => queryClient.fetchQuery(collectionsQuery(ds, mock)),
+        create: (name) => ds.createCollection(name),
+        rename: (id, name) => ds.renameCollection(id, name),
+        storedId: getDefaultCollectionId,
+        remember: setDefaultCollectionId,
+      });
+      return ds.importBridgeFavorites(bridgeId, chosen, { collectionIds: [collectionId] });
     },
     onSuccess: (result) => {
       // Only library-side state moved — no bridge content changed, so this stays targeted rather
@@ -136,7 +147,7 @@ export default function FavoritesImportScreen() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.libraryList(mock) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.collections(mock) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.favoritesImportPreview(mock, bridgeId) });
-      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'inLibrary' });
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'inLibrary' || q.queryKey[0] === 'seriesCollections' });
 
       const linked = result.linked > 0 ? ` (${result.linked} linked as another source)` : '';
       showToast(result.imported === 0 ? 'Nothing to import' : `${result.imported} series imported${linked}`);
