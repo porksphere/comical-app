@@ -11,9 +11,9 @@ import { closeSeriesPane, isSeriesPaneOpen } from '@/lib/series-pane';
 
 /**
  * Back closes whatever is over the page before it leaves the page. Everything that closes on Escape
- * — the reader, sheets, menus, the settings panel — is asked the same way Escape asks it, and one
- * that answers cancels the event. The series pane has no history entry and no Escape of its own, so
- * it comes next; only then does the page go back.
+ * — the series page's layers, sheets, menus, the settings panel — is asked the same way Escape asks
+ * it, and one that answers cancels the event. The series pane has no history entry, so if nothing in
+ * it answered it comes next; only then does the page go back.
  */
 function goBack(): void {
   const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });

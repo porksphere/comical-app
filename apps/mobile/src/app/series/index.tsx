@@ -59,6 +59,7 @@ import {
   seriesDetailQuery,
   seriesListQuery,
 } from '@/data/queries';
+import { peekSearchIntent, type SearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useMissingBridge } from '@/hooks/use-bridges';
@@ -79,7 +80,14 @@ import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } fro
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
-import { closeSeriesPane } from '@/lib/series-pane';
+import {
+  cancelSeriesPaneRestore,
+  parkSeriesPane,
+  peekSeriesPaneLayers,
+  scheduleSeriesPaneRestore,
+  setSeriesPaneLayers,
+  type SeriesPaneLayer,
+} from '@/lib/series-pane';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import { useDimWindowControls, useWindowThemeColor, watchWindowTopEdge } from '@/lib/window-controls';
@@ -1011,11 +1019,14 @@ function SeriesReaderInstance({
   params,
   depth,
   onPopLayer,
+  isTop,
   sequence,
 }: {
   params: SeriesReaderParams;
   depth: number;
   onPopLayer: () => void;
+  /** Whether this instance is the top of the stack — the one keyboard back acts on (web). */
+  isTop: boolean;
   /** Present = this instance reads a cross-series sequence instead of a chapter. */
   sequence?: ReaderSequenceRun;
 }) {
@@ -1653,7 +1664,8 @@ function SeriesReaderInstance({
   );
 
   /**
-   * Reading STARTED, in the pane — so hand this series to the full-screen route and let the pane go.
+   * Reading STARTED, in the pane — so hand this series to the full-screen route, parking the pane to
+   * come back to when the reader closes.
    *
    * A reader is the one thing on web that still takes the whole window (see components/series-pane),
    * and the details half of this screen is what the pane exists to show. The handover is an ordinary
@@ -1674,7 +1686,7 @@ function SeriesReaderInstance({
     } else if (isDirect) {
       next.direct = '1';
     }
-    closeSeriesPane();
+    parkSeriesPane();
     router.push({ pathname: '/series', params: next });
     return true;
   }, [inPane, params, target, isDirect, router]);
@@ -2497,6 +2509,22 @@ function SeriesReaderInstance({
   // exit, which is what its own back button does with the reader route anyway.
   const backStepsHome = !detailsActive && !!desktopShell();
   const revealDetails = useCallback(() => setRevealed(1), [setRevealed]);
+  // Escape is the chevron. Only the TOP layer answers: every layer beneath is a whole series page
+  // with its own reader, and when each one listened, the reader's fallback popped the route — the
+  // whole stack, from three layers up.
+  useEffect(() => {
+    if (!IS_WEB || !isTop || typeof window === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      e.preventDefault();
+      if (backStepsHome) revealDetails();
+      else closeLayer();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isTop, backStepsHome, revealDetails, closeLayer]);
   // The back-swipe recipe. FULL-SURFACE, not edge-only — a rightward drag anywhere on the details
   // goes back, the way a full-screen pop gesture does. What counts as an activation is
   // lib/back-swipe's, declarative (activeOffsetX/failOffset*), for the reasons written there.
@@ -3807,7 +3835,6 @@ function SeriesReaderInstance({
               standby={detailsSettled || !entranceSettled}
               entering={!entranceSettled}
               inLibrary={inLibrary}
-              onEscape={backStepsHome ? revealDetails : undefined}
             />
           )}
             {/* The Details pill — the guaranteed collapse path in both modes (webtoon's expanded
@@ -3944,7 +3971,7 @@ function LeavingMask({
  * on the search/downloads sub-pages, see useDrillRelatedSeries). Only the topmost instance takes
  * touches; the ones beneath stay live purely as the see-through under its gestures.
  */
-type DrillEntry = { key: number } & ({ kind: 'series'; params: SeriesReaderParams } | { kind: 'search' });
+type DrillEntry = { key: number } & SeriesPaneLayer;
 
 // memo: pushing/popping a layer re-renders the wrapper below — without this, every mounted
 // instance (each a whole series page) re-renders along with it for nothing.
@@ -3955,7 +3982,18 @@ export default function SeriesReaderScreen() {
   const router = useRouter();
   const { width } = useViewport();
   const inPane = useSeriesPaneWidth() !== null;
-  const [drills, setDrills] = useState<DrillEntry[]>([]);
+  // A pane coming back from the full-screen reader comes back with its stack (see parkSeriesPane).
+  const [drills, setDrills] = useState<DrillEntry[]>(() =>
+    inPane ? peekSeriesPaneLayers().map((layer, i) => ({ ...layer, key: i + 1 })) : [],
+  );
+  useEffect(() => {
+    if (inPane) setSeriesPaneLayers(drills.map(({ key: _key, ...layer }) => layer));
+  }, [inPane, drills]);
+  useEffect(() => {
+    if (inPane) return;
+    cancelSeriesPaneRestore();
+    return scheduleSeriesPaneRestore;
+  }, [inPane]);
 
   // ── Sequence mode (`seq=1`): the reader pages over a COLLECTION's saved pages ──
   // The screen's share is deliberately small: resolve the album (use-reader-sequence) and mount
@@ -4004,19 +4042,22 @@ export default function SeriesReaderScreen() {
   useEffect(() => {
     if (seqEmpty) router.back();
   }, [seqEmpty, router]);
-  const nextKey = useRef(1);
+  const nextKey = useRef(drills.length + 1);
   // The stack's shape, in the trace. A layer bug is by definition about which of several mounted
   // pages is reacting, and a recording had no way to say what was even mounted.
   const drill = useCallback((p: Record<string, string>) => {
     setDrills((d) => {
       traceJS('layer', 'push.series', { depth: d.length + 1 });
-      return [...d, { key: nextKey.current++, kind: 'series', params: p as SeriesReaderParams }];
+      return [...d, { key: nextKey.current++, kind: 'series', params: p }];
     });
   }, []);
   const openSearch = useCallback(() => {
+    // Held on the entry, not just handed over: the search consumes the one-shot intent, and a
+    // restored pane has to be able to open the same search again.
+    const intent = peekSearchIntent();
     setDrills((d) => {
       traceJS('layer', 'push.search', { depth: d.length + 1 });
-      return [...d, { key: nextKey.current++, kind: 'search' }];
+      return [...d, { key: nextKey.current++, kind: 'search', intent }];
     });
   }, []);
   const popLayer = useCallback(() => {
@@ -4062,7 +4103,13 @@ export default function SeriesReaderScreen() {
             // ONE instance, never re-keyed: the pager inside lives for the whole album, so a
             // series cross is a plain page turn — the instance re-points chrome and details to
             // the visible entry itself.
-            <MemoSeriesReaderInstance params={seqParams} depth={0} onPopLayer={popLayer} sequence={seqRun} />
+            <MemoSeriesReaderInstance
+              params={seqParams}
+              depth={0}
+              onPopLayer={popLayer}
+              isTop={drills.length === 0}
+              sequence={seqRun}
+            />
           ) : (
             // Cold deep link: the collection query hasn't answered yet (a warm cache resolves
             // synchronously and never shows this).
@@ -4071,7 +4118,7 @@ export default function SeriesReaderScreen() {
             </View>
           )
         ) : (
-          <MemoSeriesReaderInstance params={params} depth={0} onPopLayer={popLayer} />
+          <MemoSeriesReaderInstance params={params} depth={0} onPopLayer={popLayer} isTop={drills.length === 0} />
         )}
       </Animated.View>
       {drills.map((d, i) => (
@@ -4081,9 +4128,9 @@ export default function SeriesReaderScreen() {
           style={i === top ? StyleSheet.absoluteFill : [StyleSheet.absoluteFill, pushed]}
           pointerEvents={i === top ? 'auto' : 'none'}>
           {d.kind === 'series' ? (
-            <MemoSeriesReaderInstance params={d.params} depth={i + 1} onPopLayer={popLayer} />
+            <MemoSeriesReaderInstance params={d.params} depth={i + 1} onPopLayer={popLayer} isTop={i === top} />
           ) : (
-            <SearchLayer onPopLayer={popLayer} coverSV={layerCover} isTop={i === top} />
+            <SearchLayer onPopLayer={popLayer} coverSV={layerCover} isTop={i === top} intent={d.intent} />
           )}
         </Animated.View>
       ))}
@@ -4103,11 +4150,13 @@ function SearchLayer({
   onPopLayer,
   coverSV,
   isTop,
+  intent,
 }: {
   onPopLayer: () => void;
   /** See SeriesReaderInstance's — the parallax this layer drives on the series beneath it. */
   coverSV?: SharedValue<number>;
   isTop?: boolean;
+  intent: SearchIntent | null;
 }) {
   const { width } = useViewport();
   const theme = useTheme();
@@ -4176,6 +4225,19 @@ function SearchLayer({
     });
     return () => sub.remove();
   }, [closeLayer]);
+  // Escape, as on the series layers (see SeriesReaderInstance) — top layer only.
+  useEffect(() => {
+    if (!IS_WEB || !isTop || typeof window === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      e.preventDefault();
+      closeLayer();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isTop, closeLayer]);
   // The back-swipe. Activation is the shared one (lib/back-swipe) — literally the same code the
   // series instance runs, which is the point: two surfaces that both claim to have a back-swipe
   // must agree on what one is. Everything after it is this layer's own, because here a back-swipe
@@ -4270,8 +4332,8 @@ function SearchLayer({
   // `isTop` matters for more than looks: it is how the embedded search knows to ignore an intent
   // meant for a layer above it (see the subscription in search.tsx).
   const embedded = useMemo(
-    () => ({ onBack: closeLayer, scrollGesture, isTop: !!isTop, scrollEnabled: !swipeLocked }),
-    [closeLayer, scrollGesture, isTop, swipeLocked],
+    () => ({ onBack: closeLayer, scrollGesture, isTop: !!isTop, scrollEnabled: !swipeLocked, intent }),
+    [closeLayer, scrollGesture, isTop, swipeLocked, intent],
   );
   return (
     <View style={styles.container}>
@@ -4489,8 +4551,6 @@ const ReaderPane = forwardRef<
     /** Library membership (undefined while still resolving) — picks the progress-recording path.
      *  Queried by the screen, not here: this pane re-renders every page sweep. */
     inLibrary?: boolean;
-    /** What Escape does instead of leaving the route (web only). */
-    onEscape?: () => void;
   }
 >(function ReaderPane(
   {
@@ -4524,13 +4584,11 @@ const ReaderPane = forwardRef<
     standby,
     entering = false,
     inLibrary,
-    onEscape,
   },
   ref,
 ) {
   const ds = useDataSource();
   const mock = useMockActive();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [settings] = useReaderSettings();
   // The fit the pages are drawn to: the setting, or the axis a `switch-fit` double-tap has put in
@@ -4929,12 +4987,6 @@ const ReaderPane = forwardRef<
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
-      if (e.key === 'Escape') {
-        if (onEscape) onEscape();
-        else router.back();
-        e.preventDefault();
-        return;
-      }
       // Alt+Left is the desktop shell's Back, not a page turn.
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       const isRight = e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D';
@@ -4947,7 +4999,7 @@ const ReaderPane = forwardRef<
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [router, onEscape, turnNext, turnPrev, settings.direction]);
+  }, [turnNext, turnPrev, settings.direction]);
 
   return (
     <>

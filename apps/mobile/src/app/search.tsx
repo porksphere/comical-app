@@ -27,7 +27,13 @@ import type { ContentRow } from '@/data/content-rows';
 import { useDedupedPages } from '@/data/grid-pages';
 import { toLibraryCard } from '@/data/library-card';
 import { fetchBrowseScope, libraryQuery, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
-import { clearSearchIntent, peekSearchIntent, subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
+import {
+  clearSearchIntent,
+  peekSearchIntent,
+  subscribeSearchIntent,
+  takeSearchIntent,
+  type SearchIntent,
+} from '@/data/search-intent';
 import { COMICAL_BRIDGE_ID, isComicalBridge, useInheritedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Bridge } from '@/data/types';
@@ -82,6 +88,9 @@ export type SearchEmbedded = {
   /** False while this layer's back-swipe owns the touch — the results list stops scrolling under
    *  a page that is being dragged away. See RecyclerList's `scrollEnabled`. */
   scrollEnabled?: boolean;
+  /** The intent this layer was opened with — handed in rather than peeked, so a layer remounted
+   *  after the intent was consumed (a restored pane) opens the same search. */
+  intent?: SearchIntent | null;
 };
 
 /** The rail's search on desktop (see lib/sidebar-search). The field is in the rail, so this shows only
@@ -104,7 +113,9 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // Take the one-shot Series→Search intent exactly once (lazy initializer), before the first render
   // reads it. `query` seeds directly from a `query` intent; `tag`/`meta` are stashed and applied
   // once this bridge's filter defs settle (below), mirroring the old Browse focus-effect flow.
-  const [initialIntent] = useState(() => (docked ? null : peekSearchIntent()));
+  const [initialIntent] = useState(() =>
+    docked ? null : embedded?.intent !== undefined ? embedded.intent : peekSearchIntent(),
+  );
   // Consume it AFTER mount: a consuming read in the initializer loses the intent under
   // StrictMode's double invocation (see peekSearchIntent).
   useEffect(() => {

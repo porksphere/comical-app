@@ -21,11 +21,33 @@
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
+import type { SearchIntent } from '@/data/search-intent';
 import type { PaneParams } from '@/lib/pane';
+
+/** One layer stacked over the pane's series — a drilled series or a search (see SeriesReaderScreen). */
+export type SeriesPaneLayer =
+  | { kind: 'series'; params: Record<string, string> }
+  | { kind: 'search'; intent: SearchIntent | null };
 
 type SeriesPaneState = { available: boolean; params: PaneParams | null };
 
 const seriesPane$ = observable<SeriesPaneState>({ available: false, params: null });
+
+/**
+ * The open pane's layer stack, mirrored here by the pane's own screen so it outlives the screen: a
+ * pane remounted with the same series — un-parked, below — comes back with everything that was
+ * stacked on it, not just the series at the bottom.
+ */
+let layers: readonly SeriesPaneLayer[] = [];
+
+/**
+ * The pane as it was when reading started in it. The handover to the full-screen reader has to
+ * unmount the pane (two series pages can't be mounted at once, see `openSeriesPane`), and without
+ * this, closing the reader dropped you on the grid with the series you came from — and the search
+ * and series stacked on it — gone.
+ */
+let parked: { params: PaneParams; layers: readonly SeriesPaneLayer[] } | null = null;
+let restoreTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
 export function useSeriesPane(): SeriesPaneState {
@@ -35,7 +57,47 @@ export function useSeriesPane(): SeriesPaneState {
 /** Called by `AppTabs` with whether it is currently rendering a pane at all. */
 export function setSeriesPaneAvailable(available: boolean): void {
   seriesPane$.available.set(available);
-  if (!available) seriesPane$.params.set(null);
+  if (!available) {
+    seriesPane$.params.set(null);
+    layers = [];
+    parked = null;
+  }
+}
+
+export function setSeriesPaneLayers(next: readonly SeriesPaneLayer[]): void {
+  layers = next;
+}
+
+export function peekSeriesPaneLayers(): readonly SeriesPaneLayer[] {
+  return layers;
+}
+
+/** Give the window to a reader, keeping the pane to come back to. */
+export function parkSeriesPane(): void {
+  const params = seriesPane$.params.peek();
+  parked = params ? { params, layers } : null;
+  seriesPane$.params.set(null);
+}
+
+/**
+ * Called as a full-screen series page unmounts. Deferred a tick so StrictMode's simulated unmount —
+ * cancelled by the remount right behind it (`cancelSeriesPaneRestore`) — doesn't reopen the pane
+ * under a reader that is still up.
+ */
+export function scheduleSeriesPaneRestore(): void {
+  if (!parked) return;
+  clearTimeout(restoreTimer);
+  restoreTimer = setTimeout(() => {
+    const restore = parked;
+    parked = null;
+    if (!restore || !seriesPane$.available.peek()) return;
+    layers = restore.layers;
+    seriesPane$.params.set(restore.params);
+  }, 0);
+}
+
+export function cancelSeriesPaneRestore(): void {
+  clearTimeout(restoreTimer);
 }
 
 /**
@@ -58,6 +120,8 @@ export function openSeriesPane(params: PaneParams): boolean {
     seriesPane$.params.set(null);
     return false;
   }
+  layers = [];
+  parked = null;
   seriesPane$.params.set(params);
   return true;
 }
@@ -67,5 +131,6 @@ export function isSeriesPaneOpen(): boolean {
 }
 
 export function closeSeriesPane(): void {
+  layers = [];
   seriesPane$.params.set(null);
 }
