@@ -1,7 +1,8 @@
 /**
- * Which view the Library tab is showing — `null` for the library's own series grid, `ALL_CHAPTERS` /
- * `ALL_PAGES` for every saved chapter or page whatever its collections, a collection id for that
- * collection's contents.
+ * Which view the Library tab is showing — `null` for All (the library's own series grid),
+ * `ALL_CHAPTERS` / `ALL_PAGES` for All narrowed to every saved chapter or page whatever its
+ * collections, a collection id for that collection's contents. The three All views are one entry in
+ * the collection lists; the kind is a second axis, picked beside the title.
  *
  * Lifted out of the Library screen's `useState` because the sidebar drives it too, and a selection
  * two surfaces can move is shared state by definition. Same split the bridge selection already makes
@@ -25,24 +26,40 @@ export function allItemsType(view: string | null): 'chapter' | 'page' | null {
   return view === ALL_CHAPTERS ? 'chapter' : view === ALL_PAGES ? 'page' : null;
 }
 
-export const ALL_VIEW_NAMES = { series: 'All Series', chapter: 'All Chapters', page: 'All Pages' } as const;
+export function isAllView(view: string | null): boolean {
+  return view === null || allItemsType(view) !== null;
+}
+
+export const ALL_VIEW_NAME = 'All';
+
+export type ItemKind = 'series' | 'chapter' | 'page';
+export const ITEM_KIND_LABELS: Record<ItemKind, string> = { series: 'Series', chapter: 'Chapters', page: 'Pages' };
+const KIND_VIEWS: Record<ItemKind, string | null> = { series: null, chapter: ALL_CHAPTERS, page: ALL_PAGES };
+
+export function itemKindOf(view: string | null): ItemKind {
+  return allItemsType(view) ?? 'series';
+}
+
+export function viewForItemKind(kind: ItemKind): string | null {
+  return KIND_VIEWS[kind];
+}
+
+/** The kinds All can be narrowed to. A kind is offered once anything of it is saved — and while it is
+ *  the selection, so emptying it doesn't pull the option out from under the screen showing it. */
+export function itemKindOptions(kinds: { chapter: boolean; page: boolean }, selected: string | null): ItemKind[] {
+  return [
+    'series',
+    ...(kinds.chapter || selected === ALL_CHAPTERS ? (['chapter'] as const) : []),
+    ...(kinds.page || selected === ALL_PAGES ? (['page'] as const) : []),
+  ];
+}
 
 export type LibraryView = { id: string | null; name: string; testKey: string };
 
-/** The Library's views in menu order, for the selector and the sidebar. A kind view is listed once
- *  anything of that kind is saved — and while it is the selection, so emptying it doesn't pull the
- *  row out from under the screen showing it. */
-export function libraryViews(
-  collections: Collection[],
-  kinds: { chapter: boolean; page: boolean },
-  selected: string | null,
-): LibraryView[] {
+/** The Library's views in menu order, for the selector and the sidebar. */
+export function libraryViews(collections: Collection[]): LibraryView[] {
   return [
-    { id: null, name: ALL_VIEW_NAMES.series, testKey: 'all' },
-    ...(kinds.chapter || selected === ALL_CHAPTERS
-      ? [{ id: ALL_CHAPTERS, name: ALL_VIEW_NAMES.chapter, testKey: 'chapters' }]
-      : []),
-    ...(kinds.page || selected === ALL_PAGES ? [{ id: ALL_PAGES, name: ALL_VIEW_NAMES.page, testKey: 'pages' }] : []),
+    { id: null, name: ALL_VIEW_NAME, testKey: 'all' },
     ...collections.map((c) => ({ id: c.id, name: c.name, testKey: c.id })),
   ];
 }

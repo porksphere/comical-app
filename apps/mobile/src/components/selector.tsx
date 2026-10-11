@@ -46,6 +46,12 @@ type SelectorProps = {
   testID: string;
 };
 
+/** The `subtitle` trigger's type and caret, for a bar title that sits beside a `Selector`. */
+export function useSubtitleSelectorStyle() {
+  const compact = useIsCompact();
+  return { label: compact ? styles.subtitleCompact : styles.subtitleWide, caret: styles.caretSm };
+}
+
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
 export function Selector({ title, value, options, onChange, thumbnails, sources, labels, size = 'title', testID }: SelectorProps) {
   const { ref, openAt } = useAnchoredOverlay();

@@ -8,7 +8,7 @@ import { StyleSheet, View } from 'react-native';
 import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { LibraryCollectionSelector } from '@/components/library-collection-selector';
+import { LibraryCollectionSelector, LibraryKindSelector } from '@/components/library-collection-selector';
 import { LibraryFilterButton, SHOW_LABELS } from '@/components/library-filter-button';
 import { LibrarySortButton } from '@/components/library-sort-button';
 import { RetryBlock } from '@/components/retry-block';
@@ -18,7 +18,7 @@ import { CollectedItemsGrid } from '@/components/collections/collected-items-gri
 import { CollectedSortButton } from '@/components/collections/collected-sort-button';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { HoldActionTarget } from '@/components/hold-action-target';
-import { BridgeThumbRadius, BridgeThumbSize } from '@/components/selector';
+import { BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
 import { coverStyles } from '@/components/series-card';
 import { SeriesGrid } from '@/components/series-grid';
 import { Skeleton } from '@/components/skeleton';
@@ -28,8 +28,9 @@ import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import { useCollectedView } from '@/data/collected-view';
 import { collectionItemsQuery, libraryQuery } from '@/data/queries';
 import {
-  ALL_VIEW_NAMES,
+  ALL_VIEW_NAME,
   allItemsType,
+  isAllView,
   setSelectedCollection,
   useSelectedCollectionId,
 } from '@/data/selected-collection';
@@ -106,13 +107,9 @@ export default function LibraryScreen() {
   // carries its own bridge, unlike the Browse grid's single-bridge view).
   const { knownById: bridgeById } = useBridgeMap();
   const { collections } = useCollections();
-  // What the bar calls the current view: a collection by its name, the library grid by the tab's.
   const viewName =
-    collectionFilter === null
-      ? 'Library'
-      : allType
-        ? ALL_VIEW_NAMES[allType]
-        : (collections.find((c) => c.id === collectionFilter)?.name ?? 'Library');
+    (!isAllView(collectionFilter) && collections.find((c) => c.id === collectionFilter)?.name) || ALL_VIEW_NAME;
+  const titleType = useSubtitleSelectorStyle();
 
   // Search + sort both fold into this one query and re-render the grid in place.
   const { data: items = undefined, error, isLoading, refetch } = useQuery({
@@ -410,17 +407,20 @@ export default function LibraryScreen() {
             // control for one selection. Unlike Browse — whose `Home` selector is a different axis
             // and stays — this one IS the screen's heading, so it degrades to a plain title rather
             // than leaving the bar with nothing in it.
-            railNav ? (
-              <ThemedText numberOfLines={1} style={styles.railTitle}>
-                {viewName}
-              </ThemedText>
-            ) : (
-              <LibraryCollectionSelector
-                value={collectionFilter}
-                collections={collections}
-                onChange={setCollectionFilter}
-              />
-            )
+            <>
+              {railNav ? (
+                <ThemedText numberOfLines={1} style={[styles.railTitle, titleType.label]}>
+                  {viewName}
+                </ThemedText>
+              ) : (
+                <LibraryCollectionSelector
+                  value={collectionFilter}
+                  collections={collections}
+                  onChange={setCollectionFilter}
+                />
+              )}
+              <LibraryKindSelector value={collectionFilter} onChange={setCollectionFilter} />
+            </>
           )
         }
         right={
@@ -482,16 +482,11 @@ function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }
 }
 
 const styles = StyleSheet.create({
-  // The type the collection selector's own trigger uses, so swapping one for the other doesn't
-  // change the bar's height or the title's weight.
   railTitle: {
     flexShrink: 1,
     minWidth: 0,
     // The selector's own inset, so the title stands the same step off the tile either way.
     paddingHorizontal: Spacing.one,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '700',
   },
   barThumb: {
     borderRadius: BridgeThumbRadius,
