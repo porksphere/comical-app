@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 import { desktopShell } from '@/lib/desktop-shell';
 import { router } from '@/lib/nav';
 import { deliverOAuthReturn } from '@/lib/oauth-return';
-import { closeSeriesPane, isSeriesPaneOpen } from '@/lib/series-pane';
+import { closeSeriesPane, isSeriesPaneCovered, isSeriesPaneOpen } from '@/lib/series-pane';
 
 /**
  * Back closes whatever is over the page before it leaves the page. Everything that closes on Escape
@@ -18,7 +18,7 @@ import { closeSeriesPane, isSeriesPaneOpen } from '@/lib/series-pane';
 function goBack(): void {
   const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
   if (!document.dispatchEvent(escape)) return;
-  if (isSeriesPaneOpen()) return closeSeriesPane();
+  if (isSeriesPaneOpen() && !isSeriesPaneCovered()) return closeSeriesPane();
   window.history.back();
 }
 

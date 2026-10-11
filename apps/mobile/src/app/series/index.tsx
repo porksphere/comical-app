@@ -59,7 +59,6 @@ import {
   seriesDetailQuery,
   seriesListQuery,
 } from '@/data/queries';
-import { peekSearchIntent, type SearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useMissingBridge } from '@/hooks/use-bridges';
@@ -67,7 +66,7 @@ import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
 import { useReaderSettings, setFitOverride, useFitOverride } from '@/hooks/use-reader-settings';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
-import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
+import { LARGE_SCREEN_BREAKPOINT, useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
@@ -80,14 +79,7 @@ import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } fro
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
-import {
-  cancelSeriesPaneRestore,
-  parkSeriesPane,
-  peekSeriesPaneLayers,
-  scheduleSeriesPaneRestore,
-  setSeriesPaneLayers,
-  type SeriesPaneLayer,
-} from '@/lib/series-pane';
+import { coverSeriesPane, setSeriesPaneTop, useSeriesPaneCovered, useSeriesPaneShowsTop } from '@/lib/series-pane';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import { useDimWindowControls, useWindowThemeColor, watchWindowTopEdge } from '@/lib/window-controls';
@@ -1664,18 +1656,27 @@ function SeriesReaderInstance({
   );
 
   /**
-   * Reading STARTED, in the pane — so hand this series to the full-screen route, parking the pane to
-   * come back to when the reader closes.
+   * Reading STARTED, in the pane — so hand this series to the full-screen route, over the pane.
    *
    * A reader is the one thing on web that still takes the whole window (see components/series-pane),
    * and the details half of this screen is what the pane exists to show. The handover is an ordinary
    * reader-first push — the same params a History row carries — because `openSeriesPane` declines
    * those on purpose; there is no exit hatch here that the rest of the app doesn't already use.
    *
+   * The pane is not closed: closing the reader comes back to it as it was, stack and all.
+   *
    * Answers false outside the pane, which is every native build and every narrow viewport, so the
    * reveal below is untouched there.
    */
   const inPane = useSeriesPaneWidth() !== null;
+  const [paneHandoffs, setPaneHandoffs] = useState(0);
+  // A swipe that commits to the reader has already animated `progress` there itself, so the pane
+  // left behind would be showing a reader when it is uncovered.
+  useEffect(() => {
+    if (paneHandoffs === 0) return;
+    progress.set(1);
+    detailsActiveSV.set(true);
+  }, [paneHandoffs, progress, detailsActiveSV]);
   const leavePaneToRead = useCallback((): boolean => {
     if (!inPane) return false;
     const next: Record<string, string> = { reader: '1', start: String(target?.start ?? 0) };
@@ -1686,7 +1687,7 @@ function SeriesReaderInstance({
     } else if (isDirect) {
       next.direct = '1';
     }
-    parkSeriesPane();
+    setPaneHandoffs((n) => n + 1);
     router.push({ pathname: '/series', params: next });
     return true;
   }, [inPane, params, target, isDirect, router]);
@@ -2504,10 +2505,13 @@ function SeriesReaderInstance({
     });
     return () => sub.remove();
   }, [detailsActive, setRevealed, closeLayer]);
-  // The desktop shell's back steps home the same way — Escape, the chevron, and the mouse's back
-  // button (which arrives as Escape, see lib/desktop-commands). A browser tab keeps the one-step
-  // exit, which is what its own back button does with the reader route anyway.
-  const backStepsHome = !detailsActive && !!desktopShell();
+  // Desktop back steps home the same way — Escape, the chevron, and the shell's mouse back button
+  // (which arrives as Escape, see lib/desktop-commands). Not when the desktop pane beneath this
+  // reader already shows this series: its details are right there, so stepping home would show
+  // them twice, one over the other. A phone-width browser keeps the one-step exit.
+  const isDesktop = useIsDesktop();
+  const paneShowsThis = useSeriesPaneShowsTop(`${bridgeId ?? ''}:${id ?? ''}`) && !inPane && depth === 0;
+  const backStepsHome = !detailsActive && (isDesktop || !!desktopShell()) && !paneShowsThis;
   const revealDetails = useCallback(() => setRevealed(1), [setRevealed]);
   // Escape is the chevron. Only the TOP layer answers: every layer beneath is a whole series page
   // with its own reader, and when each one listened, the reader's fallback popped the route — the
@@ -3835,6 +3839,7 @@ function SeriesReaderInstance({
               standby={detailsSettled || !entranceSettled}
               entering={!entranceSettled}
               inLibrary={inLibrary}
+              keyboard={isTop}
             />
           )}
             {/* The Details pill — the guaranteed collapse path in both modes (webtoon's expanded
@@ -3971,7 +3976,7 @@ function LeavingMask({
  * on the search/downloads sub-pages, see useDrillRelatedSeries). Only the topmost instance takes
  * touches; the ones beneath stay live purely as the see-through under its gestures.
  */
-type DrillEntry = { key: number } & SeriesPaneLayer;
+type DrillEntry = { key: number } & ({ kind: 'series'; params: SeriesReaderParams } | { kind: 'search' });
 
 // memo: pushing/popping a layer re-renders the wrapper below — without this, every mounted
 // instance (each a whole series page) re-renders along with it for nothing.
@@ -3982,18 +3987,10 @@ export default function SeriesReaderScreen() {
   const router = useRouter();
   const { width } = useViewport();
   const inPane = useSeriesPaneWidth() !== null;
-  // A pane coming back from the full-screen reader comes back with its stack (see parkSeriesPane).
-  const [drills, setDrills] = useState<DrillEntry[]>(() =>
-    inPane ? peekSeriesPaneLayers().map((layer, i) => ({ ...layer, key: i + 1 })) : [],
-  );
-  useEffect(() => {
-    if (inPane) setSeriesPaneLayers(drills.map(({ key: _key, ...layer }) => layer));
-  }, [inPane, drills]);
-  useEffect(() => {
-    if (inPane) return;
-    cancelSeriesPaneRestore();
-    return scheduleSeriesPaneRestore;
-  }, [inPane]);
+  const [drills, setDrills] = useState<DrillEntry[]>([]);
+  // The pane stays mounted under a full-screen series page opened from it (see lib/series-pane).
+  useEffect(() => (inPane ? undefined : coverSeriesPane()), [inPane]);
+  const covered = useSeriesPaneCovered() && inPane;
 
   // ── Sequence mode (`seq=1`): the reader pages over a COLLECTION's saved pages ──
   // The screen's share is deliberately small: resolve the album (use-reader-sequence) and mount
@@ -4042,22 +4039,19 @@ export default function SeriesReaderScreen() {
   useEffect(() => {
     if (seqEmpty) router.back();
   }, [seqEmpty, router]);
-  const nextKey = useRef(drills.length + 1);
+  const nextKey = useRef(1);
   // The stack's shape, in the trace. A layer bug is by definition about which of several mounted
   // pages is reacting, and a recording had no way to say what was even mounted.
   const drill = useCallback((p: Record<string, string>) => {
     setDrills((d) => {
       traceJS('layer', 'push.series', { depth: d.length + 1 });
-      return [...d, { key: nextKey.current++, kind: 'series', params: p }];
+      return [...d, { key: nextKey.current++, kind: 'series', params: p as SeriesReaderParams }];
     });
   }, []);
   const openSearch = useCallback(() => {
-    // Held on the entry, not just handed over: the search consumes the one-shot intent, and a
-    // restored pane has to be able to open the same search again.
-    const intent = peekSearchIntent();
     setDrills((d) => {
       traceJS('layer', 'push.search', { depth: d.length + 1 });
-      return [...d, { key: nextKey.current++, kind: 'search', intent }];
+      return [...d, { key: nextKey.current++, kind: 'search' }];
     });
   }, []);
   const popLayer = useCallback(() => {
@@ -4093,6 +4087,10 @@ export default function SeriesReaderScreen() {
   // Nor in the desktop pane, where the search arrives without a slide to drift against (see
   // SearchLayer) — and the pane doesn't clip, so the page would be shoved out over the rail.
   const pushed = !inPane && top >= 0 && drills[top].kind === 'search' ? layerParallax : null;
+  const topEntry = top >= 0 ? drills[top] : null;
+  const topParams = !topEntry ? params : topEntry.kind === 'series' ? topEntry.params : null;
+  const topKey = topParams ? `${topParams.bridgeId ?? ''}:${topParams.id ?? ''}` : null;
+  useEffect(() => (inPane ? setSeriesPaneTop(topKey) : undefined), [inPane, topKey]);
   return (
     <View style={styles.container}>
       <Animated.View
@@ -4107,7 +4105,7 @@ export default function SeriesReaderScreen() {
               params={seqParams}
               depth={0}
               onPopLayer={popLayer}
-              isTop={drills.length === 0}
+              isTop={drills.length === 0 && !covered}
               sequence={seqRun}
             />
           ) : (
@@ -4118,7 +4116,12 @@ export default function SeriesReaderScreen() {
             </View>
           )
         ) : (
-          <MemoSeriesReaderInstance params={params} depth={0} onPopLayer={popLayer} isTop={drills.length === 0} />
+          <MemoSeriesReaderInstance
+            params={params}
+            depth={0}
+            onPopLayer={popLayer}
+            isTop={drills.length === 0 && !covered}
+          />
         )}
       </Animated.View>
       {drills.map((d, i) => (
@@ -4128,9 +4131,14 @@ export default function SeriesReaderScreen() {
           style={i === top ? StyleSheet.absoluteFill : [StyleSheet.absoluteFill, pushed]}
           pointerEvents={i === top ? 'auto' : 'none'}>
           {d.kind === 'series' ? (
-            <MemoSeriesReaderInstance params={d.params} depth={i + 1} onPopLayer={popLayer} isTop={i === top} />
+            <MemoSeriesReaderInstance
+              params={d.params}
+              depth={i + 1}
+              onPopLayer={popLayer}
+              isTop={i === top && !covered}
+            />
           ) : (
-            <SearchLayer onPopLayer={popLayer} coverSV={layerCover} isTop={i === top} intent={d.intent} />
+            <SearchLayer onPopLayer={popLayer} coverSV={layerCover} isTop={i === top && !covered} />
           )}
         </Animated.View>
       ))}
@@ -4150,13 +4158,11 @@ function SearchLayer({
   onPopLayer,
   coverSV,
   isTop,
-  intent,
 }: {
   onPopLayer: () => void;
   /** See SeriesReaderInstance's — the parallax this layer drives on the series beneath it. */
   coverSV?: SharedValue<number>;
   isTop?: boolean;
-  intent: SearchIntent | null;
 }) {
   const { width } = useViewport();
   const theme = useTheme();
@@ -4332,8 +4338,8 @@ function SearchLayer({
   // `isTop` matters for more than looks: it is how the embedded search knows to ignore an intent
   // meant for a layer above it (see the subscription in search.tsx).
   const embedded = useMemo(
-    () => ({ onBack: closeLayer, scrollGesture, isTop: !!isTop, scrollEnabled: !swipeLocked, intent }),
-    [closeLayer, scrollGesture, isTop, swipeLocked, intent],
+    () => ({ onBack: closeLayer, scrollGesture, isTop: !!isTop, scrollEnabled: !swipeLocked }),
+    [closeLayer, scrollGesture, isTop, swipeLocked],
   );
   return (
     <View style={styles.container}>
@@ -4551,6 +4557,8 @@ const ReaderPane = forwardRef<
     /** Library membership (undefined while still resolving) — picks the progress-recording path.
      *  Queried by the screen, not here: this pane re-renders every page sweep. */
     inLibrary?: boolean;
+    /** Whether the arrow keys turn this reader's pages (web) — only the top layer's should. */
+    keyboard: boolean;
   }
 >(function ReaderPane(
   {
@@ -4584,6 +4592,7 @@ const ReaderPane = forwardRef<
     standby,
     entering = false,
     inLibrary,
+    keyboard,
   },
   ref,
 ) {
@@ -4983,7 +4992,7 @@ const ReaderPane = forwardRef<
 
   // ── Web keyboard nav (single-step; no held-key repeat) ─────────────────────
   useEffect(() => {
-    if (!IS_WEB || typeof window === 'undefined') return;
+    if (!IS_WEB || !keyboard || typeof window === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
@@ -4999,7 +5008,7 @@ const ReaderPane = forwardRef<
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [turnNext, turnPrev, settings.direction]);
+  }, [keyboard, turnNext, turnPrev, settings.direction]);
 
   return (
     <>

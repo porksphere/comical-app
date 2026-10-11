@@ -21,33 +21,18 @@
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
-import type { SearchIntent } from '@/data/search-intent';
 import type { PaneParams } from '@/lib/pane';
 
-/** One layer stacked over the pane's series — a drilled series or a search (see SeriesReaderScreen). */
-export type SeriesPaneLayer =
-  | { kind: 'series'; params: Record<string, string> }
-  | { kind: 'search'; intent: SearchIntent | null };
+type SeriesPaneState = {
+  available: boolean;
+  params: PaneParams | null;
+  /** How many full-screen series pages are open over the pane (see `coverSeriesPane`). */
+  covered: number;
+  /** `bridgeId:id` of the series on top of the pane's stack; null while a search is on top. */
+  top: string | null;
+};
 
-type SeriesPaneState = { available: boolean; params: PaneParams | null };
-
-const seriesPane$ = observable<SeriesPaneState>({ available: false, params: null });
-
-/**
- * The open pane's layer stack, mirrored here by the pane's own screen so it outlives the screen: a
- * pane remounted with the same series — un-parked, below — comes back with everything that was
- * stacked on it, not just the series at the bottom.
- */
-let layers: readonly SeriesPaneLayer[] = [];
-
-/**
- * The pane as it was when reading started in it. The handover to the full-screen reader has to
- * unmount the pane (two series pages can't be mounted at once, see `openSeriesPane`), and without
- * this, closing the reader dropped you on the grid with the series you came from — and the search
- * and series stacked on it — gone.
- */
-let parked: { params: PaneParams; layers: readonly SeriesPaneLayer[] } | null = null;
-let restoreTimer: ReturnType<typeof setTimeout> | undefined;
+const seriesPane$ = observable<SeriesPaneState>({ available: false, params: null, covered: 0, top: null });
 
 /** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
 export function useSeriesPane(): SeriesPaneState {
@@ -57,47 +42,7 @@ export function useSeriesPane(): SeriesPaneState {
 /** Called by `AppTabs` with whether it is currently rendering a pane at all. */
 export function setSeriesPaneAvailable(available: boolean): void {
   seriesPane$.available.set(available);
-  if (!available) {
-    seriesPane$.params.set(null);
-    layers = [];
-    parked = null;
-  }
-}
-
-export function setSeriesPaneLayers(next: readonly SeriesPaneLayer[]): void {
-  layers = next;
-}
-
-export function peekSeriesPaneLayers(): readonly SeriesPaneLayer[] {
-  return layers;
-}
-
-/** Give the window to a reader, keeping the pane to come back to. */
-export function parkSeriesPane(): void {
-  const params = seriesPane$.params.peek();
-  parked = params ? { params, layers } : null;
-  seriesPane$.params.set(null);
-}
-
-/**
- * Called as a full-screen series page unmounts. Deferred a tick so StrictMode's simulated unmount —
- * cancelled by the remount right behind it (`cancelSeriesPaneRestore`) — doesn't reopen the pane
- * under a reader that is still up.
- */
-export function scheduleSeriesPaneRestore(): void {
-  if (!parked) return;
-  clearTimeout(restoreTimer);
-  restoreTimer = setTimeout(() => {
-    const restore = parked;
-    parked = null;
-    if (!restore || !seriesPane$.available.peek()) return;
-    layers = restore.layers;
-    seriesPane$.params.set(restore.params);
-  }, 0);
-}
-
-export function cancelSeriesPaneRestore(): void {
-  clearTimeout(restoreTimer);
+  if (!available) seriesPane$.params.set(null);
 }
 
 /**
@@ -109,19 +54,14 @@ export function cancelSeriesPaneRestore(): void {
  * cannot read. That covers the History and Activity rows (`reader=1`), a collection tile's album
  * (`seq=1`), and the pane's OWN handover when you start reading in it — which is why that handover
  * is an ordinary push rather than a special exit.
+ *
+ * The pane stays MOUNTED under that reader rather than giving way to it, so closing the reader
+ * comes back to the pane exactly as it was — every series and search stacked in it, with their
+ * queries, filters and scroll. Covered, it answers nothing (see `coverSeriesPane`).
  */
 export function openSeriesPane(params: PaneParams): boolean {
   if (!seriesPane$.available.peek()) return false;
-  if (params.reader === '1' || params.seq === '1') {
-    // …and the pane gives way rather than sitting behind it. At most ONE series page may be
-    // mounted at a time — `registerDrillSeries` is a module singleton and the second page to mount
-    // would take the handler off the first (see lib/series-nav) — so a reader route opening over an
-    // open pane is not a layering question, it is two series pages.
-    seriesPane$.params.set(null);
-    return false;
-  }
-  layers = [];
-  parked = null;
+  if (params.reader === '1' || params.seq === '1') return false;
   seriesPane$.params.set(params);
   return true;
 }
@@ -131,6 +71,39 @@ export function isSeriesPaneOpen(): boolean {
 }
 
 export function closeSeriesPane(): void {
-  layers = [];
   seriesPane$.params.set(null);
+}
+
+/**
+ * Called by a full-screen series page while it is mounted. The pane beneath goes on rendering but
+ * must stop ANSWERING — keys, search intents, drills — or the hidden page would act on input meant
+ * for the one over it. Returns the uncover.
+ */
+export function coverSeriesPane(): () => void {
+  seriesPane$.covered.set(seriesPane$.covered.peek() + 1);
+  return () => seriesPane$.covered.set(seriesPane$.covered.peek() - 1);
+}
+
+export function useSeriesPaneCovered(): boolean {
+  return use$(() => seriesPane$.covered.get() > 0);
+}
+
+export function isSeriesPaneCovered(): boolean {
+  return seriesPane$.covered.peek() > 0;
+}
+
+/** Published by the pane's screen; returns the retraction. */
+export function setSeriesPaneTop(key: string | null): () => void {
+  seriesPane$.top.set(key);
+  return () => {
+    if (seriesPane$.top.peek() === key) seriesPane$.top.set(null);
+  };
+}
+
+/**
+ * Whether the pane beneath already shows this series on top — in which case a reader over it has
+ * its details right underneath, and stepping back from the reader is leaving it.
+ */
+export function useSeriesPaneShowsTop(key: string): boolean {
+  return use$(() => seriesPane$.params.get() !== null && seriesPane$.top.get() === key);
 }

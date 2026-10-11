@@ -52,16 +52,31 @@ export function encodeSeriesParam(value: string): string {
   return encodeURIComponent(value).replace(/\(/g, '%28').replace(/\)/g, '%29');
 }
 
-/** The layer-push handler, registered by the mounted SeriesReaderScreen (there is at most one —
- *  drilled series are layers inside it, never a second modal). A hand-rolled module singleton on
- *  purpose (like lib/tab-bar-visibility): the React Compiler forbids mutating a context-carried
- *  ref, and this is a callback hand-off, not state anything renders from. */
-let drillSeriesHandler: ((params: Record<string, string>) => void) | null = null;
-export function registerDrillSeries(fn: (params: Record<string, string>) => void): () => void {
-  drillSeriesHandler = fn;
-  return () => {
-    if (drillSeriesHandler === fn) drillSeriesHandler = null;
+/**
+ * Registrations as a stack, newest answering. Drilled series are layers inside ONE series page,
+ * never a second modal — but the desktop pane stays mounted under a full-screen reader opened from
+ * it (see lib/series-pane), so two pages can be up at once, and the one on top must take the drill
+ * while the pane gets it back when the reader closes. A hand-rolled module singleton on purpose
+ * (like lib/tab-bar-visibility): the React Compiler forbids mutating a context-carried ref, and
+ * this is a callback hand-off, not state anything renders from.
+ */
+function handlerStack<F>() {
+  const stack: F[] = [];
+  return {
+    current: (): F | null => stack[stack.length - 1] ?? null,
+    register(fn: F): () => void {
+      stack.push(fn);
+      return () => {
+        const at = stack.lastIndexOf(fn);
+        if (at >= 0) stack.splice(at, 1);
+      };
+    },
   };
+}
+
+const drillSeriesHandlers = handlerStack<(params: Record<string, string>) => void>();
+export function registerDrillSeries(fn: (params: Record<string, string>) => void): () => void {
+  return drillSeriesHandlers.register(fn);
 }
 
 /**
@@ -71,25 +86,23 @@ export function registerDrillSeries(fn: (params: Record<string, string>) => void
  * as a LAYER rather than stack a second contained transparent modal, which is the one thing iOS
  * won't do (see the note on InSeriesPageStack).
  *
- * The registered handler's presence IS the test, and it's exact: at most one series page is ever
- * mounted, and while one is, it's the screen the menu was opened over. Returns false when there
- * is none, so the caller pushes the route instead.
+ * The registered handler's presence IS the test, and it's exact: while a series page is mounted,
+ * the topmost one is the screen the menu was opened over. Returns false when there is none, so the
+ * caller pushes the route instead.
  */
 export function drillSeriesFromOverlay(params: Record<string, string>): boolean {
-  if (!drillSeriesHandler) return false;
+  const handler = drillSeriesHandlers.current();
+  if (!handler) return false;
   // Shares the nav-guard claim with the in-tree drill, so a double commit can't fire twice.
-  if (claimNavigation(navTargetKey({ pathname: '/series', params }))) drillSeriesHandler(params);
+  if (claimNavigation(navTargetKey({ pathname: '/series', params }))) handler(params);
   return true;
 }
 
 /** Same hand-off for the SEARCH layer (tag/author/type intents — see SearchLayer in
  *  app/series/index.tsx). */
-let openSearchLayerHandler: (() => void) | null = null;
+const openSearchLayerHandlers = handlerStack<() => void>();
 export function registerOpenSearchLayer(fn: () => void): () => void {
-  openSearchLayerHandler = fn;
-  return () => {
-    if (openSearchLayerHandler === fn) openSearchLayerHandler = null;
-  };
+  return openSearchLayerHandlers.register(fn);
 }
 
 /**
@@ -105,7 +118,7 @@ export function useOpenSearchLayer(): (() => void) | null {
     if (!inStack) return null;
     return () => {
       if (!claimNavigation(navTargetKey('/series#search'))) return;
-      openSearchLayerHandler?.();
+      openSearchLayerHandlers.current()?.();
     };
   }, [inStack]);
 }
@@ -130,7 +143,7 @@ export function useDrillRelatedSeries(): ((params: Record<string, string>) => vo
       // its root and the stack router rejects POP_TO_TOP (a noisy dev warning).
       const state = navigation.getState();
       if (state && state.index > 0) navigation.dispatch({ type: 'POP_TO_TOP' });
-      drillSeriesHandler?.(params);
+      drillSeriesHandlers.current()?.(params);
     },
     [navigation],
   );
