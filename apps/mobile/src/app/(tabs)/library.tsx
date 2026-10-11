@@ -17,6 +17,7 @@ import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectedItemsGrid } from '@/components/collections/collected-items-grid';
 import { CollectedSortButton } from '@/components/collections/collected-sort-button';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
+import { HoldActionTarget } from '@/components/hold-action-target';
 import { BridgeThumbRadius, BridgeThumbSize } from '@/components/selector';
 import { coverStyles } from '@/components/series-card';
 import { SeriesGrid } from '@/components/series-grid';
@@ -369,11 +370,13 @@ export default function LibraryScreen() {
         barStyle={barRuleStyle}
         leading={
           filter.open ? undefined : (
-            <CollectionThumb
-              name={collectionFilter === null ? null : viewName}
-              size={BridgeThumbSize}
-              style={styles.barThumb}
-            />
+            <HoldActionTarget testID="library.nsfw-hold" size={BridgeThumbSize}>
+              <CollectionThumb
+                name={collectionFilter === null ? null : viewName}
+                size={BridgeThumbSize}
+                style={styles.barThumb}
+              />
+            </HoldActionTarget>
           )
         }
         titleSlot={

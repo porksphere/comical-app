@@ -20,13 +20,12 @@ import { SearchIcon } from '@/components/icons/ui-icons';
 import { SearchPill } from '@/components/search-pill';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
-import { BridgeThumbRadius, BridgeThumbSize, Selector } from '@/components/selector';
+import { BridgeThumbSize, Selector } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
-import { showToast } from '@/components/toast';
+import { HoldActionTarget } from '@/components/hold-action-target';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
-import { runBrowseHoldAction, useBrowseHoldAction } from '@/data/browse-hold-action';
 import {
   bridgePageOptions,
   comicalPageOptions,
@@ -64,7 +63,6 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
-import { useRampedHold } from '@/hooks/use-ramped-hold';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useFeedTint } from '@/hooks/use-feed-tint';
@@ -582,18 +580,6 @@ export default function BrowseScreen() {
     beginCrossfade(() => setPage(next));
   };
 
-  // Hold the bridge icon to run whatever Settings has the gesture bound to: three haptic beats ramp
-  // up while holding, then it commits (see useRampedHold) and a toast says what happened. A plain
-  // tap still does nothing — the icon stays a passive identity mark otherwise.
-  const [holdAction] = useBrowseHoldAction();
-  const nsfwHold = useRampedHold(() => {
-    const message = runBrowseHoldAction();
-    if (message) showToast(message);
-  });
-  // Bound to 'none' the gesture is GONE, not merely inert: the handlers come off entirely, so a
-  // long press on the icon never even starts the haptic ramp. Arming it and dropping the result
-  // would still buzz three times at someone who turned it off.
-
   // Shared with the series-detail bar so both stay the same height.
   const barHeight = useTopBarHeight();
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
@@ -684,23 +670,15 @@ export default function BrowseScreen() {
           headerContentStyle,
         ]}>
         {currentBridge ? (
-          <Pressable
-            testID="browse.nsfw-hold"
-            {...(holdAction !== 'none' && { onPressIn: nsfwHold.onPressIn, onPressOut: nsfwHold.onPressOut })}
-            accessibilityRole="button"
-            accessibilityLabel="Hold to show NSFW content until the app is closed"
-            style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]}>
-            {/* The ramp's beats swell the icon in step with the haptics (useRampedHold). */}
-            <Animated.View style={[styles.bridgeThumbPulse, nsfwHold.pulseStyle]}>
-              <BridgeThumb
-                uri={currentBridge.thumbnail}
-                source={isComical ? COMICAL_ICON : undefined}
-                label={currentBridge.name}
-                size={thumbSize}
-                fill
-              />
-            </Animated.View>
-          </Pressable>
+          <HoldActionTarget testID="browse.nsfw-hold" size={thumbSize}>
+            <BridgeThumb
+              uri={currentBridge.thumbnail}
+              source={isComical ? COMICAL_ICON : undefined}
+              label={currentBridge.name}
+              size={thumbSize}
+              fill
+            />
+          </HoldActionTarget>
         ) : null}
         {/* The rail lists the bridges when it's showing, so this would be a second control for one
             selection sitting a few pixels from the first. The THUMBNAIL above stays either way —
@@ -991,16 +969,6 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
-  },
-  bridgeThumb: {
-    alignSelf: 'center',
-  },
-  // The corner clip lives on the pulsing view, not the Pressable, so a beat swells the whole
-  // rounded tile instead of being cut off at the tile's own edge.
-  bridgeThumbPulse: {
-    flex: 1,
-    borderRadius: BridgeThumbRadius,
-    overflow: 'hidden',
   },
   controls: {
     paddingHorizontal: Spacing.four,

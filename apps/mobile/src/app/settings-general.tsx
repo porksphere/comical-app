@@ -57,7 +57,7 @@ const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
 /** The hold gesture has no label and no visual affordance, so these descriptions are the only
  *  place it is ever explained — write them as the feature's documentation, not as option blurbs. */
 const HOLD_ACTION_OPTIONS: SettingsOption<BrowseHoldAction>[] = [
-  { value: 'none', label: 'Nothing', description: 'The bridge icon does nothing when held.' },
+  { value: 'none', label: 'Nothing', description: 'The icon does nothing when held.' },
   {
     value: 'nsfw-until-closed',
     label: 'Show NSFW until app is closed',
@@ -141,10 +141,10 @@ export default function GeneralSettingsScreen() {
             onChange={setNsfwMode}
           />
           {/* Directly under the NSFW row because that is what it acts on, and because this row is
-              the gesture's only documentation — nothing on Browse says the icon is holdable. */}
+              the gesture's only documentation — nothing on Browse or Library says the icon is holdable. */}
           <SettingsSelectRow
             label="Hold bridge icon"
-            description="What holding the Browse tab's bridge icon does."
+            description="What holding the icon at the top of Browse or Library does."
             value={holdAction}
             options={HOLD_ACTION_OPTIONS}
             onChange={setHoldAction}
