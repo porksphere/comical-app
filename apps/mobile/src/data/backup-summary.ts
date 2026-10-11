@@ -107,6 +107,8 @@ export function describeRestore({ restored, skipped }: LibraryRestoreResult): st
   const wrote = [
     restored.items > 0 && plural(restored.items, 'library item'),
     restored.progress > 0 && `progress on ${plural(restored.progress, 'chapter')}`,
+    // Absent from hosts older than chapter lists in backups.
+    (restored.chapters ?? 0) > 0 && plural(restored.chapters ?? 0, 'chapter list'),
     other > 0 && plural(other, 'other record'),
   ].filter(Boolean);
   const head = wrote.length > 0 ? `Restored ${wrote.join(', ')}` : 'Nothing to restore — your library already has everything in this backup';

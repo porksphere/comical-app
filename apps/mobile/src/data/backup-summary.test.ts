@@ -10,7 +10,7 @@ import {
   parseBackupFile,
 } from './backup-summary';
 
-const NONE = { collections: 0, items: 0, progress: 0, groups: 0, trackerLinks: 0, readingLog: 0, bridgePrefs: 0 };
+const NONE = { collections: 0, items: 0, progress: 0, groups: 0, trackerLinks: 0, readingLog: 0, bridgePrefs: 0, chapters: 0 };
 
 async function exported() {
   const library = new Library(new InMemoryLibraryStore());
@@ -64,6 +64,14 @@ describe('describeRestore', () => {
     expect(describeRestore({ restored, skipped: 0 })).toBe(
       'Restored 12 library items, progress on 1 chapter, 5 other records',
     );
+  });
+
+  test('names restored chapter lists, and tolerates a host that predates them', () => {
+    expect(describeRestore({ restored: { ...NONE, items: 1, chapters: 3 }, skipped: 0 })).toBe(
+      'Restored 1 library item, 3 chapter lists',
+    );
+    const { chapters: _, ...old } = { ...NONE, items: 1 };
+    expect(describeRestore({ restored: old as unknown as typeof NONE, skipped: 0 })).toBe('Restored 1 library item');
   });
 
   test('says when the library already had it all', () => {

@@ -31,7 +31,7 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { useTopBarInset } from '@/components/top-bar';
 import { ContinuousCorner, MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { librarySeriesQuery, queryKeys, relatedGroupsQuery, seriesListQuery } from '@/data/queries';
+import { librarySeriesQuery, queryKeys, relatedGroupsQuery, savedSeriesListQuery, seriesListQuery } from '@/data/queries';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
 import { type Chapter, type MetaCredit, type SeriesDetail, type TagGroup } from '@/data/types';
@@ -419,8 +419,8 @@ export function SeriesBody({
   // Chapter list / page-thumbnail grid: `getSeriesDetail` returns only the fast info payload and
   // defers this fetch so the hero/meta/description paint immediately (this is what made the page feel
   // slower than comical-web, which blocked its whole body on the /chapters request). The chapter
-  // section shows a skeleton meanwhile. The list comes only from this fetch (both real and mock defer
-  // it); count/label still fall back to any inline detail value a direct series carries.
+  // section shows a skeleton meanwhile (or a collected series' saved list, below). Count/label still
+  // fall back to any inline detail value a direct series carries.
   //
   // Gated on `detailStarted` rather than the resolved detail's `listDeferred`, so it fires the moment
   // the detail request is IN FLIGHT instead of waiting for it to fully resolve. Under the bridge's
@@ -428,9 +428,17 @@ export function SeriesBody({
   // only turns true a commit AFTER detail begins fetching — so chapters never delay detail; they just
   // stop idling behind detail's resolve on a slow link. `series.id` is the real id even on the
   // placeholder, and `direct` comes from the route, so nothing here needs the resolved detail.
-  const { data: listData, isLoading: listFetching } = useQuery(
-    seriesListQuery(ds, mock, bridgeId ?? '', series.id, direct, detailStarted),
+  //
+  // A collected series shows the list its library saved until the bridge answers — offline, that
+  // answer only comes once the request times out.
+  const { data: collected } = useQuery(librarySeriesQuery(ds, mock, bridgeId ?? '', series.id));
+  const { data: savedList } = useQuery(
+    savedSeriesListQuery(ds, mock, bridgeId ?? '', series.id, !direct && detailStarted && collected != null),
   );
+  const { data: listData, isLoading: listFetching } = useQuery({
+    ...seriesListQuery(ds, mock, bridgeId ?? '', series.id, direct, detailStarted),
+    placeholderData: savedList ?? undefined,
+  });
   const listLoading = detailStarted && listFetching;
   const chapters = listData?.chapters;
   const pageThumbs = listData?.pageThumbs;
@@ -473,7 +481,6 @@ export function SeriesBody({
   // chapter has nothing to resume, so the button turns muted and says so (a tap rereads the last
   // chapter). Outside the library (or with no library store) there is no state and the button is
   // the plain Read/Resume.
-  const { data: collected } = useQuery(librarySeriesQuery(ds, mock, bridgeId ?? '', series.id));
   const readState = collected?.readState;
   const settled = readState === 'caught-up' || readState === 'finished';
   const primaryLabel = readState === 'finished' ? 'Finished' : readState === 'caught-up' ? 'Caught up' : readingLabel;

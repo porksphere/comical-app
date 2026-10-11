@@ -288,6 +288,9 @@ export interface DataSource {
    *  `getSeriesDetail` came back with `listDeferred: true` — the slow (~200ms) part, fetched
    *  separately so it never blocks the body render. */
   getSeriesList(bridgeId: string, seriesId: string, direct: boolean, signal?: AbortSignal): Promise<SeriesListResult>;
+  /** A collected series' chapter list as the library last saved it — shown while `getSeriesList`
+   *  asks the bridge, which can take as long as a network timeout. `null` when nothing is saved. */
+  getSavedSeriesList(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<SeriesListResult | null>;
   getChapterPages(bridgeId: string, seriesId: string, chapterId: string, signal?: AbortSignal): Promise<string[]>;
   getDirectPages(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[]>;
   /** Lazy fallback for a series' related-series rails when `getSeriesDetail` came back with
@@ -438,6 +441,28 @@ function toHistoryEntry(h: api.ApiHistoryItem): HistoryEntry {
 /** Back to the contract's `Chapter` shape, for the routes that take a chapter list as input
  *  (`read-up-to`). The app's `Chapter` renames `publishedAt` to `date` and carries a derived `read`
  *  flag the host has no field for; everything else is already contract-shaped. */
+function toChapterList(list: api.ApiChapter[]): SeriesListResult {
+  const chapters: Chapter[] = list.map((c) => ({
+    id: c.id,
+    name: c.name,
+    date: c.publishedAt ?? 0,
+    read: false,
+    ...(c.number !== undefined && { number: c.number }),
+    ...(c.group !== undefined && { group: c.group }),
+    ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
+    ...(c.pageCount !== undefined && { pageCount: c.pageCount }),
+  }));
+  // The Read label mirrors the Read button's target: the first chapter in reading
+  // order (by number), not the raw array's first element (a newest-first layout the
+  // bridge never promised).
+  const first = firstChapterInReadingOrder(chapters);
+  return {
+    chapters,
+    chapterCount: chapters.length,
+    readLabel: first ? first.name : undefined,
+  };
+}
+
 function toApiChapter(c: Chapter): { id: string; name: string; number?: number; languageCode?: string; group?: string; publishedAt?: number } {
   return {
     id: c.id,
@@ -844,25 +869,12 @@ const realDataSource: DataSource = {
       });
       return result;
     }
-    const chapters: Chapter[] = (await api.getChapters(bridgeId, seriesId, signal)).map((c) => ({
-      id: c.id,
-      name: c.name,
-      date: c.publishedAt ?? 0,
-      read: false,
-      ...(c.number !== undefined && { number: c.number }),
-      ...(c.group !== undefined && { group: c.group }),
-      ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
-      ...(c.pageCount !== undefined && { pageCount: c.pageCount }),
-    }));
-    // The Read label mirrors the Read button's target: the first chapter in reading
-    // order (by number), not the raw array's first element (a newest-first layout the
-    // bridge never promised).
-    const first = firstChapterInReadingOrder(chapters);
-    return {
-      chapters,
-      chapterCount: chapters.length,
-      readLabel: first ? first.name : undefined,
-    };
+    return toChapterList(await api.getChapters(bridgeId, seriesId, signal));
+  },
+
+  async getSavedSeriesList(bridgeId, seriesId, signal) {
+    const saved = await api.getSavedChapters(bridgeId, seriesId, signal);
+    return saved && saved.chapters.length > 0 ? toChapterList(saved.chapters) : null;
   },
 
   async getChapterPages(bridgeId, seriesId, chapterId, signal) {
@@ -1078,6 +1090,7 @@ const mockDataSource: DataSource = {
   // Like real bridges, mock series defer the chapter list / page-thumbnail grid to this
   // call (mockGetSeriesDetail flags `listDeferred`), so both paths share one code flow.
   getSeriesList: (bridgeId, seriesId, direct) => mock.mockGetSeriesList(bridgeId, seriesId, direct),
+  getSavedSeriesList: () => Promise.resolve(null),
   getChapterPages: (bridgeId, seriesId, chapterId) => mock.mockGetChapterPages(bridgeId, seriesId, chapterId),
   getDirectPages: (bridgeId, seriesId) => mock.mockGetDirectPages(bridgeId, seriesId),
   // mockGetSeriesList populates every pageThumbs entry inline (no `null` gaps), so this

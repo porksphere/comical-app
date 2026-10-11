@@ -693,6 +693,19 @@ export function getChapters(bridgeId: string, seriesId: string, signal?: AbortSi
   return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/series/${encodeURIComponent(seriesId)}/chapters`, signal);
 }
 
+/** GET /library/collected/series/{b}/{s}/chapters → a collected series' chapter list as last synced,
+ *  without asking the bridge; `null` when none is saved (or the host predates the route). */
+export function getSavedChapters(
+  bridgeId: string,
+  seriesId: string,
+  signal?: AbortSignal,
+): Promise<{ chapters: ApiChapter[]; cachedAt: number } | null> {
+  return fetchJsonOptional(
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/chapters`,
+    signal,
+  );
+}
+
 /** GET /bridges/{id}/series/{seriesId}/chapters/{chapterId}/pages → readable pages for one chapter. */
 export function getChapterPages(
   bridgeId: string,

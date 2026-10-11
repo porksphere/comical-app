@@ -66,6 +66,8 @@ export const queryKeys = {
     ['seriesDetail', mock, bridgeId, seriesId, direct] as const,
   seriesList: (mock: boolean, bridgeId: string, seriesId: string, direct: boolean) =>
     ['seriesList', mock, bridgeId, seriesId, direct] as const,
+  savedSeriesList: (mock: boolean, bridgeId: string, seriesId: string) =>
+    ['savedSeriesList', mock, bridgeId, seriesId] as const,
   chapterPages: (mock: boolean, bridgeId: string, seriesId: string, chapterId: string) =>
     ['chapterPages', mock, bridgeId, seriesId, chapterId] as const,
   directPages: (mock: boolean, bridgeId: string, seriesId: string) =>
@@ -368,6 +370,22 @@ export function seriesListQuery(
     queryKey: queryKeys.seriesList(mock, bridgeId, seriesId, direct),
     queryFn: ({ signal }) => ds.getSeriesList(bridgeId, seriesId, direct, signal),
     enabled: enabled && !!seriesId,
+  };
+}
+
+/** `useQuery` options for a collected series' saved chapter list — the stand-in while
+ *  `seriesListQuery` waits on the bridge. */
+export function savedSeriesListQuery(
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+  seriesId: string,
+  enabled: boolean,
+): UseQueryOptions<SeriesListResult | null, Error> {
+  return {
+    queryKey: queryKeys.savedSeriesList(mock, bridgeId, seriesId),
+    queryFn: ({ signal }) => ds.getSavedSeriesList(bridgeId, seriesId, signal),
+    enabled: enabled && !!bridgeId && !!seriesId,
   };
 }
 
