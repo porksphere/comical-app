@@ -29,10 +29,12 @@ import { useCollectedView } from '@/data/collected-view';
 import { collectionItemsQuery, libraryQuery } from '@/data/queries';
 import {
   ALL_VIEW_NAME,
-  allItemsType,
-  isAllView,
+  effectiveItemKind,
+  ITEM_KIND_LABELS,
   setSelectedCollection,
+  setSelectedItemKind,
   useSelectedCollectionId,
+  useSelectedItemKind,
 } from '@/data/selected-collection';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
@@ -41,6 +43,7 @@ import { encodeSeriesParam } from '@/lib/series-nav';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useHasSidebar } from '@/hooks/use-content-width';
+import { useSavedItemKinds } from '@/hooks/use-saved-item-kinds';
 import { useCollections } from '@/hooks/use-collections';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { libraryGroupOf } from '@/data/library-grouping';
@@ -80,13 +83,16 @@ export default function LibraryScreen() {
   // this flips, the list holds empty data and the header shows a skeleton.
   const ready = useDeferredMount();
 
-  // What the tab is showing: `null` = the library's series grid; All Chapters / All Pages = every
-  // saved item of that kind; a collection id = that collection's CONTENTS, mixed.
-  // Shared, not local: the sidebar's Collections group moves this too (see `selected-collection.ts`).
+  // What the tab is showing: All or a collection, narrowed to one kind. Shared, not local: the
+  // sidebar's Collections group moves this too (see `selected-collection.ts`).
   const collectionFilter = useSelectedCollectionId();
   const setCollectionFilter = setSelectedCollection;
-  const showingCollected = collectionFilter !== null;
-  const allType = allItemsType(collectionFilter);
+  const selectedKind = useSelectedItemKind();
+  const kindsPresent = useSavedItemKinds(collectionFilter);
+  const kind = effectiveItemKind(kindsPresent, selectedKind);
+  // All's series view is the library's own grid; every other pairing lists collected items.
+  const showingCollected = collectionFilter !== null || kind !== 'series';
+  const kindNoun = ITEM_KIND_LABELS[kind].toLowerCase();
   // Asked of the layout, not derived from width — see `useHasSidebar`.
   const railNav = useHasSidebar();
   // The library grid's sort + grouping (they only apply there; a collection view has its own axes
@@ -97,7 +103,10 @@ export default function LibraryScreen() {
   const readState = show === 'all' ? null : show;
   // Sort/dir/grouping for a collection's contents view — remembered PER COLLECTION (see the
   // store's doc), so each one restores its own last-used axes.
-  const [collectedView, setCollectedView] = useCollectedView(collectionFilter);
+  // All's chapters and pages keep the keys they had as views of their own.
+  const [collectedView, setCollectedView] = useCollectedView(
+    collectionFilter ?? (kind === 'chapter' ? '@chapters' : '@pages'),
+  );
 
   // What's typed folds straight into the same grid query, debounced since each term is a fetch.
   const filter = useTabFilter();
@@ -107,8 +116,7 @@ export default function LibraryScreen() {
   // carries its own bridge, unlike the Browse grid's single-bridge view).
   const { knownById: bridgeById } = useBridgeMap();
   const { collections } = useCollections();
-  const viewName =
-    (!isAllView(collectionFilter) && collections.find((c) => c.id === collectionFilter)?.name) || ALL_VIEW_NAME;
+  const viewName = collections.find((c) => c.id === collectionFilter)?.name ?? ALL_VIEW_NAME;
   const titleType = useSubtitleSelectorStyle();
 
   // Search + sort both fold into this one query and re-render the grid in place.
@@ -120,11 +128,10 @@ export default function LibraryScreen() {
     placeholderData: keepPreviousData,
   });
 
-  // A collection's WHOLE contents — no type filter, since hiding two of the three kinds would make a
-  // collection look emptier than it is. A kind view is the reverse: that type, every collection.
-  const scope: { type?: 'chapter' | 'page'; collection?: string } = allType
-    ? { type: allType }
-    : { collection: collectionFilter ?? '' };
+  const scope: { type: typeof kind; collection?: string } = {
+    type: kind,
+    ...(collectionFilter ? { collection: collectionFilter } : {}),
+  };
   const collected = useQuery({
     ...collectionItemsQuery(ds, mock, {
       ...scope,
@@ -187,7 +194,7 @@ export default function LibraryScreen() {
       return (
         <View style={styles.stateBlock}>
           <RetryBlock
-            message={(collected.error as Error).message || 'Failed to load saved pages'}
+            message={(collected.error as Error).message || `Failed to load saved ${kindNoun}`}
             onRetry={collected.refetch}
           />
         </View>
@@ -209,22 +216,22 @@ export default function LibraryScreen() {
         return (
           <EmptyState
             title="No matches"
-            detail={`Nothing in ${allType ? 'your saved ' + (allType === 'chapter' ? 'chapters' : 'pages') : 'this collection'} matches your filter.`}
+            detail={`No saved ${kindNoun} ${collectionFilter ? 'in this collection ' : ''}match your filter.`}
           />
         );
       }
-      if (allType === 'chapter') {
+      if (collectionFilter) {
+        return (
+          <EmptyState
+            title="This collection is empty"
+            detail="Save a series, chapter, or page into it — while reading, tap the bookmark in the top bar."
+          />
+        );
+      }
+      if (kind === 'chapter') {
         return <EmptyState title="No saved chapters" detail="Long-press a chapter on a series page and tap “Save chapter”." />;
       }
-      if (allType === 'page') {
-        return <EmptyState title="No saved pages" detail="While reading, tap the bookmark in the top bar to save a page." />;
-      }
-      return (
-        <EmptyState
-          title="This collection is empty"
-          detail="Save a series, chapter, or page into it — while reading, tap the bookmark in the top bar."
-        />
-      );
+      return <EmptyState title="No saved pages" detail="While reading, tap the bookmark in the top bar to save a page." />;
     }
     return null;
   }
@@ -271,7 +278,7 @@ export default function LibraryScreen() {
           grouping={collectedView.grouping}
           // Every axis is in the key: a sort/dir/grouping switch is a scroll-to-top moment and must
           // reset recycled rows, exactly as a search or collection switch does.
-          scopeKey={`collected|${term}|${collectionFilter}|${collectedView.sort}|${collectedView.dir}|${collectedView.grouping}`}
+          scopeKey={`collected|${term}|${collectionFilter}|${kind}|${collectedView.sort}|${collectedView.dir}|${collectedView.grouping}`}
           listRef={listRef}
           header={renderCollectedEmpty()}
           paddingTop={headerHeight + BarContentGap}
@@ -331,8 +338,8 @@ export default function LibraryScreen() {
                 pathname: '/series',
                 params: {
                   seq: '1',
-                  // Empty for All Pages: the sequence keeps only pages, so the unscoped listing is it.
-                  seqCollection: allType ? '' : (collectionFilter ?? ''),
+                  // Empty for All: the sequence keeps only pages, so the unscoped listing is it.
+                  seqCollection: collectionFilter ?? '',
                   seqSort: collectedView.sort,
                   seqDir: collectedView.dir,
                   ...(term ? { seqQ: term } : {}),
@@ -419,7 +426,12 @@ export default function LibraryScreen() {
                   onChange={setCollectionFilter}
                 />
               )}
-              <LibraryKindSelector value={collectionFilter} onChange={setCollectionFilter} />
+              <LibraryKindSelector
+                present={kindsPresent}
+                value={kind}
+                selected={selectedKind}
+                onChange={setSelectedItemKind}
+              />
             </>
           )
         }

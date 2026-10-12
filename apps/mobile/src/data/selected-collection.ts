@@ -1,8 +1,8 @@
 /**
- * Which view the Library tab is showing — `null` for All (the library's own series grid),
- * `ALL_CHAPTERS` / `ALL_PAGES` for All narrowed to every saved chapter or page whatever its
- * collections, a collection id for that collection's contents. The three All views are one entry in
- * the collection lists; the kind is a second axis, picked beside the title.
+ * Which view the Library tab is showing — two independent axes. The COLLECTION is `null` for All
+ * or a collection's id; the KIND narrows whichever of those is showing to its series, chapters or
+ * pages. All's series view is the library's own grid; every other pairing is a collected-items
+ * listing scoped by both.
  *
  * Lifted out of the Library screen's `useState` because the sidebar drives it too, and a selection
  * two surfaces can move is shared state by definition. Same split the bridge selection already makes
@@ -17,41 +17,28 @@ import { use$ } from '@legendapp/state/react';
 
 import type { Collection } from '@/data/types';
 
-// `@` can't start a collection id (they are UUIDs), so these can share the id's slot.
-export const ALL_CHAPTERS = '@chapters';
-export const ALL_PAGES = '@pages';
-
-/** The item type an all-of-a-kind view lists, or `null` for the series grid and for a collection. */
-export function allItemsType(view: string | null): 'chapter' | 'page' | null {
-  return view === ALL_CHAPTERS ? 'chapter' : view === ALL_PAGES ? 'page' : null;
-}
-
-export function isAllView(view: string | null): boolean {
-  return view === null || allItemsType(view) !== null;
-}
-
 export const ALL_VIEW_NAME = 'All';
 
 export type ItemKind = 'series' | 'chapter' | 'page';
+export const ITEM_KINDS: readonly ItemKind[] = ['series', 'chapter', 'page'];
 export const ITEM_KIND_LABELS: Record<ItemKind, string> = { series: 'Series', chapter: 'Chapters', page: 'Pages' };
-const KIND_VIEWS: Record<ItemKind, string | null> = { series: null, chapter: ALL_CHAPTERS, page: ALL_PAGES };
 
-export function itemKindOf(view: string | null): ItemKind {
-  return allItemsType(view) ?? 'series';
+/** Which kinds a view holds anything of; `null` while that is still loading. */
+export type KindsPresent = Record<ItemKind, boolean> | null;
+
+/** The kinds a view can be narrowed to — the ones it holds. Nothing known yet keeps the selection
+ *  offered, so a view doesn't flash to another kind while its contents load. */
+export function itemKindOptions(present: KindsPresent, selected: ItemKind): ItemKind[] {
+  if (!present) return [selected];
+  return ITEM_KINDS.filter((k) => present[k]);
 }
 
-export function viewForItemKind(kind: ItemKind): string | null {
-  return KIND_VIEWS[kind];
-}
-
-/** The kinds All can be narrowed to. A kind is offered once anything of it is saved — and while it is
- *  the selection, so emptying it doesn't pull the option out from under the screen showing it. */
-export function itemKindOptions(kinds: { chapter: boolean; page: boolean }, selected: string | null): ItemKind[] {
-  return [
-    'series',
-    ...(kinds.chapter || selected === ALL_CHAPTERS ? (['chapter'] as const) : []),
-    ...(kinds.page || selected === ALL_PAGES ? (['page'] as const) : []),
-  ];
+/** The kind a view actually shows: the selection when the view holds any, else the first kind it
+ *  does hold. The selection itself is left alone, so a collection of only pages doesn't drag the
+ *  next view onto Pages too. */
+export function effectiveItemKind(present: KindsPresent, selected: ItemKind): ItemKind {
+  const options = itemKindOptions(present, selected);
+  return options.includes(selected) ? selected : (options[0] ?? selected);
 }
 
 export type LibraryView = { id: string | null; name: string; testKey: string };
@@ -65,6 +52,7 @@ export function libraryViews(collections: Collection[]): LibraryView[] {
 }
 
 const selectedCollection$ = observable<string | null>(null);
+const selectedKind$ = observable<ItemKind>('series');
 
 /** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx` for the
  *  crash that shape causes under the React Compiler. */
@@ -74,4 +62,12 @@ export function useSelectedCollectionId(): string | null {
 
 export function setSelectedCollection(id: string | null): void {
   selectedCollection$.set(id);
+}
+
+export function useSelectedItemKind(): ItemKind {
+  return use$(selectedKind$);
+}
+
+export function setSelectedItemKind(kind: ItemKind): void {
+  selectedKind$.set(kind);
 }

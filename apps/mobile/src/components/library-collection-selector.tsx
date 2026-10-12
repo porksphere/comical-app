@@ -8,25 +8,21 @@ import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import {
   ALL_VIEW_NAME,
-  isAllView,
   ITEM_KIND_LABELS,
-  itemKindOf,
   itemKindOptions,
   libraryViews,
-  viewForItemKind,
   type ItemKind,
+  type KindsPresent,
 } from '@/data/selected-collection';
 import type { Collection } from '@/data/types';
 import { useHover } from '@/hooks/use-hover';
-import { useSavedItemKinds } from '@/hooks/use-saved-item-kinds';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 
 /**
  * The Library tab's top-bar view selector — the bridge-selector shape, reading "All" or the
- * collection's name and opening a menu to switch between them. A collection shows its mixed
- * contents; All is narrowed to one kind by the `LibraryKindSelector` beside it. A trailing "Manage
- * collections…" action pushes the manage screen.
+ * collection's name and opening a menu to switch between them. Either is narrowed to one kind by the
+ * `LibraryKindSelector` beside it. A trailing "Manage collections…" action pushes the manage screen.
  */
 export function LibraryCollectionSelector({
   value,
@@ -43,8 +39,7 @@ export function LibraryCollectionSelector({
   const { hovered, handlers } = useHover();
   const type = useSubtitleSelectorStyle();
 
-  const current = isAllView(value) ? null : value;
-  const currentLabel = (current && collections.find((c) => c.id === current)?.name) || ALL_VIEW_NAME;
+  const currentLabel = (value && collections.find((c) => c.id === value)?.name) || ALL_VIEW_NAME;
   // Rows, not collections: every view plus "Manage collections…".
   const rowCount = libraryViews(collections).length + 1;
 
@@ -56,7 +51,7 @@ export function LibraryCollectionSelector({
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
         openAt(
-          () => <CollectionMenu value={current} collections={collections} onChange={onChange} />,
+          () => <CollectionMenu value={value} collections={collections} onChange={onChange} />,
           { popover: rowCount <= MENU_MAX_ROWS },
         )
       }>
@@ -70,26 +65,29 @@ export function LibraryCollectionSelector({
   );
 }
 
-/** All's second axis — Series, Chapters or Pages — as Browse's Page selector sits beside the bridge.
- *  Absent until a chapter or page is saved: with only series to show it would be a lever with one
- *  position. */
+/** The view's second axis — Series, Chapters or Pages — as Browse's Page selector sits beside the
+ *  bridge. Absent while the view holds only one kind: there it would be a lever with one position. */
 export function LibraryKindSelector({
+  present,
   value,
+  selected,
   onChange,
 }: {
-  value: string | null;
-  onChange: (value: string | null) => void;
+  present: KindsPresent;
+  /** The kind on screen — see `effectiveItemKind`. */
+  value: ItemKind;
+  selected: ItemKind;
+  onChange: (kind: ItemKind) => void;
 }) {
-  const kinds = useSavedItemKinds();
-  const options = itemKindOptions(kinds, value);
-  if (!isAllView(value) || options.length < 2) return null;
+  const options = itemKindOptions(present, selected);
+  if (options.length < 2) return null;
   return (
     <Selector
       testID="library.kind-selector"
       title="Show"
-      value={itemKindOf(value)}
+      value={value}
       options={options}
-      onChange={(k) => onChange(viewForItemKind(k as ItemKind))}
+      onChange={(k) => onChange(k as ItemKind)}
       size="subtitle"
       labels={ITEM_KIND_LABELS}
     />
@@ -109,9 +107,8 @@ function CollectionMenu({
   const router = useRouter();
   const thumb = useOptionThumbBox();
 
-  // Back to All keeps the kind it was narrowed to; only a collection replaces the selection.
   const pick = (v: string | null) => {
-    if (v !== value) onChange(v);
+    onChange(v);
     closeTop();
   };
 

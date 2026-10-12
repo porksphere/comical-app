@@ -1,20 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { collectionItemsQuery } from '@/data/queries';
+import type { KindsPresent } from '@/data/selected-collection';
 import { useDataSource, useMockActive } from '@/data/source';
 
-/** Whether any chapters / pages are saved — the Library only lists "All Chapters" and "All Pages"
- *  once there is something in them. */
-export function useSavedItemKinds(): { chapter: boolean; page: boolean } {
+/** Which kinds a Library view holds — All (`null`) or one collection. All always offers Series,
+ *  since its series view is the library grid, which has its own empty state. */
+export function useSavedItemKinds(collection: string | null): KindsPresent {
   const ds = useDataSource();
   const mock = useMockActive();
-  const chapter = useQuery({
-    ...collectionItemsQuery(ds, mock, { type: 'chapter' }),
-    select: (items) => (items?.length ?? 0) > 0,
+  const { data } = useQuery({
+    ...collectionItemsQuery(ds, mock, collection ? { collection } : {}),
+    select: (items) => {
+      const present = { series: collection === null, chapter: false, page: false };
+      for (const item of items ?? []) present[item.type] = true;
+      return present;
+    },
   });
-  const page = useQuery({
-    ...collectionItemsQuery(ds, mock, { type: 'page' }),
-    select: (items) => (items?.length ?? 0) > 0,
-  });
-  return { chapter: chapter.data ?? false, page: page.data ?? false };
+  return data ?? null;
 }

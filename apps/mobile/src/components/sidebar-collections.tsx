@@ -15,19 +15,13 @@ import { StyleSheet } from 'react-native';
 
 import { SidebarSubItem, SidebarThumbRadius, SidebarThumbSize } from '@/components/app-sidebar';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
-import {
-  isAllView,
-  libraryViews,
-  setSelectedCollection,
-  useSelectedCollectionId,
-} from '@/data/selected-collection';
+import { libraryViews, setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
 import { useCollections } from '@/hooks/use-collections';
 import { router } from '@/lib/nav';
 
 export function SidebarCollections({ active, onNavigate }: { active?: boolean; onNavigate?: () => void }) {
   const selected = useSelectedCollectionId();
   const { collections } = useCollections();
-  const current = isAllView(selected) ? null : selected;
 
   return (
     <>
@@ -36,11 +30,10 @@ export function SidebarCollections({ active, onNavigate }: { active?: boolean; o
           key={row.id ?? 'all'}
           testID={`sidebar.collection.${row.testKey}`}
           label={row.name}
-          active={active === true && row.id === current}
+          active={active === true && row.id === selected}
           thumbnail={<CollectionThumb view={row.id} name={row.name} size={SidebarThumbSize} style={styles.thumb} />}
           onPress={() => {
-            // Back to All keeps the kind it was narrowed to; only a collection replaces the selection.
-            if (row.id !== current) setSelectedCollection(row.id);
+            setSelectedCollection(row.id);
             router.navigate('/library');
             onNavigate?.();
           }}
