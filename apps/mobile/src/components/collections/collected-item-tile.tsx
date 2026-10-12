@@ -7,6 +7,7 @@ import {
   View,
   type GestureResponderEvent,
   type View as ViewType,
+  type ImageStyle,
 } from 'react-native';
 
 import { CollectedItemMenu } from '@/components/collections/collected-item-menu';
@@ -73,6 +74,10 @@ export function CollectedItemTile({
   const [pictureAspect, learnAspect] = useCoverAspect(item.id);
   // A placeholder has no picture to take a shape from, and never will have.
   const aspect = showImage ? pictureAspect : DEFAULT_THUMB_ASPECT;
+  // Keyed by the URL it was measured from, so a recycled tile never sizes a new picture by the last.
+  const [natural, setNatural] = useState<{ uri: string; aspect: number } | null>(null);
+  const whole =
+    Platform.OS === 'web' && natural && natural.uri === source ? wholePictureStyle(natural.aspect, aspect) : null;
 
   // ── The gallery zoom, exactly as a series card offers it (see lib/series-zoom) ──────────────
   // Press-in captures this tile's box as the zoom SOURCE RECT, so the reader it opens (sequence
@@ -122,12 +127,15 @@ export function CollectedItemTile({
         {showImage ? (
           <Image
             source={{ uri: source }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
+            style={whole ?? StyleSheet.absoluteFill}
+            contentFit={whole ? 'fill' : 'cover'}
             cachePolicy="memory-disk"
             recyclingKey={item.id}
             onLoad={(e) => {
-              if (e.source?.width && e.source?.height) learnAspect(e.source.width, e.source.height);
+              const { width: w, height: h } = e.source ?? {};
+              if (!w || !h) return;
+              learnAspect(w, h);
+              if (source) setNatural({ uri: source, aspect: w / h });
             }}
             onError={() => setFailed(true)}
           />
@@ -165,6 +173,25 @@ export function CollectedItemTile({
       {({ onLongPress, menuOpen }) => card(onLongPress, menuOpen)}
     </CollectedItemMenu>
   );
+}
+
+/**
+ * The picture at its own shape, scaled to cover a box of `box` aspect and centred — the clip crops it.
+ *
+ * Web only, and not cosmetic: `object-fit: cover` draws a SUBSET of the image, and Chromium filters a
+ * subset draw without mipmaps. A full reader page squeezed ~7× into a tile that way samples its
+ * screentone point by point, which comes out as harsh blotches; the same draw over the whole image is
+ * mipmapped and smooth. The tile only escaped it when its box happened to match the page's shape
+ * exactly — a learned aspect on a revisit — which is why a grid looked broken on its first open and
+ * fine on the next.
+ */
+function wholePictureStyle(picture: number, box: number): ImageStyle {
+  if (picture < box) {
+    const height = (box / picture) * 100;
+    return { position: 'absolute', left: 0, width: '100%', height: `${height}%`, top: `${(100 - height) / 2}%` };
+  }
+  const width = (picture / box) * 100;
+  return { position: 'absolute', top: 0, height: '100%', width: `${width}%`, left: `${(100 - width) / 2}%` };
 }
 
 const styles = StyleSheet.create({
