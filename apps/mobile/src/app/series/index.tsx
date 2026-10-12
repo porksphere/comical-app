@@ -2566,7 +2566,7 @@ function SeriesReaderInstance({
     // once, leaving the release with nothing left to animate.
     const originX = makeMutable(0);
     const originY = makeMutable(0);
-    // Whether this drag has already been an unambiguous back-swipe — see backSwipeStayedHorizontal.
+    // Whether this drag's opening stretch made it a back-swipe — see BACK_SWIPE_DEGREES.
     const qualified = backSwipeShape();
     const settle = () => {
       'worklet';
@@ -2644,7 +2644,7 @@ function SeriesReaderInstance({
         const tx = e.translationX - originX.value;
         const ty = e.translationY - originY.value;
         traceThrottled(updateGate, 60, tag, 'update', { tx, ty, zoom: zoom.value });
-        trackBackSwipeShape(qualified, tx, ty, width * DISMISS_COMMIT_FRACTION);
+        trackBackSwipeShape(qualified, tx, ty);
         const travel = width * ZOOM_DRAG_TRAVEL;
         // RIGHTWARD ONLY, and the clamp has to be on the follow as well as the collapse. The
         // gesture can only ACTIVATE rightward (`backSwipePan`'s activeOffsetX/failOffsetX), but
@@ -2675,6 +2675,7 @@ function SeriesReaderInstance({
           ty: e.translationY - originY.value,
           vx: e.velocityX,
           vy: e.velocityY,
+          shape: qualified.value,
           zoom: zoom.value,
           active: detailsActiveSV.value,
           committing: edgeCommitting.value,
@@ -2683,10 +2684,10 @@ function SeriesReaderInstance({
         if (!detailsActiveSV.value) return;
         const tx = e.translationX - originX.value;
         const ty = e.translationY - originY.value;
-        // Two questions, and BOTH have to say yes: was this a back-swipe at all (did it stay
-        // horizontal over its whole length — activation could only see the first ten points, see
-        // lib/back-swipe), and did it go far enough. A diagonal drag followed the finger and springs
-        // back, which is the right outcome for one: it was never going anywhere.
+        // Two questions, and BOTH have to say yes: was this a back-swipe at all (did its opening
+        // stretch stay horizontal — activation could only see the first ten points, see
+        // lib/back-swipe), and did it go far enough. A drag that opened diagonal followed the finger
+        // and springs back, which is the right outcome for one: it was never going anywhere.
         //
         // Finish from exactly where the finger left it — the spring starts at the current value, so
         // there is no seam between the dragged part and the animated part.
@@ -4271,7 +4272,7 @@ function SearchLayer({
       'worklet';
       edgeX.set(withSpring(0, { ...IOS_CARD_SPRING, velocity }));
     };
-    // See the instance's copy — a stroke that already qualified stays qualified.
+    // See the instance's copy — the opening stretch decides whether this is a back-swipe.
     const qualified = backSwipeShape();
     return backSwipePan(tag)
       .onStart((e) => {
@@ -4292,7 +4293,7 @@ function SearchLayer({
         'worklet';
         const tx = e.translationX - originX.value;
         traceThrottled(updateGate, 60, tag, 'update', { tx, edgeX: edgeX.value });
-        trackBackSwipeShape(qualified, tx, e.translationY - originY.value, width * DISMISS_COMMIT_FRACTION);
+        trackBackSwipeShape(qualified, tx, e.translationY - originY.value);
         edgeX.set(Math.max(0, tx));
       })
       .onEnd((e) => {
@@ -4302,9 +4303,9 @@ function SearchLayer({
         // what react-navigation uses for this exact transition.
         const tx = e.translationX - originX.value;
         const ty = e.translationY - originY.value;
-        trace(tag, 'END', { tx, ty, vx: e.velocityX, vy: e.velocityY, edgeX: edgeX.value, committing: edgeCommitting.value, ran: ranHere.value });
+        trace(tag, 'END', { tx, ty, vx: e.velocityX, vy: e.velocityY, shape: qualified.value, edgeX: edgeX.value, committing: edgeCommitting.value, ran: ranHere.value });
         // Same two questions as the instance's release — a card pop is a back-swipe too, and a
-        // drag that wandered off-axis is not one however far across it got.
+        // drag that opened off-axis is not one however far across it got.
         if (
           backSwipeStayedHorizontal(tx, ty, e.velocityX, e.velocityY, qualified) &&
           releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)

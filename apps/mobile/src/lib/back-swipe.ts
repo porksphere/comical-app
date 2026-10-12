@@ -71,9 +71,9 @@ const BACK_ACTIVATE_PX = 10;
 /**
  * ── How straight a back-swipe has to be, and why it takes TWO numbers ───────────────────────────
  *
- * THE RULE is BACK_SWIPE_DEGREES: how far off straight-across a back-swipe may wander, measured
- * over the whole stroke. Stated in degrees because that is the unit the question gets asked in, and
- * everything below derives from it.
+ * THE RULE is BACK_SWIPE_DEGREES: how far off straight-across a back-swipe may wander over its
+ * OPENING stretch (BACK_SWIPE_LOCK_PX). Stated in degrees because that is the unit the question gets
+ * asked in, and everything below derives from it.
  *
  * It cannot be applied at activation. Activation has to decide inside ten points — the scroller's
  * claim deadline, not a preference (see BACK_ACTIVATE_PX) — and fifteen degrees of ten points is a
@@ -87,26 +87,36 @@ const BACK_ACTIVATE_PX = 10;
  *     honest swipes and to not steal obvious scrolls. It is deliberately generous, because ten
  *     points cannot support better and because being wrong here is cheap: activation buys only the
  *     right to FOLLOW the finger, which is reversible.
- *   • RELEASE uses the real angle, via `backSwipeStayedHorizontal`. By then the stroke is usually
- *     hundreds of points long, so the angle is a measurement rather than a guess — and this is the
- *     half that decides whether anything actually happens.
+ *   • The LOCK uses the real angle, once the drag has travelled BACK_SWIPE_LOCK_PX from activation —
+ *     long enough for the angle to be a measurement rather than a guess. It is decided ONCE there
+ *     and latched (`trackBackSwipeShape`): whatever the finger does afterwards, the drag was or was
+ *     not a back-swipe, and only the release distance is left to decide.
  *
  * Worth knowing what this is NOT: UIKit does not work this way. Its own back gesture is edge-only
  * (UIScreenEdgePanGestureRecognizer, ~20pt from the leading edge), which is how it avoids ever
  * having to tell a back-swipe from a scroll — almost nothing else starts in that strip. And once
  * engaged it never re-checks direction: the interactive pop's percentComplete is horizontal
  * translation alone, vertical discarded, so an edge swipe that arcs hard upward still pops. Decide
- * once, early, then commit — the same shape as UIScrollView's directional lock. A full-surface
- * back-swipe cannot borrow that, because it has no strip to hide in; the second look is the price
- * of putting the gesture everywhere.
+ * once, early, then commit — the same shape as UIScrollView's directional lock, and the shape the
+ * lock copies. A full-surface back-swipe only needs the decision a few points later than an edge
+ * gesture would, because it has no strip to hide in.
+ *
+ * It used to judge the angle over the WHOLE stroke, at release. That read thumb arcs as diagonals:
+ * a quick flick curls at the end (120 across with 40 of curl is 18°), so flicks a native pop takes
+ * sprang back, and a long drag that curled after it was obviously a back-swipe needed a latch to
+ * survive its own ending.
  *
  * Tune BACK_SWIPE_DEGREES. Leave the other two alone unless swipes stop STARTING, which is the
  * failure the pre-filter owns.
  */
 const BACK_SWIPE_DEGREES = 15;
 
-/** The rule as a slope: the most |cross-axis| may be as a fraction of |along-axis|, over the whole
- *  drag. Derived from the degrees above so the two cannot disagree. */
+/** Travel from activation over which BACK_SWIPE_DEGREES is judged — 15° of it is ~8pt of vertical,
+ *  past finger jitter, and short enough that even a quick flick has been decided before it lands. */
+const BACK_SWIPE_LOCK_PX = 32;
+
+/** The rule as a slope: the most |cross-axis| may be as a fraction of |along-axis|, over the
+ *  opening stretch. Derived from the degrees above so the two cannot disagree. */
 const BACK_DOMINANCE = Math.tan((BACK_SWIPE_DEGREES * Math.PI) / 180);
 
 /**
@@ -244,90 +254,53 @@ export function useBackSwipeBlocker(): NativeGesture | undefined {
 }
 
 /**
- * THE dominance rule — the half that can see the whole gesture, and the one that decides.
+ * Was this drag a back-swipe? The lock's verdict when it reached one (see BACK_SWIPE_DEGREES);
+ * the angle is not looked at again after that, however the stroke curls on the way to the release.
  *
- * Activation has to decide inside the first ten points, and ten points is not enough to know what a
- * swipe is. A thumb ARCS: it leaves nearly straight across and curves as the thumb pivots, so a drag
- * that ends up at 45° can spend its opening millimetres at 15° and satisfy any criteria measured
- * there. A diagonal swipe passing activation is therefore not a slack threshold — the threshold is
- * reading a genuinely horizontal beginning. The person holding the phone is judging the whole
- * stroke, and the whole stroke does not exist until it is over.
- *
- * Which is why the real angle lives here rather than up there. Activation buys only the right to
- * FOLLOW the finger — cheap, and reversible; this is where a drag either was a back-swipe or
- * springs back having briefly looked like one.
+ * A drag released before the lock distance never got a verdict — a tiny flick — and is judged here
+ * on its endpoint or, failing that, on where it was headed (lib/gesture-release), since a flick that
+ * short is all wobble and its velocity says more about its direction than its few points of travel.
  *
  * RNGH resets translation to zero the moment a pan activates (RNPanHandler.m, at the state change),
- * so `tx`/`ty` here measure the drag from activation onward — exactly the part that was on screen
- * following the finger, and exactly the part someone means when they say the swipe was diagonal.
- *
- * A FLICK is also judged by where it was headed (lib/gesture-release), not only where the finger
- * lifted. A quick thumb flick is short and curls at the end — 120 across with 40 of curl is 18°, so
- * the endpoint alone rejected flicks that a native pop takes, while the same distance dragged slowly
- * (and straighter) passed. Projecting both axes along the release velocity measures the throw's
- * direction instead of its wobble. It only ever loosens: with no velocity the projection IS the
- * endpoint, and a diagonal flick projects diagonal and still fails.
+ * so `tx`/`ty` measure the drag from activation onward — the part that was on screen following the
+ * finger.
  */
 export function backSwipeStayedHorizontal(
   tx: number,
   ty: number,
   vx: number,
   vy: number,
-  qualified: BackSwipeShape,
+  shape: BackSwipeShape,
 ): boolean {
   'worklet';
-  if (qualified.value || Math.abs(ty) <= Math.abs(tx) * BACK_DOMINANCE) return true;
+  if (shape.value !== SHAPE_UNDECIDED) return shape.value === SHAPE_BACK_SWIPE;
+  if (Math.abs(ty) <= Math.abs(tx) * BACK_DOMINANCE) return true;
   const px = tx + projectRelease(vx);
   const py = ty + projectRelease(vy);
   return Math.abs(py) <= Math.abs(px) * BACK_DOMINANCE;
 }
 
-/**
- * …with one way to have already answered it: a drag that was a committed back-swipe EARLIER stays
- * one, however the finger wanders afterwards.
- *
- * The endpoint test alone reads a drag backwards. Pull a page 300 points right — dead horizontal,
- * well past the distance it needs, visibly most of the way collapsed — then curl up 100 points
- * before letting go, and it says 100 > 300·tan15° and springs the whole thing back. Reported in
- * exactly those terms: "swiping over then up and then releasing results in the page NOT being
- * swiped away, even though if I didn't swipe up, it would have qualified." It had qualified. The
- * curl happened after, to a page that was already three-quarters gone.
- *
- * So the shape question is asked continuously and latched the first time the answer is an
- * unambiguous yes — on-axis AND already past the committing distance. Once that has happened the
- * stroke was a back-swipe as a matter of record, and only `releaseCommitted` has anything left to
- * decide. Nothing is loosened for the strokes the angle exists to catch:
- *
- *   • a 45° diagonal is off-axis at every sample, so it never latches and still meets the endpoint
- *     test on release, which it fails;
- *   • a stroke that goes ten points across and then veers hard upward never latches either — it was
- *     not past the distance while it was still on-axis;
- *   • a stroke that goes far across and is then hauled back latches, and then fails `releaseCommitted`
- *     on the distance, which is the right reason to refuse it;
- *   • a quick flick that commits on velocity alone never travels far enough to latch, and is judged
- *     by its endpoint or its projection — see `backSwipeStayedHorizontal`.
- */
-export type BackSwipeShape = SharedValue<boolean>;
+const SHAPE_UNDECIDED = 0;
+const SHAPE_BACK_SWIPE = 1;
+const SHAPE_NOT_BACK_SWIPE = -1;
+
+/** The lock's verdict for one drag: undecided, a back-swipe, or not one. */
+export type BackSwipeShape = SharedValue<number>;
 
 /** One per gesture copy, alongside its other shared values. */
 export function backSwipeShape(): BackSwipeShape {
-  return makeMutable(false);
+  return makeMutable(SHAPE_UNDECIDED);
 }
 
-/** Call from `onStart` — translation is measured per drag, so the latch is too. */
-export function resetBackSwipeShape(qualified: BackSwipeShape): void {
+/** Call from `onStart` — translation is measured per drag, so the verdict is too. */
+export function resetBackSwipeShape(shape: BackSwipeShape): void {
   'worklet';
-  qualified.set(false);
+  shape.set(SHAPE_UNDECIDED);
 }
 
-/** Call from `onUpdate`. `commitDistance` is the same threshold the release will use. */
-export function trackBackSwipeShape(
-  qualified: BackSwipeShape,
-  tx: number,
-  ty: number,
-  commitDistance: number,
-): void {
+/** Call from `onUpdate`: decides the verdict on the first sample past the lock distance. */
+export function trackBackSwipeShape(shape: BackSwipeShape, tx: number, ty: number): void {
   'worklet';
-  if (qualified.value) return;
-  if (tx > commitDistance && Math.abs(ty) <= tx * BACK_DOMINANCE) qualified.set(true);
+  if (shape.value !== SHAPE_UNDECIDED || Math.hypot(tx, ty) < BACK_SWIPE_LOCK_PX) return;
+  shape.set(tx > 0 && Math.abs(ty) <= tx * BACK_DOMINANCE ? SHAPE_BACK_SWIPE : SHAPE_NOT_BACK_SWIPE);
 }
