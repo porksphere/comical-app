@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 
 import { CollectedItemsGrid } from '@/components/collections/collected-items-grid';
 import { CollectedSortButton } from '@/components/collections/collected-sort-button';
+import { LibraryFilterButton } from '@/components/library-filter-button';
 import {
   COLLECTION_EMPTY,
   holdWithinView,
@@ -17,6 +19,7 @@ import { ITEM_KIND_LABELS, type SavedKind } from '@/data/selected-collection';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { ALL_BRIDGES, onlyBridge, useLibraryBridge } from '@/hooks/use-library-sort';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useRouter } from '@/lib/nav';
 import { encodeSeriesParam } from '@/lib/series-nav';
@@ -40,8 +43,9 @@ export function LibrarySavedView({ collection, kind, term, ready, chrome }: Libr
   const mock = useMockActive();
   const router = useRouter();
   const warmPages = useWarmChapterPages();
-  const { knownById: bridgeById } = useBridgeMap();
+  const { knownById: bridgeById, nameOf } = useBridgeMap();
   const [view] = useCollectedView(collection, kind);
+  const [bridge] = useLibraryBridge();
 
   const query = useQuery({
     ...collectionItemsQuery(ds, mock, collectedListing(collection, kind, view, term)),
@@ -50,7 +54,9 @@ export function LibrarySavedView({ collection, kind, term, ready, chrome }: Libr
   });
   useRefetchOnRefocus(query.refetch);
   // The library grid's NSFW rule, applied to what was saved out of those series too.
-  const visible = useVisibleByBridge(query.data ?? undefined);
+  const nsfwVisible = useVisibleByBridge(query.data ?? undefined);
+  const visible = useMemo(() => onlyBridge(nsfwVisible, bridge), [nsfwVisible, bridge]);
+  const source = bridge === ALL_BRIDGES ? null : nameOf(bridge);
 
   const noun = ITEM_KIND_LABELS[kind].toLowerCase();
   const header = listingStatus({
@@ -64,6 +70,12 @@ export function LibrarySavedView({ collection, kind, term, ready, chrome }: Libr
     ],
     empty: () => {
       if (term) return ['No matches', `No saved ${noun} ${collection ? 'in this collection ' : ''}match your filter.`];
+      if (source) {
+        return [
+          `No saved ${noun} from ${source}`,
+          `Showing only ${source} — change that from the filter menu.`,
+        ];
+      }
       return collection ? COLLECTION_EMPTY : NONE_SAVED[kind];
     },
   });
@@ -81,6 +93,7 @@ export function LibrarySavedView({ collection, kind, term, ready, chrome }: Libr
           seqSort: view.sort,
           seqDir: view.dir,
           ...(term ? { seqQ: term } : {}),
+          ...(bridge !== ALL_BRIDGES ? { seqBridge: bridge } : {}),
           seqStart: item.id,
         },
       });
@@ -109,7 +122,7 @@ export function LibrarySavedView({ collection, kind, term, ready, chrome }: Libr
       grouping={view.grouping}
       // Every axis is in the key: a sort/dir/grouping switch is a scroll-to-top moment and must
       // reset recycled rows, exactly as a search or view switch does.
-      scopeKey={`collected|${term}|${collection ?? ''}|${kind}|${view.sort}|${view.dir}|${view.grouping}`}
+      scopeKey={`collected|${term}|${bridge}|${collection ?? ''}|${kind}|${view.sort}|${view.dir}|${view.grouping}`}
       header={header}
       // A saved page opens in sequence mode, where the sequence IS the page list — nothing to warm,
       // and its image is the one its tile is already showing.
@@ -124,6 +137,19 @@ export function LibrarySavedView({ collection, kind, term, ready, chrome }: Libr
 }
 
 export function LibrarySavedControls({ collection, kind }: { collection: string | null; kind: SavedKind }) {
+  const ds = useDataSource();
+  const mock = useMockActive();
   const [view, setView] = useCollectedView(collection, kind);
-  return <CollectedSortButton value={view} onChange={setView} />;
+  const [bridge, setBridge] = useLibraryBridge();
+  // Unsearched, so the sources on offer are the shelf's and don't shift as you type.
+  const { data: present } = useQuery({
+    ...collectionItemsQuery(ds, mock, collectedListing(collection, kind, view, '')),
+    select: selectSaved,
+  });
+  return (
+    <>
+      <LibraryFilterButton bridge={bridge} onBridgeChange={setBridge} present={present ?? undefined} />
+      <CollectedSortButton value={view} onChange={setView} />
+    </>
+  );
 }

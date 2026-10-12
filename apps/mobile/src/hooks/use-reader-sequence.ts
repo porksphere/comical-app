@@ -41,6 +41,8 @@ export type ReaderSequenceParams = {
   seqSort?: string;
   seqDir?: string;
   seqQ?: string;
+  /** The Library's source filter, when one narrowed the grid. */
+  seqBridge?: string;
   /** The collected item id to open on. */
   seqStart?: string;
 };
@@ -87,10 +89,15 @@ export function useReaderSequence(params: ReaderSequenceParams): {
   // applies — otherwise a page hidden from the collection could still be swiped into from a
   // neighbouring one.
   const visible = useVisibleByBridge(data ?? undefined);
-  // The listing is pages-only already; the guard narrows the type.
+  // The listing is pages-only already; the guard narrows the type. The source filter is the grid's
+  // too, for the same reason as the NSFW rule: the album is the grid, so it can't page past it.
+  const seqBridge = params.seqBridge;
   const filtered = useMemo(
-    () => visible.filter((i): i is ApiCollectionPageItem => i.type === 'page'),
-    [visible],
+    () =>
+      visible.filter(
+        (i): i is ApiCollectionPageItem => i.type === 'page' && (!seqBridge || i.bridgeId === seqBridge),
+      ),
+    [visible, seqBridge],
   );
   // LATCHED on the first resolved answer, for the album's whole life. The sequence is the mounted
   // pager's verbatim page list, and the collection query it derives from is live — un-saving the

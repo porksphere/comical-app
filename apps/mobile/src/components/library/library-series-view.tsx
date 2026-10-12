@@ -18,7 +18,14 @@ import { libraryQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { ReadState } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useLibraryGrouping, useLibraryShow, useLibrarySort } from '@/hooks/use-library-sort';
+import {
+  ALL_BRIDGES,
+  onlyBridge,
+  useLibraryBridge,
+  useLibraryGrouping,
+  useLibraryShow,
+  useLibrarySort,
+} from '@/hooks/use-library-sort';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 
 // What an empty grid says under each "Show" choice — the filter emptied it, not the view.
@@ -40,6 +47,7 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
   const [sort] = useLibrarySort(collection);
   const [grouping] = useLibraryGrouping();
   const [show] = useLibraryShow();
+  const [bridge] = useLibraryBridge();
   const readState = show === 'all' ? null : show;
 
   const query = useQuery({
@@ -48,15 +56,16 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
   });
   useRefetchOnRefocus(query.refetch);
 
-  const { knownById: bridgeById } = useBridgeMap();
+  const { knownById: bridgeById, nameOf } = useBridgeMap();
   const visible = useVisibleByBridge(query.data ?? undefined);
   const cards = useMemo<LibraryGridItem[]>(
-    () => visible.map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId))),
-    [visible, bridgeById],
+    () => onlyBridge(visible, bridge).map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId))),
+    [visible, bridge, bridgeById],
   );
   const groupOf = useMemo(() => libraryGroupOf(grouping) ?? undefined, [grouping]);
 
-  const where = collection ? 'in this collection' : 'in your library';
+  const source = bridge === ALL_BRIDGES ? null : nameOf(bridge);
+  const where = `${source ? `from ${source} ` : ''}${collection ? 'in this collection' : 'in your library'}`;
   const header = listingStatus({
     query,
     ready,
@@ -70,8 +79,10 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
       if (term) return ['No matches', `No series ${where} match your filter.`];
       if (readState) {
         const [title, detail] = SHOW_EMPTY[readState](where);
-        return [title, `${detail} Showing “${SHOW_LABELS[readState]}” — change that from the filter menu.`];
+        const showing = `“${SHOW_LABELS[readState]}”${source ? ` from ${source}` : ''}`;
+        return [title, `${detail} Showing ${showing} — change that from the filter menu.`];
       }
+      if (source) return [`Nothing from ${source}`, `No series ${where}. Showing only ${source} — change that from the filter menu.`];
       if (collection) return COLLECTION_EMPTY;
       return ['Your library is empty', 'Open a series and tap “＋ Library” to add it here.'];
     },
@@ -81,7 +92,7 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
     <SeriesGrid
       {...chrome}
       items={ready ? cards : []}
-      scopeKey={`${term}|${sort}|${grouping}|${show}|${collection ?? ''}`}
+      scopeKey={`${term}|${sort}|${grouping}|${show}|${bridge}|${collection ?? ''}`}
       header={header}
       // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
       hasSub
@@ -97,9 +108,20 @@ export function LibrarySeriesControls({ collection }: { collection: string | nul
   const [sort, setSort] = useLibrarySort(collection);
   const [grouping, setGrouping] = useLibraryGrouping();
   const [show, setShow] = useLibraryShow();
+  const [bridge, setBridge] = useLibraryBridge();
+  // The view's own listing minus its search and Show filter, so the sources on offer are the shelf's
+  // and don't shift as you type. Unfiltered, it is the very query the grid itself runs.
+  const ds = useDataSource();
+  const mock = useMockActive();
+  const { data: present } = useQuery(libraryQuery(ds, mock, '', sort, collection, null));
   return (
     <>
-      <LibraryFilterButton value={show} onChange={setShow} />
+      <LibraryFilterButton
+        show={{ value: show, onChange: setShow }}
+        bridge={bridge}
+        onBridgeChange={setBridge}
+        present={present ?? undefined}
+      />
       <LibrarySortButton value={sort} onChange={setSort} grouping={grouping} onGroupingChange={setGrouping} />
     </>
   );

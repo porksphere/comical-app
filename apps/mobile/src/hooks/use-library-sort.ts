@@ -52,3 +52,18 @@ export function useLibraryShow(): [LibraryShow, (s: LibraryShow) => void] {
   const show = use$(libraryShow$);
   return [show, (next) => libraryShow$.set(next)];
 }
+
+/** The Library's source filter — one bridge id, or `'all'`. Shared by every view and kind, like the
+ *  Show filter: narrowing to a source is about which source you're reading, not which shelf. */
+export type LibraryBridge = string;
+export const ALL_BRIDGES: LibraryBridge = 'all';
+const libraryBridge$ = persisted$<LibraryBridge>('comical:libraryBridge', ALL_BRIDGES);
+
+export function useLibraryBridge(): [LibraryBridge, (b: LibraryBridge) => void] {
+  const bridge = use$(libraryBridge$);
+  return [bridge, (next) => libraryBridge$.set(next)];
+}
+
+export function onlyBridge<T extends { bridgeId: string }>(items: T[], bridge: LibraryBridge): T[] {
+  return bridge === ALL_BRIDGES ? items : items.filter((i) => i.bridgeId === bridge);
+}

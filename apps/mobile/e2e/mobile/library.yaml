@@ -59,6 +59,20 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "series-card\\..*"
 
+# Narrow to one source ("panelfox" is a seeded mock bridge), then back.
+- tapOn:
+    id: "library.filter"
+- tapOn:
+    id: "library.bridge.panelfox"
+- assertVisible:
+    id: "series-card\\..*"
+- tapOn:
+    id: "library.filter"
+- tapOn:
+    id: "library.bridge.all"
+- assertVisible:
+    id: "series-card\\..*"
+
 # Collection scope -> Manage Collections -> back
 - tapOn:
     id: "library.collection-selector"
