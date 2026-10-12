@@ -16,6 +16,7 @@ import { CardCaption, CoverFrame, useCoverAspect } from '@/components/series-car
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { ApiSavedItem } from '@/data/api';
+import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { useIsZoomingSeries, useZoomOriginSource, useZoomSurfaceKey } from '@/lib/series-zoom';
@@ -45,8 +46,8 @@ export function CollectedItemTile({
   onWarm,
 }: {
   item: ApiSavedItem;
-  /** Resolved page URL, or `undefined` while its chapter list is still loading / unavailable.
-   *  Only meaningful for a page item; a chapter has no image. */
+  /** The page's URL as the bridge listed it, or `undefined` while its chapter list is still loading /
+   *  unavailable. Only meaningful for a page item; a chapter has no image. */
   uri?: string;
   /** The grid is cross-bridge, so each tile names its source, as a Library series card does. */
   bridgeName: string;
@@ -69,7 +70,9 @@ export function CollectedItemTile({
     setHovered(false);
   }
 
-  const source = item.type === 'page' ? uri : undefined;
+  // A bridge may list a page as a server-relative resolve route rather than a CDN URL, which
+  // `<Image>` can't load as-is.
+  const source = useResolvedAsset(item.type === 'page' ? uri : undefined);
   const showImage = !!source && !failed;
   const TypeIcon = item.type === 'chapter' ? ChapterItemIcon : PageItemIcon;
   const { chapterName } = item;
