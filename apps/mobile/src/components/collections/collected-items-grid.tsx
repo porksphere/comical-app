@@ -9,6 +9,7 @@ import { estimatedCardHeight } from '@/components/series-card';
 import type { ApiSavedItem } from '@/data/api';
 import { buildCollectedRows, type CollectedRow } from '@/data/collected-rows';
 import type { CollectedGrouping } from '@/data/collected-view';
+import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCollectedPageUris } from '@/hooks/use-collected-page-uris';
 import { GRID_ROW_GAP, GRID_ROW_PAD_BOTTOM, GRID_ROW_PAD_TOP, useGridLayout } from '@/hooks/use-grid-layout';
 
@@ -59,6 +60,7 @@ export function CollectedItemsGrid({
   // One request per CHAPTER, not per tile — see the hook. Read during render as a lookup table;
   // never a memo dependency (it is a fresh Map each render by design).
   const uris = useCollectedPageUris(items);
+  const { nameOf } = useBridgeMap();
 
   // Memoized on the data, the column count and the grouping — NOT on `uris`, which is a fresh Map
   // every render by design (see the hook). Rows carry items; tiles look their URL up at render
@@ -89,6 +91,7 @@ export function CollectedItemsGrid({
               key={item.id}
               item={item}
               uri={uris.get(item.id)}
+              bridgeName={nameOf(item.bridgeId)}
               width={cardWidth}
               onPress={() => onOpen(item)}
               onWarm={onWarm && (() => onWarm(item))}

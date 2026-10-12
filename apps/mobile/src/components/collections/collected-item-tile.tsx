@@ -39,6 +39,7 @@ import { useIsZoomingSeries, useZoomOriginSource, useZoomSurfaceKey } from '@/li
 export function CollectedItemTile({
   item,
   uri,
+  bridgeName,
   width,
   onPress,
   onWarm,
@@ -47,6 +48,8 @@ export function CollectedItemTile({
   /** Resolved page URL, or `undefined` while its chapter list is still loading / unavailable.
    *  Only meaningful for a page item; a chapter has no image. */
   uri?: string;
+  /** The grid is cross-bridge, so each tile names its source, as a Library series card does. */
+  bridgeName: string;
   width: number;
   onPress: () => void;
   /** Start the fetch `onPress` is about to need. Supplied by whoever owns the navigation, since a
@@ -164,7 +167,7 @@ export function CollectedItemTile({
           </View>
         )}
       </CoverFrame>
-      <CardCaption title={item.seriesTitle} sub={chapterName} />
+      <CardCaption title={item.seriesTitle} sub={chapterName ? `${bridgeName} · ${chapterName}` : bridgeName} />
     </Pressable>
   );
 
