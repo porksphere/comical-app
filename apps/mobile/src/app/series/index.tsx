@@ -2674,6 +2674,7 @@ function SeriesReaderInstance({
           tx: e.translationX - originX.value,
           ty: e.translationY - originY.value,
           vx: e.velocityX,
+          vy: e.velocityY,
           zoom: zoom.value,
           active: detailsActiveSV.value,
           committing: edgeCommitting.value,
@@ -2690,7 +2691,7 @@ function SeriesReaderInstance({
         // Finish from exactly where the finger left it — the spring starts at the current value, so
         // there is no seam between the dragged part and the animated part.
         if (
-          backSwipeStayedHorizontal(tx, ty, qualified) &&
+          backSwipeStayedHorizontal(tx, ty, e.velocityX, e.velocityY, qualified) &&
           releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)
         )
           commit(e.velocityX);
@@ -4301,11 +4302,11 @@ function SearchLayer({
         // what react-navigation uses for this exact transition.
         const tx = e.translationX - originX.value;
         const ty = e.translationY - originY.value;
-        trace(tag, 'END', { tx, ty, vx: e.velocityX, edgeX: edgeX.value, committing: edgeCommitting.value, ran: ranHere.value });
+        trace(tag, 'END', { tx, ty, vx: e.velocityX, vy: e.velocityY, edgeX: edgeX.value, committing: edgeCommitting.value, ran: ranHere.value });
         // Same two questions as the instance's release — a card pop is a back-swipe too, and a
         // drag that wandered off-axis is not one however far across it got.
         if (
-          backSwipeStayedHorizontal(tx, ty, qualified) &&
+          backSwipeStayedHorizontal(tx, ty, e.velocityX, e.velocityY, qualified) &&
           releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)
         )
           slideOut(e.velocityX);

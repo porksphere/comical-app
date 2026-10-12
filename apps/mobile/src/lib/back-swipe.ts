@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo } from 'react';
 import { Gesture, type GestureType, type NativeGesture, type PanGesture } from 'react-native-gesture-handler';
 import { makeMutable, type SharedValue } from 'react-native-reanimated';
 
+import { projectRelease } from '@/lib/gesture-release';
 import { isGestureTraceEnabled, trace, traceGate, traceThrottled } from '@/lib/gesture-trace';
 
 /**
@@ -259,10 +260,26 @@ export function useBackSwipeBlocker(): NativeGesture | undefined {
  * RNGH resets translation to zero the moment a pan activates (RNPanHandler.m, at the state change),
  * so `tx`/`ty` here measure the drag from activation onward — exactly the part that was on screen
  * following the finger, and exactly the part someone means when they say the swipe was diagonal.
+ *
+ * A FLICK is also judged by where it was headed (lib/gesture-release), not only where the finger
+ * lifted. A quick thumb flick is short and curls at the end — 120 across with 40 of curl is 18°, so
+ * the endpoint alone rejected flicks that a native pop takes, while the same distance dragged slowly
+ * (and straighter) passed. Projecting both axes along the release velocity measures the throw's
+ * direction instead of its wobble. It only ever loosens: with no velocity the projection IS the
+ * endpoint, and a diagonal flick projects diagonal and still fails.
  */
-export function backSwipeStayedHorizontal(tx: number, ty: number, qualified: BackSwipeShape): boolean {
+export function backSwipeStayedHorizontal(
+  tx: number,
+  ty: number,
+  vx: number,
+  vy: number,
+  qualified: BackSwipeShape,
+): boolean {
   'worklet';
-  return qualified.value || Math.abs(ty) <= Math.abs(tx) * BACK_DOMINANCE;
+  if (qualified.value || Math.abs(ty) <= Math.abs(tx) * BACK_DOMINANCE) return true;
+  const px = tx + projectRelease(vx);
+  const py = ty + projectRelease(vy);
+  return Math.abs(py) <= Math.abs(px) * BACK_DOMINANCE;
 }
 
 /**
@@ -288,7 +305,7 @@ export function backSwipeStayedHorizontal(tx: number, ty: number, qualified: Bac
  *   • a stroke that goes far across and is then hauled back latches, and then fails `releaseCommitted`
  *     on the distance, which is the right reason to refuse it;
  *   • a quick flick that commits on velocity alone never travels far enough to latch, and is judged
- *     by the endpoint exactly as before.
+ *     by its endpoint or its projection — see `backSwipeStayedHorizontal`.
  */
 export type BackSwipeShape = SharedValue<boolean>;
 

@@ -52,7 +52,7 @@
 const PROJECTION_SECONDS = 0.3;
 
 /** How much further a release carries, in points, given its velocity in points/second. */
-function projectRelease(velocity: number): number {
+export function projectRelease(velocity: number): number {
   'worklet';
   return velocity * PROJECTION_SECONDS;
 }
