@@ -33,7 +33,7 @@ const STRIP_PAD_V = Spacing.one;
 // A rail: section header (a title that doubles as the drill-down link, chevron inline) above its
 // cards. Mobile/narrow desktop keeps a snap-scrolling horizontal strip (mirrors the reference's
 // `.carousel`); wide desktop instead lays the first two rows out as a static grid (no horizontal
-// scroll) — the heading's drill-down reaches the rest.
+// scroll) — the heading's drill-down reaches the rest. A hero's grid shows every item.
 
 const CARD_SIZE: Record<RailSection['kind'], CardSize> = {
   hero: 'hero',
@@ -42,6 +42,12 @@ const CARD_SIZE: Record<RailSection['kind'], CardSize> = {
 };
 
 const GRID_ROWS = 2;
+
+/** The wide grid's cards. A hero is a "look at all of these" showcase, so it draws every item at
+ *  any row count; the other kinds are a preview capped at GRID_ROWS, with the drill-down for the rest. */
+function wideGridItems<T>(kind: RailSection['kind'], items: readonly T[], columns: number): readonly T[] {
+  return kind === 'hero' ? items : items.slice(0, columns * GRID_ROWS);
+}
 
 // Strip left/right inset — matches the reference's body padding (1.5rem = 24px
 // = Spacing.four) on every width, so a rail's first card lines up with the
@@ -169,7 +175,7 @@ export function railStripHeight(
     const rowAspects =
       items === undefined || items.length === 0
         ? Array<number>(items === undefined ? GRID_ROWS : 1).fill(DEFAULT_THUMB_ASPECT)
-        : rowCoverAspects(items.slice(0, columns * GRID_ROWS), columns);
+        : rowCoverAspects(wideGridItems(kind, items, columns), columns);
     const cards = rowAspects.reduce((sum, aspect) => sum + estimatedCardHeight(cardWidth, hasSub, aspect), 0);
     return Spacing.one * 2 + cards + (rowAspects.length - 1) * GRID_ROW_GAP;
   }
@@ -342,7 +348,7 @@ export function Rail({
     zoomSurface,
     useCallback((seriesId: string) => section.items.some((i) => String(i.id) === seriesId), [section.items]),
   );
-  const gridItems = section.items.slice(0, grid.columns * GRID_ROWS);
+  const gridItems = wideGridItems(section.kind, section.items, grid.columns);
   const gridRows: SeriesEntry[][] = [];
   for (let i = 0; i < gridItems.length; i += grid.columns) gridRows.push(gridItems.slice(i, i + grid.columns));
   const gridRowAspects = gridRows.map(rowCoverAspect);
