@@ -55,8 +55,8 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "series-card\\..*"
 
-# Filter to one read state (the seeded library has series behind on unread chapters), then back to
-# everything. Its own button beside the sort.
+# Filter by read state (the seeded library has series behind on unread chapters). Its own button
+# beside the sort, and multi-select: the menu stays open, and a second state widens the filter.
 - tapOn:
     id: "Filter by reading state or source"
 - tapOn:
@@ -64,25 +64,24 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "series-card\\..*"
 - tapOn:
-    id: "Filter by reading state or source"
-- tapOn:
-    id: "library.show.all"
+    id: "library.show.unstarted"
 - assertVisible:
     id: "series-card\\..*"
+- tapOn:
+    id: "library.show.all"
 
 # Narrow to one source ("panelfox" is a seeded mock bridge), then back.
-- tapOn:
-    id: "Filter by reading state or source"
 - tapOn:
     id: "library.bridge.panelfox"
 - assertVisible:
     id: "series-card\\..*"
 - tapOn:
-    id: "Filter by reading state or source"
-- tapOn:
     id: "library.bridge.all"
 - assertVisible:
     id: "series-card\\..*"
+
+# Left open: the next tap closes it as it lands (a web popover closes on an outside mousedown
+# rather than behind a backdrop).
 
 # List scope -> Manage Collections -> back
 - tapOn:

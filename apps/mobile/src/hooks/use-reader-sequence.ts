@@ -41,8 +41,8 @@ export type ReaderSequenceParams = {
   seqSort?: string;
   seqDir?: string;
   seqQ?: string;
-  /** The Library's source filter, when one narrowed the grid. */
-  seqBridge?: string;
+  /** The Library's source filter, when one narrowed the grid — comma-joined bridge ids. */
+  seqBridges?: string;
   /** The collected item id to open on. */
   seqStart?: string;
 };
@@ -91,14 +91,13 @@ export function useReaderSequence(params: ReaderSequenceParams): {
   const visible = useVisibleByBridge(data ?? undefined);
   // The listing is pages-only already; the guard narrows the type. The source filter is the grid's
   // too, for the same reason as the NSFW rule: the album is the grid, so it can't page past it.
-  const seqBridge = params.seqBridge;
-  const filtered = useMemo(
-    () =>
-      visible.filter(
-        (i): i is ApiCollectionPageItem => i.type === 'page' && (!seqBridge || i.bridgeId === seqBridge),
-      ),
-    [visible, seqBridge],
-  );
+  const seqBridges = params.seqBridges;
+  const filtered = useMemo(() => {
+    const bridges = seqBridges?.split(',');
+    return visible.filter(
+      (i): i is ApiCollectionPageItem => i.type === 'page' && (!bridges || bridges.includes(i.bridgeId)),
+    );
+  }, [visible, seqBridges]);
   // LATCHED on the first resolved answer, for the album's whole life. The sequence is the mounted
   // pager's verbatim page list, and the collection query it derives from is live — un-saving the
   // page on screen (or any album page) invalidates it, and a refetched, shorter list would shift

@@ -7,6 +7,7 @@ import {
   COLLECTION_EMPTY,
   holdWithinView,
   listingStatus,
+  orList,
   useRefetchOnRefocus,
   type LibraryViewProps,
   type ListingMessage,
@@ -19,9 +20,9 @@ import { useDataSource, useMockActive } from '@/data/source';
 import type { ReadState } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import {
-  ALL_BRIDGES,
-  onlyBridge,
-  useLibraryBridge,
+  onlyBridges,
+  onlyReadStates,
+  useLibraryBridges,
   useLibraryGrouping,
   useLibraryShow,
   useLibrarySort,
@@ -46,12 +47,13 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
   const mock = useMockActive();
   const [sort] = useLibrarySort(collection);
   const [grouping] = useLibraryGrouping();
-  const [show] = useLibraryShow();
-  const [bridge] = useLibraryBridge();
-  const readState = show === 'all' ? null : show;
+  const show = useLibraryShow();
+  const bridges = useLibraryBridges();
 
+  // Unfiltered by reading state: the server takes one state at a time, and every item carries its
+  // own, so the set is applied here.
   const query = useQuery({
-    ...libraryQuery(ds, mock, term, sort, collection, readState),
+    ...libraryQuery(ds, mock, term, sort, collection, null),
     ...holdWithinView(`series|${collection ?? ''}`),
   });
   useRefetchOnRefocus(query.refetch);
@@ -59,12 +61,13 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
   const { knownById: bridgeById, nameOf } = useBridgeMap();
   const visible = useVisibleByBridge(query.data ?? undefined);
   const cards = useMemo<LibraryGridItem[]>(
-    () => onlyBridge(visible, bridge).map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId))),
-    [visible, bridge, bridgeById],
+    () =>
+      onlyReadStates(onlyBridges(visible, bridges), show).map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId))),
+    [visible, bridges, show, bridgeById],
   );
   const groupOf = useMemo(() => libraryGroupOf(grouping) ?? undefined, [grouping]);
 
-  const source = bridge === ALL_BRIDGES ? null : nameOf(bridge);
+  const source = bridges.length ? orList(bridges.map(nameOf)) : null;
   const where = `${source ? `from ${source} ` : ''}${collection ? 'in this collection' : 'in your library'}`;
   const header = listingStatus({
     query,
@@ -77,11 +80,12 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
     ],
     empty: () => {
       if (term) return ['No matches', `No series ${where} match your filter.`];
-      if (readState) {
-        const [title, detail] = SHOW_EMPTY[readState](where);
-        const showing = `“${SHOW_LABELS[readState]}”${source ? ` from ${source}` : ''}`;
-        return [title, `${detail} Showing ${showing} — change that from the filter menu.`];
+      const states = orList(show.map((s) => `“${SHOW_LABELS[s]}”`));
+      if (show.length === 1) {
+        const [title, detail] = SHOW_EMPTY[show[0]](where);
+        return [title, `${detail} Showing ${states}${source ? ` from ${source}` : ''} — change that from the filter menu.`];
       }
+      if (show.length) return ['Nothing matches the filter', `No series ${where} is ${states} — change that from the filter menu.`];
       if (source) return [`Nothing from ${source}`, `No series ${where}. Showing only ${source} — change that from the filter menu.`];
       if (collection) return COLLECTION_EMPTY;
       return ['Your library is empty', 'Open a series and tap “＋ Library” to add it here.'];
@@ -92,7 +96,7 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
     <SeriesGrid
       {...chrome}
       items={ready ? cards : []}
-      scopeKey={`${term}|${sort}|${grouping}|${show}|${bridge}|${collection ?? ''}`}
+      scopeKey={`${term}|${sort}|${grouping}|${show.join(',')}|${bridges.join(',')}|${collection ?? ''}`}
       header={header}
       // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
       hasSub
@@ -107,8 +111,6 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
 export function LibrarySeriesControls({ collection }: { collection: string | null }) {
   const [sort, setSort] = useLibrarySort(collection);
   const [grouping, setGrouping] = useLibraryGrouping();
-  const [show, setShow] = useLibraryShow();
-  const [bridge, setBridge] = useLibraryBridge();
   // The view's own listing minus its search and Show filter, so the sources on offer are the shelf's
   // and don't shift as you type. Unfiltered, it is the very query the grid itself runs.
   const ds = useDataSource();
@@ -116,12 +118,7 @@ export function LibrarySeriesControls({ collection }: { collection: string | nul
   const { data: present } = useQuery(libraryQuery(ds, mock, '', sort, collection, null));
   return (
     <>
-      <LibraryFilterButton
-        show={{ value: show, onChange: setShow }}
-        bridge={bridge}
-        onBridgeChange={setBridge}
-        present={present ?? undefined}
-      />
+      <LibraryFilterButton withShow present={present ?? undefined} />
       <LibrarySortButton value={sort} onChange={setSort} grouping={grouping} onGroupingChange={setGrouping} />
     </>
   );

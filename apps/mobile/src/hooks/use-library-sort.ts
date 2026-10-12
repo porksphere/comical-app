@@ -42,28 +42,52 @@ export function useLibraryGrouping(): [LibraryGrouping, (g: LibraryGrouping) => 
   return [grouping, (next) => libraryGrouping$.set(next)];
 }
 
-/** The series views' "Show" filter — one derived reading state, or `'all'`. One value for every
- *  view, like the grouping. A string rather than `null` for "all" so the persisted value is never a
- *  falsy/nullish primitive. */
-export type LibraryShow = ReadState | 'all';
-const libraryShow$ = persisted$<LibraryShow>('comical:libraryShow', 'all');
+/** Every reading state, in the order the filter lists them. */
+export const READ_STATES: readonly ReadState[] = ['unstarted', 'behind', 'caught-up', 'finished'];
 
-export function useLibraryShow(): [LibraryShow, (s: LibraryShow) => void] {
-  const show = use$(libraryShow$);
-  return [show, (next) => libraryShow$.set(next)];
+/** The series views' "Show" filter — the reading states to keep, empty for every one. One value for
+ *  every view, like the grouping. */
+const libraryShow$ = persisted$<ReadState[]>('comical:libraryShowStates', []);
+
+export function useLibraryShow(): ReadState[] {
+  return use$(libraryShow$);
 }
 
-/** The Library's source filter — one bridge id, or `'all'`. Shared by every view and kind, like the
- *  Show filter: narrowing to a source is about which source you're reading, not which shelf. */
-export type LibraryBridge = string;
-export const ALL_BRIDGES: LibraryBridge = 'all';
-const libraryBridge$ = persisted$<LibraryBridge>('comical:libraryBridge', ALL_BRIDGES);
-
-export function useLibraryBridge(): [LibraryBridge, (b: LibraryBridge) => void] {
-  const bridge = use$(libraryBridge$);
-  return [bridge, (next) => libraryBridge$.set(next)];
+export function clearLibraryShow() {
+  libraryShow$.set([]);
 }
 
-export function onlyBridge<T extends { bridgeId: string }>(items: T[], bridge: LibraryBridge): T[] {
-  return bridge === ALL_BRIDGES ? items : items.filter((i) => i.bridgeId === bridge);
+export function toggleLibraryShow(state: ReadState) {
+  const next = toggled(libraryShow$.peek(), state);
+  // Every state ticked is no filter at all, and is shown as one — "Everything" takes the check.
+  libraryShow$.set(next.length === READ_STATES.length ? [] : READ_STATES.filter((s) => next.includes(s)));
 }
+
+export function onlyReadStates<T extends { readState: ReadState }>(items: T[], states: readonly ReadState[]): T[] {
+  return states.length ? items.filter((i) => states.includes(i.readState)) : items;
+}
+
+/** The Library's source filter — the bridge ids to keep, empty for every source. Shared by every
+ *  view and kind, like the Show filter: narrowing to sources is about what you're reading, not which
+ *  shelf. Unlike the states, ticking every source on offer is NOT normalised to "all": the next
+ *  bridge installed would be filtered out of a library it was never excluded from on purpose. */
+const libraryBridges$ = persisted$<string[]>('comical:libraryBridges', []);
+
+export function useLibraryBridges(): string[] {
+  return use$(libraryBridges$);
+}
+
+export function clearLibraryBridges() {
+  libraryBridges$.set([]);
+}
+
+export function toggleLibraryBridge(bridgeId: string) {
+  libraryBridges$.set(toggled(libraryBridges$.peek(), bridgeId).sort());
+}
+
+export function onlyBridges<T extends { bridgeId: string }>(items: T[], bridges: readonly string[]): T[] {
+  return bridges.length ? items.filter((i) => bridges.includes(i.bridgeId)) : items;
+}
+
+const toggled = <T>(set: readonly T[], value: T): T[] =>
+  set.includes(value) ? set.filter((v) => v !== value) : [...set, value];

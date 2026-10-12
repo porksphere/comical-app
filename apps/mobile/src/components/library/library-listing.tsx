@@ -43,6 +43,11 @@ export const COLLECTION_EMPTY: ListingMessage = [
   'Save a series, chapter, or page into it — while reading, tap the bookmark in the top bar.',
 ];
 
+/** "A", "A or B", "A, B or C" — the filter's ticks, as an empty grid names them. */
+export function orList(items: readonly string[]): string {
+  return items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`;
+}
+
 /**
  * The grid header for a listing that has nothing to show yet, in the order every Library view
  * resolves it: a failure, then loading, then a server with no library (`data === null`), then an
