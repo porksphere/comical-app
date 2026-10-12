@@ -440,7 +440,7 @@ export function SeriesCard({
   // the card does. Measured off the box itself rather than derived from `coverAspect`, so it's
   // right no matter which aspect the card happens to be showing at press time.
   //
-  // Taken on press-IN, not press: `measureInWindow` answers asynchronously, so measuring at press
+  // Taken on press-IN, not press: measuring answers asynchronously, so measuring at press
   // would put a native round trip in front of the navigation. A drill (a related-rail card inside
   // the series page) captures too — those layers zoom exactly like a top-level open. Web has no
   // zoom entrance, so it doesn't measure at all.

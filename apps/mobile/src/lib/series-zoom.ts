@@ -1,7 +1,7 @@
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import { createContext, useCallback, useContext, useEffect, useState, type RefObject } from 'react';
-import { Dimensions } from 'react-native';
+import { Dimensions, Platform } from 'react-native';
 
 import { traceJS } from '@/lib/gesture-trace';
 
@@ -15,7 +15,7 @@ import { traceJS } from '@/lib/gesture-trace';
  * SYNCHRONOUSLY in the destination's first render — a state update would land a frame late, i.e.
  * after the entrance has already started from the wrong geometry.
  *
- * Rect capture happens on press-IN (a native `measureInWindow` round trip is async, and doing it
+ * Rect capture happens on press-IN (a native measure round trip is async, and doing it
  * on press would delay navigation by a frame), so a hold that never becomes a tap — a long-press
  * context menu, a drag that turns into a scroll — also writes one. Two guards keep a stale rect
  * from being applied to an unrelated open: the entry id must match the destination's, and the
@@ -23,7 +23,7 @@ import { traceJS } from '@/lib/gesture-trace';
  *
  */
 
-/** A thumbnail's on-screen box, in WINDOW coordinates (what `measureInWindow` reports), plus the
+/** A thumbnail's on-screen box, in ROOT-VIEW coordinates (see `measureZoomRect`), plus the
  *  corner radius it is drawn with. The RADIUS travels with the rect because the transition draws
  *  a copy of that thumbnail and has to match it: a grid card's cover is rounded 10, a History or
  *  Activity row's is rounded 6, and a copy that assumed one of them was visibly wrong on the
@@ -399,11 +399,30 @@ export async function resolveZoomTarget(
   }
 }
 
-/** The shape of the thing a card measures — `View`'s, narrowed to the one method used. */
-type Measurable = { measureInWindow: (cb: (x: number, y: number, width: number, height: number) => void) => void };
+/** The shape of the thing a card measures — `View`'s, narrowed to the methods used. */
+type Measurable = {
+  measure: (cb: (x: number, y: number, width: number, height: number, pageX: number, pageY: number) => void) => void;
+  measureInWindow: (cb: (x: number, y: number, width: number, height: number) => void) => void;
+};
 
 /**
- * The press-in capture that seeds the entrance. On press-IN because `measureInWindow` is async, and
+ * A view's rect in the coordinates the zoom DRAWS in — the root view's, which on native fills the
+ * screen edge to edge. Not `measureInWindow`: on Android that subtracts the window's visible
+ * display frame (`RootViewUtil.getViewportOffset`), which excludes the status bar while the app
+ * draws under it, so every rect came back a status bar too high and the collapse landed above its
+ * card. `measure`'s page coordinates are the same post-transform rect without that offset, and on
+ * iOS the two agree. Web keeps `measureInWindow`, whose page coordinates would include the scroll.
+ */
+export function measureZoomRect(view: Measurable, cb: (rect: ZoomRect) => void): void {
+  if (Platform.OS === 'web') {
+    view.measureInWindow((x, y, width, height) => cb({ x, y, width, height }));
+    return;
+  }
+  view.measure((_x, _y, width, height, pageX, pageY) => cb({ x: pageX, y: pageY, width, height }));
+}
+
+/**
+ * The press-in capture that seeds the entrance. On press-IN because measuring is async, and
  * doing it on press would cost the navigation a frame.
  */
 export function useZoomOriginSource(
@@ -421,7 +440,7 @@ export function useZoomOriginSource(
           resolve(null);
           return;
         }
-        view.measureInWindow((x, y, width, height) => {
+        measureZoomRect(view, ({ x, y, width, height }) => {
           // Zero-sized means not laid out — not a rect to fly to.
           if (width <= 0 || height <= 0) {
             resolve(null);

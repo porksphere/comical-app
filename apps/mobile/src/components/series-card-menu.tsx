@@ -4,7 +4,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
 import type { SeriesEntry } from '@/data/types';
-import type { ZoomSourceKey } from '@/lib/series-zoom';
+import { measureZoomRect, type ZoomSourceKey } from '@/lib/series-zoom';
 import {
   commitHoveredRow,
   HOLD_ARM_DISTANCE,
@@ -92,11 +92,14 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
       });
       // Prefer an explicit `measureRef` (e.g. History's thumbnail) so the preview lifts from a small
       // portrait rect, not the wide row that wraps the gesture.
-      (measureRef?.current ?? anchorRef.current)?.measureInWindow?.((x, y, width, height) => {
-        if (width > 0 && height > 0) {
-          openSeriesCardMenu({ entry, bridgeId, bridge, direct, coverAspect, startRadius, zoomSource, rect: { x, y, width, height }, onClose });
-        }
-      });
+      const target = measureRef?.current ?? anchorRef.current;
+      if (target) {
+        measureZoomRect(target, (rect) => {
+          if (rect.width > 0 && rect.height > 0) {
+            openSeriesCardMenu({ entry, bridgeId, bridge, direct, coverAspect, startRadius, zoomSource, rect, onClose });
+          }
+        });
+      }
     },
     [bridgeId, bridge, entry, direct, coverAspect, startRadius, zoomSource, measureRef],
   );

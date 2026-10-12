@@ -390,7 +390,7 @@ function ActivityItem({
   // On desktop the time is the row's own column (`when`), so the secondary line drops it.
   const desktop = useIsDesktop();
   // The row's thumbnail is the zoom transition's source rect,
-  // captured on press-IN because `measureInWindow` answers asynchronously — measuring at press
+  // captured on press-IN because measuring answers asynchronously — measuring at press
   // would put a native round trip in front of the navigation. And while its copy is in the air the
   // original blanks, reusing `coverHidden` — the same slot, and the same reason, as the long-press
   // preview's lifted copy.

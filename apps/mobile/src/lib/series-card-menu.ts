@@ -5,7 +5,7 @@ import { makeMutable } from 'react-native-reanimated';
 import type { SeriesEntry } from '@/data/types';
 import type { ZoomSourceKey } from '@/lib/series-zoom';
 
-/** On-screen rect of the pressed card (window coords, from `measureInWindow`). */
+/** On-screen rect of the pressed card (root-view coords, from `measureZoomRect`). */
 export type CardRect = { x: number; y: number; width: number; height: number };
 
 export type SeriesCardMenuRequest = {

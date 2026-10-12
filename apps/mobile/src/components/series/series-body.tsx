@@ -46,6 +46,7 @@ import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
 import { useOpenSearchLayer } from '@/lib/series-nav';
+import { measureZoomRect } from '@/lib/series-zoom';
 import { useRouter } from '@/lib/nav';
 import { formatScore, formatVotes } from '@/lib/rating';
 import { tagPaletteFor } from '@/lib/tag-colors';
@@ -64,7 +65,7 @@ function SeriesCoverBox({
 }: {
   aspect: number;
   children: ReactNode;
-  /** Reports this box's window rect on layout. Only the series page passes it — it
+  /** Reports this box's on-screen rect on layout. Only the series page passes it — it
    *  is the destination bound its zoom transition aligns the tapped card to (see there). */
   onRect?: (rect: { x: number; y: number; width: number; height: number }) => void;
 }) {
@@ -77,8 +78,10 @@ function SeriesCoverBox({
   // `onRect` is a stable callback at its one call site, so depending on it directly (rather than
   // latching it in a ref during render) costs nothing and keeps the ref rules happy.
   const reportRect = useCallback(() => {
-    boxRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
-      if (w > 0 && h > 0) onRect?.({ x, y, width: w, height: h });
+    const box = boxRef.current;
+    if (!box) return;
+    measureZoomRect(box, (rect) => {
+      if (rect.width > 0 && rect.height > 0) onRect?.(rect);
     });
   }, [onRect]);
   return (

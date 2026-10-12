@@ -290,7 +290,7 @@ function HistoryItem({
   const detail = standing ? (desktop ? standing : [standing, relTime(item.lastReadAt)].join('  ·  ')) : undefined;
   const thumbRef = useRef<View>(null);
   // The row's thumbnail is the zoom transition's source rect,
-  // captured on press-IN because `measureInWindow` answers asynchronously — measuring at press
+  // captured on press-IN because measuring answers asynchronously — measuring at press
   // would put a native round trip in front of the navigation. And while its copy is in the air the
   // original blanks, reusing `coverHidden` — the same slot, and the same reason, as the long-press
   // preview's lifted copy.

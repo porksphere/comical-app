@@ -1873,7 +1873,7 @@ function SeriesReaderInstance({
   // a frame or two of waiting just shows the untouched grid. A deadline caps it, after which the
   // transition falls back to the library's own no-destination behaviour (see zoomGeom).
   //
-  // ARMING matters as much as waiting. `measureInWindow` reports a view's rect AFTER every
+  // ARMING matters as much as waiting. A measurement reports a view's rect AFTER every
   // ancestor transform, so measuring the cover while the page is already scaled hands back a
   // shrunken rect — and a destination smaller than the source inverts the scale, which is the page
   // starting large and settling down to its real size. So the page stays at IDENTITY (invisible,
