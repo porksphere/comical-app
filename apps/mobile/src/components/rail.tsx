@@ -1,8 +1,8 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 
 import { BackSwipeBoundary } from '@/components/back-swipe-boundary';
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
@@ -10,7 +10,6 @@ import {
   coverStyles,
   estimatedCardHeight,
   SeriesCard,
-  TitlePeek,
   type CardSize,
 } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
@@ -27,12 +26,9 @@ import { ZoomSurfaceContext, useZoomSurfaceKey, useZoomSurfaceMembership } from 
 import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { testId } from '@/lib/test-id';
 
-// Card cover aspect is 2:3, so a card of width W has a cover of height W·3/2;
-// the title sits a card-gap below it. Used to place the lifted peek popover.
+// Card cover aspect is 2:3, so a card of width W has a cover of height W·3/2.
 const COVER_RATIO = 3 / 2;
 const STRIP_PAD_V = Spacing.one;
-// Must match the SeriesCard's cover→title gap so the lifted peek lands on the title.
-const CARD_GAP = Spacing.two;
 
 // A rail: section header (a title that doubles as the drill-down link, chevron inline) above its
 // cards. Mobile/narrow desktop keeps a snap-scrolling horizontal strip (mirrors the reference's
@@ -257,26 +253,6 @@ export function Rail({
   // have short titles just reserves a little unused bottom space, consistently.
   const stripMinHeight = estimatedCardHeight(cardWidth, hasSub) + STRIP_PAD_V * 2;
 
-  // The full-title peek lives here (not in the card) so it can float ABOVE the
-  // horizontal scroller / grid, which would otherwise clip the card's own
-  // popover. We position it from pure geometry — index, gap, scroll offset (or
-  // measured row top, on the wide grid) — no DOM measurement of the card itself.
-  const [peekIndex, setPeekIndex] = useState<number | null>(null);
-  const [stripTop, setStripTop] = useState(0);
-  const [rowTops, setRowTops] = useState<number[]>([]);
-  const onPeekChange = useCallback((show: boolean, index: number) => {
-    setPeekIndex((prev) => (show ? index : prev === index ? null : prev));
-  }, []);
-
-  // Track the strip's horizontal offset on the UI thread. The peek's left edge
-  // used to be derived from a `scrollX` React state set in onScroll, so every
-  // frame went JS-state → re-render → reposition and the popover visibly lagged
-  // a few frames behind the natively-scrolling cards. Driving it from a shared
-  // value + transform keeps it glued to its card without any JS round-trip.
-  // AnimatedLegendList writes the strip's horizontal offset into `scrollX` on the UI thread via its
-  // `sharedValues` prop (below); the peek transform reads it directly — no worklet onScroll needed.
-  const scrollX = useSharedValue(0);
-
   // Desktop web only: a horizontal ScrollView (LegendList or FlatList alike) can't be dragged with a
   // mouse — touch swipe and shift+wheel work, but click-and-drag does nothing. Add grab-and-pull
   // drag-to-scroll on the strip's scroll node, and swallow the click that follows a real drag so a
@@ -358,34 +334,6 @@ export function Rail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Hide the lifted title peek the instant a drag starts on the strip. A peek is
-  // opened by a press-hold (see SeriesCard's `useHeld`, with a huge
-  // `pressRetentionOffset` so a finger sliding off the card doesn't cancel it) —
-  // if that same touch turns into a horizontal drag of the strip, the card's
-  // `active` state never turns off mid-drag, so the popover would otherwise keep
-  // trying to follow the scroll. On iOS, `AnimatedLegendList`'s reanimated-driven
-  // transform lands a frame behind the native scroll during a fling (an upstream
-  // reanimated/UIScrollView compositing gap — legendapp/list#489, far less
-  // visible on Android/web), which reads as the popover visibly lagging/glitching
-  // behind its card — the "scrolling seems bugged" symptom. A held-but-dragging
-  // popover isn't useful anyway, so just drop it for the duration of the drag.
-  const hidePeekForDrag = useCallback(() => setPeekIndex(null), []);
-
-  // Static (scroll-independent) base position of the peeked card; only changes
-  // when a different card is peeked, not per scroll frame. On the wide grid the
-  // peeked card sits in one of GRID_ROWS rows instead of a single scrolling row.
-  const peekCol = peekIndex == null ? 0 : wide ? peekIndex % grid.columns : peekIndex;
-  const peekRow = peekIndex == null ? 0 : wide ? Math.floor(peekIndex / grid.columns) : 0;
-  const peekBase = peekIndex == null ? 0 : STRIP_PAD + peekCol * (cardWidth + (wide ? grid.columnGap : stripGap));
-  const rowTop = wide ? (rowTops[peekRow] ?? 0) : stripTop;
-  const titleTop = rowTop + STRIP_PAD_V + cardWidth * COVER_RATIO + CARD_GAP;
-
-  // The only per-frame update: slide the peek with the strip on the UI thread.
-  // The wide grid doesn't scroll, so its peek stays put.
-  const peekStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: wide ? 0 : -scrollX.value }],
-  }));
-
   const zoomSurface = useZoomSurfaceKey(`rail:${section.id}`);
   // A rail can lose a card without going anywhere itself (a filter narrowing its contents), which
   // its unmount alone would never report. Positions it cannot answer — it is a horizontal strip with
@@ -405,7 +353,7 @@ export function Rail({
     // Every rail on the home feed is its own surface, which is right: the same series in two rails
     // is two different boxes, and only the one that was tapped blanks.
     <ZoomSurfaceContext.Provider value={zoomSurface}>
-    <View style={[styles.section, peekIndex != null && styles.sectionPeeking]}>
+    <View style={styles.section}>
       {!headless && (
         <SectionHead
           title={section.title}
@@ -423,11 +371,7 @@ export function Rail({
               style={[
                 styles.gridRow,
                 { gap: grid.columnGap, height: estimatedCardHeight(cardWidth, hasSub, gridRowAspects[r]) },
-              ]}
-              onLayout={(e) => {
-                const y = e.nativeEvent.layout.y;
-                setRowTops((prev) => (prev[r] === y ? prev : [...prev.slice(0, r), y, ...prev.slice(r + 1)]));
-              }}>
+              ]}>
               {row.map((item, c) => {
                 const index = r * grid.columns + c;
                 return (
@@ -437,8 +381,6 @@ export function Rail({
                     size={size}
                     width={cardWidth}
                     rank={ranked ? index + 1 : undefined}
-                    index={index}
-                    onPeekChange={onPeekChange}
                     bridge={bridge}
                     bridgeId={bridgeId}
                     direct={direct}
@@ -481,7 +423,7 @@ export function Rail({
           // before any measurement, makes onItemLayout a no-op when it matches, and skips the average
           // entirely (react-native.mjs getKnownOrFixedSize / onItemLayout early-return / no averageSizes
           // for fixed items) — so the strip lays out at its final spacing on frame one. The value is the
-          // same cardWidth+stripGap the peek geometry already assumes, so the two can't disagree.
+          // same cardWidth+stripGap the rest-index persist/restore assumes, so the two can't disagree.
           getFixedItemSize={() => itemSize}
           // Give LegendList the strip's size on the very first render. Without it, its
           // `initialScrollLength` defaults to 0 (`react-native.web.js`: estimatedListSize ?? {width:0}),
@@ -506,12 +448,11 @@ export function Rail({
           // Animated.ScrollView at whatever scrollEventThrottle LegendList's internals hardcode
           // (0), and react-native-web's ScrollView at throttle 0 only fires onScroll at gesture
           // start and ~100ms after it goes idle — so on web, holding a finger down and dragging
-          // through the strip never recycled newly-visible cards (or moved the peek popover, or
-          // advanced anything else keyed off scroll position) until you let go. Passing this
-          // routes through the bridge's other branch, which forces scrollEventThrottle: 1.
+          // through the strip never recycled newly-visible cards (or advanced anything else keyed
+          // off scroll position) until you let go. Passing this routes through the bridge's other
+          // branch, which forces scrollEventThrottle: 1.
           // On NATIVE we don't pass it: forcing throttle:1 there just adds per-frame JS work during
-          // a fling, and the peek is driven by the UI-thread `scrollX` (sharedValues below), which
-          // works regardless — native's default bridge recycles fine (the debounce bug is web-only).
+          // a fling — native's default bridge recycles fine (the debounce bug is web-only).
           renderScrollComponent={
             Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
           }
@@ -522,17 +463,11 @@ export function Rail({
           // room inside the clipped box on every side. The outer inset then only needs the remaining
           // STRIP_PAD − stripHalfGap so the first card still lines up under the section heading.
           contentContainerStyle={{ paddingLeft: STRIP_PAD - stripHalfGap, paddingRight: STRIP_PAD - stripHalfGap }}
-          onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
-          onScrollBeginDrag={hidePeekForDrag}
-          onMomentumScrollBegin={hidePeekForDrag}
           // Persist the settled card index once the fling/snap comes to rest (see railRestIndex), so a
           // recycle/remount on a rail-heavy home restores it. Offset is a multiple of itemSize here.
           onMomentumScrollEnd={(e) =>
             railRestIndex.set(railRestKey(bridgeId, section.id), Math.max(0, Math.round(e.nativeEvent.contentOffset.x / itemSize)))
           }
-          // Feeds scrollX on the UI thread; the lifted peek slides from it via transform (see
-          // peekStyle), keeping the popover glued to its card with no JS round-trip.
-          sharedValues={{ scrollOffset: scrollX }}
           renderItem={({ item, index }) => (
             <View style={[styles.stripItem, { paddingHorizontal: stripHalfGap }]}>
               <SeriesCard
@@ -540,8 +475,6 @@ export function Rail({
                 size={size}
                 width={cardWidth}
                 rank={ranked ? index + 1 : undefined}
-                index={index}
-                onPeekChange={onPeekChange}
                 bridge={bridge}
                 bridgeId={bridgeId}
                 direct={direct}
@@ -550,20 +483,6 @@ export function Rail({
           )}
         />
         </BackSwipeBoundary>
-      )}
-      {peekIndex != null && (
-        <TitlePeek
-          title={section.items[peekIndex].title}
-          style={[
-            {
-              left: peekBase - Spacing.two,
-              right: 'auto',
-              top: titleTop - Spacing.one,
-              width: cardWidth + Spacing.two * 2,
-            },
-            peekStyle,
-          ]}
-        />
       )}
     </View>
     </ZoomSurfaceContext.Provider>
@@ -723,11 +642,6 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     position: 'relative',
   },
-  // While peeking, lift the whole section so its popover draws over the rail
-  // below it.
-  sectionPeeking: {
-    zIndex: 1000,
-  },
   head: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -780,8 +694,7 @@ const styles = StyleSheet.create({
   // Per-card wrapper for the LegendList strip. LegendList's web item container is `contain: paint`,
   // so the highlight ring (which bleeds a couple px outside the cover) is clipped to this wrapper's
   // box — hence the ring's room lives here: STRIP_PAD_V vertically, and `paddingHorizontal:
-  // stripHalfGap` (applied inline, since the gap is viewport-dependent) horizontally. STRIP_PAD_V
-  // matches the peek popover's assumed inset so it still lands on the title.
+  // stripHalfGap` (applied inline, since the gap is viewport-dependent) horizontally.
   stripItem: {
     paddingVertical: STRIP_PAD_V,
   },

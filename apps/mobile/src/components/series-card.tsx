@@ -4,6 +4,7 @@ import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type Sty
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
+import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -364,8 +365,6 @@ export function SeriesCard({
   size = 'grid',
   rank,
   width,
-  index = 0,
-  onPeekChange,
   bridge,
   bridgeId,
   direct,
@@ -379,12 +378,6 @@ export function SeriesCard({
   /** Explicit card width (rails compute a responsive one); falls back to the
    *  per-size default. `grid` cards ignore this and fill their column. */
   width?: number;
-  /** Card position in its rail — used by the rail to place the lifted popover. */
-  index?: number;
-  /** When provided (rail mode), the card reports its peek state up instead of
-   *  drawing its own popover, so the rail can render it OUTSIDE the clipping
-   *  horizontal scroller. The grid omits this and draws the popover in-card. */
-  onPeekChange?: (show: boolean, index: number) => void;
   /** Originating bridge name, carried to the series detail's header. */
   bridge?: string;
   /** Originating bridge's stable id, carried so the series detail can call the
@@ -588,25 +581,10 @@ export function SeriesCard({
   // unless the grid sized this row to shorter covers.
   const fillFactor = 1 / rowAspect - 1 / coverAspect;
 
-  // Full-title peek. In a rail, hand the show/hide up to the rail (it owns the
-  // un-clipped popover); in the grid, render it in-card (the vertical list
-  // doesn't clip downward overflow). Web only — on native the full title is shown
-  // by the long-press context menu instead (see SeriesCardMenu's `title`).
+  // Full-title peek. Web only — on native the full title is shown by the long-press context menu
+  // instead (see SeriesCardMenu's `title`).
   const showPeek = active && truncated && isWeb;
-  // The callback is boxed in a ref so the reporting effects below don't re-run just because the
-  // parent handed down a new closure identity. Assigned in an effect of its own rather than during
-  // render (the ref is only ever READ from the effects/cleanup underneath, all of which run after
-  // this one commits, so the box is never stale where it's used), and seeded via the initialiser so
-  // the very first report already has the right handler.
-  const onPeekRef = useRef(onPeekChange);
-  useEffect(() => {
-    onPeekRef.current = onPeekChange;
-  });
-  useEffect(() => {
-    onPeekRef.current?.(showPeek, index);
-  }, [showPeek, index]);
-  // Stop reporting if the card unmounts while peeking (rail recycle/scroll).
-  useEffect(() => () => onPeekRef.current?.(false, index), [index]);
+  const titleRef = useRef<ViewType>(null);
 
   // Matched the user's persistent tag/genre exclusions: a redacted, non-tappable
   // placeholder that keeps the slot (grid counts/columns stay stable) but never
@@ -685,7 +663,7 @@ export function SeriesCard({
     const trailingInner = (
       <>
         {isWeb ? (
-          <View style={styles.titleWrap}>
+          <View ref={titleRef} style={styles.titleWrap}>
             {titleText}
             {/* Off-screen full-height copy measured to detect clamping — WEB ONLY (only drives the
                 hover peek popover; on native it was a wasted per-card text layout + re-render). */}
@@ -697,8 +675,8 @@ export function SeriesCard({
               }>
               {entry.title}
             </ThemedText>
-            {/* Grid-only in-card popover (rails render it at the rail level). */}
-            {!onPeekChange && showPeek && <TitlePeek title={entry.title} />}
+            {/* Not over an open menu: the peek floats above everything, the menu included. */}
+            {showPeek && !menuOpen && <TitlePeek title={entry.title} anchor={titleRef} />}
           </View>
         ) : (
           titleText
@@ -818,12 +796,7 @@ export function SeriesCard({
             testID={testId('series-card', entry.id)}
             // Flat single style object: as the `asChild` of <Link> (web), the Pressable is cloned by
             // expo-router's <Slot>, which rejects array styles.
-            style={StyleSheet.flatten([
-              styles.card,
-              fixedWidth != null && { width: fixedWidth },
-              // Lift the active card so its full-title popover draws over neighbours.
-              active && styles.cardActive,
-            ])}
+            style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}
             // Native: sliding off the card keeps it held; release clears it.
             pressRetentionOffset={HOLD_RETENTION}
             // On web the wrapping <Link> owns navigation via a real <a> (keeps middle-click /
@@ -918,19 +891,10 @@ export function CardCaption({ title, sub }: { title: string; sub?: string }) {
 }
 
 /**
- * The full-title popover. Used in-card by the grid and lifted out of the
- * scroller by the rail (which passes a positioning `style`). Its content box
- * matches the clamped title width so the first lines wrap identically.
+ * The full-title popover, floated over the clamped title it expands (`anchor`). Its content box
+ * matches the clamped title's width so the first lines wrap identically.
  */
-export function TitlePeek({
-  title,
-  style,
-}: {
-  title: string;
-  // Accepts plain styles (grid, in-card) or a reanimated style (rail, the
-  // UI-thread scroll transform).
-  style?: StyleProp<AnimatedStyle<ViewStyle>>;
-}) {
+function TitlePeek({ title, anchor }: { title: string; anchor: RefObject<ViewType | null> }) {
   const theme = useTheme();
   // Match the card title's responsive size so the popover wraps identically.
   const compact = useIsCompact();
@@ -938,15 +902,14 @@ export function TitlePeek({
     fontSize: compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular,
     lineHeight: compact ? TITLE_LINE_HEIGHT.compact : TITLE_LINE_HEIGHT.regular,
   };
-  // Animated.View so the rail can hand it a UI-thread transform that tracks the
-  // strip's scroll (the grid passes a plain style and it renders unchanged).
   return (
-    <Animated.View
-      style={[styles.titlePopover, { backgroundColor: theme.backgroundElement }, style, { pointerEvents: 'none' }]}>
-      <ThemedText type="small" style={[styles.title, titleSize]}>
-        {title}
-      </ThemedText>
-    </Animated.View>
+    <FloatOver anchor={anchor}>
+      <View style={[styles.titlePopover, { backgroundColor: theme.backgroundElement }]}>
+        <ThemedText type="small" style={[styles.title, titleSize]}>
+          {title}
+        </ThemedText>
+      </View>
+    </FloatOver>
   );
 }
 
@@ -954,9 +917,6 @@ const styles = StyleSheet.create({
   card: {
     // A touch more breathing room between the thumbnail and its title.
     gap: Spacing.two,
-  },
-  cardActive: {
-    zIndex: 10,
   },
   coverBox: {
     // The cover itself, top-aligned at its real (capped) aspect ratio — shorter
@@ -1048,7 +1008,6 @@ const styles = StyleSheet.create({
     top: -Spacing.one,
     left: -Spacing.two,
     right: -Spacing.two,
-    zIndex: 1000,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     ...ContinuousCorner,
