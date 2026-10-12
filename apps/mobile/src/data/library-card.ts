@@ -16,6 +16,7 @@ export function toLibraryCard(e: LibraryItem, bridge?: Bridge): LibraryGridItem 
     id: e.seriesId,
     title: e.title,
     cover: e.thumbnailUrl ?? '',
+    ...(e.thumbnailAspect !== undefined && { coverAspect: e.thumbnailAspect }),
     sub: unavailable ? `${name} · Not installed` : name,
     ...(unavailable && { unavailable }),
     ...(e.unread > 0 && { unread: e.unread }),

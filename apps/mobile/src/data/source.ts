@@ -144,7 +144,7 @@ export interface DataSource {
     bridgeId: string,
     seriesId: string,
     collectionIds: string[],
-    snap: { seriesTitle: string; thumbnailUrl?: string; author?: string },
+    snap: { seriesTitle: string; thumbnailUrl?: string; thumbnailAspect?: number; author?: string },
     signal?: AbortSignal,
   ): Promise<void>;
   /** A series' collection memberships: `[]` when saved unfiled, `null` when not saved at all. */
@@ -395,7 +395,15 @@ export interface DataSource {
 // ─── Real data source: adapts api.ts's server-shaped responses to the UI types ──
 
 function toSeriesEntry(e: api.ApiSeriesEntry): SeriesEntry {
-  return { id: e.id, title: e.title, sub: e.subtitle, cover: e.thumbnailUrl ?? '', badges: e.badges, excluded: e.excluded };
+  return {
+    id: e.id,
+    title: e.title,
+    sub: e.subtitle,
+    cover: e.thumbnailUrl ?? '',
+    ...(e.thumbnailAspect !== undefined && { coverAspect: e.thumbnailAspect }),
+    badges: e.badges,
+    excluded: e.excluded,
+  };
 }
 
 function toGridPage(p: api.PagedResults<api.ApiSeriesEntry>): GridPage {
@@ -415,6 +423,7 @@ function toLibraryItem(e: api.ApiCollectedSeries): LibraryItem {
     seriesId: e.seriesId,
     title: e.seriesTitle,
     ...(e.thumbnailUrl !== undefined && { thumbnailUrl: e.thumbnailUrl }),
+    ...(e.thumbnailAspect !== undefined && { thumbnailAspect: e.thumbnailAspect }),
     ...(e.author !== undefined && { author: e.author }),
     unread: e.unreadCount,
     known: e.knownCount,
@@ -763,6 +772,7 @@ const realDataSource: DataSource = {
       id: info.id,
       title: info.title,
       cover: info.thumbnailUrl ?? '',
+      ...(info.thumbnailAspect !== undefined && { coverAspect: info.thumbnailAspect }),
       bridge: opts.bridgeName ?? '',
       description: info.description,
       // Carry `kind` (so the genre group is identifiable — genres are just a `kind: "genre"` group)

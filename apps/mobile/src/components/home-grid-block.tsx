@@ -13,6 +13,7 @@ import { useDedupedPages } from '@/data/grid-pages';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
 import { useGridLayout } from '@/hooks/use-grid-layout';
+import { rowCoverAspect } from '@/lib/aspect-ratio';
 import { testId } from '@/lib/test-id';
 
 /**
@@ -103,7 +104,13 @@ export function HomeGridBlock({
               // Pinned to `cardWidth`, like SeriesGrid's cells. A short last row just ends — this
               // block used to append invisible spacer views to stop a `flex: 1` cell stretching.
               <View key={item.id} style={[styles.cell, { width: cardWidth }]}>
-                <SeriesCard entry={item} bridge={bridge} bridgeId={bridgeId} direct={direct} />
+                <SeriesCard
+                  entry={item}
+                  bridge={bridge}
+                  bridgeId={bridgeId}
+                  direct={direct}
+                  rowAspect={rowCoverAspect(row)}
+                />
               </View>
             ))}
           </View>

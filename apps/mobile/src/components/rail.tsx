@@ -17,6 +17,7 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { DEFAULT_THUMB_ASPECT, rowCoverAspect, rowCoverAspects } from '@/lib/aspect-ratio';
 import { GRID_ROW_GAP, gridGeometry } from '@/hooks/use-grid-layout';
 import { useHovered } from '@/hooks/use-hovered';
 import { useIsCompact, useIsDesktop, useIsLargeScreen } from '@/hooks/use-responsive';
@@ -161,16 +162,20 @@ export function railStripHeight(
   wide: boolean,
   hasSub: boolean,
   gutter: number,
-  /** How many items the rail holds, when known: a rail too short to fill the wide grid draws only
-   *  the rows it has. Unknown reserves the full grid. */
-  count?: number,
+  /** The rail's items, when known: a rail too short to fill the wide grid draws only the rows it
+   *  has, each at its own covers' height (`rowCoverAspect`). Unknown reserves the full grid. */
+  items?: readonly SeriesEntry[],
 ): number {
   if (wide) {
     // Static grid of up to GRID_ROWS rows: rows of `estimatedCardHeight` cards + inter-row gaps +
     // the grid wrapper's own `Spacing.one` vertical padding (styles.grid).
     const { columns, cardWidth } = wideGrid(viewportWidth, gutter, kind);
-    const rows = count === undefined ? GRID_ROWS : Math.min(GRID_ROWS, Math.max(1, Math.ceil(count / columns)));
-    return Spacing.one * 2 + rows * estimatedCardHeight(cardWidth, hasSub) + (rows - 1) * GRID_ROW_GAP;
+    const rowAspects =
+      items === undefined || items.length === 0
+        ? Array<number>(items === undefined ? GRID_ROWS : 1).fill(DEFAULT_THUMB_ASPECT)
+        : rowCoverAspects(items.slice(0, columns * GRID_ROWS), columns);
+    const cards = rowAspects.reduce((sum, aspect) => sum + estimatedCardHeight(cardWidth, hasSub, aspect), 0);
+    return Spacing.one * 2 + cards + (rowAspects.length - 1) * GRID_ROW_GAP;
   }
   // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
   return estimatedCardHeight(cardWidthFor(kind, viewportWidth), hasSub) + STRIP_PAD_V * 2;
@@ -392,6 +397,7 @@ export function Rail({
   const gridItems = section.items.slice(0, grid.columns * GRID_ROWS);
   const gridRows: SeriesEntry[][] = [];
   for (let i = 0; i < gridItems.length; i += grid.columns) gridRows.push(gridItems.slice(i, i + grid.columns));
+  const gridRowAspects = gridRows.map(rowCoverAspect);
 
   return (
     // One zoom source key for this rail's cards — a rail recycles card instances (`recycleItems`
@@ -414,7 +420,10 @@ export function Rail({
               key={r}
               // The results grid's fixed cell height, so its rows sit at the same pitch as the grid's
               // instead of closing up under a short title.
-              style={[styles.gridRow, { gap: grid.columnGap, height: estimatedCardHeight(cardWidth, hasSub) }]}
+              style={[
+                styles.gridRow,
+                { gap: grid.columnGap, height: estimatedCardHeight(cardWidth, hasSub, gridRowAspects[r]) },
+              ]}
               onLayout={(e) => {
                 const y = e.nativeEvent.layout.y;
                 setRowTops((prev) => (prev[r] === y ? prev : [...prev.slice(0, r), y, ...prev.slice(r + 1)]));
@@ -433,6 +442,7 @@ export function Rail({
                     bridge={bridge}
                     bridgeId={bridgeId}
                     direct={direct}
+                    rowAspect={gridRowAspects[r]}
                   />
                 );
               })}

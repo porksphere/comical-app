@@ -27,7 +27,8 @@ import {
 } from '@/components/sticky-section-header';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
-import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
+import { contentRowType, type ContentRow, type FeedCardEntry, type SeeAllTarget } from '@/data/content-rows';
+import { DEFAULT_THUMB_ASPECT, rowCoverAspect } from '@/lib/aspect-ratio';
 import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
@@ -173,6 +174,12 @@ export function ContentFeed({
   const bridgeOrder = useMemo(() => new Map([...byId.keys()].map((id, i) => [id, i] as const)), [byId]);
 
   const cellHeight = estimatedCardHeight(cardWidth, subOf(bridgeId)) + CELL_ROW_GAP;
+  // A terminal row is laid out to its tallest cover — the 2:3 maximum unless every card in it says
+  // otherwise (see `rowCoverAspect`).
+  const gridRowHeight = useCallback(
+    (items: FeedCardEntry[]) => estimatedCardHeight(cardWidth, subOf(bridgeId), rowCoverAspect(items)) + CELL_ROW_GAP,
+    [cardWidth, subOf, bridgeId],
+  );
 
   // Centre content to MaxTopLevelWidth. Unlike SeriesGrid (whose `sidePad` = centering +
   // TopLevelGutter, with grid cells sitting directly in it), every ContentFeed row self-pads
@@ -203,14 +210,14 @@ export function ContentFeed({
     ),
   );
 
-  // Row-type sizing. gridRow is EXACT (cellHeight), so the many uniform terminal rows never re-measure.
+  // Row-type sizing. gridRow is EXACT (its row's height), so the many terminal rows never re-measure.
   // Headings and rails are fixed upper-bound heights; non-terminal grid BLOCKS are variable (arbitrary
   // "Load more" pages) so they return undefined and get measured.
   const getFixedItemSize = useCallback(
     (row: ContentRow): number | undefined => {
       switch (row.type) {
         case 'gridRow':
-          return cellHeight;
+          return gridRowHeight(row.items);
         case 'sectionHead':
           return SECTION_HEAD_ROW_HEIGHT;
         case 'rail':
@@ -222,7 +229,7 @@ export function ContentFeed({
             wide,
             subOf(row.bridgeId ?? bridgeId),
             gutter,
-            row.section.items.length,
+            row.section.items,
           );
         case 'railSkeleton':
           // Self-headed (still renders its own title), so it's the whole head+strip height.
@@ -231,7 +238,7 @@ export function ContentFeed({
           return undefined; // gridBlock / gridBlockSkeleton — measured
       }
     },
-    [cellHeight, railViewport, wide, subOf, bridgeId, gutter],
+    [gridRowHeight, railViewport, wide, subOf, bridgeId, gutter],
   );
 
   // ── The sticky heading's offsets ────────────────────────────────────────────
@@ -340,7 +347,7 @@ export function ContentFeed({
       scopeKey={scopeKey}
       listRef={listRef}
       scrollRef={scrollRef}
-      keyExtractor={(row) => row.key}
+      keyExtractor={contentRowKey}
       // Pool recycled views per row-type so a rail never recycles into a grid row (and vice versa).
       getItemType={(row) => contentRowType(row)}
       // `renderItem` hides the heading the pinned copy stands in for — see RecyclerList's extraData.
@@ -439,16 +446,17 @@ export function ContentFeed({
                 </View>
               </View>
             );
-          case 'gridRow':
+          case 'gridRow': {
+            const rowAspect = rowCoverAspect(item.items);
             return (
               <View style={[styles.row, styles.gridRow, { gap: columnGap }]}>
                 {item.items.map((entry) => (
-                  // Both dims fixed — cardWidth (from useGridLayout) + cellHeight — so a short final row
-                  // just ends, matching series-grid.tsx's cell exactly. Bridge-scope the key (like
+                  // Both dims fixed — cardWidth (from useGridLayout) + the row's height — so a short final
+                  // row just ends, matching series-grid.tsx's cell exactly. Bridge-scope the key (like
                   // SeriesGrid's keyExtractor) so a cross-bridge row can't collide on a shared seriesId.
                   <View
                     key={entry.bridgeId ? `${entry.bridgeId}:${entry.id}` : entry.id}
-                    style={[styles.cell, { width: cardWidth, height: cellHeight }]}>
+                    style={[styles.cell, { width: cardWidth, height: gridRowHeight(item.items) }]}>
 
                     <SeriesCard
                       entry={entry}
@@ -457,11 +465,13 @@ export function ContentFeed({
                       direct={entry.direct ?? direct}
                       cohort={scopeKey}
                       crossfading={crossfading}
+                      rowAspect={rowAspect}
                     />
                   </View>
                 ))}
               </View>
             );
+          }
         }
       }}
     />
@@ -532,3 +542,15 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
 });
+
+/**
+ * A grid row's key carries its cover shape. Terminal rows are keyed by POSITION (`grow:3`), and
+ * LegendList caches a fixed size per key, so a refetch that put shorter covers in row 3 would
+ * otherwise be laid out at the old row's height wherever it isn't on screen to be re-measured.
+ * Rows at the 2:3 maximum keep their plain key — a feed with no cover shapes is keyed as before.
+ */
+function contentRowKey(row: ContentRow): string {
+  if (row.type !== 'gridRow') return row.key;
+  const aspect = rowCoverAspect(row.items);
+  return aspect === DEFAULT_THUMB_ASPECT ? row.key : `${row.key}@${aspect.toFixed(3)}`;
+}

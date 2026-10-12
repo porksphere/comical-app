@@ -11,6 +11,7 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 import { buildGroupedRows } from '@/data/grouped-rows';
 import type { SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { rowCoverAspect, rowCoverAspects } from '@/lib/aspect-ratio';
 import { GRID_ROW_GAP, GRID_ROW_PAD_BOTTOM, GRID_ROW_PAD_TOP, useGridLayout } from '@/hooks/use-grid-layout';
 import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { useZoomSurfaceKey } from '@/lib/series-zoom';
@@ -126,11 +127,18 @@ export function SeriesGrid({
   const { numColumns, sidePad, cardWidth, columnGap } = useGridLayout();
   const { subOf } = useBridgeMap();
 
-  // FIXED row height — every cell is forced to the SAME height (worst-case card content via
-  // `estimatedCardHeight`, plus the cell's own vertical padding). With every row identical AND matching
-  // `estimatedItemSize`, LegendList never re-measures a row on scroll (the release-profile #1 fix).
-  // The sub line is reserved only when this surface's entries actually carry one (see `hasSub`).
-  const cellHeight = estimatedCardHeight(cardWidth, hasSub ?? subOf(bridgeId)) + CELL_ROW_GAP;
+  // FIXED row heights — every cell is forced to its ROW's height (worst-case card content via
+  // `estimatedCardHeight` at the row's tallest cover, plus the cell's own vertical padding), and the
+  // list is told each one up front (`getFixedItemSize`), so LegendList never re-measures a row on
+  // scroll (the release-profile #1 fix). A row is the 2:3 maximum unless every card in it carries a
+  // shorter cover shape from its bridge (`rowCoverAspect`), so a grid of unhinted covers is exactly
+  // the uniform grid it always was. The sub line is reserved only when this surface's entries
+  // actually carry one (see `hasSub`).
+  const sub = hasSub ?? subOf(bridgeId);
+  const cellHeight = estimatedCardHeight(cardWidth, sub) + CELL_ROW_GAP;
+  const rowAspects = useMemo(() => rowCoverAspects(items, numColumns), [items, numColumns]);
+  const rowAspectAt = (index: number) => rowAspects[Math.floor(index / numColumns)];
+  const heightAt = (index: number) => estimatedCardHeight(cardWidth, sub, rowAspectAt(index)) + CELL_ROW_GAP;
 
   // A series is identified by its BRIDGE plus its id, never its id alone — the Library is a
   // cross-bridge grid, and two bridges can hand out the same seriesId. Single-bridge grids leave
@@ -163,7 +171,7 @@ export function SeriesGrid({
     return (
       <GroupedGrid
         rows={groupedRows}
-        rowHeight={cellHeight}
+        rowHeight={(rowItems) => estimatedCardHeight(cardWidth, sub, rowCoverAspect(rowItems)) + CELL_ROW_GAP}
         scopeKey={scopeKey}
         listRef={listRef}
         scrollRef={scrollRef}
@@ -175,25 +183,30 @@ export function SeriesGrid({
         stickyPinned={stickyPinned}
         sharedValues={sharedValues}
         onScroll={onScroll}
-        renderRow={(rowItems) => (
-          // Manual rows lay out with a real flex gap (LegendList's column slots can't gap — see the
-          // marginLeft note below), which lands cards at the same `cardWidth + columnGap`
-          // rhythm as the ungrouped grid; fixed widths keep a short final row left-aligned.
-          <View style={[styles.groupedRow, { gap: columnGap }]}>
-            {rowItems.map((item) => (
-              <View key={keyOf(item)} style={[styles.cell, { width: cardWidth, height: cellHeight }]}>
-                <SeriesCard
-                  entry={item}
-                  bridge={item.bridge ?? bridge}
-                  bridgeId={item.bridgeId ?? bridgeId}
-                  direct={item.direct ?? direct}
-                  cohort={scopeKey}
-                  crossfading={crossfading}
-                />
-              </View>
-            ))}
-          </View>
-        )}
+        renderRow={(rowItems) => {
+          const rowAspect = rowCoverAspect(rowItems);
+          const height = estimatedCardHeight(cardWidth, sub, rowAspect) + CELL_ROW_GAP;
+          return (
+            // Manual rows lay out with a real flex gap (LegendList's column slots can't gap — see the
+            // marginLeft note below), which lands cards at the same `cardWidth + columnGap`
+            // rhythm as the ungrouped grid; fixed widths keep a short final row left-aligned.
+            <View style={[styles.groupedRow, { gap: columnGap }]}>
+              {rowItems.map((item) => (
+                <View key={keyOf(item)} style={[styles.cell, { width: cardWidth, height }]}>
+                  <SeriesCard
+                    entry={item}
+                    bridge={item.bridge ?? bridge}
+                    bridgeId={item.bridgeId ?? bridgeId}
+                    direct={item.direct ?? direct}
+                    cohort={scopeKey}
+                    crossfading={crossfading}
+                    rowAspect={rowAspect}
+                  />
+                </View>
+              ))}
+            </View>
+          );
+        }}
       />
     );
   }
@@ -205,8 +218,15 @@ export function SeriesGrid({
       listRef={listRef ?? ownListRef}
       scrollRef={scrollRef}
       keyExtractor={keyOf}
-      // EXACT, not a hint: every cell is pinned to `cellHeight` below, so this matches every measured row.
+      // EXACT, not a hint: every cell is pinned to its row's height below. LegendList lays a row out
+      // at its tallest cell, so handing every cell its row's height IS the row's height. An item that
+      // lands in a different row (a re-sort, a filter) is re-measured when it renders there, since
+      // its cached size no longer matches this.
+      getFixedItemSize={(_item, index) => heightAt(index)}
       estimatedItemSize={cellHeight}
+      // A card's row can get TALLER under it with no change to the card itself — a page appended to
+      // a short final row — and LegendList memoizes a cell on its item, so the row shapes ride along.
+      extraData={rowAspects.join()}
       numColumns={numColumns}
       itemLayoutAnimation={animateReorder ? ROW_REORDER_TRANSITION : undefined}
       header={header}
@@ -222,7 +242,7 @@ export function SeriesGrid({
       scrollGesture={scrollGesture}
       scrollEnabled={scrollEnabled}
       renderItem={({ item, index }) => (
-        // Both dimensions are FIXED — cellHeight above, and cardWidth (from useGridLayout). The width is
+        // Both dimensions are FIXED — the row's height above, and cardWidth (from useGridLayout). The width is
         // what lets a short final row simply end instead of stretching its cards across the row.
         //
         // The marginLeft is the COLUMN-GAP correction. LegendList slots each column into a plain
@@ -235,7 +255,7 @@ export function SeriesGrid({
         <View
           style={[
             styles.cell,
-            { width: cardWidth, height: cellHeight, marginLeft: (index % numColumns) * (columnGap / numColumns) },
+            { width: cardWidth, height: heightAt(index), marginLeft: (index % numColumns) * (columnGap / numColumns) },
           ]}>
           <SeriesCard
             entry={item}
@@ -244,6 +264,7 @@ export function SeriesGrid({
             direct={item.direct ?? direct}
             cohort={scopeKey}
             crossfading={crossfading}
+            rowAspect={rowAspectAt(index)}
           />
         </View>
       )}

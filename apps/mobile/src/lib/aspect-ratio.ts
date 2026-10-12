@@ -27,3 +27,30 @@ export function clampThumbAspect(ratio?: number | null): number {
   return Math.max(DEFAULT_THUMB_ASPECT, ratio);
 }
 
+
+/** What a row needs to know about a card: the cover shape its bridge reported, and whether it is a
+ *  redacted placeholder. */
+export type CoverShaped = { coverAspect?: number; excluded?: boolean };
+
+/**
+ * The cover shape a ROW of cards is laid out at: its tallest cover, as width / height. A card only
+ * counts as shorter than the 2:3 maximum when its bridge said so (`coverAspect`); one that didn't —
+ * or a redacted placeholder, which always draws 2:3 — holds the row at the full 2:3 height, exactly
+ * as every row was before covers carried a shape. So rows can only ever get shorter than that, and
+ * only when every card in them is known to be shorter.
+ *
+ * Known up front, before a single image loads, so a grid can hand its list exact row heights — no
+ * row is ever measured or re-laid-out as covers arrive.
+ */
+export function rowCoverAspect(entries: readonly CoverShaped[]): number {
+  let aspect = Infinity;
+  for (const e of entries) aspect = Math.min(aspect, e.excluded ? DEFAULT_THUMB_ASPECT : clampThumbAspect(e.coverAspect));
+  return Number.isFinite(aspect) ? aspect : DEFAULT_THUMB_ASPECT;
+}
+
+/** `rowCoverAspect` for every row of a `numColumns`-wide grid of `entries`, top to bottom. */
+export function rowCoverAspects(entries: readonly CoverShaped[], numColumns: number): number[] {
+  const rows: number[] = [];
+  for (let i = 0; i < entries.length; i += numColumns) rows.push(rowCoverAspect(entries.slice(i, i + numColumns)));
+  return rows;
+}

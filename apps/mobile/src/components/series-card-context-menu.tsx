@@ -322,7 +322,11 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // once per open — this component mounts only while the menu is up, never per card. The submenu
   // rows are inert until the memberships resolve (a toggle then would REPLACE unknown memberships).
   const { collections } = useCollections();
-  const snapshot = () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) });
+  const snapshot = () => ({
+    seriesTitle: entry.title,
+    ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
+    ...(entry.cover && entry.coverAspect !== undefined ? { thumbnailAspect: entry.coverAspect } : {}),
+  });
   const {
     collectionIds,
     loading: membershipsLoading,

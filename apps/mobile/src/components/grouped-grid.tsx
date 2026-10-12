@@ -69,8 +69,9 @@ export function GroupedGrid<T>({
   renderRow,
 }: {
   rows: GroupedRow<T>[];
-  /** An items row's fixed height (headings are always `RowHeight`). */
-  rowHeight: number;
+  /** An items row's fixed height (headings are always `RowHeight`) — a number when every row is
+   *  the same, or per row when a row's height follows its items (a series row sized to its covers). */
+  rowHeight: number | ((items: T[]) => number);
   scopeKey: string;
   listRef?: RefObject<LegendListRef | null>;
   /** Passed through to `RecyclerList` — see the doc there (the sliding bar's lockstep scroll). */
@@ -92,6 +93,12 @@ export function GroupedGrid<T>({
   /** One items row's content. The caller lays the row out (widths, gaps, short-row alignment). */
   renderRow: (items: T[]) => ReactElement;
 }) {
+  const heightOf = useCallback(
+    (row: GroupedRow<T>) =>
+      row.type === 'header' ? RowHeight : typeof rowHeight === 'number' ? rowHeight : rowHeight(row.items),
+    [rowHeight],
+  );
+
   // Each section heading's CONTENT offset (the y its row starts at, in scroll coordinates —
   // contentOffset 0 is the top of the padding). Fixed row heights make this exact, no measuring.
   const sections = useMemo<StickySection[]>(() => {
@@ -106,10 +113,10 @@ export function GroupedGrid<T>({
       // The ROW's top: the pinned copy IS this row, so pinning it there superimposes the two
       // exactly at the hand-off.
       if (row.type === 'header') out.push({ key: row.key, label: row.label, count: row.count, top: y });
-      y += row.type === 'header' ? RowHeight : rowHeight;
+      y += heightOf(row);
     }
     return out;
-  }, [rows, header, stickyHeaderTop, paddingTop, rowHeight]);
+  }, [rows, header, stickyHeaderTop, paddingTop, heightOf]);
 
   // The heading the pinned copy is currently standing in for — that row renders its space but not
   // its content, so one heading is never drawn twice.
@@ -132,10 +139,10 @@ export function GroupedGrid<T>({
         keyExtractor={(row) => row.key}
         // Distinct pools per row type, so a heading never recycles into an items row (and vice versa).
         getItemType={(row) => row.type}
-        getFixedItemSize={(row) => (row.type === 'header' ? RowHeight : rowHeight)}
+        getFixedItemSize={heightOf}
         // `renderItem` hides the heading the pinned copy stands in for — see RecyclerList's extraData.
         extraData={pinnedKey}
-        estimatedItemSize={rowHeight}
+        estimatedItemSize={typeof rowHeight === 'number' ? rowHeight : RowHeight}
         header={header}
         paddingTop={paddingTop}
         // Below the pinned heading too, which covers the track just as the bar does.

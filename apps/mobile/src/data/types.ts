@@ -24,6 +24,9 @@ export type SeriesEntry = {
   /** Secondary line under the title (e.g. latest chapter, author). */
   sub?: string;
   cover: string;
+  /** The cover's width / height when the bridge sent it (`thumbnailAspect`) — lets a grid size its
+   *  rows to their covers before any image loads. See `rowCoverAspect`. */
+  coverAspect?: number;
   /** Bridge-defined overlay badges. */
   badges?: CardBadge[];
   /** Unread-count pill (top-right). */
@@ -202,6 +205,8 @@ export type LibraryItem = {
   seriesId: string;
   title: string;
   thumbnailUrl?: string;
+  /** `thumbnailUrl`'s width / height, when the bridge sent it. */
+  thumbnailAspect?: number;
   author?: string;
   /** Logical unread chapters — drives the card's unread pill. */
   unread: number;

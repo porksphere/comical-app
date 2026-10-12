@@ -94,14 +94,21 @@ export const coverRingColor = (theme: ReturnType<typeof useTheme>) => theme.text
  * placeholder. A recycled slot handed a different `id` is re-seeded, so it doesn't keep the prior
  * cover's shape.
  *
+ * `hint` is the bridge's own word on the cover's shape (`SeriesEntry.coverAspect`), which beats the
+ * rolling guess for a cover not yet seen this session.
+ *
  * `learn` takes the loaded picture's dimensions and returns the aspect they come to.
  */
-export function useCoverAspect(id: string): [aspect: number, learn: (width: number, height: number) => number] {
-  const [aspect, setAspect] = useState(() => resolvedCoverAspects.get(id) ?? lastResolvedCoverAspect);
+export function useCoverAspect(
+  id: string,
+  hint?: number,
+): [aspect: number, learn: (width: number, height: number) => number] {
+  const seed = () => resolvedCoverAspects.get(id) ?? (hint !== undefined ? clampThumbAspect(hint) : lastResolvedCoverAspect);
+  const [aspect, setAspect] = useState(seed);
   const [prevId, setPrevId] = useState(id);
   if (prevId !== id) {
     setPrevId(id);
-    setAspect(resolvedCoverAspects.get(id) ?? lastResolvedCoverAspect);
+    setAspect(seed());
   }
   const learn = (width: number, height: number) => {
     const next = clampThumbAspect(width / height);
@@ -214,11 +221,14 @@ const HOLD_RETENTION = { top: 1000, bottom: 1000, left: 1000, right: 1000 };
  * Library's bridge-name line). Bridges that never send one drop the reserve entirely, which is what
  * keeps sub-less rows from carrying a permanent blank band under every card.
  *
+ * `rowAspect` is the row's cover shape (see `rowCoverAspect`) — every card in a row is laid out to
+ * the row's tallest cover, which is the 2:3 maximum unless every card in it says otherwise.
+ *
  * A hint, not an exact match — real cards vary with cover aspect (`fillFactor` backfills the
  * difference) and title line count, so this doesn't need to be exact.
  */
-export function estimatedCardHeight(cardWidth: number, hasSub: boolean): number {
-  const coverHeight = cardWidth / DEFAULT_THUMB_ASPECT;
+export function estimatedCardHeight(cardWidth: number, hasSub: boolean, rowAspect = DEFAULT_THUMB_ASPECT): number {
+  const coverHeight = cardWidth / rowAspect;
   const titleHeight = MAX_TITLE_LINES * TITLE_LINE_HEIGHT.regular;
   const base = coverHeight + Spacing.two + titleHeight;
   if (!hasSub) return base;
@@ -361,6 +371,7 @@ export function SeriesCard({
   direct,
   cohort,
   crossfading,
+  rowAspect = DEFAULT_THUMB_ASPECT,
 }: {
   entry: SeriesEntry;
   size?: CardSize;
@@ -396,6 +407,10 @@ export function SeriesCard({
    *  reveal instead of a needless skeleton-then-cover. A non-crossfaded swap (within-bridge recycle)
    *  still masks. */
   crossfading?: boolean;
+  /** The cover shape this card's ROW is laid out at (`rowCoverAspect`), when the grid sizes rows to
+   *  their covers. The card pads itself to that height, and its own cover never draws taller than it.
+   *  Omitted: the 2:3 maximum, i.e. a fixed-height card. */
+  rowAspect?: number;
 }) {
   // Perf toggle (Settings → "Lightweight cards") — see lib/perf-flags.
   const lightCards = useLightCards();
@@ -417,7 +432,10 @@ export function SeriesCard({
   // A plain, UNanimated value. What's smoothed below is the *visual* shrink, via a
   // `transform`-only illusion that never triggers another relayout — see
   // `pictureStyle`/`trailingStyle`.
-  const [coverAspect, learnCoverAspect] = useCoverAspect(entry.id);
+  const [learnedAspect, learnCoverAspect] = useCoverAspect(entry.id, entry.coverAspect);
+  // Never taller than the row was laid out for: a bridge hint that turns out wrong once the picture
+  // lands crops the cover (it's `contentFit="cover"`) rather than overflowing the row.
+  const coverAspect = Math.max(learnedAspect, rowAspect);
   // The FLIP-style cover-aspect shrink illusion lives in `CoverShrink` (rendered only when its
   // effects are wanted — see the render below), so its reanimated hooks aren't allocated per card
   // when Lightweight cards is on.
@@ -566,8 +584,9 @@ export function SeriesCard({
   // spacer expresses it as an `aspectRatio` so it scales with the width without
   // measuring it (works for both the flex grid and the fixed-width rails). The
   // cover shrinks and this grows by the same amount, so the total never jumps
-  // when the cover's real aspect lands from onLoad.
-  const fillFactor = 1 / DEFAULT_THUMB_ASPECT - 1 / coverAspect;
+  // when the cover's real aspect lands from onLoad. The maximum is the ROW's (`rowAspect`) — 2:3
+  // unless the grid sized this row to shorter covers.
+  const fillFactor = 1 / rowAspect - 1 / coverAspect;
 
   // Full-title peek. In a rail, hand the show/hide up to the rail (it owns the
   // un-clipped popover); in the grid, render it in-card (the vertical list
@@ -630,7 +649,7 @@ export function SeriesCard({
               if (src?.width && src?.height) {
                 // Learned on its own line: as an argument to the optional call below it would be
                 // skipped along with the call whenever Lightweight cards leaves `runShrink` unset.
-                const nextAspect = learnCoverAspect(src.width, src.height);
+                const nextAspect = Math.max(learnCoverAspect(src.width, src.height), rowAspect);
                 shrink.runShrink?.(coverAspect, nextAspect);
               }
               // Light path: the clip's own grey backing IS the placeholder, and expo-image paints the

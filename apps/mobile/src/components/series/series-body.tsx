@@ -461,6 +461,7 @@ export function SeriesBody({
     () => ({
       seriesTitle: series.title,
       ...(series.cover ? { thumbnailUrl: series.cover } : {}),
+      ...(series.cover && series.coverAspect !== undefined ? { thumbnailAspect: series.coverAspect } : {}),
       ...(author ? { author } : {}),
     }),
     series.title,

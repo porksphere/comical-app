@@ -54,7 +54,11 @@ export function SeriesCardMenuRows({
   const save = useSeriesSave(
     bridgeId,
     entry.id,
-    () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
+    () => ({
+      seriesTitle: entry.title,
+      ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
+      ...(entry.cover && entry.coverAspect !== undefined ? { thumbnailAspect: entry.coverAspect } : {}),
+    }),
     entry.title,
   );
   const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
