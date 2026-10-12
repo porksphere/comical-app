@@ -87,12 +87,22 @@ function cardWidthFor(kind: RailSection['kind'], viewport: number): number {
 
 /**
  * The wide grid is the "See all" grid's first two rows: its columns, its card width and its gaps
- * (`gridGeometry`), for every rail kind. It used to be its own six columns at a strip's 16pt gap,
- * which put two different sizes of the same card one click apart.
+ * (`gridGeometry`). It used to be its own six columns at a strip's 16pt gap, which put two different
+ * sizes of the same card one click apart.
+ *
+ * Except `hero`, whose point is bigger cards: it spreads the same content width over ⅔ as many
+ * columns (6 → 4 on a full desktop), the wide-layout counterpart of its 2⅓-card mobile strip.
  */
-function wideGrid(viewport: number, gutter: number): { columns: number; cardWidth: number; columnGap: number } {
+function wideGrid(
+  viewport: number,
+  gutter: number,
+  kind: RailSection['kind'] = 'regular',
+): { columns: number; cardWidth: number; columnGap: number } {
   const { numColumns, cardWidth, columnGap } = gridGeometry(viewport, true, gutter);
-  return { columns: numColumns, cardWidth, columnGap };
+  if (kind !== 'hero') return { columns: numColumns, cardWidth, columnGap };
+  const columns = Math.max(2, Math.round((numColumns * 2) / 3));
+  const contentWidth = numColumns * cardWidth + (numColumns - 1) * columnGap;
+  return { columns, cardWidth: (contentWidth - (columns - 1) * columnGap) / columns, columnGap };
 }
 
 // Rendered height of a `SectionHead` on the WIDE breakpoint, and the real thing rather than an
@@ -158,7 +168,7 @@ export function railStripHeight(
   if (wide) {
     // Static grid of up to GRID_ROWS rows: rows of `estimatedCardHeight` cards + inter-row gaps +
     // the grid wrapper's own `Spacing.one` vertical padding (styles.grid).
-    const { columns, cardWidth } = wideGrid(viewportWidth, gutter);
+    const { columns, cardWidth } = wideGrid(viewportWidth, gutter, kind);
     const rows = count === undefined ? GRID_ROWS : Math.min(GRID_ROWS, Math.max(1, Math.ceil(count / columns)));
     return Spacing.one * 2 + rows * estimatedCardHeight(cardWidth, hasSub) + (rows - 1) * GRID_ROW_GAP;
   }
@@ -226,7 +236,7 @@ export function Rail({
   // card sat flush against its box's left edge, so the ring's left stroke was cut off.
   const stripHalfGap = stripGap / 2;
   const gutter = useScrollbarGutter();
-  const grid = wideGrid(viewportWidth, gutter);
+  const grid = wideGrid(viewportWidth, gutter, section.kind);
   const cardWidth = wide ? grid.cardWidth : cardWidthFor(section.kind, viewportWidth);
   // One card's scroll "slot" (card width + inter-card gap). The strip snaps to multiples of this and
   // the resting card index is derived from it, so it's the single value shared by getFixedItemSize,
