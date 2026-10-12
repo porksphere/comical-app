@@ -7,21 +7,20 @@ import { ContextMenuHold, openContextMenu } from '@/components/context-menu-host
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { SeriesItemIcon } from '@/components/icons/collection-icons';
 import { CheckIcon, PlayIcon } from '@/components/icons/ui-icons';
-import type { ApiCollectionItem } from '@/data/api';
+import type { ApiSavedItem } from '@/data/api';
 import { useRouter } from '@/lib/nav';
 
 /**
  * The menu on a saved CHAPTER or PAGE tile: the card's 3-dot button and right-click on web, a hold
- * on native. A saved series wears the series card's own menu instead (`SeriesCardMenu`); these two
- * can't, because every row of that one acts on a series — its save row would file the series rather
- * than the tile's item, and its preview lifts a cover neither of them has.
+ * on native. Not the series card's menu: every row of that one acts on a series — its save row would
+ * file the series rather than the tile's item, and its preview lifts a cover neither of them has.
  */
 export function CollectedItemMenu({
   item,
   onOpen,
   children,
 }: {
-  item: Extract<ApiCollectionItem, { type: 'chapter' | 'page' }>;
+  item: ApiSavedItem;
   /** What a tap on the tile does — the menu's leading row is the same action, spelled out. */
   onOpen: () => void;
   /** `menuOpen` is web's — see `CardMenuTrigger`. */

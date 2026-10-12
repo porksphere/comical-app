@@ -10,21 +10,18 @@ import {
 } from 'react-native';
 
 import { CollectedItemMenu } from '@/components/collections/collected-item-menu';
-import { ChapterItemIcon, PageItemIcon, SeriesItemIcon } from '@/components/icons/collection-icons';
+import { ChapterItemIcon, PageItemIcon } from '@/components/icons/collection-icons';
 import { CardCaption, CoverFrame, useCoverAspect } from '@/components/series-card';
-import { SeriesCardMenu } from '@/components/series-card-menu';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import type { ApiCollectionItem } from '@/data/api';
+import type { ApiSavedItem } from '@/data/api';
 import { useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { useIsZoomingSeries, useZoomOriginSource, useZoomSurfaceKey } from '@/lib/series-zoom';
 
 /**
- * One tile in the collected grid — a saved SERIES, CHAPTER or PAGE. All three are the series card's
- * cover frame over its caption, shaped by the picture as a series card's is; the type-icon badge
- * (top-left) is what tells them apart, so the grid reads as one surface instead of three interleaved
- * layouts.
+ * One tile in the saved grid — a saved CHAPTER or PAGE, drawn as the series card's cover frame over
+ * its caption, shaped by the picture as a series card's is.
  *
  * Deliberately NOT `PageThumb`. That component exists to render a *bridge-supplied* thumbnail —
  * it lazily self-fetches via `getPageThumb`, which is series-level (no `chapterId`) and would be
@@ -32,39 +29,27 @@ import { useIsZoomingSeries, useZoomOriginSource, useZoomSurfaceKey } from '@/li
  * tile needs instead is the two states `PageThumb` has no concept of: a source that has died, and
  * an item the server could no longer locate.
  *
- * Image per type: a page shows its page image (resolved per chapter by the grid), a series shows
- * its cover, and a CHAPTER is always the placeholder — it has no image of its own, and borrowing
- * one of its pages would cost a page-list fetch per chapter just to draw a tile. The placeholder is
- * also every type's fallback when a source has died; the caption underneath, built from the stored
- * snapshot, is what still says which item it is. `stale` adds the "may no longer be available" bar.
- *
- * Every tile has a menu. A series takes the series card's, the one its Library card opens; a
- * chapter or a page takes `CollectedItemMenu`.
+ * A page shows its page image (resolved per chapter by the grid); a CHAPTER is always the
+ * placeholder — it has no image of its own, and borrowing one of its pages would cost a page-list
+ * fetch per chapter just to draw a tile. The placeholder is also a page's fallback when its source
+ * has died; the caption underneath, built from the stored snapshot, is what still says which item
+ * it is. `stale` adds the "may no longer be available" bar.
  */
 export function CollectedItemTile({
   item,
   uri,
-  sub,
-  bridge,
-  direct,
   width,
   onPress,
   onWarm,
 }: {
-  item: ApiCollectionItem;
+  item: ApiSavedItem;
   /** Resolved page URL, or `undefined` while its chapter list is still loading / unavailable.
-   *  Only meaningful for a page item; a series carries its own cover, a chapter has no image. */
+   *  Only meaningful for a page item; a chapter has no image. */
   uri?: string;
-  /** The caption's second line — whatever the series title alone doesn't say about this item. */
-  sub?: string;
-  /** The bridge's name and whether it is a direct one — a series tile's menu needs both, as a
-   *  series card's does. */
-  bridge?: string;
-  direct?: boolean;
   width: number;
   onPress: () => void;
-  /** Start the fetch `onPress` is about to need. Supplied by whoever owns the navigation, since the
-   *  three item types go three different places — see library's `onOpen`. */
+  /** Start the fetch `onPress` is about to need. Supplied by whoever owns the navigation, since a
+   *  chapter and a page open differently. */
   onWarm?: () => void;
 }) {
   const theme = useTheme();
@@ -80,22 +65,18 @@ export function CollectedItemTile({
     setHovered(false);
   }
 
-  const source = item.type === 'series' ? item.thumbnailUrl : item.type === 'page' ? uri : undefined;
+  const source = item.type === 'page' ? uri : undefined;
   const showImage = !!source && !failed;
-  const TypeIcon =
-    item.type === 'series' ? SeriesItemIcon : item.type === 'chapter' ? ChapterItemIcon : PageItemIcon;
-  const chapterName = item.type === 'series' ? undefined : item.chapterName;
+  const TypeIcon = item.type === 'chapter' ? ChapterItemIcon : PageItemIcon;
+  const { chapterName } = item;
 
-  // A series is learned under the series' own id, the one its Library card learns it under, so
-  // whichever of the two is seen first has the other open at the right shape.
-  const [pictureAspect, learnAspect] = useCoverAspect(item.type === 'series' ? item.seriesId : item.id);
+  const [pictureAspect, learnAspect] = useCoverAspect(item.id);
   // A placeholder has no picture to take a shape from, and never will have.
   const aspect = showImage ? pictureAspect : DEFAULT_THUMB_ASPECT;
 
   // ── The gallery zoom, exactly as a series card offers it (see lib/series-zoom) ──────────────
-  // Press-in captures this tile's box as the zoom SOURCE RECT, so the screen it opens — the reader
-  // in sequence mode for a page, the details for a series — grows out of the tile and collapses
-  // back into it. The zoom is matched by SERIES id (that is the id the destination instance takes),
+  // Press-in captures this tile's box as the zoom SOURCE RECT, so the reader it opens (sequence
+  // mode, for a page) grows out of the tile and collapses back into it. The zoom is matched by SERIES id (that is the id the destination instance takes),
   // but the source key is PER ITEM, derived from the item's own id rather than from the list: this
   // grid can legitimately show the same series several times (two saved pages of one series), and
   // a list-level key would blank every sibling on behalf of the one that was tapped. Item-derived
@@ -112,9 +93,7 @@ export function CollectedItemTile({
   // registers this tile as re-measurable for the collapse (see series-zoom).
   const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomKey, boxRef, 10, !isWeb && showImage);
 
-  // `lifted` is the native series menu holding a copy of this cover up as its preview: the same
-  // two-of-them problem as a zoom in flight, with the same answer.
-  const card = (onLongPress?: (e: GestureResponderEvent) => void, lifted = false, menuOpen = false) => (
+  const card = (onLongPress?: (e: GestureResponderEvent) => void, menuOpen = false) => (
     <Pressable
       testID={`collected.tile.${item.id}`}
       onPressIn={() => {
@@ -128,16 +107,14 @@ export function CollectedItemTile({
       style={[styles.card, { width }]}
       accessibilityRole="button"
       accessibilityLabel={
-        item.type === 'series'
-          ? `Series, ${item.seriesTitle}`
-          : item.type === 'chapter'
-            ? `Chapter, ${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}`
-            : `${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}, page ${item.pageIndex + 1}`
+        item.type === 'chapter'
+          ? `Chapter, ${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}`
+          : `${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}, page ${item.pageIndex + 1}`
       }>
       <CoverFrame
         aspect={aspect}
         coverRef={boxRef}
-        hidden={flying || lifted}
+        hidden={flying}
         ring={hovered || menuOpen}
         // A placeholder is this tile for good, not a moment before its picture, so it sits on the
         // theme's surface rather than the frame's loading grey.
@@ -160,17 +137,16 @@ export function CollectedItemTile({
           </View>
         )}
 
-        {/* The badge reads against the image, so it needs its own scrim rather than the theme.
-            The icon is the type; a page also carries its number, since "which page of the chapter"
-            matters there the way it can't for the other two. */}
-        <View style={styles.badge}>
-          <TypeIcon color="#fff" size={12} />
-          {item.type === 'page' && (
+        {/* Which page of the chapter — the caption already names the chapter. Its own scrim, since
+            it reads against the picture rather than the theme. */}
+        {item.type === 'page' && (
+          <View style={styles.badge}>
+            <PageItemIcon color="#fff" size={12} />
             <ThemedText type="small" style={styles.badgeText}>
               {item.pageIndex + 1}
             </ThemedText>
-          )}
-        </View>
+          </View>
+        )}
 
         {item.stale && (
           <View style={[styles.staleBar, { backgroundColor: theme.danger }]}>
@@ -180,30 +156,13 @@ export function CollectedItemTile({
           </View>
         )}
       </CoverFrame>
-      <CardCaption title={item.seriesTitle} sub={sub} />
+      <CardCaption title={item.seriesTitle} sub={chapterName} />
     </Pressable>
   );
 
-  if (item.type === 'series') {
-    return (
-      <SeriesCardMenu
-        enabled
-        bridgeId={item.bridgeId}
-        bridge={bridge}
-        entry={{ id: item.seriesId, title: item.seriesTitle, cover: item.thumbnailUrl ?? '' }}
-        direct={direct}
-        coverAspect={aspect}
-        // The cover, not the card: the preview is a cover, and lifting it from a rect that takes
-        // in the caption starts it too tall.
-        measureRef={boxRef}
-        zoomSource={zoomKey}>
-        {({ onLongPress, hidden, menuOpen }) => card(onLongPress, hidden, menuOpen)}
-      </SeriesCardMenu>
-    );
-  }
   return (
     <CollectedItemMenu item={item} onOpen={onPress}>
-      {({ onLongPress, menuOpen }) => card(onLongPress, false, menuOpen)}
+      {({ onLongPress, menuOpen }) => card(onLongPress, menuOpen)}
     </CollectedItemMenu>
   );
 }

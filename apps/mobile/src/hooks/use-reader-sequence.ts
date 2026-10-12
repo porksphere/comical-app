@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { ApiCollectionPageItem } from '@/data/api';
+import { collectedListing, type CollectedDir, type CollectedSort } from '@/data/collected-view';
 import { collectionItemsQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
@@ -48,7 +49,7 @@ export type ReaderSequenceParams = {
  * Resolve a reader sequence from its route params: the collection's saved PAGES, in the exact
  * order the grid showed them, plus their resolved image URIs.
  *
- * Same query key as the grid — collection, search, sort, dir — so with a warm cache this is
+ * Same query as the grid (`collectedListing`), so with a warm cache this is
  * synchronous on first render; a cold deep-link fetches and the caller shows a loading state.
  * URIs resolve one request per CHAPTER (`useCollectedPageUris`), lazily; an unresolved entry's
  * uri is '' and the reader's page skeleton covers it.
@@ -66,12 +67,19 @@ export function useReaderSequence(params: ReaderSequenceParams): {
   const active = params.seq === '1';
 
   const { data, isFetched } = useQuery({
-    ...collectionItemsQuery(ds, mock, {
-      collection: params.seqCollection ?? '',
-      sort: (params.seqSort as 'added' | 'series' | 'chapter') ?? 'added',
-      dir: (params.seqDir as 'asc' | 'desc') ?? 'desc',
-      ...(params.seqQ ? { q: params.seqQ } : {}),
-    }),
+    ...collectionItemsQuery(
+      ds,
+      mock,
+      collectedListing(
+        params.seqCollection || null,
+        'page',
+        {
+          sort: (params.seqSort as CollectedSort | undefined) ?? 'added',
+          dir: (params.seqDir as CollectedDir | undefined) ?? 'desc',
+        },
+        params.seqQ ?? '',
+      ),
+    ),
     enabled: active,
   });
 
@@ -79,7 +87,7 @@ export function useReaderSequence(params: ReaderSequenceParams): {
   // applies — otherwise a page hidden from the collection could still be swiped into from a
   // neighbouring one.
   const visible = useVisibleByBridge(data ?? undefined);
-  // Only pages are readable; series and chapter items in the collection stay grid-only.
+  // The listing is pages-only already; the guard narrows the type.
   const filtered = useMemo(
     () => visible.filter((i): i is ApiCollectionPageItem => i.type === 'page'),
     [visible],

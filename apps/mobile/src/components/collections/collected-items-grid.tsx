@@ -6,20 +6,15 @@ import type { SharedValue } from 'react-native-reanimated';
 import { CollectedItemTile } from '@/components/collections/collected-item-tile';
 import { GroupedGrid } from '@/components/grouped-grid';
 import { estimatedCardHeight } from '@/components/series-card';
-import type { ApiCollectionItem } from '@/data/api';
+import type { ApiSavedItem } from '@/data/api';
 import { buildCollectedRows, type CollectedRow } from '@/data/collected-rows';
 import type { CollectedGrouping } from '@/data/collected-view';
-import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCollectedPageUris } from '@/hooks/use-collected-page-uris';
 import { GRID_ROW_GAP, GRID_ROW_PAD_BOTTOM, GRID_ROW_PAD_TOP, useGridLayout } from '@/hooks/use-grid-layout';
 
 /**
- * The grid of collected items — a `GroupedGrid` (which owns the row list and the sticky section
- * header) skinned with the collected tile.
- *
- * All three item types share the one tile (`CollectedItemTile`); the tile's type-icon badge is
- * what distinguishes them, so a mixed collection reads as one surface rather than three interleaved
- * layouts.
+ * The grid of saved chapters or pages — a `GroupedGrid` (which owns the row list and the sticky
+ * section header) skinned with `CollectedItemTile`.
  *
  * A row is as tall as a row of the Library's series cards, caption included, whatever shape its
  * covers take and its titles run to: the list is told one height for every row.
@@ -39,7 +34,7 @@ export function CollectedItemsGrid({
   onOpen,
   onWarm,
 }: {
-  items: ApiCollectionItem[];
+  items: ApiSavedItem[];
   /** Client-side sectioning applied over the server's order — see `buildCollectedRows`. */
   grouping: CollectedGrouping;
   scopeKey: string;
@@ -56,14 +51,11 @@ export function CollectedItemsGrid({
    *  push-out ride. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
-  /** Tapping any item — the caller routes by `type` (a page opens the reader at that page, a
-   *  chapter at its first page, a series its detail screen). */
-  onOpen: (item: ApiCollectionItem) => void;
+  onOpen: (item: ApiSavedItem) => void;
   /** Press-in warm for the destination `onOpen` will push — see CollectedItemTile. */
-  onWarm?: (item: ApiCollectionItem) => void;
+  onWarm?: (item: ApiSavedItem) => void;
 }) {
   const { numColumns, sidePad, cardWidth, columnGap } = useGridLayout();
-  const { nameOf, directOf } = useBridgeMap();
   // One request per CHAPTER, not per tile — see the hook. Read during render as a lookup table;
   // never a memo dependency (it is a fresh Map each render by design).
   const uris = useCollectedPageUris(items);
@@ -97,11 +89,6 @@ export function CollectedItemsGrid({
               key={item.id}
               item={item}
               uri={uris.get(item.id)}
-              // A series says where it comes from, as its Library card does; a chapter or a page
-              // says which chapter, the page's number being on its badge already.
-              sub={item.type === 'series' ? nameOf(item.bridgeId) : item.chapterName}
-              bridge={nameOf(item.bridgeId)}
-              direct={directOf(item.bridgeId)}
               width={cardWidth}
               onPress={() => onOpen(item)}
               onWarm={onWarm && (() => onWarm(item))}

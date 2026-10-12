@@ -33,9 +33,8 @@ export function useLibrarySort(collection: CollectionFilter): [LibrarySort, (sor
   return [sort, setSort];
 }
 
-/** The Library grid's GROUPING choice, persisted. One value (not per-collection like the sort):
- *  the series grid only shows for the unscoped "Library" view now — a collection row opens its
- *  contents view, which has its own axes. */
+/** The series views' GROUPING choice, persisted. One value for every view (not per-collection like
+ *  the sort): how you like series sectioned doesn't depend on which shelf they're on. */
 const libraryGrouping$ = persisted$<LibraryGrouping>('comical:libraryGrouping', 'none');
 
 export function useLibraryGrouping(): [LibraryGrouping, (g: LibraryGrouping) => void] {
@@ -43,9 +42,9 @@ export function useLibraryGrouping(): [LibraryGrouping, (g: LibraryGrouping) => 
   return [grouping, (next) => libraryGrouping$.set(next)];
 }
 
-/** The Library grid's "Show" filter — one derived reading state, or `'all'`. Persisted like the
- *  grouping, and for the same reason: it is a view of the one unscoped grid. A string rather than
- *  `null` for "all" so the persisted value is never a falsy/nullish primitive. */
+/** The series views' "Show" filter — one derived reading state, or `'all'`. One value for every
+ *  view, like the grouping. A string rather than `null` for "all" so the persisted value is never a
+ *  falsy/nullish primitive. */
 export type LibraryShow = ReadState | 'all';
 const libraryShow$ = persisted$<LibraryShow>('comical:libraryShow', 'all');
 

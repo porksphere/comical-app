@@ -1,13 +1,12 @@
-import type { ApiCollectionItem } from './api';
+import type { ApiSavedItem } from './api';
 import type { CollectedGrouping } from './collected-view';
 import { buildGroupedRows, dayKey, dayLabel, type GroupedHeaderRow, type GroupedItemsRow, type GroupedRow } from './grouped-rows';
 
 /** A section heading between grids of tiles. */
 export type CollectedHeaderRow = GroupedHeaderRow;
-/** One grid row of up to `numColumns` tiles. Every item type is a tile — same 2:3 card, with a
- *  type-icon badge telling a series from a chapter from a page (see collection-icons.tsx). */
-export type CollectedTileRow = GroupedItemsRow<ApiCollectionItem>;
-export type CollectedRow = GroupedRow<ApiCollectionItem>;
+/** One grid row of up to `numColumns` tiles. */
+export type CollectedTileRow = GroupedItemsRow<ApiSavedItem>;
+export type CollectedRow = GroupedRow<ApiSavedItem>;
 
 /**
  * Turn a server-ordered list of collected items into the flat row array the list renders — the
@@ -15,7 +14,7 @@ export type CollectedRow = GroupedRow<ApiCollectionItem>;
  * module for the compose-with-sort semantics and the row-key discipline).
  */
 export function buildCollectedRows(
-  items: ApiCollectionItem[],
+  items: ApiSavedItem[],
   numColumns: number,
   grouping: CollectedGrouping,
   /** Injected so the caller controls locale/timezone — and so tests are deterministic. */
@@ -25,7 +24,7 @@ export function buildCollectedRows(
     grouping === 'none'
       ? null
       : grouping === 'series'
-        ? (item: ApiCollectionItem) => ({ key: `${item.bridgeId}:${item.seriesId}`, label: item.seriesTitle })
-        : (item: ApiCollectionItem) => ({ key: dayKey(item.collectedAt), label: formatDate(item.collectedAt) });
+        ? (item: ApiSavedItem) => ({ key: `${item.bridgeId}:${item.seriesId}`, label: item.seriesTitle })
+        : (item: ApiSavedItem) => ({ key: dayKey(item.collectedAt), label: formatDate(item.collectedAt) });
   return buildGroupedRows(items, numColumns, (item) => item.id, groupOf);
 }

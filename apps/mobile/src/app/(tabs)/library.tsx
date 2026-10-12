@@ -1,79 +1,42 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { useFocusEffect } from 'expo-router';
-
-import { useRouter } from '@/lib/nav';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useRef } from 'react';
+import { StyleSheet } from 'react-native';
 import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LibraryCollectionSelector, LibraryKindSelector } from '@/components/library-collection-selector';
-import { LibraryFilterButton, SHOW_LABELS } from '@/components/library-filter-button';
-import { LibrarySortButton } from '@/components/library-sort-button';
-import { RetryBlock } from '@/components/retry-block';
+import type { LibraryGridChrome } from '@/components/library/library-listing';
+import { LibrarySavedControls, LibrarySavedView } from '@/components/library/library-saved-view';
+import { LibrarySeriesControls, LibrarySeriesView } from '@/components/library/library-series-view';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { TabTitleBar } from '@/components/tab-title-bar';
-import { CollectedItemsGrid } from '@/components/collections/collected-items-grid';
-import { CollectedSortButton } from '@/components/collections/collected-sort-button';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import { BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
-import { coverStyles } from '@/components/series-card';
-import { SeriesGrid } from '@/components/series-grid';
-import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
-import { useCollectedView } from '@/data/collected-view';
-import { collectionItemsQuery, libraryQuery } from '@/data/queries';
 import {
   ALL_VIEW_NAME,
   effectiveItemKind,
-  ITEM_KIND_LABELS,
   setSelectedCollection,
   setSelectedItemKind,
   useSelectedCollectionId,
   useSelectedItemKind,
 } from '@/data/selected-collection';
-import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
-import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
-import { DIRECT_CHAPTER_ID, type ReadState } from '@/data/types';
-import { encodeSeriesParam } from '@/lib/series-nav';
-import { useDataSource, useMockActive } from '@/data/source';
-import { useBridgeMap } from '@/hooks/use-bridges';
 import { useHasSidebar } from '@/hooks/use-content-width';
 import { useSavedItemKinds } from '@/hooks/use-saved-item-kinds';
 import { useCollections } from '@/hooks/use-collections';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { libraryGroupOf } from '@/data/library-grouping';
-import { useLibraryGrouping, useLibraryShow, useLibrarySort } from '@/hooks/use-library-sort';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
-import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
-import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
-import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
+import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 
-// What an empty grid says under each "Show" choice — the filter emptied it, not the library.
-const SHOW_EMPTY: Record<ReadState, [title: string, detail: string]> = {
-  unstarted: ['Everything’s been started', 'Every series in your library has a chapter read.'],
-  behind: ['You’re all caught up', 'No series in your library has unread chapters.'],
-  'caught-up': ['Nothing caught up', 'No series in your library is read up to its latest chapter.'],
-  finished: ['Nothing finished', 'No completed series in your library is read to the end.'],
-};
-
 export default function LibraryScreen() {
-  // Collections tiles warm what a tap will need — see the grid's `onWarm` below. (The series GRID's
-  // own cards warm themselves, inside SeriesCard.)
-  const warmDetail = useWarmSeriesDetail();
-  const warmPages = useWarmChapterPages();
-  const ds = useDataSource();
-  const mock = useMockActive();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('library', listRef);
   // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it, `onScroll` only
@@ -85,92 +48,23 @@ export default function LibraryScreen() {
 
   // What the tab is showing: All or a collection, narrowed to one kind. Shared, not local: the
   // sidebar's Collections group moves this too (see `selected-collection.ts`).
-  const collectionFilter = useSelectedCollectionId();
-  const setCollectionFilter = setSelectedCollection;
+  const collection = useSelectedCollectionId();
   const selectedKind = useSelectedItemKind();
-  const kindsPresent = useSavedItemKinds(collectionFilter);
+  const kindsPresent = useSavedItemKinds(collection);
   const kind = effectiveItemKind(kindsPresent, selectedKind);
-  // All's series view is the library's own grid; every other pairing lists collected items.
-  const showingCollected = collectionFilter !== null || kind !== 'series';
-  const kindNoun = ITEM_KIND_LABELS[kind].toLowerCase();
   // Asked of the layout, not derived from width — see `useHasSidebar`.
   const railNav = useHasSidebar();
-  // The library grid's sort + grouping (they only apply there; a collection view has its own axes
-  // below). Grouping is client-side sectioning over the server-sorted list.
-  const [sort, setSort] = useLibrarySort(null);
-  const [grouping, setGrouping] = useLibraryGrouping();
-  const [show, setShow] = useLibraryShow();
-  const readState = show === 'all' ? null : show;
-  // Sort/dir/grouping for a collection's contents view — remembered PER COLLECTION (see the
-  // store's doc), so each one restores its own last-used axes.
-  // All's chapters and pages keep the keys they had as views of their own.
-  const [collectedView, setCollectedView] = useCollectedView(
-    collectionFilter ?? (kind === 'chapter' ? '@chapters' : '@pages'),
-  );
 
-  // What's typed folds straight into the same grid query, debounced since each term is a fetch.
+  // What's typed folds straight into the view's query, debounced since each term is a fetch.
   const filter = useTabFilter();
   const term = useDebouncedValue(filter.query.trim(), 200);
 
-  // Bridges resolve each entry's display name + direct-ness (each library card
-  // carries its own bridge, unlike the Browse grid's single-bridge view).
-  const { knownById: bridgeById } = useBridgeMap();
   const { collections } = useCollections();
-  const viewName = collections.find((c) => c.id === collectionFilter)?.name ?? ALL_VIEW_NAME;
+  const viewName = collections.find((c) => c.id === collection)?.name ?? ALL_VIEW_NAME;
   const titleType = useSubtitleSelectorStyle();
-
-  // Search + sort both fold into this one query and re-render the grid in place.
-  const { data: items = undefined, error, isLoading, refetch } = useQuery({
-    // Collections no longer FILTER the series grid — they have their own contents view — so the
-    // library query is always unscoped.
-    ...libraryQuery(ds, mock, term, sort, null, readState),
-    enabled: !showingCollected,
-    placeholderData: keepPreviousData,
-  });
-
-  const scope: { type: typeof kind; collection?: string } = {
-    type: kind,
-    ...(collectionFilter ? { collection: collectionFilter } : {}),
-  };
-  const collected = useQuery({
-    ...collectionItemsQuery(ds, mock, {
-      ...scope,
-      sort: collectedView.sort,
-      dir: collectedView.dir,
-      ...(term ? { q: term } : {}),
-    }),
-    enabled: showingCollected,
-    // Held across a refined filter, not across a switch of view — that would show the last view's
-    // contents under the new one's name.
-    placeholderData: (prev, prevQuery) => {
-      const was = prevQuery?.queryKey[2] as { collection?: string; type?: string } | undefined;
-      return was?.collection === scope.collection && was?.type === scope.type ? prev : undefined;
-    },
-  });
-
-  // Reflect adds/removes made on the series detail (or a mode switch) when the
-  // tab regains focus. Skips the very first focus (the query already fetched).
-  const [focusedOnce, setFocusedOnce] = useState(false);
-  useFocusEffect(
-    useCallback(() => {
-      if (focusedOnce) void refetch();
-      else setFocusedOnce(true);
-    }, [focusedOnce, refetch]),
-  );
 
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
-  // Column count for the skeleton only — SeriesGrid derives its own layout from the same hook.
-  const { numColumns } = useGridLayout();
-
-  const visibleItems = useVisibleByBridge(items ?? undefined);
-  const cards = useMemo<LibraryGridItem[]>(
-    () => visibleItems.map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId))),
-    [visibleItems, bridgeById],
-  );
-  // The SAME rule for a collection's contents. It didn't have it, which is the bug: with NSFW off
-  // the library grid hid those series and the collection listing them showed them anyway.
-  const visibleCollected = useVisibleByBridge(collected.data ?? undefined);
 
   // A pinned section heading sits flush under the bar and draws its own rule, so the bar YIELDS its
   // own while one is up — see the same wiring on Browse. A shared value rather than React state so
@@ -181,212 +75,24 @@ export default function LibraryScreen() {
     [theme.barHairline],
   );
 
-  // Memoized so the grid's grouped-rows memo keys off a stable function per grouping choice.
-  const groupOf = useMemo(() => libraryGroupOf(grouping) ?? undefined, [grouping]);
-
-  // Held empty until `ready` so the tab switch isn't blocked mounting the grid.
-  const listData = ready ? cards : [];
-
-  // Empty / degraded / loading messaging lives in the grid header (the sort + search controls moved
-  // up into the top bar), so it stays visible in every state.
-  function renderCollectedEmpty() {
-    if (collected.error) {
-      return (
-        <View style={styles.stateBlock}>
-          <RetryBlock
-            message={(collected.error as Error).message || `Failed to load saved ${kindNoun}`}
-            onRetry={collected.refetch}
-          />
-        </View>
-      );
-    }
-    if (!ready || collected.isLoading || collected.data === undefined) {
-      return <GridSkeleton numColumns={numColumns} rows={3} />;
-    }
-    if (collected.data === null) {
-      return (
-        <EmptyState
-          title="Collections aren’t available here"
-          detail="This server has no library. Switch to the remote server, or run bridges on this device, to save pages."
-        />
-      );
-    }
-    if (visibleCollected.length === 0) {
-      if (term) {
-        return (
-          <EmptyState
-            title="No matches"
-            detail={`No saved ${kindNoun} ${collectionFilter ? 'in this collection ' : ''}match your filter.`}
-          />
-        );
-      }
-      if (collectionFilter) {
-        return (
-          <EmptyState
-            title="This collection is empty"
-            detail="Save a series, chapter, or page into it — while reading, tap the bookmark in the top bar."
-          />
-        );
-      }
-      if (kind === 'chapter') {
-        return <EmptyState title="No saved chapters" detail="Long-press a chapter on a series page and tap “Save chapter”." />;
-      }
-      return <EmptyState title="No saved pages" detail="While reading, tap the bookmark in the top bar to save a page." />;
-    }
-    return null;
-  }
-
-  function renderEmpty() {
-    if (error) {
-      return (
-        <View style={styles.stateBlock}>
-          <RetryBlock message={(error as Error).message || 'Failed to load library'} onRetry={refetch} />
-        </View>
-      );
-    }
-    if (!ready || isLoading || items === undefined) return <GridSkeleton numColumns={numColumns} rows={3} />;
-    if (items === null) {
-      return (
-        <EmptyState
-          title="Library isn’t available here"
-          detail="This server has no library. Switch to the remote server, or run bridges on this device, to keep a library."
-        />
-      );
-    }
-    if (cards.length === 0) {
-      if (term) {
-        return <EmptyState title="No matches" detail="No series in your library match your filter." />;
-      }
-      if (readState) {
-        const [title, detail] = SHOW_EMPTY[readState];
-        return <EmptyState title={title} detail={`${detail} Showing “${SHOW_LABELS[readState]}” — change that from the sort menu.`} />;
-      }
-      return <EmptyState title="Your library is empty" detail="Open a series and tap “＋ Library” to add it here." />;
-    }
-    return null;
-  }
+  const chrome: LibraryGridChrome = {
+    listRef,
+    paddingTop: headerHeight + BarContentGap,
+    paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+    // Flush to the bar's bottom edge, as on Browse — NOT the viewport top, which is behind the bar
+    // (content scrolls under it).
+    stickyHeaderTop: headerHeight,
+    stickyPinned,
+    sharedValues,
+    onScroll,
+  };
 
   return (
     <ThemedView style={styles.container}>
-      {/* The same grid Browse and Search render — every list-level concern (recycling, the web scroll
-          bridge, the fling-jitter guard, cells, layout) lives in SeriesGrid, so the Library
-          inherits all of it and configures none of it. `scopeKey` carries query/sort, which is what
-          remounts the list on a search/sort switch (a scroll-to-top moment) and resets recycled cards. */}
-      {showingCollected ? (
-        <CollectedItemsGrid
-          items={ready ? visibleCollected : []}
-          grouping={collectedView.grouping}
-          // Every axis is in the key: a sort/dir/grouping switch is a scroll-to-top moment and must
-          // reset recycled rows, exactly as a search or collection switch does.
-          scopeKey={`collected|${term}|${collectionFilter}|${kind}|${collectedView.sort}|${collectedView.dir}|${collectedView.grouping}`}
-          listRef={listRef}
-          header={renderCollectedEmpty()}
-          paddingTop={headerHeight + BarContentGap}
-          paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
-          // Flush to the bar's bottom edge — NOT the viewport top, which is behind the bar
-          // (content scrolls under it).
-          stickyHeaderTop={headerHeight}
-          stickyPinned={stickyPinned}
-          sharedValues={sharedValues}
-          onScroll={onScroll}
-          // Mirrors the branch below: a series warms its detail, a chapter the pages it reads from.
-          // A saved page opens in SEQUENCE mode, where the sequence IS the page list — no query to
-          // warm, and its image is the one this very tile is already showing.
-          onWarm={(item) => {
-            if (item.type === 'series') {
-              // No `bridge` param below, so the destination resolves the name to 'Library' — match
-              // it, or this warm caches a detail carrying a different one (see useWarmSeriesDetail).
-              warmDetail(item.bridgeId, item.seriesId, {
-                bridgeName: 'Library',
-                title: item.seriesTitle,
-                cover: item.thumbnailUrl,
-              });
-              return;
-            }
-            if (item.type === 'chapter') {
-              const direct = item.chapterId === DIRECT_CHAPTER_ID;
-              warmPages(item.bridgeId, item.seriesId, direct ? undefined : item.chapterId);
-            }
-          }}
-          onOpen={(item) => {
-            // A series opens its details; a chapter or a saved page opens THE reader — the same
-            // series screen History rows push into, not a viewer of its own. That screen already
-            // owns everything a reading surface needs (the reveal to details with its own lazy
-            // loading and skeletons, the collapse dismissal, the settings sheet, the save button in
-            // its toolbar), so a saved page inherits all of it and any change there applies here.
-            if (item.type === 'series') {
-              router.push({
-                pathname: '/series',
-                params: {
-                  id: item.seriesId,
-                  bridgeId: item.bridgeId,
-                  title: item.seriesTitle,
-                  // The cover URL rides along for the zoom's flying copy (and the details
-                  // placeholder), exactly as a series card forwards it.
-                  ...(item.thumbnailUrl ? { cover: encodeSeriesParam(item.thumbnailUrl) } : {}),
-                },
-              });
-              return;
-            }
-            if (item.type === 'page') {
-              // A saved page opens the reader in SEQUENCE mode: the pager runs over this view's
-              // saved pages — same collection, search, sort and direction, so the album order IS
-              // the grid order — and paging past a page crosses into the next saved page, whatever
-              // series it belongs to (use-reader-sequence.ts re-resolves from the same query key,
-              // so a warm cache opens instantly).
-              router.push({
-                pathname: '/series',
-                params: {
-                  seq: '1',
-                  // Empty for All: the sequence keeps only pages, so the unscoped listing is it.
-                  seqCollection: collectionFilter ?? '',
-                  seqSort: collectedView.sort,
-                  seqDir: collectedView.dir,
-                  ...(term ? { seqQ: term } : {}),
-                  seqStart: item.id,
-                },
-              });
-              return;
-            }
-            const direct = item.chapterId === DIRECT_CHAPTER_ID;
-            router.push({
-              pathname: '/series',
-              params: {
-                id: item.seriesId,
-                title: item.seriesTitle,
-                bridge: encodeSeriesParam(bridgeById.get(item.bridgeId)?.name ?? item.bridgeId),
-                bridgeId: item.bridgeId,
-                reader: '1',
-                // A saved chapter reads normally, from its first page.
-                start: '0',
-                ...(direct
-                  ? { direct: '1' }
-                  : { chapterId: item.chapterId, chapterName: item.chapterName ?? '' }),
-              },
-            });
-          }}
-        />
+      {kind === 'series' ? (
+        <LibrarySeriesView collection={collection} term={term} ready={ready} chrome={chrome} />
       ) : (
-        <SeriesGrid
-          items={listData}
-          scopeKey={`${term}|${sort}|${grouping}|${show}|${collectionFilter ?? ''}`}
-          listRef={listRef}
-          header={renderEmpty()}
-          // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
-          hasSub
-          // The one grid that re-sorts under an open page: closing a series moves its card to the
-          // front of a last-read sort, and an unfollow closes a gap under any sort.
-          animateReorder
-          paddingTop={headerHeight + BarContentGap}
-          paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
-          // Flush to the bar's bottom edge, as on Browse — the pinned heading's material meets
-          // the bar rather than floating below it.
-          groupOf={groupOf}
-          stickyHeaderTop={headerHeight}
-          stickyPinned={stickyPinned}
-          sharedValues={sharedValues}
-          onScroll={onScroll}
-        />
+        <LibrarySavedView collection={collection} kind={kind} term={term} ready={ready} chrome={chrome} />
       )}
 
       {/* The sort button lives in the bar's trailing slot in BOTH states, so it stays put and visible
@@ -398,7 +104,7 @@ export default function LibraryScreen() {
           filter.open ? undefined : (
             <HoldActionTarget testID="library.nsfw-hold" size={BridgeThumbSize}>
               <CollectionThumb
-                view={collectionFilter}
+                view={collection}
                 name={viewName}
                 size={BridgeThumbSize}
                 style={styles.barThumb}
@@ -421,9 +127,9 @@ export default function LibraryScreen() {
                 </ThemedText>
               ) : (
                 <LibraryCollectionSelector
-                  value={collectionFilter}
+                  value={collection}
                   collections={collections}
-                  onChange={setCollectionFilter}
+                  onChange={setSelectedCollection}
                 />
               )}
               <LibraryKindSelector
@@ -438,58 +144,15 @@ export default function LibraryScreen() {
         right={
           <>
             <TabFilterTrigger filter={filter} testID="library.search" placeholder="Filter library…" />
-            {/* Sort applies to the library grid only. The saved-pages view has its own sort/dir
-                axes (Phase 3); showing this control there would be a lever that does nothing. */}
-            {showingCollected ? (
-              <CollectedSortButton value={collectedView} onChange={setCollectedView} />
+            {kind === 'series' ? (
+              <LibrarySeriesControls collection={collection} />
             ) : (
-              <>
-                <LibraryFilterButton value={show} onChange={setShow} />
-                <LibrarySortButton
-                  value={sort}
-                  onChange={setSort}
-                  grouping={grouping}
-                  onGroupingChange={setGrouping}
-                />
-              </>
+              <LibrarySavedControls collection={collection} kind={kind} />
             )}
           </>
         }
       />
     </ThemedView>
-  );
-}
-
-function EmptyState({ title, detail }: { title: string; detail: string }) {
-  return (
-    <View style={styles.empty}>
-      <ThemedText style={styles.emptyTitle}>
-        {title}
-      </ThemedText>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.emptyDetail}>
-        {detail}
-      </ThemedText>
-    </View>
-  );
-}
-
-function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }) {
-  const { columnGap } = useGridLayout();
-  const desktop = useIsDesktop();
-  return (
-    <View style={styles.skelWrap}>
-      {Array.from({ length: rows }).map((_, r) => (
-        <View key={r} style={[styles.skelRow, { gap: columnGap }]}>
-          {Array.from({ length: numColumns }).map((_, c) => (
-            <View key={c} style={[styles.cell, styles.skelCell]}>
-              <Skeleton style={[styles.skelCover, coverStyles.corner, desktop && coverStyles.cornerDesktop]} />
-              <Skeleton style={styles.skelLine} />
-              <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
-            </View>
-          ))}
-        </View>
-      ))}
-    </View>
   );
 }
 
@@ -505,53 +168,5 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-  },
-  cell: {
-    flex: 1,
-    // Row gap lives here: LegendList ignores contentContainerStyle `gap` vertically (items are
-    // absolutely positioned), so each cell reserves the inter-row space itself. It's split across
-    // top+bottom (4 + 12 = the same 16 between rows) rather than all on the bottom, because
-    // LegendList's web row container is `contain: paint` — a card flush to the row's top edge has
-    // its highlight ring's top stroke clipped, so paddingTop gives that stroke room.
-    paddingTop: Spacing.one,
-    paddingBottom: Spacing.three - Spacing.one,
-  },
-  stateBlock: {
-    paddingTop: Spacing.five,
-  },
-  empty: {
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingTop: Spacing.six,
-  },
-  emptyTitle: {
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  emptyDetail: {
-    textAlign: 'center',
-    maxWidth: 320,
-  },
-  skelWrap: {
-    gap: Spacing.three,
-    paddingTop: Spacing.two,
-  },
-  skelRow: {
-    flexDirection: 'row',
-  },
-  skelCell: {
-    gap: Spacing.one,
-  },
-  skelCover: {
-    width: '100%',
-    aspectRatio: 2 / 3,
-  },
-  skelLine: {
-    height: 12,
-    borderRadius: 4,
-  },
-  skelLineShort: {
-    width: '60%',
   },
 });

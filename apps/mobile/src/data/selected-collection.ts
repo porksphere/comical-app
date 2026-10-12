@@ -1,8 +1,8 @@
 /**
  * Which view the Library tab is showing — two independent axes. The COLLECTION is `null` for All
  * or a collection's id; the KIND narrows whichever of those is showing to its series, chapters or
- * pages. All's series view is the library's own grid; every other pairing is a collected-items
- * listing scoped by both.
+ * pages. Series are always the library grid (scoped to the collection); chapters and pages are a
+ * collected-items listing scoped by both.
  *
  * Lifted out of the Library screen's `useState` because the sidebar drives it too, and a selection
  * two surfaces can move is shared state by definition. Same split the bridge selection already makes
@@ -22,6 +22,8 @@ export const ALL_VIEW_NAME = 'All';
 export type ItemKind = 'series' | 'chapter' | 'page';
 export const ITEM_KINDS: readonly ItemKind[] = ['series', 'chapter', 'page'];
 export const ITEM_KIND_LABELS: Record<ItemKind, string> = { series: 'Series', chapter: 'Chapters', page: 'Pages' };
+/** The kinds that are saved ITEMS rather than library series — what the collected grid shows. */
+export type SavedKind = Exclude<ItemKind, 'series'>;
 
 /** Which kinds a view holds anything of; `null` while that is still loading. */
 export type KindsPresent = Record<ItemKind, boolean> | null;

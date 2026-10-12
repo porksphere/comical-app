@@ -944,6 +944,10 @@ export type {
   ApiCollectionSeriesItem,
 };
 
+/** A saved chapter or page — what a saved-items grid shows. Saved series are library entries and
+ *  render as library cards instead. */
+export type ApiSavedItem = ApiCollectionChapterItem | ApiCollectionPageItem;
+
 /** GET /bridges/{id} response — settings form data for one bridge. `info` is the bridge's full
  *  self-description (capabilities, version, contract version, languages, rate limit — everything
  *  `GET /bridges` trims down to the browse-card fields in `Bridge`), not the app's local `Bridge`
@@ -1314,8 +1318,7 @@ export async function getLibrarySeries(
 // COORDINATES throughout — a record's id is derived from them, so a reconcile that relocates a page
 // re-keys it and a held id would 404. That's why no route here takes one.
 
-/** How a collected-items listing is scoped. `type` is NOT optional in practice for a page grid:
- *  omitting it returns the mixed union (series/chapter items too). */
+/** How a collected-items listing is scoped. Omitting `type` returns every kind at once. */
 export type CollectedItemsQuery = {
   type?: 'series' | 'chapter' | 'page';
   sort?: 'added' | 'series' | 'chapter';

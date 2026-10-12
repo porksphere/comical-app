@@ -123,16 +123,20 @@ appId: com.porksphere.comical
 - tapOn:
     id: "reader.toolbar.back"
 
-# The Library tab's selector is ONE flat list: "Library" plus each collection. Opening a collection
-# shows its whole contents — series, chapters and saved pages, mixed, one tile shape with a
-# type-icon badge. The picker taps above filed into the first collection row, which in mock mode is
-# deterministically coll-reading (order 0), so that's the one opened here.
+# The Library tab's selector is ONE flat list: "Library" plus each collection, and the kind
+# selector beside it narrows the view to its series, chapters or pages. The picker taps above filed
+# into the first collection row, which in mock mode is deterministically coll-reading (order 0), so
+# that's the one opened here, on its Pages.
 - tapOn:
     id: "tab.library"
 - tapOn:
     id: "library.collection-selector"
 - tapOn:
     id: "library.collection.coll-reading"
+- tapOn:
+    id: "library.kind-selector"
+- tapOn:
+    id: "library.kind-selector.option.page"
 
 # The two pages saved above are here, drawn from their chapter's page list (one request for the
 # chapter, not one per tile).
@@ -141,6 +145,7 @@ appId: com.porksphere.comical
 
 # Sort and grouping. Grouping is applied client-side OVER the server's order, so switching to
 # "Series" inserts section headers without losing the chosen sort — the tiles must survive it.
+# Every pick closes the menu, so each one reopens it.
 - tapOn:
     id: "collected.sort"
 - tapOn:
@@ -153,6 +158,10 @@ appId: com.porksphere.comical
     id: "collected.sort"
 - tapOn:
     id: "collected.dir.asc"
+- assertNotVisible:
+    id: "collected.group.none"
+- tapOn:
+    id: "collected.sort"
 - tapOn:
     id: "collected.group.none"
 - assertVisible:
