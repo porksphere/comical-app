@@ -253,6 +253,15 @@ export function useBackSwipeBlocker(): NativeGesture | undefined {
   );
 }
 
+// Above every worklet that reads them: a worklet captures its closure where it is declared, and
+// Hermes has no TDZ, so a const declared further down is silently `undefined` on the UI thread.
+const SHAPE_UNDECIDED = 0;
+const SHAPE_BACK_SWIPE = 1;
+const SHAPE_NOT_BACK_SWIPE = -1;
+
+/** The lock's verdict for one drag: undecided, a back-swipe, or not one. */
+export type BackSwipeShape = SharedValue<number>;
+
 /**
  * Was this drag a back-swipe? The lock's verdict when it reached one (see BACK_SWIPE_DEGREES);
  * the angle is not looked at again after that, however the stroke curls on the way to the release.
@@ -279,13 +288,6 @@ export function backSwipeStayedHorizontal(
   const py = ty + projectRelease(vy);
   return Math.abs(py) <= Math.abs(px) * BACK_DOMINANCE;
 }
-
-const SHAPE_UNDECIDED = 0;
-const SHAPE_BACK_SWIPE = 1;
-const SHAPE_NOT_BACK_SWIPE = -1;
-
-/** The lock's verdict for one drag: undecided, a back-swipe, or not one. */
-export type BackSwipeShape = SharedValue<number>;
 
 /** One per gesture copy, alongside its other shared values. */
 export function backSwipeShape(): BackSwipeShape {
