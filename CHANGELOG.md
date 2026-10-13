@@ -13,6 +13,14 @@ what the app shows under Settings → About → What's new. Keep the `## X.Y.Z �
 the extractor matches on the version field, and a section it can't find silently degrades to the
 release's title.
 
+## 0.6.1 — 2026-10-13
+
+- Fix back-swipe never committing: declare shape consts before their worklets (a20cea41)
+- Decide a back-swipe's angle once, over its opening stretch (84cda7f5)
+- Judge a back-swipe flick's straightness by where it was headed (dca3c4b1)
+- Show every item in a hero rail's wide grid (5b2863bf)
+- Draw the series card's title peek in a portal so nothing clips it (d36490c6)
+
 ## 0.6.0 — 2026-10-12
 
 - Size card rows to their tallest cover (b4d435f7)
