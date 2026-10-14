@@ -1091,6 +1091,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         direct: '1',
         reader: '1',
         start: String(pageIndex),
+        picked: '1',
         ...(bridgeId ? { bridgeId } : {}),
         ...(bridge ? { bridge: encodeSeriesParam(bridge) } : {}),
         ...(entry.cover ? { cover: encodeSeriesParam(entry.cover) } : {}),

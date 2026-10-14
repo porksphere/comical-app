@@ -990,6 +990,9 @@ type SeriesReaderParams = {
   chapterId?: string;
   chapterName?: string;
   start?: string;
+  /** '1' when the seeded spot was PICKED (a page in a card's preview rail, a tap in a sequence's
+   *  details) rather than resumed — see ReadTarget's `picked`. */
+  picked?: string;
 };
 
 /**
@@ -1044,6 +1047,7 @@ function SeriesReaderInstance({
     chapterId: seedChapterId,
     chapterName: seedChapterName,
     start: seedStart,
+    picked: seedPicked,
   } = params;
   // Opened straight into the reader (History / Activity), rather than onto the details.
   const readerFirst = readerParam === '1';
@@ -1147,8 +1151,9 @@ function SeriesReaderInstance({
     if (!readerFirst) return null;
     const parsed = Number(seedStart);
     const at = Number.isFinite(parsed) ? parsed : 0;
-    if (seedChapterId) return { chapterId: seedChapterId, chapterName: seedChapterName, start: at };
-    if (direct === '1') return { start: at };
+    const picked = seedPicked === '1';
+    if (seedChapterId) return { chapterId: seedChapterId, chapterName: seedChapterName, start: at, picked };
+    if (direct === '1') return { start: at, picked };
     return null;
   });
   // Sequence mode: the target is the sequence itself. `chapterId` is deliberately ABSENT — it
@@ -3452,6 +3457,7 @@ function SeriesReaderInstance({
           chapterId: v.id,
           ...(v.name ? { chapterName: v.name } : {}),
           start: '0',
+          picked: '1',
         });
         return;
       }
@@ -3479,6 +3485,7 @@ function SeriesReaderInstance({
           reader: '1',
           direct: '1',
           start: String(pageIndex),
+          picked: '1',
         });
         return;
       }
