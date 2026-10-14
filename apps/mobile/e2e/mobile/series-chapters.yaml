@@ -2,7 +2,8 @@
 # (newest/oldest), expanding a collapsed middle, and the per-chapter long-press
 # download menu. Selectors (confirmed against source — see ../web/series-chapters.yaml
 # for why the web copy anchors differently):
-#   - series.chapters.tab.<all|read|unread>   (components/series/chapters-section.tsx)
+#   - series.chapters.tabs                    (components/series/chapters-section.tsx) — the OS's
+#     segmented control on mobile, whose segments carry no testID, so one is tapped by its label
 #   - series.chapters.sort.<desc|asc>          (same file) — ONE toggle whose id names the order a
 #     tap switches TO, so `.asc` exists while newest-first is in force and `.desc` after tapping it
 #   - series.chapters.expand-middle            (same file — only rendered once a tab
@@ -28,15 +29,19 @@ appId: com.porksphere.comical
 # Scroll the chapters section's tab/sort controls into view once.
 - scrollUntilVisible:
     element:
-      id: "series\\.chapters\\.tab\\..*"
+      id: "series.chapters.tabs"
     direction: DOWN
     timeout: 20000
 
 # Tab filter
 - tapOn:
-    id: "series.chapters.tab.unread"
+    text: "Unread"
+    childOf:
+      id: "series.chapters.tabs"
 - tapOn:
-    id: "series.chapters.tab.all"
+    text: "All"
+    childOf:
+      id: "series.chapters.tabs"
 
 # Sort toggle
 - tapOn:
