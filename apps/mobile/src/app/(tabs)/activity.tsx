@@ -260,6 +260,7 @@ export default function ActivityScreen() {
         chapterId: g.chapterId,
         chapterName: g.chapterName ?? '',
         start: '0',
+        picked: '1',
         ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
         ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
       },

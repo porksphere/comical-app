@@ -991,7 +991,7 @@ type SeriesReaderParams = {
   chapterName?: string;
   start?: string;
   /** '1' when the seeded spot was PICKED (a page in a card's preview rail, a tap in a sequence's
-   *  details) rather than resumed — see ReadTarget's `picked`. */
+   *  details, a new chapter in Activity) rather than resumed — see ReadTarget's `picked`. */
   picked?: string;
 };
 
