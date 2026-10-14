@@ -937,8 +937,10 @@ const WARM_IDLE_MS = 220;
 const POSTER_BACKSTOP_MS = 1200;
 
 /** What the reader pane is pointed at: a chapter (chaptered series) or the series itself (direct).
- *  `start: 'last'` = land on the final page (arriving from the NEXT chapter's "previous"). */
-type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'last' };
+ *  `start: 'last'` = land on the final page (arriving from the NEXT chapter's "previous").
+ *  `picked`: chosen from the details card (a page thumbnail, a chapter row), which is a read in
+ *  itself — see ReaderPane's `picked`. */
+type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'last'; picked?: boolean };
 
 /**
  * A cross-series READER SEQUENCE — what the pager runs over when the reader was opened from a
@@ -3459,6 +3461,7 @@ function SeriesReaderInstance({
           chapterId: v.id,
           chapterName: v.name,
           start: resume?.chapterId === v.id ? (resume.lastPage ?? 0) : 0,
+          picked: true,
         });
       }
       setRevealed(0);
@@ -3486,7 +3489,7 @@ function SeriesReaderInstance({
       paneRef.current?.goTo(pageIndex, false);
       setOverride((o) => {
         const from = o ?? derivedTarget;
-        return from ? { ...from, start: pageIndex } : { start: pageIndex };
+        return from ? { ...from, start: pageIndex, picked: true } : { start: pageIndex, picked: true };
       });
       setRevealed(0);
     },
@@ -3814,6 +3817,7 @@ function SeriesReaderInstance({
               seriesCover={series?.cover}
               chapterId={target.chapterId}
               chapterName={target.chapterName}
+              picked={!!target.picked}
               // A sequence has no chapter roster: no skip buttons, no cross-chapter paging, and —
               // below — no progress writes (a sequence hop is browsing, not a read position, and
               // recording it would clobber the real one).
@@ -4525,6 +4529,10 @@ const ReaderPane = forwardRef<
     seriesCover?: string;
     chapterId?: string;
     chapterName?: string;
+    /** The target was picked from the details card. That lands while the pane is still in standby
+     *  (the reveal and the jump share a commit, and `standby` lags the reveal), so the landing is
+     *  never seen as a page turned — without this, opening page 10 and leaving recorded nothing. */
+    picked?: boolean;
     /** False for a direct series — drops the navigator's chapter-skip buttons. */
     chaptered: boolean;
     /** False = never write reading progress/history from this pane (sequence mode: a hop through a
@@ -4577,6 +4585,7 @@ const ReaderPane = forwardRef<
     seriesCover,
     chapterId,
     chapterName,
+    picked = false,
     chaptered,
     recordProgress = true,
     hasPrevChapter,
@@ -4938,9 +4947,9 @@ const ReaderPane = forwardRef<
   const engagedRef = useRef(false);
   const seenPageRef = useRef(currentPage);
   useEffect(() => {
-    if (!standby && (currentPage !== seenPageRef.current || pages.length === 1)) engagedRef.current = true;
+    if (picked || (!standby && (currentPage !== seenPageRef.current || pages.length === 1))) engagedRef.current = true;
     seenPageRef.current = currentPage;
-  }, [currentPage, standby, pages.length]);
+  }, [currentPage, standby, pages.length, picked]);
   const record = useCallback(() => {
     if (!recordProgress || !engagedRef.current) return;
     if (!bridgeId || !seriesId || !pages.length) return;
