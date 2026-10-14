@@ -15,7 +15,8 @@
 #   - settings.category.trackers   settings.tsx category row
 #   - trackers.row.anilist         testId('trackers.row', t.info.id) — first mock tracker (AniList)
 #   - swipe-action.anilist.uninstall  SwipeableRow pill, testId('swipe-action', name, action.key)
-#   - confirm.confirm / confirm.cancel  confirm-popup.tsx
+#   - the confirm is the SYSTEM alert on mobile (confirm-popup.tsx's nativeConfirm), whose buttons
+#     carry no testID: matched by label, case-insensitively since Android may upper-case them
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -67,14 +68,14 @@ appId: com.porksphere.comical
 - tapOn:
     id: "swipe-action.anilist.uninstall"
 
-# The guard: a confirm popup, not an instant removal.
+# The guard: a confirm alert, not an instant removal.
 - assertVisible:
-    id: "confirm.confirm"
+    text: "(?i)uninstall tracker"
 
-# Cancel — the tracker stays installed (also proves the popup is dismissible).
+# Cancel — the tracker stays installed (also proves the alert is dismissible).
 - tapOn:
-    id: "confirm.cancel"
+    text: "(?i)cancel"
 - assertNotVisible:
-    id: "confirm.confirm"
+    text: "(?i)uninstall tracker"
 - assertVisible:
     id: "trackers.row.anilist"
