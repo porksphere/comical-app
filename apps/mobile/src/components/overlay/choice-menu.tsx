@@ -72,6 +72,16 @@ export function ChoiceMenuButton({
       icon={icon}
       badge={badge}
       render={() => <ChoiceMenu title={title} sections={sections} />}
+      native={sections.map((section) => ({
+        key: section.testID,
+        title: section.label,
+        items: section.options.map((option) => ({
+          key: option.value,
+          label: option.label,
+          checked: option.value === section.value,
+          onSelect: () => section.onChange(option.value),
+        })),
+      }))}
     />
   );
 }

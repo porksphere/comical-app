@@ -21,11 +21,12 @@ appId: com.porksphere.comical
 - tapOn:
     id: "library.search-close"
 
-# Sort
+# Sort. The sort, group and filter menus are the OS's own pull-down on mobile, whose rows carry no
+# testID, so a row is picked by its label (library-sort-button.tsx / library-filter-button.tsx).
 - tapOn:
     id: "library.sort"
 - tapOn:
-    id: "library.sort.title"
+    text: "Title"
 - assertVisible:
     id: "series-card\\..*"
 
@@ -34,45 +35,51 @@ appId: com.porksphere.comical
 - tapOn:
     id: "library.sort"
 - tapOn:
-    id: "library.group.bridge"
+    text: "Source"
 - assertVisible:
     text: "Panelfox"
 - tapOn:
     id: "library.sort"
 - tapOn:
-    id: "library.group.none"
+    text: "None"
 - assertVisible:
     id: "series-card\\..*"
 
 # Filter by read state (the seeded library has series behind on unread chapters). Its own button
-# beside the sort, and multi-select: the menu stays open, and a second state widens the filter.
+# beside the sort, and multi-select: a native menu closes on each pick, so every toggle reopens it,
+# and a second state widens the filter.
 - tapOn:
     id: "library.filter"
 - tapOn:
-    id: "library.show.behind"
+    text: "Behind"
 - assertVisible:
     id: "series-card\\..*"
-- tapOn:
-    id: "library.show.unstarted"
-- assertVisible:
-    id: "series-card\\..*"
-- tapOn:
-    id: "library.show.all"
-
-# Narrow to one source ("panelfox" is a seeded mock bridge), then back.
-- tapOn:
-    id: "library.bridge.panelfox"
-- assertVisible:
-    id: "series-card\\..*"
-- tapOn:
-    id: "library.bridge.all"
-- assertVisible:
-    id: "series-card\\..*"
-
-# Nothing closes it on a pick, so close it: on a phone the backdrop is over the bar, and the tap
-# lands on that.
 - tapOn:
     id: "library.filter"
+- tapOn:
+    text: "Not started"
+- assertVisible:
+    id: "series-card\\..*"
+- tapOn:
+    id: "library.filter"
+- tapOn:
+    text: "Everything"
+
+# Narrow to one source ("Panelfox" is a seeded mock bridge), then back.
+- tapOn:
+    id: "library.filter"
+- tapOn:
+    text: "Panelfox"
+    below:
+      text: "Source"
+- assertVisible:
+    id: "series-card\\..*"
+- tapOn:
+    id: "library.filter"
+- tapOn:
+    text: "All sources"
+- assertVisible:
+    id: "series-card\\..*"
 
 # Collection scope -> Manage Collections -> back
 - tapOn:
