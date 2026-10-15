@@ -611,7 +611,9 @@ export function SeriesCard({
     // clip box, dropping both a host view AND a Reanimated wrapper per card in the common case.
     const pictureInner = (
       <>
-        {delayPassed && (
+        {/* Not mounted while a proxied cover is still resolving: a uri-less <Image> is a src-less
+            <img> on web, which Chrome frames in its grey broken-image border. */}
+        {delayPassed && resolvedCover !== undefined && (
           <Image
             source={{ uri: resolvedCover }}
             style={StyleSheet.absoluteFill}
