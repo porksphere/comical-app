@@ -13,6 +13,7 @@
     "paths": {
       "@comical/contract": ["../../external/comical/packages/contract/src/index.ts"],
       "@comical/core": ["../../external/comical/packages/core/src/index.ts"],
+      "@comical/core/net/rate-limiter": ["../../external/comical/packages/core/src/net/rate-limiter.ts"],
       "@comical/downloads": ["../../external/comical/packages/downloads/src/index.ts"],
       "@comical/host-bun": ["../../external/comical/packages/host-bun/src/index.ts"],
       "@comical/library": ["../../external/comical/packages/library/src/index.ts"],

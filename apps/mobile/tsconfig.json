@@ -25,6 +25,9 @@
       "@comical/core/tracker-loader": [
         "../../external/comical/packages/core/src/tracker-loader.ts"
       ],
+      "@comical/core/net/rate-limiter": [
+        "../../external/comical/packages/core/src/net/rate-limiter.ts"
+      ],
       "@comical/contract": [
         "../../external/comical/packages/contract/src/index.ts"
       ],

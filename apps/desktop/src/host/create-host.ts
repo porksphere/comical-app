@@ -130,6 +130,7 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
     blobs: new FileBlobStore(join(dlDir, "blobs")),
     fetchPage: pageFetcher,
     resolvePages: createServerPageResolver(() => routerFetch),
+    pageRateLimit: async (id) => (await manager.list()).find((b) => b.info.id === id)?.info.assetRateLimit,
   });
   routerOpts.downloads = downloads;
   routerOpts.downloadEngine = engine;
