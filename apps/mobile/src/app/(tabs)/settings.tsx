@@ -19,12 +19,12 @@ import {
 } from '@/components/icons/ui-icons';
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
 import { UpdatePip } from '@/components/tab-badge';
-import { settingsRowFrame } from '@/components/settings/settings-row';
+import { SettingsSection, settingsRowFrame } from '@/components/settings/settings-row';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
-import { MaxTopLevelWidth, SettingsGutter } from '@/constants/theme';
+import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
@@ -86,109 +86,104 @@ export default function SettingsScreen() {
           styles.fill,
         ]}>
         <View style={styles.list}>
-          <CategoryRow
-            testID="settings.category.general"
-            icon={<GeneralSettingsIcon color={theme.textSecondary} size={22} />}
-            title="General"
-            onPress={() => router.push('/settings-general')}
-          />
-          <Divider />
-          <CategoryRow
-            testID="settings.category.notifications"
-            icon={<NotificationsIcon color={theme.textSecondary} size={22} />}
-            title="Notifications"
-            onPress={() => router.push('/settings-notifications')}
-          />
-          <Divider />
-          <CategoryRow
-            testID="settings.category.sync"
-            icon={<SyncIcon color={theme.textSecondary} size={22} />}
-            title="Sync"
-            onPress={() => router.push('/settings-sync')}
-          />
-          <Divider />
-          <CategoryRow
-            testID="settings.category.bridges"
-            icon={<BridgesIcon color={theme.textSecondary} size={22} />}
-            title="Bridges"
-            value={counts.bridges}
-            updates={updates.bridges}
-            onPress={() => router.push('/bridges')}
-          />
-          <Divider />
-          <CategoryRow
-            testID="settings.category.trackers"
-            icon={<TrackersIcon color={theme.textSecondary} size={22} />}
-            title="Trackers"
-            value={counts.trackers}
-            updates={updates.trackers}
-            onPress={() => router.push('/trackers')}
-          />
-          <Divider />
-          <CategoryRow
-            testID="settings.category.registries"
-            icon={<RegistriesIcon color={theme.textSecondary} size={22} />}
-            title="Registries"
-            value={counts.registries}
-            onPress={() => router.push('/registries')}
-          />
-          <Divider />
-          <CategoryRow
-            testID="settings.category.custom-pages"
-            icon={<CustomPagesIcon color={theme.textSecondary} size={22} />}
-            title="Custom Pages"
-            value={customPageCount ? String(customPageCount) : undefined}
-            onPress={() => router.push('/custom-pages')}
-          />
-          <Divider />
-          <CategoryRow
-            testID="settings.category.downloads"
-            icon={<DownloadsIcon color={theme.textSecondary} size={22} />}
-            title="Downloads"
-            value={counts.downloads}
-            progress={counts.downloadsProgress}
-            onPress={() => router.push('/downloads')}
-          />
-          <Divider />
-          <CategoryRow
-            testID="settings.category.storage"
-            icon={<StorageIcon color={theme.textSecondary} size={22} />}
-            title="Storage"
-            onPress={() => router.push('/storage')}
-          />
-          <Divider />
-          <CategoryRow
-            testID="settings.category.diagnostics"
-            icon={<DiagnosticsIcon color={theme.textSecondary} size={22} />}
-            title="Diagnostics"
-            onPress={() => router.push('/diagnostics')}
-          />
-          <Divider />
-          <CategoryRow
-            testID="settings.category.about"
-            icon={<AboutIcon color={theme.textSecondary} size={22} />}
-            title="About"
-            // The version doubles as the row's value, so the answer to "which build am I on?" is on
-            // the landing screen itself — the screen behind it is for the rest of the readout.
-            value={APP_VERSION}
-            // A newer build of this channel exists. Only ever 0 or 1 (there's one app, not a list of
-            // them), which still goes through the counted pip rather than a bare UpdateDot: this is a
-            // CATEGORY row like Bridges/Trackers, and keeping the same pill means the tab badge's
-            // total is exactly the sum of the pips visible on this screen.
-            updates={appUpdate.status === 'update-available' ? 1 : 0}
-            onPress={() => router.push('/settings-about')}
-          />
-          {PROFILING_ENABLED && (
-            <>
-              <Divider />
+          <SettingsSection>
+            <CategoryRow
+              testID="settings.category.general"
+              icon={<GeneralSettingsIcon color={theme.text} size={18} />}
+              title="General"
+              onPress={() => router.push('/settings-general')}
+            />
+            <CategoryRow
+              testID="settings.category.notifications"
+              icon={<NotificationsIcon color={theme.text} size={18} />}
+              title="Notifications"
+              onPress={() => router.push('/settings-notifications')}
+            />
+            <CategoryRow
+              testID="settings.category.sync"
+              icon={<SyncIcon color={theme.text} size={18} />}
+              title="Sync"
+              onPress={() => router.push('/settings-sync')}
+            />
+          </SettingsSection>
+          <SettingsSection>
+            <CategoryRow
+              testID="settings.category.bridges"
+              icon={<BridgesIcon color={theme.text} size={18} />}
+              title="Bridges"
+              value={counts.bridges}
+              updates={updates.bridges}
+              onPress={() => router.push('/bridges')}
+            />
+            <CategoryRow
+              testID="settings.category.trackers"
+              icon={<TrackersIcon color={theme.text} size={18} />}
+              title="Trackers"
+              value={counts.trackers}
+              updates={updates.trackers}
+              onPress={() => router.push('/trackers')}
+            />
+            <CategoryRow
+              testID="settings.category.registries"
+              icon={<RegistriesIcon color={theme.text} size={18} />}
+              title="Registries"
+              value={counts.registries}
+              onPress={() => router.push('/registries')}
+            />
+            <CategoryRow
+              testID="settings.category.custom-pages"
+              icon={<CustomPagesIcon color={theme.text} size={18} />}
+              title="Custom Pages"
+              value={customPageCount ? String(customPageCount) : undefined}
+              onPress={() => router.push('/custom-pages')}
+            />
+          </SettingsSection>
+          <SettingsSection>
+            <CategoryRow
+              testID="settings.category.downloads"
+              icon={<DownloadsIcon color={theme.text} size={18} />}
+              title="Downloads"
+              value={counts.downloads}
+              progress={counts.downloadsProgress}
+              onPress={() => router.push('/downloads')}
+            />
+            <CategoryRow
+              testID="settings.category.storage"
+              icon={<StorageIcon color={theme.text} size={18} />}
+              title="Storage"
+              onPress={() => router.push('/storage')}
+            />
+          </SettingsSection>
+          <SettingsSection>
+            <CategoryRow
+              testID="settings.category.diagnostics"
+              icon={<DiagnosticsIcon color={theme.text} size={18} />}
+              title="Diagnostics"
+              onPress={() => router.push('/diagnostics')}
+            />
+            <CategoryRow
+              testID="settings.category.about"
+              icon={<AboutIcon color={theme.text} size={18} />}
+              title="About"
+              // The version doubles as the row's value, so the answer to "which build am I on?" is on
+              // the landing screen itself — the screen behind it is for the rest of the readout.
+              value={APP_VERSION}
+              // A newer build of this channel exists. Only ever 0 or 1 (there's one app, not a list of
+              // them), which still goes through the counted pip rather than a bare UpdateDot: this is a
+              // CATEGORY row like Bridges/Trackers, and keeping the same pill means the tab badge's
+              // total is exactly the sum of the pips visible on this screen.
+              updates={appUpdate.status === 'update-available' ? 1 : 0}
+              onPress={() => router.push('/settings-about')}
+            />
+            {PROFILING_ENABLED && (
               <CategoryRow
                 testID="settings.category.developer"
-                icon={<DeveloperIcon color={theme.textSecondary} size={22} />}
+                icon={<DeveloperIcon color={theme.text} size={18} />}
                 title="Developer"
                 onPress={() => router.push('/settings-developer')}
               />
-            </>
-          )}
+            )}
+          </SettingsSection>
         </View>
       </ScrollView>
 
@@ -282,14 +277,13 @@ function CategoryRow({
         <View
           style={[
             settingsRowFrame.row,
-            settingsRowFrame.escape,
             styles.row,
             (pressed || hovered) && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
           ]}>
-          <View style={styles.icon}>
+          <View style={[styles.icon, { backgroundColor: theme.tileWash }]}>
             {icon}
-            {/* The registry-update pip sits on the row's icon exactly the way the tab pip sits on the
-                tab icon — same glyph-corner placement, so the two read as the same signal. */}
+            {/* The registry-update pip sits on the row's icon tile the way the tab pip sits on the
+                tab icon — same corner placement, so the two read as the same signal. */}
             {updates !== undefined && updates > 0 && (
               <View style={styles.iconPip} pointerEvents="none">
                 <UpdatePip count={updates} />
@@ -314,11 +308,6 @@ function CategoryRow({
   );
 }
 
-function Divider() {
-  const theme = useTheme();
-  return <View style={[styles.divider, { backgroundColor: theme.hairline }]} />;
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -334,6 +323,7 @@ const styles = StyleSheet.create({
   },
   list: {
     width: '100%',
+    gap: Spacing.four,
   },
   // Only what a category row adds ON TOP of `settingsRowFrame.row` (which it spreads): a pointer
   // cursor, and no `justifyContent` — its icon/text/count/chevron lay out left to right rather than
@@ -342,19 +332,18 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     cursor: 'pointer',
   },
+  // The glyph's tile: the same shape a bridge's icon takes in `RowIcon`, so the hub's rows and the
+  // list rows behind them share a leading column.
   icon: {
-    width: 24,
+    width: 28,
+    height: 28,
+    borderRadius: Spacing.two,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  // Hugs the top-right corner of the 24-wide icon box so the pip overlaps the glyph like the tab pip.
   iconPip: {
     position: 'absolute',
     top: -6,
-    right: -4,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    // Starts under the row's icon, runs off the right edge.
-    marginRight: -SettingsGutter,
+    right: -6,
   },
 });

@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
-import { SettingsGutter, Spacing } from '@/constants/theme';
+import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
 import { NamePromptForm } from '@/app/custom-pages';
 import {
   deleteSection,
@@ -130,7 +130,7 @@ export default function CustomPageEditorScreen() {
           description={`${nameOf(s.bridgeId)} · ${layoutLabel(s.layout)}`}
           swipeEnabled={!selecting}
           leading={
-            <SelectLead progress={mode.progress} selected={ms.isSelected(s.id)} itemKey={s.id} edgeOffset={SettingsGutter} />
+            <SelectLead progress={mode.progress} selected={ms.isSelected(s.id)} itemKey={s.id} edgeOffset={SettingsCardInset} />
           }
           onPress={selecting ? () => ms.toggle(s.id) : () => openSection(s.id)}
           onLongPress={selecting ? onLongPress : undefined}

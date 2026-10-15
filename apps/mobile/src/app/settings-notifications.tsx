@@ -96,21 +96,19 @@ export default function NotificationsSettingsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title="Notifications" />
       <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
-        <SettingsSection>
-          <SettingsToggleRow
-            label="Check for new chapters"
-            description="Scan your library when you open the app."
-            value={autoCheck}
-            onChange={(v) => notifyPrefs$.autoCheck.set(v)}
-          />
+        <SettingsSection
+          title="Checking"
+          footer={`Your library is scanned for new chapters when you open the app${
+            desktop
+              ? `, and every hour while Comical is running, from the ${trayName()} too.`
+              : isNative
+                ? ', and periodically in the background when the system allows.'
+                : '.'
+          }`}>
+          <SettingsToggleRow label="Check for new chapters" value={autoCheck} onChange={(v) => notifyPrefs$.autoCheck.set(v)} />
           {(isNative || desktop) && (
             <SettingsToggleRow
               label="Check in background"
-              description={
-                desktop
-                  ? `Every hour while Comical is running, from the ${trayName()} too.`
-                  : 'Periodically, when the system allows.'
-              }
               value={backgroundCheck}
               onChange={(v) => {
                 notifyPrefs$.backgroundCheck.set(v);
@@ -119,37 +117,19 @@ export default function NotificationsSettingsScreen() {
             />
           )}
           {isNative && backgroundCheck && (
-            <SettingsToggleRow
-              label="Wi-Fi only"
-              description="Hold background checks until you're on Wi-Fi."
-              value={wifiOnly}
-              onChange={(v) => notifyPrefs$.wifiOnly.set(v)}
-            />
-          )}
-          {(isNative || desktop) && (
-            <SettingsToggleRow
-              label="Notify about new chapters"
-              description="A notification when a background check finds releases."
-              value={notifications}
-              onChange={(v) => void toggleNotifications(v)}
-            />
-          )}
-          {isNative && (
-            <SettingsToggleRow
-              label="App icon badge"
-              description="Show the unread count on the app icon."
-              value={appBadge}
-              onChange={(v) => void toggleAppBadge(v)}
-            />
+            <SettingsToggleRow label="Wi-Fi only" value={wifiOnly} onChange={(v) => notifyPrefs$.wifiOnly.set(v)} />
           )}
         </SettingsSection>
-        <SettingsSection title="New chapters">
-          <SettingsToggleRow
-            label="Only for series I'm caught up on"
-            description="Others stay out of Activity until you are."
-            value={caughtUpOnly}
-            onChange={toggleCaughtUpOnly}
-          />
+        <SettingsSection
+          title="Alerts"
+          footer={`A notification when a background check finds releases${isNative ? ', and the unread count on the app icon' : ''}.`}>
+          {(isNative || desktop) && (
+            <SettingsToggleRow label="Notify about new chapters" value={notifications} onChange={(v) => void toggleNotifications(v)} />
+          )}
+          {isNative && <SettingsToggleRow label="App icon badge" value={appBadge} onChange={(v) => void toggleAppBadge(v)} />}
+        </SettingsSection>
+        <SettingsSection title="New chapters" footer="Series you're behind on stay out of Activity until you catch up.">
+          <SettingsToggleRow label="Only for series I'm caught up on" value={caughtUpOnly} onChange={toggleCaughtUpOnly} />
         </SettingsSection>
       </ScrollView>
     </ThemedView>

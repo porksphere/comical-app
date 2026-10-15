@@ -20,8 +20,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GripIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
 import { HoverRailContext } from '@/components/settings/hover-rail';
+import { SettingsCard } from '@/components/settings/settings-row';
 import { CAN_HOVER, WEB_LANE } from '@/components/settings/swipeable-row';
-import { SettingsGutter, SettingsRowHeight } from '@/constants/theme';
+import { SettingsCardInset, SettingsRowHeight } from '@/constants/theme';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
@@ -147,27 +148,31 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh,
         alwaysBounceVertical
         style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[contentPadding, styles.grow]}>
-        <Animated.View style={[styles.grow, { minHeight: contentHeight }, pull.listStyle]}>
-          {data.map((item, i) => (
-            <DragRow
-              key={keyOf(item)}
-              id={keyOf(item)}
-              count={count}
-              divider={i < count - 1}
-              dragEnabled={dragEnabled}
-              scrollRef={scrollRef}
-              scrollY={scrollY}
-              svTop={svTop}
-              svHeight={svHeight}
-              order={order}
-              activeId={activeId}
-              activeTop={activeTop}
-              grabOffset={grabOffset}
-              fingerVY={fingerVY}
-              onCommit={commit}>
-              {renderRow(item)}
-            </DragRow>
-          ))}
+        <Animated.View style={[styles.grow, pull.listStyle]}>
+          {/* The rows' card is exactly the rows' height: the filler that makes the pull reachable
+              below a short list is the outer view's growth, not the card's. */}
+          <SettingsCard style={{ height: contentHeight }}>
+            {data.map((item, i) => (
+              <DragRow
+                key={keyOf(item)}
+                id={keyOf(item)}
+                count={count}
+                divider={i < count - 1}
+                dragEnabled={dragEnabled}
+                scrollRef={scrollRef}
+                scrollY={scrollY}
+                svTop={svTop}
+                svHeight={svHeight}
+                order={order}
+                activeId={activeId}
+                activeTop={activeTop}
+                grabOffset={grabOffset}
+                fingerVY={fingerVY}
+                onCommit={commit}>
+                {renderRow(item)}
+              </DragRow>
+            ))}
+          </SettingsCard>
         </Animated.View>
       </Animated.ScrollView>
       <PullIndicator {...pull.indicator} top={insets.top + barHeight} />
@@ -277,7 +282,7 @@ function DragRow({
   return (
     <Animated.View style={[styles.rowAbs, style]} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
       {/* Select mode: the grip goes and holds no edge — the row's own rail (also gone) is told so. */}
-      <HoverRailContext.Provider value={{ hovered: shown, inset: dragEnabled ? WEB_LANE + SettingsGutter : 0 }}>
+      <HoverRailContext.Provider value={{ hovered: shown, inset: dragEnabled ? WEB_LANE + SettingsCardInset : 0 }}>
         {children}
       </HoverRailContext.Provider>
       {dragEnabled && (
@@ -314,21 +319,19 @@ const styles = StyleSheet.create({
   divider: {
     position: 'absolute',
     bottom: 0,
-    left: 0,
-    right: -SettingsGutter,
+    left: SettingsCardInset,
+    right: 0,
     height: StyleSheet.hairlineWidth,
   },
-  // The edge lane of the row's rail, over its trailing end: the row escapes the gutter
-  // (`marginHorizontal: -SettingsGutter`) so this box's right edge is a gutter short of the
-  // screen's — the lane escapes it too, and the grip sits inset from the edge exactly where the
-  // row's chevron does.
+  // The edge lane of the row's rail, over its trailing end: the grip sits inset from the card's
+  // edge exactly where the row's chevron does.
   handleLane: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    right: -SettingsGutter,
-    width: WEB_LANE + SettingsGutter,
-    paddingRight: SettingsGutter,
+    right: 0,
+    width: WEB_LANE + SettingsCardInset,
+    paddingRight: SettingsCardInset,
     justifyContent: 'center',
     alignItems: 'center',
     userSelect: 'none',

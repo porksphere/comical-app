@@ -391,7 +391,7 @@ function StepperRow({
   const max = descriptor.max!;
   const n = value ?? descriptor.default ?? min;
   return (
-    <View style={[settingsRowFrame.row, settingsRowFrame.escape]}>
+    <View style={settingsRowFrame.row}>
       <View style={settingsRowFrame.text}>
         <ThemedText type="small" numberOfLines={1}>
           {fieldLabel(descriptor)}
@@ -442,7 +442,7 @@ function MultiEnumRow({
       onHoverOut={onHoverOut}
       android_ripple={{ color: theme.backgroundSelected }}
       style={styles.pressableCursor}>
-      <View style={[settingsRowFrame.row, settingsRowFrame.escape, hovered && { backgroundColor: theme.backgroundSelected }]}>
+      <View style={[settingsRowFrame.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
         <View style={settingsRowFrame.text}>
           <ThemedText type="small" numberOfLines={1}>
             {fieldLabel(descriptor)}

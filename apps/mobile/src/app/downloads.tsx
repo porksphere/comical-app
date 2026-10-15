@@ -41,7 +41,7 @@ import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
+import { SettingsCardInset, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
 import { bySortValue, deriveSeriesState, EMPTY_STORAGE_USAGE, seriesFraction, seriesSortValue } from '@/data/downloads/derive';
 import { kickDownloads, pauseSeries, resumeSeriesDownload, retryChapter } from '@/data/downloads/engine';
@@ -54,7 +54,7 @@ import { hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useContentWidth } from '@/hooks/use-content-width';
-import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
+import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { useSeriesSubPath } from '@/lib/series-nav';
 import { useRouter } from '@/lib/nav';
@@ -109,8 +109,9 @@ export default function DownloadsScreen() {
 
   // Full-width scroller (scrollbar at the screen's edge); rows centered within the settings column via
   // symmetric side padding — LegendList ignores maxWidth/alignSelf on its content container, so the
-  // centring has to be explicit. Rows escape `SettingsGutter` to reach the column's edge for their pills.
+  // centring has to be explicit.
   const sidePad = useSettingsSidePad(width);
+  const listPad = useSettingsListPad(width);
   const theme = useTheme();
 
   // Caches row objects across renders so an unchanged row keeps the SAME reference — the basis for
@@ -400,8 +401,8 @@ export default function DownloadsScreen() {
           paddingTop,
           // Room for the floating pills while selecting, so the last rows can scroll clear of them.
           paddingBottom: paddingBottom + (selecting ? PILL_HEIGHT + Spacing.six : 0),
-          paddingLeft: sidePad,
-          paddingRight: sidePad,
+          paddingLeft: listPad,
+          paddingRight: listPad,
         }}
         showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
@@ -444,6 +445,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    paddingHorizontal: SettingsCardInset,
     // Space between the preferences and the first series row (was the ScrollView's inter-section gap).
     paddingBottom: Spacing.five,
   },
@@ -457,24 +459,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     textAlign: 'center',
   },
-  // The rows' bottom hairline (see `renderItem`): starts at the gutter (aligned under the row's text)
-  // and runs off the right edge to the row's own escaped extent — the same inset-divider look as
-  // `SettingsSection`. Absolute so it adds no height to the fixed-size rows.
+  // The rows' bottom hairline (see `renderItem`): the same inset divider as `SettingsSection`'s,
+  // under the row's text. Absolute so it adds no height to the fixed-size rows.
   divider: {
     position: 'absolute',
     bottom: 0,
-    left: 0,
-    right: -SettingsGutter,
+    left: SettingsCardInset,
+    right: 0,
     height: StyleSheet.hairlineWidth,
   },
-  // The focused row's brief accent wash — same extent as the divider, translucent so the row's own
-  // label/radial read straight through it.
+  // The focused row's brief accent wash — translucent so the row's own label/radial read straight
+  // through it.
   focusFlash: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     left: 0,
-    right: -SettingsGutter,
+    right: 0,
     opacity: 0.14,
     borderRadius: 8,
   },

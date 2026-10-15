@@ -1,34 +1,24 @@
 import { Children, Fragment, type ReactNode, useContext } from 'react';
-import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { HOVER_RAIL_FADE, HoverRailContext } from '@/components/settings/hover-rail';
 import { ThemedText } from '@/components/themed-text';
-import { SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
+import { ContinuousCorner, SettingsCardInset, SettingsCardRadius, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
 
 /**
- * The horizontal gutter every settings screen pads its scroll content by. Rows cancel it out with a
- * negative margin (see `SettingsRow`) so their background, press highlight, and swipe-revealed
- * delete pane all run to the screen's edge, while their TEXT still lines up with everything else at
- * this inset. Anything in a section that isn't a row (save buttons, field editors, chips) just keeps
- * the gutter it inherits.
+ * The frame every settings row is cut from: fixed height, the card inset its text sits at, and the
+ * text column. A row fills its card's width; the card (`SettingsCard`) is what clips its background,
+ * press highlight and swipe pane to the rounded corners.
  *
- * This is the one coupling to be careful about: a screen that pads its content by something other
- * than `Spacing.four` will have its rows overhang or fall short by the difference.
- */
-/**
- * The frame every settings row is cut from: fixed height, the gutter escape that lets its background
- * reach the screen's edge while its text stays inset, and the text column beside it.
- *
- * Exported because two rows in the app CAN'T be a `SettingsRow` — the Appearance and NSFW pickers in
- * `settings-general` need their own ref on the Pressable for `useAnchoredOverlay` to anchor to, and
- * the landing screen's category rows carry a leading icon and a count. They were each re-declaring
- * this geometry by hand, which is exactly how a list ends up with one row 8px taller than the rest.
- * Spread these instead.
+ * Exported because some rows CAN'T be a `SettingsRow` — the pickers need their own ref on the
+ * Pressable for `useAnchoredOverlay` to anchor to, and the landing screen's category rows carry a
+ * leading icon tile and a count. Spread these rather than re-declaring the geometry, which is how a
+ * list ends up with one row 8px taller than the rest.
  */
 export const settingsRowFrame = StyleSheet.create({
   row: {
@@ -38,12 +28,7 @@ export const settingsRowFrame = StyleSheet.create({
     gap: Spacing.three,
     height: SettingsRowHeight,
     paddingVertical: Spacing.one,
-    // Text sits at the gutter; the background and press/hover highlight run to the screen's edge.
-    paddingHorizontal: SettingsGutter,
-  },
-  /** Cancels the screen's gutter. Omit when an ancestor has already done it (the swipe wrapper has). */
-  escape: {
-    marginHorizontal: -SettingsGutter,
+    paddingHorizontal: SettingsCardInset,
   },
   text: {
     flex: 1,
@@ -51,31 +36,51 @@ export const settingsRowFrame = StyleSheet.create({
   },
 });
 
-/** A titled group of settings — the Settings screens' section shape. The title sits above a
- *  full-width list of rows separated by hairline dividers.
+/**
+ * The inset divider between two rows of a card: starts under the rows' text, runs to the card's
+ * right edge. Lists that lay their rows out themselves (the reorderable list, the downloads list)
+ * draw it with the same style so every card reads the same.
+ */
+export const settingsDivider = StyleSheet.create({
+  line: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: SettingsCardInset,
+  },
+});
+
+/**
+ * The rounded surface a group of settings rows sits on — iOS's inset grouped list. `overflow:
+ * hidden` is what rounds the first and last rows' highlight and a swipe pane without any row
+ * knowing where in the card it is (a per-corner radius would, and crashes Fabric on Android).
+ */
+export function SettingsCard({ style, children }: { style?: ViewStyle; children: ReactNode }) {
+  const theme = useTheme();
+  return <View style={[styles.card, ContinuousCorner, { backgroundColor: theme.backgroundElement }, style]}>{children}</View>;
+}
+
+/** A titled group of settings — the Settings screens' section shape: an uppercase caption above a
+ *  card of rows separated by inset hairline dividers, and an optional footer beneath in the muted
+ *  caption weight. The footer is where a group's explanation goes, so its rows can stay a single
+ *  line; a row's own `description` is for state (a URL, a status), not prose.
  *
- *  There is deliberately no card here: rows run edge to edge, the way X, iOS Settings' grouped
- *  lists on a phone, and Android's Material 3 Settings all present a settings list. The old
- *  rounded, bordered card floating inside the screen's padding read as a widget sitting ON the
- *  screen rather than as the screen itself.
+ *  `icon` is an optional leading glyph next to the title.
  *
- *  `icon` is an optional leading glyph next to the title, for scanability on the top-level
- *  Settings screen where several sections sit in a row (especially on wide desktop layouts,
- *  where a plain text-only heading reads sparse).
- *
- *  `title` is optional: a screen whose whole content IS the list (Bridges, Registries) doesn't need
- *  a header restating the screen's own name, so it renders the list alone. */
+ *  `title` is optional: a screen whose whole content IS the list doesn't need a header restating
+ *  the screen's own name, so it renders the card alone. */
 export function SettingsSection({
   title,
   icon,
+  footer,
   children,
 }: {
   title?: string;
   icon?: ReactNode;
+  footer?: string;
   children: ReactNode;
 }) {
   const theme = useTheme();
   const items = Children.toArray(children).filter(Boolean);
+  if (items.length === 0) return null;
   return (
     <View style={styles.sectionWrap}>
       {title && (
@@ -86,16 +91,19 @@ export function SettingsSection({
           </ThemedText>
         </View>
       )}
-      <View style={styles.section}>
+      <SettingsCard>
         {items.map((item, i) => (
           <Fragment key={i}>
             {item}
-            {/* Starts at the gutter (under the row's text) and runs off the right edge — the
-                standard inset-divider look, which reads as a list rather than a stack of slabs. */}
-            {i < items.length - 1 && <View style={[styles.divider, { backgroundColor: theme.hairline }]} />}
+            {i < items.length - 1 && <View style={[settingsDivider.line, { backgroundColor: theme.hairline }]} />}
           </Fragment>
         ))}
-      </View>
+      </SettingsCard>
+      {footer && (
+        <ThemedText type="small" themeColor="textSecondary" style={styles.sectionFooter}>
+          {footer}
+        </ThemedText>
+      )}
     </View>
   );
 }
@@ -115,7 +123,6 @@ export function SettingsRow({
   description,
   descriptionColor,
   descriptionSelectable,
-  escapeGutter = true,
   contentInset,
   leading,
   right,
@@ -138,10 +145,6 @@ export function SettingsRow({
   descriptionColor?: string;
   /** Lets the description text be selected/copied (e.g. a server URL) — off by default. */
   descriptionSelectable?: boolean;
-  /** Set false when an ancestor has ALREADY cancelled the screen's gutter (the swipeable wrapper
-   *  does, so its delete pane can reach the edge). The row then only pads, and doesn't also pull
-   *  itself a second `SettingsGutter` further out. */
-  escapeGutter?: boolean;
   right?: ReactNode;
   onPress?: () => void;
   /** Long-press on a pressable row (e.g. multi-select range-fill). Only fires when `onPress` is set.
@@ -170,9 +173,8 @@ export function SettingsRow({
       testID={rootTestID}
       style={[
         settingsRowFrame.row,
-        escapeGutter && settingsRowFrame.escape,
         onPress && styles.rowPressable,
-        contentInset ? { paddingLeft: SettingsGutter + contentInset } : null,
+        contentInset ? { paddingLeft: SettingsCardInset + contentInset } : null,
         highlighted && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
       ]}>
       {leading}
@@ -225,32 +227,33 @@ export function SettingsRow({
 }
 
 const styles = StyleSheet.create({
-  // No marginTop: that would also push the FIRST section down, stacking on top of the screen's
-  // `BarContentGap` and making every settings-style screen start lower than the other tabs. The space
-  // BETWEEN sections is the container's `gap` (Spacing.five), which never applies before the first.
+  // No marginTop: the space BETWEEN sections is the container's `gap`, which never applies before
+  // the first, so the first card starts at the screen's `SettingsTopGap` like every other screen.
   sectionWrap: {
     width: '100%',
   },
-  section: {
+  card: {
     width: '100%',
+    borderRadius: SettingsCardRadius,
+    overflow: 'hidden',
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
     marginBottom: Spacing.two,
+    paddingHorizontal: SettingsCardInset,
   },
   sectionTitle: {
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  sectionFooter: {
+    marginTop: Spacing.two,
+    paddingHorizontal: SettingsCardInset,
+  },
   trailingCovered: {
     opacity: 0,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    // Left edge stays at the gutter (aligned under the row's text); the right runs off-screen.
-    marginRight: -SettingsGutter,
   },
   rowPressable: {
     cursor: 'pointer',

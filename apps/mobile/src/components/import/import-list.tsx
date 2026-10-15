@@ -10,7 +10,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { ArrowRightIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
-import { SettingsGutter, Spacing } from '@/constants/theme';
+import { SettingsCardInset, Spacing } from '@/constants/theme';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -103,6 +103,7 @@ export const importStyles = StyleSheet.create({
     paddingTop: Spacing.two,
   },
   intro: {
+    paddingHorizontal: SettingsCardInset,
     paddingBottom: Spacing.four,
   },
   thumb: {
@@ -116,8 +117,8 @@ export const importStyles = StyleSheet.create({
   divider: {
     position: 'absolute',
     bottom: 0,
-    left: 0,
-    right: -SettingsGutter,
+    left: SettingsCardInset,
+    right: 0,
     height: StyleSheet.hairlineWidth,
   },
   state: {
@@ -129,6 +130,7 @@ export const importStyles = StyleSheet.create({
     textAlign: 'center',
   },
   footerNote: {
+    paddingHorizontal: SettingsCardInset,
     paddingTop: Spacing.four,
     textAlign: 'center',
   },

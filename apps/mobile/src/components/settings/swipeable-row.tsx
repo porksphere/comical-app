@@ -19,7 +19,7 @@ import Animated, {
 
 import { HOVER_RAIL_FADE, HoverRailContext } from '@/components/settings/hover-rail';
 import { SettingsRow } from '@/components/settings/settings-row';
-import { ContinuousCorner, SettingsGutter, Spacing } from '@/constants/theme';
+import { ContinuousCorner, SettingsCardInset, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { createTickHaptic, hapticImpactLight, hapticImpactMedium } from '@/lib/haptics';
@@ -115,9 +115,13 @@ type SwipeableRowProps = {
    * dev-build error).
    */
   actions: SwipeRowAction[];
-  /** Horizontal inset (px) the row escapes so its pills reach past a container's padding to the screen
-   *  edge. Settings screens pass `SettingsGutter`; a plain centred list (e.g. History) leaves it 0. */
+  /** Horizontal padding (px) of the row's container that the row escapes, so its pills reach the
+   *  container's edge. A row inside a `SettingsCard` leaves it 0 — the card has no padding, and clips. */
   edgeInset?: number;
+  /** Air between the last action and the row's trailing edge: where the row's own trailing control
+   *  (its chevron) sits. Defaults to `edgeInset`, which is right for a row escaping a padded
+   *  container; a card row passes its text inset instead. */
+  trailingInset?: number;
   /** In a RECYCLING list, the item's stable list key. When the container is reused for a different
    *  item this changes, so the row snaps closed — WITHOUT it, a swiped-open row would inherit onto the
    *  next item. It's the list key (not the item value), so a mere data UPDATE to the same item (e.g. a
@@ -160,6 +164,7 @@ export function SwipeableRow({
   name,
   actions,
   edgeInset = 0,
+  trailingInset = edgeInset,
   recycleKey,
   swipeEnabled = true,
   lanes = 0,
@@ -173,7 +178,7 @@ export function SwipeableRow({
   // which made entering a big list's select mode visibly stall — the row stays mounted and its
   // gesture is switched off instead.
   if (actions.length === 0) {
-    const reserved = IS_WEB && !overlay && swipeEnabled && lanes > 0 ? edgeInset + lanes * WEB_LANE : 0;
+    const reserved = IS_WEB && !overlay && swipeEnabled && lanes > 0 ? trailingInset + lanes * WEB_LANE : 0;
     return <View style={{ marginHorizontal: -edgeInset, paddingRight: reserved }}>{children}</View>;
   }
   // Delegated so the action-less early return above stays hook-free.
@@ -182,6 +187,7 @@ export function SwipeableRow({
       name={name}
       actions={clampActions(actions, name)}
       edgeInset={edgeInset}
+      trailingInset={trailingInset}
       recycleKey={recycleKey}
       swipeEnabled={swipeEnabled}
       lanes={lanes}
@@ -205,6 +211,7 @@ function CollapsingRow({
   name,
   actions,
   edgeInset,
+  trailingInset,
   recycleKey,
   swipeEnabled,
   lanes,
@@ -214,6 +221,7 @@ function CollapsingRow({
   name: string;
   actions: SwipeRowAction[];
   edgeInset: number;
+  trailingInset: number;
   recycleKey?: string;
   swipeEnabled: boolean;
   lanes: number;
@@ -262,6 +270,7 @@ function CollapsingRow({
           name={name}
           actions={wired}
           edgeInset={edgeInset}
+          trailingInset={trailingInset}
           recycleKey={recycleKey}
           enabled={swipeEnabled}
           lanes={lanes}
@@ -269,7 +278,7 @@ function CollapsingRow({
           {children}
         </HoverActionsRow>
       ) : (
-        <SwipeRow name={name} actions={wired} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
+        <SwipeRow name={name} actions={wired} edgeInset={edgeInset} trailingInset={trailingInset} recycleKey={recycleKey} enabled={swipeEnabled}>
           {children}
         </SwipeRow>
       )}
@@ -321,7 +330,7 @@ export function SwipeableSettingsRow({
     <SwipeableRow
       name={label}
       actions={actions}
-      edgeInset={SettingsGutter}
+      trailingInset={SettingsCardInset}
       recycleKey={recycleKey}
       overlay
       {...(swipeEnabled !== undefined ? { swipeEnabled } : {})}>
@@ -333,7 +342,6 @@ export function SwipeableSettingsRow({
         contentInset={contentInset}
         leading={leading}
         right={right}
-        escapeGutter={false}
         onPress={onPress}
         onLongPress={onLongPress}
         testID={testID}
@@ -342,9 +350,17 @@ export function SwipeableSettingsRow({
   );
 }
 
-type RowImplProps = { name: string; actions: SwipeRowAction[]; edgeInset: number; recycleKey?: string; enabled: boolean; children: ReactNode };
+type RowImplProps = {
+  name: string;
+  actions: SwipeRowAction[];
+  edgeInset: number;
+  trailingInset: number;
+  recycleKey?: string;
+  enabled: boolean;
+  children: ReactNode;
+};
 
-function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: RowImplProps) {
+function SwipeRow({ name, actions, edgeInset, trailingInset: trailingGap, recycleKey, enabled, children }: RowImplProps) {
   const theme = useTheme();
   // Where the row is BEING DRAGGED to — set straight from the finger, with no smoothing.
   const target = useSharedValue(0);
@@ -373,9 +389,9 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   const [open, setOpen] = useState(false);
 
   const pillCount = Math.max(1, actions.length);
-  // Where the pill rail ends, from the container's right edge: the screen gutter, floored at
-  // PILL_EDGE_GAP so a gutterless row (History) still gives its circles air on the right.
-  const trailingInset = Math.max(edgeInset, PILL_EDGE_GAP);
+  // Where the pill rail ends, from the container's right edge — floored at PILL_EDGE_GAP so a
+  // gutterless row (History) still gives its circles air on the right.
+  const trailingInset = Math.max(trailingGap, PILL_EDGE_GAP);
   // Rest positions along the drag: detents[0] = 0 (closed), detents[k] = far enough to reveal k pills;
   // detents[pillCount] is fully open. A plain number array, captured into the worklets by value.
   // MEMOIZED so its reference is stable across the list's frequent re-renders — a fresh array every
@@ -680,6 +696,7 @@ function HoverActionsRow({
   name,
   actions,
   edgeInset,
+  trailingInset,
   recycleKey,
   enabled,
   lanes,
@@ -725,7 +742,7 @@ function HoverActionsRow({
             style={[
               styles.webAction,
               HOVER_RAIL_FADE,
-              isEdge ? { width: edgeInset + WEB_LANE, paddingRight: edgeInset } : { width: WEB_LANE },
+              isEdge ? { width: trailingInset + WEB_LANE, paddingRight: trailingInset } : { width: WEB_LANE },
               !shown && styles.webActionIdle,
             ]}
             accessibilityRole="button"

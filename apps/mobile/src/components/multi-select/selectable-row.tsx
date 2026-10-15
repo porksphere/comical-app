@@ -126,7 +126,6 @@ export function SelectableRow({
               <View
                 style={[
                   settingsRowFrame.row,
-                  settingsRowFrame.escape,
                   pressed && { backgroundColor: theme.backgroundSelected },
                 ]}>
                 {inner}

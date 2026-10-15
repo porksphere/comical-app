@@ -47,7 +47,7 @@ import type { FavoritesImportCandidate, FavoritesImportItem } from '@/data/api';
 import { favoritesImportPreviewQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
+import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
 import { hapticSelection } from '@/lib/haptics';
@@ -72,6 +72,7 @@ export default function FavoritesImportScreen() {
 
   // Full-width scroller centered within the settings column (same treatment as the Downloads pages).
   const sidePad = useSettingsSidePad(width);
+  const listPad = useSettingsListPad(width);
 
   const { data, error, isLoading, refetch, isFetching } = useQuery(favoritesImportPreviewQuery(ds, mock, bridgeId));
 
@@ -295,8 +296,8 @@ export default function FavoritesImportScreen() {
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop,
-          paddingLeft: sidePad,
-          paddingRight: sidePad,
+          paddingLeft: listPad,
+          paddingRight: listPad,
           // Room for the floating pills, so the last rows can scroll clear of them.
           paddingBottom: PILL_HEIGHT + Spacing.six,
         }}

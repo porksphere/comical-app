@@ -21,7 +21,7 @@ import { SettingsRow, SettingsSection } from '@/components/settings/settings-row
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, SettingsCardInset, Spacing } from '@/constants/theme';
 import { noteLines, type ReleaseNote } from '@/data/release-notes';
 import { type AppUpdateAction, useAppUpdateAction, useAppUpdateCheck } from '@/data/use-app-update';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
@@ -123,10 +123,7 @@ export default function WhatsNewScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: Spacing.four, gap: Spacing.four, maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' },
-  // No horizontal padding: the section's content box is already at the screen gutter, and
-  // `SettingsRow` nets to zero there (it escapes `SettingsGutter` then re-pads by it). Padding this
-  // as well would indent the changelog text a gutter further in than every row it sits beside.
-  card: { paddingVertical: Spacing.three, gap: Spacing.two },
+  card: { paddingVertical: Spacing.three, paddingHorizontal: SettingsCardInset, gap: Spacing.two },
   cardHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: Spacing.two },
   line: { flexDirection: 'row', gap: Spacing.two },
   bullet: { lineHeight: 20 },

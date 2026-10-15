@@ -48,7 +48,7 @@ import { applyOrder, useBridgeOrder } from '@/data/list-order';
 import { libraryQuery, queryKeys, trackerImportPreviewQuery } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
+import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
 import { hapticSelection } from '@/lib/haptics';
@@ -98,6 +98,7 @@ export default function TrackerImportScreen() {
   const excluded = useComicalExcludedIds();
 
   const sidePad = useSettingsSidePad(width);
+  const listPad = useSettingsListPad(width);
 
   const { data, error, isLoading, refetch, isFetching } = useQuery(trackerImportPreviewQuery(ds, mock, trackerId));
   // The preview names a library copy but not its cover; the library list has it.
@@ -534,8 +535,8 @@ export default function TrackerImportScreen() {
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop,
-          paddingLeft: sidePad,
-          paddingRight: sidePad,
+          paddingLeft: listPad,
+          paddingRight: listPad,
           paddingBottom: PILL_HEIGHT + Spacing.six,
         }}
         showsVerticalScrollIndicator={Platform.OS === 'web'}

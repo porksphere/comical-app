@@ -3,7 +3,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useInSettingsPane } from '@/lib/settings-pane';
 
 
-import { BottomTabInset, MaxContentWidth, SettingsGutter, SettingsTopGap, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, SettingsCardInset, SettingsGutter, SettingsTopGap, Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 
 /**
@@ -16,9 +16,9 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
  *     paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
  *     paddingHorizontal: SettingsGutter,
  *
- * which meant ten chances to drift. The horizontal one matters most: rows cancel exactly
- * `SettingsGutter` with a negative margin to reach the screen's edge, so a screen that padded itself
- * differently would have its rows overhang or fall short. Getting it from here makes that impossible.
+ * which meant ten chances to drift. The horizontal one is what insets every card from the screen's
+ * edge, so a screen that padded itself differently would have its cards out of line with the rest.
+ * Getting it from here makes that impossible.
  *
  * The top bar is an absolute overlay on all of these screens, so the content pads PAST it (and
  * scrolls behind it) rather than starting below it.
@@ -58,4 +58,14 @@ export function useSettingsScrollPadding() {
 export function useSettingsSidePad(width: number): number {
   const inPane = useInSettingsPane();
   return SettingsGutter + (inPane ? 0 : Math.max(0, (width - MaxContentWidth) / 2));
+}
+
+/**
+ * The content padding for such a list's ROWS. A virtualized list has no card (its rows are recycled
+ * views, not a group), so it is laid out plain: the list is pulled in by the row's own text inset
+ * and the rows' text lands at the gutter, where a card's would. Anything else in the list's content
+ * (a header, an intro) pads itself back out by `SettingsCardInset`.
+ */
+export function useSettingsListPad(width: number): number {
+  return useSettingsSidePad(width) - SettingsCardInset;
 }

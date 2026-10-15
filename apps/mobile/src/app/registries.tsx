@@ -18,7 +18,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
-import { SettingsGutter, Spacing } from '@/constants/theme';
+import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
 import type { SavedRegistry } from '@/data/api';
 import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
@@ -196,7 +196,7 @@ export default function RegistriesScreen() {
           descriptionColor={r.pendingMove ? theme.accent : undefined}
           swipeEnabled={!selecting}
           leading={
-            <SelectLead progress={mode.progress} selected={ms.isSelected(r.url)} itemKey={r.url} edgeOffset={SettingsGutter} />
+            <SelectLead progress={mode.progress} selected={ms.isSelected(r.url)} itemKey={r.url} edgeOffset={SettingsCardInset} />
           }
           onPress={
             selecting

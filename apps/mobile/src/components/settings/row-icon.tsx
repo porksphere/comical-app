@@ -23,7 +23,7 @@ export function RowIcon({ uri, fallback }: { uri?: string | undefined; fallback:
     return (
       <Image
         source={{ uri }}
-        style={[styles.tile, { backgroundColor: theme.backgroundElement }]}
+        style={[styles.tile, { backgroundColor: theme.tileWash }]}
         contentFit="cover"
         // Icons are tiny and near-always cached; a transition here just makes the list flicker on
         // every scroll-back.
@@ -33,7 +33,7 @@ export function RowIcon({ uri, fallback }: { uri?: string | undefined; fallback:
     );
   }
   return (
-    <View style={[styles.tile, styles.fallback, { backgroundColor: theme.backgroundElement }]}>
+    <View style={[styles.tile, styles.fallback, { backgroundColor: theme.tileWash }]}>
       {fallback(theme.textSecondary, 16)}
     </View>
   );

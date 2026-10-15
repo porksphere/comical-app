@@ -23,7 +23,7 @@ import { SettingsRow, SettingsSection } from '@/components/settings/settings-row
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, SettingsCardInset, Spacing } from '@/constants/theme';
 import { dlStorageUsage, libraryUsage } from '@/data/api';
 import { readDiskInfo } from '@/data/downloads/disk';
 import { EMPTY_STORAGE_USAGE } from '@/data/downloads/derive';
@@ -145,21 +145,15 @@ export default function StorageScreen() {
                 : `${embedded ? formatBytes(usage.totalBytes) : `${formatBytes(usage.diskBytes ?? usage.totalBytes)} on the server`} · ${usage.seriesCount} series · ${usage.chapterCount} chapter${usage.chapterCount === 1 ? '' : 's'} · ${usage.pageCount} page${usage.pageCount === 1 ? '' : 's'}`
             }
           />
-          <SettingsRow
-            label="Manage downloads"
-            description="View and delete downloaded series and chapters."
-            onPress={() => router.push('/downloads')}
-          />
+          <SettingsRow label="Manage downloads" onPress={() => router.push('/downloads')} />
         </SettingsSection>
 
-        <SettingsSection title="Image cache">
+        <SettingsSection
+          title="Image cache"
+          footer="Covers and pages you've viewed. Least-recently-used images are evicted to stay under the cap; clearing frees the space, and images re-download when next viewed.">
           <SettingsRow
             label="Cached images"
-            description={
-              cacheSize === null
-                ? 'Measuring…'
-                : `${formatBytes(cacheSize)} — covers & pages you've viewed${measuring ? ' · re-measuring…' : ' · tap to re-measure'}`
-            }
+            description={cacheSize === null ? 'Measuring…' : `${formatBytes(cacheSize)}${measuring ? ' · re-measuring…' : ' · tap to re-measure'}`}
             onPress={() => void remeasure()}
           />
           {breakdown.length > 0 && (
@@ -176,14 +170,9 @@ export default function StorageScreen() {
               ))}
             </View>
           )}
-          <SettingsRow
-            label="Clear image cache"
-            description="Free the space; images re-download when next viewed."
-            onPress={() => void clearCache()}
-          />
+          <SettingsRow label="Clear image cache" onPress={() => void clearCache()} />
           <SettingsSelectRow
             label="Max image cache"
-            description="Least-recently-used images are evicted to stay under this."
             value={String(cacheMax)}
             options={CACHE_MAX_OPTIONS}
             onChange={(v) => {
@@ -210,10 +199,11 @@ const styles = StyleSheet.create({
   },
   summary: {
     paddingVertical: Spacing.three,
+    paddingHorizontal: SettingsCardInset,
     gap: Spacing.two,
   },
   breakdown: {
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: SettingsCardInset,
     paddingBottom: Spacing.three,
     gap: Spacing.one,
   },

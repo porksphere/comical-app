@@ -21,7 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar, TopBarButton } from '@/components/top-bar';
-import { SettingsGutter, Spacing } from '@/constants/theme';
+import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
 import type { BridgeSummary } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyOrder, setBridgeOrder, useBridgeOrder } from '@/data/list-order';
@@ -257,7 +257,7 @@ export default function BridgesScreen() {
             descriptionColor={statusColor}
             leading={
               <>
-                <SelectLead progress={mode.progress} selected={ms.isSelected(key)} itemKey={key} edgeOffset={SettingsGutter} />
+                <SelectLead progress={mode.progress} selected={ms.isSelected(key)} itemKey={key} edgeOffset={SettingsCardInset} />
                 {icon}
               </>
             }

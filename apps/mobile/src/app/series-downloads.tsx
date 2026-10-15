@@ -51,7 +51,7 @@ import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
+import { SettingsCardInset, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { dlDeleteChapter, dlGetSeries } from '@/data/api';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from '@/data/downloads/constants';
 import { bySortValue, chapterSortValue, displayChapterState } from '@/data/downloads/derive';
@@ -74,7 +74,7 @@ import { usePreferredGroup } from '@/lib/preferred-group';
 import { testId } from '@/lib/test-id';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useContentWidth } from '@/hooks/use-content-width';
-import { useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
+import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import type { ChapterGroup } from '@/lib/chapter-order';
 import {useLocalSearchParams, useRouter} from '@/lib/nav';
@@ -389,6 +389,7 @@ export default function SeriesDownloadsScreen() {
 
   // Full-width scroller centered within the settings column (same treatment as the Downloads page).
   const sidePad = useSettingsSidePad(width);
+  const listPad = useSettingsListPad(width);
 
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
 
@@ -532,8 +533,8 @@ export default function SeriesDownloadsScreen() {
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop,
-          paddingLeft: sidePad,
-          paddingRight: sidePad,
+          paddingLeft: listPad,
+          paddingRight: listPad,
           // Room for the floating pills, so the last rows can scroll clear of them.
           paddingBottom: selecting ? PILL_HEIGHT + Spacing.six : Spacing.three,
         }}
@@ -589,8 +590,8 @@ const styles = StyleSheet.create({
   divider: {
     position: 'absolute',
     bottom: 0,
-    left: 0,
-    right: -SettingsGutter,
+    left: SettingsCardInset,
+    right: 0,
     height: StyleSheet.hairlineWidth,
   },
   empty: {

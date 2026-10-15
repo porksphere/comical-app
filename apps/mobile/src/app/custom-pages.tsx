@@ -14,7 +14,7 @@ import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { SettingsGutter, Spacing } from '@/constants/theme';
+import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
 import { showToast } from '@/components/toast';
 import { addPage, deletePage, renamePage, reorderPages, useCustomPages, type CustomPage } from '@/data/custom-pages';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
@@ -90,7 +90,7 @@ export default function CustomPagesScreen() {
           description={`${p.sections.length} ${p.sections.length === 1 ? 'section' : 'sections'}`}
           swipeEnabled={!selecting}
           leading={
-            <SelectLead progress={mode.progress} selected={ms.isSelected(p.id)} itemKey={p.id} edgeOffset={SettingsGutter} />
+            <SelectLead progress={mode.progress} selected={ms.isSelected(p.id)} itemKey={p.id} edgeOffset={SettingsCardInset} />
           }
           onPress={
             selecting

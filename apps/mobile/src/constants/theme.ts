@@ -317,17 +317,26 @@ export const DesktopTopBarHeight = 64;
 // a React component module just to read a measurement.
 
 /**
- * The horizontal gutter every settings screen pads its scroll content by. Rows cancel it out with an
- * equal negative margin (`SettingsRow`'s `escapeGutter`) so their background, press highlight, and
- * swipe-revealed delete pane all run to the screen's edge, while their TEXT still lines up at this
- * inset. Anything in a section that isn't a row (save buttons, field editors, chips) simply keeps the
+ * The horizontal gutter every settings screen pads its scroll content by: the space between the
+ * screen's edge and a settings card. Rows live INSIDE a card (`SettingsSection`), so their
+ * background, press highlight and swipe-revealed pane reach the card's edge, never the screen's.
+ * Anything in a section that isn't a row (save buttons, field editors, chips) simply keeps the
  * gutter it inherits.
  *
- * The one coupling to watch: a settings screen that pads its content by something OTHER than this
- * will have its rows overhang or fall short by the difference. `useSettingsScrollPadding` is what
- * keeps them honest.
+ * `useSettingsScrollPadding` is what keeps every settings screen padding by the same amount, so a
+ * floating control pinned at the gutter (an add FAB, the select pill bar) lines up with the cards.
  */
 export const SettingsGutter = Spacing.four;
+
+/**
+ * A settings card's horizontal inset: the distance from the card's edge to its rows' text, and the
+ * amount a section's header and footer indent to line up with it. The inset divider between rows
+ * starts here too.
+ */
+export const SettingsCardInset = Spacing.three;
+
+/** Corner radius of a settings card. Uniform — a per-corner radius crashes Fabric on Android. */
+export const SettingsCardRadius = 14;
 
 /**
  * The height of EVERY settings row, on every settings screen. Fixed, not a minimum: descriptions are
@@ -340,16 +349,13 @@ export const SettingsGutter = Spacing.four;
  * cramped, and a label-over-description row wants air around it. This is the one number to turn to
  * retune the density of every settings screen at once.
  */
-export const SettingsRowHeight = 64;
+export const SettingsRowHeight = 56;
 
 /**
- * Gap between a settings screen's top bar and its first row. Zero on purpose — a settings list is a
- * list, and should begin flush under the bar; the row's own padding is all the separation it needs.
- * The content tabs keep `BarContentGap` instead, where the first thing under the bar is artwork.
- *
- * Named rather than inlined so the intent survives: this is a deliberate zero, not an oversight.
+ * Gap between a settings screen's top bar and its first card. A card flush under the bar reads as
+ * part of it, so the first group gets the same air a section header would give it.
  */
-export const SettingsTopGap = 0;
+export const SettingsTopGap = Spacing.three;
 
 /**
  * The `paddingTop` for a scrolling list whose rows carry their OWN vertical padding (History, settings,

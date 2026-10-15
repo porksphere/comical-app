@@ -23,8 +23,8 @@ import { testId } from '@/lib/test-id';
  *     picker (each option with an optional description) on tap. The picker style the app standardizes on.
  *   - `SettingsToggleRow` — a boolean: label + a `ThemedSwitch`.
  *
- * Both are thin over `SettingsRow`/`settingsRowFrame`, so they inherit the exact row geometry, gutter
- * escape, hover/press highlight, and one-line-description rule as every other settings row.
+ * Both are thin over `SettingsRow`/`settingsRowFrame`, so they inherit the exact row geometry,
+ * hover/press highlight, and one-line-description rule as every other settings row.
  */
 
 /**
@@ -113,7 +113,7 @@ export function SettingsSelectRow<T extends string>({
       onHoverOut={onHoverOut}
       android_ripple={{ color: theme.backgroundSelected }}
       style={styles.pressableCursor}>
-      <View style={[settingsRowFrame.row, settingsRowFrame.escape, hovered && { backgroundColor: theme.backgroundSelected }]}>
+      <View style={[settingsRowFrame.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
         <View style={settingsRowFrame.text}>
           <ThemedText type="small" numberOfLines={1}>
             {label}
@@ -233,7 +233,7 @@ export function SettingsTextRow({
   const [focused, setFocused] = useState(false);
   const base = testId('settings.text', label);
   return (
-    <View style={[settingsRowFrame.row, settingsRowFrame.escape]}>
+    <View style={settingsRowFrame.row}>
       <View style={styles.textRowLabel}>
         <ThemedText type="small" numberOfLines={1}>
           {label}

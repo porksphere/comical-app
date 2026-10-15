@@ -137,53 +137,27 @@ export default function GeneralSettingsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title="General" />
       <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
-        {/* One unheadered list. "APPEARANCE" over a row already called Appearance, and "CONTENT"
-            over one called NSFW content, said nothing the row didn't — every row here carries its
-            own title and a line explaining it. */}
-        <SettingsSection>
-          <SettingsSelectRow
-            label="Appearance"
-            description="Light or dark theme."
-            value={themePref}
-            options={THEME_OPTIONS}
-            onChange={setThemePref}
-          />
-          <SettingsToggleRow
-            label="Lightweight cards"
-            description="Drop cover animations for smoother scrolling."
-            value={lightCards}
-            onChange={(v) => lightCards$.light.set(v)}
-          />
-          <SettingsToggleRow
-            label="Tinted backgrounds"
-            description="Tint the page behind each section on Browse."
-            value={feedTint}
-            onChange={setFeedTint}
-          />
-          <SettingsSelectRow
-            label="NSFW content"
-            description="Whether NSFW-flagged bridges are visible."
-            value={nsfwMode}
-            options={NSFW_MODE_OPTIONS}
-            onChange={setNsfwMode}
-          />
-          {/* Directly under the NSFW row because that is what it acts on, and because this row is
-              the gesture's only documentation — nothing on Browse or Library says the icon is holdable. */}
-          <SettingsSelectRow
-            label="Hold bridge icon"
-            description="What holding the icon at the top of Browse or Library does."
-            value={holdAction}
-            options={HOLD_ACTION_OPTIONS}
-            onChange={setHoldAction}
-          />
-          {embeddedAvailable && (
-            <SettingsToggleRow
-              label="Run bridges on this device"
-              description="Fetch and read on-device, with no server."
-              value={onDevice}
-              onChange={toggleOnDevice}
-            />
-          )}
+        {/* Section titles name the GROUP, never a row in it: "APPEARANCE" over a row called
+            Appearance said nothing the row didn't. */}
+        <SettingsSection
+          title="Display"
+          footer="Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse.">
+          <SettingsSelectRow label="Appearance" value={themePref} options={THEME_OPTIONS} onChange={setThemePref} />
+          <SettingsToggleRow label="Lightweight cards" value={lightCards} onChange={(v) => lightCards$.light.set(v)} />
+          <SettingsToggleRow label="Tinted backgrounds" value={feedTint} onChange={setFeedTint} />
+        </SettingsSection>
+        {/* The hold row sits with NSFW because that is what it acts on, and its footer is the
+            gesture's only documentation — nothing on Browse or Library says the icon is holdable. */}
+        <SettingsSection
+          title="Browsing"
+          footer="NSFW content decides whether NSFW-flagged bridges are visible. Holding the bridge icon at the top of Browse or Library runs the chosen action.">
+          <SettingsSelectRow label="NSFW content" value={nsfwMode} options={NSFW_MODE_OPTIONS} onChange={setNsfwMode} />
+          <SettingsSelectRow label="Hold bridge icon" value={holdAction} options={HOLD_ACTION_OPTIONS} onChange={setHoldAction} />
+        </SettingsSection>
+        <SettingsSection
+          title="Connection"
+          footer={`${embeddedAvailable ? 'Running bridges on this device fetches and reads with no server. ' : ''}Request errors flash as a red toast with the error.`}>
+          {embeddedAvailable && <SettingsToggleRow label="Run bridges on this device" value={onDevice} onChange={toggleOnDevice} />}
           {/* Which server runs the bridges. While they run on the device this is the sync hub
               instead, and lives on the Sync screen. */}
           {!embeddedActive && (
@@ -203,49 +177,39 @@ export default function GeneralSettingsScreen() {
               }
             />
           )}
-          <SettingsToggleRow
-            label="Show request errors"
-            description="Flash a red toast with the error when a request fails."
-            value={errorToasts}
-            onChange={(v) => errorToasts$.on.set(v)}
-          />
-          {desktop && (
-            <SettingsToggleRow
-              label={`Keep running in the ${trayName()}`}
-              description="Closing the window leaves Comical running, so downloads carry on."
-              value={runInTray}
-              onChange={setRunInTray}
-            />
-          )}
-          {desktop && (
-            <SettingsToggleRow
-              label="Open at login"
-              description={
-                !desktopShell()?.loginItems
-                  ? 'Takes effect in an installed build.'
-                  : runInTray
-                    ? `Start Comical in the ${trayName()} when you sign in.`
-                    : 'Start Comical when you sign in.'
-              }
-              value={openAtLogin}
-              onChange={setOpenAtLogin}
-            />
-          )}
-          {dataDir && (
-            <SettingsRow
-              testID="settings.general.data-location"
-              label="Data location"
-              description={dataDir.dir}
-              onPress={() => openDialog(() => <DataLocationSheet current={dataDir} />, { accessibilityLabel: 'Data location' })}
-            />
-          )}
-          {/* The download policies gate the DEVICE engine — meaningless when a remote server owns
-              the downloads (it paces itself), so they only appear while running on-device. They used
-              to live on the Downloads page but cluttered the queue. */}
-          {embeddedActive && (
+          <SettingsToggleRow label="Show request errors" value={errorToasts} onChange={(v) => errorToasts$.on.set(v)} />
+        </SettingsSection>
+        {desktop && (
+          <SettingsSection
+            title="Desktop"
+            footer={`Closing the window leaves Comical running in the ${trayName()}, so downloads carry on. ${
+              !desktopShell()?.loginItems
+                ? 'Open at login takes effect in an installed build.'
+                : runInTray
+                  ? `Open at login starts Comical in the ${trayName()} when you sign in.`
+                  : 'Open at login starts Comical when you sign in.'
+            }`}>
+            <SettingsToggleRow label={`Keep running in the ${trayName()}`} value={runInTray} onChange={setRunInTray} />
+            <SettingsToggleRow label="Open at login" value={openAtLogin} onChange={setOpenAtLogin} />
+            {dataDir && (
+              <SettingsRow
+                testID="settings.general.data-location"
+                label="Data location"
+                description={dataDir.dir}
+                onPress={() => openDialog(() => <DataLocationSheet current={dataDir} />, { accessibilityLabel: 'Data location' })}
+              />
+            )}
+          </SettingsSection>
+        )}
+        {/* The download policies gate the DEVICE engine — meaningless when a remote server owns
+            the downloads (it paces itself), so they only appear while running on-device. They used
+            to live on the Downloads page but cluttered the queue. */}
+        {embeddedActive && (
+          <SettingsSection
+            title="Downloads"
+            footer="Held downloads wait for Wi-Fi. In the background they continue in the windows the system grants after you leave the app.">
             <SettingsToggleRow
               label="Download over Wi-Fi only"
-              description="Hold downloads until you're on Wi-Fi."
               value={wifiOnly}
               onChange={(v) => {
                 downloadPrefs$.wifiOnly.set(v);
@@ -253,44 +217,23 @@ export default function GeneralSettingsScreen() {
                 kickDownloads();
               }}
             />
-          )}
-          {embeddedActive && (
             <SettingsToggleRow
               label="Download in background"
-              description="Continue in OS-granted windows after leaving the app."
               value={background}
               onChange={(v) => {
                 downloadPrefs$.background.set(v);
                 applyBackgroundDownloads(v);
               }}
             />
-          )}
-        </SettingsSection>
-        <SettingsSection title="Auto-download">
-          <SettingsToggleRow
-            label="Saved series"
-            description="Download every chapter of a series you add to your library."
-            value={autoSeries}
-            onChange={toggleAutoSeries}
-          />
-          <SettingsToggleRow
-            label="New chapters"
-            description="Download new chapters of series in your library as they're found."
-            value={autoNew}
-            onChange={setAutoNewChapters}
-          />
-          <SettingsToggleRow
-            label="Saved chapters"
-            description="Download a chapter when you save it."
-            value={autoChapters}
-            onChange={(v) => downloadPrefs$.autoChapters.set(v)}
-          />
-          <SettingsToggleRow
-            label="Saved pages"
-            description="Download a page when you save it. Each bridge can opt out of any of these in its own settings."
-            value={autoPages}
-            onChange={(v) => downloadPrefs$.autoPages.set(v)}
-          />
+          </SettingsSection>
+        )}
+        <SettingsSection
+          title="Auto-download"
+          footer="Saved series download every chapter of a series you add to your library; new chapters are downloaded as they're found. Saved chapters and pages download when you save one. Each bridge can opt out of any of these in its own settings.">
+          <SettingsToggleRow label="Saved series" value={autoSeries} onChange={toggleAutoSeries} />
+          <SettingsToggleRow label="New chapters" value={autoNew} onChange={setAutoNewChapters} />
+          <SettingsToggleRow label="Saved chapters" value={autoChapters} onChange={(v) => downloadPrefs$.autoChapters.set(v)} />
+          <SettingsToggleRow label="Saved pages" value={autoPages} onChange={(v) => downloadPrefs$.autoPages.set(v)} />
         </SettingsSection>
         <LibraryBackupSection />
       </ScrollView>
@@ -362,19 +305,16 @@ function LibraryBackupSection() {
   };
 
   return (
-    <SettingsSection title="Library backup">
+    <SettingsSection
+      title="Library backup"
+      footer="A backup is a file holding your collections, history and reading progress. Restoring adds back what the file holds and removes nothing.">
       <SettingsRow
         testID="settings.general.backup-export"
         label="Export library"
-        description={exporting ? 'Exporting…' : 'Save your collections, history and reading progress to a file.'}
+        {...(exporting ? { description: 'Exporting…' } : {})}
         onPress={() => void exportLibrary()}
       />
-      <SettingsRow
-        testID="settings.general.backup-restore"
-        label="Restore from a backup"
-        description="Add back what a backup file holds. Nothing is removed."
-        onPress={() => void restoreLibrary()}
-      />
+      <SettingsRow testID="settings.general.backup-restore" label="Restore from a backup" onPress={() => void restoreLibrary()} />
     </SettingsSection>
   );
 }
