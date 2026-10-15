@@ -57,7 +57,7 @@ export function useSubtitleSelectorStyle() {
 export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['size'] }) {
   const theme = useTheme();
   const compact = useIsCompact();
-  const px = size === 'title' ? 14 : size === 'subtitle' ? (compact ? 12 : 13) : 10;
+  const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : 8;
   return (
     <View style={styles.caret}>
       <CaretDownIcon color={theme.textSecondary} size={px} />
