@@ -1,7 +1,7 @@
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
-import { ChevronDownIcon } from '@/components/icons/ui-icons';
+import { CaretDownIcon } from '@/components/icons/ui-icons';
 import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { ThemedText } from '@/components/themed-text';
@@ -53,12 +53,16 @@ export function useSubtitleSelectorStyle() {
   return { label: compact ? styles.subtitleCompact : styles.subtitleWide };
 }
 
-/** The trigger's dropdown caret — the sidebar's disclosure chevron, at rest pointing down. */
+/** The trigger's dropdown caret. */
 export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['size'] }) {
   const theme = useTheme();
   const compact = useIsCompact();
-  const px = size === 'title' ? 20 : size === 'subtitle' ? (compact ? 16 : 18) : 14;
-  return <ChevronDownIcon color={theme.textSecondary} size={px} />;
+  const px = size === 'title' ? 14 : size === 'subtitle' ? (compact ? 12 : 13) : 10;
+  return (
+    <View style={styles.caret}>
+      <CaretDownIcon color={theme.textSecondary} size={px} />
+    </View>
+  );
 }
 
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
@@ -225,6 +229,9 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '700',
+  },
+  caret: {
+    marginLeft: 2,
   },
   optionThumb: {
     borderRadius: 6,

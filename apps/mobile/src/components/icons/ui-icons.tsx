@@ -27,6 +27,7 @@ import {
   RefreshCw,
   RotateCcw,
   RotateCw,
+  Triangle,
   TriangleAlert,
   Globe,
   GripVertical,
@@ -48,6 +49,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react-native';
+import { View } from 'react-native';
 
 export type IconProps = {
   color: string;
@@ -94,6 +96,12 @@ export const MoreVerticalIcon = ({ color, size = 16 }: IconProps) => <MoreVertic
 export const ChevronDownIcon = ({ color, size = 16 }: IconProps) => <ChevronDown color={color} size={size} />;
 export const ChevronRightIcon = ({ color, size = 16, strokeWidth }: IconProps) => (
   <ChevronRight color={color} size={size} strokeWidth={strokeWidth} />
+);
+/** A dropdown's caret: lucide's triangle, solid and turned to point down. */
+export const CaretDownIcon = ({ color, size = 16 }: IconProps) => (
+  <View style={{ transform: [{ rotate: '180deg' }] }}>
+    <Triangle color={color} size={size} fill={color} />
+  </View>
 );
 export const ChevronUpIcon = ({ color, size = 16 }: IconProps) => <ChevronUp color={color} size={size} />;
 export const ArrowUpIcon = ({ color, size = 16 }: IconProps) => <ArrowUp color={color} size={size} />;
