@@ -215,6 +215,49 @@ describe('the resolve queue', () => {
     expect(t.started).toContain('/s/new1');
   });
 
+  test('a download waits behind mounted pages and survives a newer warm window', async () => {
+    const t = controllableTransport();
+    const blocking = ['/d/block1', '/d/block2', '/d/block3'].map((u) => resolveAssetSourceCached(u).catch(() => null));
+    const download = resolveAssetSourceCached('/d/download', { transient: true }).catch(() => null);
+    const page = resolveAssetSourceCached('/d/page').catch(() => null);
+
+    supersedeBackgroundResolves(new Set());
+
+    await t.drain();
+    expect(t.started[3]).toBe('/d/page');
+    await t.drain();
+    await t.drain();
+    await Promise.all([...blocking, download, page]);
+    expect(t.started).toContain('/d/download');
+  });
+
+  test("a download's answer is not kept, unless a page claimed it meanwhile", async () => {
+    const t = controllableTransport();
+    const blocking = ['/k/block1', '/k/block2', '/k/block3'].map((u) => resolveAssetSourceCached(u).catch(() => null));
+    const lone = resolveAssetSourceCached('/k/lone', { transient: true });
+    const claimed = resolveAssetSourceCached('/k/claimed', { transient: true });
+    void resolveAssetSourceCached('/k/claimed').catch(() => null);
+
+    await t.drain();
+    await t.drain();
+    await Promise.all([...blocking, lone, claimed]);
+    expect(peekResolvedAssetSource('/k/lone')).toBeUndefined();
+    expect(peekResolvedAssetSource('/k/claimed')).toBe('https://cdn.example.com/k/claimed');
+  });
+
+  test("a download isn't dropped when the page that claimed it unmounts", async () => {
+    const t = controllableTransport();
+    const blocking = ['/u/block1', '/u/block2', '/u/block3'].map((u) => resolveAssetSourceCached(u).catch(() => null));
+    const download = resolveAssetSourceCached('/u/page', { transient: true });
+    void resolveAssetSourceCached('/u/page').catch(() => null);
+    releaseAssetResolve('/u/page');
+
+    await t.drain();
+    await t.drain();
+    expect(await download).toBe('https://cdn.example.com/u/page');
+    await Promise.all(blocking);
+  });
+
   test('invalidating a QUEUED path settles it instead of stranding whoever awaits it', async () => {
     const t = controllableTransport();
     const blocking = ['/i/block1', '/i/block2', '/i/block3'].map((u) => resolveAssetSourceCached(u).catch(() => null));

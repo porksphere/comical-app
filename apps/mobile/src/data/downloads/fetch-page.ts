@@ -3,12 +3,23 @@
  * by reusing `resolveAssetSourceCached` — the exact resolver the reader uses — so referer/proxy
  * resolution and the in-process embedded intercept are shared, never duplicated. A resolve lands as
  * either a `data:` URI (embedded mode proxies bytes inline) or an http(s) URL to fetch with the
- * page's own headers.
+ * page's own headers. It resolves `transient`ly: behind the reader's own pages, and without
+ * parking every downloaded page's bytes in the reader's resolve cache.
+ *
+ * A source saying "slow down" is thrown as a `PageRateLimitedError`, so the engine holds the bridge
+ * instead of spending the page's attempts.
  *
  * `onDevicePageRetry` is the engine's between-attempts hook: it busts the cached resolution so the
  * retry re-resolves (an expired time-scoped CDN URL is the common first-attempt failure).
  */
-import type { FetchedPage, PageFetcher, PendingPage } from '@comical/downloads';
+import {
+  PageRateLimitedError,
+  rateLimitedFromResponse,
+  rateLimitWaitOf,
+  type FetchedPage,
+  type PageFetcher,
+  type PendingPage,
+} from '@comical/downloads';
 import { invalidateAssetSource, resolveAssetSourceCached } from '../api';
 
 /** Manual base64 decode (no `atob`/`Buffer` guarantee across Hermes/JSC/QuickJS) — mirrors api.ts's encoder. */
@@ -39,11 +50,24 @@ function dataUriToPage(uri: string): FetchedPage {
   return mime ? { data, contentType: mime } : { data };
 }
 
+/** A failed in-process resolve carries the route's status and headers (see `resolveAssetSource`). */
+function asRateLimited(e: unknown): unknown {
+  const { status, headers } = (e ?? {}) as { status?: unknown; headers?: Headers };
+  if (typeof status === 'number') return rateLimitedFromResponse({ status, headers }, String((e as Error).message)) ?? e;
+  const wait = rateLimitWaitOf(e);
+  return wait === undefined ? e : new PageRateLimitedError(wait);
+}
+
 export const devicePageFetcher: PageFetcher = async (_ctx, page) => {
-  const resolved = await resolveAssetSourceCached(page.sourceUrl);
+  let resolved: string;
+  try {
+    resolved = await resolveAssetSourceCached(page.sourceUrl, { transient: true });
+  } catch (e) {
+    throw asRateLimited(e);
+  }
   if (resolved.startsWith('data:')) return dataUriToPage(resolved);
   const res = await fetch(resolved, page.headers ? { headers: page.headers } : undefined);
-  if (!res.ok) throw new Error(`download failed: ${res.status}`);
+  if (!res.ok) throw rateLimitedFromResponse(res) ?? new Error(`download failed: ${res.status}`);
   const data = new Uint8Array(await res.arrayBuffer());
   const contentType = res.headers.get('Content-Type');
   return contentType ? { data, contentType } : { data };

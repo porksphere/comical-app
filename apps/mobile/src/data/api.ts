@@ -172,7 +172,11 @@ export async function resolveAssetSource(url: string): Promise<string> {
       // Error routes answer with a JSON `{ error }` body; surface it so the diagnostic shows the
       // bridge's real failure reason instead of a bare status (statusText is empty in-process).
       const detail = await res.text().catch(() => '');
-      throw new Error(`${res.status} ${detail || res.statusText}`.trim());
+      // Status and Retry-After ride along so a download can tell "slow down" from a real failure.
+      throw Object.assign(new Error(`${res.status} ${detail || res.statusText}`.trim()), {
+        status: res.status,
+        headers: res.headers,
+      });
     }
     return await responseToDataUri(res);
   } catch (e) {
@@ -235,6 +239,9 @@ type QueuedResolve = {
    *  unmounts (`releaseAssetResolve`); a warm-ahead claims none, because a guess has no one waiting
    *  on it. At zero, a request that hasn't started yet is dropped — see `releaseAssetResolve`. */
   claims: number;
+  /** A download's resolve: never superseded or dropped for want of a claim, and left uncached
+   *  unless a page claimed it meanwhile — see `resolveAssetSourceCached`'s `transient`. */
+  transient: boolean;
   start: () => void;
   cancel: () => void;
 };
@@ -284,8 +291,19 @@ export function assetResolvesInFlight(): number {
   return resolvesRunning + resolveQueue.size;
 }
 
-export function resolveAssetSourceCached(url: string, opts?: { background?: boolean }): Promise<string> {
-  const background = !!opts?.background;
+/**
+ * `transient` is the download engine's resolve. It queues in the warm tier, behind every page the
+ * reader wants, but is not a guess, so a newer warm window never retires it. And it is not kept: a
+ * download asks for each page once, and on the embedded transport the answer is the page's bytes
+ * as a `data:` URI, which this never-evicted cache would hold for the life of the app — a whole
+ * chapter's worth per chapter downloaded.
+ */
+export function resolveAssetSourceCached(
+  url: string,
+  opts?: { background?: boolean; transient?: boolean },
+): Promise<string> {
+  const transient = !!opts?.transient;
+  const background = transient || !!opts?.background;
   const hit = assetResolveCache.get(url);
   if (hit) {
     // Still waiting its turn: re-asking moves it to the head, and a real mount outranks the
@@ -303,6 +321,7 @@ export function resolveAssetSourceCached(url: string, opts?: { background?: bool
   }
 
   if (resolvesImmediately(url)) {
+    if (transient) return resolveAssetSource(url);
     const p = resolveAssetSource(url).then((resolved) => {
       assetResolvedValues.set(url, resolved);
       return resolved;
@@ -311,12 +330,13 @@ export function resolveAssetSourceCached(url: string, opts?: { background?: bool
     return p;
   }
 
-  const p = new Promise<string>((settle, fail) => {
+  const p: Promise<string> = new Promise<string>((settle, fail) => {
     const start = () => {
       resolveAssetSource(url).then(
         (resolved) => {
           resolvesRunning -= 1;
-          assetResolvedValues.set(url, resolved);
+          if (!entry.transient || entry.claims > 0) assetResolvedValues.set(url, resolved);
+          else if (assetResolveCache.get(url) === p) assetResolveCache.delete(url);
           settle(resolved);
           pumpResolves();
         },
@@ -332,7 +352,16 @@ export function resolveAssetSourceCached(url: string, opts?: { background?: bool
     // re-runs — and a queued entry dropped without settling its promise is a page that waits
     // forever, which is the exact failure this queue is here to end.
     const cancel = () => fail(new Error('resolve cancelled'));
-    resolveQueue.set(url, { url, background, seq: (resolveSeq += 1), claims: background ? 0 : 1, start, cancel });
+    const entry: QueuedResolve = {
+      url,
+      background,
+      seq: (resolveSeq += 1),
+      claims: background ? 0 : 1,
+      transient,
+      start,
+      cancel,
+    };
+    resolveQueue.set(url, entry);
   });
   assetResolveCache.set(url, p);
   pumpResolves();
@@ -354,7 +383,7 @@ export function resolveAssetSourceCached(url: string, opts?: { background?: bool
  */
 export function supersedeBackgroundResolves(keep: ReadonlySet<string>): void {
   for (const queued of [...resolveQueue.values()]) {
-    if (!queued.background || queued.claims > 0 || keep.has(queued.url)) continue;
+    if (!queued.background || queued.transient || queued.claims > 0 || keep.has(queued.url)) continue;
     resolveQueue.delete(queued.url);
     assetResolveCache.delete(queued.url);
     queued.cancel();
@@ -380,6 +409,11 @@ export function releaseAssetResolve(url: string): void {
   if (!queued || queued.claims <= 0) return;
   queued.claims -= 1;
   if (queued.claims > 0) return;
+  if (queued.transient) {
+    // A download still wants it: back to the warm tier, not out of the queue.
+    queued.background = true;
+    return;
+  }
   resolveQueue.delete(url);
   // The cache entry goes too, so a page that comes back asks again — and asks as the NEWEST
   // request, which is exactly the priority a page being returned to should have.
