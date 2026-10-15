@@ -63,6 +63,21 @@ appId: com.porksphere.comical
 - takeScreenshot: general
 - assertVisible:
     id: "settings.select.appearance"
+# Auto-download: three per-kind toggles under their own heading. Flipped on and back off, so the
+# walkthrough leaves no download policy behind for the flows after it.
+- scrollUntilVisible:
+    element:
+      id: "settings.toggle.saved-pages"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "settings.toggle.saved-series"
+- assertVisible:
+    id: "settings.toggle.saved-chapters"
+- tapOn:
+    id: "settings.toggle.saved-series"
+- tapOn:
+    id: "settings.toggle.saved-series"
 # Library backup sits under the settings list. Only its presence is checked: both rows hand off to
 # a system file dialog, which is outside what a flow can drive.
 - scrollUntilVisible:

@@ -1,13 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { ChapterItemSnapshotBody, LibrarySnapshot, PageItemSnapshotBody } from '@/data/api';
+import { autoDownloadChapter, autoDownloadPage, autoDownloadSeries } from '@/data/downloads/auto';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 
 /** What the picker (and the reader's save button) is filing. A discriminated union rather than an
  *  optional-fields bag, so a page target can't be built without its chapter and index. */
 export type ItemTarget =
-  | { kind: 'series'; bridgeId: string | undefined; seriesId: string; snapshot: () => LibrarySnapshot }
+  | {
+      kind: 'series';
+      bridgeId: string | undefined;
+      seriesId: string;
+      /** Whether it's a chapterless series, when known — auto-download needs it to fetch the pages. */
+      direct?: boolean;
+      snapshot: () => LibrarySnapshot;
+    }
   | {
       kind: 'chapter';
       bridgeId: string | undefined;
@@ -87,6 +95,43 @@ export function useItemCollections(target: ItemTarget) {
       const prev = queryClient.getQueryData<string[] | null>(key);
       queryClient.setQueryData(key, next);
       return { prev };
+    },
+    onSuccess: (_r, next, ctx) => {
+      // Only a fresh save auto-downloads: re-filing a saved item must not bring back a download the
+      // user deleted.
+      if (next === null || ctx?.prev !== null || !bridgeId) return;
+      if (target.kind === 'series') {
+        const snap = target.snapshot();
+        autoDownloadSeries(ds, mock, {
+          bridgeId,
+          seriesId,
+          title: snap.seriesTitle ?? seriesId,
+          ...(snap.thumbnailUrl !== undefined && { thumbnailUrl: snap.thumbnailUrl }),
+          ...(snap.author !== undefined && { author: snap.author }),
+          ...(target.direct !== undefined && { direct: target.direct }),
+        });
+      } else if (target.kind === 'chapter') {
+        const snap = target.snapshot();
+        autoDownloadChapter(mock, {
+          bridgeId,
+          seriesId,
+          chapterId: target.chapterId,
+          title: snap.seriesTitle,
+          ...(snap.chapterName !== undefined && { chapterName: snap.chapterName }),
+          ...(snap.number !== undefined && { number: snap.number }),
+          ...(snap.languageCode !== undefined && { languageCode: snap.languageCode }),
+        });
+      } else {
+        const snap = target.snapshot();
+        autoDownloadPage(mock, {
+          bridgeId,
+          seriesId,
+          chapterId: target.chapterId,
+          pageIndex: target.pageIndex,
+          title: snap.seriesTitle,
+          ...(snap.chapterName !== undefined && { chapterName: snap.chapterName }),
+        });
+      }
     },
     onError: (_e, _next, ctx) => {
       if (ctx) queryClient.setQueryData(key, ctx.prev ?? null);

@@ -173,7 +173,7 @@ function apply(e: DownloadEngineEvent): void {
         patchProgressCaches(c.bridgeId, c.seriesId, c.chapterId, c.completedPages, c.bytes, 'downloading', c.pageCount);
         break;
       }
-      if (c.state === 'complete') void refreshChapterIndex(c.bridgeId, c.seriesId, c.chapterId, c.pageCount);
+      if (c.state === 'complete' && !c.onlyPages) void refreshChapterIndex(c.bridgeId, c.seriesId, c.chapterId, c.pageCount);
       invalidate(c.bridgeId, c.seriesId); // settle on host truth (complete/failed/paused/queued)
       break;
     }

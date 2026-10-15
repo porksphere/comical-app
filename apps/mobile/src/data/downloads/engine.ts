@@ -46,6 +46,8 @@ export interface EnqueueChapterInput {
   chapterName?: string;
   number?: number;
   languageCode?: string;
+  /** Download only these pages (a partial chapter) instead of the whole chapter. */
+  onlyPages?: number[];
 }
 
 /** Refresh the Downloads screen + a series' download state after a manifest change. */
@@ -67,6 +69,7 @@ export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> 
     ...(input.chapterName !== undefined && { chapterName: input.chapterName }),
     ...(input.number !== undefined && { number: input.number }),
     ...(input.languageCode !== undefined && { languageCode: input.languageCode }),
+    ...(input.onlyPages !== undefined && { onlyPages: input.onlyPages }),
   };
   try {
     await dlEnqueueChapter(input.bridgeId, input.seriesId, chapterId, body);

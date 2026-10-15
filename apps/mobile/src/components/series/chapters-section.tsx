@@ -60,6 +60,8 @@ import {
   resolveAssetSourceCached,
   type ApiCollectionItem,
 } from '@/data/api';
+import { autoDownloadChapter } from '@/data/downloads/auto';
+import { wholeChapters } from '@/data/downloads/derive';
 import { enqueueChapters } from '@/data/downloads/engine';
 import { forgetChapter } from '@/data/downloads/index-cache';
 import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
@@ -532,7 +534,7 @@ export function ChapterScrollList({
     enabled: !!bridgeId,
   });
   const dlByChapter = useMemo(
-    () => new Map((dl?.chapters ?? []).map((c) => [c.chapterId, c])),
+    () => new Map(wholeChapters(dl?.chapters ?? []).map((c) => [c.chapterId, c])),
     [dl],
   );
 
@@ -616,7 +618,7 @@ export function ChapterScrollList({
 
   // Long-press (or, on web, right-click) a row → the per-chapter menu, in the series card popup's
   // menu system (frosted point-anchored menu, peek-and-commit) on every platform.
-  const manifest = useMemo(() => dl?.chapters ?? [], [dl]);
+  const manifest = useMemo(() => wholeChapters(dl?.chapters ?? []), [dl]);
   const openChapterMenu = (g: ChapterGroup, at: ContextMenuPoint) => {
     if (!bridgeId) return;
     // Built per open, so the "Mark as read/unread" label reflects current state.
@@ -1042,7 +1044,11 @@ function chapterMenuActions(args: {
       hapticSelection();
       void ds
         .collectChapter(bridgeId, seriesId, chapterId, itemSnapshot())
-        .then(() => showToast('Chapter saved'))
+        .then(() => {
+          showToast('Chapter saved');
+          const { seriesTitle, ...meta } = itemSnapshot();
+          autoDownloadChapter(mock, { bridgeId, seriesId, chapterId, title: seriesTitle, ...meta });
+        })
         .catch(() => showToast('Couldn’t save chapter'))
         .finally(() => {
           void queryClient.invalidateQueries({ queryKey: queryKeys.collectionItemsAll(mock) });

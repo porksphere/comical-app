@@ -35,6 +35,12 @@ describe('selectableGroups', () => {
     expect(sel.map((s) => s.complete)).toEqual([true, false, false, false, false]);
     expect(sel.map((s) => s.unread)).toEqual([false, false, true, true, true]);
   });
+
+  test('a chapter holding only saved pages is not a downloaded chapter', () => {
+    const sel = selectableGroups(CHAPTERS, [{ ...dl('c1', 'complete'), onlyPages: [0] }]);
+    expect(sel[0]).toMatchObject({ complete: false, settled: false });
+    expect(remaining(sel).map((g) => g.number)).toEqual([1, 2, 3, 4, 5]);
+  });
 });
 
 describe('selection options', () => {

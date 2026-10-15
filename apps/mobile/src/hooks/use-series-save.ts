@@ -16,8 +16,9 @@ export function useSeriesSave(
   snapshot: () => LibrarySnapshot,
   /** The series title, for the picker's subheading. */
   title: string,
+  direct?: boolean,
 ) {
-  const target = { kind: 'series', bridgeId, seriesId, snapshot } as const;
+  const target = { kind: 'series', bridgeId, seriesId, snapshot, ...(direct !== undefined && { direct }) } as const;
   const { saved, setCollections } = useItemCollections(target);
 
   const pick = () => openCollectionPicker({ ...target, title });

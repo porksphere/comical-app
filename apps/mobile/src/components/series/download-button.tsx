@@ -19,7 +19,7 @@ import { CheckIcon, DownloadsIcon } from '@/components/icons/ui-icons';
 import { ACTION_ICON_SIZE, ActionButton } from '@/components/series/action-button';
 import { useTheme } from '@/hooks/use-theme';
 import { dlGetSeries } from '@/data/api';
-import { deriveSeriesState, seriesFraction } from '@/data/downloads/derive';
+import { deriveSeriesState, seriesFraction, wholeChapters } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
 import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { queryKeys } from '@/data/queries';
@@ -56,7 +56,7 @@ export function SeriesDownloadButton({
 
   // Progress comes from this query, which the events pipe patches page-by-page — so the radial
   // advances through the reliable useQuery subscription.
-  const downloaded = data?.chapters ?? [];
+  const downloaded = wholeChapters(data?.chapters ?? []);
   const state = downloaded.length > 0 ? deriveSeriesState(downloaded) : undefined;
   const inProgress = state !== undefined && state !== 'complete';
   const frac = seriesFraction(downloaded);

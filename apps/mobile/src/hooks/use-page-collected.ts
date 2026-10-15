@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { PageItemSnapshotBody } from '@/data/api';
+import { autoDownloadPage } from '@/data/downloads/auto';
 import { chapterPageIndicesQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { hapticSelection } from '@/lib/haptics';
@@ -45,7 +46,16 @@ export function usePageCollected(
 
   const mutation = useMutation({
     mutationFn: async () => {
-      await ds.collectPage(bridgeId!, seriesId, chapterId!, pageIndex, snapshot());
+      const snap = snapshot();
+      await ds.collectPage(bridgeId!, seriesId, chapterId!, pageIndex, snap);
+      autoDownloadPage(mock, {
+        bridgeId: bridgeId!,
+        seriesId,
+        chapterId: chapterId!,
+        pageIndex,
+        title: snap.seriesTitle,
+        ...(snap.chapterName !== undefined && { chapterName: snap.chapterName }),
+      });
       // Second PUT, carrying the content hash. Deliberately after the save has already landed:
       // SHA-256 over a ~1MB page through Hermes' JS crypto shim is slow enough to feel. Safe to
       // send partially — the route MERGES, so `chapterName`/`pageCount`/`sourceUrl` survive

@@ -13,7 +13,8 @@
  *    `pageCount` alone (no per-chapter manifest fetch). The server serves its stored bytes, so a
  *    downloaded chapter reads without touching the source — the remote-mode meaning of "offline".
  *
- * Only **complete** chapters are cached — a half-downloaded chapter must still hit the bridge.
+ * Only **complete**, whole chapters are cached — a half-downloaded chapter, or one holding just a
+ * few saved pages (`onlyPages`), must still hit the bridge.
  */
 import { dlStorageUsage, getApiBase } from '../api';
 import { getResolvedModeSync } from '../embedded/preference';
@@ -49,7 +50,7 @@ export async function hydrateDownloadIndex(): Promise<void> {
       for (const series of await store.listSeries()) {
         const entryKey = `${series.bridgeId}:${series.seriesId}`;
         for (const chapter of await store.listChapters(entryKey)) {
-          if (chapter.state !== 'complete') continue;
+          if (chapter.state !== 'complete' || chapter.onlyPages) continue;
           const pages = await store.listPages(entryKey, chapter.chapterId);
           if (pages.length > 0 && pages.every((p) => p.state === 'complete' && p.file)) {
             cache.set(
@@ -64,7 +65,7 @@ export async function hydrateDownloadIndex(): Promise<void> {
     const usage = await dlStorageUsage();
     for (const series of usage.bySeries) {
       for (const chapter of series.chapters) {
-        if (chapter.state !== 'complete' || chapter.pageCount === 0) continue;
+        if (chapter.state !== 'complete' || chapter.onlyPages || chapter.pageCount === 0) continue;
         cache.set(
           key(series.bridgeId, series.seriesId, chapter.chapterId),
           remotePageUrls(series.bridgeId, series.seriesId, chapter.chapterId, chapter.pageCount),

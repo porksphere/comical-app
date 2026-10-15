@@ -101,7 +101,8 @@ function chapterDescription(c: DownloadedChapter, state: DownloadState): string 
   // A lazily-enqueued chapter has no page list yet (it resolves when the engine picks it up) —
   // "0 pages · 0 B · queued" would read as an error, so show just the state until the count lands.
   if (c.pageCount === 0 && state !== 'complete') return state;
-  const size = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'} · ${formatBytes(c.bytes)}`;
+  const noun = c.onlyPages ? 'saved page' : 'page';
+  const size = `${c.pageCount} ${noun}${c.pageCount === 1 ? '' : 's'} · ${formatBytes(c.bytes)}`;
   if (state === 'complete') return size;
   const label = state === 'downloading' ? `${c.completedPages}/${c.pageCount}` : state;
   return `${size} · ${label}`;

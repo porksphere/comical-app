@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type { DownloadedChapter } from '@comical/downloads';
-import { chapterFraction, overallProgress, seriesFraction } from './derive';
+import { chapterFraction, overallProgress, seriesFraction, wholeChapters } from './derive';
 
 function chapter(over: Partial<DownloadedChapter>): DownloadedChapter {
   return {
@@ -38,6 +38,16 @@ describe('seriesFraction', () => {
   test('a fully complete series is 1; an empty one is 0', () => {
     expect(seriesFraction([chapter({ state: 'complete', pageCount: 3, completedPages: 3 })])).toBe(1);
     expect(seriesFraction([])).toBe(0);
+  });
+});
+
+describe('wholeChapters', () => {
+  test('drops chapters that hold only saved pages', () => {
+    const whole = chapter({ chapterId: 'whole', state: 'complete' });
+    const partial = chapter({ chapterId: 'partial', state: 'complete', onlyPages: [3] });
+    expect(wholeChapters([whole, partial])).toEqual([whole]);
+    const all = [whole];
+    expect(wholeChapters(all)).toBe(all);
   });
 });
 

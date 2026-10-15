@@ -14,9 +14,19 @@ export interface DownloadPrefs {
   wifiOnly: boolean;
   /** When true, allow the OS to drain the queue in granted background windows. */
   background: boolean;
+  /** Download what gets saved to the library, per kind of item (see `auto.ts`). */
+  autoSeries: boolean;
+  autoChapters: boolean;
+  autoPages: boolean;
 }
 
-const DEFAULTS: DownloadPrefs = { wifiOnly: true, background: false };
+const DEFAULTS: DownloadPrefs = {
+  wifiOnly: true,
+  background: false,
+  autoSeries: false,
+  autoChapters: false,
+  autoPages: false,
+};
 
 export const downloadPrefs$ = persisted$<DownloadPrefs>('comical:dl:prefs-local', DEFAULTS);
 
@@ -35,5 +45,5 @@ export function useDownloadPrefs(): DownloadPrefs {
 
 /** Non-tracking read for use outside React (the engine). */
 export function getDownloadPrefsSync(): DownloadPrefs {
-  return downloadPrefs$.peek();
+  return { ...DEFAULTS, ...downloadPrefs$.peek() };
 }

@@ -761,6 +761,8 @@ export interface DlEnqueueChapterBody {
   number?: number;
   languageCode?: string;
   pages?: { index: number; sourceUrl: string; headers?: Record<string, string> }[];
+  /** Download only these page indexes — a partial chapter. */
+  onlyPages?: number[];
 }
 
 const dlBase = (bridgeId: string, seriesId: string) =>

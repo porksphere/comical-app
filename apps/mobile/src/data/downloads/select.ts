@@ -31,7 +31,8 @@ export function selectableGroups(
   chapters: Chapter[],
   manifest: DownloadedChapter[] | null | undefined,
 ): SelectableGroup[] {
-  const byId = new Map((manifest ?? []).map((c) => [c.chapterId, c.state]));
+  // A partial chapter (saved pages only) is not a downloaded chapter: enqueueing it whole fills it in.
+  const byId = new Map((manifest ?? []).filter((c) => !c.onlyPages).map((c) => [c.chapterId, c.state]));
   return groupChapters(chapters).map((group) => {
     const states = group.versions
       .map((v) => byId.get(v.id))

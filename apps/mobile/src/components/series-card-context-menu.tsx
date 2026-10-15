@@ -332,9 +332,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     loading: membershipsLoading,
     setCollections,
     remove: removeSeries,
-  } = useItemCollections({ kind: 'series', bridgeId, seriesId: entry.id, snapshot });
+  } = useItemCollections({ kind: 'series', bridgeId, seriesId: entry.id, snapshot, direct: !!direct });
   // Reads the same two queries this menu already runs, so the merged Save row costs nothing extra.
-  const save = useSeriesSave(bridgeId, entry.id, snapshot, entry.title);
+  const save = useSeriesSave(bridgeId, entry.id, snapshot, entry.title, !!direct);
   // Lazy: this panel mounts only while the menu is open, so the download-status query runs once here,
   // never per card in the grid.
   const download = useSeriesDownloadAction(

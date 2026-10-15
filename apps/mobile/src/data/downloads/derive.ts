@@ -24,6 +24,12 @@ export const EMPTY_STORAGE_USAGE: StorageUsage = {
   bySeries: [],
 };
 
+/** The chapters that are downloads of a whole chapter — without the partial ones holding only a
+ *  few saved pages (`onlyPages`), which say nothing about whether the chapter reads offline. */
+export function wholeChapters(chapters: DownloadedChapter[]): DownloadedChapter[] {
+  return chapters.some((c) => c.onlyPages) ? chapters.filter((c) => !c.onlyPages) : chapters;
+}
+
 /** The state to DISPLAY for a chapter — straight from the (per-page-patched) manifest. */
 export function displayChapterState(c: DownloadedChapter): DownloadState {
   return c.state;

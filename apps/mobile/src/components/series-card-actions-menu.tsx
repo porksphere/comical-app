@@ -60,6 +60,7 @@ export function SeriesCardMenuRows({
       ...(entry.cover && entry.coverAspect !== undefined ? { thumbnailAspect: entry.coverAspect } : {}),
     }),
     entry.title,
+    !!direct,
   );
   const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
   const download = useSeriesDownloadAction(

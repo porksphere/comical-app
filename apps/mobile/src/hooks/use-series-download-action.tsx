@@ -11,7 +11,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 
-import { deriveSeriesState } from '@/data/downloads/derive';
+import { deriveSeriesState, wholeChapters } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
 import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { dlGetSeries } from '@/data/api';
@@ -43,7 +43,7 @@ export function useSeriesDownloadAction(
   });
 
   // Manifest-driven (the events pipe patches this query per page), so the row stays in sync.
-  const chapters = data?.chapters ?? [];
+  const chapters = wholeChapters(data?.chapters ?? []);
   const state = chapters.length > 0 ? deriveSeriesState(chapters) : undefined;
   const inProgress = state !== undefined && state !== 'complete';
   const label = inProgress ? 'Downloading' : state === 'complete' ? 'Downloaded' : 'Download';

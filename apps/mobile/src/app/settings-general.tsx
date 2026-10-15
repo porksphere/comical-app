@@ -93,7 +93,7 @@ export default function GeneralSettingsScreen() {
   // after it and mismatch.
   const desktop = useHydrated() && !!desktopShell();
   const dataDir = desktop ? desktopDataDir() : undefined;
-  const { wifiOnly, background } = useDownloadPrefs();
+  const { wifiOnly, background, autoSeries, autoChapters, autoPages } = useDownloadPrefs();
   const { open, openDialog } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
@@ -240,6 +240,26 @@ export default function GeneralSettingsScreen() {
               }}
             />
           )}
+        </SettingsSection>
+        <SettingsSection title="Auto-download">
+          <SettingsToggleRow
+            label="Saved series"
+            description="Download every chapter of a series you add to your library."
+            value={autoSeries}
+            onChange={(v) => downloadPrefs$.autoSeries.set(v)}
+          />
+          <SettingsToggleRow
+            label="Saved chapters"
+            description="Download a chapter when you save it."
+            value={autoChapters}
+            onChange={(v) => downloadPrefs$.autoChapters.set(v)}
+          />
+          <SettingsToggleRow
+            label="Saved pages"
+            description="Download a page when you save it."
+            value={autoPages}
+            onChange={(v) => downloadPrefs$.autoPages.set(v)}
+          />
         </SettingsSection>
         <LibraryBackupSection />
       </ScrollView>

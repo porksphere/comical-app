@@ -465,6 +465,7 @@ export function SeriesBody({
       ...(author ? { author } : {}),
     }),
     series.title,
+    direct,
   );
 
   // What Read is CALLED — the resume point's own chapter name, resolved from the cached history.
