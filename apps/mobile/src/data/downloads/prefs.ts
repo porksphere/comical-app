@@ -18,6 +18,8 @@ export interface DownloadPrefs {
   autoSeries: boolean;
   autoChapters: boolean;
   autoPages: boolean;
+  /** Download chapters a library sync finds on series already saved. */
+  autoNew: boolean;
 }
 
 const DEFAULTS: DownloadPrefs = {
@@ -26,6 +28,7 @@ const DEFAULTS: DownloadPrefs = {
   autoSeries: false,
   autoChapters: false,
   autoPages: false,
+  autoNew: false,
 };
 
 export const downloadPrefs$ = persisted$<DownloadPrefs>('comical:dl:prefs-local', DEFAULTS);

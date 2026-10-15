@@ -18,7 +18,7 @@
  * re-implement. Read it in a component with `use$(store$)`; read/write outside
  * React with `store$.peek()` / `store$.set(...)`.
  */
-import { observable, type Observable } from '@legendapp/state';
+import { observable, syncState, when, type Observable, type ObservableParam } from '@legendapp/state';
 import { configureSynced, synced } from '@legendapp/state/sync';
 import { observablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -102,3 +102,9 @@ export function persisted$<T>(name: string, initial: T): Observable<T> {
   return store$;
 }
 
+
+/** Resolves once `store$` has rehydrated. Until then it reads `initial` — so code that runs before
+ *  any screen (a background task) must wait on this before trusting a persisted value. */
+export function whenPersistLoaded<T>(store$: Observable<T>): Promise<unknown> {
+  return when(syncState(store$ as ObservableParam).isPersistLoaded);
+}

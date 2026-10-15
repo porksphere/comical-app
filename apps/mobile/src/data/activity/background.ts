@@ -18,6 +18,7 @@ import { Platform } from 'react-native';
 
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import * as api from '../api';
+import { autoDownloadNewChapters } from '../downloads/auto';
 import { isMockActive } from '../mock';
 import { syncAppBadge } from './app-badge';
 import { feedCounts } from './feed-counts';
@@ -65,6 +66,7 @@ export async function runChapterCheck(): Promise<BackgroundTask.BackgroundTaskRe
     // Same whole-feed unread count as the tab pip, so the icon and the in-app badge always agree.
     const { unread } = await api.getActivityCount({ caughtUpOnly: prefs.caughtUpOnly });
     syncAppBadge(unread);
+    await autoDownloadNewChapters(false);
 
     return BackgroundTask.BackgroundTaskResult.Success;
   } catch {

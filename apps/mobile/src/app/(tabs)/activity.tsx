@@ -29,6 +29,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { autoDownloadNewChapters } from '@/data/downloads/auto';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
@@ -122,6 +123,7 @@ export default function ActivityScreen() {
     try {
       const res = await ds.checkForUpdates({ force: true });
       invalidateFeed();
+      void autoDownloadNewChapters(mock);
       showToast(
         res.newChapters > 0
           ? `${res.newChapters} new chapter${res.newChapters === 1 ? '' : 's'} found`
@@ -130,7 +132,7 @@ export default function ActivityScreen() {
     } catch {
       showToast('Update check failed');
     }
-  }, [ds, invalidateFeed]);
+  }, [ds, invalidateFeed, mock]);
   const pull = usePullToRefresh(scrollY, refresh);
 
   // Swipe-away clears a whole series' feed entries at once (they're coalesced into one row). Optimistic:

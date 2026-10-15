@@ -25,13 +25,14 @@ import {
 } from '@/data/backup-summary';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
+import { autoDownloadLibrary, librarySize, setAutoNewChapters } from '@/data/downloads/auto';
 import { kickDownloads } from '@/data/downloads/engine';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } from '@/data/embedded';
 import { errorToasts$, useErrorToasts } from '@/data/error-toasts';
 import { queryClient } from '@/data/query-client';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
-import { useNsfwMode, type NsfwMode } from '@/data/source';
+import { useDataSource, useMockActive, useNsfwMode, type NsfwMode } from '@/data/source';
 import { connectServer } from '@/data/switch-server';
 import { setFeedTint, useFeedTint } from '@/hooks/use-feed-tint';
 import { useHydrated } from '@/hooks/use-responsive';
@@ -93,7 +94,9 @@ export default function GeneralSettingsScreen() {
   // after it and mismatch.
   const desktop = useHydrated() && !!desktopShell();
   const dataDir = desktop ? desktopDataDir() : undefined;
-  const { wifiOnly, background, autoSeries, autoChapters, autoPages } = useDownloadPrefs();
+  const { wifiOnly, background, autoSeries, autoChapters, autoPages, autoNew } = useDownloadPrefs();
+  const ds = useDataSource();
+  const mock = useMockActive();
   const { open, openDialog } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
@@ -102,6 +105,28 @@ export default function GeneralSettingsScreen() {
   // see getResolvedModeSync in embedded/preference.ts). The remote-server row is meaningless while
   // this is true, so it's hidden rather than just disabled.
   const embeddedActive = onDevice && embeddedAvailable;
+
+  // The toggle only covers saves from here on, so turning it on asks about what's already saved.
+  const toggleAutoSeries = (enabled: boolean) => {
+    downloadPrefs$.autoSeries.set(enabled);
+    if (!enabled || mock) return;
+    void librarySize()
+      .then(({ series, chapters }) => {
+        if (series === 0) return;
+        openConfirm({
+          title: 'Download your library too?',
+          message: `${series} series already in your library, about ${chapters} chapter${chapters === 1 ? '' : 's'}. Anything already downloaded is skipped.`,
+          confirmLabel: `Download ${series} series`,
+          tone: 'primary',
+          onConfirm: () => {
+            void autoDownloadLibrary(ds, mock).then((n) =>
+              showToast(n > 0 ? `Downloading ${n} series` : 'Nothing to download'),
+            );
+          },
+        });
+      })
+      .catch(() => {});
+  };
 
   const toggleOnDevice = (enabled: boolean) => {
     setOnDevice(enabled);
@@ -246,7 +271,13 @@ export default function GeneralSettingsScreen() {
             label="Saved series"
             description="Download every chapter of a series you add to your library."
             value={autoSeries}
-            onChange={(v) => downloadPrefs$.autoSeries.set(v)}
+            onChange={toggleAutoSeries}
+          />
+          <SettingsToggleRow
+            label="New chapters"
+            description="Download new chapters of series in your library as they're found."
+            value={autoNew}
+            onChange={setAutoNewChapters}
           />
           <SettingsToggleRow
             label="Saved chapters"

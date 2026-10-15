@@ -68,8 +68,20 @@ url: http://localhost:4000/comical-app
     id: "settings.toggle.saved-chapters"
 - tapOn:
     id: "settings.toggle.saved-series"
+# The library offer — see the mobile copy. The backdrop is selected by its label here.
+- runFlow:
+    when:
+      visible:
+        id: "Cancel"
+    commands:
+      - tapOn:
+          id: "Cancel"
 - tapOn:
     id: "settings.toggle.saved-series"
+- tapOn:
+    id: "settings.toggle.new-chapters"
+- tapOn:
+    id: "settings.toggle.new-chapters"
 # Library backup — see the mobile copy. Both are SettingsRows, selected by label here (the
 # about.share quirk above).
 - scrollUntilVisible:

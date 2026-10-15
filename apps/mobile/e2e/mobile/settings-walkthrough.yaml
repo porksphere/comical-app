@@ -63,7 +63,7 @@ appId: com.porksphere.comical
 - takeScreenshot: general
 - assertVisible:
     id: "settings.select.appearance"
-# Auto-download: three per-kind toggles under their own heading. Flipped on and back off, so the
+# Auto-download: per-kind toggles under their own heading. Flipped on and back off, so the
 # walkthrough leaves no download policy behind for the flows after it.
 - scrollUntilVisible:
     element:
@@ -76,8 +76,21 @@ appId: com.porksphere.comical
     id: "settings.toggle.saved-chapters"
 - tapOn:
     id: "settings.toggle.saved-series"
+# Turning series on offers to download the library already saved. The popup only shows for a
+# non-empty library, so it is declined when present.
+- runFlow:
+    when:
+      visible:
+        id: "confirm.cancel"
+    commands:
+      - tapOn:
+          id: "confirm.cancel"
 - tapOn:
     id: "settings.toggle.saved-series"
+- tapOn:
+    id: "settings.toggle.new-chapters"
+- tapOn:
+    id: "settings.toggle.new-chapters"
 # Library backup sits under the settings list. Only its presence is checked: both rows hand off to
 # a system file dialog, which is outside what a flow can drive.
 - scrollUntilVisible:

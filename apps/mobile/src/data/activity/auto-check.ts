@@ -12,6 +12,7 @@ import { AppState } from 'react-native';
 
 import { persisted$ } from '@/lib/observable';
 import * as api from '../api';
+import { autoDownloadNewChapters } from '../downloads/auto';
 import { isMockActive } from '../mock';
 import { queryKeys } from '../queries';
 import { queryClient } from '../query-client';
@@ -59,4 +60,5 @@ export function refreshAfterSync(res: { newChapters: number; readSynced: number 
   if (res.newChapters > 0 || res.readSynced > 0) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.libraryList(false) });
   }
+  void autoDownloadNewChapters(false);
 }

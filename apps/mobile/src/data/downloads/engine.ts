@@ -88,33 +88,35 @@ export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> 
  * Enqueue many chapters of one series — the download sheet / chapter picker fan-out. ONE bulk
  * request: the host records the whole queue as instant manifest writes (each chapter's page list
  * resolves lazily when the engine picks it up), so a 300-chapter "download all" lands in one
- * round-trip and closing the app mid-collection can no longer strand the un-POSTed tail.
+ * round-trip and closing the app mid-collection can no longer strand the un-POSTed tail. Resolves
+ * false when the enqueue failed (already logged).
  */
-export function enqueueChapters(
+export async function enqueueChapters(
   series: { bridgeId: string; seriesId: string; title: string; thumbnailUrl?: string; author?: string },
   chapters: { id: string; name: string; number?: number; languageCode?: string }[],
-): void {
-  if (chapters.length === 0) return;
-  void (async () => {
-    try {
-      await dlEnqueueChapters(series.bridgeId, series.seriesId, {
-        title: series.title,
-        ...(series.thumbnailUrl !== undefined && { thumbnailUrl: series.thumbnailUrl }),
-        ...(series.author !== undefined && { author: series.author }),
-        chapters: chapters.map((c) => ({
-          chapterId: c.id,
-          chapterName: c.name,
-          ...(c.number !== undefined && { number: c.number }),
-          ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
-        })),
-      });
-    } catch (e) {
-      logDiagnostic('download-enqueue', (e as Error)?.message || String(e), {
-        context: `bulk bridge=${series.bridgeId} series=${series.seriesId} chapters=${chapters.length}`,
-      });
-    }
-    invalidateDownloads(series.bridgeId, series.seriesId);
-  })();
+): Promise<boolean> {
+  if (chapters.length === 0) return true;
+  let ok = true;
+  try {
+    await dlEnqueueChapters(series.bridgeId, series.seriesId, {
+      title: series.title,
+      ...(series.thumbnailUrl !== undefined && { thumbnailUrl: series.thumbnailUrl }),
+      ...(series.author !== undefined && { author: series.author }),
+      chapters: chapters.map((c) => ({
+        chapterId: c.id,
+        chapterName: c.name,
+        ...(c.number !== undefined && { number: c.number }),
+        ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
+      })),
+    });
+  } catch (e) {
+    logDiagnostic('download-enqueue', (e as Error)?.message || String(e), {
+      context: `bulk bridge=${series.bridgeId} series=${series.seriesId} chapters=${chapters.length}`,
+    });
+    ok = false;
+  }
+  invalidateDownloads(series.bridgeId, series.seriesId);
+  return ok;
 }
 
 /** Pause one in-flight/queued chapter (resumable) — the host's engine aborts its workers promptly. */
