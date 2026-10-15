@@ -83,7 +83,7 @@ export default function ResultsScreen() {
     gridItems.length > 0 ? null : gridError ? (
       <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />
     ) : resultsQuery.isLoading ? (
-      <GridSkeleton numColumns={numColumns} rows={3} />
+      <GridSkeleton numColumns={numColumns} />
     ) : (
       <View style={styles.hint}>
         <ThemedText type="small" themeColor="textSecondary">

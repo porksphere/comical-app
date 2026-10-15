@@ -85,7 +85,7 @@ export function listingStatus({
 
 function ListingSkeleton() {
   const { numColumns } = useGridLayout();
-  return <GridSkeleton numColumns={numColumns} rows={3} />;
+  return <GridSkeleton numColumns={numColumns} />;
 }
 
 function EmptyState({ message: [title, detail] }: { message: ListingMessage }) {

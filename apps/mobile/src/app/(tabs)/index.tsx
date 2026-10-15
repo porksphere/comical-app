@@ -898,7 +898,7 @@ export default function BrowseScreen() {
           header={resultsHeader}
           // No footer skeleton for infinite-scroll pagination (`loadingMore`) — unreliable on web. Only
           // the initial / scope-switch loading state still shows one.
-          footer={gridLoading && gridItems.length === 0 ? <GridSkeleton numColumns={numColumns} rows={2} /> : null}
+          footer={gridLoading && gridItems.length === 0 ? <GridSkeleton numColumns={numColumns} /> : null}
           paddingTop={headerHeight + BarContentGap}
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
           bridge={currentBridge?.name ?? undefined}

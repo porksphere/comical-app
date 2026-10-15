@@ -6,7 +6,7 @@ import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reani
 
 import { FeedBackdrop, type FeedBand } from '@/components/feed-backdrop';
 import { HomeGridBlock } from '@/components/home-grid-block';
-import { SkeletonCard } from '@/components/grid-skeleton';
+import { SkeletonCard, useSkeletonRows } from '@/components/grid-skeleton';
 import {
   Rail,
   RailSkeleton,
@@ -314,9 +314,10 @@ export function ContentFeed({
 
   // Terminal-grid first-load skeleton — rows self-pad Spacing.four (via styles.row), matching the real
   // gridRow's inset (ContentFeed's container is centering-only, unlike GridSkeleton's SeriesGrid shape).
+  const skeletonRows = useSkeletonRows();
   const footer = terminalLoading ? (
     <View style={styles.skelFooter}>
-      {Array.from({ length: 2 }).map((_, r) => (
+      {Array.from({ length: skeletonRows }).map((_, r) => (
         <View key={r} style={[styles.row, styles.gridRow, { gap: columnGap }]}>
           {Array.from({ length: numColumns }).map((_, c) => (
             <SkeletonCard key={c} />
@@ -436,7 +437,7 @@ export function ContentFeed({
                 onLayout={(e) => onRowMeasured(item.key, e.nativeEvent.layout.height)}>
                 <SectionHead title={item.title} />
                 <View style={styles.homeGridRows}>
-                  {Array.from({ length: item.rows }).map((_, r) => (
+                  {Array.from({ length: skeletonRows }).map((_, r) => (
                     <View key={r} style={[styles.row, styles.gridRow, { gap: columnGap }]}>
                       {Array.from({ length: numColumns }).map((_, c) => (
                         <SkeletonCard key={c} />

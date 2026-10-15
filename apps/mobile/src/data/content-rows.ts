@@ -57,7 +57,7 @@ export type ContentRow =
   // A non-terminal grid section BODY (own "Load more") — heading is the preceding `sectionHead` row.
   | ({ type: 'gridBlock'; key: string; section: HomeGridSection } & BridgeScope)
   // Loading placeholder for a non-terminal grid block — self-headed.
-  | { type: 'gridBlockSkeleton'; key: string; title: string; rows: number }
+  | { type: 'gridBlockSkeleton'; key: string; title: string }
   // One row of up to `numColumns` terminal-grid cards (the infinite-scroll body). Each card may carry
   // its own bridge (cross-bridge grid).
   | { type: 'gridRow'; key: string; items: FeedCardEntry[] };
@@ -135,7 +135,7 @@ export function buildHomeRows(args: {
       rows.push({ type: 'railSkeleton', key: 'railsk:1' });
     }
     for (const l of nonTerminalGridListsPreview) {
-      rows.push({ type: 'gridBlockSkeleton', key: `blocksk:${l.id}`, title: l.name, rows: 2 });
+      rows.push({ type: 'gridBlockSkeleton', key: `blocksk:${l.id}`, title: l.name });
     }
     if (terminalGridPreview) {
       rows.push({ type: 'sectionHead', key: 'head:terminal', title: terminalGridPreview.name });
@@ -290,7 +290,7 @@ export function buildCustomPageRows(inputs: CustomPageSectionInput[]): ContentRo
   const rows: ContentRow[] = [];
   for (const s of inputs) {
     if (s.loading) {
-      if (s.layout === 'grid') rows.push({ type: 'gridBlockSkeleton', key: `blocksk:${s.key}`, title: s.title, rows: 2 });
+      if (s.layout === 'grid') rows.push({ type: 'gridBlockSkeleton', key: `blocksk:${s.key}`, title: s.title });
       else rows.push({ type: 'railSkeleton', key: `railsk:${s.key}`, title: s.title, bridgeId: s.bridgeId });
       continue;
     }

@@ -5,7 +5,7 @@
  * "cards incoming" placeholder. Mirrors a real card's cell so it reads at the
  * same size and column offset as the cards that replace it.
  */
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
@@ -27,12 +27,25 @@ export function SkeletonCard() {
   );
 }
 
+const SKELETON_LINE_H = 12;
+
+/** Enough skeleton rows to fill the window at the grid's card size. A fixed count left most of a
+ *  desktop window empty, where six-across cards make each row short next to the window's height. */
+export function useSkeletonRows(): number {
+  const { cardWidth } = useGridLayout();
+  const { height } = useWindowDimensions();
+  const rowHeight = cardWidth * 1.5 + SKELETON_LINE_H * 2 + Spacing.one * 2 + Spacing.half * 2 + Spacing.three;
+  if (!(rowHeight > 0)) return 2;
+  return Math.min(8, Math.max(2, Math.ceil(height / rowHeight)));
+}
+
 /**
  * Skeleton rows shown while a grid's first page loads (scope switch, retry, etc.).
  * Infinite-scroll pagination itself shows no skeleton — only the initial load.
  */
-export function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }) {
+export function GridSkeleton({ numColumns }: { numColumns: number }) {
   const { columnGap } = useGridLayout();
+  const rows = useSkeletonRows();
   return (
     <View style={styles.skelFooter}>
       {Array.from({ length: rows }).map((_, r) => (
@@ -77,7 +90,7 @@ const styles = StyleSheet.create({
     aspectRatio: 2 / 3,
   },
   skelLine: {
-    height: 12,
+    height: SKELETON_LINE_H,
     borderRadius: 4,
   },
   skelLineShort: {

@@ -474,7 +474,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   const emptyBody = !showEmpty ? null : gridError ? (
     <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />
   ) : !scope ? null : resultsQuery.isLoading ? (
-    <GridSkeleton numColumns={numColumns} rows={2} />
+    <GridSkeleton numColumns={numColumns} />
   ) : (
     <View style={styles.hint}>
       <ThemedText type="small" themeColor="textSecondary" style={styles.hintText}>
