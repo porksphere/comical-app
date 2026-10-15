@@ -3,7 +3,7 @@ import { Pressable, StyleSheet } from 'react-native';
 import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { OptionActionRow, OptionMenu, OptionRow } from '@/components/overlay/option-menu';
-import { Selector, useOptionThumbBox, useSubtitleSelectorStyle } from '@/components/selector';
+import { Selector, SelectorCaret, useOptionThumbBox, useSubtitleSelectorStyle } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import {
@@ -58,9 +58,7 @@ export function LibraryCollectionSelector({
       <ThemedText numberOfLines={1} style={[styles.triggerLabel, type.label]}>
         {currentLabel}
       </ThemedText>
-      <ThemedText themeColor="textSecondary" style={type.caret}>
-        ▾
-      </ThemedText>
+      <SelectorCaret />
     </Pressable>
   );
 }

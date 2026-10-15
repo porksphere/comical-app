@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet } from 'react-native';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
+import { ChevronDownIcon } from '@/components/icons/ui-icons';
 import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { ThemedText } from '@/components/themed-text';
@@ -46,10 +47,18 @@ type SelectorProps = {
   testID: string;
 };
 
-/** The `subtitle` trigger's type and caret, for a bar title that sits beside a `Selector`. */
+/** The `subtitle` trigger's type, for a bar title that sits beside a `Selector`. */
 export function useSubtitleSelectorStyle() {
   const compact = useIsCompact();
-  return { label: compact ? styles.subtitleCompact : styles.subtitleWide, caret: styles.caretSm };
+  return { label: compact ? styles.subtitleCompact : styles.subtitleWide };
+}
+
+/** The trigger's dropdown caret — the sidebar's disclosure chevron, at rest pointing down. */
+export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['size'] }) {
+  const theme = useTheme();
+  const compact = useIsCompact();
+  const px = size === 'title' ? 20 : size === 'subtitle' ? (compact ? 16 : 18) : 14;
+  return <ChevronDownIcon color={theme.textSecondary} size={px} />;
 }
 
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
@@ -94,9 +103,7 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
         ]}>
         {labels?.[value] ?? value}
       </ThemedText>
-      <ThemedText themeColor="textSecondary" style={size === 'title' ? styles.caretLg : styles.caretSm}>
-        ▾
-      </ThemedText>
+      <SelectorCaret size={size} />
     </Pressable>
   );
 }
@@ -218,12 +225,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '700',
-  },
-  caretLg: {
-    fontSize: 20,
-  },
-  caretSm: {
-    fontSize: 13,
   },
   optionThumb: {
     borderRadius: 6,
