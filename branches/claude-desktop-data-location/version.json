@@ -1,6 +1,0 @@
-{
-  "commit": "8928f13",
-  "version": "0.6.1.9",
-  "notes": "• Let desktop keep its data in a folder of your choice\n• Use a native segmented control for the chapter tabs on mobile\n• Show confirms as a system alert on mobile\n• Use the OS's own pull-down for sort, group and filter menus on mobile\n• Bump comical: skip direct-bridge series in background sync\n• Record a read opened from an Activity row\n• Record a read picked from a card's page rail or a sequence's details\n• Record a read picked from the series details card\n• release: 0.6.1 (#155)\n• Fix back-swipe never committing: declare shape consts before their worklets\n• Decide a back-swipe's angle once, over its opening stretch\n• Judge a back-swipe flick's straightness by where it was headed\n• Show every item in a hero rail's wide grid\n• Draw the series card's title peek in a portal so nothing clips it\n• release: 0.6.0 (#154)\n• Size card rows to their tallest cover\n• Bump comical: QuickJS TextEncoder/TextDecoder/atob/btoa polyfills\n• Rail: hero rails use bigger cards on desktop\n• Library filter: multi-select reading states and sources\n• Filter the Library by source",
-  "publishedAt": "2026-10-15T01:07:39Z"
-}
