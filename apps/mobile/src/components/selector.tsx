@@ -53,13 +53,15 @@ export function useSubtitleSelectorStyle() {
   return { label: compact ? styles.subtitleCompact : styles.subtitleWide };
 }
 
-/** The trigger's dropdown caret. */
+/** The trigger's dropdown caret. Centred on the label's x-height rather than its line box, which
+ *  sits nearer the cap height — so it lines up with a word that ends in lowercase. */
 export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['size'] }) {
   const theme = useTheme();
   const compact = useIsCompact();
   const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : 8;
+  const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (compact ? 22.4 : 28) : 14;
   return (
-    <View style={styles.caret}>
+    <View style={[styles.caret, { transform: [{ translateY: Math.round(fontSize * 0.09) }] }]}>
       <CaretDownIcon color={theme.textSecondary} size={px} />
     </View>
   );
