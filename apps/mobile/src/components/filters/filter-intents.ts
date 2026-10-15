@@ -12,11 +12,14 @@ import type { FilterDef, FilterValue, TriState } from './filter-types';
 const TAG_SELECTABLE = ['tags', 'includeExclude', 'multi'] as const;
 
 /** Candidate filter-field ids (lowercased) a bridge might use for each meta key tapped on the
- *  Series screen — matched against `FilterDef.id` so e.g. an Author tap lands on that bridge's own
- *  author filter when it has one. */
+ *  Series screen, in preference order — matched against `FilterDef.id` so e.g. an Author tap lands
+ *  on that bridge's own author filter when it has one. Author and artist fall back to each other:
+ *  sources disagree about which word names the credit (a gallery site files its creators as
+ *  "artists" but a bridge still reports the primary credit as `author`), and a credit search on
+ *  the other field beats a free-text search on the name. */
 export const META_FILTER_ALIASES: Record<'author' | 'artist' | 'type', string[]> = {
-  author: ['author', 'authors'],
-  artist: ['artist', 'artists'],
+  author: ['author', 'authors', 'artist', 'artists'],
+  artist: ['artist', 'artists', 'author', 'authors'],
   type: ['type', 'format', 'category'],
 };
 
@@ -55,9 +58,9 @@ export function resolveTagIntent(defs: FilterDef[], intent: TagIntent): TagInten
 /** Resolve a tapped Author/Artist/Type meta cell: prefer the bridge's own field for that meta key
  *  (so an Author tap lands on its author filter), else fall back to a free-text search. */
 export function resolveMetaIntent(defs: FilterDef[], intent: MetaIntent): MetaIntentResult {
-  const aliases = META_FILTER_ALIASES[intent.metaKey];
-  const def = defs.find((d) => aliases.includes(d.id.toLowerCase()));
-  if (def) {
+  for (const alias of META_FILTER_ALIASES[intent.metaKey]) {
+    const def = defs.find((d) => d.id.toLowerCase() === alias);
+    if (!def) continue;
     if (def.type === 'string') return { kind: 'filter', defId: def.id, value: intent.value };
     if (def.type === 'multi' || def.type === 'includeExclude' || def.type === 'tags') {
       const match = def.options?.find((o) => o.label.toLowerCase() === intent.value.toLowerCase());

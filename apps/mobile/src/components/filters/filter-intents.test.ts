@@ -109,6 +109,43 @@ describe('resolveMetaIntent', () => {
     });
   });
 
+  test('Author tap on a bridge with only an artist filter → the artist filter', () => {
+    const artistStr: FilterDef = { id: 'artist', label: 'Artist', type: 'string' };
+    expect(resolveMetaIntent([tagsDef, artistStr], { metaKey: 'author', value: 'shindol' })).toEqual({
+      kind: 'filter',
+      defId: 'artist',
+      value: 'shindol',
+    });
+  });
+
+  test('Artist tap on a bridge with only an author filter → the author filter', () => {
+    expect(resolveMetaIntent([authorStr], { metaKey: 'artist', value: 'Oda' })).toEqual({
+      kind: 'filter',
+      defId: 'author',
+      value: 'Oda',
+    });
+  });
+
+  test("the meta key's own field wins over the other credit field, whatever the def order", () => {
+    const artistStr: FilterDef = { id: 'artist', label: 'Artist', type: 'string' };
+    expect(resolveMetaIntent([artistStr, authorStr], { metaKey: 'author', value: 'Oda' })).toMatchObject({
+      defId: 'author',
+    });
+    expect(resolveMetaIntent([authorStr, artistStr], { metaKey: 'artist', value: 'Oda' })).toMatchObject({
+      defId: 'artist',
+    });
+  });
+
+  test('own field has no matching option → the other credit field is tried before free text', () => {
+    const authorTags: FilterDef = { id: 'author', label: 'Author', type: 'tags', options: [{ value: 'a1', label: 'Oda' }] };
+    const artistStr: FilterDef = { id: 'artist', label: 'Artist', type: 'string' };
+    expect(resolveMetaIntent([authorTags, artistStr], { metaKey: 'author', value: 'Toriyama' })).toEqual({
+      kind: 'filter',
+      defId: 'artist',
+      value: 'Toriyama',
+    });
+  });
+
   test('no matching field at all → fall back to query', () => {
     expect(resolveMetaIntent([tagsDef], { metaKey: 'author', value: 'Oda' })).toEqual({
       kind: 'query',
