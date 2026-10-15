@@ -17,8 +17,7 @@ import { trace } from '@/lib/gesture-trace';
 import { useScrubHaptics } from '@/lib/scrub-haptics';
 
 /**
- * The reader's bottom bar (native and desktop — a phone-sized browser keeps the tap-to-jump
- * progress pill):
+ * The reader's bottom bar (NATIVE only — web keeps the tap-to-jump progress pill):
  * a page scrubber flanked by chapter-skip buttons, with the page count in a chip
  * beneath it (see COUNTER_H) — the one piece of the chrome that stays faintly on
  * screen when the rest has hidden.

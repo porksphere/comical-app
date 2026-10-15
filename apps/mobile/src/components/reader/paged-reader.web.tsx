@@ -36,7 +36,8 @@ import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
-  /** There is no between-pages position to draw here, so a scrub is the nearest-page jump. */
+  /** Web has no continuous scrubber (it keeps the tap-to-jump progress pill), so this is just the
+   *  nearest-page jump — present only to satisfy the shared handle shape. */
   scrubTo: (logical: number) => void;
 };
 

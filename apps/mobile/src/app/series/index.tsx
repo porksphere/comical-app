@@ -4618,7 +4618,6 @@ const ReaderPane = forwardRef<
   const mock = useMockActive();
   const queryClient = useQueryClient();
   const [settings] = useReaderSettings();
-  const scrubber = useHasScrubber();
   // The fit the pages are drawn to: the setting, or the axis a `switch-fit` double-tap has put in
   // its place for the moment (see `fitOverride$`). Cleared with this pane, so leaving the reader
   // — a chapter crossing the run doesn't cover, or the series page — returns to the setting.
@@ -5136,7 +5135,7 @@ const ReaderPane = forwardRef<
 
       {/* Bottom chrome — sits still while the page travels. */}
       <Animated.View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-      {!scrubber ? (
+      {IS_WEB ? (
         <ProgressPill
           current={currentPage}
           total={pages.length}
@@ -5163,8 +5162,7 @@ const ReaderPane = forwardRef<
           onPrevChapter={() => onSkipChapter(-1)}
           onNextChapter={() => onSkipChapter(1)}
           onScrub={scrubTo}
-          // The web pager has no between-pages scrub to drive, so it takes the nearest-page jump.
-          scrubTarget={settings.mode === 'paged' && !IS_WEB ? scrubFlat : undefined}
+          scrubTarget={settings.mode === 'paged' ? scrubFlat : undefined}
           offset={stitched ? prefixLen : 0}
           // The chapter being READ — the same one `offset` and `onSeek` speak. `total` above is
           // whatever the pill is counting, which mid-crossing is the neighbour. See `scrubTotal`.
@@ -5179,13 +5177,6 @@ const ReaderPane = forwardRef<
   );
 });
 
-/** The reader's bottom bar is the scrubber everywhere but a phone-sized browser, which keeps the
- *  tap-to-jump progress pill. */
-function useHasScrubber(): boolean {
-  const desktop = useIsDesktop();
-  return !IS_WEB || desktop;
-}
-
 /** The chrome's "Details" pill — the guaranteed, non-gesture way into the details card. Sits above
  *  the bottom chrome and fades with it. Needed because the cross-axis swipe can't always win:
  *  the web pager owns its whole touch surface, and an overflowing fit-width page's content-pan
@@ -5198,21 +5189,20 @@ function DetailsHint({
   onPress: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const scrubber = useHasScrubber();
   const style = useAnimatedStyle(() => ({
     opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
   }));
   return (
     <Animated.View
       pointerEvents={visible ? 'box-none' : 'none'}
-      // A gap above the bottom chrome's top edge: the navigator's, or the progress pill's on a
-      // phone-sized browser (which has no page counter under it and so sits lower). On a direct series the
+      // A gap above the bottom chrome's top edge: the navigator's on native, the progress pill's
+      // on web (which has no page counter under it and so sits lower). On a direct series the
       // scrubber pill spans the whole width, straight under this, so the gap is what separates
       // the two backgrounds.
       style={[
         styles.detailsHintWrap,
         {
-          bottom: !scrubber
+          bottom: IS_WEB
             ? insets.bottom + Spacing.two + 48
             : bottomChromeInset(insets.bottom) + BOTTOM_CHROME_HEIGHT + Spacing.two,
         },
