@@ -3,10 +3,11 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ChipRow } from '@/components/chip';
-import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
+import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { useComicalExcluded } from '@/data/comical-home';
+import { useBridgeAutoDownload, useDownloadPrefs, type AutoDownloadKind } from '@/data/downloads/prefs';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -262,6 +263,35 @@ export function BridgePrefsToggles({ bridgeId }: { bridgeId: string }) {
         label="Don't track reading history for this bridge"
         right={<ThemedSwitch value={data.historyDisabled} onValueChange={(v) => set({ historyDisabled: v })} />}
       />
+    </SettingsSection>
+  );
+}
+
+const AUTO_DOWNLOAD_ROWS: { kind: AutoDownloadKind; label: string; description: string; chapters?: boolean }[] = [
+  { kind: 'autoSeries', label: 'Saved series', description: 'Download every chapter of a series you add to your library.' },
+  { kind: 'autoNew', label: 'New chapters', description: "Download new chapters of saved series as they're found.", chapters: true },
+  { kind: 'autoChapters', label: 'Saved chapters', description: 'Download a chapter when you save it.', chapters: true },
+  { kind: 'autoPages', label: 'Saved pages', description: 'Download a page when you save it.' },
+];
+
+/** This bridge's opt-outs from auto-download, one per kind that is on in Settings → General. A
+ *  direct bridge's series have no chapters, so the chapter kinds never apply to it. */
+export function BridgeAutoDownloadToggles({ bridgeId, direct }: { bridgeId: string; direct: boolean }) {
+  const prefs = useDownloadPrefs();
+  const [optedIn, set] = useBridgeAutoDownload(bridgeId);
+  const rows = AUTO_DOWNLOAD_ROWS.filter((r) => prefs[r.kind] && !(direct && r.chapters));
+  if (rows.length === 0) return null;
+  return (
+    <SettingsSection title="Auto-download">
+      {rows.map((r) => (
+        <SettingsToggleRow
+          key={r.kind}
+          label={r.label}
+          description={r.description}
+          value={optedIn(r.kind)}
+          onChange={(on) => set(r.kind, on)}
+        />
+      ))}
     </SettingsSection>
   );
 }

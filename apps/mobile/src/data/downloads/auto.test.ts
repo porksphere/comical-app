@@ -1,5 +1,5 @@
 /**
- * Auto-download on save: each kind of item is gated by its own pref, a page goes out as a partial
+ * Auto-download on save: each kind of item is gated by its own pref (and its bridge's opt-out), a page goes out as a partial
  * chapter, and a series enqueues only the chapters not already kept or queued. Plus the two ways in
  * outside a save: downloading the whole library, and downloading what syncs find.
  */
@@ -23,6 +23,7 @@ let activity: { bridgeId: string; seriesId: string; chapterId: string; title: st
 let bulkFails = false;
 let activityGate: Promise<void> = Promise.resolve();
 const persistedStores = new Map<string, { value: unknown }>();
+let bridgeOptOuts: Record<string, Partial<Record<keyof typeof prefs, boolean>>> = {};
 
 mock.module('../api', () => ({
   dlEnqueueChapter: async (_b: string, _s: string, chapterId: string, body: Record<string, unknown>) => {
@@ -84,6 +85,9 @@ mock.module('expo-network', () => ({
 mock.module('./prefs', () => ({
   getDownloadPrefsSync: () => prefs,
   downloadPrefs$: { autoNew: { set: (v: boolean) => (prefs.autoNew = v) } },
+  bridgeAutoDownload$: {},
+  autoDownloadsFor: (bridgeId: string, kind: 'autoSeries' | 'autoNew' | 'autoChapters' | 'autoPages') =>
+    prefs[kind] && bridgeOptOuts[bridgeId]?.[kind] !== false,
 }));
 mock.module('@/lib/observable', () => ({
   persisted$: (name: string, initial: unknown) => {
@@ -132,6 +136,7 @@ beforeEach(() => {
   bulkFails = false;
   activityGate = Promise.resolve();
   watermark.value = 100;
+  bridgeOptOuts = {};
 });
 
 describe('autoDownloadPage', () => {
@@ -168,6 +173,15 @@ describe('autoDownloadChapter', () => {
     autoDownloadChapter(false, { ...SERIES, chapterId: 'c2', chapterName: 'Two', number: 2 });
     await flush();
     expect(enqueued).toEqual([{ chapterId: 'c2', body: { title: 'T', chapterName: 'Two', number: 2 } }]);
+  });
+
+  test("a bridge that opted out of chapters is skipped, while its pages still go", async () => {
+    bridgeOptOuts = { b: { autoChapters: false } };
+    autoDownloadChapter(false, { ...SERIES, chapterId: 'c2' });
+    autoDownloadChapter(false, { ...SERIES, bridgeId: 'other', chapterId: 'c3' });
+    autoDownloadPage(false, { ...SERIES, chapterId: 'c4', pageIndex: 0 });
+    await flush();
+    expect(enqueued.map((e) => e.chapterId)).toEqual(['c3', 'c4']);
   });
 
   test('is gated by its own pref, not the others', async () => {
@@ -269,6 +283,19 @@ describe('autoDownloadLibrary', () => {
     library = [entry('s1', 10), entry('s2', 5)];
     expect(await librarySize()).toEqual({ series: 2, chapters: 15 });
   });
+
+  test("a bridge that opted out of series is left out of both the download and the offer", async () => {
+    library = [entry('s1', 10), { ...entry('s2', 5), bridgeId: 'off' }];
+    bridges = [
+      { id: 'b', capabilities: [] },
+      { id: 'off', capabilities: [] },
+    ];
+    saved = { s1: [ch('a', 1)], s2: [ch('c', 1)] };
+    bridgeOptOuts = { off: { autoSeries: false } };
+    expect(await librarySize()).toEqual({ series: 1, chapters: 10 });
+    expect(await autoDownloadLibrary(ds, false)).toBe(1);
+    expect(bulkIds()).toEqual([['s1', ['a']]]);
+  });
 });
 
 const item = (seriesId: string, chapterId: string, detectedAt: number, read = false) => ({
@@ -287,6 +314,15 @@ describe('autoDownloadNewChapters', () => {
     await autoDownloadNewChapters(false);
     expect(bulkIds()).toEqual([['s1', ['n1', 'n2']]]);
     expect(watermark.value).toBe(170);
+  });
+
+  test("a bridge that opted out of new chapters is skipped, and the watermark still advances", async () => {
+    saved = { s1: [ch('n1', 1)], s2: [ch('m1', 1)] };
+    activity = [item('s1', 'n1', 150), { ...item('s2', 'm1', 160), bridgeId: 'off' }];
+    bridgeOptOuts = { off: { autoNew: false } };
+    await autoDownloadNewChapters(false);
+    expect(bulkIds()).toEqual([['s1', ['n1']]]);
+    expect(watermark.value).toBe(160);
   });
 
   test('a chapter already kept is not enqueued again', async () => {

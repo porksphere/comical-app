@@ -1,0 +1,49 @@
+# Web copy of ../mobile/bridge-auto-download.yaml, kept in sync by hand — see that file's header.
+#
+# Selectors hitting the web-only aria-label quirk (see ../README.md): the tab, category rows, the
+# bridge row and the back button are selected by their labels. The toggles keep their testIDs (a
+# ThemedSwitch has no accessibilityLabel), same as settings-walkthrough.yaml.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Settings"
+- tapOn:
+    id: "General"
+- scrollUntilVisible:
+    element:
+      id: "settings.toggle.saved-chapters"
+    direction: DOWN
+- tapOn:
+    id: "settings.toggle.saved-chapters"
+- tapOn:
+    id: "Go back"
+
+- tapOn:
+    id: "Bridges"
+- tapOn:
+    id: "Panelfox"
+- scrollUntilVisible:
+    element:
+      id: "settings.toggle.saved-chapters"
+    direction: DOWN
+    timeout: 20000
+- takeScreenshot: bridge-auto-download
+- tapOn:
+    id: "settings.toggle.saved-chapters"
+- tapOn:
+    id: "settings.toggle.saved-chapters"
+- tapOn:
+    id: "Go back"
+- tapOn:
+    id: "Go back"
+
+- tapOn:
+    id: "General"
+- scrollUntilVisible:
+    element:
+      id: "settings.toggle.saved-chapters"
+    direction: DOWN
+- tapOn:
+    id: "settings.toggle.saved-chapters"

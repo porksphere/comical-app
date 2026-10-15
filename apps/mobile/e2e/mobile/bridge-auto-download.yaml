@@ -1,0 +1,48 @@
+# A bridge opting out of one kind of auto-download: Settings -> General turns "Saved chapters" on,
+# which is what makes Panelfox's settings grow its own Auto-download section (a kind that's off
+# globally has nothing for a bridge to opt out of, so its row isn't drawn). The bridge's toggle is
+# flipped off and back on, then the global one is turned off again so later flows start clean.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.general"
+- scrollUntilVisible:
+    element:
+      id: "settings.toggle.saved-chapters"
+    direction: DOWN
+- tapOn:
+    id: "settings.toggle.saved-chapters"
+- tapOn:
+    id: "top-bar.back"
+
+- tapOn:
+    id: "settings.category.bridges"
+- tapOn:
+    id: "settings.row.panelfox"
+- scrollUntilVisible:
+    element:
+      id: "settings.toggle.saved-chapters"
+    direction: DOWN
+    timeout: 20000
+- takeScreenshot: bridge-auto-download
+- tapOn:
+    id: "settings.toggle.saved-chapters"
+- tapOn:
+    id: "settings.toggle.saved-chapters"
+- tapOn:
+    id: "top-bar.back"
+- tapOn:
+    id: "top-bar.back"
+
+- tapOn:
+    id: "settings.category.general"
+- scrollUntilVisible:
+    element:
+      id: "settings.toggle.saved-chapters"
+    direction: DOWN
+- tapOn:
+    id: "settings.toggle.saved-chapters"

@@ -1,6 +1,7 @@
 /**
  * Auto-download: saving something to the library downloads it, per kind of item, when the matching
- * Settings → General toggle is on. Called by the save paths on the transition from unsaved to saved
+ * Settings → General toggle is on and the item's bridge hasn't opted out of that kind in its own
+ * settings (`autoDownloadsFor`). Called by the save paths on the transition from unsaved to saved
  * only — re-filing a saved item must not re-download what the user may have deliberately deleted.
  *
  *  - series → every logical chapter not already kept or queued (the "Download all" set), or a direct
@@ -25,7 +26,7 @@ import { logDiagnostic } from '@/lib/diagnostics';
 import { persisted$, whenPersistLoaded } from '@/lib/observable';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './constants';
 import { enqueueChapter, enqueueChapters } from './engine';
-import { downloadPrefs$, getDownloadPrefsSync } from './prefs';
+import { autoDownloadsFor, bridgeAutoDownload$, downloadPrefs$, getDownloadPrefsSync } from './prefs';
 import { remaining, selectableGroups, toEnqueue } from './select';
 
 interface SeriesRef {
@@ -59,7 +60,7 @@ function report(e: unknown, context: string): void {
 /** A series was just added to the library. `direct` must be known to download a chapterless
  *  series — without it, an empty chapter list just downloads nothing. */
 export function autoDownloadSeries(ds: DataSource, mock: boolean, ref: SeriesRef & { direct?: boolean }): void {
-  if (mock || !getDownloadPrefsSync().autoSeries) return;
+  if (mock || !autoDownloadsFor(ref.bridgeId, 'autoSeries')) return;
   const series = withCover(mock, ref);
   if (ref.direct) {
     void enqueueChapter({ ...series, chapterId: DIRECT_DOWNLOAD_CHAPTER_ID, direct: true });
@@ -94,15 +95,15 @@ async function savedChapters(bridgeId: string, seriesId: string): Promise<Chapte
 
 /** What `autoDownloadLibrary` would take on, for the offer made when the series toggle goes on. */
 export async function librarySize(): Promise<{ series: number; chapters: number }> {
-  const library = (await getLibrary()) ?? [];
+  const library = ((await getLibrary()) ?? []).filter((s) => autoDownloadsFor(s.bridgeId, 'autoSeries'));
   return { series: library.length, chapters: library.reduce((n, s) => n + s.knownCount, 0) };
 }
 
 /**
  * Download every series already in the library, one at a time. Each reads the stored chapter list
  * and only asks the bridge for a series that has none (never synced), so a large library costs a
- * stored read per series rather than a bridge request. Series whose bridge isn't installed are
- * skipped. Resolves with how many series it enqueued.
+ * stored read per series rather than a bridge request. Series whose bridge isn't installed, or has
+ * opted out of series downloads, are skipped. Resolves with how many series it enqueued.
  */
 export async function autoDownloadLibrary(ds: DataSource, mock: boolean): Promise<number> {
   if (mock) return 0;
@@ -111,7 +112,7 @@ export async function autoDownloadLibrary(ds: DataSource, mock: boolean): Promis
   let count = 0;
   for (const entry of library ?? []) {
     const bridge = installed.get(entry.bridgeId);
-    if (!bridge) continue;
+    if (!bridge || !autoDownloadsFor(entry.bridgeId, 'autoSeries')) continue;
     const series = withCover(mock, {
       bridgeId: entry.bridgeId,
       seriesId: entry.seriesId,
@@ -170,7 +171,11 @@ export function autoDownloadNewChapters(mock: boolean): Promise<void> {
 async function downloadNewChapters(): Promise<void> {
   // The background task runs before anything has hydrated: an unloaded pref reads off, and an
   // unloaded watermark reads 0, which would restamp it to now and skip what the sync just found.
-  await Promise.all([whenPersistLoaded(downloadPrefs$), whenPersistLoaded(newChaptersSince$)]);
+  await Promise.all([
+    whenPersistLoaded(downloadPrefs$),
+    whenPersistLoaded(newChaptersSince$),
+    whenPersistLoaded(bridgeAutoDownload$),
+  ]);
   if (!getDownloadPrefsSync().autoNew) return;
   const since = newChaptersSince$.peek();
   if (since === 0) {
@@ -183,7 +188,7 @@ async function downloadNewChapters(): Promise<void> {
   let next = Math.max(...fresh.map((a) => a.detectedAt));
   const bySeries = new Map<string, ApiActivityItem[]>();
   for (const a of fresh) {
-    if (a.read) continue;
+    if (a.read || !autoDownloadsFor(a.bridgeId, 'autoNew')) continue;
     const key = JSON.stringify([a.bridgeId, a.seriesId]);
     bySeries.set(key, [...(bySeries.get(key) ?? []), a]);
   }
@@ -212,7 +217,7 @@ export function autoDownloadChapter(
   mock: boolean,
   ref: SeriesRef & { chapterId: string; chapterName?: string; number?: number; languageCode?: string },
 ): void {
-  if (mock || !getDownloadPrefsSync().autoChapters) return;
+  if (mock || !autoDownloadsFor(ref.bridgeId, 'autoChapters')) return;
   void enqueueChapter(withCover(mock, ref));
 }
 
@@ -221,7 +226,7 @@ export function autoDownloadPage(
   mock: boolean,
   ref: SeriesRef & { chapterId: string; pageIndex: number; chapterName?: string },
 ): void {
-  if (mock || !getDownloadPrefsSync().autoPages) return;
+  if (mock || !autoDownloadsFor(ref.bridgeId, 'autoPages')) return;
   const { pageIndex, ...rest } = withCover(mock, ref);
   void enqueueChapter({ ...rest, direct: ref.chapterId === DIRECT_DOWNLOAD_CHAPTER_ID, onlyPages: [pageIndex] });
 }

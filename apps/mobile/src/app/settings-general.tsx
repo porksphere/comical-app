@@ -287,7 +287,7 @@ export default function GeneralSettingsScreen() {
           />
           <SettingsToggleRow
             label="Saved pages"
-            description="Download a page when you save it."
+            description="Download a page when you save it. Each bridge can opt out of any of these in its own settings."
             value={autoPages}
             onChange={(v) => downloadPrefs$.autoPages.set(v)}
           />

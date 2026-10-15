@@ -50,3 +50,34 @@ export function useDownloadPrefs(): DownloadPrefs {
 export function getDownloadPrefsSync(): DownloadPrefs {
   return { ...DEFAULTS, ...downloadPrefs$.peek() };
 }
+
+/** The kinds of auto-download, each a global toggle above that a bridge can opt out of. */
+export type AutoDownloadKind = 'autoSeries' | 'autoNew' | 'autoChapters' | 'autoPages';
+
+/** Per-bridge opt-outs, keyed by bridge id. Only `false` is ever stored: a bridge takes part in
+ *  every kind that is on globally until it is switched off here. */
+export const bridgeAutoDownload$ = persisted$<Record<string, Partial<Record<AutoDownloadKind, boolean>>>>(
+  'comical:dl:autoBridges',
+  {},
+);
+
+/** Whether `kind` should auto-download for `bridgeId` right now: on globally and not opted out. */
+export function autoDownloadsFor(bridgeId: string, kind: AutoDownloadKind): boolean {
+  return getDownloadPrefsSync()[kind] && bridgeAutoDownload$.peek()[bridgeId]?.[kind] !== false;
+}
+
+/** Reactive `[optedIn, set]` for one bridge's settings. Writes replace the whole record, as
+ *  `useComicalExcluded` does, so subscribers elsewhere see a new reference. */
+export function useBridgeAutoDownload(
+  bridgeId: string,
+): readonly [(kind: AutoDownloadKind) => boolean, (kind: AutoDownloadKind, on: boolean) => void] {
+  const map = use$(bridgeAutoDownload$);
+  const set = (kind: AutoDownloadKind, on: boolean) => {
+    const all = bridgeAutoDownload$.peek();
+    const { [kind]: _, ...rest } = all[bridgeId] ?? {};
+    const next = on ? rest : { ...rest, [kind]: false };
+    const { [bridgeId]: __, ...others } = all;
+    bridgeAutoDownload$.set(Object.keys(next).length > 0 ? { ...others, [bridgeId]: next } : others);
+  };
+  return [(kind) => map[bridgeId]?.[kind] !== false, set] as const;
+}
