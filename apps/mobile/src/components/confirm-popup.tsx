@@ -10,14 +10,11 @@
  * (WHICH registry/bridge), a non-danger `tone`, and an ASYNC `onConfirm` — the popup then stays
  * open with the verb reading `pendingLabel` until it settles, showing a rejection inline (via
  * `friendlyError` + `errorFallback`) so the user can retry or cancel.
- *
- * That card is WEB's. iOS and Android get the system alert instead (`nativeConfirm`), which is the
- * dialog those platforms already teach for exactly this question.
  */
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Alert, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { BackHandler, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   interpolate,
   runOnJS,
@@ -82,39 +79,7 @@ function setConfirm(req: ConfirmRequest | null): void {
 }
 
 export function openConfirm(req: ConfirmRequest): void {
-  if (Platform.OS === 'web') setConfirm(req);
-  else nativeConfirm(req);
-}
-
-/**
- * A system alert can't stay up while an async `onConfirm` runs, so the work runs after it closes and
- * a rejection reopens it with the error under the message — the same retry-or-cancel the card offers.
- * With no `title`, the message takes the title slot: a UIKit alert's message alone is drawn as small
- * body text under an empty heading.
- */
-function nativeConfirm(req: ConfirmRequest, error?: string): void {
-  const heading = req.title ?? req.message;
-  const body = [req.title ? req.message : undefined, req.detail, error].filter(Boolean).join('\n\n');
-  const run = async () => {
-    try {
-      await req.onConfirm();
-    } catch (e) {
-      nativeConfirm(req, friendlyError(e, req.errorFallback ?? 'Something went wrong'));
-    }
-  };
-  Alert.alert(
-    heading,
-    body || undefined,
-    [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: error ? 'Try Again' : req.confirmLabel,
-        style: req.tone === 'primary' ? 'default' : 'destructive',
-        onPress: () => void run(),
-      },
-    ],
-    { cancelable: true },
-  );
+  setConfirm(req);
 }
 
 function useConfirm(): ConfirmRequest | null {
@@ -187,6 +152,13 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     progress.set(withSpring(1, OPEN_SPRING));
+    // BackHandler is native-only (it raises a red dev error on web).
+    if (Platform.OS === 'web') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      dismiss();
+      return true;
+    });
+    return () => sub.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -21,10 +21,9 @@
  *   there is otherwise nothing at all between touching a row and the sheet closing.
  */
 import type { ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { CheckIcon } from '@/components/icons/ui-icons';
-import { NativeMenu, type NativeMenuSection } from '@/components/overlay/native-menu';
 import {
   HEADER_TO_LIST_GAP,
   MeasuredHeader,
@@ -106,7 +105,6 @@ export function OptionMenuButton({
   icon,
   badge,
   render,
-  native,
 }: {
   testID: string;
   accessibilityLabel: string;
@@ -114,25 +112,10 @@ export function OptionMenuButton({
   /** A dot on the icon — the menu holds a non-default choice that narrows what's shown. */
   badge?: boolean;
   render: () => ReactNode;
-  /** The same menu as rows, for the OS's own pull-down on iOS and Android. `render` is web's. */
-  native?: NativeMenuSection[];
 }) {
   const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
-  const badgeDot = badge && (
-    <View style={[styles.menuBadge, { backgroundColor: theme.accent, borderColor: theme.background }]} />
-  );
-  if (native && Platform.OS !== 'web') {
-    return (
-      <NativeMenu testID={testID} sections={native}>
-        <View accessible accessibilityRole="button" accessibilityLabel={accessibilityLabel} style={styles.menuButton}>
-          {icon}
-          {badgeDot}
-        </View>
-      </NativeMenu>
-    );
-  }
   return (
     <Pressable
       testID={testID}
@@ -144,7 +127,7 @@ export function OptionMenuButton({
       style={[styles.menuButton, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() => openAt(render, { popover: true })}>
       {icon}
-      {badgeDot}
+      {badge && <View style={[styles.menuBadge, { backgroundColor: theme.accent, borderColor: theme.background }]} />}
     </Pressable>
   );
 }

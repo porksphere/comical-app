@@ -41,8 +41,6 @@ export function LibraryFilterButton({ withShow, present }: { withShow?: boolean;
   const show = useLibraryShow();
   const bridges = useLibraryBridges();
   const narrowing = (withShow && show.length > 0) || bridges.length > 0;
-  const { nameOf } = useBridgeMap();
-  const sources = useFilterSources(present);
   return (
     <OptionMenuButton
       testID="library.filter"
@@ -52,56 +50,8 @@ export function LibraryFilterButton({ withShow, present }: { withShow?: boolean;
       accessibilityLabel={withShow ? 'Filter by reading state or source' : 'Filter by source'}
       icon={<FilterIcon color={theme.text} size={22} filled={narrowing} />}
       render={() => <LibraryFilterMenu withShow={withShow} present={present} />}
-      // A native menu closes on every pick, so a multi-select there is one toggle per opening. It
-      // reopens on the current ticks, since these rows are rebuilt from the store on each render.
-      native={[
-        ...(withShow
-          ? [
-              {
-                key: 'library.show',
-                title: 'Show',
-                items: [
-                  { key: 'all', label: 'Everything', checked: show.length === 0, onSelect: clearLibraryShow },
-                  ...READ_STATES.map((state) => ({
-                    key: state,
-                    label: SHOW_LABELS[state],
-                    checked: show.includes(state),
-                    onSelect: () => toggleLibraryShow(state),
-                  })),
-                ],
-              },
-            ]
-          : []),
-        {
-          key: 'library.bridge',
-          title: 'Source',
-          items: [
-            { key: 'all', label: 'All sources', checked: bridges.length === 0, onSelect: clearLibraryBridges },
-            ...sources.map((id) => ({
-              key: id,
-              label: nameOf(id),
-              checked: bridges.includes(id),
-              onSelect: () => toggleLibraryBridge(id),
-            })),
-          ],
-        },
-      ]}
     />
   );
-}
-
-/** The sources the filter offers: those with something visible, sorted by name. */
-function useFilterSources(present: Present): string[] {
-  const bridges = useLibraryBridges();
-  const { nameOf } = useBridgeMap();
-  const visible = useVisibleByBridge(present);
-  return useMemo(() => {
-    const ids = new Set(visible.map((i) => i.bridgeId));
-    // A ticked source stays listed even once nothing from it is left, or the menu would hide what is
-    // emptying the grid along with the way to untick it.
-    for (const id of bridges) ids.add(id);
-    return [...ids].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-  }, [visible, bridges, nameOf]);
 }
 
 /**
@@ -113,7 +63,15 @@ function LibraryFilterMenu({ withShow, present }: { withShow?: boolean; present:
   const show = useLibraryShow();
   const bridges = useLibraryBridges();
   const { nameOf } = useBridgeMap();
-  const sources = useFilterSources(present);
+  const visible = useVisibleByBridge(present);
+
+  const sources = useMemo(() => {
+    const ids = new Set(visible.map((i) => i.bridgeId));
+    // A ticked source stays listed even once nothing from it is left, or the menu would hide what is
+    // emptying the grid along with the way to untick it.
+    for (const id of bridges) ids.add(id);
+    return [...ids].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  }, [visible, bridges, nameOf]);
 
   return (
     <OptionMenu title="Filter">

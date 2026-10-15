@@ -1,4 +1,3 @@
-import { SegmentedControl } from '@expo/ui/community/segmented-control';
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
 import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
@@ -53,7 +52,7 @@ import { useHovered } from '@/hooks/use-hovered';
 import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
-import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useTheme } from '@/hooks/use-theme';
 import {
   dlDeleteChapter,
   dlGetSeries,
@@ -242,25 +241,6 @@ function Segmented<T extends string>({
         </SegmentButton>
       ))}
     </ThemedView>
-  );
-}
-
-/** The chapter tabs as the platform's own segmented control — SwiftUI's segmented picker on iOS,
- *  Material's segmented buttons on Android. Web keeps `Segmented`, which has no native peer. A host
- *  can't size the control to its labels, so a roomy column gives it a fixed width instead. */
-function NativeChapterTabs({ active, fill, onChange }: { active: Tab; fill: boolean; onChange: (id: Tab) => void }) {
-  const scheme = useActiveColorScheme();
-  // The testID rides a wrapper: Android's control drops it, and the segments themselves can't carry
-  // one, so flows select a segment by its label inside this.
-  return (
-    <View testID="series.chapters.tabs" style={fill ? styles.tabsFill : styles.nativeTabs}>
-      <SegmentedControl
-        values={TABS.map((t) => t.label)}
-        selectedIndex={Math.max(0, TABS.findIndex((t) => t.id === active))}
-        onChange={(e) => onChange(TABS[e.nativeEvent.selectedSegmentIndex].id)}
-        appearance={scheme}
-      />
-    </View>
   );
 }
 
@@ -701,38 +681,27 @@ export function ChapterScrollList({
         Chapters
       </ThemedText>
       <View style={styles.controls}>
-        {Platform.OS !== 'web' ? (
-          <NativeChapterTabs
-            active={tab}
-            fill={fillTabs}
-            onChange={(id) => {
-              setTab(id);
-              setMiddleExpanded(false);
-            }}
-          />
-        ) : (
-          <Segmented
-            options={TABS.map((t) => ({
-              id: t.id,
-              accessibilityLabel: t.label,
-              testID: testId('series.chapters.tab', t.id),
-              render: (active) => (
-                <ThemedText
-                  type="small"
-                  numberOfLines={1}
-                  style={[styles.tabLabel, active ? { color: theme.accentOn } : { color: theme.textSecondary }]}>
-                  {t.label}
-                </ThemedText>
-              ),
-            }))}
-            active={tab}
-            onChange={(id) => {
-              setTab(id);
-              setMiddleExpanded(false);
-            }}
-            {...(fillTabs && { containerStyle: styles.tabsFill, itemStyle: styles.tabFill })}
-          />
-        )}
+        <Segmented
+          options={TABS.map((t) => ({
+            id: t.id,
+            accessibilityLabel: t.label,
+            testID: testId('series.chapters.tab', t.id),
+            render: (active) => (
+              <ThemedText
+                type="small"
+                numberOfLines={1}
+                style={[styles.tabLabel, active ? { color: theme.accentOn } : { color: theme.textSecondary }]}>
+                {t.label}
+              </ThemedText>
+            ),
+          }))}
+          active={tab}
+          onChange={(id) => {
+            setTab(id);
+            setMiddleExpanded(false);
+          }}
+          {...(fillTabs && { containerStyle: styles.tabsFill, itemStyle: styles.tabFill })}
+        />
         <SortToggle asc={asc} onToggle={() => setAsc((v) => !v)} />
       </View>
     </View>
@@ -2032,9 +2001,6 @@ const styles = StyleSheet.create({
   tabsFill: {
     flex: 1,
     minWidth: 0,
-  },
-  nativeTabs: {
-    width: 240,
   },
   // A fill-strip tab: shares the strip width equally with its siblings (each 1/3) with tighter
   // padding, so even the longest label fits its share without pushing the strip wider.

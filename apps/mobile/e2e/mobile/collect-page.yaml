@@ -33,8 +33,8 @@
 #     (collected-item-menu.tsx). A series tile opens the series card's menu instead.
 #   - collected.sort / .sort.* / .dir.* / .group.*   the saved-pages ordering menu
 #     (collected-sort-button.tsx). Sort and direction are SEPARATE server params, and grouping is
-#     client-side over the result — hence three sections rather than one fused list. On mobile it is
-#     the OS's pull-down, whose rows carry no testID (picked by label) and which closes on every pick.
+#     client-side over the result — hence three sections rather than one fused list. The menu stays
+#     open on sort/dir and closes on a grouping pick, which is why the steps below re-open it.
 #
 # The chrome AUTO-HIDES after 3s (CHROME_HIDE_MS in app/series/index.tsx), so every step that needs
 # the toolbar re-taps reader.control.toggle-chrome first rather than assuming it is still up. Same
@@ -145,14 +145,11 @@ appId: com.porksphere.comical
 
 # Sort and grouping. Grouping is applied client-side OVER the server's order, so switching to
 # "Series" inserts section headers without losing the chosen sort — the tiles must survive it.
-# Every pick closes the menu, so each one reopens it. It is the OS's own pull-down here, whose rows
-# carry no testID: "Series" is both a sort and a grouping, so the grouping is the one under its label.
+# Every pick closes the menu, so each one reopens it.
 - tapOn:
     id: "collected.sort"
 - tapOn:
-    text: "Series"
-    below:
-      text: "Group by"
+    id: "collected.group.series"
 - assertVisible:
     id: "collected\\.tile\\..*"
 
@@ -160,13 +157,13 @@ appId: com.porksphere.comical
 - tapOn:
     id: "collected.sort"
 - tapOn:
-    text: "Oldest first"
+    id: "collected.dir.asc"
 - assertNotVisible:
-    text: "Group by"
+    id: "collected.group.none"
 - tapOn:
     id: "collected.sort"
 - tapOn:
-    text: "None"
+    id: "collected.group.none"
 - assertVisible:
     id: "collected\\.tile\\..*"
 

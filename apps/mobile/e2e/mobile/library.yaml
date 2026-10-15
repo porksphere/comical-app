@@ -21,12 +21,11 @@ appId: com.porksphere.comical
 - tapOn:
     id: "library.search-close"
 
-# Sort. The sort, group and filter menus are the OS's own pull-down on mobile, whose rows carry no
-# testID, so a row is picked by its label (library-sort-button.tsx / library-filter-button.tsx).
+# Sort
 - tapOn:
     id: "library.sort"
 - tapOn:
-    text: "Title"
+    id: "library.sort.title"
 - assertVisible:
     id: "series-card\\..*"
 
@@ -35,51 +34,45 @@ appId: com.porksphere.comical
 - tapOn:
     id: "library.sort"
 - tapOn:
-    text: "Source"
+    id: "library.group.bridge"
 - assertVisible:
     text: "Panelfox"
 - tapOn:
     id: "library.sort"
 - tapOn:
-    text: "None"
+    id: "library.group.none"
 - assertVisible:
     id: "series-card\\..*"
 
 # Filter by read state (the seeded library has series behind on unread chapters). Its own button
-# beside the sort, and multi-select: a native menu closes on each pick, so every toggle reopens it,
-# and a second state widens the filter.
+# beside the sort, and multi-select: the menu stays open, and a second state widens the filter.
 - tapOn:
     id: "library.filter"
 - tapOn:
-    text: "Behind"
+    id: "library.show.behind"
 - assertVisible:
     id: "series-card\\..*"
 - tapOn:
-    id: "library.filter"
-- tapOn:
-    text: "Not started"
+    id: "library.show.unstarted"
 - assertVisible:
     id: "series-card\\..*"
 - tapOn:
-    id: "library.filter"
-- tapOn:
-    text: "Everything"
+    id: "library.show.all"
 
-# Narrow to one source ("Panelfox" is a seeded mock bridge), then back.
+# Narrow to one source ("panelfox" is a seeded mock bridge), then back.
 - tapOn:
-    id: "library.filter"
-- tapOn:
-    text: "Panelfox"
-    below:
-      text: "Source"
+    id: "library.bridge.panelfox"
 - assertVisible:
     id: "series-card\\..*"
 - tapOn:
-    id: "library.filter"
-- tapOn:
-    text: "All sources"
+    id: "library.bridge.all"
 - assertVisible:
     id: "series-card\\..*"
+
+# Nothing closes it on a pick, so close it: on a phone the backdrop is over the bar, and the tap
+# lands on that.
+- tapOn:
+    id: "library.filter"
 
 # Collection scope -> Manage Collections -> back
 - tapOn:
