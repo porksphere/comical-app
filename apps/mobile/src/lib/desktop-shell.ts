@@ -7,6 +7,8 @@ import { use$ } from '@legendapp/state/react';
 import type { PairedDevice } from '@comical/sync';
 import { Platform } from 'react-native';
 
+import { UserFacingError } from '@/lib/friendly-error';
+
 export type ShellCommand = { type: 'open'; route: string } | { type: 'navigate'; dir: 'back' | 'forward' };
 
 /** Where the shell's own update stands. `ready` carries the version a restart installs; `manual`
@@ -17,6 +19,16 @@ export type DesktopUpdate =
 
 /** What one phone scans to pair with this computer: its address ending in a code that works once, until `expiresAt`. */
 export type PairingOffer = { address: string; expiresAt: number };
+
+/** Where the shell keeps everything: the library, downloads, bridges, and this page's own storage. */
+export type DataDir = { dir: string; isDefault: boolean };
+
+/** A folder the data could move to, as the shell found it, or why it can't go there. `holdsData`: a
+ *  Comical library is already there — opening the folder uses it, and a copy replaces it. `bytes` is
+ *  what a copy of the current data comes to; `free`, the room on that drive, when the OS says. */
+export type DataDirTarget =
+  | { dir: string; isDefault: boolean; holdsData: boolean; bytes: number; free: number | null }
+  | { problem: string };
 
 type DesktopShell = {
   platform: string;
@@ -43,6 +55,12 @@ type DesktopShell = {
   unlinkSyncDevice?(id: string): Promise<boolean>;
   onSyncDevices?(onDevices: (devices: PairedDevice[]) => void): () => void;
   onSynced?(onSynced: () => void): () => void;
+  /** Absent before the data could live anywhere but the default folder. */
+  dataDir?: DataDir;
+  chooseDataDir?(): Promise<DataDirTarget | null>;
+  defaultDataDir?(): Promise<DataDirTarget>;
+  moveDataDir?(dir: string, copy: boolean): Promise<string | null>;
+  showDataDir?(): void;
   setRunInTray(on: boolean): void;
   setOpenAtLogin(on: boolean): void;
   dimCaptionButtons(dim: boolean): void;
@@ -167,4 +185,30 @@ export async function unlinkSyncDevice(id: string): Promise<void> {
 /** What the platform calls the place a background app's icon lives. */
 export function trayName(): string {
   return desktopShell()?.platform === 'darwin' ? 'menu bar' : 'tray';
+}
+
+/** Where this launch keeps its data; undefined where the shell can't move it. */
+export function desktopDataDir(): DataDir | undefined {
+  return desktopShell()?.dataDir;
+}
+
+/** The system folder picker. Null when it was dismissed. */
+export function chooseDataDir(): Promise<DataDirTarget | null> {
+  return desktopShell()?.chooseDataDir?.() ?? Promise.resolve(null);
+}
+
+export function defaultDataDir(): Promise<DataDirTarget | null> {
+  return desktopShell()?.defaultDataDir?.() ?? Promise.resolve(null);
+}
+
+/** Restarts the app on the data in `dir`, copying the current data there first when `copy` is set.
+ *  Resolves as the app goes down; throws why when the shell refused. */
+export async function moveDataDir(dir: string, copy: boolean): Promise<void> {
+  const problem = await desktopShell()?.moveDataDir?.(dir, copy);
+  if (problem) throw new UserFacingError(problem);
+}
+
+/** Opens the data's folder in Explorer, Finder or the file manager. */
+export function showDataDir(): void {
+  desktopShell()?.showDataDir?.();
 }

@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /** Passed by the login entry, so a launch can tell it was the session starting rather than the user. */
-const LOGIN_ARG = "--login";
+export const LOGIN_ARG = "--login";
 
 const autostartFile = (): string =>
   join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "autostart", "comical.desktop");

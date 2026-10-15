@@ -13,6 +13,7 @@ import { app, BrowserWindow, ipcMain, Notification, screen, shell, session } fro
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
 import type { PairingGate } from "@comical/sync";
+import { clearScratch, currentDataDir, locateData, registerDataLocation, settleData } from "./data-location.ts";
 import { createDesktopHost, type DesktopHost } from "./host/create-host.ts";
 import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
 import { iconImage, shellIcon } from "./icon.ts";
@@ -486,6 +487,9 @@ async function openWindow(): Promise<void> {
 // isn't running, has two versions of the host writing one library.
 if (!app.isPackaged) app.setPath("userData", `${app.getPath("userData")}-dev`);
 
+// Before the lock, which lives in whichever folder this picks.
+const dataLaunch = locateData();
+
 // A second launch — the shortcut clicked while the app sits in the tray — would boot a second host
 // against the same data dir. It hands over to the running one instead.
 const primary = app.requestSingleInstanceLock();
@@ -505,7 +509,14 @@ app.on("open-url", (e, url) => {
 // The renderer reads these synchronously from its preload, before the page's first render.
 ipcMain.on("shell-settings", (e) => {
   const { runInTray, openAtLogin, networkSync } = shellSettings();
-  e.returnValue = { runInTray, openAtLogin, networkSync, loginItems: canOpenAtLogin(), updates: updatesSupported };
+  e.returnValue = {
+    runInTray,
+    openAtLogin,
+    networkSync,
+    loginItems: canOpenAtLogin(),
+    updates: updatesSupported,
+    dataDir: currentDataDir(),
+  };
 });
 ipcMain.on("shell-commands", (e) => {
   if (e.sender !== mainWindow?.webContents) return void (e.returnValue = null);
@@ -545,12 +556,16 @@ ipcMain.on("sync-pairing-close", () => gate().closeCode());
 
 ipcMain.handle("sync-device-unlink", (_e, id: unknown) => typeof id === "string" && gate().unlink(id));
 
+registerDataLocation();
+
 if (primary) {
   app
     .whenReady()
     .then(() => {
       // Without it Windows attributes the tray's notice to Electron itself in dev.
       if (process.platform === "win32") app.setAppUserModelId("com.porksphere.comical");
+      if (dataLaunch.kind !== "run") return settleData(dataLaunch);
+      clearScratch();
       setAppMenu(navigate);
       registerLinkScheme();
       const settings = shellSettings();
@@ -574,6 +589,8 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
+  // A launch moving the data, or asking where it went, has nothing to boot.
+  if (dataLaunch.kind !== "run") return;
   if (mainWindow) return showWindow();
   if (BrowserWindow.getAllWindows().length > 0) return;
   // The host and its listener outlive every window (downloads keep draining), so reopening is just

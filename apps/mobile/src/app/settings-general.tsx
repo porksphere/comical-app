@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
 import { useOverlay } from '@/components/overlay/overlay';
+import { DataLocationSheet } from '@/components/settings/data-location-sheet';
 import { RemoteServerForm } from '@/components/settings/remote-server-form';
 import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
@@ -35,7 +36,7 @@ import { connectServer } from '@/data/switch-server';
 import { setFeedTint, useFeedTint } from '@/hooks/use-feed-tint';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useThemePreference, type ThemePreference } from '@/hooks/use-theme';
-import { desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
+import { desktopDataDir, desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
 import { friendlyError } from '@/lib/friendly-error';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
@@ -91,8 +92,9 @@ export default function GeneralSettingsScreen() {
   // Gated on hydration: the static web render has no shell, so the row would otherwise appear only
   // after it and mismatch.
   const desktop = useHydrated() && !!desktopShell();
+  const dataDir = desktop ? desktopDataDir() : undefined;
   const { wifiOnly, background } = useDownloadPrefs();
-  const { open } = useOverlay();
+  const { open, openDialog } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
   const embeddedAvailable = isEmbeddedRuntimeAvailable();
@@ -202,6 +204,14 @@ export default function GeneralSettingsScreen() {
               }
               value={openAtLogin}
               onChange={setOpenAtLogin}
+            />
+          )}
+          {dataDir && (
+            <SettingsRow
+              testID="settings.general.data-location"
+              label="Data location"
+              description={dataDir.dir}
+              onPress={() => openDialog(() => <DataLocationSheet current={dataDir} />, { accessibilityLabel: 'Data location' })}
             />
           )}
           {/* The download policies gate the DEVICE engine — meaningless when a remote server owns

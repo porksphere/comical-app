@@ -85,6 +85,34 @@ require FUSE to run`. Either `apt install libfuse2` or run it with `--appimage-e
   hourly, and *Notify about new chapters* posts a system notice for what it finds — only while the
   window isn't focused, and clicking it opens Activity.
 
+## Data location
+
+Settings → General → **Data location** moves everything the app keeps to a folder of your choice:
+the library, downloads, bridges, the shell's own settings, and Chromium's profile, which is where
+the page keeps its preferences. All of it is Electron's `userData`, so the move is one path
+(`src/data-location.ts`, with the file work in `src/data-dir.ts`). Picking a folder offers to copy
+the current data there or start empty — or, when the folder already holds a Comical library, to
+open it or replace it. Either way the app restarts to switch.
+
+- **The folder is set before `ready`, so a move is carried out by the NEXT launch.** The choice is
+  written to `data-location.json` in the default folder, the one file that stays there whatever the
+  data's location. The single-instance lock lives in `userData` too, which is why `locateData()`
+  runs before it.
+- **The copying launch runs on a scratch profile** (`.moving`, in the default folder) so that
+  Chromium has neither copy open while it copies: the old one's LevelDB and the new one's
+  `Local State` (which holds the key its cookies are encrypted with) would both be live otherwise.
+  It shows a small progress window, then relaunches onto the new folder.
+- **A copy never touches its source, and only lands whole.** It's put together in a staging folder
+  inside the target and renamed into place entry by entry, so a copy that fails, runs out of space
+  or is stopped (closing the progress window asks) leaves the target as it was, and the app goes on
+  using the old folder. The old folder isn't deleted afterwards; that's left to the user.
+- **A folder with other things in it gets a `Comical` folder of its own**, so a profile's few
+  dozen entries never land among someone's files. A folder counts as an existing library only by
+  the shell's own files in its `comical/` (`desktop-settings.json`, `window-state.json`) — a folder
+  of comics called "comical" isn't one.
+- **A custom folder that's gone at launch** (an unplugged drive) is asked about rather than
+  silently replaced with an empty library: try again, go back to the default folder, or quit.
+
 ## Syncing with a phone
 
 The desktop app is the hub a phone syncs with — its library is the hub's library, so there is

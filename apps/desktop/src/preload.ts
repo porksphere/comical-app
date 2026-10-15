@@ -4,6 +4,7 @@
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { PairedDevice } from "@comical/sync";
+import type { DataDir, DataDirTarget } from "./data-location.ts";
 
 type UpdateState = { phase: "idle" | "downloading" | "ready" | "manual"; version: string | null };
 
@@ -13,6 +14,7 @@ const settings = ipcRenderer.sendSync("shell-settings") as {
   loginItems: boolean;
   updates: boolean;
   networkSync: boolean;
+  dataDir: DataDir;
 };
 
 contextBridge.exposeInMainWorld("comicalDesktop", {
@@ -92,6 +94,16 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
       ipcRenderer.off("synced", listener);
     };
   },
+  /** Where everything this app keeps lives. Fixed for the launch: a move restarts the app. */
+  dataDir: settings.dataDir,
+  /** The folder picker. Resolves to where the data would go there, or why it can't; null if dismissed. */
+  chooseDataDir: () => ipcRenderer.invoke("data-dir-choose") as Promise<DataDirTarget | null>,
+  /** The same, for the folder it started out in. */
+  defaultDataDir: () => ipcRenderer.invoke("data-dir-default") as Promise<DataDirTarget>,
+  /** Restart with the data in `dir`, copying it there first or not. Resolves to why not, when it can't. */
+  moveDataDir: (dir: string, copy: boolean) => ipcRenderer.invoke("data-dir-move", dir, copy === true) as Promise<string | null>,
+  /** Open the data's folder in the file manager. */
+  showDataDir: () => ipcRenderer.send("data-dir-show"),
   /** Fade the caption buttons' glyphs back, for a screen that has hidden its own chrome. */
   dimCaptionButtons: (dim: boolean) => ipcRenderer.send("caption-dim", dim === true),
   /** Reports the pointer entering and leaving the top `edge` px of the window — over a drag
