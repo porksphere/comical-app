@@ -21,6 +21,7 @@ import { defaultShouldDehydrateQuery, MutationCache, QueryCache, QueryClient, ty
 
 import { getApiBase, isAbort } from './api';
 import { getResolvedModeSync } from './embedded/preference';
+import { queryRetry, queryRetryDelay } from './rate-limit-retry';
 import { logDiagnostic } from '@/lib/diagnostics';
 
 // Content (series detail, chapters, lists, pages) is effectively immutable for
@@ -64,7 +65,8 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: STALE_TIME_MS,
       gcTime: GC_TIME_MS,
-      retry: 1,
+      retry: queryRetry,
+      retryDelay: queryRetryDelay,
       // The app's screens have always fetched on mount and never on focus; keep
       // that behavior (the cache, not focus refetch, is what makes it feel fast).
       refetchOnWindowFocus: false,
