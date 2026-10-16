@@ -11,7 +11,7 @@
  *
  * Native is untouched: nothing renders this, and the rail keeps its Settings row there.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import AboutScreen from '@/app/settings-about';
@@ -47,7 +47,7 @@ import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { closeSettingsModal, setSettingsCategory, useSettingsModal } from '@/lib/settings-modal';
 import { PaneNavContext, PaneParamsContext, type PaneNav, type PaneParams } from '@/lib/pane';
-import { SettingsPaneContext, SettingsPaneTopInset } from '@/lib/settings-pane';
+import { SettingsPaneActionsContext, SettingsPaneContext, SettingsPaneTopInset } from '@/lib/settings-pane';
 
 import AddRegistryScreen from '@/app/add-registry';
 import BridgeSettingsScreen from '@/app/bridge-settings';
@@ -113,6 +113,9 @@ function SettingsPanel() {
   const [stack, setStack] = useState<{ pathname: string; params: PaneParams }[]>([]);
   const top = stack[stack.length - 1];
   const [paneWidth, setPaneWidth] = useState(0);
+  const [actionsSlot, setActionsSlot] = useState<Element | null>(null);
+  // Stable, or React detaches and re-attaches the ref every render. On web the View's ref IS its DOM node.
+  const actionsRef = useCallback((node: View | null) => setActionsSlot(node as unknown as Element | null), []);
   // Read by `nav.canGoBack`, which is built once and must not go stale as the stack moves.
   const stackDepth = useRef(stack.length);
   useEffect(() => {
@@ -200,6 +203,8 @@ function SettingsPanel() {
               <ThemedText type="smallBold" numberOfLines={1} style={styles.paneTitle}>
                 {top ? SUB_PAGES[top.pathname]?.title : current.label}
               </ThemedText>
+              {/* The screen's own top-bar actions portal in here (see `SettingsPaneActionsContext`). */}
+              <View ref={actionsRef} style={styles.paneActions} />
               <CloseButton />
             </View>
             {/* Keyed so switching category remounts the screen rather than handing the next one the
@@ -212,11 +217,13 @@ function SettingsPanel() {
               {paneWidth > 0 ? (
                 <ContentWidthProvider width={paneWidth} sidebar={false}>
                   <SettingsPaneContext.Provider value={true}>
-                    <PaneNavContext.Provider value={nav}>
-                      <PaneParamsContext.Provider value={top?.params ?? EMPTY_PARAMS}>
-                        {top ? <SubPage pathname={top.pathname} /> : <current.Screen />}
-                      </PaneParamsContext.Provider>
-                    </PaneNavContext.Provider>
+                    <SettingsPaneActionsContext.Provider value={actionsSlot}>
+                      <PaneNavContext.Provider value={nav}>
+                        <PaneParamsContext.Provider value={top?.params ?? EMPTY_PARAMS}>
+                          {top ? <SubPage pathname={top.pathname} /> : <current.Screen />}
+                        </PaneParamsContext.Provider>
+                      </PaneNavContext.Provider>
+                    </SettingsPaneActionsContext.Provider>
                   </SettingsPaneContext.Provider>
                 </ContentWidthProvider>
               ) : null}
@@ -351,6 +358,11 @@ const styles = StyleSheet.create({
   },
   paneTitle: {
     flex: 1,
+  },
+  paneActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
   },
   // Nothing HEADER-shaped above the list — no heading, and no block standing in for the pane's
   // header, which on this side would just be an empty band. The list still gets the same inset off

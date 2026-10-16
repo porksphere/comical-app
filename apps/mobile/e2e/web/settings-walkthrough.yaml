@@ -5,8 +5,9 @@
 #     select by the row's visible title text instead.
 #   - trackers.install (TopBarButton) sets accessibilityLabel="Install a tracker" — same reason.
 #   - bridges.check-updates / trackers.check-updates (TopBarButton) set accessibilityLabel="Check for
-#     bridge updates" / "Check for tracker updates" — same reason. Those two buttons exist on web
-#     only (native checks by pulling the list down), so the mobile copy has no step for them.
+#     bridge updates" / "Check for tracker updates", and registries.refresh "Refresh registries" —
+#     same reason. Those buttons exist on web only (native refreshes by pulling the list down), so
+#     the mobile copy has no step for them.
 #   - bridges.add / registries.add / custom-pages.add (AddFab) set accessibilityLabel=label — select
 #     by "Install a bridge" / "Add registry" / "Add page" instead.
 #   - downloads.select-toggle (SelectToggle) sets accessibilityLabel="Select items" (not selecting)
@@ -144,6 +145,8 @@ url: http://localhost:4000/comical-app
 - takeScreenshot: registries
 - assertVisible:
     id: "Add registry"
+- assertVisible:
+    id: "Refresh registries"
 - tapOn:
     id: "Go back"
 

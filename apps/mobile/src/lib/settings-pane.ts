@@ -25,3 +25,10 @@ export const SettingsPaneTopInset = 48;
 export const SettingsPaneContext = createContext(false);
 
 export const useInSettingsPane = (): boolean => useContext(SettingsPaneContext);
+
+/**
+ * The pane header's trailing slot, as a DOM element, for a screen's `TopBar` to portal its `right`
+ * actions into — the bar itself stands down in here, but the refresh / select controls it carried are
+ * the only way those screens offer them on a mouse (no pull-to-refresh).
+ */
+export const SettingsPaneActionsContext = createContext<Element | null>(null);

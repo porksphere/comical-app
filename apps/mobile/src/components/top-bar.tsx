@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarSurface } from '@/components/bar-surface';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
+import { PaneActions } from '@/components/settings/pane-actions';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
@@ -42,8 +43,9 @@ export function TopBar({
   const clearance = useWindowControlsClearance();
   const inPane = useInSettingsPane();
   // Inside the settings modal the pane has no bar of its own: the modal supplies the header, and a
-  // back button here would point at a stack this pane isn't on.
-  if (inPane) return null;
+  // back button here would point at a stack this pane isn't on. The trailing actions still have to
+  // land somewhere, so they go into that header.
+  if (inPane) return <PaneActions>{right}</PaneActions>;
   return (
     <BarSurface style={[styles.topBar, { height: insets.top + barHeight }]}>
       {left ? (

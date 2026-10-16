@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
-import { CheckIcon, ClearIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, ClearIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SelectLead, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
@@ -17,7 +17,7 @@ import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { TopBar } from '@/components/top-bar';
+import { TopBar, TopBarButton } from '@/components/top-bar';
 import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
 import type { SavedRegistry } from '@/data/api';
 import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-order';
@@ -75,6 +75,18 @@ export default function RegistriesScreen() {
     nudged.current = true;
     void reconcileLabels();
   }, [registries, reconcileLabels]);
+
+  // Web has no pull-to-refresh on this list, so the same reconcile gets a button there.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshLabels = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await reconcileLabels();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // ── Multi-select mode (the shared select-mode chrome) — bulk-remove registries ──
   const mode = useSelectMode();
@@ -229,7 +241,17 @@ export default function RegistriesScreen() {
           ) : (
             // The + add button now lives in the floating FAB below (hidden in select mode); the
             // top-right holds the select toggle where the + used to be.
-            allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="registries.select-toggle" />
+            <View style={styles.topActions}>
+              {IS_WEB && (ordered?.length ?? 0) > 0 && (
+                <TopBarButton
+                  testID="registries.refresh"
+                  icon={refreshing ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />}
+                  label="Refresh registries"
+                  onPress={() => void refreshLabels()}
+                />
+              )}
+              {allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="registries.select-toggle" />}
+            </View>
           ))
         }
       />
@@ -407,6 +429,10 @@ function AddRegistryForm() {
 }
 
 const styles = StyleSheet.create({
+  topActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   container: {
     flex: 1,
   },
