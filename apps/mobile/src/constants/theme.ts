@@ -336,7 +336,7 @@ export const SettingsGutter = Spacing.four;
 export const SettingsCardInset = Spacing.three;
 
 /** Corner radius of a settings card. Uniform — a per-corner radius crashes Fabric on Android. */
-export const SettingsCardRadius = 14;
+export const SettingsCardRadius = 20;
 
 /**
  * The height of EVERY settings row, on every settings screen. Fixed, not a minimum: descriptions are
