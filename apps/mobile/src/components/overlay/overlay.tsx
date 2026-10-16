@@ -311,11 +311,12 @@ export function MeasuredHeader({ children }: { children: ReactNode }) {
  *
  * Whether the rows fit without scrolling is reported up through
  * `SheetContentScrollContext`, and both containers answer it the same way: a
- * list that fits sits inside the panel's bottom padding, and a list that
- * scrolls runs to the panel's bottom EDGE — padding under a scroller reads as
- * the content being cut off short of the border, not as a margin. On the
- * popover the trailing pad moves inside the scroll content instead, so the
- * last row still lands off the edge once it is scrolled to. */
+ * list that fits sits inside the panel's padding, and a list that scrolls
+ * clips at the panel's EDGE — padding around a scroller reads as the content
+ * being cut off short of the border, not as a margin. On the popover the pad
+ * moves inside the scroll content instead, so at rest the rows still sit off
+ * the edge and only scrolled content runs to it. The top pad moves only when
+ * there is no header: under one, the list already clips at the header. */
 export function OptionList({ children, fixed }: { children: ReactNode; fixed?: boolean }) {
   const sheet = useSheetScroll();
   const presentation = useOverlayPresentation();
@@ -378,7 +379,7 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       contentContainerStyle={
         presentation === 'popover'
           ? needsScroll
-            ? listStyles.listContentPopoverScrolling
+            ? [listStyles.listContentPopoverScrolling, !budget?.headerHeight && listStyles.listContentPopoverScrollingTop]
             : undefined
           : listStyles.listContent
       }
@@ -417,10 +418,13 @@ const listStyles = StyleSheet.create({
     paddingTop: Spacing.one,
     paddingBottom: LIST_TRAILING_SPACE,
   },
-  // The panel's bottom padding, moved inside the scroller while the list scrolls (the panel drops
-  // its own then — see `OverlayPopover`), so the end of the list still lands off the edge.
+  // The panel's padding, moved inside the scroller while the list scrolls (the panel drops its own
+  // then — see `OverlayPopover`), so the rows sit off the edge at rest but scroll right up to it.
   listContentPopoverScrolling: {
     paddingBottom: POPOVER_PANEL_PAD,
+  },
+  listContentPopoverScrollingTop: {
+    paddingTop: POPOVER_PANEL_PAD,
   },
   // 8pt between rows was a sheet's, where every row was a filled button that needed separating from
   // the next. Rows are transparent until hovered or selected now, so a gap separates nothing and
@@ -1341,7 +1345,11 @@ function OverlayPopover({
           // has to do that on a phone for the same reason it does on a desktop.
           styles.floatingEdge,
           styles.popoverEdge,
-          { borderColor: theme.overlayHairline, paddingBottom: listScrolls ? 0 : POPOVER_PANEL_PAD },
+          {
+            borderColor: theme.overlayHairline,
+            paddingTop: listScrolls && headerHeight === 0 ? 0 : POPOVER_PANEL_PAD,
+            paddingBottom: listScrolls ? 0 : POPOVER_PANEL_PAD,
+          },
         ]}
         onLayout={(e) => {
           const { width: w, height: hh } = e.nativeEvent.layout;
@@ -1462,10 +1470,9 @@ const styles = StyleSheet.create({
     // none, and the rows inside no longer carry a fill of their own (see selector.tsx), so that
     // padding read as dead space around a floating list rather than as the menu's own body. The
     // vertical pad is the same 8, for the reason the settings modal's category list takes one: a
-    // first row flush into a rounded corner while every other edge is padded. The bottom pad is set
-    // inline: it gives way to a list that scrolls (see `OptionList`).
+    // first row flush into a rounded corner while every other edge is padded. The vertical pads are
+    // set inline: they give way to a list that scrolls (see `OptionList`).
     paddingHorizontal: POPOVER_PANEL_PAD,
-    paddingTop: POPOVER_PANEL_PAD,
   },
   heading: {
     marginBottom: Spacing.one,
