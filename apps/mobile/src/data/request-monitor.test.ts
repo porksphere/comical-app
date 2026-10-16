@@ -15,8 +15,10 @@ const {
   requestLabel,
   requestOverlay$,
   resetRequestMonitorForTests,
+  subscribeRequestMonitor,
   trackRequest,
 } = await import('./request-monitor');
+type RequestMonitorState = import('./request-monitor').RequestMonitorState;
 
 describe('requestLabel', () => {
   test('names the bridge and the route', () => {
@@ -62,6 +64,24 @@ describe('tracking', () => {
     expect(peekRequestMonitor().inFlight.map((r) => r.label)).toEqual(['b search']);
     settled();
     expect(peekRequestMonitor().inFlight).toHaveLength(0);
+    settled();
+    expect(peekRequestMonitor().inFlight).toHaveLength(0);
+  });
+
+  test('every change hands subscribers a new snapshot', () => {
+    const seen: RequestMonitorState[] = [];
+    const unsubscribe = subscribeRequestMonitor(() => seen.push(peekRequestMonitor()));
+    const before = peekRequestMonitor();
+    const settled = trackRequest('/bridges/b/search');
+    noteRequestFailure('/bridges/b/latest', new Error('x exceeded 1ms'));
+    settled();
+    expect(seen).toHaveLength(3);
+    expect(new Set([before, ...seen]).size).toBe(4);
+    expect(seen[0]!.inFlight).not.toBe(before.inFlight);
+    expect(seen[1]!.recent).not.toBe(seen[0]!.recent);
+    unsubscribe();
+    trackRequest('/bridges/b/search');
+    expect(seen).toHaveLength(3);
   });
 
   test('recent failures are capped and expire', () => {

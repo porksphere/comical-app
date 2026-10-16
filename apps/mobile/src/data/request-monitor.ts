@@ -6,9 +6,11 @@
  * source; a request that comes back as a timeout or a rate-limit hold is recorded for a few seconds.
  *
  * Nothing is tracked while the overlay is off: the bookkeeping is skipped at the call, not hidden.
+ *
+ * The state is a plain immutable snapshot (not a Legend State observable): `useSyncExternalStore`
+ * re-renders only when the snapshot reference changes, and an observable mutates in place.
  */
 import { parseRateLimited } from '@comical/contract';
-import { observable } from '@legendapp/state';
 import { useSyncExternalStore } from 'react';
 
 import { persisted$ } from '@/lib/observable';
@@ -29,7 +31,14 @@ export type RecentFailure = { id: number; label: string; kind: FailureKind; deta
 
 export type RequestMonitorState = { inFlight: InFlightRequest[]; recent: RecentFailure[] };
 
-const monitor$ = observable<RequestMonitorState>({ inFlight: [], recent: [] });
+const EMPTY: RequestMonitorState = { inFlight: [], recent: [] };
+let state: RequestMonitorState = EMPTY;
+const listeners = new Set<() => void>();
+
+function commit(next: RequestMonitorState): void {
+  state = next;
+  for (const listener of listeners) listener();
+}
 
 const RECENT_MAX = 4;
 export const RECENT_TTL_MS = 15_000;
@@ -60,11 +69,10 @@ export function classifyFailure(message: string): { kind: FailureKind; detail: s
 export function trackRequest(path: string): () => void {
   if (!requestOverlay$.on.peek()) return () => {};
   const id = ++seq;
-  monitor$.inFlight.push({ id, label: requestLabel(path), startedAt: Date.now() });
+  commit({ ...state, inFlight: [...state.inFlight, { id, label: requestLabel(path), startedAt: Date.now() }] });
   return () => {
-    const list = monitor$.inFlight.peek();
-    const index = list.findIndex((r) => r.id === id);
-    if (index >= 0) monitor$.inFlight.splice(index, 1);
+    if (!state.inFlight.some((r) => r.id === id)) return;
+    commit({ ...state, inFlight: state.inFlight.filter((r) => r.id !== id) });
   };
 }
 
@@ -72,29 +80,31 @@ export function noteRequestFailure(path: string | undefined, error: Error): void
   if (!requestOverlay$.on.peek()) return;
   const { kind, detail } = classifyFailure(error.message);
   const at = Date.now();
-  const kept = monitor$.recent.peek().filter((f) => at - f.at < RECENT_TTL_MS);
-  monitor$.recent.set([...kept, { id: ++seq, label: requestLabel(path ?? ''), kind, detail, at }].slice(-RECENT_MAX));
+  const kept = state.recent.filter((f) => at - f.at < RECENT_TTL_MS);
+  commit({ ...state, recent: [...kept, { id: ++seq, label: requestLabel(path ?? ''), kind, detail, at }].slice(-RECENT_MAX) });
 }
 
 /** Drop recorded failures older than the TTL; the overlay calls it on its tick. */
 export function expireRecentFailures(now = Date.now()): void {
-  const list = monitor$.recent.peek();
-  const kept = list.filter((f) => now - f.at < RECENT_TTL_MS);
-  if (kept.length !== list.length) monitor$.recent.set(kept);
+  const kept = state.recent.filter((f) => now - f.at < RECENT_TTL_MS);
+  if (kept.length !== state.recent.length) commit({ ...state, recent: kept });
+}
+
+export function subscribeRequestMonitor(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function peekRequestMonitor(): RequestMonitorState {
-  return monitor$.peek();
+  return state;
 }
 
 export function useRequestMonitor(): RequestMonitorState {
-  return useSyncExternalStore(
-    (onStoreChange) => monitor$.onChange(onStoreChange),
-    () => monitor$.peek(),
-    () => monitor$.peek(),
-  );
+  return useSyncExternalStore(subscribeRequestMonitor, peekRequestMonitor, peekRequestMonitor);
 }
 
 export function resetRequestMonitorForTests(): void {
-  monitor$.set({ inFlight: [], recent: [] });
+  commit(EMPTY);
 }
