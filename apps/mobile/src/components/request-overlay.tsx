@@ -48,7 +48,7 @@ function Panel() {
           {inFlight.length} in flight{slow > 0 ? ` · ${slow} waiting` : ''}
         </ThemedText>
         {rows.map((r) => {
-          const age = now - r.startedAt;
+          const age = Math.max(0, now - r.startedAt);
           return (
             <ThemedText key={r.id} style={[styles.line, { color: age >= SLOW_MS ? AMBER : DIM }]} numberOfLines={1}>
               {(age / 1000).toFixed(1).padStart(5)}s  {r.label}
