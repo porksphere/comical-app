@@ -38,6 +38,7 @@ import { ConfirmPopupHost } from '@/components/confirm-popup';
 import { ContextMenuHost } from '@/components/context-menu-host';
 import { CollectionPickerHost } from '@/components/collection-picker';
 import { OverlayProvider } from '@/components/overlay/overlay';
+import { RequestOverlay } from '@/components/request-overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
 import { ToastHost } from '@/components/toast';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
@@ -201,6 +202,8 @@ function RootNavigation() {
         <ConfirmPopupHost />
         {/* Root host for the transient notice pill (showToast). */}
         <ToastHost />
+        {/* Corner panel of requests in flight / recent timeouts; null unless Settings → General turns it on. */}
+        <RequestOverlay />
         {/* DEV-only floating Hermes JS profiler; null in production (see require above),
             and hidden unless the Settings → Developer toggle is on. Temporary tooling. */}
         {DevProfiler ? <DevProfiler /> : null}

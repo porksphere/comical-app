@@ -44,6 +44,7 @@ import { use$ } from '@legendapp/state/react';
 import type { Pairing } from '@comical/sync';
 
 import { getResolvedModeSync } from './embedded/preference';
+import { noteRequestFailure, trackRequest } from './request-monitor';
 import type { Bridge, BridgeList, MissingBridge } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { persisted$ } from '@/lib/observable';
@@ -488,15 +489,27 @@ export function setRequestErrorListener(listener: RequestErrorListener | null): 
 }
 
 function reportRequestError<E>(e: E, path?: string): E {
-  if (e instanceof Error && !isAbort(e)) requestErrorListener?.(e, path);
+  if (e instanceof Error && !isAbort(e)) {
+    requestErrorListener?.(e, path);
+    noteRequestFailure(path, e);
+  }
   return e;
 }
 
 /** The active transport, with a request that never got an answer reported on its way out. */
-const transport: Transport = (path, init) =>
-  activeTransport(path, init).catch((e: unknown) => {
-    throw reportRequestError(e, path);
-  });
+const transport: Transport = (path, init) => {
+  const settled = trackRequest(path);
+  return activeTransport(path, init).then(
+    (res) => {
+      settled();
+      return res;
+    },
+    (e: unknown) => {
+      settled();
+      throw reportRequestError(e, path);
+    },
+  );
+};
 
 /** The error an unsuccessful response becomes: the route's own `{ error }` where it gave one. */
 async function responseError(res: Response, path?: string): Promise<Error> {

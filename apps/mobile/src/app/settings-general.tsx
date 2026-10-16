@@ -31,6 +31,7 @@ import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } from '@/data/embedded';
 import { errorToasts$, useErrorToasts } from '@/data/error-toasts';
 import { queryClient } from '@/data/query-client';
+import { requestOverlay$, useRequestOverlayEnabled } from '@/data/request-monitor';
 import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useDataSource, useMockActive, useNsfwMode, type NsfwMode } from '@/data/source';
 import { connectServer } from '@/data/switch-server';
@@ -88,6 +89,7 @@ export default function GeneralSettingsScreen() {
   const lightCards = useLightCards();
   const feedTint = useFeedTint();
   const errorToasts = useErrorToasts();
+  const requestOverlay = useRequestOverlayEnabled();
   const [runInTray, setRunInTray] = useRunInTray();
   const [openAtLogin, setOpenAtLogin] = useOpenAtLogin();
   // Gated on hydration: the static web render has no shell, so the row would otherwise appear only
@@ -178,6 +180,12 @@ export default function GeneralSettingsScreen() {
             />
           )}
           <SettingsToggleRow label="Show request errors" value={errorToasts} onChange={(v) => errorToasts$.on.set(v)} />
+          <SettingsToggleRow
+            label="Show request activity"
+            description="A small corner readout of requests in flight, how long each has waited, and recent timeouts or rate-limit holds."
+            value={requestOverlay}
+            onChange={(v) => requestOverlay$.on.set(v)}
+          />
         </SettingsSection>
         {desktop && (
           <SettingsSection
