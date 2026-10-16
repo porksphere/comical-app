@@ -66,16 +66,22 @@ export function SettingsCard({ style, children }: { style?: ViewStyle; children:
  *  `icon` is an optional leading glyph next to the title.
  *
  *  `title` is optional: a screen whose whole content IS the list doesn't need a header restating
- *  the screen's own name, so it renders the card alone. */
+ *  the screen's own name, so it renders the card alone.
+ *
+ *  `plain` drops the card: the content sits directly under the caption at the card's gutter, no
+ *  surface and no dividers. For content that isn't rows — a chip row, an editor — which a card
+ *  turns into a box of loose controls. */
 export function SettingsSection({
   title,
   icon,
   footer,
+  plain,
   children,
 }: {
   title?: string;
   icon?: ReactNode;
   footer?: string;
+  plain?: boolean;
   children: ReactNode;
 }) {
   const theme = useTheme();
@@ -91,14 +97,18 @@ export function SettingsSection({
           </ThemedText>
         </View>
       )}
-      <SettingsCard>
-        {items.map((item, i) => (
-          <Fragment key={i}>
-            {item}
-            {i < items.length - 1 && <View style={[settingsDivider.line, { backgroundColor: theme.hairline }]} />}
-          </Fragment>
-        ))}
-      </SettingsCard>
+      {plain ? (
+        <View style={styles.plain}>{items}</View>
+      ) : (
+        <SettingsCard>
+          {items.map((item, i) => (
+            <Fragment key={i}>
+              {item}
+              {i < items.length - 1 && <View style={[settingsDivider.line, { backgroundColor: theme.hairline }]} />}
+            </Fragment>
+          ))}
+        </SettingsCard>
+      )}
       {footer && (
         <ThemedText type="small" themeColor="textSecondary" style={styles.sectionFooter}>
           {footer}
@@ -247,6 +257,10 @@ const styles = StyleSheet.create({
   sectionTitle: {
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  plain: {
+    gap: Spacing.two,
+    paddingHorizontal: SettingsCardInset,
   },
   sectionFooter: {
     marginTop: Spacing.two,

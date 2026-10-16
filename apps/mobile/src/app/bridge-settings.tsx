@@ -225,12 +225,11 @@ export default function BridgeSettingsScreen() {
                 bridge's "favorites require a username + password" — is the better signal, and it
                 names the fields sitting right above this row. */}
             {data.info.capabilities?.includes('favorites') && (
-              <SettingsSection title="Favorites">
-                {favoritesLoginPending(data) && (
-                  <ThemedText type="small" themeColor="textSecondary" style={styles.favoritesNote}>
-                    Favorites need an account — fill in {favoritesLoginPending(data)} above.
-                  </ThemedText>
-                )}
+              <SettingsSection
+                title="Favorites"
+                footer={
+                  favoritesLoginPending(data) ? `Favorites need an account — fill in ${favoritesLoginPending(data)} above.` : undefined
+                }>
                 <SettingsRow
                   testID="settings.bridge.import-favorites"
                   label="Import favorites into library"
@@ -276,10 +275,6 @@ export default function BridgeSettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  favoritesNote: {
-    paddingHorizontal: Spacing.three,
-    paddingBottom: Spacing.two,
   },
   content: {
     // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).

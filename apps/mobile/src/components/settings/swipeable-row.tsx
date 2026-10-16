@@ -141,6 +141,11 @@ type SwipeableRowProps = {
    *  decorative — a chevron — since the rail covers it while shown; a row with live controls there
    *  (History's ⋯ button) keeps its lanes. Native ignores it. */
   overlay?: boolean;
+  /** What the row sits on. Native paints the row at rest in that surface's colour (it slides to
+   *  uncover the pills beneath, so it can't be transparent) and lifts one step up as it opens. A row
+   *  inside a `SettingsCard` left on the page colour was a darker strip with the card showing round
+   *  it. Web ignores it — the hover row paints nothing. */
+  surface?: 'page' | 'card';
   /** The row's own content (rendered as the swipeable surface / hover body). */
   children: ReactNode;
 };
@@ -169,6 +174,7 @@ export function SwipeableRow({
   swipeEnabled = true,
   lanes = 0,
   overlay = false,
+  surface = 'page',
   children,
 }: SwipeableRowProps) {
   // Nothing to act on: plain content in the same escaped layout, no gesture/lanes. Checked BEFORE
@@ -191,7 +197,8 @@ export function SwipeableRow({
       recycleKey={recycleKey}
       swipeEnabled={swipeEnabled}
       lanes={lanes}
-      overlay={overlay}>
+      overlay={overlay}
+      surface={surface}>
       {children}
     </CollapsingRow>
   );
@@ -216,6 +223,7 @@ function CollapsingRow({
   swipeEnabled,
   lanes,
   overlay,
+  surface,
   children,
 }: {
   name: string;
@@ -226,6 +234,7 @@ function CollapsingRow({
   swipeEnabled: boolean;
   lanes: number;
   overlay: boolean;
+  surface: 'page' | 'card';
   children: ReactNode;
 }) {
   // Mirrors the natural height while idle, so a fold starts where the row already sits.
@@ -278,7 +287,14 @@ function CollapsingRow({
           {children}
         </HoverActionsRow>
       ) : (
-        <SwipeRow name={name} actions={wired} edgeInset={edgeInset} trailingInset={trailingInset} recycleKey={recycleKey} enabled={swipeEnabled}>
+        <SwipeRow
+          name={name}
+          actions={wired}
+          edgeInset={edgeInset}
+          trailingInset={trailingInset}
+          recycleKey={recycleKey}
+          enabled={swipeEnabled}
+          surface={surface}>
           {children}
         </SwipeRow>
       )}
@@ -333,6 +349,7 @@ export function SwipeableSettingsRow({
       trailingInset={SettingsCardInset}
       recycleKey={recycleKey}
       overlay
+      surface="card"
       {...(swipeEnabled !== undefined ? { swipeEnabled } : {})}>
       <SettingsRow
         label={label}
@@ -357,10 +374,12 @@ type RowImplProps = {
   trailingInset: number;
   recycleKey?: string;
   enabled: boolean;
+  /** Native only — see `SwipeableRowProps.surface`. */
+  surface?: 'page' | 'card';
   children: ReactNode;
 };
 
-function SwipeRow({ name, actions, edgeInset, trailingInset: trailingGap, recycleKey, enabled, children }: RowImplProps) {
+function SwipeRow({ name, actions, edgeInset, trailingInset: trailingGap, recycleKey, enabled, surface, children }: RowImplProps) {
   const theme = useTheme();
   // Where the row is BEING DRAGGED to — set straight from the finger, with no smoothing.
   const target = useSharedValue(0);
@@ -612,8 +631,8 @@ function SwipeRow({ name, actions, edgeInset, trailingInset: trailingGap, recycl
 
   // Hoist the two colours to local strings so the worklet closes over primitives, not the whole
   // `theme` object (which Reanimated would otherwise deep-clone into the shareable — per row).
-  const bgClosed = theme.background;
-  const bgOpen = theme.backgroundElement;
+  const bgClosed = surface === 'card' ? theme.backgroundElement : theme.background;
+  const bgOpen = surface === 'card' ? theme.backgroundSelected : theme.backgroundElement;
   const rowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
     // UNIFORM radius (all four corners), NOT just the trailing two. Only the trailing edge's

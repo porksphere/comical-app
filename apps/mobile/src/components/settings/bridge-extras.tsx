@@ -71,7 +71,7 @@ export function BridgeMetaInfo({ info }: { info: ApiBridgeInfo }) {
           no row height — wrapped straight onto the divider beneath them. As a section it inherits
           both, and being last it has no divider to crowd. */}
       {capabilities.length > 0 && (
-        <SettingsSection title="Capabilities">
+        <SettingsSection title="Capabilities" plain>
           <ChipRow labels={capabilities.map(capabilityLabel)} accent />
         </SettingsSection>
       )}
@@ -141,7 +141,7 @@ export function TagExclusionsControl({
   const save = () => saveMutation.mutate();
 
   return (
-    <SettingsSection title="Excluded tags">
+    <SettingsSection title="Excluded tags" plain>
       <ThemedText type="small" themeColor="textSecondary">
         Series carrying these tags are hidden from this bridge&apos;s lists and search.
       </ThemedText>
