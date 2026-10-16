@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import {
   BridgeMetaInfo,
   BridgeAutoDownloadToggles,
+  BridgeDownloadLibraryRow,
   BridgePrefsToggles,
   ComicalHomeToggle,
   MaxContentRatingControl,
@@ -256,6 +257,7 @@ export default function BridgeSettingsScreen() {
             )}
             <BridgePrefsToggles bridgeId={bridgeId!} />
             <BridgeAutoDownloadToggles bridgeId={bridgeId!} direct={!!data.info.capabilities?.includes('direct')} />
+            <BridgeDownloadLibraryRow bridgeId={bridgeId!} />
             <ComicalHomeToggle bridgeId={bridgeId!} />
 
             {source === 'registry' && (

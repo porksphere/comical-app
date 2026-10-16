@@ -93,9 +93,16 @@ async function savedChapters(bridgeId: string, seriesId: string): Promise<Chapte
   }));
 }
 
-/** What `autoDownloadLibrary` would take on, for the offer made when the series toggle goes on. */
-export async function librarySize(): Promise<{ series: number; chapters: number }> {
-  const library = ((await getLibrary()) ?? []).filter((s) => autoDownloadsFor(s.bridgeId, 'autoSeries'));
+/** Which library entries a backfill covers: every bridge that auto-downloads series when the
+ *  Settings → General toggle goes on, or one bridge asked for by name — an explicit request, so
+ *  the global toggle and the bridge's own opt-out don't apply. */
+function backfills(entryBridgeId: string, bridgeId: string | undefined): boolean {
+  return bridgeId ? entryBridgeId === bridgeId : autoDownloadsFor(entryBridgeId, 'autoSeries');
+}
+
+/** What `autoDownloadLibrary` would take on, for the offer made before it runs. */
+export async function librarySize(bridgeId?: string): Promise<{ series: number; chapters: number }> {
+  const library = ((await getLibrary()) ?? []).filter((s) => backfills(s.bridgeId, bridgeId));
   return { series: library.length, chapters: library.reduce((n, s) => n + s.knownCount, 0) };
 }
 
@@ -103,16 +110,17 @@ export async function librarySize(): Promise<{ series: number; chapters: number 
  * Download every series already in the library, one at a time. Each reads the stored chapter list
  * and only asks the bridge for a series that has none (never synced), so a large library costs a
  * stored read per series rather than a bridge request. Series whose bridge isn't installed, or has
- * opted out of series downloads, are skipped. Resolves with how many series it enqueued.
+ * opted out of series downloads, are skipped — unless `bridgeId` names one bridge, which takes
+ * only its series and ignores the opt-out. Resolves with how many series it enqueued.
  */
-export async function autoDownloadLibrary(ds: DataSource, mock: boolean): Promise<number> {
+export async function autoDownloadLibrary(ds: DataSource, mock: boolean, bridgeId?: string): Promise<number> {
   if (mock) return 0;
   const [library, bridges] = await Promise.all([getLibrary(), getBridges()]);
   const installed = new Map(bridges.map((b) => [b.id, b]));
   let count = 0;
   for (const entry of library ?? []) {
     const bridge = installed.get(entry.bridgeId);
-    if (!bridge || !autoDownloadsFor(entry.bridgeId, 'autoSeries')) continue;
+    if (!bridge || !backfills(entry.bridgeId, bridgeId)) continue;
     const series = withCover(mock, {
       bridgeId: entry.bridgeId,
       seriesId: entry.seriesId,

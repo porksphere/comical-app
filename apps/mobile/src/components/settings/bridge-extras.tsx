@@ -3,7 +3,10 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ChipRow } from '@/components/chip';
+import { openConfirm } from '@/components/confirm-popup';
 import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
+import { showToast } from '@/components/toast';
+import { autoDownloadLibrary, librarySize } from '@/data/downloads/auto';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { useComicalExcluded } from '@/data/comical-home';
@@ -13,7 +16,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import type { ApiBridgeInfo, ContentRating } from '@/data/api';
 import { queryKeys } from '@/data/queries';
-import { useDataSource } from '@/data/source';
+import { useDataSource, useMockActive } from '@/data/source';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
@@ -292,6 +295,46 @@ export function BridgeAutoDownloadToggles({ bridgeId, direct }: { bridgeId: stri
           onChange={(on) => set(r.kind, on)}
         />
       ))}
+    </SettingsSection>
+  );
+}
+
+/** A one-off backfill of this bridge's saved series, for a library that predates auto-download or a
+ *  bridge that opted out of it. Not gated on the Settings → General toggle: it is an action, not a
+ *  preference, and the toggle's own offer only ever runs the moment it is switched on. */
+export function BridgeDownloadLibraryRow({ bridgeId }: { bridgeId: string }) {
+  const ds = useDataSource();
+  const mock = useMockActive();
+  const offer = () => {
+    if (mock) return;
+    void librarySize(bridgeId)
+      .then(({ series, chapters }) => {
+        if (series === 0) {
+          showToast('No saved series from this bridge');
+          return;
+        }
+        openConfirm({
+          title: 'Download saved series?',
+          message: `${series} series from this bridge in your library, about ${chapters} chapter${chapters === 1 ? '' : 's'}. Anything already downloaded is skipped.`,
+          confirmLabel: `Download ${series} series`,
+          tone: 'primary',
+          onConfirm: () => {
+            void autoDownloadLibrary(ds, mock, bridgeId).then((n) =>
+              showToast(n > 0 ? `Downloading ${n} series` : 'Nothing to download'),
+            );
+          },
+        });
+      })
+      .catch(() => {});
+  };
+  return (
+    <SettingsSection title="Downloads">
+      <SettingsRow
+        testID="settings.bridge.download-library"
+        label="Download saved series"
+        description="Queue every chapter of this bridge's series in your library."
+        onPress={offer}
+      />
     </SettingsSection>
   );
 }

@@ -296,6 +296,23 @@ describe('autoDownloadLibrary', () => {
     expect(await autoDownloadLibrary(ds, false)).toBe(1);
     expect(bulkIds()).toEqual([['s1', ['a']]]);
   });
+
+  test('asked for one bridge, takes only its series and ignores the toggle and its opt-out', async () => {
+    library = [entry('s1', 10), { ...entry('s2', 5), bridgeId: 'off' }, { ...entry('s3', 2), bridgeId: 'off' }];
+    bridges = [
+      { id: 'b', capabilities: [] },
+      { id: 'off', capabilities: [] },
+    ];
+    saved = { s1: [ch('a', 1)], s2: [ch('c', 1)], s3: [ch('d', 1)] };
+    bridgeOptOuts = { off: { autoSeries: false } };
+    prefs.autoSeries = false;
+    expect(await librarySize('off')).toEqual({ series: 2, chapters: 7 });
+    expect(await autoDownloadLibrary(ds, false, 'off')).toBe(2);
+    expect(bulkIds()).toEqual([
+      ['s2', ['c']],
+      ['s3', ['d']],
+    ]);
+  });
 });
 
 const item = (seriesId: string, chapterId: string, detectedAt: number, read = false) => ({
