@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, TextInput, type TextInputProps, View } from 'rea
 
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { ChevronRightIcon, EyeIcon, EyeOffIcon } from '@/components/icons/ui-icons';
-import { MeasuredHeader, OptionList, OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { MeasuredHeading, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { BridgeThumbSize } from '@/components/selector';
 import { settingsRowFrame, SettingsRow } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
@@ -162,9 +162,7 @@ function SelectPicker<T extends string>({
   const theme = useTheme();
   return (
     <View style={styles.pickerBody}>
-      <MeasuredHeader>
-        <OverlayHeading>{heading}</OverlayHeading>
-      </MeasuredHeader>
+      <MeasuredHeading>{heading}</MeasuredHeading>
       <OptionList>
         {options.map((opt) => (
           <Pressable
@@ -358,7 +356,7 @@ const styles = StyleSheet.create({
   revealBtn: {
     cursor: 'pointer',
   },
-  // No `flex: 1` (see `sheetBody` in overlay.tsx) — hugs its MeasuredHeader/OptionList content.
+  // No `flex: 1` (see `sheetBody` in overlay.tsx) — hugs its MeasuredHeading/OptionList content.
   pickerBody: {
     gap: Spacing.three,
   },

@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
-import { MeasuredHeader, OptionList, OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { MeasuredHeading, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { SettingsSelectRow, SettingsTextRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { settingsRowFrame, SettingsRow } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
@@ -482,9 +482,7 @@ function EnumPicker({
   };
   return (
     <View style={styles.body}>
-      <MeasuredHeader>
-        <OverlayHeading>{descriptor.label}</OverlayHeading>
-      </MeasuredHeader>
+      <MeasuredHeading>{descriptor.label}</MeasuredHeading>
       <OptionList>
         {descriptor.options.map((opt) => (
           <EnumOption
@@ -544,7 +542,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0,
   },
-  // No `flex: 1` (see `sheetBody` in overlay.tsx) — hugs its MeasuredHeader/OptionList content.
+  // No `flex: 1` (see `sheetBody` in overlay.tsx) — hugs its MeasuredHeading/OptionList content.
   body: {
     gap: Spacing.three,
   },

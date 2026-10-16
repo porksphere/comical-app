@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { MeasuredHeader, OptionList, OverlayHeading, useOverlay } from '@/components/overlay/overlay';
+import { MeasuredHeading, OptionList, useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -60,9 +60,7 @@ function RegistryPicker() {
 
   return (
     <View style={styles.pickerBody}>
-      <MeasuredHeader>
-        <OverlayHeading>Browse a registry</OverlayHeading>
-      </MeasuredHeader>
+      <MeasuredHeading>Browse a registry</MeasuredHeading>
       <OptionList>
         {(registries ?? []).map((r) => (
           <Pressable

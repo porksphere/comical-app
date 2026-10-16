@@ -181,11 +181,8 @@ type SheetBudget = { budget: number; headerHeight: number; setHeaderHeight: (h: 
 const SheetBudgetContext = createContext<SheetBudget | null>(null);
 
 // Lets `OptionList` report whether its content needs an internal scroll back up
-// to the enclosing `OverlaySheet`, which uses that to decide whether to reserve
-// the bottom safe-area inset below the sheet's content (see the note above
-// `OverlaySheet`'s `styles.sheet`). Only the sheet provides this — the popover
-// has no device-chrome inset of its own to reserve, so it's `null` (a no-op)
-// there.
+// to the enclosing container, which drops its bottom padding (the sheet's
+// safe-area inset, the popover's panel pad) while it does — see `OptionList`.
 type ReportNeedsScroll = (needsScroll: boolean) => void;
 const SheetContentScrollContext = createContext<ReportNeedsScroll | null>(null);
 
@@ -235,13 +232,17 @@ const ROW_UNIT_HEIGHT = RowHeight + Spacing.two;
 // bit more height, so the last row isn't flush against the sheet's own
 // bottom edge (or, for a short list, against the screen).
 const LIST_TRAILING_SPACE = Spacing.four;
+// `listContent`'s total vertical padding (below).
+const LIST_CONTENT_PAD = Spacing.one + LIST_TRAILING_SPACE;
+// The desktop popover's panel padding, on every side (see `styles.popoverEdge`).
+const POPOVER_PANEL_PAD = Spacing.two;
 // `+ Spacing.one + LIST_TRAILING_SPACE` reserves room for `listContent`'s own
 // paddingTop/paddingBottom (above): those live *inside* this same capped
 // viewport, so without adding them here the 7th row's bottom few pixels (and
 // everything after it) get clipped instead of the viewport stopping cleanly
 // after a whole row — the list cuts off mid-row with what reads as a blank
 // gap underneath, rather than reaching that gap only after a complete row.
-const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two + Spacing.one + LIST_TRAILING_SPACE;
+const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two + LIST_CONTENT_PAD;
 // Floor so a not-yet-measured header (the first frame, before its own
 // `onLayout` has fired) doesn't leave the list with zero/negative room.
 const LIST_MIN_HEIGHT = 160;
@@ -254,6 +255,20 @@ const HANDLE_AREA_HEIGHT = Spacing.two + 5 + Spacing.three;
 // this total from a smaller flex `gap` plus a margin and so has to be told
 // what the total must come to.
 export const HEADER_TO_LIST_GAP = Spacing.three;
+
+/**
+ * A `MeasuredHeader` holding only the overlay's title — which renders NOTHING on the popover, so the
+ * header has to go with it: an empty `MeasuredHeader` still draws its own top padding, and the
+ * caller's flex `gap` still reserves a full step before it, a ~40pt blank band above the list.
+ */
+export function MeasuredHeading({ children }: { children: string }) {
+  if (useOverlayPresentation() === 'popover') return null;
+  return (
+    <MeasuredHeader>
+      <OverlayHeading>{children}</OverlayHeading>
+    </MeasuredHeader>
+  );
+}
 
 /** Wraps a sheet's non-list content (title, helper text, search input, …). */
 export function MeasuredHeader({ children }: { children: ReactNode }) {
@@ -291,32 +306,24 @@ export function MeasuredHeader({ children }: { children: ReactNode }) {
  * though it was clearly visible on screen. Screenshots (not DOM color
  * probing) are what caught it.
  *
- * `LIST_TRAILING_SPACE` only applies on the sheet: the popover's outer
- * `paddingVertical` (see `styles.popover`) already clears its own bottom edge
- * symmetrically with the top, so adding the sheet's trailing space there too
- * would double up into a bottom gap nearly twice the top one.
+ * `LIST_TRAILING_SPACE` only applies on the sheet: the popover's panel pads
+ * its own bottom edge to match its top and sides.
  *
- * On the popover specifically (which has no vertical padding of its own),
- * this also decides whether the *list* should have top/bottom padding
- * matching its horizontal padding: only when its rows comfortably fit
- * without scrolling. Once there's enough content to need an internal
- * scroll, that padding goes away entirely (rows run flush to the border).
- * Content height is measured via an inner wrapper that isn't itself
- * padded, so the measurement can't be thrown off by the padding decision
- * it's used to make; padding is tried once when there's room and reverted
- * if that push turns out to tip it into scrolling — a settle that takes at
- * most one flip, never an ongoing back-and-forth.
- *
- * That same fits-without-scrolling signal is measured on the sheet too (not
- * just the popover) and reported up through `SheetContentScrollContext` —
- * `OverlaySheet` uses it to decide whether to reserve the bottom safe-area
- * inset below its content, mirroring the popover's fits→padded chrome. */
+ * Whether the rows fit without scrolling is reported up through
+ * `SheetContentScrollContext`, and both containers answer it the same way: a
+ * list that fits sits inside the panel's bottom padding, and a list that
+ * scrolls runs to the panel's bottom EDGE — padding under a scroller reads as
+ * the content being cut off short of the border, not as a margin. On the
+ * popover the trailing pad moves inside the scroll content instead, so the
+ * last row still lands off the edge once it is scrolled to. */
 export function OptionList({ children, fixed }: { children: ReactNode; fixed?: boolean }) {
   const sheet = useSheetScroll();
   const presentation = useOverlayPresentation();
   const budget = useContext(SheetBudgetContext);
+  // No header (a popover drops its title — see `MeasuredHeading`) means no gap to reserve either.
+  const headerSpace = budget && budget.headerHeight > 0 ? budget.headerHeight + HEADER_TO_LIST_GAP : 0;
   const target = budget
-    ? Math.max(LIST_MIN_HEIGHT, Math.min(LIST_MAX_HEIGHT, budget.budget - budget.headerHeight - HEADER_TO_LIST_GAP))
+    ? Math.max(LIST_MIN_HEIGHT, Math.min(LIST_MAX_HEIGHT, budget.budget - headerSpace))
     : LIST_MAX_HEIGHT;
   const localOffset = useSharedValue(0);
   const offset = sheet?.scrollOffset ?? localOffset;
@@ -325,54 +332,25 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
   });
 
   const [needsScroll, setNeedsScroll] = useState(true);
-  const needsScrollRef = useRef(needsScroll);
-  const coreHeightRef = useRef(0);
-  const scrollHeightRef = useRef(0);
-  const triedPadded = useRef(false);
-
-  // Sheet-only: forward the same fits/needs-scroll verdict up to `OverlaySheet`
-  // (a no-op on the popover, which doesn't provide this context). Reported
-  // from inside `evaluate` itself (below), not a `useEffect` keyed on
-  // `needsScroll` — an effect fires after every render including the very
-  // first, before any real layout has happened, and would report the
-  // pre-measurement default guess. `evaluate` only ever runs off a real
-  // onLayout event, so its report is always backed by an actual measurement.
-  // It reports unconditionally (not just on change) so a list that's clamped
-  // from its very first evaluation — which never takes the "flip" branches
-  // below — still gets its `true` verdict sent up at least once.
+  const rowsHeightRef = useRef(0);
+  const frameHeightRef = useRef(0);
   const reportNeedsScroll = useContext(SheetContentScrollContext);
+  // Only the content padding that is the same whatever the verdict. The popover's trailing pad
+  // exists only while scrolling, so counting it would keep a list that fits "scrolling" for good.
+  const fixedPad = presentation === 'popover' ? 0 : LIST_CONTENT_PAD;
 
-  // Decided imperatively off each fresh onLayout event rather than through a
-  // useEffect keyed on `needsScroll`: an effect re-running the instant
-  // `needsScroll` flips would read the *previous* render's scroll height (the
-  // new padding's own layout pass hasn't happened yet), always concluding
-  // "still clamped" and reverting on the spot. Reading straight from the
-  // event — which only ever fires once that render's real layout is in —
-  // avoids that stale-state race entirely. Both onLayout callbacks (the
-  // scroll frame and the inner unpadded row wrapper) can fire in either
-  // order, so either one re-evaluates using whatever the other last reported.
+  // Decided off the real layout events, never an effect: an effect's first run precedes any layout
+  // and would report the default guess. Reported every time, not just on a flip, so a list that is
+  // clamped from its first measurement still sends its verdict up once. An unclamped frame hugs its
+  // content, so it is never shorter than rows + `fixedPad`; shorter means something capped it.
   const evaluate = useCallback(() => {
-    const coreHeight = coreHeightRef.current;
-    const scrollHeight = scrollHeightRef.current;
-    if (coreHeight === 0 || scrollHeight === 0) return;
-    if (needsScrollRef.current) {
-      // Flush right now. An unclamped ScrollView auto-sizes down to exactly
-      // its content's height (it doesn't hold slack in reserve), so "not
-      // clamped" reads as scrollHeight ≈ coreHeight — that's the signal
-      // there's room to try adding padding, not scrollHeight already being
-      // bigger than coreHeight.
-      if (!triedPadded.current && scrollHeight >= coreHeight - 0.5) {
-        triedPadded.current = true;
-        needsScrollRef.current = false;
-        setNeedsScroll(false);
-      }
-    } else if (scrollHeight < coreHeight + Spacing.four * 2 - 0.5) {
-      // Padded right now — if that push clamped it after all, revert.
-      needsScrollRef.current = true;
-      setNeedsScroll(true);
-    }
-    reportNeedsScroll?.(needsScrollRef.current);
-  }, [reportNeedsScroll]);
+    const rows = rowsHeightRef.current;
+    const frame = frameHeightRef.current;
+    if (rows === 0 || frame === 0) return;
+    const next = rows + fixedPad > frame + 0.5;
+    setNeedsScroll(next);
+    reportNeedsScroll?.(next);
+  }, [fixedPad, reportNeedsScroll]);
 
 
   return (
@@ -389,7 +367,7 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       // offset (see SheetScroll), so disabling it there would take the sheet's gesture with it.
       scrollEnabled={presentation === 'sheet' || needsScroll}
       onLayout={(e) => {
-        scrollHeightRef.current = e.nativeEvent.layout.height;
+        frameHeightRef.current = e.nativeEvent.layout.height;
         evaluate();
       }}
       style={
@@ -399,9 +377,9 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       }
       contentContainerStyle={
         presentation === 'popover'
-          ? // Flush: the PANEL carries the padding (see `styles.popover`), on every platform. Both
-            // applying it stacked 32pt of empty band above and below a two-row menu.
-            listStyles.listContentPopover
+          ? needsScroll
+            ? listStyles.listContentPopoverScrolling
+            : undefined
           : listStyles.listContent
       }
       keyboardShouldPersistTaps="handled"
@@ -409,7 +387,7 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       <View
         style={listStyles.rowsWrapper}
         onLayout={(e) => {
-          coreHeightRef.current = e.nativeEvent.layout.height;
+          rowsHeightRef.current = e.nativeEvent.layout.height;
           evaluate();
         }}>
         {children}
@@ -422,12 +400,11 @@ const listStyles = StyleSheet.create({
   header: {
     gap: Spacing.three,
   },
-  // The popover no longer has its own paddingVertical (see `styles.popover`),
-  // so a header that does render on the popover (TriEditor/TagSearchEditor's
-  // helper text, search input) needs its own top clearance from the border.
+  // On top of the panel's own top pad, so a header's helper text or search
+  // field sits as far off the border as it does off the list below it.
   headerPopover: {
     gap: Spacing.three,
-    paddingTop: Spacing.four,
+    paddingTop: Spacing.two,
   },
   listContent: {
     // `gap` lives on `rowsWrapper` instead (below): both presentations wrap
@@ -440,13 +417,11 @@ const listStyles = StyleSheet.create({
     paddingTop: Spacing.one,
     paddingBottom: LIST_TRAILING_SPACE,
   },
-  // Flush by default (see `OptionList`'s popover-padding settle logic above);
-  // `gap` lives on `rowsWrapper` instead, since rows sit inside that inner
-  // measuring wrapper rather than directly in this contentContainerStyle.
-  listContentPopover: {},
-  // Shared by both presentations — the inner View `OptionList` measures its
-  // rows against, unpadded so neither presentation's fits/needs-scroll
-  // decision gets thrown off by the padding it's used to decide.
+  // The panel's bottom padding, moved inside the scroller while the list scrolls (the panel drops
+  // its own then — see `OverlayPopover`), so the end of the list still lands off the edge.
+  listContentPopoverScrolling: {
+    paddingBottom: POPOVER_PANEL_PAD,
+  },
   // 8pt between rows was a sheet's, where every row was a filled button that needed separating from
   // the next. Rows are transparent until hovered or selected now, so a gap separates nothing and
   // only makes the list tall — the rail's own 2 is the right amount, on both presentations.
@@ -1335,10 +1310,15 @@ function OverlayPopover({
   }, [left, top, width, rectHeight]);
 
   // Same real-number budget as `OverlaySheet` (see the note above
-  // `ROW_UNIT_HEIGHT`) — `maxHeight` here is already a real, anchor-clamped
-  // number, so it's used directly rather than re-derived.
+  // `ROW_UNIT_HEIGHT`), less the panel's own padding. BOTH pads are taken off even though a
+  // scrolling list drops the bottom one: a budget that grew when the list scrolled could let it fit,
+  // which would put the pad back, which would make it scroll again.
   const [headerHeight, setHeaderHeight] = useState(0);
-  const budget = useMemo<SheetBudget>(() => ({ budget: maxHeight, headerHeight, setHeaderHeight }), [maxHeight, headerHeight]);
+  const budget = useMemo<SheetBudget>(
+    () => ({ budget: maxHeight - POPOVER_PANEL_PAD * 2, headerHeight, setHeaderHeight }),
+    [maxHeight, headerHeight],
+  );
+  const [listScrolls, setListScrolls] = useState(false);
 
   const animStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
@@ -1361,14 +1341,16 @@ function OverlayPopover({
           // has to do that on a phone for the same reason it does on a desktop.
           styles.floatingEdge,
           styles.popoverEdge,
-          { borderColor: theme.overlayHairline },
+          { borderColor: theme.overlayHairline, paddingBottom: listScrolls ? 0 : POPOVER_PANEL_PAD },
         ]}
         onLayout={(e) => {
           const { width: w, height: hh } = e.nativeEvent.layout;
           setCard((prev) => (prev && prev.height === hh && prev.width === w ? prev : { width: w, height: hh }));
         }}>
         <OverlayPresentationContext.Provider value="popover">
-          <SheetBudgetContext.Provider value={budget}>{children}</SheetBudgetContext.Provider>
+          <SheetBudgetContext.Provider value={budget}>
+            <SheetContentScrollContext.Provider value={setListScrolls}>{children}</SheetContentScrollContext.Provider>
+          </SheetBudgetContext.Provider>
         </OverlayPresentationContext.Provider>
       </View>
     </Animated.View>
@@ -1480,9 +1462,10 @@ const styles = StyleSheet.create({
     // none, and the rows inside no longer carry a fill of their own (see selector.tsx), so that
     // padding read as dead space around a floating list rather than as the menu's own body. The
     // vertical pad is the same 8, for the reason the settings modal's category list takes one: a
-    // first row flush into a rounded corner while every other edge is padded.
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
+    // first row flush into a rounded corner while every other edge is padded. The bottom pad is set
+    // inline: it gives way to a list that scrolls (see `OptionList`).
+    paddingHorizontal: POPOVER_PANEL_PAD,
+    paddingTop: POPOVER_PANEL_PAD,
   },
   heading: {
     marginBottom: Spacing.one,
