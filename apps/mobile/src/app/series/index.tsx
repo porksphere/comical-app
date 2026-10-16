@@ -1684,16 +1684,19 @@ function SeriesReaderInstance({
     progress.set(1);
     detailsActiveSV.set(true);
   }, [paneHandoffs, progress, detailsActiveSV]);
-  const leavePaneToRead = useCallback((): boolean => {
+  // `at` is for callers that set a new target in the same handler: `target` here is still the
+  // previous render's, so a page tapped in the details would hand off the old start page.
+  const leavePaneToRead = useCallback((at: ReadTarget | null = target): boolean => {
     if (!inPane) return false;
-    const next: Record<string, string> = { reader: '1', start: String(target?.start ?? 0) };
+    const next: Record<string, string> = { reader: '1', start: String(at?.start ?? 0) };
     for (const [k, v] of Object.entries(params)) if (typeof v === 'string') next[k] = v;
-    if (target?.chapterId) {
-      next.chapterId = target.chapterId;
-      next.chapterName = target.chapterName ?? '';
+    if (at?.chapterId) {
+      next.chapterId = at.chapterId;
+      next.chapterName = at.chapterName ?? '';
     } else if (isDirect) {
       next.direct = '1';
     }
+    if (at?.picked) next.picked = '1';
     setPaneHandoffs((n) => n + 1);
     router.push({ pathname: '/series', params: next });
     return true;
@@ -1717,11 +1720,11 @@ function SeriesReaderInstance({
   }, [detailsActive, scheduleHide]);
   // Full JS-side reveal (pill, grab-handle, hardware back, chapter/page intents).
   const setRevealed = useCallback(
-    (to: 0 | 1) => {
+    (to: 0 | 1, at?: ReadTarget) => {
       // Ahead of the 240ms reveal, not just at its commit: in the pane the reader is not where
       // this is going, so playing the reveal first would show a page at pane width and then
       // replace it.
-      if (to === 0 && leavePaneToRead()) return;
+      if (to === 0 && leavePaneToRead(at)) return;
       detailsActiveSV.set(to === 1);
       pullEngagedSV.set(false); // the commit animation owns `progress` — stop any live pull-follow
       progress.set(withTiming(to, { duration: 240, easing: Easing.out(Easing.cubic) }));
@@ -3463,12 +3466,15 @@ function SeriesReaderInstance({
       }
       if (v.id !== targetChapterId) {
         setJumpNonce((n) => n + 1); // explicit jump — remount seeded at the target, even in-window
-        setOverride({
+        const next: ReadTarget = {
           chapterId: v.id,
           chapterName: v.name,
           start: resume?.chapterId === v.id ? (resume.lastPage ?? 0) : 0,
           picked: true,
-        });
+        };
+        setOverride(next);
+        setRevealed(0, next);
+        return;
       }
       setRevealed(0);
     },
@@ -3494,13 +3500,12 @@ function SeriesReaderInstance({
       // seeds from it instead. A pane that IS mounted ignores the seed — `start` is read once, at
       // mount — and the direct call is what moves it.
       paneRef.current?.goTo(pageIndex, false);
-      setOverride((o) => {
-        const from = o ?? derivedTarget;
-        return from ? { ...from, start: pageIndex, picked: true } : { start: pageIndex, picked: true };
-      });
-      setRevealed(0);
+      const from = override ?? derivedTarget;
+      const next: ReadTarget = from ? { ...from, start: pageIndex, picked: true } : { start: pageIndex, picked: true };
+      setOverride(next);
+      setRevealed(0, next);
     },
-    [sequence, openFromSequenceDetails, detailSeriesId, detailBridgeId, detailTitle, setRevealed, derivedTarget],
+    [sequence, openFromSequenceDetails, detailSeriesId, detailBridgeId, detailTitle, setRevealed, override, derivedTarget],
   );
   // The Read button/cover: the pane already sits at the same resume point Read would compute.
   const startReadingFromDetails = useCallback(() => setRevealed(0), [setRevealed]);
