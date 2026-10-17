@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View, type TextStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
+import { NO_OUTLINE, ROW_INPUT } from '@/components/input-style';
 import { Fonts, Spacing } from '@/constants/theme';
 import SearchScreen from '@/app/search';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
@@ -16,8 +17,6 @@ import {
   submitSidebarSearch,
   useSidebarSearch,
 } from '@/lib/sidebar-search';
-
-const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
 
 /** With its margin, a destination row's height — the rail's rhythm rather than the bars'. */
 const FIELD_HEIGHT = 40;
@@ -126,6 +125,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   input: {
+    ...ROW_INPUT,
     flex: 1,
     minWidth: 0,
     fontFamily: Fonts.sans,

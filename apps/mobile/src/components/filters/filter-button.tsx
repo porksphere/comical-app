@@ -1,6 +1,7 @@
 import { memo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View, type TextStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { NO_OUTLINE, ROW_INPUT, SINGLE_LINE_INPUT } from '@/components/input-style';
 import { useAnchoredOverlay, useKeyboardAvoidingInput } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -19,11 +20,6 @@ import {
   type FilterValue,
 } from './filter-types';
 import { OverflowChips } from './overflow-chips';
-
-// Suppress react-native-web's default focus outline on the <input> so the
-// row's own border carries the focus highlight instead (matches SearchField).
-// No-op on native.
-const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
 
 const LABEL_FONT_SIZE = 16;
 const LABEL_LINE_HEIGHT = 24;
@@ -348,10 +344,10 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   inlineInput: {
+    ...ROW_INPUT,
     flex: 1,
     minWidth: 0,
     fontSize: 16,
-    lineHeight: 24,
     padding: 0,
     zIndex: 1,
   },
@@ -375,9 +371,10 @@ const styles = StyleSheet.create({
   // sized to the current text length, which is what makes the pill hug just
   // the digits instead of reserving extra space.
   valueInput: {
+    ...SINGLE_LINE_INPUT,
     flexShrink: 0,
+    height: 20,
     fontSize: 14,
-    lineHeight: 20,
     textAlign: 'center',
     padding: 0,
   },

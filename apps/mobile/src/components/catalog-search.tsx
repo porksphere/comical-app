@@ -6,10 +6,11 @@
  */
 import { Image } from 'expo-image';
 import { useRef, useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View, type TextStyle } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
+import { NO_OUTLINE, SINGLE_LINE_INPUT } from '@/components/input-style';
 import { CheckIcon, ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { useKeyboardAvoidingInput, useSheetScroll } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
@@ -89,10 +90,6 @@ export function SourceTabs({
     </ThemedView>
   );
 }
-
-// Suppress react-native-web's default focus outline (the field's own border carries the focus
-// highlight instead) — same trick as the browse search field.
-const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
 
 /** The query box: a search glyph, the text, a clear button, and an accent border while focused.
  *  It keeps itself above the on-screen keyboard inside a sheet. */
@@ -232,6 +229,7 @@ export const catalogSearchStyles = StyleSheet.create({
     borderWidth: 1,
   },
   searchInput: {
+    ...SINGLE_LINE_INPUT,
     flex: 1,
     fontSize: 14,
     padding: 0,

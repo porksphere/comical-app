@@ -9,6 +9,7 @@ import {
   useKeyboardAvoidingInput,
   useOverlayPresentation,
 } from '@/components/overlay/overlay';
+import { SINGLE_LINE_INPUT } from '@/components/input-style';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -385,6 +386,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   input: {
+    ...SINGLE_LINE_INPUT,
     borderWidth: 1,
     borderRadius: Spacing.three,
     paddingVertical: Spacing.three,

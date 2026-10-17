@@ -1,16 +1,13 @@
 import { useNavigation } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, type TextStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput } from 'react-native';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
+import { NO_OUTLINE, ROW_INPUT } from '@/components/input-style';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { CONTROL_HEIGHT } from '@/components/filters/filter-types';
 import { useTheme } from '@/hooks/use-theme';
-
-// Suppress react-native-web's default focus outline on the <input> so the
-// container border carries the focus highlight instead. No-op on native.
-const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
 
 /**
  * The shared search field used by Browse and Library: a pill with a leading
@@ -186,6 +183,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   searchInput: {
+    ...ROW_INPUT,
     flex: 1,
     fontSize: 16,
     padding: 0,

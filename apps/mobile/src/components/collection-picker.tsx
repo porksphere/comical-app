@@ -13,7 +13,7 @@
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { BackHandler, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, type TextStyle } from 'react-native';
+import { BackHandler, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, {
   interpolate,
   runOnJS,
@@ -34,6 +34,7 @@ import {
   MENU_FILL,
 } from '@/components/context-menu-material';
 import { CheckIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { NO_OUTLINE, ROW_INPUT } from '@/components/input-style';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useItemCollections, type ItemTarget } from '@/hooks/use-item-collections';
@@ -44,7 +45,6 @@ import { hapticImpactLight } from '@/lib/haptics';
 import { windowModalLayer } from '@/lib/window-controls';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
-const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
 const OPEN_SPRING = { damping: 18, stiffness: 320, mass: 0.7 } as const;
 const CARD_MAX_WIDTH = 340;
 const MAX_LIST_HEIGHT = 320;
@@ -380,9 +380,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   newInput: {
+    ...ROW_INPUT,
     padding: 0,
     fontSize: 16,
-    lineHeight: 24,
   },
   done: {
     borderRadius: 999,
