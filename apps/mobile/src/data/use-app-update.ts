@@ -29,7 +29,7 @@
  *    ever run while the About screen itself is mounted — the tab pip and toast need it running
  *    app-wide.
  */
-import { useQuery } from '@tanstack/react-query';
+import { useIsFetching, useQuery } from '@tanstack/react-query';
 import { openBrowserAsync } from 'expo-web-browser';
 import { AppState, Platform } from 'react-native';
 
@@ -194,6 +194,22 @@ export function useAppUpdateCheck(): AppUpdateCheck {
   if (!supported) return { status: 'unsupported' };
   if (data) return data;
   return { status: isError ? 'error' : 'checking' };
+}
+
+/** The About row's press when there's nothing to install: a check now, past the staleTime. A toast
+ *  answers it, because an up-to-date result looks exactly like the row did before the press. */
+export function useAppUpdateRecheck(): { checking: boolean; recheck: () => void } {
+  const queryKey = queryKeys.appUpdateCheck(BUILD_CHANNEL, RUNNING_BUILD_ID);
+  const checking = useIsFetching({ queryKey }) > 0;
+  const recheck = () => {
+    if (checking) return;
+    void queryClient.refetchQueries({ queryKey }).then(() => {
+      const state = queryClient.getQueryState<AppUpdateCheck>(queryKey);
+      if (state?.status === 'error') showToast("Couldn't check for updates");
+      else if (state?.data?.status === 'up-to-date') showToast("You're on the latest version");
+    });
+  };
+  return { checking, recheck };
 }
 
 /** The Update button, for the two screens that have one: which step this build is at, the version

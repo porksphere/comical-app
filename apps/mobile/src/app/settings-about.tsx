@@ -25,7 +25,7 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useApiBase } from '@/data/api';
 import { getResolvedModeSync } from '@/data/embedded/preference';
 import { IS_DEMO_MODE, useMockActive } from '@/data/source';
-import { useAppUpdateAction, useAppUpdateCheck } from '@/data/use-app-update';
+import { useAppUpdateAction, useAppUpdateCheck, useAppUpdateRecheck } from '@/data/use-app-update';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
@@ -78,6 +78,7 @@ export default function AboutScreen() {
   const mockActive = useMockActive();
   const appUpdate = useAppUpdateCheck();
   const updateAction = useAppUpdateAction();
+  const { checking, recheck } = useAppUpdateRecheck();
   const updateVersion = updateAction?.version ?? 'newer build';
   // The mode actually in force right now, not the stored preference — the toggle only takes effect
   // where the native runtime exists (see embedded/preference.ts).
@@ -178,7 +179,7 @@ export default function AboutScreen() {
                       ? `Downloading version ${updateVersion}…`
                       : updateAction
                         ? `Version ${updateVersion} available`
-                        : appUpdate.status === 'checking'
+                        : checking || appUpdate.status === 'checking'
                           ? 'Checking…'
                           : appUpdate.status === 'error'
                             ? "Couldn't check"
@@ -190,9 +191,13 @@ export default function AboutScreen() {
                     <ThemedText type="smallBold" style={{ color: theme.accent }}>
                       {updateAction.step === 'restart' ? 'Restart' : 'Update'}
                     </ThemedText>
-                  ) : undefined
+                  ) : updateAction ? undefined : (
+                    <ThemedText type="smallBold" style={{ color: checking ? theme.textSecondary : theme.accent }}>
+                      Check
+                    </ThemedText>
+                  )
                 }
-                onPress={updateAction?.run}
+                onPress={updateAction ? updateAction.run : recheck}
               />
             )}
           </SettingsSection>
