@@ -265,6 +265,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     moved: false,
     // direction disambiguation ('swipe' vs 'pan')
     dirDecided: false,
+    // A mouse drag on a page zoomed past its rest: only ever a pan, never handed to the swipe — a
+    // drag across a page with no sideways room would otherwise turn it rather than move it down.
+    panOnly: false,
     // pan (zoomed, or a page that overflows at rest)
     panStartX: 0,
     panStartY: 0,
@@ -422,8 +425,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const startPanInertia = useCallback(() => {
     cancelInertia();
     const s = zoom.current.scale;
-    if (s <= 1) return;
     const { x: limitX, y: limitY } = panLimits(s, restRef.current.box, { width, height });
+    if (limitX <= 0 && limitY <= 0) return;
     let vx = gesture.panVX;
     let vy = gesture.panVY;
     if (Math.abs(vx) < MIN_FLING_V && Math.abs(vy) < MIN_FLING_V) return;
@@ -637,8 +640,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     if (standby) return;
     zoomLevel$.set(zoom.current.scale / restRef.current.restScale);
     return registerZoomTarget({
-      zoomTo(level) {
-        zoomAround(restRef.current.restScale * level, width / 2, height / 2, true);
+      zoomTo(level, animate = true) {
+        zoomAround(restRef.current.restScale * level, width / 2, height / 2, animate);
         keepZoomLevel(zoom.current.scale / restRef.current.restScale);
       },
       reset() {
@@ -708,6 +711,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     [gesture, zoom],
   );
 
+  // Zoomed past the page's rest — by any control, not just past 1×: a 110% kept level counts, and a
+  // spread at its fit-height rest does not.
+  const zoomedIn = useCallback(() => zoom.current.scale > restRef.current.restScale * ZOOM_EPSILON, [zoom]);
+
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (currentFailedRef.current) return;
@@ -732,7 +739,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       gesture.downT = performance.now();
       gesture.moved = false;
       gesture.dirDecided = false;
-      if (zoomedRef.current || restRef.current.overflowsAtRest) {
+      gesture.panOnly = e.pointerType === 'mouse' && zoomedIn();
+      if (gesture.panOnly || zoomedRef.current || restRef.current.overflowsAtRest) {
         beginPan(p, true); // standalone pan on a page with somewhere to go — momentum allowed
       } else {
         gesture.mode = 'swipe';
@@ -743,7 +751,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         gesture.velocity = 0;
       }
     },
-    [beginPan, beginPinch, cancelInertia, gesture, posOf],
+    [beginPan, beginPinch, cancelInertia, gesture, posOf, zoomedIn],
   );
 
   const onPointerMove = useCallback(
@@ -777,7 +785,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       // past the edge the page already shows (or on a page with no sideways overflow) is handed
       // to the SWIPE, which slides to the next page from here — the hand-off every native reader
       // has, a zoomed page dragged to its edge and then on.
-      if (gesture.mode === 'pan' && !gesture.dirDecided) {
+      if (gesture.mode === 'pan' && !gesture.dirDecided && !gesture.panOnly) {
         const dx = p.x - gesture.panStartX;
         const dy = p.y - gesture.panStartY;
         if (Math.hypot(dx, dy) > DIR_DEADZONE) {
@@ -900,8 +908,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // Arrows and WASD. An axis the page has room on — any, zoomed; only the vertical, for a strip
   // resting at fit-width — is panned while the key is held, and a fresh press at the edge it already
   // shows turns the page, as a drag past it does. Up/Down with no room turn the page (fit-height reads
-  // a page at a time); Left/Right with none are left to the screen's own page turn. Claimed in the
-  // capture phase, ahead of that turn and the app-wide W/S scroll (lib/keyboard-scroll).
+  // a page at a time); Left/Right with none are left to the screen's own page turn — except on a page
+  // zoomed past its rest, where they only ever pan: a page being looked at closely is not turned out
+  // from under the look by the key that was moving it. Claimed in the capture phase, ahead of that
+  // turn and the app-wide W/S scroll (lib/keyboard-scroll).
   useEffect(() => {
     if (standby || !isDesktopPointer()) return;
     const room = () => {
@@ -920,7 +930,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       const dir = keyDirection(e.key);
       if (!dir) return;
       const limit = dir.x !== 0 ? room().x : room().y;
-      if (limit === 0 && dir.x !== 0) return;
+      const sidewaysHeld = dir.x !== 0 && zoomedIn();
+      if (limit === 0 && dir.x !== 0 && !sidewaysHeld) return;
       e.preventDefault();
       e.stopPropagation();
       const at = dir.x !== 0 ? zoom.current.tx : zoom.current.ty;
@@ -928,7 +939,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       if (!atEdge) {
         cancelInertia();
         hold.press(e.key, dir);
-      } else if (!e.repeat) {
+      } else if (!e.repeat && !sidewaysHeld) {
+        hold.stop();
         if (dir.x !== 0) turn(dir.x);
         else turn(rtl ? (-dir.y as -1 | 1) : (dir.y as -1 | 1));
       }
@@ -944,7 +956,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       window.removeEventListener('blur', onBlur);
       hold.dispose();
     };
-  }, [standby, cancelInertia, writeZoom, turn, zoom, rtl, width, height]);
+  }, [standby, cancelInertia, writeZoom, turn, zoom, zoomedIn, rtl, width, height]);
 
   const handleTap = useCallback(
     (x: number) => {

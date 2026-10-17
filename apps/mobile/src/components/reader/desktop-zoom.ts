@@ -2,9 +2,10 @@ import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
 import { showToast } from '@/components/toast';
+import { createKeyHold, HOLD_SPEED } from '@/lib/key-hold';
 
 // Mouse-and-keyboard zoom for the web readers: Ctrl/⌘+wheel (which is also what a trackpad pinch
-// arrives as), the +/-/0 keys and the toolbar's stepper. All of them speak a LEVEL — a multiple of
+// arrives as), the +/-/0 keys, Q/E held and the toolbar's stepper. All of them speak a LEVEL — a multiple of
 // the current page's rest, so 100% is the page as its fit draws it, whatever scale that takes.
 
 /** One press of +/- (and one notch of a mouse wheel, see `wheelZoomFactor`). */
@@ -20,8 +21,10 @@ export const zoomLevel$ = observable(1);
 /** What a reader exposes to the stepper and the keys. Only the PRIMARY reader registers — a pager
  *  parked as the series page's backdrop must not zoom under the details card. */
 export type ZoomTarget = {
-  /** Zoom to `level` about the middle of the viewport (clamped to what the page allows). */
-  zoomTo: (level: number) => void;
+  /** Zoom to `level` about the middle of the viewport (clamped to what the page allows) — eased,
+   *  unless `animate` is false: a held key moves it every frame, and an ease restarted every frame
+   *  only trails behind. */
+  zoomTo: (level: number, animate?: boolean) => void;
   /** Back to the page's rest, as a double-click from a zoomed page does. */
   reset: () => void;
 };
@@ -64,6 +67,24 @@ export function formatZoom(level: number): string {
 
 export function showZoomToast(level: number): void {
   showToast(`Page zoom ${formatZoom(level)}`, { slot: 'reader-zoom', durationMs: 1200 });
+}
+
+/** The factor Q/E zoom by over a second at full speed. */
+const HOLD_ZOOM_PER_S = 2.5;
+
+/** Q zooms out and E in, continuously while held — on the pan keys' own eased velocity
+ *  (lib/key-hold), read as a rate in log-zoom, so it starts, runs and settles the way they do. */
+export function zoomHoldDirection(key: string): -1 | 1 | null {
+  return key === 'q' || key === 'Q' ? -1 : key === 'e' || key === 'E' ? 1 : null;
+}
+export function createZoomHold() {
+  return createKeyHold((dx) => {
+    if (!target || dx === 0) return;
+    const from = zoomLevel$.peek();
+    target.zoomTo(from * HOLD_ZOOM_PER_S ** (dx / HOLD_SPEED), false);
+    const level = zoomLevel$.peek();
+    if (Math.round(level * 100) !== Math.round(from * 100)) showZoomToast(level);
+  });
 }
 
 /** One step in or out from whatever the page shows now (not from the kept level: after a

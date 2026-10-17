@@ -38,7 +38,13 @@ import { BOTTOM_CHROME_HEIGHT, ChapterNavigator, bottomChromeInset } from '@/com
 import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
-import { keepZoomLevel, resetZoom, stepZoom } from '@/components/reader/desktop-zoom';
+import {
+  createZoomHold,
+  keepZoomLevel,
+  resetZoom,
+  stepZoom,
+  zoomHoldDirection,
+} from '@/components/reader/desktop-zoom';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
 import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
@@ -5035,9 +5041,10 @@ const ReaderPane = forwardRef<
   }, [currentPage]);
   useEffect(() => () => recordRef.current(), []);
 
-  // ── Web keyboard nav (single-step; no held-key repeat) ─────────────────────
+  // ── Web keyboard nav ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!IS_WEB || !keyboard || typeof window === 'undefined') return;
+    const zoomHold = createZoomHold();
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
@@ -5050,6 +5057,12 @@ const ReaderPane = forwardRef<
         else stepZoom(e.key === '+' || e.key === '=' ? 1 : -1);
         return;
       }
+      const zoomDir = zoomHoldDirection(e.key);
+      if (zoomDir) {
+        e.preventDefault();
+        zoomHold.press(e.key, { x: zoomDir, y: 0 });
+        return;
+      }
       const isRight = e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D';
       const isLeft = e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A';
       if (!isRight && !isLeft) return;
@@ -5058,8 +5071,17 @@ const ReaderPane = forwardRef<
       const forward = isRight !== (settings.direction === 'rtl');
       (forward ? turnNext : turnPrev)();
     };
+    const onKeyUp = (e: KeyboardEvent) => zoomHold.release(e.key);
+    const onBlur = () => zoomHold.clear();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      zoomHold.dispose();
+    };
   }, [keyboard, turnNext, turnPrev, settings.direction]);
 
   return (

@@ -85,6 +85,11 @@ type Props = {
 const ESTIMATED_ASPECT = 3 / 2;
 // Keep images mounted within this many viewport-heights of the visible area.
 const PRELOAD_VIEWPORTS = 1.5;
+// A mouse drag of the strip: how far the button moves before it is a drag rather than a click, the
+// glide's per-16ms decay after release, and the speed (px/ms) it stops at.
+const DRAG_SLOP = 5;
+const DRAG_FRICTION = 0.94;
+const DRAG_MIN_V = 0.02;
 
 function seedWindow(center: number, n: number): Set<number> {
   const s = new Set<number>();
@@ -549,6 +554,100 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     };
   }, [standby]);
 
+  // A mouse drags the strip, both axes, with a glide on release — the hand's own scroll, which a
+  // strip zoomed wider than the window otherwise only has as Shift+wheel. The press is kept from the
+  // series screen's collapse pan, which would read the sideways part of any drag as a dismiss. A drag
+  // swallows the click that ends it, or letting go would toggle the chrome.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || standby || !isDesktopPointer()) return;
+    type Drag = { id: number; x: number; y: number; left: number; top: number; lastX: number; lastY: number; lastT: number; vx: number; vy: number; moved: boolean };
+    let drag: Drag | null = null;
+    let glide: number | null = null;
+    let swallowClick = false;
+    const stopGlide = () => {
+      if (glide != null) cancelAnimationFrame(glide);
+      glide = null;
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      e.stopPropagation();
+      stopGlide();
+      swallowClick = false;
+      const now = performance.now();
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, lastX: e.clientX, lastY: e.clientY, lastT: now, vx: 0, vy: 0, moved: false };
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id || pinch.current.active) return;
+      const dx = e.clientX - drag.x;
+      const dy = e.clientY - drag.y;
+      if (!drag.moved) {
+        if (Math.hypot(dx, dy) < DRAG_SLOP) return;
+        drag.moved = true;
+        el.setPointerCapture(e.pointerId);
+        el.style.cursor = 'grabbing';
+      }
+      el.scrollLeft = drag.left - dx;
+      el.scrollTop = drag.top - dy;
+      userScrolledRef.current = true;
+      const now = performance.now();
+      const dt = Math.max(1, now - drag.lastT);
+      drag.vx = (e.clientX - drag.lastX) / dt;
+      drag.vy = (e.clientY - drag.lastY) / dt;
+      drag.lastX = e.clientX;
+      drag.lastY = e.clientY;
+      drag.lastT = now;
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const d = drag;
+      drag = null;
+      if (!d.moved) return;
+      swallowClick = true;
+      el.style.cursor = '';
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      // A drag that stopped before letting go doesn't coast.
+      if (performance.now() - d.lastT > 50) return;
+      let { vx, vy } = d;
+      let last = performance.now();
+      const step = () => {
+        const now = performance.now();
+        const dt = Math.min(32, now - last);
+        last = now;
+        el.scrollLeft -= vx * dt;
+        el.scrollTop -= vy * dt;
+        const decay = Math.pow(DRAG_FRICTION, dt / 16);
+        vx *= decay;
+        vy *= decay;
+        glide = Math.abs(vx) > DRAG_MIN_V || Math.abs(vy) > DRAG_MIN_V ? requestAnimationFrame(step) : null;
+      };
+      glide = requestAnimationFrame(step);
+    };
+    const onClick = (e: MouseEvent) => {
+      if (!swallowClick) return;
+      swallowClick = false;
+      e.stopPropagation();
+    };
+    const noDrag = (e: Event) => e.preventDefault();
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+    el.addEventListener('click', onClick, true);
+    el.addEventListener('dragstart', noDrag);
+    el.addEventListener('wheel', stopGlide, { passive: true });
+    return () => {
+      stopGlide();
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+      el.removeEventListener('click', onClick, true);
+      el.removeEventListener('dragstart', noDrag);
+      el.removeEventListener('wheel', stopGlide);
+    };
+  }, [standby]);
+
   // Jump to the entry page once mounted, then correct twice more shortly after:
   // the first jump only has the generic estimate to go on for most slots (real
   // heights are unknown until each image loads), so as the seeded window around
@@ -657,6 +756,7 @@ function scrollerStyle(paged: boolean, snapEnabled: boolean): React.CSSPropertie
     overflowY: 'auto',
     overflowX: 'hidden',
     touchAction: 'pan-y',
+    userSelect: 'none',
     WebkitOverflowScrolling: 'touch',
     scrollSnapType: snapEnabled ? 'y mandatory' : undefined,
     // Pure black, matching the app's own background and native's `READER_BACKDROP`.
