@@ -3784,6 +3784,7 @@ function SeriesReaderInstance({
               scrollEnabled={!swipeLocked}
               onHeroCoverRect={onHeroCoverRect}
               coverAspectSeed={heroAspectSeed}
+              saveKeyEnabled={IS_WEB && !!isTop && detailsActive}
             />
             </BackSwipeGestureContext.Provider>
           </Animated.View>
@@ -4426,6 +4427,7 @@ function SeriesDetailsHost({
   scrollEnabled,
   onHeroCoverRect,
   coverAspectSeed,
+  saveKeyEnabled,
 }: {
   bridgeId?: string;
   id?: string;
@@ -4454,6 +4456,7 @@ function SeriesDetailsHost({
   scrollGesture?: ComposedGesture;
   /** False while a horizontal details gesture is active, so the list can't scroll under it. */
   scrollEnabled?: boolean;
+  saveKeyEnabled?: boolean;
 }) {
   const ds = useDataSource();
   const mock = useMockActive();
@@ -4537,6 +4540,7 @@ function SeriesDetailsHost({
       scrollGesture={scrollGesture}
       scrollEnabled={scrollEnabled}
       onHeroCoverRect={onHeroCoverRect}
+      saveKeyEnabled={saveKeyEnabled}
     />
   );
 }

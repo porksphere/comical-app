@@ -7,7 +7,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -30,6 +30,7 @@ import { SeriesDownloadButton } from '@/components/series/download-button';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
+import { showToast } from '@/components/toast';
 import { useTopBarInset } from '@/components/top-bar';
 import { ContinuousCorner, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { librarySeriesQuery, queryKeys, relatedGroupsQuery, savedSeriesListQuery, seriesListQuery } from '@/data/queries';
@@ -45,6 +46,7 @@ import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
+import { isTypingTarget } from '@/lib/key-hold';
 import { useOpenSearchLayer } from '@/lib/series-nav';
 import { measureZoomRect } from '@/lib/series-zoom';
 import { useRouter } from '@/lib/nav';
@@ -327,7 +329,8 @@ export function SeriesBody({
   wrapperStyle,
   scrollGesture,
   scrollEnabled,
-  onHeroCoverRect
+  onHeroCoverRect,
+  saveKeyEnabled = false,
 }: {
   series: SeriesDetail;
   bridgeId?: string;
@@ -373,6 +376,9 @@ export function SeriesBody({
   /** False while the series page's horizontal gesture is active — freezes whichever list owns
    *  the scroll so it can't scroll under the swipe. The classic route passes nothing. */
   scrollEnabled?: boolean;
+  /** F works the save button (web) — on for the one details page in front of you only: layers
+   *  beneath it, and the reader's half of the screen, have their own F. */
+  saveKeyEnabled?: boolean;
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -467,6 +473,23 @@ export function SeriesBody({
     series.title,
     direct,
   );
+  // F does what a press of the button does, and says so when it saves — the button may be scrolled
+  // out of sight.
+  const onSaveKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key !== 'f' && e.key !== 'F') return;
+    if (e.altKey || e.ctrlKey || e.metaKey || e.repeat || e.defaultPrevented || isTypingTarget(e.target)) return;
+    if (!bridgeId || save.saved === null) return;
+    e.preventDefault();
+    if (save.saved) return save.pick();
+    save.onPress();
+    showToast('Added to library');
+  });
+  useEffect(() => {
+    if (!saveKeyEnabled || typeof window === 'undefined') return;
+    const listener = (e: KeyboardEvent) => onSaveKey(e);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, [saveKeyEnabled]);
 
   // What Read is CALLED — the resume point's own chapter name, resolved from the cached history.
   // Shared with the card long-press menu's Read row (see useStartReading) so the two can't name
