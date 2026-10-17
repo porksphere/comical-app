@@ -49,6 +49,7 @@ import { installErrorToasts } from '@/data/error-toasts';
 import { installAppUpdateAutoCheck } from '@/data/use-app-update';
 import { installBrowserZoomToast } from '@/lib/browser-zoom-toast';
 import { useDesktopShellCommands } from '@/lib/desktop-commands';
+import { installKeyboardScroll } from '@/lib/keyboard-scroll';
 import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { useWindowThemeColor } from '@/lib/window-controls';
@@ -75,6 +76,9 @@ installErrorToasts();
 
 // "Browser zoom 110%" for Ctrl/⌘ +/-/0, which the page leaves to the browser (web only).
 installBrowserZoomToast();
+
+// W/S and ↑/↓ scroll whichever screen is under the pointer (web only).
+installKeyboardScroll();
 
 // DevProfiler is profiling-only tooling; require it behind `PROFILING_ENABLED` (dev, or a CI
 // profiling-release build) so its module — and the react-native-release-profiler dependency it

@@ -43,6 +43,7 @@ import {
   ZOOM_EPSILON,
 } from '@/components/reader/reader-zoom';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
+import { createKeyHold, isTypingTarget, keyDirection } from '@/lib/key-hold';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
@@ -895,6 +896,55 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     },
     [onPrev, onNext, settleTo, n, rtl],
   );
+
+  // Arrows and WASD. An axis the page has room on — any, zoomed; only the vertical, for a strip
+  // resting at fit-width — is panned while the key is held, and a fresh press at the edge it already
+  // shows turns the page, as a drag past it does. Up/Down with no room turn the page (fit-height reads
+  // a page at a time); Left/Right with none are left to the screen's own page turn. Claimed in the
+  // capture phase, ahead of that turn and the app-wide W/S scroll (lib/keyboard-scroll).
+  useEffect(() => {
+    if (standby || !isDesktopPointer()) return;
+    const room = () => {
+      const limit = panLimits(zoom.current.scale, restRef.current.box, { width, height });
+      const pans = zoomedRef.current || restRef.current.overflowsAtRest;
+      return { x: pans && limit.x > 0.5 ? limit.x : 0, y: pans && limit.y > 0.5 ? limit.y : 0 };
+    };
+    const hold = createKeyHold((dx, dy) => {
+      const limit = room();
+      const { scale, tx, ty } = zoom.current;
+      zoom.current = { scale, tx: clamp(tx - dx, -limit.x, limit.x), ty: clamp(ty - dy, -limit.y, limit.y) };
+      writeZoom(false);
+    });
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || isTypingTarget(e.target)) return;
+      const dir = keyDirection(e.key);
+      if (!dir) return;
+      const limit = dir.x !== 0 ? room().x : room().y;
+      if (limit === 0 && dir.x !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const at = dir.x !== 0 ? zoom.current.tx : zoom.current.ty;
+      const atEdge = limit === 0 || -(dir.x || dir.y) * at >= limit - 0.5;
+      if (!atEdge) {
+        cancelInertia();
+        hold.press(e.key, dir);
+      } else if (!e.repeat) {
+        if (dir.x !== 0) turn(dir.x);
+        else turn(rtl ? (-dir.y as -1 | 1) : (dir.y as -1 | 1));
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => hold.release(e.key);
+    const onBlur = () => hold.clear();
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keyup', onKeyUp, true);
+      window.removeEventListener('blur', onBlur);
+      hold.dispose();
+    };
+  }, [standby, cancelInertia, writeZoom, turn, zoom, rtl, width, height]);
 
   const handleTap = useCallback(
     (x: number) => {

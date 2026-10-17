@@ -25,6 +25,7 @@ import {
 } from '@/components/reader/reader-zoom';
 import { webtoonFit } from '@/components/reader/settings-panel';
 import type { PageFit } from '@/hooks/use-reader-settings';
+import { createKeyHold, isTypingTarget, keyDirection } from '@/lib/key-hold';
 
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
 
@@ -511,76 +512,42 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paged, standby, width, height]);
 
-  // Smooth continuous vertical scroll while Up/Down (or W/S) is held. The
-  // browser's own key-repeat doesn't drive scrollTop at all here (this div
-  // isn't natively keyboard-scrollable), so this owns movement directly via
-  // a per-frame, delta-time-based velocity instead of stepping once per
-  // keydown — constant speed regardless of frame rate, and no OS-repeat
-  // unevenness to stutter on. Only wired up on a desktop (mouse+keyboard)
-  // session — see `isDesktopPointer` for why `fit-page`'s CSS scroll-snap is
-  // skipped there entirely, which is what makes direct `scrollTop` writes
-  // work here in the first place.
+  // Smooth continuous scroll while an arrow or WASD is held (see lib/key-hold) — this div
+  // isn't natively keyboard-scrollable. Only on a desktop (mouse+keyboard) session — see
+  // `isDesktopPointer` for why `fit-page`'s CSS scroll-snap is skipped there entirely, which is what
+  // makes direct `scrollTop` writes work here in the first place. Claimed in the capture phase, so
+  // the app-wide W/S scroll (lib/keyboard-scroll) doesn't scroll the strip a second time; a strip
+  // parked behind the details leaves the keys to the details.
   useEffect(() => {
     const el = scrollerRef.current;
-    if (!el || !isDesktopPointer()) return;
-    const held = { up: false, down: false };
-    const SCROLL_SPEED = 900; // px/sec
-    let rafId: number | null = null;
-    let lastT = 0;
-
-    const tick = (t: number) => {
-      if (!held.up && !held.down) {
-        rafId = null;
-        return;
-      }
-      const dt = lastT ? (t - lastT) / 1000 : 0;
-      lastT = t;
-      if (!pinch.current.active) {
-        const dir = held.down ? 1 : -1;
-        el.scrollTop = clamp(el.scrollTop + SCROLL_SPEED * dt * dir, 0, el.scrollHeight - el.clientHeight);
-        userScrolledRef.current = true;
-      }
-      rafId = requestAnimationFrame(tick);
-    };
-    const start = () => {
-      if (rafId == null) {
-        lastT = 0;
-        rafId = requestAnimationFrame(tick);
-      }
-    };
-
+    if (!el || standby || !isDesktopPointer()) return;
+    const hold = createKeyHold((dx, dy) => {
+      if (pinch.current.active) return;
+      el.scrollLeft = clamp(el.scrollLeft + dx, 0, el.scrollWidth - el.clientWidth);
+      el.scrollTop = clamp(el.scrollTop + dy, 0, el.scrollHeight - el.clientHeight);
+      if (dy !== 0) userScrolledRef.current = true;
+    });
     const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
-      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-        held.up = true;
-        e.preventDefault();
-        start();
-      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-        held.down = true;
-        e.preventDefault();
-        start();
-      }
+      if (e.altKey || e.ctrlKey || e.metaKey || isTypingTarget(e.target)) return;
+      const dir = keyDirection(e.key);
+      // Sideways only pans a strip zoomed wider than the screen; otherwise it's the screen's page turn.
+      if (!dir || (dir.x !== 0 && el.scrollWidth <= el.clientWidth + 1)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      hold.press(e.key, dir);
     };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') held.up = false;
-      else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') held.down = false;
-    };
-    const onBlur = () => {
-      held.up = false;
-      held.down = false;
-    };
-
-    window.addEventListener('keydown', onKeyDown);
+    const onKeyUp = (e: KeyboardEvent) => hold.release(e.key);
+    const onBlur = () => hold.clear();
+    window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
     return () => {
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
-      if (rafId != null) cancelAnimationFrame(rafId);
+      hold.dispose();
     };
-  }, []);
+  }, [standby]);
 
   // Jump to the entry page once mounted, then correct twice more shortly after:
   // the first jump only has the generic estimate to go on for most slots (real
