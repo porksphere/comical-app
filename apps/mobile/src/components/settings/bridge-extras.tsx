@@ -6,7 +6,7 @@ import { ChipRow } from '@/components/chip';
 import { openConfirm } from '@/components/confirm-popup';
 import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { showToast } from '@/components/toast';
-import { autoDownloadLibrary, librarySize } from '@/data/downloads/auto';
+import { autoDownloadLibrary, describeBackfill, librarySize } from '@/data/downloads/auto';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { useComicalExcluded } from '@/data/comical-home';
@@ -308,15 +308,15 @@ export function BridgeDownloadLibraryRow({ bridgeId }: { bridgeId: string }) {
   const offer = () => {
     if (mock) return;
     void librarySize(bridgeId)
-      .then(({ series, chapters }) => {
-        if (series === 0) {
-          showToast('No saved series from this bridge');
+      .then((size) => {
+        if (size.series === 0) {
+          showToast(size.skipped > 0 ? 'Everything saved from this bridge is already downloaded' : 'No saved series from this bridge');
           return;
         }
         openConfirm({
           title: 'Download saved series?',
-          message: `${series} series from this bridge in your library, about ${chapters} chapter${chapters === 1 ? '' : 's'}. Anything already downloaded is skipped.`,
-          confirmLabel: `Download ${series} series`,
+          message: describeBackfill(size, 'from this bridge'),
+          confirmLabel: `Download ${size.series} series`,
           tone: 'primary',
           onConfirm: () => {
             void autoDownloadLibrary(ds, mock, bridgeId).then((n) =>

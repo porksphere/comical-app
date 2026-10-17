@@ -25,7 +25,7 @@ import {
 } from '@/data/backup-summary';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
-import { autoDownloadLibrary, librarySize, setAutoNewChapters } from '@/data/downloads/auto';
+import { autoDownloadLibrary, describeBackfill, librarySize, setAutoNewChapters } from '@/data/downloads/auto';
 import { kickDownloads } from '@/data/downloads/engine';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } from '@/data/embedded';
@@ -113,12 +113,12 @@ export default function GeneralSettingsScreen() {
     downloadPrefs$.autoSeries.set(enabled);
     if (!enabled || mock) return;
     void librarySize()
-      .then(({ series, chapters }) => {
-        if (series === 0) return;
+      .then((size) => {
+        if (size.series === 0) return;
         openConfirm({
           title: 'Download your library too?',
-          message: `${series} series already in your library, about ${chapters} chapter${chapters === 1 ? '' : 's'}. Anything already downloaded is skipped.`,
-          confirmLabel: `Download ${series} series`,
+          message: describeBackfill(size, 'already in your library'),
+          confirmLabel: `Download ${size.series} series`,
           tone: 'primary',
           onConfirm: () => {
             void autoDownloadLibrary(ds, mock).then((n) =>

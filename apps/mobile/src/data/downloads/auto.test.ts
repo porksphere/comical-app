@@ -41,7 +41,14 @@ mock.module('../api', () => ({
   dlResumeChapter: async () => ({}),
   dlResumeSeries: async () => ({}),
   dlRequeue: async () => [],
-  dlStorageUsage: async () => ({ totalBytes: 0, seriesCount: 0, chapterCount: 0, pageCount: 0, bySeries: [] }),
+  // The one `manifest` stands for every series, as it does through dlGetSeries above.
+  dlStorageUsage: async () => ({
+    totalBytes: 0,
+    seriesCount: 0,
+    chapterCount: 0,
+    pageCount: 0,
+    bySeries: manifest ? library.map((e) => ({ ...e, chapters: manifest })) : [],
+  }),
   getActivity: async () => {
     await activityGate;
     return activity;
@@ -279,9 +286,29 @@ describe('autoDownloadLibrary', () => {
     expect(bulkIds()).toEqual([['s2', ['c']]]);
   });
 
-  test('librarySize totals series and known chapters', async () => {
-    library = [entry('s1', 10), entry('s2', 5)];
-    expect(await librarySize()).toEqual({ series: 2, chapters: 15 });
+  test('librarySize counts a never-synced series by its known total, and an uninstalled bridge not at all', async () => {
+    library = [entry('s1', 10), entry('s2', 5), { ...entry('x', 3), bridgeId: 'gone' }];
+    bridges = [{ id: 'b', capabilities: [] }];
+    expect(await librarySize()).toEqual({ series: 2, chapters: 15, skipped: 0 });
+  });
+
+  test('librarySize counts only the chapters left to enqueue, and a fully kept series as skipped', async () => {
+    library = [entry('s1', 2), entry('s2', 3)];
+    bridges = [{ id: 'b', capabilities: [] }];
+    saved = { s1: [ch('a', 1), ch('b', 2)], s2: [ch('a', 1), ch('c', 2), ch('d', 3)] };
+    manifest = [dl('a'), dl('b')];
+    expect(await librarySize()).toEqual({ series: 1, chapters: 2, skipped: 1 });
+    expect(await autoDownloadLibrary(ds, false)).toBe(1);
+    expect(bulkIds()).toEqual([['s2', ['c', 'd']]]);
+  });
+
+  test("a direct series already kept is skipped by the offer and the run alike", async () => {
+    library = [entry('s1'), entry('s2')];
+    bridges = [{ id: 'b', capabilities: ['direct'] }];
+    manifest = [dl('__direct__', { state: 'queued' })];
+    expect(await librarySize()).toEqual({ series: 0, chapters: 0, skipped: 2 });
+    expect(await autoDownloadLibrary(ds, false)).toBe(0);
+    expect(enqueued).toEqual([]);
   });
 
   test("a bridge that opted out of series is left out of both the download and the offer", async () => {
@@ -292,7 +319,7 @@ describe('autoDownloadLibrary', () => {
     ];
     saved = { s1: [ch('a', 1)], s2: [ch('c', 1)] };
     bridgeOptOuts = { off: { autoSeries: false } };
-    expect(await librarySize()).toEqual({ series: 1, chapters: 10 });
+    expect(await librarySize()).toEqual({ series: 1, chapters: 1, skipped: 0 });
     expect(await autoDownloadLibrary(ds, false)).toBe(1);
     expect(bulkIds()).toEqual([['s1', ['a']]]);
   });
@@ -306,7 +333,7 @@ describe('autoDownloadLibrary', () => {
     saved = { s1: [ch('a', 1)], s2: [ch('c', 1)], s3: [ch('d', 1)] };
     bridgeOptOuts = { off: { autoSeries: false } };
     prefs.autoSeries = false;
-    expect(await librarySize('off')).toEqual({ series: 2, chapters: 7 });
+    expect(await librarySize('off')).toEqual({ series: 2, chapters: 2, skipped: 0 });
     expect(await autoDownloadLibrary(ds, false, 'off')).toBe(2);
     expect(bulkIds()).toEqual([
       ['s2', ['c']],

@@ -16,7 +16,17 @@
  *
  * Everything here is fire-and-forget: a save never waits on (or fails because of) its download.
  */
-import { dlGetSeries, getActivity, getBridges, getLibrary, getSavedChapters, type ApiActivityItem } from '../api';
+import type { DownloadedChapter } from '@comical/downloads';
+
+import {
+  dlGetSeries,
+  dlStorageUsage,
+  getActivity,
+  getBridges,
+  getLibrary,
+  getSavedChapters,
+  type ApiActivityItem,
+} from '../api';
 import { queryClient } from '../query-client';
 import { queryKeys, seriesListQuery } from '../queries';
 import type { DataSource } from '../source';
@@ -27,7 +37,7 @@ import { persisted$, whenPersistLoaded } from '@/lib/observable';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './constants';
 import { enqueueChapter, enqueueChapters } from './engine';
 import { autoDownloadsFor, bridgeAutoDownload$, downloadPrefs$, getDownloadPrefsSync } from './prefs';
-import { remaining, selectableGroups, toEnqueue } from './select';
+import { remaining, selectableGroups, settled, toEnqueue } from './select';
 
 interface SeriesRef {
   bridgeId: string;
@@ -73,11 +83,18 @@ export function autoDownloadSeries(ds: DataSource, mock: boolean, ref: SeriesRef
   })().catch((e) => report(e, `series bridge=${series.bridgeId} series=${series.seriesId}`));
 }
 
-async function enqueueRemaining(series: SeriesRef, chapters: Chapter[]): Promise<void> {
-  if (chapters.length === 0) return;
+/** Resolves with how many chapters it enqueued — 0 for a series already fully kept or queued. */
+async function enqueueRemaining(series: SeriesRef, chapters: Chapter[]): Promise<number> {
+  if (chapters.length === 0) return 0;
   const manifest = await dlGetSeries(series.bridgeId, series.seriesId).catch(() => null);
   const groups = remaining(selectableGroups(chapters, manifest?.chapters));
   await enqueueChapters(series, toEnqueue(groups, getPreferredGroup()));
+  return groups.length;
+}
+
+/** A direct series' one page set is already kept or queued. */
+function directSettled(manifest: DownloadedChapter[] | null | undefined): boolean {
+  return (manifest ?? []).some((c) => c.chapterId === DIRECT_DOWNLOAD_CHAPTER_ID && settled(c.state));
 }
 
 /** The chapter list the last library sync stored: what a sync just found, with no bridge call. */
@@ -100,10 +117,76 @@ function backfills(entryBridgeId: string, bridgeId: string | undefined): boolean
   return bridgeId ? entryBridgeId === bridgeId : autoDownloadsFor(entryBridgeId, 'autoSeries');
 }
 
-/** What `autoDownloadLibrary` would take on, for the offer made before it runs. */
-export async function librarySize(bridgeId?: string): Promise<{ series: number; chapters: number }> {
-  const library = ((await getLibrary()) ?? []).filter((s) => backfills(s.bridgeId, bridgeId));
-  return { series: library.length, chapters: library.reduce((n, s) => n + s.knownCount, 0) };
+/** The library entries `autoDownloadLibrary` walks, with each one's installed bridge. */
+async function backfillEntries(bridgeId: string | undefined) {
+  const [library, bridges] = await Promise.all([getLibrary(), getBridges()]);
+  const installed = new Map(bridges.map((b) => [b.id, b]));
+  return (library ?? []).flatMap((entry) => {
+    const bridge = installed.get(entry.bridgeId);
+    return bridge && backfills(entry.bridgeId, bridgeId) ? [{ entry, direct: bridge.capabilities.includes('direct') }] : [];
+  });
+}
+
+/** `fn` over every item, at most `limit` in flight — a few hundred stored reads without queueing
+ *  them all at once behind the transport. */
+async function eachLimited<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) await fn(items[next++]!);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+/** The offer `autoDownloadLibrary` makes before it runs. */
+export interface LibraryBackfill {
+  /** Series the run would enqueue something for. */
+  series: number;
+  /** About how many chapters those add up to. */
+  chapters: number;
+  /** Series already fully kept or queued, which the run leaves alone. */
+  skipped: number;
+}
+
+/**
+ * What `autoDownloadLibrary` would take on, judged per series the way the run judges it: the stored
+ * chapter list against the download manifest. Every manifest comes from one storage-usage read and
+ * each stored list is a local read, so a large library costs no bridge call. A series never synced
+ * has no stored list — the run asks its bridge — so it counts as a download by its known total.
+ */
+export async function librarySize(bridgeId?: string): Promise<LibraryBackfill> {
+  const [entries, usage] = await Promise.all([backfillEntries(bridgeId), dlStorageUsage().catch(() => null)]);
+  const manifests = new Map((usage?.bySeries ?? []).map((s) => [`${s.bridgeId}\u0000${s.seriesId}`, s.chapters]));
+  const size: LibraryBackfill = { series: 0, chapters: 0, skipped: 0 };
+  await eachLimited(entries, 8, async ({ entry, direct }) => {
+    const manifest = manifests.get(`${entry.bridgeId}\u0000${entry.seriesId}`);
+    let pending: number;
+    if (direct) {
+      pending = directSettled(manifest) ? 0 : 1;
+    } else {
+      const chapters = await savedChapters(entry.bridgeId, entry.seriesId).catch(() => []);
+      if (chapters.length === 0) {
+        size.series += 1;
+        size.chapters += entry.knownCount;
+        return;
+      }
+      pending = remaining(selectableGroups(chapters, manifest)).length;
+    }
+    if (pending > 0) {
+      size.series += 1;
+      size.chapters += pending;
+    } else {
+      size.skipped += 1;
+    }
+  });
+  return size;
+}
+
+/** The offer's sentence: what a run would download, and what it would leave alone. `where` says
+ *  whose series these are, e.g. "from this bridge". */
+export function describeBackfill({ series, chapters, skipped }: LibraryBackfill, where: string): string {
+  const skip =
+    skipped === 0 ? '' : ` ${skipped} already downloaded ${skipped === 1 ? 'is' : 'are'} skipped.`;
+  return `${series} series ${where} will be downloaded, about ${chapters} chapter${chapters === 1 ? '' : 's'}.${skip}`;
 }
 
 /**
@@ -111,16 +194,13 @@ export async function librarySize(bridgeId?: string): Promise<{ series: number; 
  * and only asks the bridge for a series that has none (never synced), so a large library costs a
  * stored read per series rather than a bridge request. Series whose bridge isn't installed, or has
  * opted out of series downloads, are skipped — unless `bridgeId` names one bridge, which takes
- * only its series and ignores the opt-out. Resolves with how many series it enqueued.
+ * only its series and ignores the opt-out. Resolves with how many series it enqueued something for;
+ * one already fully kept or queued doesn't count.
  */
 export async function autoDownloadLibrary(ds: DataSource, mock: boolean, bridgeId?: string): Promise<number> {
   if (mock) return 0;
-  const [library, bridges] = await Promise.all([getLibrary(), getBridges()]);
-  const installed = new Map(bridges.map((b) => [b.id, b]));
   let count = 0;
-  for (const entry of library ?? []) {
-    const bridge = installed.get(entry.bridgeId);
-    if (!bridge || !backfills(entry.bridgeId, bridgeId)) continue;
+  for (const { entry, direct } of await backfillEntries(bridgeId)) {
     const series = withCover(mock, {
       bridgeId: entry.bridgeId,
       seriesId: entry.seriesId,
@@ -129,17 +209,19 @@ export async function autoDownloadLibrary(ds: DataSource, mock: boolean, bridgeI
       ...(entry.author !== undefined && { author: entry.author }),
     });
     try {
-      if (bridge.capabilities.includes('direct')) {
+      if (direct) {
+        const manifest = await dlGetSeries(series.bridgeId, series.seriesId).catch(() => null);
+        if (directSettled(manifest?.chapters)) continue;
         await enqueueChapter({ ...series, chapterId: DIRECT_DOWNLOAD_CHAPTER_ID, direct: true });
+        count += 1;
       } else {
         let chapters = await savedChapters(series.bridgeId, series.seriesId).catch(() => []);
         if (chapters.length === 0) {
           const q = seriesListQuery(ds, mock, series.bridgeId, series.seriesId, false, true);
           chapters = (await queryClient.fetchQuery({ queryKey: q.queryKey, queryFn: q.queryFn })).chapters ?? [];
         }
-        await enqueueRemaining(series, chapters);
+        if ((await enqueueRemaining(series, chapters)) > 0) count += 1;
       }
-      count += 1;
     } catch (e) {
       report(e, `library bridge=${series.bridgeId} series=${series.seriesId}`);
     }

@@ -15,6 +15,11 @@ import { groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-ord
  *  — re-enqueueing a failed chapter re-queues only its missing pages, i.e. a retry. */
 const SETTLED: ReadonlySet<DownloadState> = new Set(['complete', 'queued', 'downloading', 'paused']);
 
+/** Whether a manifest chapter in this state needs no fresh enqueue. */
+export function settled(state: DownloadState): boolean {
+  return SETTLED.has(state);
+}
+
 /** One logical chapter with its manifest coverage, in ascending reading order. */
 export interface SelectableGroup {
   group: ChapterGroup;
