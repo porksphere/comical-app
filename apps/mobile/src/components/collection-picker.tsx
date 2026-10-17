@@ -12,7 +12,7 @@
  */
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 import { BackHandler, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, {
   interpolate,
@@ -113,6 +113,8 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
   // first submit's `createCollection` await is still in flight and `newName` is still the stale
   // text. The second call then created the same collection again. One-shot latch, reset when the row re-opens.
   const submittingRef = useRef(false);
+  // Escape abandons a half-typed name, but closing the field blurs it, and the blur commits.
+  const abandonedRef = useRef(false);
 
   const dismiss = () => {
     progress.set(
@@ -138,6 +140,24 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Escape backs out one step: the name being typed, else the picker. Captured on the window so
+  // nothing the picker was opened over — a series layer, the settings panel — closes with it.
+  const onEscape = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (!creating) return dismiss();
+    abandonedRef.current = true;
+    setNewName('');
+    setCreating(false);
+  });
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const listener = (e: KeyboardEvent) => onEscape(e);
+    window.addEventListener('keydown', listener, true);
+    return () => window.removeEventListener('keydown', listener, true);
+  }, []);
+
   const toggle = (id: string) => {
     hapticImpactLight();
     const next = selected.has(id) ? collectionIds.filter((x: string) => x !== id) : [...collectionIds, id];
@@ -146,6 +166,10 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
 
   const submitNew = async () => {
     if (submittingRef.current) return; // the onBlur echo of an Enter submit — see submittingRef
+    if (abandonedRef.current) {
+      abandonedRef.current = false;
+      return;
+    }
     const name = newName.trim();
     if (!name) {
       setCreating(false);
@@ -271,7 +295,10 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
               ) : (
                 <Pressable
                   testID="collection-picker.new"
-                  onPress={() => setCreating(true)}
+                  onPress={() => {
+                    abandonedRef.current = false;
+                    setCreating(true);
+                  }}
                   style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.backgroundSelected }]}
                   accessibilityRole="button">
                   <View style={styles.newIcon}>
