@@ -46,6 +46,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
+import { isSeriesPaneOpen } from '@/lib/series-pane';
 import { useWindowControlsClearance } from '@/lib/window-controls';
 
 // Stable, never-fetched key for the results infinite query while it's disabled (no active search).
@@ -233,6 +234,11 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // subscription and quietly re-search itself, while the search layer the chip opened mounted on an
   // empty intent and showed nothing. `isTop` is the host telling us which layer is actually live.
   //
+  // The desktop's bridge-search pane is the same trap one level out. It is neither embedded nor
+  // unfocused, but a series opened from its results opens in the series PANE over it, and a tag or
+  // author tapped there opens a search layer inside that pane. Answering would re-search the buried
+  // pane and leave the layer blank, so this screen is covered whenever the series pane is open.
+  //
   // Seed the same three paths as mount — but clear the existing query and FILTERS first, so the tap
   // lands on a clean slate exactly as it would on a freshly-pushed Search. Without that, the new tag
   // would MERGE into whatever refinement is already on screen (the filters hook only self-resets on a
@@ -267,6 +273,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
     () =>
       subscribeSearchIntent(() => {
         if (isDocked || !focusedRef.current || !topRef.current) return;
+        if (!isEmbedded && isSeriesPaneOpen()) return;
         // The desktop's Search entry opens the app's Search screen. A layer in the series pane is
         // still mounted while the pane closes, and would otherwise take it from the screen it pushes.
         if (isEmbedded && peekSearchIntent()?.kind === 'open') return;
