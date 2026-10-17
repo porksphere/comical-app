@@ -19,6 +19,16 @@ import {
   WIDE_ZOOM_HEADROOM,
   type Size,
 } from '@/components/reader/page-geometry';
+import {
+  isDesktopPointer,
+  keepZoomLevel,
+  keptZoomLevel,
+  registerZoomTarget,
+  showZoomToast,
+  wheelPixels,
+  wheelZoomFactor,
+  zoomLevel$,
+} from '@/components/reader/desktop-zoom';
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import {
@@ -297,7 +307,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     const { scale, tx, ty } = zoom.current;
     el.style.transition = animate ? `transform ${ZOOM_SNAP_MS}ms ease-out` : 'none';
     el.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`;
-  }, [zoom]);
+    if (!standby) zoomLevel$.set(scale / restRef.current.restScale);
+  }, [zoom, standby]);
 
   const cancelInertia = useCallback(() => {
     if (inertiaRef.current != null) {
@@ -316,29 +327,66 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // `doubleTapZoomTo`.
   const tapRef = useRef<Point | null>(null);
 
-  // Put the current page at rest (see `restRef`): 1× for most pages, fit-height for a spread. A
-  // rest asked for by a double-tap is aimed at the tap: the content point under the finger is
-  // read back through the old transform and put back under it at the new scale, clamped to the
-  // new rest's bounds. Anything else lands at the reading edge — or, for a page swiped BACK onto
-  // (`fromFarEdge`), at the far one, where reading left off.
+  // Where the current page comes to rest: its own rest (see `restRef`) — 1× for most pages,
+  // fit-height for a spread — or, under a level the desktop zoom keeps (see `keptZoomLevel`), that
+  // multiple of it, entered at the top of the reading side, the way a magnified page is read.
+  // Either way a page swiped BACK onto (`fromFarEdge`) is entered at the far edge, where reading
+  // left off.
+  const restTarget = useCallback(
+    (fromFarEdge: boolean) => {
+      const { box: b, restScale: rest, restTx: readingTx, restTy: readingTy, maxScale: max } = restRef.current;
+      const into = fromFarEdge ? -1 : 1;
+      const kept = keptZoomLevel();
+      if (kept === 1) return { scale: rest, tx: into * readingTx, ty: into * readingTy };
+      const scale = clamp(rest * kept, Math.min(1, rest), max);
+      const limit = panLimits(scale, b, { width, height });
+      const side = readingTx !== 0 ? Math.sign(readingTx) : rtl ? -1 : 1;
+      return { scale, tx: into * side * limit.x, ty: into * limit.y };
+    },
+    [width, height, rtl],
+  );
+
+  // Put the current page at rest (see `restTarget`). A rest asked for by a double-tap is aimed at
+  // the tap: the content point under the finger is read back through the old transform and put
+  // back under it at the new scale, clamped to the new rest's bounds.
   const goToRest = useCallback(
     (animate: boolean, fromFarEdge = false) => {
       cancelInertia();
-      const { box: b, restScale: s, restTx: readingTx, restTy: readingTy, restZoomed: z } = restRef.current;
-      const restTx = fromFarEdge ? -readingTx : readingTx;
-      const restTy = fromFarEdge ? -readingTy : readingTy;
+      const { scale: s, tx: restTx, ty: restTy } = restTarget(fromFarEdge);
       const tap = tapRef.current;
       tapRef.current = null;
       let tx = restTx;
       if (tap && animate) {
         const cx = width / 2;
-        const limit = panLimits(s, b, { width, height });
+        const limit = panLimits(s, restRef.current.box, { width, height });
         const contentX = (tap.x - cx - zoom.current.tx) / zoom.current.scale;
         tx = clamp(tap.x - cx - s * contentX, -limit.x, limit.x);
       }
       zoom.current = { scale: s, tx, ty: restTy };
       writeZoom(animate);
-      setZoomedNow(z);
+      setZoomedNow(s > ZOOM_EPSILON);
+    },
+    [cancelInertia, restTarget, setZoomedNow, writeZoom, zoom, width, height],
+  );
+
+  // Scale the current page to `target` about a viewport point, keeping the content under it in
+  // place — the wheel's zoom, and the stepper's about the middle.
+  const zoomAround = useCallback(
+    (target: number, x: number, y: number, animate: boolean) => {
+      cancelInertia();
+      const { box: b, maxScale: max } = restRef.current;
+      const s = clamp(target, Math.min(1, restRef.current.restScale), max);
+      const { scale: s0, tx: tx0, ty: ty0 } = zoom.current;
+      const cx = width / 2;
+      const cy = height / 2;
+      const limit = panLimits(s, b, { width, height });
+      zoom.current = {
+        scale: s,
+        tx: clamp(x - cx - s * ((x - cx - tx0) / s0), -limit.x, limit.x),
+        ty: clamp(y - cy - s * ((y - cy - ty0) / s0), -limit.y, limit.y),
+      };
+      writeZoom(animate);
+      setZoomedNow(s > ZOOM_EPSILON);
     },
     [cancelInertia, setZoomedNow, writeZoom, zoom, width, height],
   );
@@ -362,11 +410,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     // a page swiped back onto: it is entered at its far edge.
     const fromFarEdge = prev != null && index < prev.index;
     const { scale, tx, ty } = zoom.current;
-    const wantTx = fromFarEdge ? -restTx : restTx;
-    const wantTy = fromFarEdge ? -restTy : restTy;
-    if (Math.abs(scale - restScale) < 0.001 && Math.abs(tx - wantTx) < 0.5 && Math.abs(ty - wantTy) < 0.5) return;
+    const want = restTarget(fromFarEdge);
+    if (Math.abs(scale - want.scale) < 0.001 && Math.abs(tx - want.tx) < 0.5 && Math.abs(ty - want.ty) < 0.5) return;
     goToRest(!arriving && prev.known && imageKnown, fromFarEdge);
-  }, [index, restScale, restTx, restTy, imageKnown, goToRest, zoom]);
+  }, [index, restScale, restTx, restTy, imageKnown, goToRest, restTarget, zoom]);
 
   // Momentum after a pan release: keep gliding from the last pan velocity,
   // decelerating each frame and stopping dead at the pan bounds. Grabbing again
@@ -413,8 +460,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       cancelInertia();
       const { box: b, restScale: rest, maxScale: max } = restRef.current;
       const { scale: s0, tx: tx0, ty: ty0 } = zoom.current;
-      // Anywhere but at rest — magnified, or pinched out below a spread's rest — goes back to rest.
+      // Anywhere but at rest — magnified, or pinched out below a spread's rest — goes back to rest,
+      // a level the desktop zoom was keeping included: double-clicking out of it puts it down.
       if (s0 > rest * ZOOM_EPSILON || s0 < rest / ZOOM_EPSILON) {
+        keepZoomLevel(1);
         goToRest(true);
         return;
       }
@@ -523,6 +572,80 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       el.removeEventListener('gesturechange', prevent as EventListener);
     };
   }, []);
+
+  // The mouse's zoom. Ctrl/⌘+wheel (a Chromium/Firefox trackpad pinch arrives as one; Safari's
+  // is a gesture event) zooms about the pointer, and is KEPT across page turns — claimed here so
+  // the browser doesn't zoom the whole app instead. A plain wheel pans a page that has somewhere
+  // to go (Shift for sideways, on a mouse with the one axis) and is left alone on one that doesn't.
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el || standby) return;
+    const zoomTo = (scale: number, clientX: number, clientY: number) => {
+      const rect = el.getBoundingClientRect();
+      zoomAround(scale, clientX - rect.left, clientY - rect.top, false);
+      const level = zoom.current.scale / restRef.current.restScale;
+      keepZoomLevel(level);
+      showZoomToast(level);
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (currentFailedRef.current) return;
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        zoomTo(zoom.current.scale * wheelZoomFactor(e, height), e.clientX, e.clientY);
+        return;
+      }
+      if (!zoomedRef.current && !restRef.current.overflowsAtRest) return;
+      e.preventDefault();
+      cancelInertia();
+      let dx = wheelPixels(e.deltaX, e.deltaMode, height);
+      let dy = wheelPixels(e.deltaY, e.deltaMode, height);
+      if (e.shiftKey && dx === 0) [dx, dy] = [dy, 0];
+      const { scale, tx, ty } = zoom.current;
+      const limit = panLimits(scale, restRef.current.box, { width, height });
+      zoom.current = { scale, tx: clamp(tx - dx, -limit.x, limit.x), ty: clamp(ty - dy, -limit.y, limit.y) };
+      writeZoom(false);
+    };
+    // Safari's trackpad pinch: `scale` is cumulative since the gesture began. Only on a desktop
+    // pointer — on iOS the same events come from a touch pinch, which the pointer path owns.
+    let gestureFrom = 1;
+    const onGestureStart = () => {
+      gestureFrom = zoom.current.scale;
+    };
+    const onGestureChange = (e: Event) => {
+      const g = e as Event & { scale: number; clientX: number; clientY: number };
+      if (currentFailedRef.current) return;
+      zoomTo(gestureFrom * g.scale, g.clientX, g.clientY);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    const desktop = isDesktopPointer();
+    if (desktop) {
+      el.addEventListener('gesturestart', onGestureStart);
+      el.addEventListener('gesturechange', onGestureChange);
+    }
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      if (desktop) {
+        el.removeEventListener('gesturestart', onGestureStart);
+        el.removeEventListener('gesturechange', onGestureChange);
+      }
+    };
+  }, [standby, zoomAround, cancelInertia, writeZoom, zoom, width, height]);
+
+  // The stepper and the +/-/0 keys (see desktop-zoom). Only the primary pager answers them.
+  useEffect(() => {
+    if (standby) return;
+    zoomLevel$.set(zoom.current.scale / restRef.current.restScale);
+    return registerZoomTarget({
+      zoomTo(level) {
+        zoomAround(restRef.current.restScale * level, width / 2, height / 2, true);
+        keepZoomLevel(zoom.current.scale / restRef.current.restScale);
+      },
+      reset() {
+        keepZoomLevel(1);
+        goToRest(true);
+      },
+    });
+  }, [standby, zoomAround, goToRest, zoom, width, height]);
 
   // Stop any in-flight momentum glide / pending single-tap timer when unmounting
   // (e.g. switching reader modes or leaving the reader).
@@ -775,10 +898,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
   const handleTap = useCallback(
     (x: number) => {
-      // No tap zones while zoomed (mirrors native) — except on a page that RESTS zoomed, a spread
-      // or a fill-height page, whose taps stay live and turn as they always do: with swiping
-      // frozen under a zoom, the taps are how such a page is left.
-      if (zoomedRef.current && !restRef.current.restZoomed) return;
+      // No tap zones while zoomed (mirrors native) — except on a page that RESTS zoomed (a spread, a
+      // fill-height page, or one at a level the desktop zoom keeps), whose taps stay live and turn
+      // as they always do: with swiping frozen under a zoom, the taps are how such a page is left.
+      if (zoomedRef.current && !restRef.current.restZoomed && keptZoomLevel() === 1) return;
       const dir: -1 | 0 | 1 = x < width * 0.3 ? -1 : x > width * 0.7 ? 1 : 0;
       if (dir === 0) onToggleChrome();
       else turn(dir);

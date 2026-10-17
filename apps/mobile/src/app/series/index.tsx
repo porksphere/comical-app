@@ -38,8 +38,10 @@ import { BOTTOM_CHROME_HEIGHT, ChapterNavigator, bottomChromeInset } from '@/com
 import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
+import { keepZoomLevel, resetZoom, stepZoom } from '@/components/reader/desktop-zoom';
 import { ProgressPill } from '@/components/reader/progress-pill';
-import { ReaderToolbar } from '@/components/reader/reader-toolbar';
+import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
+import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
 import { CollectPageControl } from '@/components/reader/collect-page-control';
 import { SettingsControl } from '@/components/reader/settings-panel';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
@@ -1274,6 +1276,12 @@ function SeriesReaderInstance({
   // The committed side of the reveal (declared up here — the stitching queries below gate on
   // it). The screen opens ON the details; see the reveal section further down.
   const [detailsActive, setDetailsActive] = useState(!readerFirst);
+  // The level the desktop zoom keeps lasts across page turns and chapters, but not out of the
+  // reader: back on the details, or gone, it's put down.
+  useEffect(() => {
+    if (detailsActive) keepZoomLevel(1);
+    return () => keepZoomLevel(1);
+  }, [detailsActive]);
   useWindowThemeColor(detailsActive ? null : READER_BACKDROP, 1);
   // True while a horizontal details gesture (back-swipe or webtoon reveal) is ACTIVE. The pans
   // ride the details scroller's own detector, simultaneous with it — that's the only way they
@@ -1541,6 +1549,7 @@ function SeriesReaderInstance({
   // Set while the toolbar is up only because a mouse is near it; anything that shows the toolbar
   // on purpose clears it, and with it the quick hide.
   const hoverShownRef = useRef(false);
+  const zoomControlShown = useZoomControlShown();
   const showChrome = useCallback(() => {
     hoverShownRef.current = false;
     setChromeVisible(true);
@@ -3635,8 +3644,10 @@ function SeriesReaderInstance({
                   visible={chromeVisible}
                   onBack={goBack}
                   hideBack
+                  trailingWidth={zoomControlShown ? TRAILING_SLOT_W + Spacing.two + ZOOM_CONTROL_W : undefined}
                   right={
                     <>
+                      {zoomControlShown && <ZoomControl onPress={showChrome} />}
                       <CollectPageControl
                         bridgeId={pageAction ? pageAction.bridgeId : bridgeId}
                         seriesId={pageAction ? pageAction.seriesId : id}
@@ -5020,7 +5031,14 @@ const ReaderPane = forwardRef<
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
       // Alt+Left is the desktop shell's Back, not a page turn.
+      // Ctrl/⌘ +/-/0 stay the browser's own zoom; bare, they're the page's (see desktop-zoom).
       if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_' || e.key === '0') {
+        e.preventDefault();
+        if (e.key === '0') resetZoom();
+        else stepZoom(e.key === '+' || e.key === '=' ? 1 : -1);
+        return;
+      }
       const isRight = e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D';
       const isLeft = e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A';
       if (!isRight && !isLeft) return;

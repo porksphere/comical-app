@@ -1,0 +1,76 @@
+# The desktop reader's page zoom — the toolbar stepper (components/reader/zoom-control.tsx) left of
+# the save button. Web-only: the stepper only shows on a desktop pointer, and a phone zooms by pinch.
+#
+# Selectors: all three buttons set an accessibilityLabel, so on web they are selected by that (see
+# ../README.md's aria-label quirk) — "Zoom in", "Zoom out", and the level, whose label carries the
+# level itself ("Page zoom 125%, reset"), which is what the asserts below read.
+#
+# The reader's chrome is in the hierarchy TWICE: the live toolbar is Maestro's `index: 0`, and the
+# other copy sits lower and takes no taps (one aimed at it lands on the page and turns it). The
+# asserts read either, since both show the one shared level.
+#
+# The keyboard half (+/-/0, arrows/WASD, B to save the page) isn't driven here: Maestro's pressKey
+# only knows a fixed set of named keys.
+#
+# Same entry into the reader as browse-to-reader.yaml — see it for why the chapter list is reached
+# with a coordinate swipe.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Browse"
+
+- tapOn:
+    id: "series-card\\..*"
+
+- assertVisible:
+    id: "series.action.read"
+
+- swipe:
+    start: 50%, 70%
+    end: 50%, 40%
+    duration: 600
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+
+- assertVisible:
+    id: "Page zoom 100%, reset"
+
+# The chrome is up on entry but auto-hides after CHROME_HIDE_MS (3s), and Maestro's steps are slow
+# enough to tap it mid-hide, which lands on the page. A page tap TOGGLES the chrome and the web reader
+# has no tap-zone markers, so get it to a known state instead: wait the hide out (there is no
+# sleep; an optional wait on an id that never appears is one), then tap the middle of the page to
+# bring it back. Every stepper press restarts the hide, so it stays up through the steps below.
+- extendedWaitUntil:
+    visible:
+      id: "never-present"
+    timeout: 4000
+    optional: true
+- tapOn:
+    point: 50%, 50%
+- tapOn:
+    id: "Zoom in"
+    index: 0
+- assertVisible:
+    id: "Page zoom 125%, reset"
+
+- tapOn:
+    id: "Zoom in"
+    index: 0
+- assertVisible:
+    id: "Page zoom 156%, reset"
+
+- tapOn:
+    id: "Zoom out"
+    index: 0
+- assertVisible:
+    id: "Page zoom 125%, reset"
+
+# The level resets.
+- tapOn:
+    id: "Page zoom 125%, reset"
+    index: 0
+- assertVisible:
+    id: "Page zoom 100%, reset"

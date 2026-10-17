@@ -42,6 +42,9 @@ type ToastRequest = {
   message: string;
   durationMs: number;
   tone: ToastTone;
+  /** A toast reporting a running value (a zoom level under a wheel) names a slot: the next one in
+   *  the same slot updates the pill in place instead of re-entering it on every tick. */
+  slot?: string;
 };
 
 /** `error` is the red pill for something that failed — still transient, still no action in it. */
@@ -61,8 +64,14 @@ function setToast(req: ToastRequest | null): void {
 
 /** Show a transient notice, e.g. "NSFW enabled until the app is closed". Replaces any toast
  *  already showing. `duration` is the visible time before auto-dismiss. */
-export function showToast(message: string, opts?: { durationMs?: number; tone?: ToastTone }): void {
-  setToast({ id: nextId++, message, durationMs: opts?.durationMs ?? DEFAULT_DURATION_MS, tone: opts?.tone ?? 'default' });
+export function showToast(message: string, opts?: { durationMs?: number; tone?: ToastTone; slot?: string }): void {
+  setToast({
+    id: nextId++,
+    message,
+    durationMs: opts?.durationMs ?? DEFAULT_DURATION_MS,
+    tone: opts?.tone ?? 'default',
+    slot: opts?.slot,
+  });
 }
 
 function useToast(): ToastRequest | null {
@@ -80,8 +89,9 @@ function useToast(): ToastRequest | null {
 export function ToastHost() {
   const req = useToast();
   if (!req) return null;
-  // Keyed by id so a replacing toast remounts the pill: fresh enter animation, fresh timer.
-  return <HostToast key={req.id} req={req} />;
+  // Keyed by id so a replacing toast remounts the pill: fresh enter animation, fresh timer. A slot
+  // keeps the pill mounted across its own updates (the timer still restarts, on `req.id`).
+  return <HostToast key={req.slot ?? req.id} req={req} />;
 }
 
 function HostToast({ req }: { req: ToastRequest }) {
@@ -108,7 +118,7 @@ function HostToast({ req }: { req: ToastRequest }) {
     const t = setTimeout(dismiss, req.durationMs);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [req.id]);
 
   const pillStyle = useAnimatedStyle(() => ({
     opacity: progress.value,

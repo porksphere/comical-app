@@ -1,5 +1,15 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useReducer, useRef, useState } from 'react';
 
+import {
+  isDesktopPointer,
+  keepZoomLevel,
+  keptZoomLevel,
+  registerZoomTarget,
+  showZoomToast,
+  WEBTOON_MIN_LEVEL,
+  wheelZoomFactor,
+  zoomLevel$,
+} from '@/components/reader/desktop-zoom';
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import {
@@ -85,7 +95,7 @@ function rel(touch: Touch, rect: DOMRect): Point {
   return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
 }
 
-// A mouse+keyboard session, not a touch one: `fit-page`'s CSS scroll-snap
+// On a mouse+keyboard session (`isDesktopPointer`), `fit-page`'s CSS scroll-snap
 // exists so a touch swipe pages one screen at a time via the browser's own
 // gesture handling, with no custom JS. On desktop that same mandatory snap
 // fights direct `scrollTop` writes — a released Up/Down hold-scroll was
@@ -93,9 +103,6 @@ function rel(touch: Touch, rect: DOMRect): Point {
 // keyboard/mouse user has an equivalent "swipe" gesture for and shouldn't
 // happen — so it's skipped entirely there in favor of free scroll plus the
 // explicit instant jump `goToPage` already does for Left/Right/A/D.
-function isDesktopPointer(): boolean {
-  return typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
-}
 
 export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(
   { pages, width, height, pageFit, doubleTapZoom, initialPage, onPageChange, onToggleChrome, standby },
@@ -156,7 +163,44 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   const onPageChangeRef = useRef(onPageChange);
   onPageChangeRef.current = onPageChange;
 
-  const applyZoom = (z: number) => contentRef.current?.style.setProperty('zoom', String(z));
+  // Below 1× (the desktop zoom's way of narrowing a window-wide strip) the content is centred: a
+  // margin, in the content's own zoomed pixels, of half the room it leaves.
+  const marginAt = useCallback(
+    (z: number) => (z < 1 ? ((scrollerRef.current?.clientWidth ?? 0) * (1 - z)) / 2 : 0),
+    [],
+  );
+  const standbyRef = useRef(standby);
+  useEffect(() => {
+    standbyRef.current = standby;
+  }, [standby]);
+  const applyZoom = useCallback(
+    (z: number) => {
+      const content = contentRef.current;
+      if (!content) return;
+      content.style.setProperty('zoom', String(z));
+      content.style.marginLeft = `${marginAt(z) / z}px`;
+      if (!standbyRef.current) zoomLevel$.set(z);
+    },
+    [marginAt],
+  );
+
+  // Zoom to `target` keeping the content point under the viewport point (fx, fy) in place — the
+  // double-tap, the wheel and the stepper all land here (the touch pinch keeps its own frame loop).
+  const zoomAt = (target: number, fx: number, fy: number) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const z0 = zoom.current;
+    const z = clamp(target, WEBTOON_MIN_LEVEL, MAX_SCALE);
+    const cpX = (el.scrollLeft + fx - marginAt(z0)) / z0;
+    const cpY = (el.scrollTop + fy) / z0;
+    zoom.current = z;
+    applyZoom(z);
+    const magnified = z > ZOOM_EPSILON;
+    el.style.overflowX = magnified ? 'auto' : 'hidden';
+    el.style.touchAction = magnified ? 'pan-x pan-y' : 'pan-y';
+    el.scrollLeft = magnified ? clamp(cpX * z - fx, 0, Math.max(0, el.scrollWidth - el.clientWidth)) : 0;
+    el.scrollTop = clamp(cpY * z - fy, 0, Math.max(0, el.scrollHeight - el.clientHeight));
+  };
 
   // Double-tap tracking: a click is deferred by DOUBLE_TAP_MS so a second click
   // can turn it into a zoom instead of a chrome toggle.
@@ -173,29 +217,16 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       const rect = el.getBoundingClientRect();
       const fx = clientX - rect.left;
       const fy = clientY - rect.top;
-      if (zoom.current > ZOOM_EPSILON) {
-        // Zoom out, keeping the vertical reading position (content shrinks).
-        const prevTop = el.scrollTop;
-        const z0 = zoom.current;
-        zoom.current = 1;
-        applyZoom(1);
-        el.style.overflowX = 'hidden';
-        el.style.touchAction = 'pan-y';
-        el.scrollLeft = 0;
-        el.scrollTop = z0 > 0 ? prevTop / z0 : prevTop;
+      // Anywhere but 1× goes back to it — keeping the vertical reading position, and putting down
+      // any level the desktop zoom was keeping.
+      if (zoom.current > ZOOM_EPSILON || zoom.current < 1 / ZOOM_EPSILON) {
+        keepZoomLevel(1);
+        zoomAt(1, fx, 0);
       } else {
-        const z0 = zoom.current;
-        const cpX = (el.scrollLeft + fx) / z0;
-        const cpY = (el.scrollTop + fy) / z0;
-        const z = DOUBLE_TAP_SCALE;
-        zoom.current = z;
-        applyZoom(z);
-        el.style.overflowX = 'auto';
-        el.style.touchAction = 'pan-x pan-y';
-        el.scrollLeft = clamp(cpX * z - fx, 0, Math.max(0, el.scrollWidth - el.clientWidth));
-        el.scrollTop = clamp(cpY * z - fy, 0, Math.max(0, el.scrollHeight - el.clientHeight));
+        zoomAt(DOUBLE_TAP_SCALE, fx, fy);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [paged],
   );
 
@@ -416,7 +447,69 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       el.removeEventListener('gesturechange', preventGesture as EventListener);
       el.removeEventListener('gestureend', preventGesture as EventListener);
     };
-  }, [paged]);
+  }, [paged, applyZoom]);
+
+  // The desktop zoom (see desktop-zoom): Ctrl/⌘+wheel — or a trackpad pinch, which arrives as one
+  // (Safari's as a gesture event) — about the pointer, claimed so the browser doesn't zoom the whole
+  // app; the stepper and +/-/0 keys about the middle. Whatever level it leaves is kept, and a strip
+  // mounting (the next chapter) picks it up. A plain wheel stays the browser's own scroll.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || standby) return;
+    // Fit-page mode doesn't zoom (its slots are the screen), so a strip switched into it lets go.
+    if (paged) {
+      if (zoom.current !== 1) zoomAt(1, 0, 0);
+      return;
+    }
+    const kept = keptZoomLevel();
+    if (kept !== 1 && zoom.current === 1) zoomAt(kept, el.clientWidth / 2, 0);
+    // Re-applied for a resize, which re-centres a narrowed strip, and to report the level.
+    else applyZoom(zoom.current);
+    const zoomAtClient = (target: number, clientX: number, clientY: number) => {
+      const rect = el.getBoundingClientRect();
+      zoomAt(target, clientX - rect.left, clientY - rect.top);
+      keepZoomLevel(zoom.current);
+      showZoomToast(zoom.current);
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      zoomAtClient(zoom.current * wheelZoomFactor(e, height), e.clientX, e.clientY);
+    };
+    let gestureFrom = 1;
+    const onGestureStart = () => {
+      gestureFrom = zoom.current;
+    };
+    const onGestureChange = (e: Event) => {
+      const g = e as Event & { scale: number; clientX: number; clientY: number };
+      zoomAtClient(gestureFrom * g.scale, g.clientX, g.clientY);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    const desktop = isDesktopPointer();
+    if (desktop) {
+      el.addEventListener('gesturestart', onGestureStart);
+      el.addEventListener('gesturechange', onGestureChange);
+    }
+    const unregister = registerZoomTarget({
+      zoomTo(level) {
+        zoomAt(level, el.clientWidth / 2, el.clientHeight / 2);
+        keepZoomLevel(zoom.current);
+      },
+      reset() {
+        keepZoomLevel(1);
+        zoomAt(1, el.clientWidth / 2, el.clientHeight / 2);
+      },
+    });
+    return () => {
+      unregister();
+      el.removeEventListener('wheel', onWheel);
+      if (desktop) {
+        el.removeEventListener('gesturestart', onGestureStart);
+        el.removeEventListener('gesturechange', onGestureChange);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paged, standby, width, height]);
 
   // Smooth continuous vertical scroll while Up/Down (or W/S) is held. The
   // browser's own key-repeat doesn't drive scrollTop at all here (this div
@@ -538,7 +631,8 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
         requestAnimationFrame(() => {
           const el = scrollerRef.current;
           const target = slotsRef.current[clamped];
-          if (el && target) el.scrollTop = target.offsetTop;
+          // Measured on screen rather than by offsetTop, which a zoomed strip doesn't scale.
+          if (el && target) el.scrollTop += target.getBoundingClientRect().top - el.getBoundingClientRect().top;
         });
       },
     }),

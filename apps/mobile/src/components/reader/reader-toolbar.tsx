@@ -25,6 +25,7 @@ export function ReaderToolbar({
   visible,
   onBack,
   right,
+  trailingWidth = TRAILING_SLOT_W,
   hideBack,
 }: {
   title: string;
@@ -34,6 +35,9 @@ export function ReaderToolbar({
   /** Rendered in the slot opposite Back. Sized like the back button so the
    *  titles stay centred whether or not anything is passed. */
   right?: ReactNode;
+  /** The trailing slot's width when `right` holds more than the two buttons (the desktop zoom
+   *  stepper); the leading spacer takes it too. */
+  trailingWidth?: number;
   /** The screen renders its OWN back button persisting across bar modes (series page's
    *  TopBarSwitch) — keep just the spacer here so the titles stay centred. */
   hideBack?: boolean;
@@ -69,7 +73,7 @@ export function ReaderToolbar({
         ]}>
         {/* Always the same width as the trailing slot, with or without a back button in it —
             that symmetry is what centres the titles. */}
-        <View style={styles.leading}>
+        <View style={[styles.leading, { width: trailingWidth }]}>
           {!hideBack && (
             <Pressable
               testID="reader.toolbar.back"
@@ -94,7 +98,7 @@ export function ReaderToolbar({
         </View>
         {/* Balances the leading spacer so the titles stay centred — a ROW, since the reader has
             two trailing controls (collect, then settings). */}
-        <View style={styles.trailing}>{right}</View>
+        <View style={[styles.trailing, { width: trailingWidth }]}>{right}</View>
       </View>
     </Animated.View>
   );
