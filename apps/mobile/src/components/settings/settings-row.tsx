@@ -192,7 +192,7 @@ export function SettingsRow({
         contentInset ? { paddingLeft: SettingsCardInset + contentInset } : null,
         highlighted && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
       ]}>
-      {leading && <View style={disabled && styles.disabled}>{leading}</View>}
+      {leading && <View style={[styles.leading, disabled && styles.disabled]}>{leading}</View>}
       <View style={[settingsRowFrame.text, disabled && styles.disabled]}>
         <ThemedText type={labelBold ? 'smallBold' : 'small'} numberOfLines={1}>
           {label}
@@ -244,6 +244,13 @@ export function SettingsRow({
 }
 
 const styles = StyleSheet.create({
+  // Lays `leading` out as the row itself would: callers pass fragments (Bridges' select-mode slot +
+  // icon), and a plain View stacked those, pushing the icon down by the circle's height.
+  leading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: settingsRowFrame.row.gap,
+  },
   disabled: {
     opacity: 0.4,
   },
