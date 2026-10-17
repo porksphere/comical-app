@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, TextInput, type TextInputProps, View } from 'rea
 
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { ChevronRightIcon, EyeIcon, EyeOffIcon } from '@/components/icons/ui-icons';
-import { SINGLE_LINE_INPUT } from '@/components/input-style';
+import { singleLineInput } from '@/components/input-style';
 import { MeasuredHeading, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { BridgeThumbSize } from '@/components/selector';
 import { settingsRowFrame, SettingsRow } from '@/components/settings/settings-row';
@@ -356,11 +356,10 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   textRowInput: {
-    ...SINGLE_LINE_INPUT,
+    ...singleLineInput(16),
     flex: 1,
     minWidth: 0,
     textAlign: 'right',
-    fontSize: 16,
     paddingVertical: 0,
   },
   revealBtn: {

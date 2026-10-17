@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput } from 'react-native';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
-import { NO_OUTLINE, ROW_INPUT } from '@/components/input-style';
+import { NO_OUTLINE, rowInput } from '@/components/input-style';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { CONTROL_HEIGHT } from '@/components/filters/filter-types';
@@ -183,9 +183,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   searchInput: {
-    ...ROW_INPUT,
+    ...rowInput(16),
     flex: 1,
-    fontSize: 16,
     padding: 0,
   },
 });

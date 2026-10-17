@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { SINGLE_LINE_INPUT } from '@/components/input-style';
+import { singleLineInput } from '@/components/input-style';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useKeyboardLift } from '@/hooks/use-keyboard-lift';
@@ -146,10 +146,9 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   input: {
-    ...SINGLE_LINE_INPUT,
+    ...singleLineInput(16),
     minWidth: 40,
     color: '#fff',
-    fontSize: 16,
     paddingVertical: 0,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.6)',

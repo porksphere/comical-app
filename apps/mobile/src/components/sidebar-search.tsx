@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
-import { NO_OUTLINE, ROW_INPUT } from '@/components/input-style';
+import { NO_OUTLINE, rowInput } from '@/components/input-style';
 import { Fonts, Spacing } from '@/constants/theme';
 import SearchScreen from '@/app/search';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
@@ -125,11 +125,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   input: {
-    ...ROW_INPUT,
+    ...rowInput(15),
     flex: 1,
     minWidth: 0,
     fontFamily: Fonts.sans,
-    fontSize: 15,
     padding: 0,
   },
   hint: {

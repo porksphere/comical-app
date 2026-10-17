@@ -34,7 +34,7 @@ import {
   MENU_FILL,
 } from '@/components/context-menu-material';
 import { CheckIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { NO_OUTLINE, ROW_INPUT } from '@/components/input-style';
+import { NO_OUTLINE, rowInput } from '@/components/input-style';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useItemCollections, type ItemTarget } from '@/hooks/use-item-collections';
@@ -380,9 +380,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   newInput: {
-    ...ROW_INPUT,
+    ...rowInput(16),
     padding: 0,
-    fontSize: 16,
   },
   done: {
     borderRadius: 999,

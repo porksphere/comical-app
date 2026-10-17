@@ -1,7 +1,7 @@
 import { memo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { NO_OUTLINE, ROW_INPUT, SINGLE_LINE_INPUT } from '@/components/input-style';
+import { NO_OUTLINE, rowInput, singleLineInput } from '@/components/input-style';
 import { useAnchoredOverlay, useKeyboardAvoidingInput } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -344,10 +344,9 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   inlineInput: {
-    ...ROW_INPUT,
+    ...rowInput(16),
     flex: 1,
     minWidth: 0,
-    fontSize: 16,
     padding: 0,
     zIndex: 1,
   },
@@ -371,10 +370,9 @@ const styles = StyleSheet.create({
   // sized to the current text length, which is what makes the pill hug just
   // the digits instead of reserving extra space.
   valueInput: {
-    ...SINGLE_LINE_INPUT,
+    ...singleLineInput(14),
     flexShrink: 0,
     height: 20,
-    fontSize: 14,
     textAlign: 'center',
     padding: 0,
   },

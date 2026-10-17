@@ -10,7 +10,7 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
-import { NO_OUTLINE, SINGLE_LINE_INPUT } from '@/components/input-style';
+import { NO_OUTLINE, singleLineInput } from '@/components/input-style';
 import { CheckIcon, ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { useKeyboardAvoidingInput, useSheetScroll } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
@@ -229,9 +229,8 @@ export const catalogSearchStyles = StyleSheet.create({
     borderWidth: 1,
   },
   searchInput: {
-    ...SINGLE_LINE_INPUT,
+    ...singleLineInput(14),
     flex: 1,
-    fontSize: 14,
     padding: 0,
   },
   results: {
