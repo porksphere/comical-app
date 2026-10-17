@@ -9,7 +9,7 @@
 # other copy sits lower and takes no taps (one aimed at it lands on the page and turns it). The
 # asserts read either, since both show the one shared level.
 #
-# The keyboard half (+/-/0, arrows/WASD, B to save the page) isn't driven here: Maestro's pressKey
+# The keyboard half (+/-/0, arrows/WASD, F to save the page) isn't driven here: Maestro's pressKey
 # only knows a fixed set of named keys.
 #
 # Same entry into the reader as browse-to-reader.yaml — see it for why the chapter list is reached

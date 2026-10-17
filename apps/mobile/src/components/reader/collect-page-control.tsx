@@ -129,7 +129,7 @@ export function CollectPageControl({
 export function CollectPageShortcut({ enabled, ...page }: CollectPageProps & { enabled: boolean }) {
   const { toggle, openPicker } = useCollectPage(page);
   const onKey = useEffectEvent((e: KeyboardEvent) => {
-    if (e.key !== 'b' && e.key !== 'B') return;
+    if (e.key !== 'f' && e.key !== 'F') return;
     if (e.altKey || e.ctrlKey || e.metaKey || e.repeat || e.defaultPrevented || isTypingTarget(e.target)) return;
     e.preventDefault();
     const result = toggle();
