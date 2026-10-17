@@ -47,7 +47,7 @@ export default function CustomPageEditorScreen() {
   const theme = useTheme();
   const contentPadding = useSettingsScrollPadding();
   const insets = useSafeAreaInsets();
-  const { open } = useOverlay();
+  const { openDialog } = useOverlay();
 
   const page = useCustomPage(pageId);
   const { nameOf } = useBridgeMap();
@@ -139,15 +139,18 @@ export default function CustomPageEditorScreen() {
               label: 'Rename',
               icon: PencilIcon,
               onPress: () =>
-                open(() => (
-                  <NamePromptForm
-                    title="Rename section"
-                    placeholder={titleOf(s)}
-                    submitLabel="Rename"
-                    initialValue={s.name ?? ''}
-                    onSubmit={(name) => updateSection(page.id, s.id, { name })}
-                  />
-                )),
+                openDialog(
+                  () => (
+                    <NamePromptForm
+                      title="Rename section"
+                      placeholder={titleOf(s)}
+                      submitLabel="Rename"
+                      initialValue={s.name ?? ''}
+                      onSubmit={(name) => updateSection(page.id, s.id, { name })}
+                    />
+                  ),
+                  { accessibilityLabel: 'Rename section' },
+                ),
             },
             { label: 'Delete', icon: TrashIcon, destructive: true, onPress: () => deleteSection(page.id, s.id) },
           ]}

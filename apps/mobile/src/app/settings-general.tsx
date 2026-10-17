@@ -99,7 +99,7 @@ export default function GeneralSettingsScreen() {
   const { wifiOnly, background, autoSeries, autoChapters, autoPages, autoNew } = useDownloadPrefs();
   const ds = useDataSource();
   const mock = useMockActive();
-  const { open, openDialog } = useOverlay();
+  const { openDialog } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
   const embeddedAvailable = isEmbeddedRuntimeAvailable();
@@ -168,14 +168,17 @@ export default function GeneralSettingsScreen() {
               label="Remote server"
               description={apiBase}
               onPress={() =>
-                open(() => (
-                  <RemoteServerForm
-                    title="Remote server"
-                    description="The Comical server this app talks to when not running bridges on this device."
-                    currentUrl={apiBase}
-                    onSave={connectServer}
-                  />
-                ))
+                openDialog(
+                  () => (
+                    <RemoteServerForm
+                      title="Remote server"
+                      description="The Comical server this app talks to when not running bridges on this device."
+                      currentUrl={apiBase}
+                      onSave={connectServer}
+                    />
+                  ),
+                  { accessibilityLabel: 'Remote server' },
+                )
               }
             />
           )}

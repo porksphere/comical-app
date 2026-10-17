@@ -18,18 +18,16 @@ import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
 import { testId } from '@/lib/test-id';
 
-// The "Trackers ▾" action button: opens a bottom sheet (the app's overlay
-// system) to view, sync, unlink and link progress-tracker services for this
-// series. Mirrors the reference's anchored `#tracker-menu` / `#tracker-panel`
-// popover — rebuilt as a sheet since that's this app's touch-first equivalent
-// (see Selector, which does the same for the bridge/page pickers).
+// The "Trackers ▾" action button: opens a task surface (a bottom sheet on phones, a dialog on
+// desktop — the app's overlay system) to view, sync, unlink and link progress-tracker services for
+// this series. Mirrors the reference's anchored `#tracker-menu` / `#tracker-panel` popover.
 //
 // Trackers themselves are bridge-agnostic (configured once in Settings, shared across every
 // series — see trackers.tsx), but a *link* is per library entry, so every call here is scoped to
 // this series' bridgeId+seriesId.
 
 export function TrackerButton({ bridgeId, seriesId, title }: { bridgeId: string; seriesId: string; title: string }) {
-  const { open } = useOverlay();
+  const { openDialog } = useOverlay();
   const theme = useTheme();
   return (
     <ActionButton
@@ -37,7 +35,11 @@ export function TrackerButton({ bridgeId, seriesId, title }: { bridgeId: string;
       label="Trackers"
       leading={<TrackersIcon color={theme.text} size={ACTION_ICON_SIZE} />}
       caret
-      onPress={() => open(() => <TrackerMenu bridgeId={bridgeId} seriesId={seriesId} title={title} />)}
+      onPress={() =>
+        openDialog(() => <TrackerMenu bridgeId={bridgeId} seriesId={seriesId} title={title} />, {
+          accessibilityLabel: 'Trackers',
+        })
+      }
     />
   );
 }

@@ -34,7 +34,7 @@ export default function CustomPagesScreen() {
   const theme = useTheme();
   const contentPadding = useSettingsScrollPadding();
   const insets = useSafeAreaInsets();
-  const { open } = useOverlay();
+  const { openDialog } = useOverlay();
 
   const pages = useCustomPages();
 
@@ -103,21 +103,30 @@ export default function CustomPagesScreen() {
               label: 'Rename',
               icon: PencilIcon,
               onPress: () =>
-                open(() => (
-                  <NamePromptForm
-                    title="Rename page"
-                    placeholder="Page name"
-                    submitLabel="Rename"
-                    initialValue={p.name}
-                    onSubmit={(name) => renamePage(p.id, name)}
-                  />
-                )),
+                openDialog(
+                  () => (
+                    <NamePromptForm
+                      title="Rename page"
+                      placeholder="Page name"
+                      submitLabel="Rename"
+                      initialValue={p.name}
+                      onSubmit={(name) => renamePage(p.id, name)}
+                    />
+                  ),
+                  { accessibilityLabel: 'Rename page' },
+                ),
             },
             {
               label: 'Delete',
               icon: TrashIcon,
               destructive: true,
-              onPress: () => open(() => <DeletePageConfirm pageId={p.id} name={p.name} />),
+              onPress: () =>
+                openConfirm({
+                  title: 'Delete page?',
+                  message: `“${p.name}” and its sections will be removed. This can't be undone.`,
+                  confirmLabel: 'Delete Page',
+                  onConfirm: () => deletePage(p.id),
+                }),
             },
           ]}
         />
@@ -126,14 +135,17 @@ export default function CustomPagesScreen() {
   );
 
   const openAddPage = () =>
-    open(() => (
-      <NamePromptForm
-        title="New page"
-        placeholder="Page name"
-        submitLabel="Create"
-        onSubmit={(name) => router.push({ pathname: '/custom-page-editor', params: { pageId: addPage(name) } })}
-      />
-    ));
+    openDialog(
+      () => (
+        <NamePromptForm
+          title="New page"
+          placeholder="Page name"
+          submitLabel="Create"
+          onSubmit={(name) => router.push({ pathname: '/custom-page-editor', params: { pageId: addPage(name) } })}
+        />
+      ),
+      { accessibilityLabel: 'New page' },
+    );
 
   return (
     <ThemedView style={styles.container}>
@@ -196,35 +208,6 @@ export default function CustomPagesScreen() {
         />
       )}
     </ThemedView>
-  );
-}
-
-function DeletePageConfirm({ pageId, name }: { pageId: string; name: string }) {
-  const theme = useTheme();
-  const { closeTop } = useOverlay();
-  return (
-    <View style={styles.confirmBody}>
-      <ThemedText type="subtitle">Delete page?</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        “{name}” and its sections will be removed. This can&apos;t be undone.
-      </ThemedText>
-      <View style={styles.confirmActions}>
-        <Pressable testID="custom-pages.delete.cancel" onPress={closeTop} style={styles.confirmBtn}>
-          <ThemedText type="smallBold">Cancel</ThemedText>
-        </Pressable>
-        <Pressable
-          testID="custom-pages.delete.confirm"
-          onPress={() => {
-            deletePage(pageId);
-            closeTop();
-          }}
-          style={styles.confirmBtn}>
-          <ThemedText type="smallBold" style={{ color: theme.danger }}>
-            Delete
-          </ThemedText>
-        </Pressable>
-      </View>
-    </View>
   );
 }
 
@@ -324,13 +307,5 @@ const styles = StyleSheet.create({
   },
   confirmBody: {
     gap: Spacing.three,
-  },
-  confirmActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: Spacing.five,
-  },
-  confirmBtn: {
-    paddingVertical: Spacing.two,
   },
 });

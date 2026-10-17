@@ -27,32 +27,38 @@ import { useRouter } from '@/lib/nav';
 export default function ManageCollectionsScreen() {
   const router = useRouter();
   const contentPadding = useSettingsScrollPadding();
-  const { open } = useOverlay();
+  const { openDialog } = useOverlay();
   const { collections, createCollection, renameCollection, reorderCollections, deleteCollection } = useCollections();
 
   const openCreate = () =>
-    open(() => (
-      <NamePromptForm
-        title="New collection"
-        placeholder="Collection name"
-        submitLabel="Create"
-        onSubmit={(name) => {
-          void createCollection(name);
-          showToast('Collection created');
-        }}
-      />
-    ));
+    openDialog(
+      () => (
+        <NamePromptForm
+          title="New collection"
+          placeholder="Collection name"
+          submitLabel="Create"
+          onSubmit={(name) => {
+            void createCollection(name);
+            showToast('Collection created');
+          }}
+        />
+      ),
+      { accessibilityLabel: 'New collection' },
+    );
 
   const openRename = (id: string, name: string) =>
-    open(() => (
-      <NamePromptForm
-        title="Rename collection"
-        placeholder="Collection name"
-        submitLabel="Rename"
-        initialValue={name}
-        onSubmit={(next) => renameCollection(id, next)}
-      />
-    ));
+    openDialog(
+      () => (
+        <NamePromptForm
+          title="Rename collection"
+          placeholder="Collection name"
+          submitLabel="Rename"
+          initialValue={name}
+          onSubmit={(next) => renameCollection(id, next)}
+        />
+      ),
+      { accessibilityLabel: 'Rename collection' },
+    );
 
   const confirmDelete = (id: string, name: string) =>
     openConfirm({

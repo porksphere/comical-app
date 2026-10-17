@@ -25,7 +25,7 @@ import { testId } from '@/lib/test-id';
 export function useBrowseRegistry(): (() => void) | null {
   const ds = useDataSource();
   const router = useRouter();
-  const { open } = useOverlay();
+  const { openDialog } = useOverlay();
 
   const { data: registries } = useQuery({
     queryKey: queryKeys.registries(),
@@ -43,7 +43,7 @@ export function useBrowseRegistry(): (() => void) | null {
       router.push({ pathname: '/registry-browse', params: { url: registries[0].url } });
       return;
     }
-    open(() => <RegistryPicker />);
+    openDialog(() => <RegistryPicker />, { accessibilityLabel: 'Browse a registry' });
   };
 }
 

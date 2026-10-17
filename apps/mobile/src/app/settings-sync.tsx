@@ -73,7 +73,7 @@ export default function SyncSettingsScreen() {
 /** A phone's side: its own library, kept in step with a hub. */
 function DeviceRows() {
   const router = useRouter();
-  const { open } = useOverlay();
+  const { openDialog } = useOverlay();
   const [onDevice] = useEmbeddedEnabled();
   const [apiBase] = useApiBase();
   const paired = useSyncPaired();
@@ -129,17 +129,20 @@ function DeviceRows() {
           label="Sync server"
           description={apiBase}
           onPress={() =>
-            open(() => (
-              <RemoteServerForm
-                title="Sync server"
-                description="The computer this library syncs with. Scan the code on its Sync settings, or type the address shown beside it."
-                currentUrl={apiBase}
-                resetLabel={paired ? 'Unpair' : undefined}
-                onSave={connectServer}
-                // The scanner is a camera, so only where there is one.
-                onScan={Platform.OS === 'web' ? undefined : () => router.push('/scan-sync-server')}
-              />
-            ))
+            openDialog(
+              () => (
+                <RemoteServerForm
+                  title="Sync server"
+                  description="The computer this library syncs with. Scan the code on its Sync settings, or type the address shown beside it."
+                  currentUrl={apiBase}
+                  resetLabel={paired ? 'Unpair' : undefined}
+                  onSave={connectServer}
+                  // The scanner is a camera, so only where there is one.
+                  onScan={Platform.OS === 'web' ? undefined : () => router.push('/scan-sync-server')}
+                />
+              ),
+              { accessibilityLabel: 'Sync server' },
+            )
           }
         />
       )}
