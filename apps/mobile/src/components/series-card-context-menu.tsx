@@ -4,7 +4,7 @@ import { usePathname } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
-import { BackHandler, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
   cancelAnimation,
   Extrapolation,
@@ -65,6 +65,7 @@ import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useDismissKey } from '@/lib/dismiss-key';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { useRouter } from '@/lib/nav';
 import { drillSeriesFromOverlay, encodeSeriesParam } from '@/lib/series-nav';
@@ -390,16 +391,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     }));
   }, [progress, finishClose]);
 
-  useEffect(() => {
-    // Android hardware-back dismisses the popup; BackHandler is native-only (it raises a red dev
-    // toast on web, where the web hold-menu path opens this via the dev hook).
-    if (Platform.OS === 'web') return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      dismiss();
-      return true;
-    });
-    return () => sub.remove();
-  }, [dismiss]);
+  useDismissKey(dismiss);
 
   // ── Chrome band ───────────────────────────────────────────────────────────
   // The app's bars are chrome the grids scroll UNDER (see bar-surface / app-tabs), so a card at either

@@ -14,7 +14,7 @@
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { BackHandler, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   interpolate,
   runOnJS,
@@ -37,6 +37,7 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useDismissKey } from '@/lib/dismiss-key';
 import { friendlyError } from '@/lib/friendly-error';
 import { windowModalLayer } from '@/lib/window-controls';
 
@@ -152,26 +153,8 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     progress.set(withSpring(1, OPEN_SPRING));
-    // BackHandler is native-only (it raises a red dev error on web).
-    if (Platform.OS === 'web') {
-      // Capture on the window, so the popup hears Escape before anything it was opened over: the
-      // settings panel, a series layer and the menus all close on it too, and would go with it.
-      const onKey = (e: KeyboardEvent) => {
-        if (e.key !== 'Escape') return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        dismiss();
-      };
-      window.addEventListener('keydown', onKey, true);
-      return () => window.removeEventListener('keydown', onKey, true);
-    }
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      dismiss();
-      return true;
-    });
-    return () => sub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [progress]);
+  useDismissKey(dismiss);
 
   const backdropBlurProps = useAnimatedProps(() => ({
     intensity: interpolate(progress.value, [0, 1], [0, BACKDROP_BLUR.plain]),

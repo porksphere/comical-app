@@ -12,8 +12,8 @@
  */
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
-import { BackHandler, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, {
   interpolate,
   runOnJS,
@@ -41,6 +41,7 @@ import { useItemCollections, type ItemTarget } from '@/hooks/use-item-collection
 import { useKeyboardLift } from '@/hooks/use-keyboard-lift';
 import { useCollections } from '@/hooks/use-collections';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useDismissKey } from '@/lib/dismiss-key';
 import { hapticImpactLight } from '@/lib/haptics';
 import { windowModalLayer } from '@/lib/window-controls';
 
@@ -130,33 +131,14 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     progress.set(withSpring(1, OPEN_SPRING));
-    // Android hardware-back dismisses the picker; BackHandler is native-only (it throws on web).
-    if (Platform.OS === 'web') return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      dismiss();
-      return true;
-    });
-    return () => sub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Escape backs out one step: the name being typed, else the picker. Captured on the window so
-  // nothing the picker was opened over — a series layer, the settings panel — closes with it.
-  const onEscape = useEffectEvent((e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
+  }, [progress]);
+  // Backs out one step: the name being typed, else the picker.
+  useDismissKey(() => {
     if (!creating) return dismiss();
     abandonedRef.current = true;
     setNewName('');
     setCreating(false);
   });
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const listener = (e: KeyboardEvent) => onEscape(e);
-    window.addEventListener('keydown', listener, true);
-    return () => window.removeEventListener('keydown', listener, true);
-  }, []);
 
   const toggle = (id: string) => {
     hapticImpactLight();

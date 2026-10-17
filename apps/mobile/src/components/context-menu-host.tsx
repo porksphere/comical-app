@@ -31,7 +31,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { BackHandler, Platform, StyleSheet, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
@@ -65,6 +65,7 @@ import {
   menuStyles,
   type MenuRowSpec,
 } from '@/components/context-menu-material';
+import { useDismissKey } from '@/lib/dismiss-key';
 import { HOLD_ARM_DISTANCE } from '@/lib/series-card-menu';
 import { useActiveColorScheme } from '@/hooks/use-theme';
 import { windowModalLayer } from '@/lib/window-controls';
@@ -295,21 +296,8 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
     // The hold pays off with the card popup's medium thump; a plain button tap gets a light tick.
     void Haptics.impactAsync(fixed ? Haptics.ImpactFeedbackStyle.Light : Haptics.ImpactFeedbackStyle.Medium);
     progress.set(withSpring(1, OPEN_SPRING));
-    if (Platform.OS === 'web') {
-      const onKey = (e: KeyboardEvent) => {
-        if (e.key !== 'Escape') return;
-        e.preventDefault();
-        dismiss();
-      };
-      document.addEventListener('keydown', onKey);
-      return () => document.removeEventListener('keydown', onKey);
-    }
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      dismiss();
-      return true;
-    });
-    return () => sub.remove();
-  }, [progress, dismiss, fixed]);
+  }, [progress, fixed]);
+  useDismissKey(dismiss);
 
   // Every row action also dismisses the menu — for a plain press AND a lift-commit alike.
   const rows = useMemo(
