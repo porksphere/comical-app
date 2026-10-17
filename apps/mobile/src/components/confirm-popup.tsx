@@ -153,7 +153,18 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     progress.set(withSpring(1, OPEN_SPRING));
     // BackHandler is native-only (it raises a red dev error on web).
-    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'web') {
+      // Capture on the window, so the popup hears Escape before anything it was opened over: the
+      // settings panel, a series layer and the menus all close on it too, and would go with it.
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        dismiss();
+      };
+      window.addEventListener('keydown', onKey, true);
+      return () => window.removeEventListener('keydown', onKey, true);
+    }
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       dismiss();
       return true;
