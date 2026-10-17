@@ -1992,7 +1992,9 @@ function SeriesReaderInstance({
   // gesture's own vector, which had nowhere to land. Built inside
   // useMemo like chapter-navigator's pan (the React Compiler lint can't tell worklets from render
   // code).
-  const collapseEnabled = !detailsActive && !readerZoomed && !scrubbing;
+  // Never under a mouse: a drag there is a PAN of the page, and a pan that set off the reveal or the
+  // dismiss took the reader away mid-read. The desktop has the Details button and Back for those.
+  const collapseEnabled = !detailsActive && !readerZoomed && !scrubbing && !(IS_WEB && isDesktopPointer());
   // Each GESTURE is one thing, decided at activation and locked: a drag that sets off toward the
   // details is a reveal (progress only, and paged only); anything else is a dismiss — a free 2D
   // follow in BOTH directions, released on the |cross| decision below, driving the
