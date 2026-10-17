@@ -1,7 +1,8 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useAnchoredOverlay, useOverlay, useOverlayPresentation } from '@/components/overlay/overlay';
+import { OptionMenu, OptionRow } from '@/components/overlay/option-menu';
+import { OptionList, useAnchoredOverlay, useOverlay, useOverlayPresentation } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -108,7 +109,7 @@ export function SortControl({
       label={currentSortLabel}
       showLabel={showLabel}
       render={() => (
-        <OptionMenu
+        <SortMenu
           title="Sort by"
           options={sortOptions.map((o) => o.label)}
           selected={currentSortLabel}
@@ -211,8 +212,9 @@ function FiltersSheet({
   );
 }
 
-/** A single-select popup menu (overlay) that reports the chosen value back. */
-function OptionMenu({
+/** The sort menu — the shared single-select menu, so a popover too short to scroll gets the same
+ *  even padding as every other one (its own sheet-style trailing pad left a band under the rows). */
+function SortMenu({
   title,
   options,
   selected,
@@ -225,20 +227,22 @@ function OptionMenu({
 }) {
   const { closeTop } = useOverlay();
   return (
-    <SheetContent title={title}>
-      {options.map((opt) => (
-        <SelectRow
-          key={opt}
-          testID={testId('filter.sort.option', opt)}
-          label={opt}
-          selected={selected === opt}
-          onPress={() => {
-            onSelect(opt);
-            closeTop();
-          }}
-        />
-      ))}
-    </SheetContent>
+    <OptionMenu title={title}>
+      <OptionList>
+        {options.map((opt) => (
+          <OptionRow
+            key={opt}
+            testID={testId('filter.sort.option', opt)}
+            label={opt}
+            selected={selected === opt}
+            onPress={() => {
+              onSelect(opt);
+              closeTop();
+            }}
+          />
+        ))}
+      </OptionList>
+    </OptionMenu>
   );
 }
 
@@ -266,27 +270,6 @@ function SheetContent({
       )}
       {children}
     </View>
-  );
-}
-
-function SelectRow({
-  label,
-  selected,
-  onPress,
-  testID,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-  testID?: string;
-}) {
-  return (
-    <Pressable testID={testID} onPress={onPress}>
-      <ThemedView type="backgroundElement" style={styles.row}>
-        <ThemedText>{label}</ThemedText>
-        <View style={[styles.dot, selected && styles.dotSelected]} />
-      </ThemedView>
-    </Pressable>
   );
 }
 
@@ -356,25 +339,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: Spacing.one,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  dot: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: 'rgba(128,128,128,0.5)',
-  },
-  dotSelected: {
-    borderColor: '#3478F6',
-    backgroundColor: '#3478F6',
   },
   confirm: {
     width: 36,
