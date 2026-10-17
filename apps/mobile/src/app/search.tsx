@@ -548,16 +548,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
             </>
           ) : (
             <>
-          <Pressable
-            testID="search.back"
-            onPress={goBack}
-            hitSlop={12}
-            android_ripple={{ color: theme.backgroundSelected, borderless: true }}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            style={styles.backButton}>
-            <ChevronLeftIcon color={theme.text} />
-          </Pressable>
+          <View style={styles.backSlot} />
           <View style={styles.searchWrap}>
             <SearchField
               // Remounted per open request: the field holds unsubmitted text of its own, which a
@@ -578,6 +569,20 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
             </>
           )}
         </View>
+        {/* Outside the capped row, at the window edge like TopBar's: inside it, a window wider than
+            MaxTopLevelWidth carried the chevron in to the column, away from every other screen's. */}
+        {!docked && (
+          <Pressable
+            testID="search.back"
+            onPress={goBack}
+            hitSlop={12}
+            android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            style={[styles.edgeBack, { height: barHeight }]}>
+            <ChevronLeftIcon color={theme.text} />
+          </Pressable>
+        )}
       </BarSurface>
 
       {bridgesError && bridges.length === 0 ? (
@@ -682,6 +687,16 @@ const styles = StyleSheet.create({
   backButton: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // ChevronLeftIcon's width: holds the field where it sits when the window is no wider than the row.
+  backSlot: {
+    width: 26,
+  },
+  edgeBack: {
+    position: 'absolute',
+    left: Spacing.three,
+    bottom: 0,
+    justifyContent: 'center',
   },
   searchWrap: {
     flex: 1,
