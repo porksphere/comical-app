@@ -165,6 +165,15 @@ function StringFilterRow({
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState(value ?? '');
   const [focused, setFocused] = useState(false);
+  // A tapped Author/Artist reaches this row as a meta intent AFTER it has mounted empty (the intent
+  // waits for the bridge's filter defs), so seeding `text` once left the search running on the artist
+  // while the field read blank. Typing can't be clobbered: every keystroke goes out through
+  // `onChange`, so `value` comes back equal to `text`.
+  const [prevValue, setPrevValue] = useState(value);
+  if (prevValue !== value) {
+    setPrevValue(value);
+    setText(value ?? '');
+  }
   return (
     <ThemedView
       type="backgroundElement"
