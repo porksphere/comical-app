@@ -5069,7 +5069,7 @@ const ReaderPane = forwardRef<
       const zoomDir = zoomHoldDirection(e.key);
       if (zoomDir) {
         e.preventDefault();
-        zoomHold.press(e.key, { x: zoomDir, y: 0 });
+        zoomHold.press(e.key, zoomDir, e.repeat);
         return;
       }
       const isRight = e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D';

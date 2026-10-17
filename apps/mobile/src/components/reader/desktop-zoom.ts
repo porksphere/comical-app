@@ -71,20 +71,64 @@ export function showZoomToast(level: number): void {
 
 /** The factor Q/E zoom by over a second at full speed. */
 const HOLD_ZOOM_PER_S = 4;
+/** A second Q/E press within this long of the first goes all the way out/in. */
+const DOUBLE_PRESS_MS = 300;
 
 /** Q zooms out and E in, continuously while held — on the pan keys' own eased velocity
- *  (lib/key-hold), read as a rate in log-zoom, so it starts, runs and settles the way they do. */
+ *  (lib/key-hold), read as a rate in log-zoom, so it starts, runs and settles the way they do.
+ *  A quick double press jumps to the far end instead (see `zoomToLimit`). */
 export function zoomHoldDirection(key: string): -1 | 1 | null {
   return key === 'q' || key === 'Q' ? -1 : key === 'e' || key === 'E' ? 1 : null;
 }
 export function createZoomHold() {
-  return createKeyHold((dx) => {
+  const hold = createKeyHold((dx) => {
     if (!target || dx === 0) return;
     const from = zoomLevel$.peek();
     target.zoomTo(from * HOLD_ZOOM_PER_S ** (dx / HOLD_SPEED), false);
     const level = zoomLevel$.peek();
     if (Math.round(level * 100) !== Math.round(from * 100)) showZoomToast(level);
   });
+  let lastPress: { key: string; at: number } | null = null;
+  // The key whose second press jumped. Its auto-repeat must not feed the hold until it comes back
+  // up: the hold zooms un-eased every frame, which would cut the jump's ease off where it started.
+  let jumped: string | null = null;
+  return {
+    press(key: string, dir: -1 | 1, repeat: boolean) {
+      const k = key.toLowerCase();
+      if (repeat) {
+        if (jumped !== k) hold.press(k, { x: dir, y: 0 });
+        return;
+      }
+      const now = performance.now();
+      if (lastPress?.key === k && now - lastPress.at < DOUBLE_PRESS_MS) {
+        lastPress = null;
+        jumped = k;
+        hold.stop();
+        zoomToLimit(dir);
+        return;
+      }
+      lastPress = { key: k, at: now };
+      hold.press(k, { x: dir, y: 0 });
+    },
+    release(key: string) {
+      const k = key.toLowerCase();
+      if (jumped === k) jumped = null;
+      hold.release(k);
+    },
+    clear() {
+      jumped = null;
+      hold.clear();
+    },
+    dispose: hold.dispose,
+  };
+}
+
+/** All the way in or out, eased like the +/-/0 keys — the readers clamp the level to what the
+ *  page allows, so asking for the extremes lands exactly on them. */
+export function zoomToLimit(dir: 1 | -1, opts?: { toast?: boolean }): void {
+  if (!target) return;
+  target.zoomTo(dir > 0 ? Number.POSITIVE_INFINITY : 0);
+  if (opts?.toast !== false) showZoomToast(zoomLevel$.peek());
 }
 
 /** One step in or out from whatever the page shows now (not from the kept level: after a
