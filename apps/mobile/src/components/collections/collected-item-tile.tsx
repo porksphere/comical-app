@@ -7,7 +7,6 @@ import {
   View,
   type GestureResponderEvent,
   type View as ViewType,
-  type ImageStyle,
 } from 'react-native';
 
 import { CollectedItemMenu } from '@/components/collections/collected-item-menu';
@@ -18,7 +17,7 @@ import { Spacing } from '@/constants/theme';
 import type { ApiSavedItem } from '@/data/api';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
-import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { DEFAULT_THUMB_ASPECT, wholePictureStyle } from '@/lib/aspect-ratio';
 import { useIsZoomingSeries, useZoomOriginSource, useZoomSurfaceKey } from '@/lib/series-zoom';
 
 /**
@@ -179,25 +178,6 @@ export function CollectedItemTile({
       {({ onLongPress, menuOpen }) => card(onLongPress, menuOpen)}
     </CollectedItemMenu>
   );
-}
-
-/**
- * The picture at its own shape, scaled to cover a box of `box` aspect and centred — the clip crops it.
- *
- * Web only, and not cosmetic: `object-fit: cover` draws a SUBSET of the image, and Chromium filters a
- * subset draw without mipmaps. A full reader page squeezed ~7× into a tile that way samples its
- * screentone point by point, which comes out as harsh blotches; the same draw over the whole image is
- * mipmapped and smooth. The tile only escaped it when its box happened to match the page's shape
- * exactly — a learned aspect on a revisit — which is why a grid looked broken on its first open and
- * fine on the next.
- */
-function wholePictureStyle(picture: number, box: number): ImageStyle {
-  if (picture < box) {
-    const height = (box / picture) * 100;
-    return { position: 'absolute', left: 0, width: '100%', height: `${height}%`, top: `${(100 - height) / 2}%` };
-  }
-  const width = (picture / box) * 100;
-  return { position: 'absolute', top: 0, height: '100%', width: `${width}%`, left: `${(100 - width) / 2}%` };
 }
 
 const styles = StyleSheet.create({

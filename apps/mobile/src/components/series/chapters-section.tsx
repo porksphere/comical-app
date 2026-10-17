@@ -74,7 +74,7 @@ import { useSeriesPageWidth } from '@/lib/series-pane-context';
 import { chapterProgressQuery, collectionItemsQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive, type DataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
-import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT, wholePictureStyle } from '@/lib/aspect-ratio';
 import { applyReadState, groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
@@ -1578,6 +1578,14 @@ export function PageThumb({
     }),
   );
   const aspectRatio = resolved?.kind === 'sprite' ? clampThumbAspect(resolved.w / resolved.h) : imageAspect;
+  // A downloaded page is a full reader page, not a bridge's thumbnail, so a cover crop of it on web is
+  // the mipmap-less subset draw `wholePictureStyle` exists for. Keyed by the URL it was measured from,
+  // so a recycled tile never sizes a new picture by the last one's shape.
+  const [natural, setNatural] = useState<{ uri: string; aspect: number } | null>(null);
+  const whole =
+    Platform.OS === 'web' && natural && natural.uri === resolvedImageUrl
+      ? wholePictureStyle(natural.aspect, aspectRatio)
+      : null;
   const ready = delayPassed && loaded;
   // The tile's BOX shape. In the grid it is the slot's shape, so the tile always fills its slot
   // exactly and the picture inside crops to cover it — a box sized to the image's own aspect is what
@@ -1607,8 +1615,8 @@ export function PageThumb({
         {delayPassed && resolved?.kind === 'image' && resolvedImageUrl && (
           <Image
             source={{ uri: resolvedImageUrl }}
-            style={styles.thumbImg}
-            contentFit="cover"
+            style={whole ?? styles.thumbImg}
+            contentFit={whole ? 'fill' : 'cover'}
             cachePolicy="memory-disk"
             transition={lightCards ? 0 : 90}
             // Reset the reused image view on recycle so it doesn't flash the
@@ -1621,6 +1629,7 @@ export function PageThumb({
                 const nextAspect = clampThumbAspect(src.width / src.height);
                 resolvedThumbAspects.set(delayKey, nextAspect);
                 lastResolvedThumbAspect = nextAspect;
+                if (Platform.OS === 'web') setNatural({ uri: resolvedImageUrl, aspect: src.width / src.height });
                 // Smooth the aspect settle when the shape changes; a no-op when Lightweight is on.
                 shrink.runShrink?.(imageAspect, nextAspect, boxSize?.w ?? 0);
                 setImageAspect(nextAspect);

@@ -1,3 +1,5 @@
+import type { ImageStyle } from 'react-native';
+
 /** Default cover/page-thumb aspect ratio (width / height) — the skeleton's
  *  fixed shape, and the vertical MAX every thumbnail is capped to. Mirrors
  *  the reference's fixed 2:3 card shape. */
@@ -53,4 +55,22 @@ export function rowCoverAspects(entries: readonly CoverShaped[], numColumns: num
   const rows: number[] = [];
   for (let i = 0; i < entries.length; i += numColumns) rows.push(rowCoverAspect(entries.slice(i, i + numColumns)));
   return rows;
+}
+
+/**
+ * The picture at its own shape, scaled to cover a box of `box` aspect and centred — the clip crops it.
+ *
+ * Web only, and not cosmetic: `object-fit: cover` draws a SUBSET of the image, and Chromium filters a
+ * subset draw without mipmaps. A full reader page squeezed several times into a tile that way samples
+ * its screentone and line art point by point, which comes out as harsh blotches and jagged lettering;
+ * the same draw over the whole image is mipmapped and smooth. Pair it with `contentFit="fill"`, inside
+ * an `overflow: hidden` ancestor.
+ */
+export function wholePictureStyle(picture: number, box: number): ImageStyle {
+  if (picture < box) {
+    const height = (box / picture) * 100;
+    return { position: 'absolute', left: 0, width: '100%', height: `${height}%`, top: `${(100 - height) / 2}%` };
+  }
+  const width = (picture / box) * 100;
+  return { position: 'absolute', top: 0, height: '100%', width: `${width}%`, left: `${(100 - width) / 2}%` };
 }
