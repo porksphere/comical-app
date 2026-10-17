@@ -12,6 +12,7 @@ import {
 import {
   edgeOffset,
   fillRule,
+  freePanLimits,
   isStrip,
   pageGeometry,
   stripGeometry,
@@ -321,6 +322,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     }
   }, []);
 
+  // How far the current page may be panned at `scale`. Under a mouse a page zoomed past its rest
+  // reaches further than its own edges (see `freePanLimits`); touch keeps the page filling the screen.
+  const panRoom = useCallback(
+    (scale: number) => {
+      const { box: b, restScale: rest } = restRef.current;
+      return isDesktopPointer() ? freePanLimits(scale, rest, b, { width, height }) : panLimits(scale, b, { width, height });
+    },
+    [width, height],
+  );
+
   const setZoomedNow = useCallback((next: boolean) => {
     if (zoomedRef.current === next) return;
     zoomedRef.current = next;
@@ -378,12 +389,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const zoomAround = useCallback(
     (target: number, x: number, y: number, animate: boolean) => {
       cancelInertia();
-      const { box: b, maxScale: max } = restRef.current;
+      const { maxScale: max } = restRef.current;
       const s = clamp(target, Math.min(1, restRef.current.restScale), max);
       const { scale: s0, tx: tx0, ty: ty0 } = zoom.current;
       const cx = width / 2;
       const cy = height / 2;
-      const limit = panLimits(s, b, { width, height });
+      const limit = panRoom(s);
       zoom.current = {
         scale: s,
         tx: clamp(x - cx - s * ((x - cx - tx0) / s0), -limit.x, limit.x),
@@ -392,7 +403,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       writeZoom(animate);
       setZoomedNow(s > ZOOM_EPSILON);
     },
-    [cancelInertia, setZoomedNow, writeZoom, zoom, width, height],
+    [cancelInertia, setZoomedNow, writeZoom, zoom, panRoom, width, height],
   );
   // A page ARRIVING starts from rest, instantly — the native pager rests a neighbour before it is
   // ever seen, and this is the closest a single transform slot can get: `zoomRef` only points at
@@ -425,7 +436,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const startPanInertia = useCallback(() => {
     cancelInertia();
     const s = zoom.current.scale;
-    const { x: limitX, y: limitY } = panLimits(s, restRef.current.box, { width, height });
+    const { x: limitX, y: limitY } = panRoom(s);
     if (limitX <= 0 && limitY <= 0) return;
     let vx = gesture.panVX;
     let vy = gesture.panVY;
@@ -454,7 +465,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       }
     };
     inertiaRef.current = requestAnimationFrame(step);
-  }, [cancelInertia, gesture, width, height, writeZoom, zoom]);
+  }, [cancelInertia, gesture, panRoom, writeZoom, zoom]);
 
   // Double-tap toggles between the page's rest and a fixed magnification centred on the tap point
   // (clamped into bounds). Unavailable when pinch is (fit-width overflow), matching the native
@@ -605,7 +616,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       let dy = wheelPixels(e.deltaY, e.deltaMode, height);
       if (e.shiftKey && dx === 0) [dx, dy] = [dy, 0];
       const { scale, tx, ty } = zoom.current;
-      const limit = panLimits(scale, restRef.current.box, { width, height });
+      const limit = panRoom(scale);
       zoom.current = { scale, tx: clamp(tx - dx, -limit.x, limit.x), ty: clamp(ty - dy, -limit.y, limit.y) };
       writeZoom(false);
     };
@@ -633,7 +644,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         el.removeEventListener('gesturechange', onGestureChange);
       }
     };
-  }, [standby, zoomAround, cancelInertia, writeZoom, zoom, width, height]);
+  }, [standby, zoomAround, cancelInertia, writeZoom, zoom, panRoom, height]);
 
   // The stepper and the +/-/0 keys (see desktop-zoom). Only the primary pager answers them.
   useEffect(() => {
@@ -806,7 +817,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
       if (gesture.mode === 'pan') {
         const s = zoom.current.scale;
-        const limit = panLimits(s, restRef.current.box, { width, height });
+        const limit = panRoom(s);
         zoom.current = {
           scale: s,
           tx: clamp(gesture.panBaseTx + (p.x - gesture.panStartX), -limit.x, limit.x),
@@ -843,7 +854,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         writeTrack(dx, false);
       }
     },
-    [firstTwo, gesture, height, n, posOf, width, writeTrack, writeZoom, zoom],
+    [firstTwo, gesture, height, n, posOf, width, writeTrack, writeZoom, zoom, panRoom],
   );
 
   const finalizePinch = useCallback(() => {
@@ -915,7 +926,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   useEffect(() => {
     if (standby || !isDesktopPointer()) return;
     const room = () => {
-      const limit = panLimits(zoom.current.scale, restRef.current.box, { width, height });
+      const limit = panRoom(zoom.current.scale);
       const pans = zoomedRef.current || restRef.current.overflowsAtRest;
       return { x: pans && limit.x > 0.5 ? limit.x : 0, y: pans && limit.y > 0.5 ? limit.y : 0 };
     };
@@ -956,7 +967,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       window.removeEventListener('blur', onBlur);
       hold.dispose();
     };
-  }, [standby, cancelInertia, writeZoom, turn, zoom, zoomedIn, rtl, width, height]);
+  }, [standby, cancelInertia, writeZoom, turn, zoom, zoomedIn, rtl, panRoom]);
 
   const handleTap = useCallback(
     (x: number) => {

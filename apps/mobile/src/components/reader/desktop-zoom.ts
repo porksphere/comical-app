@@ -70,7 +70,7 @@ export function showZoomToast(level: number): void {
 }
 
 /** The factor Q/E zoom by over a second at full speed. */
-const HOLD_ZOOM_PER_S = 2.5;
+const HOLD_ZOOM_PER_S = 4;
 
 /** Q zooms out and E in, continuously while held — on the pan keys' own eased velocity
  *  (lib/key-hold), read as a rate in log-zoom, so it starts, runs and settles the way they do. */

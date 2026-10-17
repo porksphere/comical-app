@@ -80,6 +80,30 @@ export function panLimits(scale: number, content: Size, viewport: Size): { x: nu
   };
 }
 
+/** How far past rest a desktop zoom must go before the page's edges can be brought all the way
+ *  to the middle of the window (see `freePanLimits`). */
+const FREE_PAN_RAMP = 0.25;
+
+/** 0 at rest, 1 once zoomed `FREE_PAN_RAMP` past it. Ramped rather than switched so zooming back
+ *  out to rest draws an off-centre page back in with the zoom instead of snapping it there. */
+export function freePanReach(level: number): number {
+  'worklet';
+  return Math.max(0, Math.min(1, (level - 1) / FREE_PAN_RAMP));
+}
+
+/** `panLimits` for a mouse: a page zoomed past its rest may be panned until any point of it, its
+ *  edges included, sits in the middle of the window — a look at a corner wants it centred, not
+ *  pressed against the window's edge. */
+export function freePanLimits(scale: number, restScale: number, content: Size, viewport: Size): { x: number; y: number } {
+  'worklet';
+  const strict = panLimits(scale, content, viewport);
+  const t = freePanReach(scale / restScale);
+  return {
+    x: strict.x + ((content.width * scale) / 2 - strict.x) * t,
+    y: strict.y + ((content.height * scale) / 2 - strict.y) * t,
+  };
+}
+
 /** The edge a page is ENTERED from when it is swiped back onto: the far one. A page before the
  *  one being read rests here, so a backward swipe lands where reading left off — decided from
  *  where the page sits, never from history, so it holds for a chapter resumed from the middle. */

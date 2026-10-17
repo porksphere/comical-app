@@ -1,6 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 
-import { containedSize, edgeOffset, effectiveFit, farEdge, fillRule, isStrip, otherFit, pageGeometry, panLimits, stripGeometry } from './page-geometry';
+import {
+  containedSize,
+  edgeOffset,
+  effectiveFit,
+  farEdge,
+  fillRule,
+  freePanLimits,
+  isStrip,
+  otherFit,
+  pageGeometry,
+  panLimits,
+  stripGeometry,
+} from './page-geometry';
 
 const phone = { width: 390, height: 844 };
 const spread = { width: 2000, height: 1000 };
@@ -34,6 +46,28 @@ describe('panLimits', () => {
     // 2.5 × 557 = 1393 tall: the overhang past 844 is what may be panned, not (2.5 − 1) × 844 / 2.
     expect(limit.y).toBeCloseTo((2.5 * content.height - 844) / 2, 6);
     expect(limit.y).toBeLessThan(((2.5 - 1) * 844) / 2);
+  });
+});
+
+describe('freePanLimits', () => {
+  const desk = { width: 1440, height: 900 };
+  const content = containedSize(portrait, desk);
+  test('at rest it is the strict limit', () => {
+    expect(freePanLimits(1, 1, content, desk)).toEqual(panLimits(1, content, desk));
+  });
+  test('well past rest an edge may reach the middle of the window', () => {
+    const limit = freePanLimits(2, 1, content, desk);
+    expect(limit.x).toBeCloseTo(content.width, 6);
+    expect(limit.y).toBeCloseTo(content.height, 6);
+  });
+  test('it ramps in between, never below the strict limit', () => {
+    const strict = panLimits(1.1, content, desk);
+    const free = freePanLimits(1.1, 1, content, desk);
+    expect(free.x).toBeGreaterThan(strict.x);
+    expect(free.x).toBeLessThan((content.width * 1.1) / 2);
+  });
+  test('the ramp is measured from the rest, not from 1×', () => {
+    expect(freePanLimits(2, 2, content, desk)).toEqual(panLimits(2, content, desk));
   });
 });
 

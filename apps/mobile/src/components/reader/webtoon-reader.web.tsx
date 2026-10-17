@@ -10,6 +10,7 @@ import {
   wheelZoomFactor,
   zoomLevel$,
 } from '@/components/reader/desktop-zoom';
+import { freePanReach } from '@/components/reader/page-geometry';
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import {
@@ -169,12 +170,16 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   const onPageChangeRef = useRef(onPageChange);
   onPageChangeRef.current = onPageChange;
 
-  // Below 1× (the desktop zoom's way of narrowing a window-wide strip) the content is centred: a
-  // margin, in the content's own zoomed pixels, of half the room it leaves.
-  const marginAt = useCallback(
-    (z: number) => (z < 1 ? ((scrollerRef.current?.clientWidth ?? 0) * (1 - z)) / 2 : 0),
-    [],
-  );
+  // Where the strip's left edge sits in the scrolled content, in screen pixels. Below 1× (the
+  // desktop zoom's way of narrowing a window-wide strip) it is centred in the room it leaves. Above
+  // it, under a mouse, the strip gets room either side — up to half the window — so either edge of
+  // it can be scrolled to the middle, as a zoomed page can (see `freePanLimits`).
+  const marginAt = useCallback((z: number) => {
+    const w = scrollerRef.current?.clientWidth ?? 0;
+    if (z < 1) return (w * (1 - z)) / 2;
+    // Not below ZOOM_EPSILON, where the strip can't be scrolled sideways and would just sit off-centre.
+    return z > ZOOM_EPSILON && isDesktopPointer() ? (w / 2) * freePanReach(z) : 0;
+  }, []);
   const standbyRef = useRef(standby);
   useEffect(() => {
     standbyRef.current = standby;
@@ -184,7 +189,14 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       const content = contentRef.current;
       if (!content) return;
       content.style.setProperty('zoom', String(z));
-      content.style.marginLeft = `${marginAt(z) / z}px`;
+      const m = marginAt(z) / z;
+      content.style.marginLeft = z < 1 ? `${m}px` : '0px';
+      // Padding, not margin: the scroll range has to grow by it on BOTH sides, and an end margin
+      // doesn't count toward a scroller's overflow. The width is pinned in the content's own zoomed
+      // pixels so the box is as wide as the pictures it holds — `100%` resolves to the window's
+      // width AFTER zoom, leaving the pictures to overflow it and the right padding inside them.
+      content.style.paddingLeft = content.style.paddingRight = z > 1 ? `${m}px` : '0px';
+      content.style.width = z > 1 ? `${scrollerRef.current?.clientWidth ?? 0}px` : '100%';
       if (!standbyRef.current) zoomLevel$.set(z);
     },
     [marginAt],
@@ -204,7 +216,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     const magnified = z > ZOOM_EPSILON;
     el.style.overflowX = magnified ? 'auto' : 'hidden';
     el.style.touchAction = magnified ? 'pan-x pan-y' : 'pan-y';
-    el.scrollLeft = magnified ? clamp(cpX * z - fx, 0, Math.max(0, el.scrollWidth - el.clientWidth)) : 0;
+    el.scrollLeft = magnified ? clamp(cpX * z + marginAt(z) - fx, 0, Math.max(0, el.scrollWidth - el.clientWidth)) : 0;
     el.scrollTop = clamp(cpY * z - fy, 0, Math.max(0, el.scrollHeight - el.clientHeight));
   };
 
@@ -378,7 +390,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
         startDist: distance(a, b) || 1,
         z0,
         // The content-space point currently under the focal (stays put as we zoom).
-        cpX: (el.scrollLeft + f.x) / z0,
+        cpX: (el.scrollLeft + f.x - marginAt(z0)) / z0,
         cpY: (el.scrollTop + f.y) / z0,
         latest: { a, b },
       };
@@ -396,7 +408,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       const z = clamp(pinch.current.z0 * (distance(a, b) / pinch.current.startDist), 1, MAX_SCALE);
       zoom.current = z;
       applyZoom(z);
-      el.scrollLeft = clamp(pinch.current.cpX * z - f.x, 0, Math.max(0, el.scrollWidth - el.clientWidth));
+      el.scrollLeft = clamp(pinch.current.cpX * z + marginAt(z) - f.x, 0, Math.max(0, el.scrollWidth - el.clientWidth));
       el.scrollTop = clamp(pinch.current.cpY * z - f.y, 0, Math.max(0, el.scrollHeight - el.clientHeight));
     };
 
@@ -453,7 +465,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       el.removeEventListener('gesturechange', preventGesture as EventListener);
       el.removeEventListener('gestureend', preventGesture as EventListener);
     };
-  }, [paged, applyZoom]);
+  }, [paged, applyZoom, marginAt]);
 
   // The desktop zoom (see desktop-zoom): Ctrl/⌘+wheel — or a trackpad pinch, which arrives as one
   // (Safari's as a gesture event) — about the pointer, claimed so the browser doesn't zoom the whole
@@ -766,5 +778,5 @@ function scrollerStyle(paged: boolean, snapEnabled: boolean): React.CSSPropertie
 function pagedSlotStyle(height: number): React.CSSProperties {
   return { width: '100%', height, scrollSnapAlign: 'start' };
 }
-const contentStyle: React.CSSProperties = { width: '100%' };
+const contentStyle: React.CSSProperties = { width: '100%', boxSizing: 'content-box' };
 const loadedSlotStyle: React.CSSProperties = { width: '100%' };

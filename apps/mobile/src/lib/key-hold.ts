@@ -8,10 +8,10 @@
 export const HOLD_SPEED = 900;
 /** The velocity a fresh press starts from, so a tap that is up before the ease-in gets going still
  *  travels (about KICK_SPEED · GLIDE_S). */
-const KICK_SPEED = 450;
+const KICK_SPEED = 600;
 /** Time constants, in seconds: of the ease toward HOLD_SPEED, and of the glide after release. */
-const EASE_IN_S = 0.09;
-const GLIDE_S = 0.12;
+const EASE_IN_S = 0.05;
+const GLIDE_S = 0.07;
 /** Below this the glide has stopped. */
 const REST_SPEED = 8;
 
