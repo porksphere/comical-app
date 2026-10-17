@@ -272,7 +272,10 @@ async function boot(): Promise<void> {
   // back to a plain <img> and no percentage. The shell owns the network layer, so it grants that
   // allowance itself on every response the renderer fetches from another host: this app sends no
   // credentials anywhere (see data/api.ts), so the wildcard is both sufficient and safe. Those
-  // fetches get the same hotlink treatment as the <img>s — same bytes, same CDN.
+  // fetches get the same hotlink treatment as the <img>s — same bytes, same CDN — and lose their
+  // `Origin` too: some image CDNs answer a browser asking from a foreign origin with an empty 404,
+  // and with the allowance granted the reader can read that 404, so it never falls back to the
+  // <img> that would have loaded.
   //
   // Both jobs share a listener because a session keeps only one per event — a second registration
   // replaces the first, and with it the token.
@@ -284,7 +287,7 @@ async function boot(): Promise<void> {
     if (details.url.startsWith(own)) {
       callback({ requestHeaders: { ...details.requestHeaders, Authorization: bearer } });
     } else if (isPicture(details.resourceType)) {
-      callback({ requestHeaders: withoutHeaders(details.requestHeaders, /^(referer|sec-fetch-.+)$/i) });
+      callback({ requestHeaders: withoutHeaders(details.requestHeaders, /^(origin|referer|sec-fetch-.+)$/i) });
     } else {
       callback({});
     }
