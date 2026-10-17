@@ -21,7 +21,7 @@ import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { useComicalExcludedIds } from '@/data/comical-home';
 import type { ContentRow } from '@/data/content-rows';
 import { useDedupedPages } from '@/data/grid-pages';
@@ -34,6 +34,7 @@ import type { Bridge } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { useBridgeFilters } from '@/hooks/use-bridge-filters';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useContentWidth } from '@/hooks/use-content-width';
 import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
@@ -54,6 +55,8 @@ const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;
 // Stable empty array so `useCrossBridgeRails` runs zero queries in single-bridge mode.
 const NO_BRIDGES: Bridge[] = [];
 const LIBRARY_ROWS = 2;
+/** ChevronLeftIcon's width: what the field leaves clear for the edge chevron. */
+const BackSlotWidth = 26;
 const SUBMIT_HINT =
   Platform.OS === 'web' ? 'Press Enter to search every bridge' : 'Tap search to look across every bridge';
 
@@ -167,6 +170,10 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   }
   const typed = docked ? docked.typed : ownTyped;
   const desktop = useIsDesktop();
+  // Desktop: the field starts where the filters do once the capped row's gutter can hold the edge
+  // chevron, and is pushed only as far as it can't.
+  const contentWidth = useContentWidth();
+  const fieldIndent = Math.max(0, BackSlotWidth + Spacing.two - topLevelCenterInset(contentWidth));
   const libraryTerm = useDebouncedValue(desktop ? typed.trim() : '', 150);
   const libraryMatches = useQuery({
     ...libraryQuery(ds, mock, libraryTerm, 'lastRead', null),
@@ -555,8 +562,8 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
             </>
           ) : (
             <>
-          <View style={styles.backSlot} />
-          <View style={styles.searchWrap}>
+          {!desktop && <View style={styles.backSlot} />}
+          <View style={[styles.searchWrap, desktop && { marginLeft: fieldIndent }]}>
             <SearchField
               // Remounted per open request: the field holds unsubmitted text of its own, which a
               // committed query that was already empty has no way to clear.
@@ -695,9 +702,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // ChevronLeftIcon's width: holds the field where it sits when the window is no wider than the row.
+  // Holds the field clear of the edge chevron off-desktop.
   backSlot: {
-    width: 26,
+    width: BackSlotWidth,
   },
   edgeBack: {
     position: 'absolute',
