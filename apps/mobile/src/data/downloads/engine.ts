@@ -25,10 +25,9 @@ import {
   dlResumeSeries,
   type DlEnqueueChapterBody,
 } from '../api';
-import { queryClient } from '../query-client';
-import { queryKeys } from '../queries';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './constants';
+import { invalidateDownloadState } from './events';
 import { getDownloadPrefsSync } from './prefs';
 
 /** A chapter to enqueue — the UI supplies the display snapshot + chapter identity it already has. */
@@ -48,12 +47,6 @@ export interface EnqueueChapterInput {
   languageCode?: string;
   /** Download only these pages (a partial chapter) instead of the whole chapter. */
   onlyPages?: number[];
-}
-
-/** Refresh the Downloads screen + a series' download state after a manifest change. */
-function invalidateDownloads(bridgeId: string, seriesId: string): void {
-  void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
-  void queryClient.invalidateQueries({ queryKey: queryKeys.seriesDownloads(bridgeId, seriesId) });
 }
 
 /**
@@ -81,7 +74,7 @@ export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> 
       context: `bridge=${input.bridgeId} series=${input.seriesId} chapter=${chapterId}`,
     });
   }
-  invalidateDownloads(input.bridgeId, input.seriesId);
+  invalidateDownloadState(input.bridgeId, input.seriesId);
 }
 
 /**
@@ -115,7 +108,7 @@ export async function enqueueChapters(
     });
     ok = false;
   }
-  invalidateDownloads(series.bridgeId, series.seriesId);
+  invalidateDownloadState(series.bridgeId, series.seriesId);
   return ok;
 }
 
@@ -126,7 +119,7 @@ export async function pauseChapter(bridgeId: string, seriesId: string, chapterId
   } catch {
     /* best-effort */
   }
-  invalidateDownloads(bridgeId, seriesId);
+  invalidateDownloadState(bridgeId, seriesId);
 }
 
 /** Pause a whole series (resumable). */
@@ -136,7 +129,7 @@ export async function pauseSeries(bridgeId: string, seriesId: string): Promise<v
   } catch {
     /* best-effort */
   }
-  invalidateDownloads(bridgeId, seriesId);
+  invalidateDownloadState(bridgeId, seriesId);
 }
 
 /** Resume one paused chapter — the host's engine kicks its drain. */
@@ -146,7 +139,7 @@ export async function resumeChapterDownload(bridgeId: string, seriesId: string, 
   } catch {
     /* best-effort */
   }
-  invalidateDownloads(bridgeId, seriesId);
+  invalidateDownloadState(bridgeId, seriesId);
 }
 
 /** Resume every paused chapter of a series. */
@@ -156,7 +149,7 @@ export async function resumeSeriesDownload(bridgeId: string, seriesId: string): 
   } catch {
     /* best-effort */
   }
-  invalidateDownloads(bridgeId, seriesId);
+  invalidateDownloadState(bridgeId, seriesId);
 }
 
 /** Retry a failed chapter — re-queue its non-complete (incl. failed) pages; the host drains them. */
@@ -166,7 +159,7 @@ export async function retryChapter(bridgeId: string, seriesId: string, chapterId
   } catch {
     /* best-effort */
   }
-  invalidateDownloads(bridgeId, seriesId);
+  invalidateDownloadState(bridgeId, seriesId);
 }
 
 // ── Device-lifecycle hooks (embedded engine only; no-ops in remote mode) ────────

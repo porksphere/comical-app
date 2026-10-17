@@ -103,7 +103,7 @@ function patchProgressCaches(
       return { ...old, chapters };
     },
   );
-  if (usageStale && seriesStale) invalidate(bridgeId, seriesId);
+  if (usageStale && seriesStale) invalidateDownloadState(bridgeId, seriesId);
   else if (usageStale) invalidateUsage();
   else if (seriesStale) invalidateSeries(bridgeId, seriesId);
 }
@@ -133,7 +133,9 @@ function scheduleFlush(): void {
   }, INVALIDATE_COALESCE_MS);
 }
 
-function invalidate(bridgeId: string, seriesId: string): void {
+/** Refetch the storage tree and a series' manifest from host truth, coalesced with every other
+ *  invalidation in the window — a select-all pause is one refetch, not one per series. */
+export function invalidateDownloadState(bridgeId: string, seriesId: string): void {
   pendingUsage = true;
   pendingSeries.set(`${bridgeId} ${seriesId}`, [bridgeId, seriesId]);
   scheduleFlush();
@@ -174,17 +176,17 @@ function apply(e: DownloadEngineEvent): void {
         break;
       }
       if (c.state === 'complete' && !c.onlyPages) void refreshChapterIndex(c.bridgeId, c.seriesId, c.chapterId, c.pageCount);
-      invalidate(c.bridgeId, c.seriesId); // settle on host truth (complete/failed/paused/queued)
+      invalidateDownloadState(c.bridgeId, c.seriesId); // settle on host truth (complete/failed/paused/queued)
       break;
     }
     case 'changed':
-      invalidate(e.bridgeId, e.seriesId);
+      invalidateDownloadState(e.bridgeId, e.seriesId);
       break;
     case 'deleted':
       if (e.bridgeId && e.seriesId && e.chapterId) forgetChapter(e.bridgeId, e.seriesId, e.chapterId);
       else if (e.bridgeId && e.seriesId) forgetSeries(e.bridgeId, e.seriesId);
       else clearDownloadIndex();
-      if (e.bridgeId && e.seriesId) invalidate(e.bridgeId, e.seriesId);
+      if (e.bridgeId && e.seriesId) invalidateDownloadState(e.bridgeId, e.seriesId);
       else invalidateUsage();
       break;
     case 'idle':

@@ -218,7 +218,11 @@ function useCategoryCounts() {
     // resolve to the SAME empty shape the Downloads/Storage screens fall back to (EMPTY_STORAGE_USAGE),
     // not null/undefined — they share this cache entry, and a null cached here crashes whichever of
     // those screens reads it next (its own `= EMPTY_STORAGE_USAGE` default only guards `undefined`).
-    queryFn: () => dlStorageUsage().catch(() => EMPTY_STORAGE_USAGE),
+    queryFn: ({ signal }) =>
+      dlStorageUsage(signal).catch((e: unknown) => {
+        if (signal.aborted) throw e;
+        return EMPTY_STORAGE_USAGE;
+      }),
   });
   // Manifest-driven (the engine patches this query per page — see engine.ts), so the row's radial
   // advances through the reliable useQuery subscription without the live-overlay re-render gap.

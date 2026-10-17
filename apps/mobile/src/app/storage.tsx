@@ -78,7 +78,11 @@ export default function StorageScreen() {
   // yields an empty tree, not an error. `diskBytes` is the owning host's true blob size.
   const { data: usage = EMPTY_STORAGE_USAGE } = useQuery({
     queryKey: queryKeys.downloadsUsage(),
-    queryFn: () => dlStorageUsage().catch(() => EMPTY_STORAGE_USAGE),
+    queryFn: ({ signal }) =>
+      dlStorageUsage(signal).catch((e: unknown) => {
+        if (signal.aborted) throw e;
+        return EMPTY_STORAGE_USAGE;
+      }),
   });
   // The library's footprint on the same host (store docs + captured covers); null without the module.
   const { data: libUsage = null } = useQuery({

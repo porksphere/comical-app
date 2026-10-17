@@ -122,7 +122,11 @@ export default function DownloadsScreen() {
 
   const { data: usage = EMPTY_STORAGE_USAGE } = useQuery({
     queryKey: queryKeys.downloadsUsage(),
-    queryFn: () => dlStorageUsage().catch(() => EMPTY_STORAGE_USAGE),
+    queryFn: ({ signal }) =>
+      dlStorageUsage(signal).catch((e: unknown) => {
+        if (signal.aborted) throw e;
+        return EMPTY_STORAGE_USAGE;
+      }),
   });
 
   // Opening this screen nudges the queue to drain — a safety net so a download that didn't resume at
