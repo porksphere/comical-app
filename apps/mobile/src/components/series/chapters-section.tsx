@@ -1372,12 +1372,6 @@ export function PageThumbList({
 const resolvedThumbIds = new Set<string>();
 const resolvedThumbAspects = new Map<string, number>();
 
-// Rolling "last resolved" aspect ratio for page thumbnails — same rationale as SeriesCard's
-// `lastResolvedCoverAspect` (page thumbnails within a chapter are typically all the same
-// shape), kept as a separate scalar since page thumbs and series covers don't share a
-// distribution. Used as the initial/recycle seed below instead of the flat placeholder.
-let lastResolvedThumbAspect = DEFAULT_THUMB_ASPECT;
-
 function thumbDelayKey(t: PageThumbSource | null): string {
   return t ? (t.kind === 'sprite' ? t.sheetUrl : t.url) : '';
 }
@@ -1478,10 +1472,12 @@ export function PageThumb({
   // one-time relayout of `thumbBox`. The *visual* shrink is smoothed separately
   // by `picturePageStyle` (pure `transform`, no further relayout) below. Seeded
   // from `resolvedThumbAspects` when this thumbnail has already resolved before,
-  // else from the rolling `lastResolvedThumbAspect` guess rather than the flat
-  // placeholder (page thumbs in a chapter tend to share a shape).
+  // else the flat slot shape. Never a guess from another page: tiles mount at
+  // different times, so each one's skeleton took the shape of whichever page
+  // last loaded and a grid of unknowns came out in mixed sizes — wide spreads
+  // amid near-2:3 pages made that obvious.
   const [imageAspect, setImageAspect] = useState(
-    () => resolvedThumbAspects.get(thumbDelayKey(thumb)) ?? lastResolvedThumbAspect,
+    () => resolvedThumbAspects.get(thumbDelayKey(thumb)) ?? DEFAULT_THUMB_ASPECT,
   );
   // Lightweight cards: the same Settings lever SeriesCard honours (see lib/perf-flags). When on, the
   // tile pays for NO animation machinery at all — the shrink's reanimated hooks aren't even allocated
@@ -1506,7 +1502,7 @@ export function PageThumb({
     setPrevIndex(index);
     const key = thumbDelayKey(thumb);
     setLoaded(resolvedThumbIds.has(key));
-    setImageAspect(resolvedThumbAspects.get(key) ?? lastResolvedThumbAspect);
+    setImageAspect(resolvedThumbAspects.get(key) ?? DEFAULT_THUMB_ASPECT);
   }
 
   // Lazy per-page thumbnail (only the pages a bridge didn't inline, i.e. `thumb === null`). Via
@@ -1628,7 +1624,6 @@ export function PageThumb({
               if (src?.width && src?.height) {
                 const nextAspect = clampThumbAspect(src.width / src.height);
                 resolvedThumbAspects.set(delayKey, nextAspect);
-                lastResolvedThumbAspect = nextAspect;
                 if (Platform.OS === 'web') setNatural({ uri: resolvedImageUrl, aspect: src.width / src.height });
                 // Smooth the aspect settle when the shape changes; a no-op when Lightweight is on.
                 shrink.runShrink?.(imageAspect, nextAspect, boxSize?.w ?? 0);
