@@ -40,6 +40,7 @@ import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import {
   createZoomHold,
+  isDesktopPointer,
   keepZoomLevel,
   resetZoom,
   stepZoom,
@@ -4373,8 +4374,12 @@ function SearchLayer({
   // Web only, exactly as on the series instance — this layer had the same two-copy arrangement, an
   // ancestor detector and a descendant one both reaching for the same touch with the same criteria
   // and cancelling each other at the activation frame. The results list carries the native copy.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const edgePan = useMemo(() => makeBackSwipePan('search.edge').enabled(IS_WEB), [makeBackSwipePan, traceOn]);
+  // Not under a mouse: RNGH hears its drags too, and a desktop has the back button for this.
+  const edgePan = useMemo(
+    () => makeBackSwipePan('search.edge').enabled(IS_WEB && !isDesktopPointer()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [makeBackSwipePan, traceOn],
+  );
   const scrollGesture = useMemo(
     () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan('search.list'))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
