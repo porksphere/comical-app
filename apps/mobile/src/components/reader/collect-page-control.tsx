@@ -1,35 +1,15 @@
+import { useEffect, useEffectEvent } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 
 import { openCollectionPicker } from '@/components/collection-picker';
 import { BookmarkIcon } from '@/components/icons/reader-icons';
+import { showToast } from '@/components/toast';
 import { peekResolvedAssetSource } from '@/data/api';
 import { usePageCollected } from '@/hooks/use-page-collected';
 import { hapticImpactLight } from '@/lib/haptics';
+import { isTypingTarget } from '@/lib/key-hold';
 
-/**
- * The reader chrome's save-this-page button, left of the settings gear in the toolbar's trailing
- * slot.
- *
- * **Tap** saves the page, unfiled; on a saved page it opens the picker, where it is filed or
- * removed. **Long press** opens the picker outright.
- *
- * Like the rest of the reader chrome this is deliberately UNTHEMED — white on the dark gradient,
- * never `useTheme()`, because the reader stays dark whatever the app theme is.
- *
- * Disabled until the chapter's saved indices resolve, so a quick tap can't act on an unknown state
- * (the same gate `useFavorite`'s star uses).
- */
-export function CollectPageControl({
-  bridgeId,
-  seriesId,
-  seriesTitle,
-  chapterId,
-  chapterName,
-  pageIndex,
-  pageCount,
-  sourceUrl,
-  onPress,
-}: {
+type CollectPageProps = {
   bridgeId?: string;
   seriesId?: string;
   seriesTitle: string;
@@ -41,10 +21,18 @@ export function CollectPageControl({
   pageCount?: number;
   /** The page's image URL right now. A re-anchor key server-side; expected to rot, never rendered. */
   sourceUrl?: string;
-  /** Called on press so the caller can restart the chrome's auto-hide countdown — otherwise the
-   *  bar can fade out from under the finger just as it's tapped. */
-  onPress?: () => void;
-}) {
+};
+
+function useCollectPage({
+  bridgeId,
+  seriesId,
+  seriesTitle,
+  chapterId,
+  chapterName,
+  pageIndex,
+  pageCount,
+  sourceUrl,
+}: CollectPageProps) {
   // expo-image's disk-cache key is the URI actually handed to `<Image>`, which is the RESOLVED
   // asset source — the reader resolves a bridge's relative page path before rendering it. Peeking
   // the same memo the reader filled avoids threading the string up through the pager; a miss (or
@@ -80,6 +68,32 @@ export function CollectPageControl({
     });
   };
 
+  return { collected, toggle, openPicker };
+}
+
+/**
+ * The reader chrome's save-this-page button, left of the settings gear in the toolbar's trailing
+ * slot.
+ *
+ * **Tap** saves the page, unfiled; on a saved page it opens the picker, where it is filed or
+ * removed. **Long press** opens the picker outright.
+ *
+ * Like the rest of the reader chrome this is deliberately UNTHEMED — white on the dark gradient,
+ * never `useTheme()`, because the reader stays dark whatever the app theme is.
+ *
+ * Disabled until the chapter's saved indices resolve, so a quick tap can't act on an unknown state
+ * (the same gate `useFavorite`'s star uses).
+ */
+export function CollectPageControl({
+  onPress,
+  ...page
+}: CollectPageProps & {
+  /** Called on press so the caller can restart the chrome's auto-hide countdown — otherwise the
+   *  bar can fade out from under the finger just as it's tapped. */
+  onPress?: () => void;
+}) {
+  const { collected, toggle, openPicker } = useCollectPage(page);
+
   return (
     <Pressable
       testID="reader.toolbar.collect-page"
@@ -105,6 +119,30 @@ export function CollectPageControl({
       />
     </Pressable>
   );
+}
+
+/**
+ * The save button's key (web): B does what a tap does — saves the page, or on a saved one opens the
+ * picker — and says so, since nothing else on a hidden chrome would. Rendered once per screen, apart
+ * from the button: the reader's chrome can be mounted twice over.
+ */
+export function CollectPageShortcut({ enabled, ...page }: CollectPageProps & { enabled: boolean }) {
+  const { toggle, openPicker } = useCollectPage(page);
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key !== 'b' && e.key !== 'B') return;
+    if (e.altKey || e.ctrlKey || e.metaKey || e.repeat || e.defaultPrevented || isTypingTarget(e.target)) return;
+    e.preventDefault();
+    const result = toggle();
+    if (result === 'saved') showToast('Page saved');
+    else if (result === 'pick') openPicker();
+  });
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined') return;
+    const listener = (e: KeyboardEvent) => onKey(e);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, [enabled]);
+  return null;
 }
 
 const styles = StyleSheet.create({

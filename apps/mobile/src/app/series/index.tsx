@@ -42,7 +42,7 @@ import { keepZoomLevel, resetZoom, stepZoom } from '@/components/reader/desktop-
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
 import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
-import { CollectPageControl } from '@/components/reader/collect-page-control';
+import { CollectPageControl, CollectPageShortcut } from '@/components/reader/collect-page-control';
 import { SettingsControl } from '@/components/reader/settings-panel';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
 import { RetryBlock } from '@/components/retry-block';
@@ -3634,6 +3634,17 @@ function SeriesReaderInstance({
               // The reader's own fully transparent toolbar (with no back of its own — the
               // persistent chevron above serves both modes); its auto-hide rides `visible`.
               <View pointerEvents="box-none">
+                <CollectPageShortcut
+                  enabled={IS_WEB && isTop && !detailsActive}
+                  bridgeId={pageAction ? pageAction.bridgeId : bridgeId}
+                  seriesId={pageAction ? pageAction.seriesId : id}
+                  seriesTitle={pageAction ? pageAction.seriesTitle : seriesTitle}
+                  chapterId={pageAction?.chapterId}
+                  chapterName={pageAction?.chapterName}
+                  pageIndex={pageAction?.pageIndex ?? 0}
+                  pageCount={pageAction?.pageCount}
+                  sourceUrl={pageAction?.sourceUrl}
+                />
                 <ReaderToolbar
                   // In sequence mode the chrome describes the VISIBLE entry — which series the
                   // page in front of you belongs to is the one thing this bar must answer there.
