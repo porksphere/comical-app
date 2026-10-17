@@ -823,25 +823,20 @@ const realDataSource: DataSource = {
       // thumbnails — expo-image downscales each to the tile and the grid is virtualized, so only
       // visible pages decode, at no extra storage cost. Only complete downloads are indexed, so array
       // position lines up with the reader's page index just like the bridge path below.
-      const localGrid = (): SeriesListResult | undefined => {
-        const local = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
-        if (!local) return undefined;
+      //
+      // Served BEFORE asking the bridge, not only when it fails: the bridge's grid is a page-list
+      // round-trip plus one rate-limited lookup per tile it didn't inline, which on a slow source
+      // filled a downloaded series' grid in over many seconds while the same pages sat on disk.
+      const local = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
+      if (local) {
         return {
           chapterCount: local.length,
           readLabel: 'Read',
           pageThumbs: local.map((url): PageThumbSource => ({ kind: 'image', url })),
         };
-      };
-
-      let pages;
-      try {
-        pages = await api.getSeriesPages(bridgeId, seriesId, signal);
-      } catch (e) {
-        // Bridge unreachable (offline): fall back to the downloaded copy's grid if we have it.
-        const offline = localGrid();
-        if (offline) return offline;
-        throw e;
       }
+
+      const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
 
       const result: SeriesListResult = { chapterCount: pages.length, readLabel: 'Read' };
       // Mirrors comical-web: only show the preview grid when the bridge actually supplies cheap
@@ -864,11 +859,8 @@ const realDataSource: DataSource = {
         }
         return result;
       }
-      // The bridge supplies no inline thumbnails. If the series is downloaded, fill the grid from its
-      // local page bytes rather than showing no grid at all; otherwise leave it thumbless (as before,
-      // where `PageThumbGrid` isn't rendered and the page falls back to the Read button alone).
-      const downloaded = localGrid();
-      if (downloaded) return { ...downloaded, chapterCount: pages.length };
+      // No inline thumbnails: leave the grid thumbless (`PageThumbGrid` isn't rendered and the page
+      // falls back to the Read button alone).
       logDiagnostic('series-pages-no-thumbs', `${pages.length} page(s), 0 with an inline thumbnail`, {
         context: `bridge=${bridgeId} series=${seriesId}`,
       });

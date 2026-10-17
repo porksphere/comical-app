@@ -18,8 +18,10 @@
  */
 import { dlStorageUsage, getApiBase } from '../api';
 import { getResolvedModeSync } from '../embedded/preference';
+import { queryClient } from '../query-client';
 import { downloadsStore as store } from './async-store';
 import { uriFor } from './blob-store';
+import { DIRECT_DOWNLOAD_CHAPTER_ID } from './constants';
 
 /** `bridgeId:seriesId:chapterId`. */
 function key(bridgeId: string, seriesId: string, chapterId: string): string {
@@ -28,6 +30,20 @@ function key(bridgeId: string, seriesId: string, chapterId: string): string {
 
 /** chapterKey → ordered page URIs (complete chapters only). */
 const cache = new Map<string, string[]>();
+
+/**
+ * A direct series' page grid is BUILT from this index (`getSeriesList` serves a downloaded one from
+ * disk), so a cached grid holds these exact URIs — refetch it whenever its entry changes, or a deleted
+ * download leaves the grid pointing at files that are gone. Matches `queryKeys.seriesList`'s shape
+ * (`['seriesList', mock, bridgeId, seriesId, direct]`); importing `queries` here would be a cycle.
+ * Omit the ids to refetch every direct grid (a rehydrate or "Delete all").
+ */
+function invalidateDirectGrid(bridgeId?: string, seriesId?: string): void {
+  void queryClient.invalidateQueries({
+    predicate: ({ queryKey: k }) =>
+      k[0] === 'seriesList' && k[4] === true && (bridgeId === undefined || (k[2] === bridgeId && k[3] === seriesId)),
+  });
+}
 
 /** The server's downloaded-page URL for one page (remote mode). */
 function remotePageUrl(bridgeId: string, seriesId: string, chapterId: string, index: number): string {
@@ -45,6 +61,11 @@ function remotePageUrls(bridgeId: string, seriesId: string, chapterId: string, p
  */
 export async function hydrateDownloadIndex(): Promise<void> {
   cache.clear();
+  await hydrate();
+  invalidateDirectGrid();
+}
+
+async function hydrate(): Promise<void> {
   try {
     if (getResolvedModeSync() === 'embedded') {
       for (const series of await store.listSeries()) {
@@ -92,32 +113,37 @@ export async function refreshChapterIndex(
   try {
     if (getResolvedModeSync() !== 'embedded') {
       if (pageCount > 0) cache.set(key(bridgeId, seriesId, chapterId), remotePageUrls(bridgeId, seriesId, chapterId, pageCount));
-      return;
-    }
-    const pages = await store.listPages(`${bridgeId}:${seriesId}`, chapterId);
-    if (pages.length > 0 && pages.every((p) => p.state === 'complete' && p.file)) {
-      cache.set(
-        key(bridgeId, seriesId, chapterId),
-        [...pages].sort((a, b) => a.index - b.index).map((p) => uriFor(p.file)),
-      );
+    } else {
+      const pages = await store.listPages(`${bridgeId}:${seriesId}`, chapterId);
+      if (pages.length > 0 && pages.every((p) => p.state === 'complete' && p.file)) {
+        cache.set(
+          key(bridgeId, seriesId, chapterId),
+          [...pages].sort((a, b) => a.index - b.index).map((p) => uriFor(p.file)),
+        );
+      }
     }
   } catch {
     // Best-effort — the chapter still reads through the bridge until the next hydration.
   }
+  if (chapterId === DIRECT_DOWNLOAD_CHAPTER_ID) invalidateDirectGrid(bridgeId, seriesId);
 }
 
 /** Forget one chapter (on delete). */
 export function forgetChapter(bridgeId: string, seriesId: string, chapterId: string): void {
-  cache.delete(key(bridgeId, seriesId, chapterId));
+  if (cache.delete(key(bridgeId, seriesId, chapterId)) && chapterId === DIRECT_DOWNLOAD_CHAPTER_ID) {
+    invalidateDirectGrid(bridgeId, seriesId);
+  }
 }
 
 /** Forget every chapter of a series (on series delete). */
 export function forgetSeries(bridgeId: string, seriesId: string): void {
   const prefix = `${bridgeId}:${seriesId}:`;
   for (const k of cache.keys()) if (k.startsWith(prefix)) cache.delete(k);
+  invalidateDirectGrid(bridgeId, seriesId);
 }
 
 /** Forget everything (on "Delete all"). */
 export function clearDownloadIndex(): void {
   cache.clear();
+  invalidateDirectGrid();
 }
