@@ -104,6 +104,7 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
       // front of a last-read sort, and an unfollow closes a gap under any sort.
       animateReorder
       groupOf={groupOf}
+      markSaved={false}
     />
   );
 }

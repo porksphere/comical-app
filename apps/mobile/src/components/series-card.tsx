@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type View as ViewType, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { CardBadge, UnreadBadge } from '@/components/card-badge';
+import { CardOverlays } from '@/components/card-badge';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { Skeleton } from '@/components/skeleton';
@@ -11,6 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
+import { useSavedInLibrary } from '@/hooks/use-library-marker';
 import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
@@ -371,6 +372,7 @@ export function SeriesCard({
   cohort,
   crossfading,
   rowAspect = DEFAULT_THUMB_ASPECT,
+  markSaved = true,
 }: {
   entry: SeriesEntry;
   size?: CardSize;
@@ -404,6 +406,8 @@ export function SeriesCard({
    *  their covers. The card pads itself to that height, and its own cover never draws taller than it.
    *  Omitted: the 2:3 maximum, i.e. a fixed-height card. */
   rowAspect?: number;
+  /** Mark the card when the series is in the library. Off where every card is (the Library). */
+  markSaved?: boolean;
 }) {
   // Perf toggle (Settings → "Lightweight cards") — see lib/perf-flags.
   const lightCards = useLightCards();
@@ -422,6 +426,7 @@ export function SeriesCard({
   // the skeleton to actually cover it; fresh mounts (no stale bitmap) leave the subtle look untouched.
   const [maskStale, setMaskStale] = useState(false);
   const theme = useTheme();
+  const saved = useSavedInLibrary(bridgeId, entry.id, markSaved && !entry.excluded);
   // A plain, UNanimated value. What's smoothed below is the *visual* shrink, via a
   // `transform`-only illusion that never triggers another relayout — see
   // `pictureStyle`/`trailingStyle`.
@@ -715,13 +720,7 @@ export function SeriesCard({
         ) : (
           pictureInner
         )}
-        {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
-        {entry.unread != null && <UnreadBadge count={entry.unread} />}
-        {rank != null && (
-          <View style={styles.rank}>
-            <ThemedText style={styles.rankText}>{rank}</ThemedText>
-          </View>
-        )}
+        <CardOverlays badges={entry.badges} rank={rank} saved={saved} unread={entry.unread} />
         {/* A wash in the page colour, not an opacity dim: here "broken" is the message, but the
             badges above still have to read. */}
         {entry.unavailable && (
@@ -1017,20 +1016,5 @@ const styles = StyleSheet.create({
     // Soft lift so it reads as floating over the cards below it.
     boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.25)',
     elevation: 6,
-  },
-  rank: {
-    position: 'absolute',
-    top: Spacing.one,
-    left: Spacing.one,
-    zIndex: 2,
-    backgroundColor: '#2563eb',
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 1,
-  },
-  rankText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 13,
   },
 });

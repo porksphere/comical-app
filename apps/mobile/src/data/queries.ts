@@ -226,6 +226,9 @@ export const queryKeys = {
    *  everything that invalidates the grid (a read, a reset, a collect) changes this too. */
   librarySeries: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['library', mock, 'series', bridgeId, seriesId] as const,
+  /** Every saved series as a `libraryMemberKey`, for marking browse cards. Under the `libraryList`
+   *  prefix so a collect or uncollect refreshes it along with the grid. */
+  libraryMembership: (mock: boolean) => ['library', mock, 'membership'] as const,
 };
 
 /** `useQuery` options for one collected series' derived read state (`null` = not collected, or no
@@ -561,6 +564,18 @@ export function inLibraryQuery(
     queryKey: queryKeys.inLibrary(mock, bridgeId, seriesId),
     queryFn: ({ signal }) => ds.isInLibrary(bridgeId, seriesId, signal),
     enabled: !!bridgeId && !!seriesId,
+  };
+}
+
+export const libraryMemberKey = (bridgeId: string, seriesId: string) => `${bridgeId}\n${seriesId}`;
+
+/** `useQuery` options for the saved series, as `libraryMemberKey`s. A server or runtime with no
+ *  library store has saved nothing, so that is an empty list rather than an error. */
+export function libraryMembershipQuery(ds: DataSource, mock: boolean): UseQueryOptions<string[], Error> {
+  return {
+    queryKey: queryKeys.libraryMembership(mock),
+    queryFn: async ({ signal }) =>
+      ((await ds.getLibrary({}, signal)) ?? []).map((item) => libraryMemberKey(item.bridgeId, item.seriesId)),
   };
 }
 

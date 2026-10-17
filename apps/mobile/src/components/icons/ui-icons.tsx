@@ -6,6 +6,7 @@ import {
   Asterisk,
   Bell,
   Blocks,
+  Bookmark,
   BookOpen,
   Bug,
   Check,
@@ -85,6 +86,8 @@ export const StarIcon = ({ color, size = 16, filled }: IconProps) => (
 export const SourcesIcon = ({ color, size = 16 }: IconProps) => <Globe color={color} size={size} />;
 /** "This needs an account" — the favorite control's face when the bridge isn't logged in. */
 export const LogInIcon = ({ color, size = 16 }: IconProps) => <LogIn color={color} size={size} />;
+/** "Already in your library" — the marker a browse card wears. */
+export const SavedIcon = ({ color, size = 16 }: IconProps) => <Bookmark color={color} size={size} fill={color} />;
 export const CheckIcon = ({ color, size = 16 }: IconProps) => <Check color={color} size={size} />;
 /** A double check — "everything up to here", as distinct from `CheckIcon`'s single item. */
 export const CheckAllIcon = ({ color, size = 16 }: IconProps) => <CheckCheck color={color} size={size} />;

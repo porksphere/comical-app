@@ -36,6 +36,7 @@ import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-a
 import { useDataSource, useMockActive, useNsfwMode, type NsfwMode } from '@/data/source';
 import { connectServer } from '@/data/switch-server';
 import { setFeedTint, useFeedTint } from '@/hooks/use-feed-tint';
+import { setLibraryMarker, useLibraryMarker } from '@/hooks/use-library-marker';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { desktopDataDir, desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
@@ -88,6 +89,7 @@ export default function GeneralSettingsScreen() {
   const [apiBase] = useApiBase();
   const lightCards = useLightCards();
   const feedTint = useFeedTint();
+  const libraryMarker = useLibraryMarker();
   const errorToasts = useErrorToasts();
   const requestOverlay = useRequestOverlayEnabled();
   const [runInTray, setRunInTray] = useRunInTray();
@@ -143,10 +145,11 @@ export default function GeneralSettingsScreen() {
             Appearance said nothing the row didn't. */}
         <SettingsSection
           title="Display"
-          footer="Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse.">
+          footer="Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.">
           <SettingsSelectRow label="Appearance" value={themePref} options={THEME_OPTIONS} onChange={setThemePref} />
           <SettingsToggleRow label="Lightweight cards" value={lightCards} onChange={(v) => lightCards$.light.set(v)} />
           <SettingsToggleRow label="Tinted backgrounds" value={feedTint} onChange={setFeedTint} />
+          <SettingsToggleRow label="Mark saved series" value={libraryMarker} onChange={setLibraryMarker} />
         </SettingsSection>
         {/* The hold row sits with NSFW because that is what it acts on, and its footer is the
             gesture's only documentation — nothing on Browse or Library says the icon is holdable. */}

@@ -61,6 +61,7 @@ export function SeriesGrid({
   direct,
   hasSub,
   crossfading,
+  markSaved,
   animateReorder,
   groupOf,
   stickyHeaderTop,
@@ -96,6 +97,8 @@ export function SeriesGrid({
   hasSub?: boolean;
   /** Suppresses per-card entrance work while a full-surface crossfade owns the transition. */
   crossfading?: boolean;
+  /** Passed to every card — see SeriesCard's `markSaved`. */
+  markSaved?: boolean;
   /** Slide cards to their new slots when `items` re-sorts in place (the Library under a last-read
    *  sort, a gap closing after an unfollow). Ungrouped mode only — grouped rows are laid out by
    *  hand, so there is no per-card container to transition. */
@@ -200,6 +203,7 @@ export function SeriesGrid({
                     direct={item.direct ?? direct}
                     cohort={scopeKey}
                     crossfading={crossfading}
+                    markSaved={markSaved}
                     rowAspect={rowAspect}
                   />
                 </View>
@@ -264,6 +268,7 @@ export function SeriesGrid({
             direct={item.direct ?? direct}
             cohort={scopeKey}
             crossfading={crossfading}
+            markSaved={markSaved}
             rowAspect={rowAspectAt(index)}
           />
         </View>
