@@ -290,6 +290,7 @@ export function SettingsToggleRow({
   value,
   onChange,
   right,
+  disabled,
 }: {
   label: string;
   description?: string;
@@ -297,12 +298,19 @@ export function SettingsToggleRow({
   onChange: (value: boolean) => void;
   /** Escape hatch to swap the control (rarely needed); defaults to a `ThemedSwitch`. */
   right?: ReactNode;
+  /** See `SettingsRow`'s `disabled`: greyed out, never hidden. */
+  disabled?: boolean;
 }) {
   return (
     <SettingsRow
       label={label}
       description={description}
-      right={right ?? <ThemedSwitch testID={testId('settings.toggle', label)} value={value} onValueChange={onChange} />}
+      disabled={disabled}
+      right={
+        right ?? (
+          <ThemedSwitch testID={testId('settings.toggle', label)} value={value} onValueChange={onChange} disabled={disabled} />
+        )
+      }
     />
   );
 }

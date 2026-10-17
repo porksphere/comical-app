@@ -277,24 +277,30 @@ const AUTO_DOWNLOAD_ROWS: { kind: AutoDownloadKind; label: string; description: 
   { kind: 'autoPages', label: 'Saved pages', description: 'Download a page when you save it.' },
 ];
 
-/** This bridge's opt-outs from auto-download, one per kind that is on in Settings → General. A
- *  direct bridge's series have no chapters, so the chapter kinds never apply to it. */
+/** This bridge's opt-outs from auto-download, one per kind. A kind that is off in Settings → General
+ *  is greyed out rather than hidden (its stored opt-in still shows, ready for when it comes back on),
+ *  and so are the chapter kinds on a direct bridge, whose series have no chapters. */
 export function BridgeAutoDownloadToggles({ bridgeId, direct }: { bridgeId: string; direct: boolean }) {
   const prefs = useDownloadPrefs();
   const [optedIn, set] = useBridgeAutoDownload(bridgeId);
-  const rows = AUTO_DOWNLOAD_ROWS.filter((r) => prefs[r.kind] && !(direct && r.chapters));
-  if (rows.length === 0) return null;
+  const offGlobally = AUTO_DOWNLOAD_ROWS.some((r) => !prefs[r.kind] && !(direct && r.chapters));
   return (
-    <SettingsSection title="Auto-download">
-      {rows.map((r) => (
-        <SettingsToggleRow
-          key={r.kind}
-          label={r.label}
-          description={r.description}
-          value={optedIn(r.kind)}
-          onChange={(on) => set(r.kind, on)}
-        />
-      ))}
+    <SettingsSection
+      title="Auto-download"
+      footer={offGlobally ? 'Greyed-out kinds are off for every bridge in Settings → General.' : undefined}>
+      {AUTO_DOWNLOAD_ROWS.map((r) => {
+        const noChapters = direct && !!r.chapters;
+        return (
+          <SettingsToggleRow
+            key={r.kind}
+            label={r.label}
+            description={noChapters ? "This bridge's series have no chapters." : r.description}
+            value={!noChapters && optedIn(r.kind)}
+            onChange={(on) => set(r.kind, on)}
+            disabled={noChapters || !prefs[r.kind]}
+          />
+        );
+      })}
     </SettingsSection>
   );
 }

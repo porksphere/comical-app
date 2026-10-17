@@ -141,6 +141,7 @@ export function SettingsRow({
   onHoverIn,
   onHoverOut,
   testID,
+  disabled,
 }: {
   label: string;
   /** Render the label in the bolder weight — used to make a parent row stand above its nested children. */
@@ -168,6 +169,10 @@ export function SettingsRow({
   /** Automation selector for the row. Defaults to `settings.row.<label>`; pass an explicit id when two
    *  rows would otherwise collide on their label (see src/lib/test-id.ts). */
   testID?: string;
+  /** Greys the row out and stops it pressing. A setting that doesn't apply right now is shown this
+   *  way, never hidden — hiding it leaves no clue it exists or what would bring it back. Only the
+   *  label side is dimmed: a control in `right` dims itself (pass it `disabled` too). */
+  disabled?: boolean;
 }) {
   const theme = useTheme();
   const { hovered, onHoverIn: markHovered, onHoverOut: markUnhovered } = useHovered();
@@ -187,8 +192,8 @@ export function SettingsRow({
         contentInset ? { paddingLeft: SettingsCardInset + contentInset } : null,
         highlighted && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
       ]}>
-      {leading}
-      <View style={settingsRowFrame.text}>
+      {leading && <View style={disabled && styles.disabled}>{leading}</View>}
+      <View style={[settingsRowFrame.text, disabled && styles.disabled]}>
         <ThemedText type={labelBold ? 'smallBold' : 'small'} numberOfLines={1}>
           {label}
         </ThemedText>
@@ -220,6 +225,7 @@ export function SettingsRow({
         onPress();
       }}
       onLongPress={onLongPress}
+      disabled={disabled}
       onHoverIn={() => {
         markHovered();
         onHoverIn?.();
@@ -230,13 +236,17 @@ export function SettingsRow({
       }}
       android_ripple={{ color: theme.backgroundSelected }}
       accessibilityRole="button"
-      accessibilityLabel={label}>
-      {({ pressed }) => content(pressed || hovered || !!rail?.hovered)}
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}>
+      {({ pressed }) => content(!disabled && (pressed || hovered || !!rail?.hovered))}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  disabled: {
+    opacity: 0.4,
+  },
   // No marginTop: the space BETWEEN sections is the container's `gap`, which never applies before
   // the first, so the first card starts at the screen's `SettingsTopGap` like every other screen.
   sectionWrap: {
