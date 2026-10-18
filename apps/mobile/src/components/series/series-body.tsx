@@ -27,7 +27,7 @@ import { Rail, RailSkeleton } from '@/components/rail';
 import { ACTION_ICON_SIZE, ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChapterScrollList, Disclosure, PageThumbList, TurningChevron } from '@/components/series/chapters-section';
 import { SeriesDownloadButton } from '@/components/series/download-button';
-import { SeriesDelistedNotice, SeriesRemovedNotice } from '@/components/series/series-removed';
+import { SeriesRemovedNotice } from '@/components/series/series-removed';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -785,9 +785,6 @@ export function SeriesBody({
           onCheckAgain={checkAgain}
           onRemove={save.remove}
         />
-      )}
-      {series.delisted && !series.removal && (
-        <SeriesDelistedNotice delisted={series.delisted} bridgeId={bridgeId} bridgeName={series.bridge} direct={direct} />
       )}
       {series.tagGroups?.length ? (
         <View style={styles.tagsBlock}>

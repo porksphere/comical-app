@@ -5,10 +5,9 @@ import { ThemedView } from '@/components/themed-view';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { setSearchIntent } from '@/data/search-intent';
 import { COMICAL_BRIDGE_ID } from '@/data/selected-bridge';
-import type { SeriesDetail } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
-import { encodeSeriesParam, useDrillRelatedSeries, useOpenSearchLayer } from '@/lib/series-nav';
+import { useOpenSearchLayer } from '@/lib/series-nav';
 
 /** The reason a bridge gives when it has nothing more specific — not worth repeating under the heading. */
 const GENERIC_REASON = 'removed from the source';
@@ -102,45 +101,6 @@ export function SeriesRemovedNotice({
     <View testID="series.removed" style={styles.block}>
       {body}
     </View>
-  );
-}
-
-/** Still on the source and readable, but hidden from its listings or superseded by a newer upload. */
-export function SeriesDelistedNotice({
-  delisted,
-  bridgeId,
-  bridgeName,
-  direct,
-}: {
-  delisted: NonNullable<SeriesDetail['delisted']>;
-  bridgeId?: string;
-  bridgeName: string;
-  direct: boolean;
-}) {
-  const router = useRouter();
-  const drill = useDrillRelatedSeries();
-  const { newerVersionId } = delisted;
-  const openNewer = () => {
-    if (!bridgeId || !newerVersionId) return;
-    const params = {
-      id: newerVersionId,
-      bridgeId,
-      bridge: encodeSeriesParam(bridgeName),
-      ...(direct ? { direct: '1' } : {}),
-    };
-    if (drill) drill(params);
-    else router.push({ pathname: '/series', params });
-  };
-
-  return (
-    <ThemedView testID="series.delisted" type="backgroundElement" style={styles.plate}>
-      <ThemedText type="small" themeColor="textSecondary">
-        {delisted.reason ?? `Hidden on ${bridgeName || 'the source'}`}. It can still be read.
-      </ThemedText>
-      {newerVersionId && bridgeId ? (
-        <NoticeAction testID="series.delisted.openNewer" label="Open the newer version" onPress={openNewer} />
-      ) : null}
-    </ThemedView>
   );
 }
 

@@ -793,7 +793,6 @@ const realDataSource: DataSource = {
       relatedGroups,
       relatedGroupsDeferred: !info.relatedSeriesGroups,
       listDeferred: true,
-      ...(info.delisted && { delisted: info.delisted }),
     };
     // The host flags a response served from the library's offline metadata cache with additive
     // fields on the SeriesInfo shape — carry them through so the page can show the affordance.

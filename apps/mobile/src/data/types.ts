@@ -181,8 +181,6 @@ export type SeriesDetail = SeriesEntry & {
   /** The source has said this series no longer exists there. One answer is only a suspicion;
    *  `confirmedAt` is set once a second, hours later, agrees. Downloads stay readable. */
   removal?: { reason: string; firstSeenAt: number; confirmedAt?: number };
-  /** Still on the source and readable, but hidden or superseded there. */
-  delisted?: { reason?: string; newerVersionId?: string };
 };
 
 /** Result of the deferred `getSeriesList` fetch: the chapter list (chaptered) OR
