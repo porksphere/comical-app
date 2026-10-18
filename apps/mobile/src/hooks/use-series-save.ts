@@ -19,7 +19,7 @@ export function useSeriesSave(
   direct?: boolean,
 ) {
   const target = { kind: 'series', bridgeId, seriesId, snapshot, ...(direct !== undefined && { direct }) } as const;
-  const { saved, setCollections } = useItemCollections(target);
+  const { saved, setCollections, remove } = useItemCollections(target);
 
   const pick = () => openCollectionPicker({ ...target, title });
 
@@ -39,5 +39,6 @@ export function useSeriesSave(
       hapticSelection();
       setCollections([]);
     },
+    remove,
   };
 }

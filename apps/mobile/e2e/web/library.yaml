@@ -70,6 +70,17 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "library.show.all"
 
+# Availability: the seeded library has nothing its source removed, so "Removed from source"
+# empties the grid into its own empty state; "Any" brings the cards back.
+- tapOn:
+    id: "library.removed.only"
+- assertVisible:
+    text: "Nothing removed"
+- tapOn:
+    id: "library.removed.any"
+- assertVisible:
+    id: "series-card\\..*"
+
 # Narrow to one source ("panelfox" is a seeded mock bridge), then back.
 - tapOn:
     id: "library.bridge.panelfox"

@@ -511,10 +511,23 @@ const transport: Transport = (path, init) => {
   );
 };
 
+/** A failed response's error, carrying its status — and, on a 410, the source's word that the series
+ *  no longer exists there. */
+export type ResponseError = Error & { status: number; gone?: { reason: string } };
+
+/** The removal a failed request reported, if that's why it failed. */
+export function seriesGoneReason(e: unknown): string | undefined {
+  return (e as Partial<ResponseError> | null)?.gone?.reason;
+}
+
 /** The error an unsuccessful response becomes: the route's own `{ error }` where it gave one. */
 async function responseError(res: Response, path?: string): Promise<Error> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string };
-  return reportRequestError(new Error(body.error ?? `${res.status} ${res.statusText}`), path);
+  const body = (await res.json().catch(() => ({}))) as { error?: string; gone?: { reason?: string } };
+  const error: ResponseError = Object.assign(new Error(body.error ?? `${res.status} ${res.statusText}`), {
+    status: res.status,
+    ...(res.status === 410 && { gone: { reason: body.gone?.reason || 'Removed from the source' } }),
+  });
+  return reportRequestError(error, path);
 }
 
 async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {

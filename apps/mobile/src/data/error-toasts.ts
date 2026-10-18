@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 import { showToast } from '@/components/toast';
-import { setRequestErrorListener } from '@/data/api';
+import { seriesGoneReason, setRequestErrorListener } from '@/data/api';
 import { isMissingBridgeRequest } from '@/data/known-bridges';
 import { queryClient } from '@/data/query-client';
 import type { Bridge, MissingBridge } from '@/data/types';
@@ -37,12 +37,14 @@ function cachedBridgeLists(): { installed: Bridge[]; missing: MissingBridge[] } 
  * Show every failed request as a red toast while the setting is on. One failure tends to arrive as
  * several (a query and its retry, a screen's parallel requests to the same dead server), so a
  * message identical to the one still on screen is dropped rather than restarting the toast. Requests
- * to an uninstalled bridge are skipped: the series page says that itself.
+ * to an uninstalled bridge, and for a series its source has removed, are skipped: the series page
+ * says those itself.
  */
 export function installErrorToasts(): void {
   let last = { message: '', at: 0 };
   setRequestErrorListener((error, path) => {
     if (!errorToasts$.on.peek()) return;
+    if (seriesGoneReason(error) !== undefined) return;
     const { installed, missing } = cachedBridgeLists();
     if (isMissingBridgeRequest(path, installed, missing)) return;
     const message = shortError(error);

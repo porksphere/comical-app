@@ -106,6 +106,22 @@ export function onlyReadStates<T extends { readState: ReadState }>(items: T[], s
   return states.length ? items.filter((i) => states.includes(i.readState)) : items;
 }
 
+/** The series views' "removed from its source" filter. An object, not a bare boolean — see
+ *  `lightCards$` for why a persisted `false` crashes. */
+const libraryRemovedOnly$ = persisted$('comical:libraryRemovedOnly', { on: false });
+
+export function useLibraryRemovedOnly(): boolean {
+  return use$(libraryRemovedOnly$).on;
+}
+
+export function setLibraryRemovedOnly(on: boolean) {
+  libraryRemovedOnly$.set({ on });
+}
+
+export function onlyRemoved<T extends { removed?: boolean }>(items: T[], removedOnly: boolean): T[] {
+  return removedOnly ? items.filter((i) => i.removed) : items;
+}
+
 /** The Library's source filter — the bridge ids to keep, empty for every source. Shared by every
  *  view and kind, like the Show filter: narrowing to sources is about what you're reading, not which
  *  shelf. Unlike the states, ticking every source on offer is NOT normalised to "all": the next

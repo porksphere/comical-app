@@ -178,6 +178,11 @@ export type SeriesDetail = SeriesEntry & {
   cached?: boolean;
   /** When the cached detail was captured (epoch ms) — shown as "updated X ago". */
   cachedAt?: number;
+  /** The source has said this series no longer exists there. One answer is only a suspicion;
+   *  `confirmedAt` is set once a second, hours later, agrees. Downloads stay readable. */
+  removal?: { reason: string; firstSeenAt: number; confirmedAt?: number };
+  /** Still on the source and readable, but hidden or superseded there. */
+  delisted?: { reason?: string; newerVersionId?: string };
 };
 
 /** Result of the deferred `getSeriesList` fetch: the chapter list (chaptered) OR
@@ -219,6 +224,8 @@ export type LibraryItem = {
   collectedAt: number;
   /** Last read moment, absent for a series never opened — the "Last read" grouping axis. */
   lastReadAt?: number;
+  /** Its source has confirmed the series is gone (see `SeriesDetail.removal`). */
+  removed?: boolean;
 };
 
 /** A user-defined collection. Mirrors `@comical/library`'s `Collection`.

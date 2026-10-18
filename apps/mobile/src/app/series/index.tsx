@@ -56,11 +56,13 @@ import { CollectPageControl, CollectPageShortcut } from '@/components/reader/col
 import { SettingsControl } from '@/components/reader/settings-panel';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
 import { RetryBlock } from '@/components/retry-block';
+import { SeriesRemovedNotice } from '@/components/series/series-removed';
 import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
+import { seriesGoneReason } from '@/data/api';
 import { warmPageImages } from '@/data/warm-pages';
 import {
   chapterPagesQuery,
@@ -1250,6 +1252,7 @@ function SeriesReaderInstance({
   const error = !sequence && queryError ? (queryError as Error).message || 'Failed to load pages' : null;
   // The bridge's own error for a bridge that isn't there is a server path and a Retry that can't work.
   const missingBridge = useMissingBridge(sequence ? undefined : bridgeId);
+  const pagesGone = !sequence && seriesGoneReason(queryError) !== undefined;
 
   // ── Adjacent chapters (chaptered only; no stitching — see the header comment) ──
   const currentChapter = useMemo(
@@ -3891,7 +3894,15 @@ function SeriesReaderInstance({
           <View style={styles.readerClip}>
           {error ? (
             <>
-              {!missingBridge ? (
+              {pagesGone && !missingBridge ? (
+                !detailsActive && (
+                  <View testID="series-page.reader.removed" style={[styles.centerFill, styles.readerNotice]}>
+                    <ThemedText type="small" style={styles.readerNoticeText}>
+                      {`${detailBridge || 'The source'} no longer has this series, and this chapter isn't downloaded, so it can't be opened.`}
+                    </ThemedText>
+                  </View>
+                )
+              ) : !missingBridge ? (
                 <View style={styles.centerFill}>
                   <RetryBlock message={error} onRetry={refetch} />
                 </View>
@@ -4580,6 +4591,22 @@ function SeriesDetailsHost({
   const isLarge = width >= LARGE_SCREEN_BREAKPOINT;
   const actionsWidth = Math.round(Math.min(width * 0.4, 220));
 
+  const goneReason = seriesGoneReason(queryError);
+  if (queryError && goneReason !== undefined) {
+    return (
+      <View style={styles.centerFill}>
+        <SeriesRemovedNotice
+          bridgeName={bridge ?? ''}
+          title={title ?? series?.title ?? ''}
+          reason={goneReason}
+          confirmed
+          saved={false}
+          checking={isFetching}
+          onCheckAgain={() => void refetch()}
+        />
+      </View>
+    );
+  }
   if (queryError) {
     return (
       <View style={styles.centerFill}>
@@ -5494,6 +5521,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  readerNotice: {
+    paddingHorizontal: Spacing.five,
+  },
+  readerNoticeText: {
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
   },
   loadingText: {
     color: '#fff',

@@ -1,4 +1,4 @@
-import { parseRateLimited } from '@comical/contract';
+import { parseRateLimited, parseSeriesGone } from '@comical/contract';
 
 const RATE_LIMITED_ATTEMPTS = 3;
 // Longer than this and the screen shows the error: waiting minutes on a spinner reads as a hang.
@@ -9,6 +9,7 @@ export function rateLimitWait(error: unknown): number | undefined {
 }
 
 export function queryRetry(failureCount: number, error: unknown): boolean {
+  if (error instanceof Error && parseSeriesGone(error.message)) return false;
   const wait = rateLimitWait(error);
   if (wait === undefined) return failureCount < 1;
   return failureCount < RATE_LIMITED_ATTEMPTS && wait <= MAX_HELD_WAIT_MS;

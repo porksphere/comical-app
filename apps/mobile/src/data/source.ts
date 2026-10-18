@@ -430,6 +430,7 @@ function toLibraryItem(e: api.ApiCollectedSeries): LibraryItem {
     readState: e.readState,
     collectedAt: e.collectedAt,
     ...(e.lastReadAt !== undefined && { lastReadAt: e.lastReadAt }),
+    ...(e.removal?.confirmedAt !== undefined && { removed: true }),
   };
 }
 
@@ -792,13 +793,15 @@ const realDataSource: DataSource = {
       relatedGroups,
       relatedGroupsDeferred: !info.relatedSeriesGroups,
       listDeferred: true,
+      ...(info.delisted && { delisted: info.delisted }),
     };
     // The host flags a response served from the library's offline metadata cache with additive
     // fields on the SeriesInfo shape — carry them through so the page can show the affordance.
-    const offline = info as { cached?: boolean; cachedAt?: number };
+    const offline = info as { cached?: boolean; cachedAt?: number; removal?: SeriesDetail['removal'] };
     if (offline.cached) {
       base.cached = true;
       if (offline.cachedAt !== undefined) base.cachedAt = offline.cachedAt;
+      if (offline.removal) base.removal = offline.removal;
       // A captured cover arrives as the host's server-relative cover route — resolve it into
       // something <Image> can load (remote: apiBase-prefixed URL; embedded: an in-process data URI).
       // Best-effort: an unresolvable cover just leaves the hero on its normal fallback path.

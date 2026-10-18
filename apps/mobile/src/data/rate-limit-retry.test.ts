@@ -23,6 +23,10 @@ describe('query retry', () => {
     expect(queryRetry(0, limited(3 * 60 * 60 * 1000))).toBe(false);
   });
 
+  test('a series the source has removed is not retried — asking again only repeats the answer', () => {
+    expect(queryRetry(0, new Error('getSeriesDetails threw: [series-gone] removed from the source'))).toBe(false);
+  });
+
   test('a zero wait still pauses a beat', () => {
     expect(queryRetryDelay(0, limited(0))).toBe(1000);
   });

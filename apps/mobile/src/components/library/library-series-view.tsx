@@ -22,10 +22,12 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import {
   onlyBridges,
   onlyReadStates,
+  onlyRemoved,
   serverSort,
   shuffleLibrary,
   useLibraryBridges,
   useLibraryGrouping,
+  useLibraryRemovedOnly,
   useLibraryShow,
   useLibrarySort,
   useShuffleSeed,
@@ -52,6 +54,7 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
   const [grouping] = useLibraryGrouping();
   const show = useLibraryShow();
   const bridges = useLibraryBridges();
+  const removedOnly = useLibraryRemovedOnly();
   const seed = useShuffleSeed();
 
   // Unfiltered by reading state: the server takes one state at a time, and every item carries its
@@ -66,11 +69,11 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
   const visible = useVisibleByBridge(query.data ?? undefined);
   const cards = useMemo<LibraryGridItem[]>(
     () => {
-      const kept = onlyReadStates(onlyBridges(visible, bridges), show);
+      const kept = onlyRemoved(onlyReadStates(onlyBridges(visible, bridges), show), removedOnly);
       const ordered = sort === 'random' ? shuffleLibrary(kept, seed) : kept;
       return ordered.map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
     },
-    [visible, bridges, show, bridgeById, sort, seed],
+    [visible, bridges, show, removedOnly, bridgeById, sort, seed],
   );
   const groupOf = useMemo(() => libraryGroupOf(grouping) ?? undefined, [grouping]);
 
@@ -87,6 +90,9 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
     ],
     empty: () => {
       if (term) return ['No matches', `No series ${where} match your filter.`];
+      if (removedOnly) {
+        return ['Nothing removed', `No series ${where} has been removed from its source — change that from the filter menu.`];
+      }
       const states = orList(show.map((s) => `“${SHOW_LABELS[s]}”`));
       if (show.length === 1) {
         const [title, detail] = SHOW_EMPTY[show[0]](where);
@@ -104,7 +110,7 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
       {...chrome}
       items={ready ? cards : []}
       // A reshuffle is a new order like any sort change, so it's a new scope too.
-      scopeKey={`${term}|${sort === 'random' ? `random:${seed}` : sort}|${grouping}|${show.join(',')}|${bridges.join(',')}|${collection ?? ''}`}
+      scopeKey={`${term}|${sort === 'random' ? `random:${seed}` : sort}|${grouping}|${show.join(',')}|${removedOnly ? 'removed' : ''}|${bridges.join(',')}|${collection ?? ''}`}
       header={header}
       // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
       hasSub

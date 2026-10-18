@@ -5,7 +5,7 @@
  * Moved here out of `app/series.tsx` when the standalone series screen was removed: a file under
  * `app/` is a ROUTE, and this is a component the one remaining series route renders.
  */
-import { useQuery } from '@tanstack/react-query';
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import {
@@ -27,6 +27,7 @@ import { Rail, RailSkeleton } from '@/components/rail';
 import { ACTION_ICON_SIZE, ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChapterScrollList, Disclosure, PageThumbList, TurningChevron } from '@/components/series/chapters-section';
 import { SeriesDownloadButton } from '@/components/series/download-button';
+import { SeriesDelistedNotice, SeriesRemovedNotice } from '@/components/series/series-removed';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -474,6 +475,14 @@ export function SeriesBody({
     series.title,
     direct,
   );
+
+  const queryClient = useQueryClient();
+  const detailKey = queryKeys.seriesDetail(mock, bridgeId ?? '', series.id, direct);
+  const checkingRemoval = useIsFetching({ queryKey: detailKey }) > 0;
+  const checkAgain = () => {
+    void queryClient.invalidateQueries({ queryKey: detailKey });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.seriesList(mock, bridgeId ?? '', series.id, direct) });
+  };
   // The save key (lib/keymap) does what a press of the button does, and says so when it saves — the button may be scrolled
   // out of sight.
   const onSaveKey = useEffectEvent((e: KeyboardEvent) => {
@@ -762,6 +771,23 @@ export function SeriesBody({
           message={`${missingBridge.name} isn't installed. Your saved details and reading progress are kept — reinstall it to read chapters you haven't downloaded.`}
           testID="series.bridgeMissing"
         />
+      )}
+      {series.removal && !missingBridge && (
+        <SeriesRemovedNotice
+          plate
+          bridgeName={series.bridge}
+          title={series.title}
+          reason={series.removal.reason}
+          confirmed={series.removal.confirmedAt !== undefined}
+          // Only a library entry carries a removal, so "not loaded yet" is saved.
+          saved={save.saved !== false}
+          checking={checkingRemoval}
+          onCheckAgain={checkAgain}
+          onRemove={save.remove}
+        />
+      )}
+      {series.delisted && !series.removal && (
+        <SeriesDelistedNotice delisted={series.delisted} bridgeId={bridgeId} bridgeName={series.bridge} direct={direct} />
       )}
       {series.tagGroups?.length ? (
         <View style={styles.tagsBlock}>

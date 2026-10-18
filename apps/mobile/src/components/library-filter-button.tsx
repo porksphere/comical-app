@@ -9,9 +9,11 @@ import {
   clearLibraryBridges,
   clearLibraryShow,
   READ_STATES,
+  setLibraryRemovedOnly,
   toggleLibraryBridge,
   toggleLibraryShow,
   useLibraryBridges,
+  useLibraryRemovedOnly,
   useLibraryShow,
 } from '@/hooks/use-library-sort';
 import { useTheme } from '@/hooks/use-theme';
@@ -33,14 +35,16 @@ type Present = { bridgeId: string }[] | undefined;
  * while anything is narrowing — a state readable from the bar without opening anything.
  *
  * Both axes are multi-select: rows toggle, a ticked state or source is kept, and nothing ticked
- * (the "Everything" / "All sources" row) keeps all of them. `withShow` is the series views' alone;
- * saved chapters and pages have no reading state to filter by.
+ * (the "Everything" / "All sources" row) keeps all of them. `withShow` is the series views' alone —
+ * along with the removed-from-source filter: saved chapters and pages have no reading state, and are
+ * never marked removed.
  */
 export function LibraryFilterButton({ withShow, present }: { withShow?: boolean; present: Present }) {
   const theme = useTheme();
   const show = useLibraryShow();
   const bridges = useLibraryBridges();
-  const narrowing = (withShow && show.length > 0) || bridges.length > 0;
+  const removedOnly = useLibraryRemovedOnly();
+  const narrowing = (withShow && (show.length > 0 || removedOnly)) || bridges.length > 0;
   return (
     <OptionMenuButton
       testID="library.filter"
@@ -62,6 +66,7 @@ export function LibraryFilterButton({ withShow, present }: { withShow?: boolean;
 function LibraryFilterMenu({ withShow, present }: { withShow?: boolean; present: Present }) {
   const show = useLibraryShow();
   const bridges = useLibraryBridges();
+  const removedOnly = useLibraryRemovedOnly();
   const { nameOf } = useBridgeMap();
   const visible = useVisibleByBridge(present);
 
@@ -88,6 +93,19 @@ function LibraryFilterMenu({ withShow, present }: { withShow?: boolean; present:
               onPress={() => toggleLibraryShow(state)}
             />
           ))}
+          <OptionSectionLabel divided>Availability</OptionSectionLabel>
+          <OptionRow
+            testID="library.removed.any"
+            label="Any"
+            selected={!removedOnly}
+            onPress={() => setLibraryRemovedOnly(false)}
+          />
+          <OptionRow
+            testID="library.removed.only"
+            label="Removed from source"
+            selected={removedOnly}
+            onPress={() => setLibraryRemovedOnly(true)}
+          />
         </OptionList>
       )}
       <OptionList>
