@@ -32,7 +32,7 @@ export function useTabFilter() {
   };
   const show = () => setOpened(true);
   useKeyboardShortcut(
-    'f',
+    'filter',
     () => {
       if (!docked) setOpened(true);
       setFocusRequest((n) => n + 1);

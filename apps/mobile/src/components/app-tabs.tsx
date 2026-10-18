@@ -442,7 +442,7 @@ export default function AppTabs() {
     expandSidebar();
     focusSidebarSearch();
   }, []);
-  useKeyboardShortcut('k', () => {
+  useKeyboardShortcut('search', () => {
     if (!searchCapable || !activeTab) return openSearch();
     revealSearchField();
   });

@@ -26,7 +26,8 @@ import {
 } from '@/components/reader/reader-zoom';
 import { webtoonFit } from '@/components/reader/settings-panel';
 import type { PageFit } from '@/hooks/use-reader-settings';
-import { createKeyHold, isTypingTarget, keyDirection } from '@/lib/key-hold';
+import { createKeyHold, isTypingTarget } from '@/lib/key-hold';
+import { moveDirectionOf } from '@/lib/keybindings';
 
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
 
@@ -545,8 +546,8 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       if (dy !== 0) userScrolledRef.current = true;
     });
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey || e.ctrlKey || e.metaKey || isTypingTarget(e.target)) return;
-      const dir = keyDirection(e.key);
+      if (isTypingTarget(e.target)) return;
+      const dir = moveDirectionOf(e);
       // Sideways only pans a strip zoomed wider than the screen; otherwise it's the screen's page turn.
       if (!dir || (dir.x !== 0 && el.scrollWidth <= el.clientWidth + 1)) return;
       e.preventDefault();

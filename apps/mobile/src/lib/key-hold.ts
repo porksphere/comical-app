@@ -1,4 +1,4 @@
-// Held-key movement for the desktop: arrows and WASD drive a per-frame, delta-time velocity rather
+// Held-key movement for the desktop: the move keys (lib/keymap — WASD and the arrows) drive a per-frame, delta-time velocity rather
 // than one step per keydown, so the speed is the same at any frame rate and the OS's uneven
 // key-repeat has nothing to stutter on. The velocity EASES toward the held speed and glides back to
 // rest after release, and a fresh press starts from a kick rather than from nothing — so a quick tap
@@ -16,29 +16,6 @@ const GLIDE_S = 0.07;
 const REST_SPEED = 8;
 
 export type KeyDirection = { x: -1 | 0 | 1; y: -1 | 0 | 1 };
-
-export function keyDirection(key: string): KeyDirection | null {
-  switch (key) {
-    case 'ArrowUp':
-    case 'w':
-    case 'W':
-      return { x: 0, y: -1 };
-    case 'ArrowDown':
-    case 's':
-    case 'S':
-      return { x: 0, y: 1 };
-    case 'ArrowLeft':
-    case 'a':
-    case 'A':
-      return { x: -1, y: 0 };
-    case 'ArrowRight':
-    case 'd':
-    case 'D':
-      return { x: 1, y: 0 };
-    default:
-      return null;
-  }
-}
 
 /** A key event that belongs to something being typed into, not to the page. */
 export function isTypingTarget(target: EventTarget | null): boolean {

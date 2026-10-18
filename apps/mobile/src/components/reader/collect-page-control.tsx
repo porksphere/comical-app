@@ -8,6 +8,7 @@ import { peekResolvedAssetSource } from '@/data/api';
 import { usePageCollected } from '@/hooks/use-page-collected';
 import { hapticImpactLight } from '@/lib/haptics';
 import { isTypingTarget } from '@/lib/key-hold';
+import { isKey } from '@/lib/keybindings';
 
 type CollectPageProps = {
   bridgeId?: string;
@@ -122,15 +123,15 @@ export function CollectPageControl({
 }
 
 /**
- * The save button's key (web): B does what a tap does — saves the page, or on a saved one opens the
+ * The save button's key (web, lib/keymap's `save`): it does what a tap does — saves the page, or on a saved one opens the
  * picker — and says so, since nothing else on a hidden chrome would. Rendered once per screen, apart
  * from the button: the reader's chrome can be mounted twice over.
  */
 export function CollectPageShortcut({ enabled, ...page }: CollectPageProps & { enabled: boolean }) {
   const { toggle, openPicker } = useCollectPage(page);
   const onKey = useEffectEvent((e: KeyboardEvent) => {
-    if (e.key !== 'f' && e.key !== 'F') return;
-    if (e.altKey || e.ctrlKey || e.metaKey || e.repeat || e.defaultPrevented || isTypingTarget(e.target)) return;
+    if (!isKey(e, 'save')) return;
+    if (e.repeat || e.defaultPrevented || isTypingTarget(e.target)) return;
     e.preventDefault();
     const result = toggle();
     if (result === 'saved') showToast('Page saved');

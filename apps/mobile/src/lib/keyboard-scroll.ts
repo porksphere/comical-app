@@ -1,8 +1,9 @@
 import { Platform } from 'react-native';
 
-import { createKeyHold, isTypingTarget, keyDirection } from '@/lib/key-hold';
+import { createKeyHold, isTypingTarget } from '@/lib/key-hold';
+import { moveDirectionOf } from '@/lib/keybindings';
 
-// W/S and ↑/↓ scroll the app's screens on a desktop. With body scroll locked app-wide, every list is
+// Up/Down (lib/keymap — W/S and ↑/↓) scroll the app's screens on a desktop. With body scroll locked app-wide, every list is
 // its own scroller, and the browser only arrow-scrolls one that has been clicked into — so this
 // scrolls the one under the pointer, or, with the pointer elsewhere, the largest one on screen.
 // The readers claim their own keys first (in the capture phase), so they never reach here.
@@ -50,8 +51,8 @@ export function installKeyboardScroll(): void {
   });
 
   window.addEventListener('keydown', (e) => {
-    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || isTypingTarget(e.target)) return;
-    const dir = keyDirection(e.key);
+    if (e.defaultPrevented || isTypingTarget(e.target)) return;
+    const dir = moveDirectionOf(e);
     if (!dir || dir.y === 0) return;
     if (!e.repeat || !target?.isConnected) {
       target = (pointer && scrollerAt(pointer.x, pointer.y)) || largestScroller();

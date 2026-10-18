@@ -46,6 +46,8 @@ import {
   stepZoom,
   zoomHoldDirection,
 } from '@/components/reader/desktop-zoom';
+import { isTypingTarget } from '@/lib/key-hold';
+import { keyActionOf } from '@/lib/keybindings';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
 import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
@@ -143,6 +145,8 @@ import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body
 // are up the reader is in STANDBY — only the single visible strip page is requested.
 
 const CHROME_HIDE_MS = 3000;
+/** The reader's own keys, in lib/keymap. Up/Down and a sideways pan are the readers' themselves. */
+const READER_KEYS = ['zoom-step-in', 'zoom-step-out', 'zoom-reset', 'left', 'right'] as const;
 // CI-speed override: Maestro steps can outlast the auto-hide, and hidden chrome drops out of the
 // accessibility tree.
 const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
@@ -5057,29 +5061,22 @@ const ReaderPane = forwardRef<
     if (!IS_WEB || !keyboard || typeof window === 'undefined') return;
     const zoomHold = createZoomHold();
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
-      // Alt+Left is the desktop shell's Back, not a page turn.
-      // Ctrl/⌘ +/-/0 stay the browser's own zoom; bare, they're the page's (see desktop-zoom).
-      if (e.altKey || e.ctrlKey || e.metaKey) return;
-      if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_' || e.key === '0') {
-        e.preventDefault();
-        if (e.key === '0') resetZoom();
-        else stepZoom(e.key === '+' || e.key === '=' ? 1 : -1);
-        return;
-      }
-      const zoomDir = zoomHoldDirection(e.key);
+      if (isTypingTarget(e.target)) return;
+      // Modifiers are exact (lib/keymap), so Alt+Left stays the desktop shell's Back and Ctrl/⌘
+      // +/-/0 the browser's own zoom; bare, they're the page's (see desktop-zoom).
+      const zoomDir = zoomHoldDirection(e);
       if (zoomDir) {
         e.preventDefault();
         zoomHold.press(e.key, zoomDir, e.repeat);
         return;
       }
-      const isRight = e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D';
-      const isLeft = e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A';
-      if (!isRight && !isLeft) return;
+      const action = keyActionOf(e, READER_KEYS);
+      if (!action) return;
       e.preventDefault();
+      if (action === 'zoom-reset') return resetZoom();
+      if (action === 'zoom-step-in' || action === 'zoom-step-out') return stepZoom(action === 'zoom-step-in' ? 1 : -1);
       if (e.repeat) return;
-      const forward = isRight !== (settings.direction === 'rtl');
+      const forward = (action === 'right') !== (settings.direction === 'rtl');
       (forward ? turnNext : turnPrev)();
     };
     const onKeyUp = (e: KeyboardEvent) => zoomHold.release(e.key);

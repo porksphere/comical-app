@@ -3,6 +3,7 @@ import { use$ } from '@legendapp/state/react';
 
 import { showToast } from '@/components/toast';
 import { createKeyHold, HOLD_SPEED } from '@/lib/key-hold';
+import { keyActionOf } from '@/lib/keybindings';
 
 // Mouse-and-keyboard zoom for the web readers: Ctrl/⌘+wheel (which is also what a trackpad pinch
 // arrives as), the +/-/0 keys, Q/E held and the toolbar's stepper. All of them speak a LEVEL — a multiple of
@@ -77,8 +78,9 @@ const DOUBLE_PRESS_MS = 300;
 /** Q zooms out and E in, continuously while held — on the pan keys' own eased velocity
  *  (lib/key-hold), read as a rate in log-zoom, so it starts, runs and settles the way they do.
  *  A quick double press jumps to the far end instead (see `zoomToLimit`). */
-export function zoomHoldDirection(key: string): -1 | 1 | null {
-  return key === 'q' || key === 'Q' ? -1 : key === 'e' || key === 'E' ? 1 : null;
+export function zoomHoldDirection(e: KeyboardEvent): -1 | 1 | null {
+  const action = keyActionOf(e, ['zoom-out', 'zoom-in']);
+  return action === 'zoom-out' ? -1 : action === 'zoom-in' ? 1 : null;
 }
 export function createZoomHold() {
   const hold = createKeyHold((dx) => {

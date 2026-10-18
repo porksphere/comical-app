@@ -44,7 +44,8 @@ import {
   ZOOM_EPSILON,
 } from '@/components/reader/reader-zoom';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
-import { createKeyHold, isTypingTarget, keyDirection } from '@/lib/key-hold';
+import { createKeyHold, isTypingTarget } from '@/lib/key-hold';
+import { moveDirectionOf } from '@/lib/keybindings';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
@@ -937,8 +938,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       writeZoom(false);
     });
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey || e.ctrlKey || e.metaKey || isTypingTarget(e.target)) return;
-      const dir = keyDirection(e.key);
+      if (isTypingTarget(e.target)) return;
+      const dir = moveDirectionOf(e);
       if (!dir) return;
       const limit = dir.x !== 0 ? room().x : room().y;
       const sidewaysHeld = dir.x !== 0 && zoomedIn();

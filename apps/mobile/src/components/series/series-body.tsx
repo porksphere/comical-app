@@ -47,6 +47,7 @@ import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
 import { isTypingTarget } from '@/lib/key-hold';
+import { isKey } from '@/lib/keybindings';
 import { useOpenSearchLayer } from '@/lib/series-nav';
 import { measureZoomRect } from '@/lib/series-zoom';
 import { useRouter } from '@/lib/nav';
@@ -473,11 +474,11 @@ export function SeriesBody({
     series.title,
     direct,
   );
-  // F does what a press of the button does, and says so when it saves — the button may be scrolled
+  // The save key (lib/keymap) does what a press of the button does, and says so when it saves — the button may be scrolled
   // out of sight.
   const onSaveKey = useEffectEvent((e: KeyboardEvent) => {
-    if (e.key !== 'f' && e.key !== 'F') return;
-    if (e.altKey || e.ctrlKey || e.metaKey || e.repeat || e.defaultPrevented || isTypingTarget(e.target)) return;
+    if (!isKey(e, 'save')) return;
+    if (e.repeat || e.defaultPrevented || isTypingTarget(e.target)) return;
     if (!bridgeId || save.saved === null) return;
     e.preventDefault();
     if (save.saved) return save.pick();
