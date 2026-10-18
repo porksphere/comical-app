@@ -42,8 +42,11 @@ import {
   SyncIcon,
   TrackersIcon,
 } from '@/components/icons/ui-icons';
+import { TabBadge } from '@/components/tab-badge';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { useAppUpdateCheck } from '@/data/use-app-update';
+import { useRegistryUpdateCounts } from '@/data/use-settings-badge';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
@@ -111,6 +114,7 @@ function SettingsPanel() {
   const theme = useTheme();
   const { category, page } = useSettingsModal();
   const current = CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0]!;
+  const updates = useCategoryUpdates();
   // Sub-pages pushed from within the pane. A stack, not a single slot: bridges → registries →
   // registry-browse is three deep, and each step has to come back to the one before it.
   const [stack, setStack] = useState<{ pathname: string; params: PaneParams }[]>(() =>
@@ -188,6 +192,7 @@ function SettingsPanel() {
                   id={c.id}
                   label={c.label}
                   Icon={c.Icon}
+                  updates={updates[c.id]}
                   active={c.id === current.id}
                   // A category is a top-level destination, the current one included: whatever was
                   // pushed over the last one doesn't follow you to it.
@@ -262,16 +267,26 @@ function PaneBackButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+/** The same pips, on the same rows, as the Settings tab's list — together they add up to the one on
+ *  the sidebar's Settings button. */
+function useCategoryUpdates(): Partial<Record<string, number>> {
+  const registry = useRegistryUpdateCounts();
+  const app = useAppUpdateCheck();
+  return { bridges: registry.bridges, trackers: registry.trackers, about: app.status === 'update-available' ? 1 : 0 };
+}
+
 function CategoryRow({
   id,
   label,
   Icon,
+  updates = 0,
   active,
   onPress,
 }: {
   id: string;
   label: string;
   Icon: SettingsIcon;
+  updates?: number;
   active: boolean;
   onPress: () => void;
 }) {
@@ -288,7 +303,10 @@ function CategoryRow({
         styles.categoryRow,
         { backgroundColor: active ? theme.backgroundSelected : hovered ? theme.backgroundElement : 'transparent' },
       ]}>
-      <Icon color={active ? theme.text : theme.textSecondary} size={20} />
+      <View>
+        <Icon color={active ? theme.text : theme.textSecondary} size={20} />
+        <TabBadge count={updates} />
+      </View>
       <ThemedText numberOfLines={1} themeColor={active ? 'text' : 'textSecondary'}>
         {label}
       </ThemedText>
