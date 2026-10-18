@@ -1,3 +1,4 @@
+import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
 import type { LibrarySort } from '@/data/api';
@@ -15,8 +16,17 @@ import { persisted$ } from '@/lib/observable';
  * Keeps its original AsyncStorage key so the "all" view's remembered sort survives the lists →
  * collections migration. Entries keyed by long-dead list ids are inert and just fall back.
  */
-const DEFAULT_SORT: LibrarySort = 'added';
-const sortByCollection$ = persisted$<Record<string, LibrarySort>>('comical:librarySortByList', {});
+/** The Library's sort choices: the server's orders plus `'random'`, which the app applies itself
+ *  (see `shuffleLibrary`) over a server fetch in `serverSort` order. */
+export type LibraryViewSort = LibrarySort | 'random';
+
+const DEFAULT_SORT: LibraryViewSort = 'added';
+const sortByCollection$ = persisted$<Record<string, LibraryViewSort>>('comical:librarySortByList', {});
+
+/** The random order's seed. Deliberately NOT persisted: each launch deals a fresh order, and picking
+ *  Random again (even while it's already the sort) deals another. */
+const newSeed = () => Math.floor(Math.random() * 0x100000000);
+const shuffleSeed$ = observable(newSeed());
 
 const keyFor = (collection: CollectionFilter): string => collection ?? 'all';
 
@@ -24,13 +34,42 @@ const keyFor = (collection: CollectionFilter): string => collection ?? 'all';
  *  collection only.
  *  Writes REPLACE the whole record (new reference) so `use$` subscribers re-render immediately — a
  *  nested `store$[key].set()` can leave the root snapshot's identity unchanged (see comical-home). */
-export function useLibrarySort(collection: CollectionFilter): [LibrarySort, (sort: LibrarySort) => void] {
+export function useLibrarySort(collection: CollectionFilter): [LibraryViewSort, (sort: LibraryViewSort) => void] {
   const map = use$(sortByCollection$);
   const key = keyFor(collection);
   const sort = map[key] ?? DEFAULT_SORT;
-  const setSort = (next: LibrarySort) =>
+  const setSort = (next: LibraryViewSort) => {
+    if (next === 'random') shuffleSeed$.set(newSeed());
     sortByCollection$.set({ ...sortByCollection$.peek(), [key]: next });
+  };
   return [sort, setSort];
+}
+
+/** The order to fetch in for a view sort. Random shuffles over `added` — any stable order would do,
+ *  and sharing one keeps a single cached query for it. */
+export const serverSort = (sort: LibraryViewSort): LibrarySort => (sort === 'random' ? 'added' : sort);
+
+export function useShuffleSeed(): number {
+  return use$(shuffleSeed$);
+}
+
+/**
+ * `items` in the seed's random order. Each series sorts by a hash of (seed, identity) rather than a
+ * Fisher–Yates pass over the list, so the order is a property of the series, not of its neighbours:
+ * a refetch, a filter, or a series joining or leaving never reshuffles the rest.
+ */
+export function shuffleLibrary<T extends { bridgeId: string; seriesId: string }>(items: T[], seed: number): T[] {
+  const rank = new Map(items.map((i) => [i, hash32(`${i.bridgeId}/${i.seriesId}`, seed)]));
+  return [...items].sort((a, b) => rank.get(a)! - rank.get(b)!);
+}
+
+/** FNV-1a over the string, seeded, with a final avalanche so near-identical ids scatter. */
+function hash32(text: string, seed: number): number {
+  let h = (0x811c9dc5 ^ seed) >>> 0;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
 }
 
 /** The series views' GROUPING choice, persisted. One value for every view (not per-collection like

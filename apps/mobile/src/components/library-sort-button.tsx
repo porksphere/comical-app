@@ -1,16 +1,18 @@
 import { SortIcon } from '@/components/icons/ui-icons';
 import { ChoiceMenuButton, choiceSection } from '@/components/overlay/choice-menu';
-import type { LibrarySort } from '@/data/api';
 import type { LibraryGrouping } from '@/data/library-grouping';
+import type { LibraryViewSort } from '@/hooks/use-library-sort';
 import { useTheme } from '@/hooks/use-theme';
 
-const SORT_LABELS: Record<LibrarySort, string> = {
+const SORT_LABELS: Record<LibraryViewSort, string> = {
   added: 'Recently added',
   lastRead: 'Last read',
   title: 'Title',
   unread: 'Unread',
+  random: 'Random',
 };
-const SORT_ORDER: LibrarySort[] = ['added', 'lastRead', 'title', 'unread'];
+// Picking Random again while it's the sort deals a fresh order (see useLibrarySort).
+const SORT_ORDER: LibraryViewSort[] = ['added', 'lastRead', 'title', 'unread', 'random'];
 
 // Grouping is client-side sectioning OVER the sorted result — it composes with any sort instead of
 // replacing it (see libraryGroupOf / buildGroupedRows).
@@ -23,7 +25,8 @@ const GROUP_LABELS: Record<LibraryGrouping, string> = {
 const GROUP_ORDER: LibraryGrouping[] = ['none', 'bridge', 'added', 'lastRead'];
 
 /**
- * The series views' arranging axes: the sort order (the `/library?sort=` param) and the grid's
+ * The series views' arranging axes: the sort order (the `/library?sort=` param, or a
+ * client-side shuffle) and the grid's
  * grouping. The reading-state filter is the button beside this one (`LibraryFilterButton`) — it
  * narrows rather than arranges.
  */
@@ -33,8 +36,8 @@ export function LibrarySortButton({
   grouping,
   onGroupingChange,
 }: {
-  value: LibrarySort;
-  onChange: (s: LibrarySort) => void;
+  value: LibraryViewSort;
+  onChange: (s: LibraryViewSort) => void;
   grouping: LibraryGrouping;
   onGroupingChange: (g: LibraryGrouping) => void;
 }) {

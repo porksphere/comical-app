@@ -22,10 +22,13 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import {
   onlyBridges,
   onlyReadStates,
+  serverSort,
+  shuffleLibrary,
   useLibraryBridges,
   useLibraryGrouping,
   useLibraryShow,
   useLibrarySort,
+  useShuffleSeed,
 } from '@/hooks/use-library-sort';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 
@@ -49,11 +52,12 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
   const [grouping] = useLibraryGrouping();
   const show = useLibraryShow();
   const bridges = useLibraryBridges();
+  const seed = useShuffleSeed();
 
   // Unfiltered by reading state: the server takes one state at a time, and every item carries its
   // own, so the set is applied here.
   const query = useQuery({
-    ...libraryQuery(ds, mock, term, sort, collection, null),
+    ...libraryQuery(ds, mock, term, serverSort(sort), collection, null),
     ...holdWithinView(`series|${collection ?? ''}`),
   });
   useRefetchOnRefocus(query.refetch);
@@ -61,9 +65,12 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
   const { knownById: bridgeById, nameOf } = useBridgeMap();
   const visible = useVisibleByBridge(query.data ?? undefined);
   const cards = useMemo<LibraryGridItem[]>(
-    () =>
-      onlyReadStates(onlyBridges(visible, bridges), show).map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId))),
-    [visible, bridges, show, bridgeById],
+    () => {
+      const kept = onlyReadStates(onlyBridges(visible, bridges), show);
+      const ordered = sort === 'random' ? shuffleLibrary(kept, seed) : kept;
+      return ordered.map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
+    },
+    [visible, bridges, show, bridgeById, sort, seed],
   );
   const groupOf = useMemo(() => libraryGroupOf(grouping) ?? undefined, [grouping]);
 
@@ -96,7 +103,8 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
     <SeriesGrid
       {...chrome}
       items={ready ? cards : []}
-      scopeKey={`${term}|${sort}|${grouping}|${show.join(',')}|${bridges.join(',')}|${collection ?? ''}`}
+      // A reshuffle is a new order like any sort change, so it's a new scope too.
+      scopeKey={`${term}|${sort === 'random' ? `random:${seed}` : sort}|${grouping}|${show.join(',')}|${bridges.join(',')}|${collection ?? ''}`}
       header={header}
       // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
       hasSub
@@ -116,7 +124,7 @@ export function LibrarySeriesControls({ collection }: { collection: string | nul
   // and don't shift as you type. Unfiltered, it is the very query the grid itself runs.
   const ds = useDataSource();
   const mock = useMockActive();
-  const { data: present } = useQuery(libraryQuery(ds, mock, '', sort, collection, null));
+  const { data: present } = useQuery(libraryQuery(ds, mock, '', serverSort(sort), collection, null));
   return (
     <>
       <LibraryFilterButton withShow present={present ?? undefined} />
