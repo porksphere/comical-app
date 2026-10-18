@@ -22,6 +22,7 @@ import DownloadsScreen from '@/app/downloads';
 import GeneralScreen from '@/app/settings-general';
 import NotificationsScreen from '@/app/settings-notifications';
 import RegistriesScreen from '@/app/registries';
+import ShortcutsScreen from '@/app/settings-shortcuts';
 import StorageScreen from '@/app/storage';
 import SyncScreen from '@/app/settings-sync';
 import TrackersScreen from '@/app/trackers';
@@ -34,6 +35,7 @@ import {
   DiagnosticsIcon,
   DownloadsIcon,
   GeneralSettingsIcon,
+  KeyboardIcon,
   NotificationsIcon,
   RegistriesIcon,
   StorageIcon,
@@ -57,7 +59,6 @@ import GestureTraceScreen from '@/app/gesture-trace';
 import RegistryBrowseScreen from '@/app/registry-browse';
 import SeriesDownloadsScreen from '@/app/series-downloads';
 import TrackerSettingsScreen from '@/app/tracker-settings';
-import ShortcutsScreen from '@/app/settings-shortcuts';
 import WhatsNewScreen from '@/app/settings-whats-new';
 
 /** Every screen the settings pane can push to. A push to anything NOT in here falls through to the
@@ -74,7 +75,6 @@ const SUB_PAGES: Record<string, { title: string; Screen: () => React.ReactNode }
   '/series-downloads': { title: 'Downloads', Screen: SeriesDownloadsScreen },
   '/gesture-trace': { title: 'Gesture trace', Screen: GestureTraceScreen },
   '/settings-whats-new': { title: "What's new", Screen: WhatsNewScreen },
-  '/settings-shortcuts': { title: 'Keyboard shortcuts', Screen: ShortcutsScreen },
 };
 
 /** The same categories, in the same order, with the same ICONS as the Settings tab's own list — this
@@ -87,6 +87,7 @@ const CATEGORIES: { id: string; label: string; Icon: SettingsIcon; Screen: () =>
   { id: 'general', label: 'General', Icon: GeneralSettingsIcon, Screen: GeneralScreen },
   { id: 'notifications', label: 'Notifications', Icon: NotificationsIcon, Screen: NotificationsScreen },
   { id: 'sync', label: 'Sync', Icon: SyncIcon, Screen: SyncScreen },
+  { id: 'shortcuts', label: 'Keyboard', Icon: KeyboardIcon, Screen: ShortcutsScreen },
   { id: 'bridges', label: 'Bridges', Icon: BridgesIcon, Screen: BridgesScreen },
   { id: 'trackers', label: 'Trackers', Icon: TrackersIcon, Screen: TrackersScreen },
   { id: 'registries', label: 'Registries', Icon: RegistriesIcon, Screen: RegistriesScreen },

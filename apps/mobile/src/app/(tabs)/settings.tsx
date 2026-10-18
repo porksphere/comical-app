@@ -11,6 +11,7 @@ import {
   DiagnosticsIcon,
   DownloadsIcon,
   GeneralSettingsIcon,
+  KeyboardIcon,
   NotificationsIcon,
   RegistriesIcon,
   StorageIcon,
@@ -42,6 +43,9 @@ import { PROFILING_ENABLED } from '@/lib/profiling';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
+
+// The keys are only listened for on web, which is also what the desktop app runs.
+const keyboardless = Platform.OS !== 'web';
 
 /**
  * The Settings landing screen is a table of contents, nothing more: every category owns its own
@@ -86,7 +90,7 @@ export default function SettingsScreen() {
           styles.fill,
         ]}>
         <View style={styles.list}>
-          <SettingsSection>
+          <SettingsSection footer={keyboardless ? 'Keyboard shortcuts are for the desktop app and the browser.' : undefined}>
             <CategoryRow
               testID="settings.category.general"
               icon={<GeneralSettingsIcon color={theme.text} size={18} />}
@@ -104,6 +108,13 @@ export default function SettingsScreen() {
               icon={<SyncIcon color={theme.text} size={18} />}
               title="Sync"
               onPress={() => router.push('/settings-sync')}
+            />
+            <CategoryRow
+              testID="settings.category.shortcuts"
+              icon={<KeyboardIcon color={theme.text} size={18} />}
+              title="Keyboard"
+              disabled={keyboardless}
+              onPress={() => router.push('/settings-shortcuts')}
             />
           </SettingsSection>
           <SettingsSection>
@@ -249,6 +260,7 @@ function CategoryRow({
   value,
   updates,
   progress,
+  disabled,
   onPress,
   testID,
 }: {
@@ -260,6 +272,7 @@ function CategoryRow({
   updates?: number;
   /** Cumulative download progress [0,1] — renders a small radial before the chevron while in flight. */
   progress?: number;
+  disabled?: boolean;
   onPress: () => void;
   testID: string;
 }) {
@@ -274,15 +287,18 @@ function CategoryRow({
       }}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
-      android_ripple={{ color: theme.backgroundSelected }}
+      disabled={disabled}
+      android_ripple={disabled ? undefined : { color: theme.backgroundSelected }}
       accessibilityRole="button"
-      accessibilityLabel={title}>
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: !!disabled }}>
       {({ pressed }) => (
         <View
           style={[
             settingsRowFrame.row,
             styles.row,
-            (pressed || hovered) && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
+            disabled && styles.disabled,
+            !disabled && (pressed || hovered) && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
           ]}>
           <View style={[styles.icon, { backgroundColor: theme.tileWash }]}>
             {icon}
@@ -335,6 +351,10 @@ const styles = StyleSheet.create({
   row: {
     justifyContent: 'flex-start',
     cursor: 'pointer',
+  },
+  disabled: {
+    opacity: 0.4,
+    cursor: 'auto',
   },
   // The glyph's tile: the same shape a bridge's icon takes in `RowIcon`, so the hub's rows and the
   // list rows behind them share a leading column.

@@ -24,6 +24,7 @@ import {
   Funnel,
   HardDrive,
   Info,
+  Keyboard,
   Pause,
   RefreshCw,
   RotateCcw,
@@ -122,6 +123,7 @@ export const GripIcon = ({ color, size = 16 }: IconProps) => <GripVertical color
 // Settings section glyphs — General/Bridges/Trackers/Registries/Developer.
 export const GeneralSettingsIcon = ({ color, size = 16 }: IconProps) => <SlidersHorizontal color={color} size={size} />;
 export const NotificationsIcon = ({ color, size = 16 }: IconProps) => <Bell color={color} size={size} />;
+export const KeyboardIcon = ({ color, size = 16 }: IconProps) => <Keyboard color={color} size={size} />;
 // A phone beside a computer: the two ends of sync, which is what the screen is about.
 export const SyncIcon = ({ color, size = 16 }: IconProps) => <MonitorSmartphone color={color} size={size} />;
 export const BridgesIcon = ({ color, size = 16 }: IconProps) => <Blocks color={color} size={size} />;

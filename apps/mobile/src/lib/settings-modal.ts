@@ -19,7 +19,7 @@ export function useSettingsModal(): SettingsModalState {
   return use$(settingsModal$);
 }
 
-export function openSettingsModal(at?: { category: string; page: string }): void {
+export function openSettingsModal(at?: { category: string; page?: string }): void {
   settingsModal$.assign({ open: true, page: at?.page ?? null, opened: settingsModal$.opened.peek() + 1, ...(at && { category: at.category }) });
 }
 

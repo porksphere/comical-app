@@ -1,9 +1,9 @@
 # Same journey as ../mobile/keyboard-shortcuts.yaml, but only web can go past the row: the keys are
 # only listened for there. Selectors hitting the web-only aria-label quirk (see ../README.md):
 #   - tab bar: "Settings", not tab.settings (same as smoke.yaml).
-#   - settings.category.general sets accessibilityLabel={title} — select by "General".
-#   - settings.general.shortcuts and every shortcuts.<action> row are SettingsRows, so they set
-#     accessibilityLabel={label} — select by "Keyboard shortcuts" and "Next page".
+#   - settings.category.shortcuts sets accessibilityLabel={title} — select by "Keyboard".
+#   - every shortcuts.<action> row is a SettingsRow, so it sets accessibilityLabel={label} — select
+#     by "Next page".
 #   - top-bar.back sets accessibilityLabel="Go back" — same as every other flow using it.
 #
 # Maestro can't press an arbitrary key, so rebinding itself is not driven here: tapping a row starts
@@ -18,14 +18,7 @@ url: http://localhost:4000/comical-app
     id: "screen-title.settings"
 
 - tapOn:
-    id: "General"
-- scrollUntilVisible:
-    element:
-      id: "Keyboard shortcuts"
-    direction: DOWN
-    timeout: 10000
-- tapOn:
-    id: "Keyboard shortcuts"
+    id: "Keyboard"
 
 # The layout picker, first on the screen; the default layout is the left hand.
 - assertVisible:
@@ -49,4 +42,4 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "Go back"
 - assertVisible:
-    id: "Keyboard shortcuts"
+    id: "Keyboard"

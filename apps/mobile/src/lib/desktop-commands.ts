@@ -67,7 +67,7 @@ function onKeyDown(e: KeyboardEvent): void {
   e.preventDefault();
   if (step === 'back') goBack();
   else if (step === 'forward') goForward();
-  else openSettingsModal({ category: 'general', page: '/settings-shortcuts' });
+  else openSettingsModal({ category: 'shortcuts' });
 }
 
 /** Mounted above the navigator, so not through `useKeyboardShortcut`, which needs a screen. */
