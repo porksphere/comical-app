@@ -15,6 +15,9 @@ img, a { -webkit-user-drag: none; }
    rings it until something else takes focus: a thin rectangle that reads as a stuck selection.
    The latch below says which input is driving; only keyboard navigation gets the ring. */
 html[data-input="pointer"] :focus-visible { outline: none; }
+/* The keyboard's focus (lib/focus-nav) in the accent — Colors.light/dark.accent — and held clear of
+   the control, so it reads against a cover as well as against the page. */
+:focus-visible { outline: 2px solid #3478F6; outline-offset: 2px; }
 </style><script>
 (function () {
   var root = document.documentElement;
@@ -218,6 +221,7 @@ input::-webkit-search-cancel-button,input::-webkit-search-decoration,input::-web
 .r-17u3ijr{background-color:rgba(155,161,166,0.27);}
 .r-182abj8{font-family:var(--font-display);}
 .r-184en5c{z-index:1;}
+.r-18bj3io{min-width:28px;}
 .r-18kxxzh{flex-grow:0;}
 .r-18miidv{background-color:rgba(52,120,246,1.00);}
 .r-18nhz7w{top:-3px;}
@@ -619,5 +623,5 @@ input::-webkit-search-cancel-button,input::-webkit-search-decoration,input::-web
 @keyframes r-imtty0{0%{opacity:0;}100%{opacity:1;}}
 @keyframes r-q67da2{0%{transform:translateX(-100%);}100%{transform:translateX(400%);}}
 @keyframes r-t2lo5v{0%{opacity:1;}100%{opacity:0;}}</style><script type="module">globalThis.__EXPO_ROUTER_HYDRATE__=true;</script><link rel="preload" href="/comical-app/_expo/static/css/global-87fd0564cfa78f37afcb8d7603e15d75.css" as="style">
-<link rel="stylesheet" href="/comical-app/_expo/static/css/global-87fd0564cfa78f37afcb8d7603e15d75.css"><link rel="icon" href="/comical-app/favicon.ico" /></head><body><div id="root"><div class="css-g5y9jx r-13awgt0"></div></div><script src="/comical-app/_expo/static/js/web/entry-0910d1c10d4f03a8b4340472b266482a.js" defer></script>
+<link rel="stylesheet" href="/comical-app/_expo/static/css/global-87fd0564cfa78f37afcb8d7603e15d75.css"><link rel="icon" href="/comical-app/favicon.ico" /></head><body><div id="root"><div class="css-g5y9jx r-13awgt0"></div></div><script src="/comical-app/_expo/static/js/web/entry-eca9f98e0fb692a78dcbac40cafaa98e.js" defer></script>
 </body></html>
