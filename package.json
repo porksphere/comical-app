@@ -20,6 +20,9 @@
   "engines": {
     "node": ">=20"
   },
+  "overrides": {
+    "react-native-worklets": "0.11.4"
+  },
   "devDependencies": {
     "playwright": "^1.62.1"
   }
