@@ -40,7 +40,7 @@ export const KEY_ACTIONS = {
     label: 'Close',
     scope: 'global',
     keys: [k('escape')],
-    hint: 'Leaves a text field, then closes what is open, then goes back',
+    hint: 'Leaves a text field, then closes what is open, then lets go of the focus, then goes back',
     // Everything that closes listens for Escape itself, and the shell's mouse back button arrives
     // as a synthetic one (lib/desktop-commands).
     fixed: true,
@@ -55,7 +55,7 @@ export const KEY_ACTIONS = {
   'tab-settings': { label: 'Go to Settings', scope: 'global', keys: [k('5')] },
   shortcuts: { label: 'Keyboard shortcuts', scope: 'global', keys: [k('f1')] },
 
-  activate: { label: 'Open', scope: 'lists', keys: [k(' ')], hint: 'Presses whatever has the focus' },
+  activate: { label: 'Open', scope: 'lists', keys: [k(' ')], hint: 'Presses what has the focus; with nothing focused, focuses the first thing on screen' },
   menu: { label: 'Menu', scope: 'lists', keys: [k('r')], hint: 'What a right-click or long press opens' },
   'scroll-up': { label: 'Scroll up', scope: 'lists', keys: [k('w', { shift: true })], hint: 'Even while something has the focus' },
   'scroll-down': { label: 'Scroll down', scope: 'lists', keys: [k('s', { shift: true })], hint: 'Even while something has the focus' },

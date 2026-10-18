@@ -64,6 +64,9 @@ img, a { -webkit-user-drag: none; }
    rings it until something else takes focus: a thin rectangle that reads as a stuck selection.
    The latch below says which input is driving; only keyboard navigation gets the ring. */
 html[data-input="pointer"] :focus-visible { outline: none; }
+/* The keyboard's focus (lib/focus-nav) in the accent — Colors.light/dark.accent — and held clear of
+   the control, so it reads against a cover as well as against the page. */
+:focus-visible { outline: 2px solid #3478F6; outline-offset: 2px; }
 `;
 
 /* Inline so it is in place before hydration. Any pointer press means "pointer"; Tab is the one key

@@ -7,6 +7,7 @@ import { Platform } from 'react-native';
 
 import { closeBridgeSearchPane, isBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
 import { desktopShell } from '@/lib/desktop-shell';
+import { letGoOfFocus } from '@/lib/focus-nav';
 import { isTypingTarget } from '@/lib/key-hold';
 import { keyActionOf } from '@/lib/keybindings';
 import { router } from '@/lib/nav';
@@ -42,7 +43,7 @@ export const goForward = () => window.history.forward();
 
 /**
  * Escape is the one key that always does something: out of a text field, then whatever is open
- * closes, then back. The listeners that close things are window and document listeners added after
+ * closes, then out of the keyboard's focus, then back. The listeners that close things are window and document listeners added after
  * this one, so whether one took the key is only known once the event has finished dispatching.
  * `goBack`'s own Escape is left to `goBack`.
  */
@@ -54,7 +55,8 @@ function onKeyDown(e: KeyboardEvent): void {
       (e.target as HTMLElement).blur();
     } else if (e.isTrusted) {
       setTimeout(() => {
-        if (!e.defaultPrevented) stepBack();
+        if (e.defaultPrevented) return;
+        if (!letGoOfFocus()) stepBack();
       });
     }
     return;

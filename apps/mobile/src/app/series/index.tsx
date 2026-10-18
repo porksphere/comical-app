@@ -47,7 +47,7 @@ import {
   zoomHoldDirection,
 } from '@/components/reader/desktop-zoom';
 import { isControlTarget, isTypingTarget } from '@/lib/key-hold';
-import { isKey, keyActionOf } from '@/lib/keybindings';
+import { claimReaderScope, isKey, keyActionOf } from '@/lib/keybindings';
 import { TAB_KEY_ACTIONS } from '@/lib/keymap';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
@@ -1663,6 +1663,7 @@ function SeriesReaderInstance({
         .filter((el) => el.getClientRects().length > 0);
     const stale = document.activeElement;
     if (stale instanceof HTMLElement && stale !== document.body && !inside(stale)) stale.blur();
+    const releaseScope = claimReaderScope();
 
     const onKeyDown = (e: KeyboardEvent) => {
       // A digit must not throw away the chapter being read for another tab.
@@ -1702,6 +1703,7 @@ function SeriesReaderInstance({
       window.removeEventListener('keydown', onKeyDown, true);
       document.removeEventListener('focusin', onFocusChange);
       document.removeEventListener('focusout', onFocusChange);
+      releaseScope();
       if (focusHeld) holdChromeFor('focus', false);
     };
   }, [isTop, detailsActive, chromeId, showChrome, holdChromeFor]);

@@ -49,6 +49,7 @@ import { installErrorToasts } from '@/data/error-toasts';
 import { installAppUpdateAutoCheck } from '@/data/use-app-update';
 import { installBrowserZoomToast } from '@/lib/browser-zoom-toast';
 import { useDesktopShellCommands, useNavigationKeys } from '@/lib/desktop-commands';
+import { installFocusNav } from '@/lib/focus-nav';
 import { installKeyboardScroll } from '@/lib/keyboard-scroll';
 import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
@@ -78,6 +79,7 @@ installErrorToasts();
 installBrowserZoomToast();
 
 // W/S and ↑/↓ scroll whichever screen is under the pointer (web only).
+installFocusNav();
 installKeyboardScroll();
 
 // DevProfiler is profiling-only tooling; require it behind `PROFILING_ENABLED` (dev, or a CI

@@ -1,9 +1,10 @@
 import { Platform } from 'react-native';
 
 import { createKeyHold, isTypingTarget } from '@/lib/key-hold';
-import { moveDirectionOf } from '@/lib/keybindings';
+import { keyActionOf, moveDirectionOf, readerScopeActive } from '@/lib/keybindings';
 
-// Up/Down (lib/keymap — W/S and ↑/↓) scroll the app's screens on a desktop. With body scroll locked app-wide, every list is
+// Up/Down (lib/keymap — W/S and ↑/↓) scroll the app's screens on a desktop, unless the keyboard holds
+// the focus, where they move it (lib/focus-nav); Scroll up/down scroll regardless. With body scroll locked app-wide, every list is
 // its own scroller, and the browser only arrow-scrolls one that has been clicked into — so this
 // scrolls the one under the pointer, or, with the pointer elsewhere, the largest one on screen.
 // The readers claim their own keys first (in the capture phase), so they never reach here.
@@ -21,17 +22,22 @@ function scrollerAt(x: number, y: number): HTMLElement | null {
   return null;
 }
 
-function largestScroller(): HTMLElement | null {
+export function largestScroller(): HTMLElement | null {
   let best: HTMLElement | null = null;
   let bestArea = 0;
   for (const el of document.querySelectorAll<HTMLElement>('div')) {
     if (!scrollsY(el)) continue;
     const r = el.getBoundingClientRect();
-    const area = Math.max(0, Math.min(r.right, window.innerWidth) - Math.max(r.left, 0)) *
-      Math.max(0, Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0));
-    if (area > bestArea) {
+    const left = Math.max(r.left, 0);
+    const top = Math.max(r.top, 0);
+    const width = Math.min(r.right, window.innerWidth) - left;
+    const height = Math.min(r.bottom, window.innerHeight) - top;
+    if (width <= 0 || height <= 0 || width * height <= bestArea) continue;
+    // Not one a pane or a panel is covering.
+    const hit = document.elementFromPoint(left + width / 2, top + height / 2);
+    if (hit && el.contains(hit)) {
       best = el;
-      bestArea = area;
+      bestArea = width * height;
     }
   }
   return best;
@@ -52,7 +58,8 @@ export function installKeyboardScroll(): void {
 
   window.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || isTypingTarget(e.target)) return;
-    const dir = moveDirectionOf(e);
+    const scroll = readerScopeActive() ? null : keyActionOf(e, ['scroll-up', 'scroll-down']);
+    const dir = scroll ? { x: 0, y: scroll === 'scroll-up' ? -1 : 1 } as const : moveDirectionOf(e);
     if (!dir || dir.y === 0) return;
     if (!e.repeat || !target?.isConnected) {
       target = (pointer && scrollerAt(pointer.x, pointer.y)) || largestScroller();

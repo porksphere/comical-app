@@ -42,6 +42,20 @@ export function moveDirectionOf(e: KeyEventLike): { x: -1 | 0 | 1; y: -1 | 0 | 1
   return move ? MOVE_DIRECTION[move] : null;
 }
 
+let readers = 0;
+
+/** A reader has the keys: the `lists` scope stands down until the returned release. */
+export function claimReaderScope(): () => void {
+  readers += 1;
+  return () => {
+    readers -= 1;
+  };
+}
+
+export function readerScopeActive(): boolean {
+  return readers > 0;
+}
+
 export function useKeyOverrides(): KeyOverrides {
   return use$(overrides$);
 }
