@@ -69,6 +69,7 @@ export function SeriesCardMenuRows({
     !!direct,
     { title: entry.title, ...(entry.cover ? { cover: entry.cover } : {}) },
     true,
+    !!entry.removed || detail.data?.removal !== undefined,
   );
 
   const rows: MenuRowSpec[] = [
@@ -116,6 +117,7 @@ export function SeriesCardMenuRows({
       Icon: DownloadsIcon,
       loading: download.loading,
       active: download.active,
+      disabled: download.disabled,
       testID: 'series.card-menu.download',
       onPress: download.onPress,
     },

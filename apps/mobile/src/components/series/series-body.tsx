@@ -637,6 +637,7 @@ export function SeriesBody({
           title={series.title}
           cover={series.cover}
           {...(chapters !== undefined && { chapters })}
+          removed={series.removal !== undefined}
         />
       )}
       {/* One control, four faces (see useFavorite's `status`). ABSENT for a bridge without favorites —
@@ -948,6 +949,7 @@ export function SeriesBody({
       bridgeId={bridgeId}
       offline={series.cached === true}
       {...(missingBridge && { missingBridgeName: missingBridge.name })}
+      removed={series.removal !== undefined}
       header={chapterHeader}
       footer={relatedRailsEl}
       isLarge={isLarge}

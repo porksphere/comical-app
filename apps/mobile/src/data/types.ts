@@ -36,6 +36,8 @@ export type SeriesEntry = {
   excluded?: boolean;
   /** Its bridge isn't installed: the card is washed out, and still opens to what's cached. */
   unavailable?: boolean;
+  /** Its source has confirmed the series is gone: what's downloaded reads, nothing more can be. */
+  removed?: boolean;
 };
 
 export type TagGroup = {

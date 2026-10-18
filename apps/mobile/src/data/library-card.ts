@@ -19,7 +19,7 @@ export function toLibraryCard(e: LibraryItem, bridge?: Bridge): LibraryGridItem 
     ...(e.thumbnailAspect !== undefined && { coverAspect: e.thumbnailAspect }),
     sub: unavailable ? `${name} · Not installed` : e.removed ? `${name} · Removed` : name,
     ...(unavailable && { unavailable }),
-    ...(e.removed && { badges: [{ text: 'Removed', position: 'bottom-left', tone: 'warn' }] }),
+    ...(e.removed && { removed: true, badges: [{ text: 'Removed', position: 'bottom-left', tone: 'warn' }] }),
     ...(e.unread > 0 && { unread: e.unread }),
     bridgeId: e.bridgeId,
     ...(bridge?.name && { bridge: bridge.name }),

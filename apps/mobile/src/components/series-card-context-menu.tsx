@@ -344,6 +344,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     !!direct,
     { title: entry.title, ...(entry.cover ? { cover: entry.cover } : {}) },
     true,
+    !!entry.removed || detail.data?.removal !== undefined,
   );
 
   // Start the open morph, once. Deferred until the lifted cover's bitmap is decoded (see `openMorph`
@@ -1191,6 +1192,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       Icon: DownloadsIcon,
       loading: download.loading,
       active: download.active,
+      disabled: download.disabled,
       testID: 'series.card-menu.download',
       onPress: () => act(download.onPress),
     },

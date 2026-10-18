@@ -139,6 +139,7 @@ export default function SeriesDownloadsScreen() {
     author?: string;
     all?: string;
     select?: string;
+    removed?: string;
   }>();
   const bridgeId = params.bridgeId ?? '';
   const seriesId = params.id ?? '';
@@ -306,7 +307,9 @@ export default function SeriesDownloadsScreen() {
   // (complete/paused/failed — an actively downloading one must be paused first), Cancel for queued
   // ones, Pause/Resume for in-flight/paused. Download stays the enqueue verb.
   const picked = rows.filter((r) => ms.selected.has(r.key));
-  const toDownload = picked.filter((r) => (r.group ? !r.c || r.c.state === 'failed' : r.c?.state === 'failed'));
+  // A series its source removed has nothing left to fetch, so Download never surfaces for it.
+  const toDownload =
+    params.removed === '1' ? [] : picked.filter((r) => (r.group ? !r.c || r.c.state === 'failed' : r.c?.state === 'failed'));
   const toPause = picked.filter((r) => r.c && chapterCan.pause(r.c.state));
   const toResume = picked.filter((r) => r.c && chapterCan.resume(r.c.state));
   const toCancel = picked.filter((r) => r.c && chapterCan.cancel(r.c.state));

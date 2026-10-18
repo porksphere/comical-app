@@ -8,6 +8,8 @@
  *   - not downloaded, direct → enqueues the series' single page set immediately,
  *   - already downloading / downloaded → opens the per-series chapter roster, or — for a direct
  *     (chapterless) series, which has no roster — the Downloads screen focused on its own row.
+ * A series its source has removed can't download anything new, so with nothing tracked the row is
+ * greyed; what is tracked stays reachable to manage.
  */
 import { useQuery } from '@tanstack/react-query';
 
@@ -24,6 +26,8 @@ export interface SeriesDownloadAction {
   active: boolean;
   /** Status still resolving. */
   loading: boolean;
+  /** Removed from its source with nothing downloaded — nothing to start, nothing to manage. */
+  disabled: boolean;
   onPress: () => void;
 }
 
@@ -33,6 +37,7 @@ export function useSeriesDownloadAction(
   direct: boolean,
   snapshot: { title: string; cover?: string },
   enabled: boolean,
+  removed = false,
 ): SeriesDownloadAction {
   const router = useRouter();
 
@@ -48,8 +53,10 @@ export function useSeriesDownloadAction(
   const inProgress = state !== undefined && state !== 'complete';
   const label = inProgress ? 'Downloading' : state === 'complete' ? 'Downloaded' : 'Download';
 
+  const disabled = removed && state === undefined;
+
   const onPress = () => {
-    if (!bridgeId) return;
+    if (!bridgeId || disabled) return;
     // Already tracked → somewhere to watch/manage it: the Downloads screen's own row for a direct
     // (chapterless) series, the per-series chapter roster for a chaptered one.
     if (state !== undefined) {
@@ -64,6 +71,7 @@ export function useSeriesDownloadAction(
           id: seriesId,
           title: snapshot.title,
           all: '1',
+          ...(removed ? { removed: '1' } : {}),
           ...(snapshot.cover ? { cover: snapshot.cover } : {}),
         },
       });
@@ -94,5 +102,5 @@ export function useSeriesDownloadAction(
     });
   };
 
-  return { label, active: state !== undefined, loading: isLoading && enabled, onPress };
+  return { label, active: state !== undefined, loading: isLoading && enabled, disabled, onPress };
 }

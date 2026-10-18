@@ -10,6 +10,8 @@
  * Direct (chapterless) series are a single unit and keep the instant two-state behavior — and, being
  * chapterless, their manage/watch tap goes to the Downloads screen's own row instead of a chapter
  * roster with nothing in it (see `downloads/nav.ts`).
+ * Once the source has removed the series nothing new can download: "Download" greys out, and a
+ * partial download opens the roster to manage what's kept rather than to pick more.
  */
 import { useQuery } from '@tanstack/react-query';
 import { View } from 'react-native';
@@ -36,6 +38,7 @@ export function SeriesDownloadButton({
   cover,
   author,
   chapters,
+  removed = false,
 }: {
   bridgeId: string;
   seriesId: string;
@@ -45,6 +48,8 @@ export function SeriesDownloadButton({
   author?: string;
   /** The series' chapters (undefined while the list still loads); unused for a direct series. */
   chapters?: Chapter[];
+  /** The source has removed the series (see `SeriesDetail.removal`). */
+  removed?: boolean;
 }) {
   const router = useRouter();
   const theme = useTheme();
@@ -83,6 +88,7 @@ export function SeriesDownloadButton({
         title,
         all: '1',
         ...(select ? { select: '1' } : {}),
+        ...(removed ? { removed: '1' } : {}),
         ...(cover ? { cover } : {}),
         ...(author ? { author } : {}),
       },
@@ -121,7 +127,7 @@ export function SeriesDownloadButton({
         testID="series.action.download"
         label={`${completeGroups} / ${totalGroups}`}
         leading={download}
-        onPress={openSelect}
+        onPress={removed ? openDownloads : openSelect}
       />
     );
   } else if (direct) {
@@ -136,9 +142,13 @@ export function SeriesDownloadButton({
         ...(cover && { thumbnailUrl: cover }),
         ...(author && { author }),
       });
-    button = <ActionButton testID="series.action.download" label="Download" leading={download} onPress={enqueueDirect} />;
+    button = (
+      <ActionButton testID="series.action.download" label="Download" leading={download} disabled={removed} onPress={enqueueDirect} />
+    );
   } else {
-    button = <ActionButton testID="series.action.download" label="Download" leading={download} onPress={openSelect} />;
+    button = (
+      <ActionButton testID="series.action.download" label="Download" leading={download} disabled={removed} onPress={openSelect} />
+    );
   }
 
   return <View collapsable={false}>{button}</View>;

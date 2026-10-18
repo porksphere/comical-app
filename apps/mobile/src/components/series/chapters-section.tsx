@@ -469,6 +469,7 @@ export function ChapterScrollList({
   bridgeId,
   offline,
   missingBridgeName,
+  removed,
   header,
   footer,
   isLarge,
@@ -492,6 +493,8 @@ export function ChapterScrollList({
   /** Set when the series' bridge isn't installed: only downloaded chapters can be read, and a tap on
    *  any other says why instead of opening a reader that can only fail. */
   missingBridgeName?: string;
+  /** The source has removed the series: downloaded chapters still read, nothing new can download. */
+  removed?: boolean;
   /** Series hero / meta / description — the list header (this component owns the scroll). On large
    *  screens this is the two-column hero (cover+actions | meta/description); the chapter rows below
    *  are full-width, so LegendList virtualizes them and the rails footer spans the full column. */
@@ -639,7 +642,7 @@ export function ChapterScrollList({
         preferredGroup,
         collected: collectedChapterIds(),
         read: readArgs,
-        canDownload: missingBridgeName === undefined,
+        canDownload: missingBridgeName === undefined && !removed,
       }),
     });
   };
@@ -1115,20 +1118,21 @@ function chapterMenuRows(
       onPress: collect,
     },
   );
-  if (args.canDownload) rows.push(
+  // Greyed rather than dropped when the source can't serve it (bridge missing, series removed).
+  rows.push(
     {
       label: entry?.settled ? 'Already saved' : 'Download chapter',
       Icon: DownloadsIcon,
       loading: false,
-      disabled: !entry || entry.settled,
+      disabled: !args.canDownload || !entry || entry.settled,
       testID: testId('series.chapter-menu', 'this'),
       onPress: downloadThis,
     },
     {
-      label: span.length > 0 ? `Download from here (${span.length})` : 'Download from here',
+      label: span.length > 0 && args.canDownload ? `Download from here (${span.length})` : 'Download from here',
       Icon: ArrowDownIcon,
       loading: false,
-      disabled: span.length === 0,
+      disabled: !args.canDownload || span.length === 0,
       testID: testId('series.chapter-menu', 'from-here'),
       onPress: downloadFromHere,
     },
