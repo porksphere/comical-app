@@ -533,6 +533,7 @@ export default function AppTabs() {
                         label: 'Settings',
                         onPress: openSettingsModal,
                         icon: <Settings size={20} color={theme.textSecondary} />,
+                        badge: <SettingsTabBadge />,
                       }
                     : undefined
                 }>

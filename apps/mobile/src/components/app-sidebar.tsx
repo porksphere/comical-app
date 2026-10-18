@@ -160,7 +160,7 @@ export function AppSidebar({
   collapsed: boolean;
   /** Web only: Settings leaves the destination list and becomes a button down here, because it
    *  opens a modal rather than going anywhere. Absent on native, where it is still a tab. */
-  settingsButton?: { icon: React.ReactNode; label: string; onPress: () => void; testID: string };
+  settingsButton?: { icon: React.ReactNode; badge?: React.ReactNode; label: string; onPress: () => void; testID: string };
   children: React.ReactNode;
 }) {
   const theme = useTheme();
@@ -206,11 +206,13 @@ export function AppSidebar({
 
 function FooterButton({
   icon,
+  badge,
   label,
   onPress,
   testID,
 }: {
   icon: React.ReactNode;
+  badge?: React.ReactNode;
   label: string;
   onPress: () => void;
   testID: string;
@@ -229,7 +231,10 @@ function FooterButton({
         { backgroundColor: hovered ? theme.backgroundElement : 'transparent' },
         pressed && styles.pressed,
       ]}>
-      {icon}
+      <View>
+        {icon}
+        {badge}
+      </View>
     </Pressable>
   );
 }
