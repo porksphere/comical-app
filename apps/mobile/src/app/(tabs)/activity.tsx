@@ -65,10 +65,13 @@ type SeriesActivity = {
   newCount: number;
   /** Any unread chapter in the group (drives the accent dot; all-read rows dim). */
   hasUnread: boolean;
-  /** The chapter a tap reads: the newest unread one, else the newest overall. */
-  chapterId: string;
+  /** The chapter a tap reads: the newest unread one, else the newest overall. None when the row is
+   *  only a removal, and a tap opens the series instead. */
+  chapterId?: string;
   chapterName?: string;
   number?: number;
+  /** The source confirmed the series is gone. News, but never unread. */
+  removed: boolean;
 };
 
 /** Stable, so the zoom surface registers once rather than every render — see useZoomSurfaceList. */
@@ -194,8 +197,9 @@ export default function ActivityScreen() {
     }
     const out: SeriesActivity[] = [];
     for (const { head, entries } of groups.values()) {
-      const unread = entries.filter((e) => !e.read);
-      const rep = unread[0] ?? entries[0]!; // newest unread, else newest
+      const chapters = entries.filter((e) => !e.removed);
+      const unread = chapters.filter((e) => !e.read);
+      const rep = unread[0] ?? chapters[0]; // newest unread, else newest
       out.push({
         bridgeId: head.bridgeId,
         seriesId: head.seriesId,
@@ -204,17 +208,19 @@ export default function ActivityScreen() {
         latestAt: (entries.find((e) => !e.quiet) ?? head).detectedAt,
         newCount: unread.length,
         hasUnread: unread.length > 0,
-        chapterId: rep.chapterId,
-        chapterName: rep.chapterName,
-        number: rep.number,
+        chapterId: rep?.chapterId,
+        chapterName: rep?.chapterName,
+        number: rep?.number,
+        removed: chapters.length < entries.length,
       });
     }
     // Everything still unread first, newest update first within each half — so what's left to read
     // is one block at the top and the dimmed rows a trail beneath it, rather than the two mixed in
     // date order where an unread row could sit under a page of finished ones. (Insertion order is
     // already close to the date order, but ties/interleaving make the explicit sort the source of
-    // truth.)
-    out.sort((a, b) => Number(b.hasUnread) - Number(a.hasUnread) || b.latestAt - a.latestAt);
+    // truth.) A removal has no read state to drain, so it stays up in the live block until cleared.
+    const live = (r: SeriesActivity) => Number(r.hasUnread || r.removed);
+    out.sort((a, b) => live(b) - live(a) || b.latestAt - a.latestAt);
     // A filter over rows already grouped, not a query: applied after coalescing so a match keeps the
     // whole series' row rather than splitting its entries.
     const q = query.trim().toLowerCase();
@@ -250,6 +256,7 @@ export default function ActivityScreen() {
   };
 
   const read = (g: SeriesActivity) => {
+    if (g.chapterId === undefined) return openDetail(g);
     // See history.tsx's `resume` — same experiment, same reasoning.
     router.push({
       pathname: '/series',
@@ -408,25 +415,28 @@ function ActivityItem({
   // (details) need different things. `read` always forwards the chapter id, so this always does.
   const warmPages = useWarmChapterPages();
   const warmDetail = useWarmSeriesDetail();
-  const onRowPressIn = () => {
-    captureZoomOrigin();
-    warmPages(item.bridgeId, item.seriesId, item.chapterId);
-  };
-  const onMorePressIn = () => {
-    captureZoomOrigin();
+  const warmSeries = () =>
     warmDetail(item.bridgeId, item.seriesId, {
       direct,
       bridgeName: bridge,
       title: item.title,
       cover: item.thumbnailUrl,
     });
+  const onRowPressIn = () => {
+    captureZoomOrigin();
+    if (item.chapterId === undefined) warmSeries();
+    else warmPages(item.bridgeId, item.seriesId, item.chapterId);
+  };
+  const onMorePressIn = () => {
+    captureZoomOrigin();
+    warmSeries();
   };
   const renderRow = (coverHidden: boolean) => (
     <HistoryRow
       thumbnailUrl={item.thumbnailUrl}
       title={item.title}
-      sub={activitySub(item, !desktop)}
-      dimmed={!item.hasUnread}
+      sub={activitySub(item, bridge, !desktop)}
+      dimmed={!item.hasUnread && !item.removed}
       unread={item.hasUnread}
       onPress={onRead}
       onPressIn={onRowPressIn}
@@ -475,10 +485,12 @@ function ActivityItem({
   );
 }
 
-/** Row secondary line: `N new chapters · when` when several coalesce, else `chapter · when`. */
-function activitySub(g: SeriesActivity, withTime: boolean): string {
-  const chapter =
-    g.newCount > 1
+/** Row secondary line: `N new chapters · when` when several coalesce, else `chapter · when`; a
+ *  removal says so instead. */
+function activitySub(g: SeriesActivity, bridge: string, withTime: boolean): string {
+  const chapter = g.removed
+    ? `Removed from ${bridge}`
+    : g.newCount > 1
       ? `${g.newCount} new chapters`
       : (g.chapterName ?? (g.number !== undefined ? `Chapter ${g.number}` : 'New chapter'));
   return withTime ? `${chapter}  ·  ${relTime(g.latestAt)}` : chapter;

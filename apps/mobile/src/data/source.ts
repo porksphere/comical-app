@@ -497,6 +497,7 @@ function toActivityEntry(a: api.ApiActivityItem, caughtUpOnly: boolean): Activit
     detectedAt: a.detectedAt,
     read: a.read,
     ...(caughtUpOnly && a.behind === 'joined' && { quiet: true }),
+    ...(a.kind === 'removed' && { removed: true }),
   };
 }
 

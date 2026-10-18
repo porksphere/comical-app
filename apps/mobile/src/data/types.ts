@@ -279,6 +279,8 @@ export type ActivityEntry = {
   /** Landed on a row its series already had waiting unread: it counts toward that row, and isn't
    *  news that moves it back up the feed. */
   quiet?: boolean;
+  /** Not a chapter: the source confirmed the series is gone. Always `read` — news, never unread. */
+  removed?: boolean;
 };
 
 export type RailKind = 'hero' | 'ranked' | 'regular';
