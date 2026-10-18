@@ -11,19 +11,20 @@
  * it in the browser at http://<lan-ip>:<PORT>. Ctrl-C — or killing this
  * process — tears everything down cleanly via a final port sweep.
  *
- * Also presets EXPO_PUBLIC_COMICAL_SERVER to the sibling comical-web dev
- * server (see comical-web/CLAUDE.md — `bun run dev` there serves on :3100,
- * routes at the root with no /api prefix — that prefix belongs to the
- * reverse-proxied topology comical-web is designed for, which nothing runs
+ * Also presets EXPO_PUBLIC_COMICAL_SERVER to the sibling comical repo's
+ * host-server (the workspace-root `bun run dev` starts it on :3100 via
+ * comical/sandbox/demo-server.ts; routes live at the root with no /api
+ * prefix — that prefix only exists behind a reverse proxy, which nothing runs
  * yet), addressed by LAN IP rather than localhost so a phone on the
  * same network can reach both the Expo web page and the API it calls.
  * Override either half with COMICAL_SERVER_PORT or by setting
  * EXPO_PUBLIC_COMICAL_SERVER yourself before running this script.
  *
- * Mirrors the workspace-root dev.ts (the comical-web orchestrator): same
- * cross-platform port handling, no bash/awk/netstat shell glue. The app is its
- * own stack (Metro, not the comical-web bridge/tracker pipeline), so it runs
- * from its own entry point rather than being folded into that orchestrator.
+ * Mirrors the workspace-root dev.ts (the bridge/tracker + host-server
+ * orchestrator): same cross-platform port handling, no bash/awk/netstat shell
+ * glue. The app is its own stack (Metro, not that bridge/tracker build
+ * pipeline), so it runs from its own entry point rather than being folded into
+ * that orchestrator.
  *
  * Override the port with PORT=8090 bun run dev.
  */
@@ -61,14 +62,13 @@ function lanIp(): Promise<string> {
 const HOST = await lanIp();
 const COMICAL_SERVER_PORT = Number(process.env.COMICAL_SERVER_PORT ?? 3100);
 if (!process.env.EXPO_PUBLIC_COMICAL_SERVER) {
-  // No /api prefix here. That prefix belongs to the reverse-proxied deployment
-  // comical-web is designed for, where SWAG would strip it before proxying to
-  // host-server (see comical-web/CLAUDE.md) — nothing is deployed that way today.
+  // No /api prefix here. That prefix only exists behind a reverse proxy that strips it
+  // before forwarding to host-server — nothing is deployed that way today.
   // Requests hit host-server's routes at the root, e.g. GET /bridges, not /api/bridges.
   process.env.EXPO_PUBLIC_COMICAL_SERVER = `http://${HOST}:${COMICAL_SERVER_PORT}`;
 }
 console.log(`==> API backend: ${process.env.EXPO_PUBLIC_COMICAL_SERVER}`);
-console.log(`    (start it with: cd ../comical-web && bun run dev)`);
+console.log(`    (start it with: bun run dev from the workspace root, which runs comical's host-server)`);
 
 /** PIDs LISTENING on an exact local port. Metro spawns a child that also holds
  *  the socket and old runs can leave several — so we collect every one. */
