@@ -31,7 +31,13 @@ function originOf(uri: string): string | null {
 /** Is it worth trying to read this URL's bytes? */
 function measurable(uri: string): boolean {
   if (uri.startsWith('data:') || uri.startsWith('blob:')) return false; // already local — instant
-  if (uri.startsWith(getApiBase())) return true; // ours: always readable
+  if (uri.startsWith(getApiBase())) {
+    // Ours is always readable — except a lazy page-image route, which answers with a redirect to
+    // the source's own image server, whose CORS we can't know. A read that fails there looks like
+    // our server failing (so it can't fall back the way a foreign origin does), and every retry
+    // re-resolves the page against the source.
+    return !uri.includes('/page-image/');
+  }
   const origin = originOf(uri);
   return origin !== null && !unreadableOrigins.has(origin);
 }
