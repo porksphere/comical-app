@@ -79,6 +79,7 @@
     "lint:testids": "eslint --format json \"src/**/*.{ts,tsx}\" | node scripts/assert-testids.mjs",
     "check:flow-coverage": "node scripts/check-flow-coverage.mjs",
     "check:route-headers": "node scripts/check-route-headers.mjs",
+    "check:android-host-deps": "node scripts/check-android-host-deps.mjs",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

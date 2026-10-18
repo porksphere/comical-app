@@ -66,14 +66,13 @@ unreachable) remote server. `run:android` compiles a dev build that includes the
 Then in the app: Settings → "Run bridges on this device" → browse/search/read with no server; toggle
 off to confirm remote still works. (iOS needs macOS/Xcode; CI covers it.)
 
-## Known device follow-ups (needed for the registry path to work end-to-end)
-- **`crypto.subtle` polyfill** — `@comical/registry`'s `verify.ts` uses WebCrypto (SHA-256 + Ed25519)
-  to verify downloaded bundles; Hermes has no `crypto.subtle`. Add e.g. `react-native-quick-crypto`
-  (and install its global shim before `startEmbeddedRuntime()`), or bundle bridges as assets instead.
-- **`expo-file-system` `BundleCache`** — currently `MemoryBundleCache` (bundles re-download each
-  launch). Add a persistent adapter (implements `BundleCache`, pass via `configureEmbeddedRuntime`).
+## Known device follow-ups
+- **iOS `networkJson`** (GatedNetwork overrides) isn't threaded through `ComicalBridgeContext.init`
+  yet — Android is. See `ios/ComicalRuntimeModule.swift`.
 - **Gradle/podspec relative paths** to `external/comical` are best-effort — adjust if a build can't
-  find the host sources/harness.
-- **iOS `networkJson`** isn't threaded through `ComicalBridgeContext.init` yet (Android is).
-- `describeJson()` returns `{ info, methods }`, so the proxy exposes exactly the implemented methods
-  (the JS falls back to capability-derived methods if `methods` is absent).
+  find the host sources/harness. The Android runtime dependencies the module repeats from
+  `host-android` are checked against the submodule in CI (`bun run check:android-host-deps`).
+
+(Done, kept here so nobody re-plans them: the Hermes WebCrypto shim is `installWebCryptoShim` from
+`@comical/host-rn`, installed in `src/data/embedded/startup.ts`; the persistent bundle cache is
+`src/data/embedded/bundle-cache.ts`.)

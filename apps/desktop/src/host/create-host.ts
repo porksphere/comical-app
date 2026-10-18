@@ -2,37 +2,18 @@
  * The desktop host: the *real* `@comical/host-server` stack, assembled to run inside Electron's
  * main process instead of behind `Bun.serve`.
  *
- * This is a near-copy of `@comical/host-server`'s own `createServer()` (external/comical/packages/
- * host-server/src/server.ts) with two deliberate differences:
- *
- *  1. **No `Bun.serve`.** That is the single Bun-only line in the whole server; everything else —
- *     the Hono router, `BridgeManager`, the `node:vm` bundle evaluator, `FileStorage` — is plain
- *     Node. We return the Hono app instead, and let the caller decide how to expose it (see
- *     `serve()` below and `main.ts`).
- *  2. **A `fetch(path, init)` seam.** `router.fetch` driven directly, no socket — the same
- *     in-process shape `@comical/host-rn`'s embedded transport uses on iOS/Android. The localhost
- *     listener is only there so the *unmodified* web bundle (which speaks HTTP to
- *     `window.__COMICAL_SERVER__`) can talk to us; the IPC path is the one to keep.
+ * `@comical/host-server/host`'s `createHost()` is exactly that assembly — the Hono router,
+ * `BridgeManager`, registry, settings, library + runtime, sync hub, download engine — with no
+ * listener; `createServer()` is only `createHost()` + `Bun.serve`. This file is the thin desktop
+ * shaping of it: every optional module on (a single-user machine with a disk is what they were
+ * written for), CORS locked to the loopback origin, and the `fetch(path, init)` seam the IPC path
+ * uses (the same in-process shape `@comical/host-rn`'s embedded transport has on iOS/Android).
  *
  * Bridges execute in `node:vm` contexts here, exactly as they do on a self-hosted server — desktop
  * needs neither the JavaScriptCore harness (iOS) nor the QuickJS one (Android), because Electron
  * already ships a full Node runtime.
  */
-import { join } from "node:path";
-import { DownloadEngine, Downloads } from "@comical/downloads";
-import { DEFAULT_USER_AGENT } from "@comical/host-bun";
-import { Library } from "@comical/library";
-import { ManifestStore, RegistryManager } from "@comical/registry";
-import { ComicalRuntime } from "@comical/runtime";
-import { BridgeManager } from "@comical/host-server/bridge-manager";
-import { FileBlobStore } from "@comical/host-server/blob-store";
-import { FileDownloadsStore } from "@comical/host-server/downloads-store";
-import { FileLibraryStore } from "@comical/host-server/library-store";
-import { createServerPageFetcher, createServerPageResolver } from "@comical/host-server/page-fetcher";
-import { createRouter, type RouterOptions } from "@comical/host-server/router";
-import { SettingsStore } from "@comical/host-server/settings-store";
-import { createSyncHost, dropStaleLoads } from "@comical/host-server/sync-host";
-import { TrackerManager } from "@comical/host-server/tracker-manager";
+import { createHost, type ComicalHost } from "@comical/host-server/host";
 
 export interface DesktopHostOptions {
   /** Per-user data root — `app.getPath('userData')` in Electron. Holds settings, library,
@@ -48,104 +29,23 @@ export interface DesktopHostOptions {
   onSynced?: () => void;
 }
 
-export interface DesktopHost {
-  /** The assembled Hono app. `.fetch(Request)` is the whole API surface. */
-  router: ReturnType<typeof createRouter>;
-  /** In-process transport: a server-relative path in, a `Response` out. No socket involved.
-   *  Shape-identical to the app's own `Transport` type in `apps/mobile/src/data/api.ts`. */
-  fetch(path: string, init?: RequestInit): Promise<Response>;
-  /** Schedule no more sync rounds; a write landing inside the debounce window stays for next launch. */
-  close(): void;
-}
+/** `router.fetch(Request)` is the whole API surface; `fetch(path)` drives it with no socket;
+ *  `close()` stops the download engine and schedules no more sync rounds. */
+export type DesktopHost = ComicalHost;
 
 export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
-  const { dataDir, baseUrl } = opts;
-
-  const settings = new SettingsStore(dataDir);
-  const manifest = new ManifestStore(dataDir);
-  const registry = new RegistryManager({
-    cacheDir: join(dataDir, "bridge-cache"),
-    manifest,
-  });
-  const manager = new BridgeManager({
-    bridgesDir: opts.bridgesDir ?? join(dataDir, "bridges"),
-    dataDir,
-    settings,
-    registry,
-    hostUrl: baseUrl,
-  });
-
-  const routerOpts: RouterOptions = {
-    registry,
-    userAgent: DEFAULT_USER_AGENT,
+  return createHost({
+    dataDir: opts.dataDir,
+    ...(opts.bridgesDir ? { bridgesDir: opts.bridgesDir } : {}),
+    hostUrl: opts.baseUrl,
     // The renderer is a file:// / app:// page talking to loopback, so it *is* cross-origin.
     // Locked to the loopback origin rather than the server's LAN-friendly "*" default.
-    origin: baseUrl,
-  };
-
-  const trackerManager = new TrackerManager({ dataDir, settings, registry });
-  routerOpts.trackers = trackerManager;
-
-  // Late-bound in-process fetch: the download engine and the cover capture both drive the router
-  // directly, but the router can't exist until the options that reference them are assembled.
-  let routerFetch: (req: Request) => Response | Promise<Response> = () =>
-    new Response(null, { status: 503 });
-  const pageFetcher = createServerPageFetcher(() => routerFetch);
-
-  // Desktop gets both optional modules unconditionally — it's a single-user machine with a disk,
-  // which is exactly the case they were written for.
-  const libDir = join(dataDir, "library");
-  // Always a sync hub, as `createServer({ sync: true })` is: the routes cost nothing while only the
-  // loopback can reach them, and `sync-listener.ts` is what lets a phone in.
-  const sync = createSyncHost({
-    dir: join(dataDir, "sync"),
-    store: new FileLibraryStore(libDir),
-    registry,
-    bridges: manager,
-    lists: {
-      registries: () => manifest.allRegistries(),
-      installed: () => manifest.allInstalled(),
-      installedTrackers: () => manifest.allInstalledTrackers(),
-    },
-    onApplied: opts.onSynced,
-    onRegistryApplied: dropStaleLoads(manager, trackerManager),
+    origin: opts.baseUrl,
+    library: true,
+    // Always a sync hub, as `createServer({ sync: true })` is: the routes cost nothing while only
+    // the loopback can reach them, and `sync-listener.ts` is what lets a phone in.
+    sync: true,
+    ...(opts.onSynced ? { onSynced: opts.onSynced } : {}),
+    downloads: true,
   });
-  routerOpts.sync = sync.backend;
-  // The router's installs are recorded; the managers keep the plain one, they only read.
-  routerOpts.registry = sync.registry;
-  const lib = new Library(sync.store);
-  routerOpts.library = lib;
-  routerOpts.runtime = new ComicalRuntime({
-    bridges: manager,
-    library: lib,
-    trackers: routerOpts.trackers,
-    log: console,
-  });
-  routerOpts.covers = { blobs: new FileBlobStore(join(libDir, "covers")), fetchPage: pageFetcher };
-
-  const dlDir = join(dataDir, "downloads");
-  const downloads = new Downloads(new FileDownloadsStore(dlDir));
-  const engine = new DownloadEngine({
-    downloads,
-    blobs: new FileBlobStore(join(dlDir, "blobs")),
-    fetchPage: pageFetcher,
-    resolvePages: createServerPageResolver(() => routerFetch),
-    pageRateLimit: async (id) => (await manager.list()).find((b) => b.info.id === id)?.info.assetRateLimit,
-  });
-  routerOpts.downloads = downloads;
-  routerOpts.downloadEngine = engine;
-
-  // A preference saved through the router is recorded for the other devices.
-  const router = createRouter(sync.bridges, routerOpts);
-  routerFetch = (req) => router.fetch(req);
-  engine.kick(); // resume anything the previous run left mid-download
-
-  return {
-    router,
-    // The origin is arbitrary — the router matches on path only, and nothing leaves the process.
-    // Same trick `@comical/host-rn`'s embedded transport uses on iOS/Android.
-    fetch: (path, init) =>
-      Promise.resolve(router.fetch(new Request(`http://desktop.comical.local${path}`, init))),
-    close: () => sync.stop(),
-  };
 }

@@ -125,6 +125,12 @@ jobs:
         run: bun install
         working-directory: external/comical
 
+      # The Expo module repeats comical's host-android runtime deps by hand (it compiles those
+      # sources directly), so a version bump on either side must land on both. Needs the submodule.
+      - name: Check Android host deps match the submodule
+        working-directory: apps/mobile
+        run: bun run check:android-host-deps
+
       - name: Typecheck
         working-directory: apps/mobile
         run: bun run typecheck
