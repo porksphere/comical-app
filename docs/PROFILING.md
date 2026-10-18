@@ -39,7 +39,7 @@ First build is a full native compile (slow); Xcode may ask you to pick a free-Ap
 team — the same identity you use for SideStore. It installs the app, launches it, and starts Metro.
 **Leave the Metro terminal open — it's your control panel** (press keys in it to open tools).
 
-For a backend, run `comical-web`'s dev server (`bun run dev`, :3100) on the Mac — the app's `dev.ts`
+For a backend, run comical's host-server (`bun run dev` from the workspace root, :3100) on the Mac — the app's `dev.ts`
 auto-points `EXPO_PUBLIC_COMICAL_SERVER` at your LAN IP. Or flip **Settings → Use mock data** to
 isolate pure rendering cost from network latency for a first pass.
 

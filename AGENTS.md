@@ -67,8 +67,8 @@ mock is decided.
   `setApiBaseOverride` in `apps/mobile/src/data/api.ts`), but that row is hidden while the
   on-device runtime is actually active, since it wouldn't do anything then.
 - **Local dev needs a running host-server.** There's no bundled dev server in
-  this repo yet — run `comical-web`'s dev server (`bun run dev` in
-  `comical-web`, port 3100) alongside this app's own `bun run dev`, which
+  this repo — the workspace-root `bun run dev` (one level up) starts comical's
+  host-server on :3100 alongside this app's own `bun run dev`, which
   auto-presets `EXPO_PUBLIC_COMICAL_SERVER` to that server's LAN address (see
   `dev.ts` at this repo's root) so it works out of the box, including from a
   phone on the same network. It only points elsewhere if you've set

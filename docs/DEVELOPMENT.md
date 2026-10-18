@@ -43,8 +43,7 @@ story (incl. profiling over it): [PROFILING.md](PROFILING.md) → "Iterative dev
 ### Local web dev (`bun run dev`)
 
 The fastest loop while iterating on shared screens: run the app in a desktop browser
-via react-native-web, no simulator or device needed — the analogue of `comical-web`'s
-local dev in the sibling workspace.
+via react-native-web, no simulator or device needed.
 
 ```bash
 bun run dev            # → http://localhost:8081  (opens automatically, hot reload on)
@@ -56,11 +55,11 @@ socket, so a stale server from a prior run otherwise makes `expo start` drop int
 interactive "use another port?" prompt. Ctrl-C tears everything down and sweeps the port.
 Override the port with `PORT=8090 bun run dev`. First time only: `bun install`.
 
-It also presets `EXPO_PUBLIC_COMICAL_SERVER` to the sibling `comical-web` dev server
-(`http://<your-lan-ip>:3100`, detected automatically, no `/api` prefix — that belongs to the
-reverse-proxied topology comical-web is designed for, which nothing runs yet) so the app talks
-to a real local backend without any manual
-export — start that server first with `cd ../comical-web && bun run dev`. The LAN IP (not
+It also presets `EXPO_PUBLIC_COMICAL_SERVER` to the sibling `comical` repo's host-server
+(`http://<your-lan-ip>:3100`, detected automatically, no `/api` prefix — that only exists behind
+the production reverse proxy) so the app talks to a real local backend without any manual
+export — start that server first with `bun run dev` from the workspace root (one level up), which
+runs both it and this app. The LAN IP (not
 `localhost`) is used deliberately so a phone on the same network can load the printed
 `http://<lan-ip>:8081` URL and reach the API too. Override the backend port with
 `COMICAL_SERVER_PORT=...`, or set `EXPO_PUBLIC_COMICAL_SERVER` yourself to point elsewhere
