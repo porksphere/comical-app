@@ -59,20 +59,24 @@ body { background-color: #ffffff; }
    which the browser lets you pick up and drag as a ghost image. Nothing here is meant to be
    dragged out of the app; a pointer drag means scroll, swipe or select. */
 img, a { -webkit-user-drag: none; }
-/* A mouse press leaves whatever it hit focused (a card's <a>, a toolbar button), and the next
-   keypress — arrows or space to scroll, Ctrl+K — flips the browser's focus-visible heuristic and
-   rings it until something else takes focus: a thin rectangle that reads as a stuck selection.
-   The latch below says which input is driving; only keyboard navigation gets the ring. */
-html[data-input="pointer"] :focus-visible { outline: none; }
-/* The keyboard's focus (lib/focus-nav) in the accent — Colors.light/dark.accent — and held clear of
-   the control, so it reads against a cover as well as against the page. */
-:focus-visible { outline: 2px solid #3478F6; outline-offset: 2px; }
-/* ...unless the control shows its own hover look, which the keyboard's focus wears instead. */
-[data-key-hover]:focus-visible { outline: none; }
+/* Never the browser's focus ring. The keyboard's focus (lib/focus-nav) wears each control's own hover
+   look instead, and the browser's own heuristics ring things nobody navigated to — whatever a mouse
+   press left focused once a key is pressed, whatever a menu or dialog focuses on opening. */
+*:focus, *:focus-visible { outline: none !important; }
+/* A control with no hover look of its own is tinted instead, laid over the whole of it in its own corners
+   — over its content too, since some controls are nothing but content (a cover). One that isn't a
+   positioned box ("flat", see lib/focus-nav) has nothing to hold an overlay, and is shaded under its
+   content instead. */
+[data-key-tint]::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: rgba(128, 128, 140, 0.2);
+}
+[data-key-tint="flat"]::after { content: none; }
+[data-key-tint="flat"] { box-shadow: inset 0 0 0 100vmax rgba(128, 128, 140, 0.2) !important; }
 `;
 
 /* Inline so it is in place before hydration. Any pointer press means "pointer"; Tab is the one key
-   that moves focus, so it is the one that hands the ring back. */
+   that moves focus, so it is the one that hands the focus back to the keyboard (lib/focus-nav). */
 const inputModeScript = `
 (function () {
   var root = document.documentElement;

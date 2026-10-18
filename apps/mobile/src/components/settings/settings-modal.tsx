@@ -179,6 +179,9 @@ function SettingsPanel() {
           accessibilityLabel="Close settings"
           accessibilityRole="button"
           onPress={closeSettingsModal}
+          // Not a stop for the keyboard: the panel's close button and Escape already close it, and a
+          // focused scrim is the whole screen lit up.
+          tabIndex={-1}
           style={StyleSheet.absoluteFill}
         />
         <View

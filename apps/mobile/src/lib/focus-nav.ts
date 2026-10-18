@@ -17,7 +17,7 @@ import { largestScroller } from '@/lib/keyboard-scroll';
 // The focus wears the pointer's hover rather than a ring of its own: each control already draws how
 // it looks under the mouse, from its own state, so the focus plays the pointer's events into it and
 // a card shows its cover ring, a row its fill. Only a control whose look doesn't change under the
-// pointer keeps the outline (`data-key-hover` in app/+html).
+// pointer is tinted instead (`data-key-tint` in app/+html); the browser's ring is never shown.
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -256,7 +256,7 @@ function hoverTo(next: HTMLElement | null): void {
   const left = lineage(prev);
   const entered = lineage(next);
   if (prev) {
-    prev.removeAttribute('data-key-hover');
+    prev.removeAttribute('data-key-tint');
     prev.dispatchEvent(pointer('pointerout', next, true));
     for (const el of left) {
       if (entered.includes(el)) break;
@@ -270,6 +270,7 @@ function hoverTo(next: HTMLElement | null): void {
 }
 
 const LOOK_DEPTH = 4;
+const LOOK_SETTLE_MS = 60;
 
 /** Enough of how a control is drawn to tell whether hovering it changed anything: itself, and the
  *  boxes just around it, where a wrapper's hover fill lands. */
@@ -282,15 +283,17 @@ function look(el: HTMLElement): string {
 function wearHover(el: HTMLElement): void {
   // Taken back after a list moved it (`regain`): it is still hovered, and already wears it or doesn't.
   if (hovered === el) return;
-  // Set first, so it is part of the look compared against, and so no outline flashes while the
-  // control's hover state takes its render.
-  el.setAttribute('data-key-hover', '');
   const before = look(el);
   hoverTo(el);
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      if (hovered === el && look(el) === before) el.removeAttribute('data-key-hover');
-    }),
+  // React renders a hover as an ordinary task, not before the next frame, so a frame or two can pass
+  // before a control that has a hover look shows it.
+  setTimeout(
+    () =>
+      requestAnimationFrame(() => {
+        if (hovered !== el || look(el) !== before) return;
+        el.setAttribute('data-key-tint', getComputedStyle(el).position === 'static' ? 'flat' : '');
+      }),
+    LOOK_SETTLE_MS,
   );
 }
 
