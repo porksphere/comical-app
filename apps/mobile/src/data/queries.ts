@@ -14,7 +14,7 @@ import { keepPreviousData, type UseQueryOptions } from '@tanstack/react-query';
 
 import { STALE_TIME_MS } from './query-client';
 import type * as api from './api';
-import { isRailLayout, railKindFor, type DataSource, type QueryOpts } from './source';
+import { isRailLayout, railKindFor, seriesPagesKey, type DataSource, type QueryOpts } from './source';
 import type {
   ActivityEntry,
   ChapterProgress,
@@ -72,6 +72,10 @@ export const queryKeys = {
     ['chapterPages', mock, bridgeId, seriesId, chapterId] as const,
   directPages: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['directPages', mock, bridgeId, seriesId] as const,
+  /** The raw page list `directPages` and a direct `seriesList` are both built from (see
+   *  `fetchSeriesPages`). Nothing subscribes to it, so refreshing either of those means
+   *  invalidating this first, or they rebuild from the cached copy. */
+  seriesPages: seriesPagesKey,
   /** One series' persisted chapter read state. Deliberately NOT folded into `seriesList`: read
    *  state is local library data that changes on every mark-read/finished chapter, while the
    *  chapter list itself comes from the bridge over the network — keeping them apart means a

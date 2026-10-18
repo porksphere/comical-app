@@ -481,6 +481,7 @@ export function SeriesBody({
   const checkingRemoval = useIsFetching({ queryKey: detailKey }) > 0;
   const checkAgain = () => {
     void queryClient.invalidateQueries({ queryKey: detailKey });
+    if (direct) void queryClient.invalidateQueries({ queryKey: queryKeys.seriesPages(bridgeId ?? '', series.id) });
     void queryClient.invalidateQueries({ queryKey: queryKeys.seriesList(mock, bridgeId ?? '', series.id, direct) });
   };
   // The save key (lib/keymap) does what a press of the button does, and says so when it saves — the button may be scrolled

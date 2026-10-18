@@ -119,6 +119,7 @@ const NO_PERSIST_KEYS = new Set([
   'seriesList',
   'chapterPages',
   'directPages',
+  'seriesPages',
   'relatedGroups',
   'isFavorite',
   'pageThumb',

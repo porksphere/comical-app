@@ -23,6 +23,7 @@ import { logDiagnostic } from '@/lib/diagnostics';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { persisted$ } from '@/lib/observable';
 import * as api from './api';
+import { queryClient } from './query-client';
 import * as mock from './mock';
 import { feedCounts } from './activity/feed-counts';
 import { getNotifyPrefsSync } from './activity/prefs';
@@ -565,6 +566,26 @@ function toPageThumbSource(t: api.ApiPageThumbnail | undefined): PageThumbSource
   };
 }
 
+/** The cache key `fetchSeriesPages` files a direct series' raw page list under. */
+export const seriesPagesKey = (bridgeId: string, seriesId: string) => ['seriesPages', bridgeId, seriesId] as const;
+
+/**
+ * A direct series' page list, fetched once for everyone who needs it.
+ *
+ * The reader (`getDirectPages`, the URLs) and the page grid (`getSeriesList`, the thumbnails) both
+ * want it on the same open, and under their own keys each asked the bridge separately: on a source
+ * paced at seconds a request, the second ask was a whole extra slot before the series filled in.
+ * Both now share this one query, so a concurrent ask joins the fetch already in flight. `retry` is
+ * off because the callers' own queries already retry, and retrying here too would multiply them.
+ */
+function fetchSeriesPages(bridgeId: string, seriesId: string): Promise<api.ApiPage[]> {
+  return queryClient.fetchQuery({
+    queryKey: seriesPagesKey(bridgeId, seriesId),
+    queryFn: ({ signal }) => api.getSeriesPages(bridgeId, seriesId, signal),
+    retry: false,
+  });
+}
+
 const realDataSource: DataSource = {
   getBridges: (signal) => api.getBridges(signal),
   getMissingBridges: (signal) => api.getMissingBridges(signal),
@@ -839,7 +860,7 @@ const realDataSource: DataSource = {
         };
       }
 
-      const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
+      const pages = await fetchSeriesPages(bridgeId, seriesId);
 
       const result: SeriesListResult = { chapterCount: pages.length, readLabel: 'Read' };
       // Mirrors comical-web: only show the preview grid when the bridge actually supplies cheap
@@ -898,7 +919,7 @@ const realDataSource: DataSource = {
     const local = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
     if (local) return local;
     try {
-      const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
+      const pages = await fetchSeriesPages(bridgeId, seriesId);
       // Return the raw (possibly server-relative) page paths WITHOUT resolving them here. Some bridges
       // make each `imageUrl` a lazy resolve-route that costs a rate-limited network round-trip; resolving
       // all of them up front (Promise.all over the whole gallery) fires hundreds of parallel requests
