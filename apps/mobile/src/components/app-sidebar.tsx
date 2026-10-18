@@ -12,7 +12,7 @@
 import { type LucideIcon } from 'lucide-react-native';
 
 import { useEffect } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type PressableProps } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type PressableProps, type ViewProps } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChevronRightIcon, PanelCollapseIcon, PanelExpandIcon } from '@/components/icons/ui-icons';
@@ -166,7 +166,7 @@ export function AppSidebar({
   const theme = useTheme();
   const barHeight = useTopBarHeight();
   return (
-    <View style={[styles.rail, { borderRightColor: theme.barHairline, backgroundColor: theme.background }]}>
+    <View {...focusRegion} style={[styles.rail, { borderRightColor: theme.barHairline, backgroundColor: theme.background }]}>
       <ScrollView
         style={styles.sidebar}
         // Centres the FIRST row against the bar's title rather than padding by a round number: the
@@ -258,6 +258,10 @@ function CollapseToggle({ collapsed }: { collapsed: boolean }) {
     </Pressable>
   );
 }
+
+// Up and down keep to the sidebar rather than running out into the page (lib/focus-nav).
+// react-native-web renders `dataSet` as data-* attributes; react-native's types don't know it.
+const focusRegion = { dataSet: { focusRegion: '' } } as ViewProps;
 
 const styles = StyleSheet.create({
   // The rail's frame. Its WIDTH comes from the animated wrapper in `app-tabs`, so the edge can track

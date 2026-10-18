@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type ViewProps } from 'react-native';
 import Animated, {
   runOnJS,
   useAnimatedReaction,
@@ -458,6 +458,8 @@ export function StickySectionHeader<S extends StickySection>({
           'none' while nothing is pinned, so an invisible heading can never intercept a tap meant
           for the content under it. */}
       <Animated.View
+        // The keyboard moves through the list's own headings, not these stand-ins (lib/focus-nav).
+        {...focusSkip}
         pointerEvents={active >= 0 ? 'box-none' : 'none'}
         style={[styles.clip, { top: stickyTop, height: bandHeight }, bandStyle]}>
         <Animated.View
@@ -503,6 +505,9 @@ export function StickySectionHeader<S extends StickySection>({
     </>
   );
 }
+
+// react-native-web renders `dataSet` as data-* attributes; react-native's types don't know it.
+const focusSkip = { dataSet: { focusSkip: '' } } as ViewProps;
 
 const styles = StyleSheet.create({
   clip: {

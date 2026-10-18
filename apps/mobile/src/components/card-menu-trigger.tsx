@@ -71,6 +71,8 @@ export function CardMenuTrigger({
         // Kept mounted (so the anchor `ref` stays measurable) but only shown/interactive
         // while hovered or open — fading via opacity avoids any layout shift on the card.
         pointerEvents={show ? 'auto' : 'none'}
+        // The keyboard opens the same menu on the card itself (R), so it doesn't stop here too.
+        focusable={false}
         aria-label={label}
         style={[
           styles.trigger,

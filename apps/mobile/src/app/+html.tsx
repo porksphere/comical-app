@@ -67,6 +67,8 @@ html[data-input="pointer"] :focus-visible { outline: none; }
 /* The keyboard's focus (lib/focus-nav) in the accent — Colors.light/dark.accent — and held clear of
    the control, so it reads against a cover as well as against the page. */
 :focus-visible { outline: 2px solid #3478F6; outline-offset: 2px; }
+/* ...unless the control shows its own hover look, which the keyboard's focus wears instead. */
+[data-key-hover]:focus-visible { outline: none; }
 `;
 
 /* Inline so it is in place before hydration. Any pointer press means "pointer"; Tab is the one key

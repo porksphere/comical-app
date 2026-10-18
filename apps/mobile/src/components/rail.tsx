@@ -636,7 +636,11 @@ export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeA
         accessibilityRole="button"
         // The visible label is just the title now, so the "see all" intent has to be spoken.
         accessibilityLabel={`${title}, see all`}
-        style={({ pressed }) => [styles.headLink, pressed && styles.headLinkPressed]}>
+        style={({ pressed }) => [
+          styles.headLink,
+          hovered && { backgroundColor: theme.backgroundElement },
+          pressed && styles.headLinkPressed,
+        ]}>
         <SectionHeadContent title={title} chevron chevronColor={hovered ? theme.text : theme.textSecondary} />
       </Pressable>
     </View>
@@ -679,10 +683,15 @@ const styles = StyleSheet.create({
   // Title + chevron as one drill-down target. Hugs its content (`flexShrink` so a long title
   // ellipsizes instead of pushing the chevron off-screen) — the tap area is the heading, not the
   // full-width row, so a stray tap in the empty space beside it doesn't navigate.
+  // Padded out and pulled back by the same amount, so the hover fill has room around the title
+  // without moving it off the gutter.
   headLink: {
     flexDirection: 'row',
     alignItems: 'center',
     flexShrink: 1,
+    paddingHorizontal: Spacing.two,
+    marginHorizontal: -Spacing.two,
+    borderRadius: 8,
   },
   headLinkPressed: {
     opacity: 0.6,

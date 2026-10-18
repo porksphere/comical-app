@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-import { directionalScore, type Direction } from '@/lib/focus-geometry';
+import { nextInDirection, type Direction, type Rect } from '@/lib/focus-geometry';
 import { isTypingTarget } from '@/lib/key-hold';
 import { isKey, moveDirectionOf, readerScopeActive } from '@/lib/keybindings';
 import { largestScroller } from '@/lib/keyboard-scroll';
@@ -13,9 +13,18 @@ import { largestScroller } from '@/lib/keyboard-scroll';
 // Only what is on TOP is a candidate, judged by hit-testing its centre: whatever covers the screen
 // (a pane, the settings panel, a menu) takes the focus with it, with no layer bookkeeping. A list
 // virtualizes what is off screen, so a move with nothing to land on scrolls first and looks again.
+//
+// The focus wears the pointer's hover rather than a ring of its own: each control already draws how
+// it looks under the mouse, from its own state, so the focus plays the pointer's events into it and
+// a card shows its cover ring, a row its fill. Only a control whose look doesn't change under the
+// pointer keeps the outline (`data-key-hover` in app/+html).
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+// A pinned section heading is a COPY of one in the list, re-based onto another section as the list
+// scrolls, so the focus would change headings under itself; the list's own heading is the one moved to.
+const SKIPPED = '[aria-hidden="true"], [inert], [data-focus-skip]';
 
 const pointerMode = () => document.documentElement.getAttribute('data-input') === 'pointer';
 
@@ -83,6 +92,7 @@ export function letGoOfFocus(): boolean {
     return false;
   }
   returnTo = null;
+  landed = null;
   el.blur();
   return true;
 }
@@ -94,65 +104,201 @@ function scrolls(el: HTMLElement, horizontal: boolean): boolean {
   return room && (overflow === 'auto' || overflow === 'scroll');
 }
 
-function scrollerOf(el: HTMLElement): HTMLElement | null {
-  for (let p = el.parentElement; p; p = p.parentElement) if (scrolls(p, false) || scrolls(p, true)) return p;
-  return null;
-}
-
-/** The scroller around `el` that can still go `dir`'s way. */
-function scrollerToward(el: HTMLElement, dir: Direction): HTMLElement | null {
-  const horizontal = dir.x !== 0;
-  const s = horizontal ? dir.x : dir.y;
-  for (let p = el.parentElement; p; p = p.parentElement) {
-    if (!scrolls(p, horizontal)) continue;
-    const at = horizontal ? p.scrollLeft : p.scrollTop;
-    const end = horizontal ? p.scrollWidth - p.clientWidth : p.scrollHeight - p.clientHeight;
-    if (s > 0 ? at < end - 1 : at > 1) return p;
-  }
-  return null;
-}
-
 function candidates(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => {
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && !el.closest('[aria-hidden="true"], [inert]');
+    return r.width > 0 && r.height > 0 && !el.closest(SKIPPED);
   });
 }
 
-/** Off screen still counts inside the same scroller as the focus: focusing it scrolls it in. */
-function nearest(from: HTMLElement, dir: Direction): HTMLElement | null {
-  const rect = from.getBoundingClientRect();
-  const home = scrollerOf(from);
-  const scored: [number, HTMLElement][] = [];
-  for (const el of candidates()) {
-    if (el === from || el.contains(from)) continue;
-    const score = directionalScore(rect, el.getBoundingClientRect(), dir);
-    if (score !== null) scored.push([score, el]);
+/** What a move along that axis stays inside while it can: the scroller it runs through, or a region
+ *  (`data-focus-region`) that holds a set of controls apart, like the sidebar. */
+function regionOf(el: Element, horizontal: boolean): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    if (scrolls(p, horizontal) || p.hasAttribute('data-focus-region')) return p;
   }
-  scored.sort((a, b) => a[0] - b[0]);
-  return scored.find(([, el]) => onTop(el) || (!!home && scrollerOf(el) === home))?.[1] ?? null;
+  return null;
+}
+
+function canScroll(el: HTMLElement, dir: Direction): boolean {
+  if (dir.x > 0) return el.scrollLeft < el.scrollWidth - el.clientWidth - 1;
+  if (dir.x < 0) return el.scrollLeft > 1;
+  if (dir.y > 0) return el.scrollTop < el.scrollHeight - el.clientHeight - 1;
+  return el.scrollTop > 1;
+}
+
+/** Inside `region`, anything counts, on screen or not: focusing it scrolls it in, and one under the
+ *  top bar or a pinned heading is brought out (`uncover`). Outside one, only what is on top. */
+function nearest(from: Rect, self: HTMLElement | null, dir: Direction, anchor: number, region: HTMLElement | null) {
+  const pool = candidates().filter(
+    (el) => !(self && (el.contains(self) || self.contains(el))) && (region ? region.contains(el) : onTop(el)),
+  );
+  const i = nextInDirection(
+    from,
+    pool.map((el) => el.getBoundingClientRect()),
+    dir,
+    anchor,
+  );
+  return i === null ? null : pool[i]!;
+}
+
+// Where a run of moves set out from across their axis, so a run keeps to its column (or row) through
+// a heading or a shorter row rather than drifting toward whatever each one puts closest.
+let anchor: { el: HTMLElement; horizontal: boolean; at: number } | null = null;
+
+// What the keyboard last landed on. A list recycles a row out from under the focus, which drops it on
+// the body, and the next move carries on from here instead of going nowhere.
+let landed: { el: HTMLElement; rect: Rect; id: string | null; href: string } | null = null;
+
+function recover(): { el: HTMLElement | null; rect: Rect } | null {
+  if (!landed || pointerMode() || document.activeElement !== document.body || landed.href !== location.href) return null;
+  const back = stillThere();
+  return back ? { el: back, rect: back.getBoundingClientRect() } : { el: null, rect: landed.rect };
+}
+
+/** The control the keyboard last landed on, or the copy a list re-rendered it as. */
+function stillThere(): HTMLElement | null {
+  if (!landed) return null;
+  const { el, id } = landed;
+  if (el.isConnected && onTop(el)) return el;
+  return (id && candidates().find((c) => c.getAttribute('data-testid') === id && onTop(c))) || null;
+}
+
+/** A list that moves a row's node to recycle it drops the focus on the body — the browser blurs
+ *  anything moved — so the keyboard takes it straight back, where it was. */
+function regain(el: EventTarget | null): boolean {
+  if (landed?.el !== el || pointerMode() || landed.href !== location.href) return false;
+  const back = stillThere();
+  back?.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
+  return !!back && document.activeElement === back;
 }
 
 function focusKeyboard(el: HTMLElement): void {
   document.documentElement.removeAttribute('data-input');
   el.focus({ focusVisible: true } as FocusOptions);
+  requestAnimationFrame(() => uncover(el));
 }
 
-function move(from: HTMLElement, dir: Direction): void {
-  const to = nearest(from, dir);
-  if (to) return focusKeyboard(to);
-  const scroller = scrollerToward(from, dir);
-  if (!scroller) return;
+const UNCOVER_MARGIN = 8;
+const EDGE_PROBE = 2;
+
+/** Scrolls a control out from under whatever is drawn over its list — the top bar, a pinned heading,
+ *  the tab bar — which focusing it doesn't do, since it is inside the scroller's view all along. */
+function uncover(el: HTMLElement, tries = 2): void {
+  const scroller = regionOf(el, false);
+  if (!scroller || !el.isConnected || document.activeElement !== el) return;
+  const r = el.getBoundingClientRect();
+  const x = (r.left + r.right) / 2;
+  const coverAt = (y: number) => {
+    const hit = document.elementFromPoint(x, y);
+    if (!hit || el.contains(hit)) return null;
+    let cover: Element = hit;
+    while (cover.parentElement && !cover.parentElement.contains(el)) cover = cover.parentElement;
+    return cover.getBoundingClientRect();
+  };
+  const over = coverAt(Math.max(r.top, 0) + EDGE_PROBE);
+  const under = over ? null : coverAt(Math.min(r.bottom, window.innerHeight) - EDGE_PROBE);
+  if (!over && !under) return;
+  scroller.scrollBy({ top: over ? r.top - over.bottom - UNCOVER_MARGIN : r.bottom - under!.top + UNCOVER_MARGIN });
+  // What covers it can change with the scroll: a pinned heading hands over to the next section's.
+  if (tries > 1) requestAnimationFrame(() => requestAnimationFrame(() => uncover(el, tries - 1)));
+}
+
+function move(from: HTMLElement | null, rect: Rect, dir: Direction): void {
   const horizontal = dir.x !== 0;
-  const step = (horizontal ? scroller.clientWidth : scroller.clientHeight) / 2;
-  scroller.scrollBy({ [horizontal ? 'left' : 'top']: (horizontal ? dir.x : dir.y) * step });
+  const centre = horizontal ? (rect.top + rect.bottom) / 2 : (rect.left + rect.right) / 2;
+  const at = anchor && anchor.el === from && anchor.horizontal === horizontal ? anchor.at : centre;
+  const land = (to: HTMLElement) => {
+    focusKeyboard(to);
+    anchor = { el: to, horizontal, at };
+  };
+  const origin = from ?? document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+  const region = origin && regionOf(origin, horizontal);
+  const inside = region && nearest(rect, from, dir, at, region);
+  if (inside) return land(inside);
+  if (!region || !canScroll(region, dir)) {
+    const outside = nearest(rect, from, dir, at, null);
+    if (outside) land(outside);
+    return;
+  }
+  const step = (horizontal ? region.clientWidth : region.clientHeight) / 2;
+  region.scrollBy({ [horizontal ? 'left' : 'top']: (horizontal ? dir.x : dir.y) * step });
   // Two frames: the scroll event, then the list rendering what it scrolled into.
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      const next = from.isConnected ? nearest(from, dir) : null;
-      if (next) focusKeyboard(next);
+      if (from && !from.isConnected) return;
+      const next = nearest(from?.getBoundingClientRect() ?? rect, from, dir, at, region);
+      if (next) land(next);
     }),
   );
+}
+
+// ── The pointer's hover, played into the focused control ──
+// Both kinds of hover listener get what a real pointer would send: RN-web's useHover (what Pressable's
+// onHoverIn rides) listens for pointerenter/leave on the element itself, and React derives its
+// onPointerEnter/Leave from pointerover/out.
+
+let hovered: HTMLElement | null = null;
+
+function lineage(el: HTMLElement | null): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  for (let p = el; p; p = p.parentElement) out.push(p);
+  return out;
+}
+
+const pointer = (type: string, relatedTarget: Element | null, bubbles: boolean) =>
+  new PointerEvent(type, { pointerType: 'mouse', isPrimary: true, bubbles, composed: bubbles, relatedTarget });
+
+function hoverTo(next: HTMLElement | null): void {
+  const prev = hovered?.isConnected ? hovered : null;
+  hovered = next;
+  if (prev === next) return;
+  const left = lineage(prev);
+  const entered = lineage(next);
+  if (prev) {
+    prev.removeAttribute('data-key-hover');
+    prev.dispatchEvent(pointer('pointerout', next, true));
+    for (const el of left) {
+      if (entered.includes(el)) break;
+      el.dispatchEvent(pointer('pointerleave', next, false));
+    }
+  }
+  if (next) {
+    next.dispatchEvent(pointer('pointerover', prev, true));
+    for (const el of entered.filter((e) => !left.includes(e)).reverse()) el.dispatchEvent(pointer('pointerenter', prev, false));
+  }
+}
+
+const LOOK_DEPTH = 4;
+
+/** Enough of how a control is drawn to tell whether hovering it changed anything: itself, and the
+ *  boxes just around it, where a wrapper's hover fill lands. */
+function look(el: HTMLElement): string {
+  let out = el.outerHTML;
+  for (let p = el.parentElement, i = 0; p && i < LOOK_DEPTH; p = p.parentElement, i++) out += p.className + p.style.cssText;
+  return out;
+}
+
+function wearHover(el: HTMLElement): void {
+  // Taken back after a list moved it (`regain`): it is still hovered, and already wears it or doesn't.
+  if (hovered === el) return;
+  // Set first, so it is part of the look compared against, and so no outline flashes while the
+  // control's hover state takes its render.
+  el.setAttribute('data-key-hover', '');
+  const before = look(el);
+  hoverTo(el);
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      if (hovered === el && look(el) === before) el.removeAttribute('data-key-hover');
+    }),
+  );
+}
+
+function onFocusIn(e: FocusEvent): void {
+  const el = e.target;
+  if (!(el instanceof HTMLElement) || pointerMode() || isTypingTarget(el)) return hoverTo(null);
+  landed = { el, rect: el.getBoundingClientRect(), id: el.getAttribute('data-testid'), href: location.href };
+  wearHover(el);
 }
 
 /** Where the keyboard comes in: the first thing in the screen's main list, else anything on top. */
@@ -173,8 +319,10 @@ function onKeyDown(e: KeyboardEvent): void {
   const dir = moveDirectionOf(e);
   if (dir) {
     const from = keyboardFocus();
-    if (from) move(from, dir);
+    const lost = from ? null : recover();
+    if (from) move(from, from.getBoundingClientRect(), dir);
     else if (focusCovered()) enterLayer(heldFocus());
+    else if (lost) move(lost.el, lost.rect, dir);
     else return;
     e.preventDefault();
     return;
@@ -209,8 +357,17 @@ function onKeyDown(e: KeyboardEvent): void {
 export function installFocusNav(): void {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return;
   window.addEventListener('keydown', onKeyDown);
-  // A menu closes itself on Escape and takes the focus with it.
+  document.addEventListener('focusin', onFocusIn);
   document.addEventListener('focusout', (e) => {
-    if (returnTo && !e.relatedTarget) returnSoon();
+    if (e.relatedTarget) return;
+    const from = e.target;
+    // A frame later, once a list moving the node has put it back.
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body && !regain(from)) hoverTo(null);
+    });
+    // A menu closes itself on Escape and takes the focus with it.
+    if (returnTo) returnSoon();
   });
+  // The real pointer takes its hover back the moment it moves.
+  window.addEventListener('pointermove', () => hovered && hoverTo(null), { passive: true });
 }
