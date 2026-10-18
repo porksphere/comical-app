@@ -104,10 +104,12 @@ function scrolls(el: HTMLElement, horizontal: boolean): boolean {
   return room && (overflow === 'auto' || overflow === 'scroll');
 }
 
+/** A text field is never one: it takes the keys that would move back out of it. It is reached on
+ *  purpose instead — its own shortcut, Tab — and left with Escape. */
 function candidates(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => {
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && !el.closest(SKIPPED);
+    return r.width > 0 && r.height > 0 && !el.closest(SKIPPED) && !isTypingTarget(el);
   });
 }
 
@@ -307,7 +309,7 @@ function onFocusIn(e: FocusEvent): void {
 /** Where the keyboard comes in: the first thing in the screen's main list, else anything on top. */
 function focusFirst(): void {
   const main = largestScroller();
-  const onScreen = candidates().filter((el) => !isTypingTarget(el) && onTop(el));
+  const onScreen = candidates().filter(onTop);
   const pool = onScreen.filter((el) => main?.contains(el));
   const first = (pool.length ? pool : onScreen)
     .map((el) => [el.getBoundingClientRect(), el] as const)
