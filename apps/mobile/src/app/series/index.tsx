@@ -62,7 +62,7 @@ import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
-import { seriesGoneReason } from '@/data/api';
+import { peekResolvedAssetSource, seriesGoneReason } from '@/data/api';
 import { warmPageImages } from '@/data/warm-pages';
 import {
   chapterPagesQuery,
@@ -5291,7 +5291,11 @@ const ReaderPane = forwardRef<
         (() => {
           const list = stitched ? flatItems : items;
           const at = stitched ? prefixLen + startIndex : startIndex;
-          const uri = list[Math.max(0, Math.min(list.length - 1, at))]?.uri;
+          const raw = list[Math.max(0, Math.min(list.length - 1, at))]?.uri;
+          // The page's RESOLVED source, not its raw path: a server-relative path (a lazy resolve
+          // route, say) loaded as-is resolves against the app's own origin and 404s. Not resolved
+          // yet means the page under it has nothing to show either, so there's nothing to paper over.
+          const uri = raw && peekResolvedAssetSource(raw);
           if (!uri) return null;
           return (
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
