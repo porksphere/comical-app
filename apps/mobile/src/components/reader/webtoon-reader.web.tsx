@@ -26,8 +26,8 @@ import {
 } from '@/components/reader/reader-zoom';
 import { webtoonFit } from '@/components/reader/settings-panel';
 import type { PageFit } from '@/hooks/use-reader-settings';
-import { createKeyHold, isTypingTarget } from '@/lib/key-hold';
-import { moveDirectionOf } from '@/lib/keybindings';
+import { createKeyHold, isControlTarget, isTypingTarget, PAGE_KEY_SCROLL } from '@/lib/key-hold';
+import { keyActionOf, moveDirectionOf } from '@/lib/keybindings';
 
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
 
@@ -535,7 +535,9 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   // `isDesktopPointer` for why `fit-page`'s CSS scroll-snap is skipped there entirely, which is what
   // makes direct `scrollTop` writes work here in the first place. Claimed in the capture phase, so
   // the app-wide W/S scroll (lib/keyboard-scroll) doesn't scroll the strip a second time; a strip
-  // parked behind the details leaves the keys to the details.
+  // parked behind the details leaves the keys to the details. Space goes a screen at a time, and
+  // off either end of the strip it is the reader's page turn; a strip of whole pages (`paged`) is
+  // left to that turn throughout.
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el || standby || !isDesktopPointer()) return;
@@ -547,6 +549,18 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     });
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
+      const page = keyActionOf(e, ['page-next', 'page-prev']);
+      if (page) {
+        const sign = page === 'page-next' ? 1 : -1;
+        const atEnd = sign > 0 ? el.scrollTop >= el.scrollHeight - el.clientHeight - 1 : el.scrollTop <= 1;
+        if (paged || atEnd || isControlTarget(e.target)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        hold.stop();
+        el.scrollBy({ top: sign * el.clientHeight * PAGE_KEY_SCROLL, behavior: 'smooth' });
+        userScrolledRef.current = true;
+        return;
+      }
       const dir = moveDirectionOf(e);
       // Sideways only pans a strip zoomed wider than the screen; otherwise it's the screen's page turn.
       if (!dir || (dir.x !== 0 && el.scrollWidth <= el.clientWidth + 1)) return;
@@ -565,7 +579,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       window.removeEventListener('blur', onBlur);
       hold.dispose();
     };
-  }, [standby]);
+  }, [standby, paged]);
 
   // A mouse drags the strip, both axes, with a glide on release — the hand's own scroll, which a
   // strip zoomed wider than the window otherwise only has as Shift+wheel. The press is kept from the

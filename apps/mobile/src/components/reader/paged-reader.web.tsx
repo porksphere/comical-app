@@ -44,8 +44,8 @@ import {
   ZOOM_EPSILON,
 } from '@/components/reader/reader-zoom';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
-import { createKeyHold, isTypingTarget } from '@/lib/key-hold';
-import { moveDirectionOf } from '@/lib/keybindings';
+import { createKeyHold, isControlTarget, isTypingTarget, PAGE_KEY_SCROLL } from '@/lib/key-hold';
+import { isKey, keyActionOf, moveDirectionOf } from '@/lib/keybindings';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
@@ -924,6 +924,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // zoomed past its rest, where they only ever pan: a page being looked at closely is not turned out
   // from under the look by the key that was moving it. Claimed in the capture phase, ahead of that
   // turn and the app-wide W/S scroll (lib/keyboard-scroll).
+  //
+  // Space goes a screen down a page that runs on below it before the screen turns it, and X is the
+  // switch-fit double-tap aimed at the middle.
   useEffect(() => {
     if (standby || !isDesktopPointer()) return;
     const room = () => {
@@ -939,6 +942,33 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     });
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
+      const page = keyActionOf(e, ['page-next', 'page-prev']);
+      if (page) {
+        const limit = room().y;
+        const sign = page === 'page-next' ? 1 : -1;
+        if (isControlTarget(e.target) || limit === 0 || -sign * zoom.current.ty >= limit - 0.5) return;
+        e.preventDefault();
+        e.stopPropagation();
+        cancelInertia();
+        hold.stop();
+        zoom.current = { ...zoom.current, ty: clamp(zoom.current.ty - sign * height * PAGE_KEY_SCROLL, -limit, limit) };
+        writeZoom(true);
+        return;
+      }
+      if (isKey(e, 'switch-fit')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.repeat) return;
+        hold.stop();
+        keepZoomLevel(1);
+        if (zoomedIn()) {
+          goToRest(true);
+          return;
+        }
+        tapRef.current = { x: width / 2, y: height / 2 };
+        onSwitchFit(image);
+        return;
+      }
       const dir = moveDirectionOf(e);
       if (!dir) return;
       const limit = dir.x !== 0 ? room().x : room().y;
@@ -968,7 +998,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       window.removeEventListener('blur', onBlur);
       hold.dispose();
     };
-  }, [standby, cancelInertia, writeZoom, turn, zoom, zoomedIn, rtl, panRoom]);
+  }, [standby, cancelInertia, writeZoom, turn, zoom, zoomedIn, rtl, panRoom, height, width, goToRest, onSwitchFit, image]);
 
   const handleTap = useCallback(
     (x: number) => {

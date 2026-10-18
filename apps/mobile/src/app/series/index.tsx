@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -46,8 +46,8 @@ import {
   stepZoom,
   zoomHoldDirection,
 } from '@/components/reader/desktop-zoom';
-import { isTypingTarget } from '@/lib/key-hold';
-import { keyActionOf } from '@/lib/keybindings';
+import { isControlTarget, isTypingTarget } from '@/lib/key-hold';
+import { isKey, keyActionOf } from '@/lib/keybindings';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
 import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
@@ -145,8 +145,13 @@ import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body
 // are up the reader is in STANDBY — only the single visible strip page is requested.
 
 const CHROME_HIDE_MS = 3000;
+/** What Tab can land on in the reader's toolbar. */
+const FOCUSABLE = 'button, a[href], input, [tabindex]:not([tabindex="-1"])';
 /** The reader's own keys, in lib/keymap. Up/Down and a sideways pan are the readers' themselves. */
 const READER_KEYS = ['zoom-step-in', 'zoom-step-out', 'zoom-reset', 'left', 'right'] as const;
+/** The ones that move through what is being read. Only while it is read: not under the details,
+ *  and not over a focused control, whose own Space presses it. */
+const STEP_KEYS = ['page-next', 'page-prev', 'chapter-next', 'chapter-prev'] as const;
 // CI-speed override: Maestro steps can outlast the auto-hide, and hidden chrome drops out of the
 // accessibility tree.
 const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
@@ -1546,6 +1551,9 @@ function SeriesReaderInstance({
   const [chromeVisible, setChromeVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chromeHeldRef = useRef(false);
+  // Who is holding it up: a control in use, and the keyboard's focus — kept apart so one letting go
+  // doesn't drop the other's hold.
+  const chromeHolds = useRef(new Set<'control' | 'focus'>());
   const scheduleHide = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
     if (!CHROME_AUTO_HIDE || chromeHeldRef.current) return;
@@ -1566,10 +1574,12 @@ function SeriesReaderInstance({
     setChromeVisible(true);
     scheduleHide();
   }, [scheduleHide]);
-  const holdChrome = useCallback(
-    (hold: boolean) => {
+  const holdChromeFor = useCallback(
+    (holder: 'control' | 'focus', hold: boolean) => {
       hoverShownRef.current = false;
-      chromeHeldRef.current = hold;
+      if (hold) chromeHolds.current.add(holder);
+      else chromeHolds.current.delete(holder);
+      chromeHeldRef.current = chromeHolds.current.size > 0;
       if (hold) {
         if (hideTimer.current) clearTimeout(hideTimer.current);
       } else {
@@ -1579,6 +1589,7 @@ function SeriesReaderInstance({
     },
     [scheduleHide],
   );
+  const holdChrome = useCallback((hold: boolean) => holdChromeFor('control', hold), [holdChromeFor]);
   useDimWindowControls(!chromeVisible && !detailsActive);
   const toggleChrome = useCallback(() => {
     hoverShownRef.current = false;
@@ -1632,6 +1643,65 @@ function SeriesReaderInstance({
       window.removeEventListener('pointermove', onMove, true);
     };
   }, [detailsActive]);
+
+  // The keyboard's way into the toolbar (lib/keymap's `reader-controls`): Tab shows it and focuses
+  // its first control, it stays up while the focus is in it, Tab and Shift+Tab go round inside it,
+  // and Escape hands the keys back to the page. Becoming the reader of the top layer drops whatever
+  // focus was left behind on the screen it covers, or Space would press that again.
+  const chromeId = useId();
+  useEffect(() => {
+    if (!IS_WEB || !isTop || detailsActive || typeof document === 'undefined') return;
+    const parts = () =>
+      [`${chromeId}-back`, `${chromeId}-bar`]
+        .map((part) => document.getElementById(part))
+        .filter((el): el is HTMLElement => !!el);
+    const inside = (el: Element | null) => !!el && parts().some((part) => part.contains(el));
+    const controls = () =>
+      parts()
+        .flatMap((part) => [...(part.matches(FOCUSABLE) ? [part] : []), ...part.querySelectorAll<HTMLElement>(FOCUSABLE)])
+        .filter((el) => el.getClientRects().length > 0);
+    const stale = document.activeElement;
+    if (stale instanceof HTMLElement && stale !== document.body && !inside(stale)) stale.blur();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && inside(active)) {
+        // Not the shell's mouse Back, which arrives as a synthetic Escape (lib/desktop-commands)
+        // and means back.
+        if (e.key === 'Escape' && e.isTrusted) {
+          e.preventDefault();
+          active.blur();
+        } else if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+          const ring = controls();
+          const at = ring.indexOf(active);
+          if (ring.length === 0) return;
+          e.preventDefault();
+          ring[(at + (e.shiftKey ? -1 : 1) + ring.length) % ring.length].focus();
+        }
+        return;
+      }
+      if (!isKey(e, 'reader-controls') || isTypingTarget(e.target)) return;
+      e.preventDefault();
+      showChrome();
+      requestAnimationFrame(() => controls()[0]?.focus());
+    };
+    let focusHeld = false;
+    const onFocusChange = () => {
+      const held = inside(document.activeElement);
+      if (held === focusHeld) return;
+      focusHeld = held;
+      holdChromeFor('focus', held);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('focusin', onFocusChange);
+    document.addEventListener('focusout', onFocusChange);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('focusin', onFocusChange);
+      document.removeEventListener('focusout', onFocusChange);
+      if (focusHeld) holdChromeFor('focus', false);
+    };
+  }, [isTop, detailsActive, chromeId, showChrome, holdChromeFor]);
 
   // Pinch-zoom / an active scrub both suspend the reveal pan (a one-finger drag pans the zoomed
   // page; a scrub owns the finger).
@@ -3613,6 +3683,7 @@ function SeriesReaderInstance({
           mode={detailsActive ? 'details' : 'reader'}
           persistent={
             <Animated.View
+              nativeID={`${chromeId}-back`}
               pointerEvents={detailsActive || chromeVisible ? 'box-none' : 'none'}
               style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, backPersistStyle]}>
               <Pressable
@@ -3646,7 +3717,7 @@ function SeriesReaderInstance({
             reader: (
               // The reader's own fully transparent toolbar (with no back of its own — the
               // persistent chevron above serves both modes); its auto-hide rides `visible`.
-              <View pointerEvents="box-none">
+              <View nativeID={`${chromeId}-bar`} pointerEvents="box-none">
                 <CollectPageShortcut
                   enabled={IS_WEB && isTop && !detailsActive}
                   bridgeId={pageAction ? pageAction.bridgeId : bridgeId}
@@ -5057,6 +5128,12 @@ const ReaderPane = forwardRef<
   useEffect(() => () => recordRef.current(), []);
 
   // ── Web keyboard nav ─────────────────────────────────────────────────────────
+  // Boxed: the screen hands this down as a fresh arrow every render, and re-subscribing the keys
+  // would drop a Q/E zoom being held.
+  const skipChapterRef = useRef(onSkipChapter);
+  useEffect(() => {
+    skipChapterRef.current = onSkipChapter;
+  });
   useEffect(() => {
     if (!IS_WEB || !keyboard || typeof window === 'undefined') return;
     const zoomHold = createZoomHold();
@@ -5068,6 +5145,17 @@ const ReaderPane = forwardRef<
       if (zoomDir) {
         e.preventDefault();
         zoomHold.press(e.key, zoomDir, e.repeat);
+        return;
+      }
+      const step = keyActionOf(e, STEP_KEYS);
+      if (step) {
+        if (standby || isControlTarget(e.target)) return;
+        e.preventDefault();
+        if (e.repeat) return;
+        if (step === 'page-next') return turnNext();
+        if (step === 'page-prev') return turnPrev();
+        const forward = (step === 'chapter-next') !== (settings.mode === 'paged' && settings.direction === 'rtl');
+        if (chaptered && (forward ? hasNextChapter : hasPrevChapter)) skipChapterRef.current(forward ? 1 : -1);
         return;
       }
       const action = keyActionOf(e, READER_KEYS);
@@ -5090,7 +5178,7 @@ const ReaderPane = forwardRef<
       window.removeEventListener('blur', onBlur);
       zoomHold.dispose();
     };
-  }, [keyboard, turnNext, turnPrev, settings.direction]);
+  }, [keyboard, standby, turnNext, turnPrev, settings.mode, settings.direction, chaptered, hasNextChapter, hasPrevChapter]);
 
   return (
     <>

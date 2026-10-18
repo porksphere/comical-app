@@ -15,12 +15,22 @@ const GLIDE_S = 0.07;
 /** Below this the glide has stopped. */
 const REST_SPEED = 8;
 
+/** How much of a screen Space scrolls a page that runs on below it, leaving a strip of what was
+ *  read to keep the place by. */
+export const PAGE_KEY_SCROLL = 0.85;
+
 export type KeyDirection = { x: -1 | 0 | 1; y: -1 | 0 | 1 };
 
 /** A key event that belongs to something being typed into, not to the page. */
 export function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   return !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
+}
+
+/** A key event aimed at a focused control, whose own Space presses it. */
+export function isControlTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return !!el && el !== document.body && typeof el.tabIndex === 'number' && el.tabIndex >= 0;
 }
 
 /** Calls `move(dx, dy)` every frame — in pixels, along the held directions — until every key held
