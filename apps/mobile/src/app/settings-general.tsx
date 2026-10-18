@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { Platform, ScrollView, StyleSheet } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
 import { useOverlay } from '@/components/overlay/overlay';
@@ -41,6 +41,7 @@ import { useHydrated } from '@/hooks/use-responsive';
 import { useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { desktopDataDir, desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
 import { friendlyError } from '@/lib/friendly-error';
+import { useRouter } from '@/lib/nav';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -80,7 +81,11 @@ const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
   { value: 'dark', label: 'Dark', description: 'Always use the dark theme.' },
 ];
 
+// The keys are only listened for on web, which is also what the desktop app runs.
+const keyboardless = Platform.OS !== 'web';
+
 export default function GeneralSettingsScreen() {
+  const router = useRouter();
   const contentPadding = useSettingsScrollPadding();
   const [nsfwMode, setNsfwMode] = useNsfwMode();
   const [holdAction, setHoldAction] = useBrowseHoldAction();
@@ -153,6 +158,16 @@ export default function GeneralSettingsScreen() {
         </SettingsSection>
         {/* The hold row sits with NSFW because that is what it acts on, and its footer is the
             gesture's only documentation — nothing on Browse or Library says the icon is holdable. */}
+        <SettingsSection
+          title="Keyboard"
+          footer={keyboardless ? 'Keyboard shortcuts are for the desktop app and the browser.' : undefined}>
+          <SettingsRow
+            testID="settings.general.shortcuts"
+            label="Keyboard shortcuts"
+            disabled={keyboardless}
+            onPress={() => router.push('/settings-shortcuts')}
+          />
+        </SettingsSection>
         <SettingsSection
           title="Browsing"
           footer="NSFW content decides whether NSFW-flagged bridges are visible. Holding the bridge icon at the top of Browse or Library runs the chosen action.">

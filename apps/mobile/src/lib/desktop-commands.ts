@@ -14,6 +14,7 @@ import { router } from '@/lib/nav';
 import { deliverOAuthReturn } from '@/lib/oauth-return';
 import { closeResultsPane, isResultsPaneOpen } from '@/lib/results-pane';
 import { closeSeriesPane, isSeriesPaneCovered, isSeriesPaneOpen } from '@/lib/series-pane';
+import { openSettingsModal } from '@/lib/settings-modal';
 import { closeSidebarSearch, isSidebarSearchOpen } from '@/lib/sidebar-search';
 
 /**
@@ -61,11 +62,12 @@ function onKeyDown(e: KeyboardEvent): void {
     }
     return;
   }
-  const step = isTypingTarget(e.target) ? null : keyActionOf(e, ['back', 'forward']);
+  const step = isTypingTarget(e.target) ? null : keyActionOf(e, ['back', 'forward', 'shortcuts']);
   if (!step) return;
   e.preventDefault();
   if (step === 'back') goBack();
-  else goForward();
+  else if (step === 'forward') goForward();
+  else openSettingsModal({ category: 'general', page: '/settings-shortcuts' });
 }
 
 /** Mounted above the navigator, so not through `useKeyboardShortcut`, which needs a screen. */

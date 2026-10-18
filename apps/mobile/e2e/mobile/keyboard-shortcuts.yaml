@@ -1,0 +1,25 @@
+# Keyboard shortcuts — Settings → General → Keyboard shortcuts (settings-shortcuts.tsx), the
+# rebindable keymap for the desktop app and the browser.
+#
+# A phone has no keyboard to rebind, so the row is greyed out rather than hidden (the settings rule)
+# and the section's footer says where the shortcuts live. That is all there is to check here; the
+# screen itself is covered by ../web/keyboard-shortcuts.yaml.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- assertVisible:
+    id: "screen-title.settings"
+
+- tapOn:
+    id: "settings.category.general"
+- scrollUntilVisible:
+    element:
+      id: "settings.general.shortcuts"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    text: "Keyboard shortcuts are for the desktop app and the browser."
+- takeScreenshot: keyboard-shortcuts-disabled

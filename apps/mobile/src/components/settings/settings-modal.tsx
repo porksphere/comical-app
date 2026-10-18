@@ -57,6 +57,7 @@ import GestureTraceScreen from '@/app/gesture-trace';
 import RegistryBrowseScreen from '@/app/registry-browse';
 import SeriesDownloadsScreen from '@/app/series-downloads';
 import TrackerSettingsScreen from '@/app/tracker-settings';
+import ShortcutsScreen from '@/app/settings-shortcuts';
 import WhatsNewScreen from '@/app/settings-whats-new';
 
 /** Every screen the settings pane can push to. A push to anything NOT in here falls through to the
@@ -73,6 +74,7 @@ const SUB_PAGES: Record<string, { title: string; Screen: () => React.ReactNode }
   '/series-downloads': { title: 'Downloads', Screen: SeriesDownloadsScreen },
   '/gesture-trace': { title: 'Gesture trace', Screen: GestureTraceScreen },
   '/settings-whats-new': { title: "What's new", Screen: WhatsNewScreen },
+  '/settings-shortcuts': { title: 'Keyboard shortcuts', Screen: ShortcutsScreen },
 };
 
 /** The same categories, in the same order, with the same ICONS as the Settings tab's own list — this
@@ -98,19 +100,21 @@ const CATEGORIES: { id: string; label: string; Icon: SettingsIcon; Screen: () =>
 type SettingsIcon = (props: { color: string; size?: number }) => React.ReactNode;
 
 export function SettingsModal() {
-  const { open } = useSettingsModal();
+  const { open, opened } = useSettingsModal();
   // Mounted only while open, so the pane's sub-page stack goes with it: reopening lands on the
   // category's own page, not on whatever was pushed over it last time.
-  return open ? <SettingsPanel /> : null;
+  return open ? <SettingsPanel key={opened} /> : null;
 }
 
 function SettingsPanel() {
   const theme = useTheme();
-  const { category } = useSettingsModal();
+  const { category, page } = useSettingsModal();
   const current = CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0]!;
   // Sub-pages pushed from within the pane. A stack, not a single slot: bridges → registries →
   // registry-browse is three deep, and each step has to come back to the one before it.
-  const [stack, setStack] = useState<{ pathname: string; params: PaneParams }[]>([]);
+  const [stack, setStack] = useState<{ pathname: string; params: PaneParams }[]>(() =>
+    page && SUB_PAGES[page] ? [{ pathname: page, params: EMPTY_PARAMS }] : [],
+  );
   const top = stack[stack.length - 1];
   const [paneWidth, setPaneWidth] = useState(0);
   const [actionsSlot, setActionsSlot] = useState<Element | null>(null);

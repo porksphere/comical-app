@@ -8,17 +8,19 @@
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
-type SettingsModalState = { open: boolean; category: string };
+/** `page` is a sub-page to open straight onto; `opened` counts the openings, so one over an open
+ *  modal starts it afresh. */
+type SettingsModalState = { open: boolean; category: string; page: string | null; opened: number };
 
-const settingsModal$ = observable<SettingsModalState>({ open: false, category: 'general' });
+const settingsModal$ = observable<SettingsModalState>({ open: false, category: 'general', page: null, opened: 0 });
 
 /** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
 export function useSettingsModal(): SettingsModalState {
   return use$(settingsModal$);
 }
 
-export function openSettingsModal(): void {
-  settingsModal$.assign({ open: true });
+export function openSettingsModal(at?: { category: string; page: string }): void {
+  settingsModal$.assign({ open: true, page: at?.page ?? null, opened: settingsModal$.opened.peek() + 1, ...(at && { category: at.category }) });
 }
 
 export function closeSettingsModal(): void {

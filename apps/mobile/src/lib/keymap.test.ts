@@ -6,6 +6,9 @@ import {
   chordFromEvent,
   chordLabel,
   KEY_ACTIONS,
+  matchesPreset,
+  MIRRORED_KEYS,
+  rebound,
   type KeyAction,
   type KeyChord,
 } from './keymap';
@@ -72,6 +75,30 @@ describe('defaults', () => {
     expect(chordConflicts('activate', { key: ' ' }, {})).toEqual([]);
     expect(chordConflicts('menu', { key: 'x' }, {})).toEqual([]);
     expect(chordConflicts('menu', { key: 'f' }, {})).toEqual(['save']);
+  });
+});
+
+describe('rebinding', () => {
+  test('a rebind keeps the arrow it had as an alias', () => {
+    expect(rebound('up', { key: 'i' })).toEqual([{ key: 'i' }, { key: 'arrowup' }]);
+    expect(rebound('up', { key: 'arrowup' })).toEqual([{ key: 'arrowup' }]);
+    expect(rebound('save', { key: 'g' })).toEqual([{ key: 'g' }]);
+  });
+
+  test('the mirrored layout has no clashes of its own', () => {
+    for (const action of Object.keys(KEY_ACTIONS) as KeyAction[]) {
+      for (const chord of MIRRORED_KEYS[action] ?? KEY_ACTIONS[action].keys) {
+        expect({ action, chord, with: chordConflicts(action, chord, MIRRORED_KEYS) }).toEqual({ action, chord, with: [] });
+      }
+    }
+  });
+
+  test('a layout is recognised however it was arrived at', () => {
+    expect(matchesPreset({}, {})).toBe(true);
+    expect(matchesPreset({ save: [{ key: 'f' }] }, {})).toBe(true);
+    expect(matchesPreset({ ...MIRRORED_KEYS }, MIRRORED_KEYS)).toBe(true);
+    expect(matchesPreset({ ...MIRRORED_KEYS, save: [{ key: 'g' }] }, MIRRORED_KEYS)).toBe(false);
+    expect(matchesPreset({}, MIRRORED_KEYS)).toBe(false);
   });
 });
 

@@ -86,6 +86,36 @@ export const KEY_SCOPE_LABELS: Record<KeyScope, string> = {
 /** What a user has rebound. An action that isn't here keeps its defaults. */
 export type KeyOverrides = Partial<Record<KeyAction, KeyChord[]>>;
 
+/**
+ * The defaults moved six columns right, for the right hand: WASD becomes IJKL and everything
+ * around it moves with it. The digits only have room to move five (6–0), which takes 0 from Reset
+ * zoom, so that one goes to H. Tab, Space, F1 and the Ctrl chords are kept: Tab is the browser's own
+ * focus key, Space is under either thumb, and a Ctrl chord already has a Ctrl key on each side.
+ */
+export const MIRRORED_KEYS: KeyOverrides = {
+  up: [k('i'), k('arrowup')],
+  down: [k('k'), k('arrowdown')],
+  left: [k('j'), k('arrowleft')],
+  right: [k('l'), k('arrowright')],
+  back: [k('j', { alt: true })],
+  forward: [k('l', { alt: true })],
+  save: [k(';')],
+  'tab-browse': [k('6')],
+  'tab-library': [k('7')],
+  'tab-history': [k('8')],
+  'tab-activity': [k('9')],
+  'tab-settings': [k('0')],
+  menu: [k('p')],
+  'scroll-up': [k('i', { shift: true })],
+  'scroll-down': [k('k', { shift: true })],
+  'chapter-next': [k('l', { shift: true })],
+  'chapter-prev': [k('j', { shift: true })],
+  'zoom-in': [k('o')],
+  'zoom-out': [k('u')],
+  'zoom-reset': [k('h')],
+  'switch-fit': [k(',')],
+};
+
 type KeyEventLike = Pick<KeyboardEvent, 'key' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey'>;
 
 export function chordMatches(e: KeyEventLike, chord: KeyChord): boolean {
@@ -118,6 +148,20 @@ export function chordFromEvent(e: KeyEventLike): KeyChord | null {
 
 export function sameChord(a: KeyChord, b: KeyChord): boolean {
   return a.key === b.key && !!a.shift === !!b.shift && !!a.alt === !!b.alt && !!a.mod === !!b.mod;
+}
+
+/** What a rebind to `chord` leaves `action` bound to: that, and the arrows it had as aliases. */
+export function rebound(action: KeyAction, chord: KeyChord): KeyChord[] {
+  const aliases = KEY_ACTIONS[action].keys.filter((c: KeyChord) => c.key.startsWith('arrow') && !sameChord(c, chord));
+  return [chord, ...aliases];
+}
+
+const sameChords = (a: readonly KeyChord[], b: readonly KeyChord[]) =>
+  a.length === b.length && a.every((c, i) => sameChord(c, b[i]!));
+
+/** Whether `overrides` binds every action exactly as `preset` does. */
+export function matchesPreset(overrides: KeyOverrides, preset: KeyOverrides): boolean {
+  return (Object.keys(KEY_ACTIONS) as KeyAction[]).every((a) => sameChords(bindingsFor(a, overrides), bindingsFor(a, preset)));
 }
 
 const scopesMeet = (a: KeyScope, b: KeyScope) => a === b || a === 'global' || b === 'global';
