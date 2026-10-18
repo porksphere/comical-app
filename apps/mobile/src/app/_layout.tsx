@@ -48,7 +48,7 @@ import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { installErrorToasts } from '@/data/error-toasts';
 import { installAppUpdateAutoCheck } from '@/data/use-app-update';
 import { installBrowserZoomToast } from '@/lib/browser-zoom-toast';
-import { useDesktopShellCommands } from '@/lib/desktop-commands';
+import { useDesktopShellCommands, useNavigationKeys } from '@/lib/desktop-commands';
 import { installKeyboardScroll } from '@/lib/keyboard-scroll';
 import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
@@ -125,6 +125,7 @@ function RootNavigation() {
   const scheme = useActiveColorScheme();
   useWindowThemeColor(Colors[scheme].background);
   useDesktopShellCommands();
+  useNavigationKeys();
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       {/* Status-bar contents follow the active scheme (light glyphs on the dark

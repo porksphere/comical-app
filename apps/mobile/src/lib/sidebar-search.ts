@@ -28,6 +28,10 @@ export function useSidebarSearchOpen(): boolean {
   return use$(() => !!sidebarSearch$.typed.get().trim() || !!sidebarSearch$.query.get());
 }
 
+export function isSidebarSearchOpen(): boolean {
+  return !!sidebarSearch$.typed.peek().trim() || !!sidebarSearch$.query.peek();
+}
+
 export function setSidebarSearchTyped(typed: string): void {
   sidebarSearch$.typed.set(typed);
 }

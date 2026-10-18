@@ -34,6 +34,10 @@ import { expandSidebar, SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWi
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
 import { closeBridgeSearchPane, setBridgeSearchPaneAvailable, useBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
+import { isTypingTarget } from '@/lib/key-hold';
+import { keyActionOf } from '@/lib/keybindings';
+import { TAB_KEY_ACTIONS } from '@/lib/keymap';
+import { router } from '@/lib/nav';
 import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { closeSettingsModal, openSettingsModal } from '@/lib/settings-modal';
@@ -446,6 +450,7 @@ export default function AppTabs() {
     if (!searchCapable || !activeTab) return openSearch();
     revealSearchField();
   });
+  useTabKeys(activeTab, sidebar);
   const sidebarChildren = useMemo(
     () => [
       // First, and not a tab: Search searches every bridge, wherever you are, so it is never the
@@ -601,6 +606,33 @@ export default function AppTabs() {
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
     </Animated.View>
   );
+}
+
+/** 1–5: the destinations in the rail's order, pressed the way the rail presses them. */
+function useTabKeys(activeTab: string | undefined, sidebar: boolean) {
+  const at = useRef({ activeTab, sidebar });
+  useEffect(() => {
+    at.current = { activeTab, sidebar };
+  });
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || isTypingTarget(e.target)) return;
+      const action = keyActionOf(e, TAB_KEY_ACTIONS);
+      if (!action) return;
+      e.preventDefault();
+      if (e.repeat) return;
+      const tab = TABS[TAB_KEY_ACTIONS.indexOf(action)];
+      if (SETTINGS_AS_MODAL && tab.name === 'settings') return openSettingsModal();
+      closeSettingsModal();
+      if (at.current.activeTab === tab.name) scrollToTopFor(tab.name);
+      if (at.current.sidebar) tab.selectDefault?.();
+      closeContentPanes();
+      router.navigate(tab.href as never);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 }
 
 /** A `use`-prefixed wrapper around the pane store, and narrowed to the one fact this file needs:

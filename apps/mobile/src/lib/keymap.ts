@@ -75,6 +75,8 @@ export const KEY_ACTIONS = {
 
 export type KeyAction = keyof typeof KEY_ACTIONS;
 
+export const TAB_KEY_ACTIONS = ['tab-browse', 'tab-library', 'tab-history', 'tab-activity', 'tab-settings'] as const;
+
 export const KEY_SCOPE_LABELS: Record<KeyScope, string> = {
   global: 'Everywhere',
   lists: 'Lists and screens',

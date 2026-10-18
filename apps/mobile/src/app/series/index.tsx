@@ -48,6 +48,7 @@ import {
 } from '@/components/reader/desktop-zoom';
 import { isControlTarget, isTypingTarget } from '@/lib/key-hold';
 import { isKey, keyActionOf } from '@/lib/keybindings';
+import { TAB_KEY_ACTIONS } from '@/lib/keymap';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
 import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
@@ -1664,6 +1665,8 @@ function SeriesReaderInstance({
     if (stale instanceof HTMLElement && stale !== document.body && !inside(stale)) stale.blur();
 
     const onKeyDown = (e: KeyboardEvent) => {
+      // A digit must not throw away the chapter being read for another tab.
+      if (keyActionOf(e, TAB_KEY_ACTIONS)) return e.stopPropagation();
       const active = document.activeElement;
       if (active instanceof HTMLElement && inside(active)) {
         // Not the shell's mouse Back, which arrives as a synthetic Escape (lib/desktop-commands)

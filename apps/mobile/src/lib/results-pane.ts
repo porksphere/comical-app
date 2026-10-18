@@ -48,6 +48,10 @@ export function openResultsPane(params: PaneParams): boolean {
   return true;
 }
 
+export function isResultsPaneOpen(): boolean {
+  return resultsPane$.params.peek() !== null;
+}
+
 export function closeResultsPane(): void {
   resultsPane$.params.set(null);
 }

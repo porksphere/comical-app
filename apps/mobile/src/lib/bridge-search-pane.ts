@@ -43,6 +43,10 @@ export function openBridgeSearchPane(): boolean {
   return true;
 }
 
+export function isBridgeSearchPaneOpen(): boolean {
+  return bridgeSearchPane$.open.peek();
+}
+
 export function closeBridgeSearchPane(): void {
   bridgeSearchPane$.open.set(false);
 }
