@@ -113,11 +113,10 @@ function candidates(): HTMLElement[] {
   });
 }
 
-/** What a move along that axis stays inside while it can: the scroller it runs through, or a region
- *  (`data-focus-region`) that holds a set of controls apart, like the sidebar. */
+/** What a move along that axis stays inside while it can: the scroller it runs through. */
 function regionOf(el: Element, horizontal: boolean): HTMLElement | null {
   for (let p = el.parentElement; p; p = p.parentElement) {
-    if (scrolls(p, horizontal) || p.hasAttribute('data-focus-region')) return p;
+    if (scrolls(p, horizontal)) return p;
   }
   return null;
 }

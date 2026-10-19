@@ -23,14 +23,15 @@ import { ResultsPane } from '@/components/results-pane';
 import { SeriesPane } from '@/components/series-pane';
 import { SearchPane, SidebarSearchField } from '@/components/sidebar-search';
 import { SidebarResizer } from '@/components/sidebar-resizer';
-import { COMICAL_BRIDGE_ID, setSelectedBridge } from '@/data/selected-bridge';
-import { setSelectedCollection } from '@/data/selected-collection';
+import { COMICAL_BRIDGE_ID, setSelectedBridge, useSelectedBridge } from '@/data/selected-bridge';
+import { libraryViews, setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
 import { expandSidebar, SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
+import { useCollections } from '@/hooks/use-collections';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
 import { closeBridgeSearchPane, setBridgeSearchPaneAvailable, useBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
@@ -40,7 +41,7 @@ import { TAB_KEY_ACTIONS } from '@/lib/keymap';
 import { router } from '@/lib/nav';
 import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
-import { closeSettingsModal, openSettingsModal } from '@/lib/settings-modal';
+import { closeSettingsModal, openSettingsModal, useSettingsModal } from '@/lib/settings-modal';
 import { closeResultsPane, setResultsPaneAvailable, useResultsPaneOpen } from '@/lib/results-pane';
 import { closeSeriesPane, setSeriesPaneAvailable, useSeriesPane } from '@/lib/series-pane';
 import { closeSidebarSearch, focusSidebarSearch, useSidebarSearchOpen } from '@/lib/sidebar-search';
@@ -450,7 +451,6 @@ export default function AppTabs() {
     if (!searchCapable || !activeTab) return openSearch();
     revealSearchField();
   });
-  useTabKeys(activeTab, sidebar);
   const sidebarChildren = useMemo(
     () => [
       // First, and not a tab: Search searches every bridge, wherever you are, so it is never the
@@ -603,17 +603,33 @@ export default function AppTabs() {
       {resultsPaneOpen ? <ResultsPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {seriesPaneOpen ? <SeriesPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
+      <TabKeys
+        activeTab={activeTab}
+        covered={searchPaneOpen || bridgeSearchPaneOpen || resultsPaneOpen || seriesPaneOpen}
+      />
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
     </Animated.View>
   );
 }
 
-/** 1–5: the destinations in the rail's order, pressed the way the rail presses them. */
-function useTabKeys(activeTab: string | undefined, sidebar: boolean) {
-  const at = useRef({ activeTab, sidebar });
+/** 1–5: the destinations in the rail's order. On the destination already showing, its key steps
+ *  through its scope instead — Browse's bridges, Library's collections — so the digits reach every
+ *  row the rail lists, which the arrows don't (lib/focus-nav skips the rail). Arriving from elsewhere
+ *  lands on the scope's first row, the way a press of the rail's destination row does. A
+ *  destination under a pane or the settings modal isn't the one showing: its key only uncovers it. */
+function TabKeys({ activeTab, covered }: { activeTab: string | undefined; covered: boolean }) {
+  const { visibleBridges, bridgeId } = useSelectedBridge();
+  const { collections } = useCollections();
+  const collection = useSelectedCollectionId();
+  const settingsOpen = useSettingsModal().open;
+  const steps: Partial<Record<string, () => void>> = {
+    browse: () => setSelectedBridge(nextOf(visibleBridges.map((b) => b.id), bridgeId)),
+    library: () => setSelectedCollection(nextOf(libraryViews(collections).map((v) => v.id), collection)),
+  };
+  const at = useRef({ activeTab, showing: !covered && !settingsOpen, steps });
   useEffect(() => {
-    at.current = { activeTab, sidebar };
+    at.current = { activeTab, showing: !covered && !settingsOpen, steps };
   });
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
@@ -625,15 +641,26 @@ function useTabKeys(activeTab: string | undefined, sidebar: boolean) {
       if (e.repeat) return;
       const tab = TABS[TAB_KEY_ACTIONS.indexOf(action)];
       if (SETTINGS_AS_MODAL && tab.name === 'settings') return openSettingsModal();
+      const { activeTab, showing, steps } = at.current;
       closeSettingsModal();
-      if (at.current.activeTab === tab.name) scrollToTopFor(tab.name);
-      if (at.current.sidebar) tab.selectDefault?.();
       closeContentPanes();
+      if (activeTab === tab.name) {
+        if (!showing) return;
+        const step = steps[tab.name];
+        return step ? step() : scrollToTopFor(tab.name);
+      }
+      tab.selectDefault?.();
       router.navigate(tab.href as never);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
+  return null;
+}
+
+/** The entry after `current`, wrapping; the first when `current` isn't in the list. */
+function nextOf<T>(list: readonly T[], current: T | undefined): T {
+  return list[(list.findIndex((x) => x === current) + 1) % list.length]!;
 }
 
 /** A `use`-prefixed wrapper around the pane store, and narrowed to the one fact this file needs:

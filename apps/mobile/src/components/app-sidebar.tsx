@@ -166,7 +166,7 @@ export function AppSidebar({
   const theme = useTheme();
   const barHeight = useTopBarHeight();
   return (
-    <View {...focusRegion} style={[styles.rail, { borderRightColor: theme.barHairline, backgroundColor: theme.background }]}>
+    <View {...focusSkip} style={[styles.rail, { borderRightColor: theme.barHairline, backgroundColor: theme.background }]}>
       <ScrollView
         style={styles.sidebar}
         // Centres the FIRST row against the bar's title rather than padding by a round number: the
@@ -264,9 +264,10 @@ function CollapseToggle({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-// Up and down keep to the sidebar rather than running out into the page (lib/focus-nav).
+// The arrows never reach the rail (lib/focus-nav): the digit keys are its keyboard, a press to move
+// to a destination and another to step through its scope (`TabKeys` in app-tabs).
 // react-native-web renders `dataSet` as data-* attributes; react-native's types don't know it.
-const focusRegion = { dataSet: { focusRegion: '' } } as ViewProps;
+const focusSkip = { dataSet: { focusSkip: '' } } as ViewProps;
 
 const styles = StyleSheet.create({
   // The rail's frame. Its WIDTH comes from the animated wrapper in `app-tabs`, so the edge can track
