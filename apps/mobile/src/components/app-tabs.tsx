@@ -41,7 +41,7 @@ import { TAB_KEY_ACTIONS } from '@/lib/keymap';
 import { router } from '@/lib/nav';
 import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
-import { closeSettingsModal, openSettingsModal, useSettingsModal } from '@/lib/settings-modal';
+import { closeSettingsModal, openSettingsModal } from '@/lib/settings-modal';
 import { closeResultsPane, setResultsPaneAvailable, useResultsPaneOpen } from '@/lib/results-pane';
 import { closeSeriesPane, setSeriesPaneAvailable, useSeriesPane } from '@/lib/series-pane';
 import { closeSidebarSearch, focusSidebarSearch, useSidebarSearchOpen } from '@/lib/sidebar-search';
@@ -603,10 +603,7 @@ export default function AppTabs() {
       {resultsPaneOpen ? <ResultsPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {seriesPaneOpen ? <SeriesPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
-      <TabKeys
-        activeTab={activeTab}
-        covered={searchPaneOpen || bridgeSearchPaneOpen || resultsPaneOpen || seriesPaneOpen}
-      />
+      <TabKeys activeTab={activeTab} />
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
     </Animated.View>
@@ -616,20 +613,18 @@ export default function AppTabs() {
 /** 1–5: the destinations in the rail's order. On the destination already showing, its key steps
  *  through its scope instead — Browse's bridges, Library's collections — so the digits reach every
  *  row the rail lists, which the arrows don't (lib/focus-nav skips the rail). Arriving from elsewhere
- *  lands on the scope's first row, the way a press of the rail's destination row does. A
- *  destination under a pane or the settings modal isn't the one showing: its key only uncovers it. */
-function TabKeys({ activeTab, covered }: { activeTab: string | undefined; covered: boolean }) {
+ *  lands on the scope's first row, the way a press of the rail's destination row does. */
+function TabKeys({ activeTab }: { activeTab: string | undefined }) {
   const { visibleBridges, bridgeId } = useSelectedBridge();
   const { collections } = useCollections();
   const collection = useSelectedCollectionId();
-  const settingsOpen = useSettingsModal().open;
   const steps: Partial<Record<string, () => void>> = {
     browse: () => setSelectedBridge(nextOf(visibleBridges.map((b) => b.id), bridgeId)),
     library: () => setSelectedCollection(nextOf(libraryViews(collections).map((v) => v.id), collection)),
   };
-  const at = useRef({ activeTab, showing: !covered && !settingsOpen, steps });
+  const at = useRef({ activeTab, steps });
   useEffect(() => {
-    at.current = { activeTab, showing: !covered && !settingsOpen, steps };
+    at.current = { activeTab, steps };
   });
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
@@ -641,11 +636,10 @@ function TabKeys({ activeTab, covered }: { activeTab: string | undefined; covere
       if (e.repeat) return;
       const tab = TABS[TAB_KEY_ACTIONS.indexOf(action)];
       if (SETTINGS_AS_MODAL && tab.name === 'settings') return openSettingsModal();
-      const { activeTab, showing, steps } = at.current;
+      const { activeTab, steps } = at.current;
       closeSettingsModal();
       closeContentPanes();
       if (activeTab === tab.name) {
-        if (!showing) return;
         const step = steps[tab.name];
         return step ? step() : scrollToTopFor(tab.name);
       }
