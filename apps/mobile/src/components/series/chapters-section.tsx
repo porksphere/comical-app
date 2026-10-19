@@ -1312,7 +1312,9 @@ export function PageThumbList({
             // Overlaps the last visible row (negative top margin) with a gradient
             // that fades it out under the centered "Show all" button — the old
             // `.page-thumbs-more` overlay, reproduced in the list footer.
-            <View style={[styles.moreOverlay, { height: fadeHeight, marginTop: -fadeHeight, pointerEvents: 'box-none' }]}>
+            // The prop, not the style: RN-web writes a style `box-none` straight into CSS, which has no
+            // such value, so the overlay swallowed every press (and hit test) over the faded row.
+            <View pointerEvents="box-none" style={[styles.moreOverlay, { height: fadeHeight, marginTop: -fadeHeight }]}>
               <GradientFade color={theme.background} />
               <Pressable
                 testID="series.pages.show-all"

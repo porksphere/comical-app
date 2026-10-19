@@ -19,9 +19,21 @@ export function nextInDirection(from: Rect, options: readonly Rect[], dir: Direc
   const crossLo = (r: Rect) => (horizontal ? r.top : r.left);
   const crossHi = (r: Rect) => (horizontal ? r.bottom : r.right);
   const mid = (lo(from) + hi(from)) / 2;
-  // Past the middle and out beyond the far edge: something level with `from`, or taller beside it,
-  // isn't a step that way.
-  const ahead = (r: Rect) => (s > 0 ? lo(r) >= mid && hi(r) > hi(from) : hi(r) <= mid && lo(r) < lo(from));
+  const centre = (r: Rect) => (lo(r) + hi(r)) / 2;
+  // Past the middle and out to the far edge: something level with `from`, or taller beside it,
+  // isn't a step that way. One that only reaches the far edge counts — a button laid over the
+  // bottom of a row, flush with it, is the next thing down.
+  const past = (r: Rect) => (s > 0 ? lo(r) >= mid && hi(r) >= hi(from) : hi(r) <= mid && lo(r) <= lo(from));
+  // `from` is laid over part of `r`, and the rest of `r` lies that way: back off the overlay onto
+  // what it covers.
+  const overlaps = (r: Rect) =>
+    crossLo(r) < crossHi(from) && crossHi(r) > crossLo(from) && lo(r) < hi(from) && hi(r) > lo(from);
+  const behind = (r: Rect) =>
+    overlaps(r) &&
+    (s > 0
+      ? lo(r) <= lo(from) && hi(r) > hi(from) && centre(r) > mid
+      : hi(r) >= hi(from) && lo(r) < lo(from) && centre(r) < mid);
+  const ahead = (r: Rect) => past(r) || behind(r);
   const gap = (r: Rect) => Math.max(0, s > 0 ? lo(r) - hi(from) : lo(from) - hi(r));
   const reach = (r: Rect) => Math.max(0, crossLo(r) - anchor, anchor - crossHi(r));
   const offCentre = (r: Rect) => Math.abs((crossLo(r) + crossHi(r)) / 2 - anchor);
@@ -34,5 +46,7 @@ export function nextInDirection(from: Rect, options: readonly Rect[], dir: Direc
     return d < 0 || (d === 0 && closer(cur[0], best[0]) < 0) ? cur : best;
   });
   const row = inWay.filter(([r]) => lo(r) < hi(first) && hi(r) > lo(first));
-  return row.reduce((best, cur) => (closer(cur[0], best[0]) < 0 ? cur : best))[1];
+  // Level, as near the anchor: the one whose middle is nearer, which is the one laid over the other.
+  const nearer = (a: Rect, b: Rect) => closer(a, b) || s * (centre(a) - centre(b));
+  return row.reduce((best, cur) => (nearer(cur[0], best[0]) < 0 ? cur : best))[1];
 }

@@ -25,7 +25,18 @@ describe('nextInDirection', () => {
     expect(nextInDirection(from, [box(100, 300)], RIGHT, centreY(from))).toBeNull();
     expect(nextInDirection(from, [box(100, 0)], UP, centreX(from))).toBe(0);
     expect(nextInDirection(from, [box(200, 50, 100, 300)], RIGHT, centreY(from))).toBe(0);
-    expect(nextInDirection(from, [box(100, 100, 100, 300)], DOWN, centreX(from))).toBeNull();
+    expect(nextInDirection(from, [box(200, 100, 100, 300)], DOWN, centreX(from))).toBeNull();
+  });
+
+  test('a button laid over the bottom of a row is between the row and what is below', () => {
+    const row = [box(0, 0), box(120, 0), box(240, 0)];
+    const button = box(130, 110, 80, 40);
+    const below = box(0, 200, 400, 30);
+    const options = [...row, button, below];
+    expect(nextInDirection(row[0]!, options, DOWN, centreX(row[0]!))).toBe(3);
+    expect(nextInDirection(button, options, DOWN, centreX(button))).toBe(4);
+    expect(nextInDirection(below, options, UP, centreX(button))).toBe(3);
+    expect(nextInDirection(button, options, UP, centreX(button))).toBe(1);
   });
 
   test("the next rail's heading comes before its cards, however far left it sits", () => {
