@@ -637,12 +637,11 @@ function TabKeys({ activeTab }: { activeTab: string | undefined }) {
       const tab = TABS[TAB_KEY_ACTIONS.indexOf(action)];
       if (SETTINGS_AS_MODAL && tab.name === 'settings') return openSettingsModal();
       const { activeTab, steps } = at.current;
+      const step = activeTab === tab.name ? steps[tab.name] : undefined;
+      if (step) return step();
       closeSettingsModal();
       closeContentPanes();
-      if (activeTab === tab.name) {
-        const step = steps[tab.name];
-        return step ? step() : scrollToTopFor(tab.name);
-      }
+      if (activeTab === tab.name) return scrollToTopFor(tab.name);
       tab.selectDefault?.();
       router.navigate(tab.href as never);
     };
