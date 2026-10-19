@@ -38,7 +38,7 @@ import {
 } from '@/lib/overlay-presentation';
 import { sharedPushback } from '@/lib/pushback-signal';
 import { armSettleCheck, cancelSettleCheck, notePushback, reportStuck } from '@/lib/pushback-watchdog';
-import { windowModalLayer } from '@/lib/window-controls';
+import { useWindowControlsStrip, windowModalLayer } from '@/lib/window-controls';
 
 // A small stacked-overlay system. On phones, task surfaces are bottom sheets
 // with drag-to-dismiss; desktop presents anchored choices as popovers and
@@ -1231,6 +1231,7 @@ function OverlayPopover({
   children: ReactNode;
 }) {
   const { width: vw, height: vh } = useWindowDimensions();
+  const controls = useWindowControlsStrip();
   const theme = useTheme();
   const [card, setCard] = useState<{ width: number; height: number } | null>(null);
   const progress = useSharedValue(0);
@@ -1296,7 +1297,6 @@ function OverlayPopover({
   }, [card, progress]);
 
   const width = Math.min(POPOVER_WIDTH, vw * POPOVER_MAX_VIEWPORT_FRACTION, vw - POPOVER_PAD * 2);
-  const left = Math.min(Math.max(POPOVER_PAD, anchor.x), vw - width - POPOVER_PAD);
   const spaceBelow = vh - (anchor.y + anchor.height) - POPOVER_GAP - POPOVER_PAD;
   const spaceAbove = anchor.y - POPOVER_GAP - POPOVER_PAD;
   const h = card?.height ?? 0;
@@ -1305,6 +1305,9 @@ function OverlayPopover({
   const top = below
     ? anchor.y + anchor.height + POPOVER_GAP
     : Math.max(POPOVER_PAD, anchor.y - POPOVER_GAP - Math.min(h, maxHeight));
+  // A panel whose top starts in the caption strip ends short of the buttons, which draw over anything.
+  const right = top < controls.height ? vw - controls.inset - POPOVER_PAD : vw - POPOVER_PAD;
+  const left = Math.max(POPOVER_PAD, Math.min(anchor.x, right - width));
   const rectHeight = Math.min(h, maxHeight);
 
   useEffect(() => {

@@ -19,36 +19,46 @@ type WindowControlsOverlay = EventTarget & {
   getTitlebarAreaRect(): DOMRect;
 };
 
-const inset$ = observable(0);
-let watching = false;
+const strip$ = observable({ inset: 0, height: 0 });
+let read: (() => void) | null = null;
 
 function watch(): void {
-  if (watching || typeof navigator === 'undefined') return;
+  if (read) return read();
+  if (typeof navigator === 'undefined') return;
   const overlay = (navigator as Navigator & { windowControlsOverlay?: WindowControlsOverlay }).windowControlsOverlay;
   if (!overlay) return;
-  watching = true;
-  const read = () => {
-    if (!overlay.visible) return inset$.set(0);
+  read = () => {
+    if (!overlay.visible) return strip$.set({ inset: 0, height: 0 });
     const free = overlay.getTitlebarAreaRect();
-    inset$.set(Math.max(0, window.innerWidth - (free.x + free.width)));
+    strip$.set({ inset: Math.max(0, window.innerWidth - (free.x + free.width)), height: free.height });
   };
   read();
+  // Not `geometrychange` alone: a stale reading parks the reader's gear under the buttons, where it
+  // can't be clicked (seen in the field, never reproduced), so a resize and every mount re-read too.
   overlay.addEventListener('geometrychange', read);
+  window.addEventListener('resize', read);
 }
 
 /** The bare read, alone in its own hook — see `sidebar-bridges.tsx`. */
-function useMeasuredInset(): number {
-  return use$(inset$);
+function useMeasuredStrip(): { inset: number; height: number } {
+  return use$(strip$);
 }
 
-/** How far in from the window's right edge the caption buttons reach, in a bar at the top of it. */
-export function useWindowControlsInset(): number {
+/** The caption buttons' corner of the window: how far in from its right edge they reach, and how far
+ *  down. Zero everywhere they aren't drawn over the page. */
+export function useWindowControlsStrip(): { inset: number; height: number } {
   const hydrated = useHydrated();
   useEffect(() => {
     if (Platform.OS === 'web') watch();
   }, []);
-  const inset = useMeasuredInset();
-  return hydrated ? inset : 0;
+  const strip = useMeasuredStrip();
+  return hydrated ? strip : NO_STRIP;
+}
+const NO_STRIP = { inset: 0, height: 0 };
+
+/** How far in from the window's right edge the caption buttons reach, in a bar at the top of it. */
+export function useWindowControlsInset(): number {
+  return useWindowControlsStrip().inset;
 }
 
 /**
