@@ -17,32 +17,44 @@
  * `@/lib/nav`'s router guard, outside React, where there is no width to read and no provider to
  * consult. It answers false on native and at every viewport below the rail's, which is what makes
  * the interception a no-op there rather than a branch at eleven call sites.
+ *
+ * One pane per TAB (see `lib/pane-tab`): the open functions act on the active tab's, the hooks on
+ * the tab of the subtree that calls them.
  */
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
 import type { PaneParams } from '@/lib/pane';
+import { activePaneTab, usePaneTab, usePaneTabLive } from '@/lib/pane-tab';
 
 type SeriesPaneState = {
   available: boolean;
-  params: PaneParams | null;
+  params: Record<string, PaneParams | null>;
   /** How many full-screen series pages are open over the pane (see `coverSeriesPane`). */
   covered: number;
-  /** `bridgeId:id` of the series on top of the pane's stack; null while a search is on top. */
-  top: string | null;
+  /** `bridgeId:id` of the series on top of each tab's pane stack; null while a search is on top. */
+  top: Record<string, string | null>;
 };
 
-const seriesPane$ = observable<SeriesPaneState>({ available: false, params: null, covered: 0, top: null });
+const seriesPane$ = observable<SeriesPaneState>({ available: false, params: {}, covered: 0, top: {} });
+
+export function useSeriesPaneParams(): PaneParams | null {
+  return useTabParams(usePaneTab());
+}
+
+// The `use$` wrappers below hold nothing BUT `use$`: one with a real hook beside it gets compiled,
+// and the compiler then memoizes the `use$` call out of the hook order. So the tab is read by the
+// caller and passed in.
 
 /** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
-export function useSeriesPane(): SeriesPaneState {
-  return use$(seriesPane$);
+function useTabParams(tab: string): PaneParams | null {
+  return use$(() => seriesPane$.params[tab].get() ?? null);
 }
 
 /** Called by `AppTabs` with whether it is currently rendering a pane at all. */
 export function setSeriesPaneAvailable(available: boolean): void {
   seriesPane$.available.set(available);
-  if (!available) seriesPane$.params.set(null);
+  if (!available) seriesPane$.params.set({});
 }
 
 /**
@@ -62,16 +74,16 @@ export function setSeriesPaneAvailable(available: boolean): void {
 export function openSeriesPane(params: PaneParams): boolean {
   if (!seriesPane$.available.peek()) return false;
   if (params.reader === '1' || params.seq === '1') return false;
-  seriesPane$.params.set(params);
+  seriesPane$.params[activePaneTab()].set(params);
   return true;
 }
 
-export function isSeriesPaneOpen(): boolean {
-  return seriesPane$.params.peek() !== null;
+export function isSeriesPaneOpen(tab = activePaneTab()): boolean {
+  return (seriesPane$.params[tab].peek() ?? null) !== null;
 }
 
-export function closeSeriesPane(): void {
-  seriesPane$.params.set(null);
+export function closeSeriesPane(tab = activePaneTab()): void {
+  seriesPane$.params[tab].set(null);
 }
 
 /**
@@ -84,7 +96,13 @@ export function coverSeriesPane(): () => void {
   return () => seriesPane$.covered.set(seriesPane$.covered.peek() - 1);
 }
 
+/** Also true of a pane kept for a tab you aren't on: hidden is covered, by the same rule. */
 export function useSeriesPaneCovered(): boolean {
+  const live = usePaneTabLive();
+  return useCoveredByPage() || !live;
+}
+
+function useCoveredByPage(): boolean {
   return use$(() => seriesPane$.covered.get() > 0);
 }
 
@@ -92,11 +110,11 @@ export function isSeriesPaneCovered(): boolean {
   return seriesPane$.covered.peek() > 0;
 }
 
-/** Published by the pane's screen; returns the retraction. */
-export function setSeriesPaneTop(key: string | null): () => void {
-  seriesPane$.top.set(key);
+/** Published by the pane's screen for the tab it was mounted for; returns the retraction. */
+export function setSeriesPaneTop(tab: string, key: string | null): () => void {
+  seriesPane$.top[tab].set(key);
   return () => {
-    if (seriesPane$.top.peek() === key) seriesPane$.top.set(null);
+    if (seriesPane$.top[tab].peek() === key) seriesPane$.top[tab].set(null);
   };
 }
 
@@ -105,5 +123,9 @@ export function setSeriesPaneTop(key: string | null): () => void {
  * its details right underneath, and stepping back from the reader is leaving it.
  */
 export function useSeriesPaneShowsTop(key: string): boolean {
-  return use$(() => seriesPane$.params.get() !== null && seriesPane$.top.get() === key);
+  return useTabShowsTop(usePaneTab(), key);
+}
+
+function useTabShowsTop(tab: string, key: string): boolean {
+  return use$(() => (seriesPane$.params[tab].get() ?? null) !== null && seriesPane$.top[tab].get() === key);
 }

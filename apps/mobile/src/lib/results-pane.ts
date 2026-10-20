@@ -13,25 +13,32 @@ import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
 import type { PaneParams } from '@/lib/pane';
+import { activePaneTab, usePaneTab } from '@/lib/pane-tab';
 import { closeSeriesPane } from '@/lib/series-pane';
 
-type ResultsPaneState = { available: boolean; params: PaneParams | null };
+/** One entry per tab — see `lib/pane-tab`. */
+type ResultsPaneState = { available: boolean; params: Record<string, PaneParams | null> };
 
-const resultsPane$ = observable<ResultsPaneState>({ available: false, params: null });
+const resultsPane$ = observable<ResultsPaneState>({ available: false, params: {} });
 
 /** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
 export function useResultsPaneOpen(): boolean {
-  return use$(() => resultsPane$.params.get() !== null);
+  return useResultsPaneParams() !== null;
 }
 
 export function useResultsPaneParams(): PaneParams | null {
-  return use$(resultsPane$.params);
+  return useTabParams(usePaneTab());
+}
+
+/** Nothing but `use$`, so the tab comes in from the caller — see `useSeriesPaneParams`. */
+function useTabParams(tab: string): PaneParams | null {
+  return use$(() => resultsPane$.params[tab].get() ?? null);
 }
 
 /** Called by `AppTabs` with whether it is currently rendering a pane at all. */
 export function setResultsPaneAvailable(available: boolean): void {
   resultsPane$.available.set(available);
-  if (!available) resultsPane$.params.set(null);
+  if (!available) resultsPane$.params.set({});
 }
 
 /**
@@ -44,14 +51,14 @@ export function setResultsPaneAvailable(available: boolean): void {
 export function openResultsPane(params: PaneParams): boolean {
   if (!resultsPane$.available.peek()) return false;
   closeSeriesPane();
-  resultsPane$.params.set(params);
+  resultsPane$.params[activePaneTab()].set(params);
   return true;
 }
 
-export function isResultsPaneOpen(): boolean {
-  return resultsPane$.params.peek() !== null;
+export function isResultsPaneOpen(tab = activePaneTab()): boolean {
+  return (resultsPane$.params[tab].peek() ?? null) !== null;
 }
 
-export function closeResultsPane(): void {
-  resultsPane$.params.set(null);
+export function closeResultsPane(tab = activePaneTab()): void {
+  resultsPane$.params[tab].set(null);
 }

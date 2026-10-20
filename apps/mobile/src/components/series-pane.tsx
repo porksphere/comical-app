@@ -25,7 +25,7 @@ import SeriesReaderScreen from '@/app/series/index';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useTheme } from '@/hooks/use-theme';
 import { PaneNavContext, PaneParamsContext, type PaneNav } from '@/lib/pane';
-import { closeSeriesPane, useSeriesPane } from '@/lib/series-pane';
+import { closeSeriesPane, useSeriesPaneParams } from '@/lib/series-pane';
 import { SeriesPaneWidthContext } from '@/lib/series-pane-context';
 import { InSeriesPageStack } from '@/lib/series-nav';
 
@@ -45,7 +45,7 @@ const PANE_NAV: PaneNav = {
 
 export function SeriesPane({ left, width, top }: { left: number; width: number; top: number }) {
   const theme = useTheme();
-  const { params } = useSeriesPane();
+  const params = useSeriesPaneParams();
   if (!params) return null;
   return (
     <View

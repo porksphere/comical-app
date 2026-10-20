@@ -10,21 +10,28 @@
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
+import { activePaneTab, usePaneTab } from '@/lib/pane-tab';
 import { closeResultsPane } from '@/lib/results-pane';
 import { closeSeriesPane } from '@/lib/series-pane';
 import { closeSidebarSearch } from '@/lib/sidebar-search';
 
-const bridgeSearchPane$ = observable({ available: false, open: false });
+/** `open` has one entry per tab — see `lib/pane-tab`. */
+const bridgeSearchPane$ = observable({ available: false, open: {} as Record<string, boolean> });
 
-/** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
 export function useBridgeSearchPaneOpen(): boolean {
-  return use$(bridgeSearchPane$.open);
+  return useTabOpen(usePaneTab());
+}
+
+/** A `use`-prefixed wrapper holding nothing but `use$`, so the tab comes in from the caller — see
+ *  `useSeriesPaneParams`. */
+function useTabOpen(tab: string): boolean {
+  return use$(() => !!bridgeSearchPane$.open[tab].get());
 }
 
 /** Called by `AppTabs` with whether it is currently rendering a pane at all. */
 export function setBridgeSearchPaneAvailable(available: boolean): void {
   bridgeSearchPane$.available.set(available);
-  if (!available) bridgeSearchPane$.open.set(false);
+  if (!available) bridgeSearchPane$.open.set({});
 }
 
 /**
@@ -39,14 +46,14 @@ export function openBridgeSearchPane(): boolean {
   closeSeriesPane();
   closeResultsPane();
   closeSidebarSearch();
-  bridgeSearchPane$.open.set(true);
+  bridgeSearchPane$.open[activePaneTab()].set(true);
   return true;
 }
 
-export function isBridgeSearchPaneOpen(): boolean {
-  return bridgeSearchPane$.open.peek();
+export function isBridgeSearchPaneOpen(tab = activePaneTab()): boolean {
+  return !!bridgeSearchPane$.open[tab].peek();
 }
 
-export function closeBridgeSearchPane(): void {
-  bridgeSearchPane$.open.set(false);
+export function closeBridgeSearchPane(tab = activePaneTab()): void {
+  bridgeSearchPane$.open[tab].set(false);
 }

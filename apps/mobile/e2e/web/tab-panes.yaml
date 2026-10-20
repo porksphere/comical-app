@@ -1,0 +1,43 @@
+# Web only: each tab keeps its own panes (lib/pane-tab). At rail widths a series opens as a pane
+# beside the rail, the rail stays usable, and switching tabs there leaves the series open on the tab
+# it was opened from. There is no mobile copy because there is no mobile surface — on a phone the
+# series page covers the tab bar, so there is no tab to switch to while it is up.
+#
+# Journey: Browse -> open a series (series.pane) -> Library (pane hidden) -> Browse (the same series
+# is still open) -> Browse again (its front door: the pane closes).
+#
+# Selectors: the rail's destination rows hit the web-only aria-label quirk (see ../README.md), so
+# they're selected by label ("Browse", "Library"), as series-page.yaml does. series.pane has no
+# competing accessibilityLabel — selected by its testID.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.pane"
+- assertVisible:
+    id: "series.action.read"
+
+# Another tab: its own content, with Browse's series kept out of sight rather than closed.
+- tapOn:
+    id: "Library"
+- assertNotVisible:
+    id: "series.pane"
+
+# Back to Browse: the series is still up, details and all.
+- tapOn:
+    id: "Browse"
+- assertVisible:
+    id: "series.pane"
+- assertVisible:
+    id: "series.action.read"
+
+# Pressing the tab you're on is its front door, which closes what it had open.
+- tapOn:
+    id: "Browse"
+- assertNotVisible:
+    id: "series.pane"

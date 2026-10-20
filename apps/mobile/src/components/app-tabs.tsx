@@ -1,7 +1,7 @@
 import { usePathname } from 'expo-router';
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
 import { Bell, Compass, History, Library, Search, Settings, type LucideIcon } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -34,7 +34,12 @@ import { expandSidebar, SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWi
 import { useCollections } from '@/hooks/use-collections';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
-import { closeBridgeSearchPane, setBridgeSearchPaneAvailable, useBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
+import {
+  closeBridgeSearchPane,
+  isBridgeSearchPaneOpen,
+  setBridgeSearchPaneAvailable,
+  useBridgeSearchPaneOpen,
+} from '@/lib/bridge-search-pane';
 import { isTypingTarget } from '@/lib/key-hold';
 import { keyActionOf } from '@/lib/keybindings';
 import { TAB_KEY_ACTIONS } from '@/lib/keymap';
@@ -42,9 +47,16 @@ import { router } from '@/lib/nav';
 import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { closeSettingsModal, openSettingsModal } from '@/lib/settings-modal';
-import { closeResultsPane, setResultsPaneAvailable, useResultsPaneOpen } from '@/lib/results-pane';
-import { closeSeriesPane, setSeriesPaneAvailable, useSeriesPane } from '@/lib/series-pane';
-import { closeSidebarSearch, focusSidebarSearch, useSidebarSearchOpen } from '@/lib/sidebar-search';
+import { PaneTabContext, setPaneTab, useActivePaneTab } from '@/lib/pane-tab';
+import { closeResultsPane, isResultsPaneOpen, setResultsPaneAvailable, useResultsPaneOpen } from '@/lib/results-pane';
+import { closeSeriesPane, isSeriesPaneOpen, setSeriesPaneAvailable, useSeriesPaneParams } from '@/lib/series-pane';
+import {
+  clearSidebarSearches,
+  closeSidebarSearch,
+  focusSidebarSearch,
+  isSidebarSearchOpen,
+  useSidebarSearchOpen,
+} from '@/lib/sidebar-search';
 import { setSidebarDragWidth, sidebarDragWidth } from '@/lib/sidebar-drag';
 import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
@@ -125,13 +137,17 @@ const SERIES_AS_PANE = Platform.OS === 'web';
 /** And search's field moves into the rail, with its results in a pane of their own. */
 const SEARCH_IN_RAIL = Platform.OS === 'web';
 
-/** Every pane over the content region — what a destination pressed in the rail has to clear (see
- *  TabButton's press). */
-function closeContentPanes(): void {
-  closeSeriesPane();
-  closeResultsPane();
-  closeSidebarSearch();
-  closeBridgeSearchPane();
+/** Every pane over a tab's content region, the active tab's unless told otherwise — what that tab's
+ *  own destination, pressed while you are on it, clears (see TabButton's press). */
+function closeContentPanes(tab?: string): void {
+  closeSeriesPane(tab);
+  closeResultsPane(tab);
+  closeSidebarSearch(tab);
+  closeBridgeSearchPane(tab);
+}
+
+function hasContentPanes(tab: string): boolean {
+  return isSeriesPaneOpen(tab) || isResultsPaneOpen(tab) || isSidebarSearchOpen(tab) || isBridgeSearchPaneOpen(tab);
 }
 
 const SEARCH_HINT =
@@ -364,9 +380,6 @@ export default function AppTabs() {
     setResultsPaneAvailable(paneAvailable);
     setBridgeSearchPaneAvailable(paneAvailable);
   }, [paneAvailable]);
-  const seriesPaneOpen = useSeriesPaneOpen();
-  const resultsPaneOpen = useResultsPaneOpen();
-  const bridgeSearchPaneOpen = useBridgeSearchPaneOpen();
   // The rail's edge follows the pointer on the UI thread; the content's inset can't (see
   // `sidebar-drag`), so it is committed at column boundaries instead. At rest the two are the same
   // number, and this is what keeps them that way — after a release, after a collapse, after a
@@ -432,15 +445,21 @@ export default function AppTabs() {
   // selection puts two (or three) filled rows on screen at once. Exact pathname match, no fallback —
   // on a pushed screen over the tabs nothing in the rail is current.
   const activeTab = TABS.find((t) => t.href === pathname)?.name;
+  // Layout, not passive: the slot has already switched screens this render, and the panes of the tab
+  // you left must not paint a frame over the one you arrived on. Over a pushed screen there is no
+  // `activeTab`, and the panes stay those of the tab it covers.
+  useLayoutEffect(() => {
+    if (activeTab) setPaneTab(activeTab);
+  }, [activeTab]);
+  const paneTab = useActivePaneTab();
   const openSearch = useOpenComicalSearch();
   // The rail's field only where it is drawn: collapsed it is an icon that expands the rail to reach
   // it, and over a pushed screen (a reader, Settings on native) the rail is covered, so the shortcut
   // opens the screen.
   const searchCapable = SEARCH_IN_RAIL && sidebar;
   const railSearch = searchCapable && !collapsed;
-  const searchPaneOpen = useSidebarSearchOpen() && railSearch;
   useEffect(() => {
-    if (!railSearch) closeSidebarSearch();
+    if (!railSearch) clearSidebarSearches();
   }, [railSearch]);
   const revealSearchField = useCallback(() => {
     closeSettingsModal();
@@ -484,7 +503,7 @@ export default function AppTabs() {
           <SidebarGroup key={`${tab.name}-scope`} name={tab.name} testID={`sidebar.group.${tab.name}`}>
             {/* Same reason as the destination rows above: a scope picked in the rail changes what
                 the covered screen shows, so the pane has to get out of its way. */}
-            <tab.Scope active={activeTab === tab.name} onNavigate={closeContentPanes} />
+            <tab.Scope active={activeTab === tab.name} onNavigate={() => closeContentPanes(tab.name)} />
           </SidebarGroup>,
         ];
       }),
@@ -596,12 +615,19 @@ export default function AppTabs() {
           an overlay opened from within it (a chapter menu, a selector) still paints over it.
           It covers the CONTENT REGION and nothing else: the rail stays lit and usable beside it, so
           the series is over the grid you opened it from rather than over the whole app. */}
-      {searchPaneOpen ? <SearchPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
-      {bridgeSearchPaneOpen ? (
-        <BridgeSearchPane left={contentInset} width={width - contentInset} top={insets.top} />
-      ) : null}
-      {resultsPaneOpen ? <ResultsPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
-      {seriesPaneOpen ? <SeriesPane left={contentInset} width={width - contentInset} top={insets.top} /> : null}
+      {paneAvailable
+        ? TABS.map((tab) => (
+            <PaneTabContext.Provider key={tab.name} value={tab.name}>
+              <TabPanes
+                hidden={tab.name !== paneTab}
+                railSearch={railSearch}
+                left={contentInset}
+                width={width - contentInset}
+                top={insets.top}
+              />
+            </PaneTabContext.Provider>
+          ))
+        : null}
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
       <TabKeys activeTab={activeTab} />
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
@@ -640,9 +666,12 @@ function TabKeys({ activeTab }: { activeTab: string | undefined }) {
       const step = activeTab === tab.name ? steps[tab.name] : undefined;
       if (step) return step();
       closeSettingsModal();
-      closeContentPanes();
-      if (activeTab === tab.name) return scrollToTopFor(tab.name);
-      tab.selectDefault?.();
+      if (activeTab === tab.name) {
+        closeContentPanes();
+        return scrollToTopFor(tab.name);
+      }
+      // Arriving where you left something open is coming back to it, as the rail's press is.
+      if (!hasContentPanes(tab.name)) tab.selectDefault?.();
       router.navigate(tab.href as never);
     };
     document.addEventListener('keydown', onKey);
@@ -660,7 +689,39 @@ function nextOf<T>(list: readonly T[], current: T | undefined): T {
  *  the params themselves change on every series opened, and the layout only cares whether there
  *  are any. */
 function useSeriesPaneOpen(): boolean {
-  return useSeriesPane().params !== null;
+  return useSeriesPaneParams() !== null;
+}
+
+/**
+ * One tab's panes, read under that tab's `PaneTabContext` — mounted for every tab, shown for the
+ * active one alone (see lib/pane-tab), and hidden the way the slot hides a tab's screen, so a tab
+ * you come back to has its panes exactly as it has its screen. In stacking order: the rail's
+ * results and Browse's Search at the bottom, "See all" over them, the series over everything.
+ */
+function TabPanes({
+  hidden,
+  railSearch,
+  ...frame
+}: {
+  hidden: boolean;
+  railSearch: boolean;
+  left: number;
+  width: number;
+  top: number;
+}) {
+  const searchOpen = useSidebarSearchOpen() && railSearch;
+  const bridgeSearchOpen = useBridgeSearchPaneOpen();
+  const resultsOpen = useResultsPaneOpen();
+  const seriesOpen = useSeriesPaneOpen();
+  if (!searchOpen && !bridgeSearchOpen && !resultsOpen && !seriesOpen) return null;
+  return (
+    <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, hidden && styles.hiddenPanes]}>
+      {searchOpen ? <SearchPane {...frame} /> : null}
+      {bridgeSearchOpen ? <BridgeSearchPane {...frame} /> : null}
+      {resultsOpen ? <ResultsPane {...frame} /> : null}
+      {seriesOpen ? <SeriesPane {...frame} /> : null}
+    </View>
+  );
 }
 
 function TabButton({
@@ -703,12 +764,13 @@ function TabButton({
   // free anymore - see useScrollToTopOnReselect).
   const handlePress = (e: GestureResponderEvent) => {
     if (isFocused) scrollToTopFor(routeName);
+    // Each tab keeps its own panes (lib/pane-tab), so pressing ANOTHER tab comes back to whatever it
+    // had open, scope and all, and leaves the one you were on waiting. Pressing the tab you are on
+    // is going to its front door: its panes close.
+    const returning = !isFocused && hasContentPanes(routeName);
     // Only where the rail is showing the scope this resets — see `selectDefault` on the tab table.
-    if (sidebar) selectDefault?.();
-    // The rail is the one surface still visible beside an open pane, so a destination
-    // pressed there has to reveal itself: the pane covers the content region, and a tab switch
-    // under it would look like the click did nothing. Free when no pane is open.
-    closeContentPanes();
+    if (sidebar && !returning) selectDefault?.();
+    if (isFocused) closeContentPanes();
     onPress?.(e);
   };
 
@@ -776,6 +838,10 @@ const styles = StyleSheet.create({
   },
   slot: {
     flex: 1,
+  },
+  // Another tab's panes: mounted, and hidden the way the slot hides that tab's screen.
+  hiddenPanes: {
+    display: 'none',
   },
   // The configuration TabList: present in the tree so the navigator can build its screens from the
   // triggers inside it, but never seen.

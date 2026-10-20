@@ -1,7 +1,7 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
@@ -47,6 +47,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
+import { isPaneTabLive, PaneTabContext } from '@/lib/pane-tab';
 import { isSeriesPaneOpen } from '@/lib/series-pane';
 import { useWindowControlsClearance } from '@/lib/window-controls';
 
@@ -275,12 +276,14 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   });
   const isEmbedded = !!embedded;
   const isDocked = !!docked;
+  // Null outside a pane. Inside one, its tab's — and another tab's pane is hidden, not gone.
+  const paneTab = useContext(PaneTabContext);
   const [focusRequest, setFocusRequest] = useState(0);
   useEffect(
     () =>
       subscribeSearchIntent(() => {
-        if (isDocked || !focusedRef.current || !topRef.current) return;
-        if (!isEmbedded && isSeriesPaneOpen()) return;
+        if (isDocked || !focusedRef.current || !topRef.current || !isPaneTabLive(paneTab)) return;
+        if (!isEmbedded && isSeriesPaneOpen(paneTab ?? undefined)) return;
         // The desktop's Search entry opens the app's Search screen. A layer in the series pane is
         // still mounted while the pane closes, and would otherwise take it from the screen it pushes.
         if (isEmbedded && peekSearchIntent()?.kind === 'open') return;
@@ -300,7 +303,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
           intent.kind === 'meta' ? { bridgeId: intent.bridgeId, metaKey: intent.metaKey, value: intent.value } : null,
         );
       }),
-    [setBridge, setFilterValues, isEmbedded, isDocked],
+    [setBridge, setFilterValues, isEmbedded, isDocked, paneTab],
   );
 
   useEffect(() => {

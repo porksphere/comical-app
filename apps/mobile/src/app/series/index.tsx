@@ -94,6 +94,7 @@ import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-relea
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
 import { coverSeriesPane, setSeriesPaneTop, useSeriesPaneCovered, useSeriesPaneShowsTop } from '@/lib/series-pane';
+import { usePaneTab, usePaneTabLive } from '@/lib/pane-tab';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import { useDimWindowControls, useWindowThemeColor, watchWindowTopEdge } from '@/lib/window-controls';
@@ -4201,8 +4202,11 @@ export default function SeriesReaderScreen() {
       return d.slice(0, -1);
     });
   }, []);
-  useEffect(() => registerDrillSeries(drill), [drill]);
-  useEffect(() => registerOpenSearchLayer(openSearch), [openSearch]);
+  // The handlers are a stack whose top answers, and another tab's pane stays mounted while hidden —
+  // so only the one you can see holds them, re-taking the top when its tab comes back.
+  const live = usePaneTabLive();
+  useEffect(() => (live ? registerDrillSeries(drill) : undefined), [drill, live]);
+  useEffect(() => (live ? registerOpenSearchLayer(openSearch) : undefined), [openSearch, live]);
   // The IN-TREE push parallax, now serving the SEARCH layer alone: how much it covers what's under
   // it (0 off-screen, 1 fully arrived). The layer publishes it; everything beneath drifts left
   // against it, the way UIKit moves an outgoing screen. Drilled SERIES layers no longer write it —
@@ -4231,7 +4235,8 @@ export default function SeriesReaderScreen() {
   const topEntry = top >= 0 ? drills[top] : null;
   const topParams = !topEntry ? params : topEntry.kind === 'series' ? topEntry.params : null;
   const topKey = topParams ? `${topParams.bridgeId ?? ''}:${topParams.id ?? ''}` : null;
-  useEffect(() => (inPane ? setSeriesPaneTop(topKey) : undefined), [inPane, topKey]);
+  const paneTab = usePaneTab();
+  useEffect(() => (inPane ? setSeriesPaneTop(paneTab, topKey) : undefined), [inPane, paneTab, topKey]);
   return (
     <View style={styles.container}>
       <Animated.View

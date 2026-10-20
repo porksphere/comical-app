@@ -9,6 +9,7 @@ import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useTheme } from '@/hooks/use-theme';
 import { closeBridgeSearchPane } from '@/lib/bridge-search-pane';
 import { closeResultsPane } from '@/lib/results-pane';
+import { usePaneTab } from '@/lib/pane-tab';
 import { closeSeriesPane } from '@/lib/series-pane';
 import {
   closeSidebarSearch,
@@ -81,7 +82,7 @@ export function SidebarSearchField({ hint }: { hint: string }) {
       {typed ? (
         <Pressable
           testID="sidebar.search.clear"
-          onPress={closeSidebarSearch}
+          onPress={() => closeSidebarSearch()}
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Clear search">
@@ -101,13 +102,14 @@ export function SidebarSearchField({ hint }: { hint: string }) {
 export function SearchPane({ left, width, top }: { left: number; width: number; top: number }) {
   const theme = useTheme();
   const { typed, query } = useSidebarSearch();
+  const tab = usePaneTab();
   return (
     <View
       testID="search.pane"
       style={[styles.pane, { left, width, paddingTop: top, backgroundColor: theme.background }]}>
       {/* Outside the tabs' provider, so it says what the slot's does: the rail is beside it. */}
       <ContentWidthProvider width={width} sidebar>
-        <SearchScreen docked={{ query, typed, onClose: closeSidebarSearch }} />
+        <SearchScreen docked={{ query, typed, onClose: () => closeSidebarSearch(tab) }} />
       </ContentWidthProvider>
     </View>
   );

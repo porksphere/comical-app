@@ -13,35 +13,69 @@
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
+import { activePaneTab, usePaneTab } from '@/lib/pane-tab';
+
+type Search = { typed: string; query: string };
+
+const NO_SEARCH: Search = { typed: '', query: '' };
+
 // A pending flag rather than a counter: the field may not exist when focus is asked for (the rail is
 // collapsed, and expands to answer), and a counter would refocus it on every later remount too.
-type SidebarSearchState = { typed: string; query: string; focusPending: boolean };
+// `searches` has one entry per tab (see `lib/pane-tab`), so the field shows the search of the tab
+// you are on, and each tab's results pane lists its own.
+type SidebarSearchState = { searches: Record<string, Search>; focusPending: boolean };
 
-const sidebarSearch$ = observable<SidebarSearchState>({ typed: '', query: '', focusPending: false });
+const sidebarSearch$ = observable<SidebarSearchState>({ searches: {}, focusPending: false });
 
-/** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
-export function useSidebarSearch(): SidebarSearchState {
-  return use$(sidebarSearch$);
+export function useSidebarSearch(): Search & { focusPending: boolean } {
+  const search = useTabSearch(usePaneTab());
+  const focusPending = useFocusPending();
+  return { ...search, focusPending };
 }
 
 export function useSidebarSearchOpen(): boolean {
-  return use$(() => !!sidebarSearch$.typed.get().trim() || !!sidebarSearch$.query.get());
+  return useTabSearchOpen(usePaneTab());
 }
 
-export function isSidebarSearchOpen(): boolean {
-  return !!sidebarSearch$.typed.peek().trim() || !!sidebarSearch$.query.peek();
+// `use`-prefixed wrappers, never a bare `use$` at a call site — see `sidebar-bridges.tsx` — and
+// holding nothing BUT `use$` (see `useSeriesPaneParams`), so the tab comes in from the caller.
+
+function useTabSearch(tab: string): Search {
+  return use$(() => sidebarSearch$.searches[tab].get() ?? NO_SEARCH);
+}
+
+function useTabSearchOpen(tab: string): boolean {
+  return use$(() => isOpen(sidebarSearch$.searches[tab].get()));
+}
+
+function useFocusPending(): boolean {
+  return use$(sidebarSearch$.focusPending);
+}
+
+export function isSidebarSearchOpen(tab = activePaneTab()): boolean {
+  return isOpen(sidebarSearch$.searches[tab].peek());
+}
+
+function isOpen(search: Search | undefined): boolean {
+  return !!search && (!!search.typed.trim() || !!search.query);
 }
 
 export function setSidebarSearchTyped(typed: string): void {
-  sidebarSearch$.typed.set(typed);
+  const tab = activePaneTab();
+  sidebarSearch$.searches[tab].set({ ...(sidebarSearch$.searches[tab].peek() ?? NO_SEARCH), typed });
 }
 
 export function submitSidebarSearch(text: string): void {
-  sidebarSearch$.assign({ typed: text, query: text.trim() });
+  sidebarSearch$.searches[activePaneTab()].set({ typed: text, query: text.trim() });
 }
 
-export function closeSidebarSearch(): void {
-  sidebarSearch$.assign({ typed: '', query: '' });
+export function closeSidebarSearch(tab = activePaneTab()): void {
+  sidebarSearch$.searches[tab].set({ typed: '', query: '' });
+}
+
+/** Every tab's — for when the field itself goes away (a collapsed rail has none). */
+export function clearSidebarSearches(): void {
+  sidebarSearch$.searches.set({});
 }
 
 export function focusSidebarSearch(): void {
