@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { Platform, ScrollView, StyleSheet } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
 import { useOverlay } from '@/components/overlay/overlay';
@@ -37,11 +37,13 @@ import { useDataSource, useMockActive, useNsfwMode, type NsfwMode } from '@/data
 import { connectServer } from '@/data/switch-server';
 import { setFeedTint, useFeedTint } from '@/hooks/use-feed-tint';
 import { setLibraryMarker, useLibraryMarker } from '@/hooks/use-library-marker';
+import { setKeepTabPanes, useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { desktopDataDir, desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
 import { friendlyError } from '@/lib/friendly-error';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
+import { useSeriesPaneAvailable } from '@/lib/series-pane';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
   { value: 'off', label: 'Off', description: 'NSFW-flagged bridges stay hidden everywhere in the app.' },
@@ -90,6 +92,8 @@ export default function GeneralSettingsScreen() {
   const lightCards = useLightCards();
   const feedTint = useFeedTint();
   const libraryMarker = useLibraryMarker();
+  const keepTabPanes = useKeepTabPanes();
+  const panesAvailable = useSeriesPaneAvailable();
   const errorToasts = useErrorToasts();
   const requestOverlay = useRequestOverlayEnabled();
   const [runInTray, setRunInTray] = useRunInTray();
@@ -155,9 +159,23 @@ export default function GeneralSettingsScreen() {
             gesture's only documentation — nothing on Browse or Library says the icon is holdable. */}
         <SettingsSection
           title="Browsing"
-          footer="NSFW content decides whether NSFW-flagged bridges are visible. Holding the bridge icon at the top of Browse or Library runs the chosen action.">
+          footer={`NSFW content decides whether NSFW-flagged bridges are visible. Holding the bridge icon at the top of Browse or Library runs the chosen action.${
+            Platform.OS === 'web'
+              ? ' Keep pages open per tab leaves a series or search you opened beside the sidebar open on its tab while you visit another.'
+              : ''
+          }`}>
           <SettingsSelectRow label="NSFW content" value={nsfwMode} options={NSFW_MODE_OPTIONS} onChange={setNsfwMode} />
           <SettingsSelectRow label="Hold bridge icon" value={holdAction} options={HOLD_ACTION_OPTIONS} onChange={setHoldAction} />
+          {/* Web only, like the panes themselves: a phone's series page covers the tab bar. Greyed
+              out below the sidebar's width, where there are no panes to keep. */}
+          {Platform.OS === 'web' && (
+            <SettingsToggleRow
+              label="Keep pages open per tab"
+              value={keepTabPanes}
+              onChange={setKeepTabPanes}
+              disabled={!panesAvailable}
+            />
+          )}
         </SettingsSection>
         <SettingsSection
           title="Connection"

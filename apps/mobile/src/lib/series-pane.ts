@@ -51,6 +51,11 @@ function useTabParams(tab: string): PaneParams | null {
   return use$(() => seriesPane$.params[tab].get() ?? null);
 }
 
+/** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
+export function useSeriesPaneAvailable(): boolean {
+  return use$(seriesPane$.available);
+}
+
 /** Called by `AppTabs` with whether it is currently rendering a pane at all. */
 export function setSeriesPaneAvailable(available: boolean): void {
   seriesPane$.available.set(available);

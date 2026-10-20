@@ -32,6 +32,7 @@ import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
 import { expandSidebar, SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useCollections } from '@/hooks/use-collections';
+import { useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
 import {
@@ -448,9 +449,15 @@ export default function AppTabs() {
   // Layout, not passive: the slot has already switched screens this render, and the panes of the tab
   // you left must not paint a frame over the one you arrived on. Over a pushed screen there is no
   // `activeTab`, and the panes stay those of the tab it covers.
+  //
+  // With the setting off, only the tab you are on has panes: leaving one closes what it had open,
+  // and so does turning the setting off while other tabs still hold some.
+  const keepTabPanes = useKeepTabPanes();
   useLayoutEffect(() => {
-    if (activeTab) setPaneTab(activeTab);
-  }, [activeTab]);
+    if (!activeTab) return;
+    if (!keepTabPanes) for (const tab of TABS) if (tab.name !== activeTab) closeContentPanes(tab.name);
+    setPaneTab(activeTab);
+  }, [activeTab, keepTabPanes]);
   const paneTab = useActivePaneTab();
   const openSearch = useOpenComicalSearch();
   // The rail's field only where it is drawn: collapsed it is an icon that expands the rail to reach
