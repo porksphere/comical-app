@@ -44,8 +44,10 @@ import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 
-// The keys are only listened for on web, which is also what the desktop app runs.
-const keyboardless = Platform.OS !== 'web';
+// The keys are only listened for on web, which is also what the desktop app runs. A phone has no
+// keyboard to rebind, so the row isn't there at all rather than greyed out: nothing about the device
+// could ever make it apply.
+const HAS_SHORTCUTS = Platform.OS === 'web';
 
 /**
  * The Settings landing screen is a table of contents, nothing more: every category owns its own
@@ -90,7 +92,7 @@ export default function SettingsScreen() {
           styles.fill,
         ]}>
         <View style={styles.list}>
-          <SettingsSection footer={keyboardless ? 'Keyboard shortcuts are for the desktop app and the browser.' : undefined}>
+          <SettingsSection>
             <CategoryRow
               testID="settings.category.general"
               icon={<GeneralSettingsIcon color={theme.text} size={18} />}
@@ -109,13 +111,14 @@ export default function SettingsScreen() {
               title="Sync"
               onPress={() => router.push('/settings-sync')}
             />
-            <CategoryRow
-              testID="settings.category.shortcuts"
-              icon={<KeyboardIcon color={theme.text} size={18} />}
-              title="Keyboard"
-              disabled={keyboardless}
-              onPress={() => router.push('/settings-shortcuts')}
-            />
+            {HAS_SHORTCUTS && (
+              <CategoryRow
+                testID="settings.category.shortcuts"
+                icon={<KeyboardIcon color={theme.text} size={18} />}
+                title="Keyboard"
+                onPress={() => router.push('/settings-shortcuts')}
+              />
+            )}
           </SettingsSection>
           <SettingsSection>
             <CategoryRow
