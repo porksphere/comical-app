@@ -16,6 +16,7 @@ import { syncDeviceName } from '@/lib/device-name';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { getApiBase, getSyncPairing, setApiBaseOverride } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
+import { autoDownloadSynced } from '../downloads/synced';
 import { getResolvedModeSync } from '../embedded/preference';
 import { queryClient } from '../query-client';
 import { createLibrarySync, type LibrarySync, type SyncDoc, type SyncStatus } from './controller';
@@ -50,9 +51,10 @@ export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): Lib
     canSync: () => getResolvedModeSync() === 'embedded',
     newDeviceId: () => `app-${crypto.randomUUID()}`,
     deviceName: syncDeviceName,
-    onApplied: () => {
+    onApplied: ({ addedSeries }) => {
       bumpDataEpoch();
       void queryClient.invalidateQueries();
+      void autoDownloadSynced(addedSeries);
     },
     onRepaired: () => showToast('Sync paired again — the computer had been reset.'),
     onUnlinked: () => {

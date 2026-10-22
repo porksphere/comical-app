@@ -182,6 +182,9 @@ function notify(title: string, body: string, route: string | null): void {
 let syncGate: PairingGate | null = null;
 let syncListener: SyncListener | null = null;
 let syncListenerChange: Promise<unknown> = Promise.resolve();
+/** Series other devices added, held until the page takes them (`synced-series-take`): a sync can
+ *  land while it is still loading or mid-reload, and only the page knows whether to download them. */
+const syncedSeries: { bridgeId: string; seriesId: string }[] = [];
 
 function gate(): PairingGate {
   syncGate ??= createSyncGate({
@@ -253,7 +256,10 @@ async function boot(): Promise<void> {
     //   COMICAL_BRIDGES_DIR=../../external/comical/bridges bun run start
     bridgesDir: process.env.COMICAL_BRIDGES_DIR ?? join(dataDir, "bridges"),
     baseUrl: `${server.origin}/api`,
-    onSynced: () => mainWindow?.webContents.send("synced"),
+    onSynced: ({ addedSeries }) => {
+      syncedSeries.push(...addedSeries);
+      mainWindow?.webContents.send("synced");
+    },
   });
   if (shellSettings().networkSync) void applyNetworkSync();
 
@@ -548,6 +554,7 @@ ipcMain.handle("network-sync", (_e, on: unknown) => {
 });
 
 ipcMain.handle("sync-devices", () => gate().devices());
+ipcMain.handle("synced-series-take", () => syncedSeries.splice(0));
 
 // What one phone scans to pair. Asking again replaces the code, so only the newest one shown works.
 ipcMain.handle("sync-pairing-open", async () => {

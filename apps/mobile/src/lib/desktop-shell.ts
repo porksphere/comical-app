@@ -55,6 +55,8 @@ type DesktopShell = {
   unlinkSyncDevice?(id: string): Promise<boolean>;
   onSyncDevices?(onDevices: (devices: PairedDevice[]) => void): () => void;
   onSynced?(onSynced: () => void): () => void;
+  /** Absent before the shell reported which series a sync added. */
+  takeSyncedSeries?(): Promise<{ bridgeId: string; seriesId: string }[]>;
   /** Absent before the data could live anywhere but the default folder. */
   dataDir?: DataDir;
   chooseDataDir?(): Promise<DataDirTarget | null>;

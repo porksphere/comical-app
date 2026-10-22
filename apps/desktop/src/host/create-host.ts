@@ -13,7 +13,7 @@
  * needs neither the JavaScriptCore harness (iOS) nor the QuickJS one (Android), because Electron
  * already ships a full Node runtime.
  */
-import { createHost, type ComicalHost } from "@comical/host-server/host";
+import { createHost, type ComicalHost, type HostOptions } from "@comical/host-server/host";
 
 export interface DesktopHostOptions {
   /** Per-user data root — `app.getPath('userData')` in Electron. Holds settings, library,
@@ -26,7 +26,7 @@ export interface DesktopHostOptions {
    *  loopback listener has a port. */
   baseUrl: string;
   /** Another device's changes have just landed in this library or its bridges. */
-  onSynced?: () => void;
+  onSynced?: HostOptions["onSynced"];
 }
 
 /** `router.fetch(Request)` is the whole API surface; `fetch(path)` drives it with no socket;

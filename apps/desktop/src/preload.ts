@@ -94,6 +94,8 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
       ipcRenderer.off("synced", listener);
     };
   },
+  /** The series other devices added since the last call, each handed over once. */
+  takeSyncedSeries: () => ipcRenderer.invoke("synced-series-take") as Promise<{ bridgeId: string; seriesId: string }[]>,
   /** Where everything this app keeps lives. Fixed for the launch: a move restarts the app. */
   dataDir: settings.dataDir,
   /** The folder picker. Resolves to where the data would go there, or why it can't; null if dismissed. */

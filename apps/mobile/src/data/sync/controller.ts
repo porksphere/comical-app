@@ -39,6 +39,8 @@ import {
   type SyncStats,
 } from '@comical/sync';
 
+export type SyncApplied = { addedSeries: { bridgeId: string; seriesId: string }[] };
+
 /** What's saved between launches; its absence means sync is off. */
 export type SyncDoc = {
   state: SyncStateSnapshot;
@@ -72,8 +74,9 @@ export type LibrarySyncOptions = {
   newDeviceId: () => string;
   /** What the hub lists this device as; asked every round, so a rename lands on the next one. */
   deviceName: () => string;
-  /** A round brought in changes — the screens reading the library should refetch. */
-  onApplied: () => void;
+  /** A round brought in changes — the screens reading the library should refetch. `addedSeries` is
+   *  what another device put in this library that it didn't hold, for this device's auto-download. */
+  onApplied: (applied: SyncApplied) => void;
   /** The hub had lost this device's history, and the device paired with it again (see `round`). */
   onRepaired?: () => void;
   /** The hub unlinked this device and sync is now off: whatever it was paired with is no use. */
@@ -144,6 +147,8 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
   }
   let status: SyncStatus = { enabled: false, running: false };
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** Filled as records apply, handed over by the round that succeeds — a failed one keeps them. */
+  let addedSeries: SyncApplied['addedSeries'] = [];
   // Serialises enable / disable / rounds, so a toggle never lands halfway through a round.
   let queue: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -167,7 +172,7 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
     const settings = bridgeSettingsSyncStore(lateBridges, { log });
     const engine = new SyncEngine({
       store: composeSyncStores([
-        [LIBRARY_TABLES, librarySyncStore(opts.raw)],
+        [LIBRARY_TABLES, librarySyncStore(opts.raw, Date.now, { onSeriesAdded: (series) => addedSeries.push(series) })],
         [REGISTRY_TABLES, registry],
         [SETTINGS_TABLES, settings],
       ]),
@@ -191,6 +196,7 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
     if (timer) clearTimeout(timer);
     timer = undefined;
     active = null;
+    addedSeries = [];
     setStatus({ enabled: false, running: false, lastSyncAt: undefined, lastError: undefined });
     await opts.save(null);
   }
@@ -236,7 +242,9 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
       // round. Under the engine's lock, so the recording wrapper never takes it for a local change.
       applied += await a.engine.exclusive(() => a.settings.retry());
       await save();
-      if (applied > 0) opts.onApplied();
+      const added = addedSeries;
+      addedSeries = [];
+      if (applied > 0 || added.length > 0) opts.onApplied({ addedSeries: added });
       setStatus({ running: false, lastSyncAt: Date.now(), lastError: undefined, repairedAt: repaired ? Date.now() : undefined });
       return { ...stats, applied };
     } catch (e) {

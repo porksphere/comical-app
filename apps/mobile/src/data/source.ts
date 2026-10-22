@@ -1245,6 +1245,12 @@ export function useDataSource(): DataSource {
   return useMemo(() => (mock ? mockDataSource : { ...realDataSource }), [mock, epoch]);
 }
 
+/** The real source, for work off the React tree that has already checked `isMockActive` — e.g.
+ *  downloading what a sync brought in. */
+export function getRealDataSource(): DataSource {
+  return realDataSource;
+}
+
 // NSFW visibility now lives in its own Legend State store; re-exported here so
 // screens keep importing it from `@/data/source`.
 export { useNsfwMode, useHideNsfw, type NsfwMode } from './nsfw';

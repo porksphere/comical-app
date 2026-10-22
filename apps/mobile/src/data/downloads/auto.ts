@@ -10,9 +10,10 @@
  *  - page → just that page, as a partial chapter (`onlyPages`), which a later whole-chapter download
  *    fills in around.
  *
- * Two more ways in, outside the save paths: turning the series toggle on offers to do the same for
- * everything already saved (`autoDownloadLibrary`), and the `autoNew` toggle downloads what each
- * library sync finds (`autoDownloadNewChapters`).
+ * Three more ways in, outside the save paths: turning the series toggle on offers to do the same for
+ * everything already saved (`autoDownloadLibrary`), a series another device saved arrives by sync
+ * (`syncedSeriesBackfill`, see `./synced.ts`), and the `autoNew` toggle downloads what each library
+ * sync finds (`autoDownloadNewChapters`).
  *
  * Everything here is fire-and-forget: a save never waits on (or fails because of) its download.
  */
@@ -26,6 +27,7 @@ import {
   getLibrary,
   getSavedChapters,
   type ApiActivityItem,
+  type ApiCollectedSeries,
 } from '../api';
 import { queryClient } from '../query-client';
 import { queryKeys, seriesListQuery } from '../queries';
@@ -113,19 +115,21 @@ async function savedChapters(bridgeId: string, seriesId: string): Promise<Chapte
 /** Which library entries a backfill covers: every bridge that auto-downloads series when the
  *  Settings → General toggle goes on, or one bridge asked for by name — an explicit request, so
  *  the global toggle and the bridge's own opt-out don't apply. */
-function backfills(entryBridgeId: string, bridgeId: string | undefined): boolean {
-  return bridgeId ? entryBridgeId === bridgeId : autoDownloadsFor(entryBridgeId, 'autoSeries');
+function backfills(bridgeId: string | undefined): (entry: ApiCollectedSeries) => boolean {
+  return (entry) => (bridgeId ? entry.bridgeId === bridgeId : autoDownloadsFor(entry.bridgeId, 'autoSeries'));
 }
 
-/** The library entries `autoDownloadLibrary` walks, with each one's installed bridge. */
-async function backfillEntries(bridgeId: string | undefined) {
+/** The library entries a backfill walks, with each one's installed bridge. */
+async function backfillEntries(include: (entry: ApiCollectedSeries) => boolean) {
   const [library, bridges] = await Promise.all([getLibrary(), getBridges()]);
   const installed = new Map(bridges.map((b) => [b.id, b]));
   return (library ?? []).flatMap((entry) => {
     const bridge = installed.get(entry.bridgeId);
-    return bridge && backfills(entry.bridgeId, bridgeId) ? [{ entry, direct: bridge.capabilities.includes('direct') }] : [];
+    return bridge && include(entry) ? [{ entry, direct: bridge.capabilities.includes('direct') }] : [];
   });
 }
+
+type BackfillEntry = Awaited<ReturnType<typeof backfillEntries>>[number];
 
 /** `fn` over every item, at most `limit` in flight — a few hundred stored reads without queueing
  *  them all at once behind the transport. */
@@ -154,7 +158,11 @@ export interface LibraryBackfill {
  * has no stored list — the run asks its bridge — so it counts as a download by its known total.
  */
 export async function librarySize(bridgeId?: string): Promise<LibraryBackfill> {
-  const [entries, usage] = await Promise.all([backfillEntries(bridgeId), dlStorageUsage().catch(() => null)]);
+  return sizeOf(await backfillEntries(backfills(bridgeId)));
+}
+
+async function sizeOf(entries: BackfillEntry[]): Promise<LibraryBackfill> {
+  const usage = await dlStorageUsage().catch(() => null);
   const manifests = new Map((usage?.bySeries ?? []).map((s) => [`${s.bridgeId}\u0000${s.seriesId}`, s.chapters]));
   const size: LibraryBackfill = { series: 0, chapters: 0, skipped: 0 };
   await eachLimited(entries, 8, async ({ entry, direct }) => {
@@ -199,9 +207,13 @@ export function describeBackfill({ series, chapters, skipped }: LibraryBackfill,
  */
 export async function autoDownloadLibrary(ds: DataSource, mock: boolean, bridgeId?: string): Promise<number> {
   if (mock) return 0;
+  return downloadEntries(ds, await backfillEntries(backfills(bridgeId)));
+}
+
+async function downloadEntries(ds: DataSource, entries: BackfillEntry[]): Promise<number> {
   let count = 0;
-  for (const { entry, direct } of await backfillEntries(bridgeId)) {
-    const series = withCover(mock, {
+  for (const { entry, direct } of entries) {
+    const series = withCover(false, {
       bridgeId: entry.bridgeId,
       seriesId: entry.seriesId,
       title: entry.seriesTitle,
@@ -217,7 +229,7 @@ export async function autoDownloadLibrary(ds: DataSource, mock: boolean, bridgeI
       } else {
         let chapters = await savedChapters(series.bridgeId, series.seriesId).catch(() => []);
         if (chapters.length === 0) {
-          const q = seriesListQuery(ds, mock, series.bridgeId, series.seriesId, false, true);
+          const q = seriesListQuery(ds, false, series.bridgeId, series.seriesId, false, true);
           chapters = (await queryClient.fetchQuery({ queryKey: q.queryKey, queryFn: q.queryFn })).chapters ?? [];
         }
         if ((await enqueueRemaining(series, chapters)) > 0) count += 1;
@@ -227,6 +239,32 @@ export async function autoDownloadLibrary(ds: DataSource, mock: boolean, bridgeI
     }
   }
   return count;
+}
+
+/** What `syncedSeriesBackfill` would take on, and the run that does it. */
+export interface SyncedBackfill {
+  size: LibraryBackfill;
+  download(ds: DataSource): Promise<number>;
+}
+
+/**
+ * Series another device's sync just put in this library, judged by THIS device's series toggle and
+ * bridge opt-outs — the save that would have downloaded them ran on the other device, against its
+ * own. Null when none of them would download here. The caller decides whether to ask first.
+ */
+export async function syncedSeriesBackfill(
+  added: readonly { bridgeId: string; seriesId: string }[],
+): Promise<SyncedBackfill | null> {
+  // Called as a sync lands, which can be at launch, before the prefs have hydrated (read off).
+  await Promise.all([whenPersistLoaded(downloadPrefs$), whenPersistLoaded(bridgeAutoDownload$)]);
+  if (added.length === 0 || !getDownloadPrefsSync().autoSeries) return null;
+  const keys = new Set(added.map((s) => JSON.stringify([s.bridgeId, s.seriesId])));
+  const entries = await backfillEntries(
+    (e) => keys.has(JSON.stringify([e.bridgeId, e.seriesId])) && autoDownloadsFor(e.bridgeId, 'autoSeries'),
+  );
+  if (entries.length === 0) return null;
+  const size = await sizeOf(entries);
+  return size.series === 0 ? null : { size, download: (ds) => downloadEntries(ds, entries) };
 }
 
 /** Feed items detected after this haven't been considered for `autoNew` yet. 0 = never stamped. */

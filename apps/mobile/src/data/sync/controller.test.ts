@@ -229,6 +229,25 @@ describe('createLibrarySync', () => {
     expect((await hub.pull(PROBE)).segments).toHaveLength(before);
   });
 
+  test("a series another device saved is handed on once, and this device's own saves never are", async () => {
+    const hub = await SyncHub.open(new MemorySegmentStore());
+    const a = device(hub);
+    await a.sync.enable();
+    await a.library.collectSeries(SERIES, { seriesTitle: 'One' });
+    await a.sync.syncNow();
+
+    const added: string[][] = [];
+    const b = device(hub, { onApplied: ({ addedSeries }) => void added.push(addedSeries.map((s) => s.seriesId)) });
+    await b.library.collectSeries({ bridgeId: 'bridge-a', seriesId: 'mine' }, { seriesTitle: 'Mine' });
+    await b.sync.enable();
+    expect(added).toEqual([['s1']]);
+
+    await a.library.createCollection('Later');
+    await a.sync.syncNow();
+    await b.sync.syncNow();
+    expect(added).toEqual([['s1'], []]);
+  });
+
   test('a write made before the saved state loads is still recorded', async () => {
     const hub = await SyncHub.open(new MemorySegmentStore());
     const a = device(hub);

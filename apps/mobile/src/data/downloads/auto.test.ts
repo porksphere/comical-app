@@ -1,7 +1,8 @@
 /**
  * Auto-download on save: each kind of item is gated by its own pref (and its bridge's opt-out), a page goes out as a partial
  * chapter, and a series enqueues only the chapters not already kept or queued. Plus the two ways in
- * outside a save: downloading the whole library, and downloading what syncs find.
+ * outside a save: downloading the whole library, downloading what syncs find, and downloading the
+ * series another device added.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { DownloadedChapter } from '@comical/downloads';
@@ -84,6 +85,15 @@ mock.module('../queries', () => ({
   }),
 }));
 mock.module('@comical/host-rn', () => ({ getEmbeddedDownloadEngine: () => null }));
+mock.module('expo/fetch', () => ({ fetch: globalThis.fetch }));
+// What `./events` reaches past the server — the on-device index and its files — none of it here.
+mock.module('../embedded/preference', () => ({ getResolvedModeSync: () => 'remote' }));
+mock.module('./index-cache', () => ({
+  clearDownloadIndex: () => {},
+  forgetChapter: () => {},
+  forgetSeries: () => {},
+  refreshChapterIndex: async () => {},
+}));
 mock.module('expo-network', () => ({
   getNetworkStateAsync: async () => ({ type: 'WIFI', isConnected: true }),
   addNetworkStateListener: () => ({ remove: () => {} }),
@@ -117,6 +127,7 @@ const {
   autoDownloadSeries,
   librarySize,
   setAutoNewChapters,
+  syncedSeriesBackfill,
 } = await import('./auto');
 const watermark = persistedStores.get('comical:dl:autoNewSince')!;
 
@@ -339,6 +350,49 @@ describe('autoDownloadLibrary', () => {
       ['s2', ['c']],
       ['s3', ['d']],
     ]);
+  });
+});
+
+describe('syncedSeriesBackfill', () => {
+  const coord = (seriesId: string, bridgeId = 'b') => ({ bridgeId, seriesId });
+
+  test("takes just the series another device added, asking the bridge for a list this one never fetched", async () => {
+    library = [entry('mine'), entry('theirs', 0)];
+    bridges = [{ id: 'b', capabilities: [] }];
+    chapterList = [ch('live', 1)];
+    const plan = await syncedSeriesBackfill([coord('theirs')]);
+    expect(plan?.size).toEqual({ series: 1, chapters: 0, skipped: 0 });
+    expect(await plan!.download(ds)).toBe(1);
+    expect(bulkIds()).toEqual([['theirs', ['live']]]);
+  });
+
+  test("this device's series toggle off means nothing, whatever the other device had", async () => {
+    library = [entry('theirs')];
+    bridges = [{ id: 'b', capabilities: [] }];
+    prefs.autoSeries = false;
+    expect(await syncedSeriesBackfill([coord('theirs')])).toBeNull();
+  });
+
+  test('a bridge that opted out of series is left out', async () => {
+    library = [entry('s1'), { ...entry('s2'), bridgeId: 'off' }];
+    bridges = [
+      { id: 'b', capabilities: [] },
+      { id: 'off', capabilities: [] },
+    ];
+    bridgeOptOuts = { off: { autoSeries: false } };
+    const plan = await syncedSeriesBackfill([coord('s1'), coord('s2', 'off')]);
+    expect(plan?.size).toEqual({ series: 1, chapters: 1, skipped: 0 });
+    expect(await syncedSeriesBackfill([coord('s2', 'off')])).toBeNull();
+  });
+
+  test('nothing to do — none added, not installed here, or already kept — is null', async () => {
+    library = [entry('s1'), { ...entry('x'), bridgeId: 'gone' }];
+    bridges = [{ id: 'b', capabilities: ['direct'] }];
+    manifest = [dl('__direct__')];
+    expect(await syncedSeriesBackfill([])).toBeNull();
+    expect(await syncedSeriesBackfill([coord('x', 'gone')])).toBeNull();
+    expect(await syncedSeriesBackfill([coord('s1')])).toBeNull();
+    expect(await syncedSeriesBackfill([coord('nowhere')])).toBeNull();
   });
 });
 
