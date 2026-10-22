@@ -61,15 +61,13 @@ export function ReaderToolbar({
         {...windowDragRegion}
         style={[
           styles.bar,
-          { paddingTop: insets.top + Spacing.two },
-          // Both sides, so the titles stay centred between the slots. The app's top-bar height, which
-          // the shell sizes the caption buttons to, so this row shares their centre line.
-          controls > 0 && {
-            paddingHorizontal: Spacing.three + controls,
-            paddingTop: 0,
-            paddingBottom: 0,
-            height: barHeight,
-          },
+          // Exactly `TopBar`'s geometry — the inset, then a top-bar-height row — so everything here
+          // shares the centre line of a back chevron sat in TopBar's slot (the series page's
+          // persistent one) and, on desktop, of the caption buttons the shell sizes to that height.
+          // Sized by its content instead, the row's centre moved with whether a subtitle showed.
+          { paddingTop: insets.top, height: insets.top + barHeight },
+          // Both sides, so the titles stay centred between the slots.
+          controls > 0 && { paddingHorizontal: Spacing.three + controls },
         ]}>
         {/* Always the same width as the trailing slot, with or without a back button in it —
             that symmetry is what centres the titles. */}
@@ -117,7 +115,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
-    paddingBottom: Spacing.three,
   },
   back: {
     width: 32,
