@@ -108,7 +108,7 @@ export function SettingFieldEditor({ descriptor, value, secretSet, trackerId, on
         <SettingsSelectRow
           label={fieldLabel(descriptor)}
           description={descriptor.description}
-          value={typeof value === 'string' ? value : ''}
+          value={typeof value === 'string' ? value : typeof descriptor.default === 'string' ? descriptor.default : ''}
           options={descriptor.options.map((o): SettingsOption<string> => ({ value: o.value, label: o.label }))}
           onChange={onChange}
           heading={descriptor.label}
