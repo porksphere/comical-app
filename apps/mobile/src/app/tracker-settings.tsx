@@ -10,7 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import type { SettingValue, TrackerSettingsInfo } from '@/data/api';
-import { isSecretSetting } from '@/data/secret-settings';
+import { isSecretSetting } from '@comical/contract';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';

@@ -1,5 +1,5 @@
 import type { BridgeSummary } from '@/data/api';
-import { isSecretSetting } from '@/data/secret-settings';
+import { isSecretSetting } from '@comical/contract';
 
 /**
  * Whether one bridge's favorites can be used right now, and if not, why:

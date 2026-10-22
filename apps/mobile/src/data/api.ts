@@ -1012,7 +1012,7 @@ export function dlDeleteAll(): Promise<{ files: string[] }> {
 import type {
   BridgeInfo as ApiBridgeInfo,
   ContentRating,
-  SettingDescriptor as ContractSettingDescriptor,
+  SettingDescriptor,
   SettingOption,
   SettingValue,
 } from '@comical/contract';
@@ -1040,6 +1040,7 @@ export type {
   ReadState,
   ApiBridgeInfo,
   ContentRating,
+  SettingDescriptor,
   SettingOption,
   SettingValue,
   RegistryBridgeEntry,
@@ -1086,20 +1087,7 @@ export interface BridgeSettingsInfo {
   settingsForm?: boolean;
 }
 
-/** A sign-in on the site itself (contract 2.1): `url` opens in a web view and the setting's value
- *  becomes the cookies it set, once every one in `cookies` is among them. Defined here until the
- *  `@comical/contract` this app pins has it. */
-export type WebLoginSetting = {
-  type: 'web-login';
-  key: string;
-  label: string;
-  description?: string;
-  required?: boolean;
-  url: string;
-  cookies: string[];
-  cookieUrls?: string[];
-};
-export type SettingDescriptor = ContractSettingDescriptor | WebLoginSetting;
+export type WebLoginSetting = Extract<SettingDescriptor, { type: 'web-login' }>;
 
 /** A button on a bridge's live settings form ("Test login") — it stores nothing. */
 export type SettingAction = { type: 'action'; key: string; label: string; description?: string };
