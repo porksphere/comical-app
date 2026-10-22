@@ -113,6 +113,10 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
       bumpDataEpoch();
       queryClient.invalidateQueries();
     },
+    onIdsMigrated: () => {
+      bumpDataEpoch();
+      queryClient.invalidateQueries();
+    },
     // Installs from the app's own screens are recorded for the other devices while paired.
     decorateRegistry: decorateRegistryForSync,
     // So are a bridge's preferences; its logins are never sent.

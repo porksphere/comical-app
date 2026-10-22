@@ -1,6 +1,6 @@
 /**
- * The activity feed's store contract, which sync leans on: a row is recorded once, and a drop takes
- * exactly the rows it names.
+ * The store contract sync and id migrations lean on: an activity row is recorded once, a drop takes
+ * exactly the rows it names, and a progress delete takes exactly the chapters it names.
  */
 import { describe, expect, mock, test } from 'bun:test';
 
@@ -39,5 +39,33 @@ describe('AsyncStorageLibraryStore activity', () => {
     await store.dropActivity(['bridge-a:s1:ch1', 'bridge-a:s1:missing']);
     expect((await store.listActivity()).map((a) => a.chapterId)).toEqual(['ch2']);
     expect(await store.putActivity(row('ch1'))).toBe(true);
+  });
+});
+
+const progress = (chapterId: string) => ({ chapterId, read: true, lastPage: 1, pageCount: 1, updatedAt: 1 });
+
+describe('AsyncStorageLibraryStore progress', () => {
+  test('a delete takes the chapters it names, and the last one takes the document', async () => {
+    mem.clear();
+    const store = new AsyncStorageLibraryStore();
+    await store.putProgress('bridge-a:s1', progress('ch1'));
+    await store.putProgress('bridge-a:s1', progress('ch2'));
+    await store.deleteProgress('bridge-a:s1', ['ch1', 'missing']);
+    expect((await store.listProgress('bridge-a:s1')).map((p) => p.chapterId)).toEqual(['ch2']);
+    await store.deleteProgress('bridge-a:s1', ['ch2']);
+    expect([...mem.keys()].some((k) => k.startsWith('comical:lib:progress:'))).toBe(false);
+  });
+});
+
+describe('AsyncStorageLibraryStore id-migration marks', () => {
+  test('are kept per bridge until cleared', async () => {
+    mem.clear();
+    const store = new AsyncStorageLibraryStore();
+    expect(await store.getIdMigrationMark('bridge-a')).toBeUndefined();
+    await store.setIdMigrationMark('bridge-a', '1.2.0');
+    await store.setIdMigrationMark('bridge-b', '3.0.0');
+    expect(await store.getIdMigrationMark('bridge-a')).toBe('1.2.0');
+    await store.clearIdMigrationMarks();
+    expect(await store.getIdMigrationMark('bridge-b')).toBeUndefined();
   });
 });

@@ -14,6 +14,7 @@
  *   comical:lib:progress:<key>     → { [chapterId]: ChapterProgress }
  *   comical:lib:detail:<key>       → CachedSeriesDetail   (offline series page)
  *   comical:lib:chapters:<key>     → CachedChapters       (offline chapter list)
+ *   comical:lib:id-migrations      → { [bridgeId]: version }   (device-local, never synced)
  *
  * Single-user, local scale: read/parse/write per operation (no in-memory cache), which keeps it
  * trivially correct — the library is small and writes are infrequent (a read or an add/remove).
@@ -55,6 +56,7 @@ const TRACKER_LINKS = `${NS}:tracker-links`;
 const READING_LOG = `${NS}:reading-log`;
 const BRIDGE_PREFS = `${NS}:bridge-prefs`;
 const ACTIVITY = `${NS}:activity`;
+const ID_MIGRATIONS = `${NS}:id-migrations`;
 const PROGRESS_PREFIX = `${NS}:progress:`;
 const progressKey = (key: string) => `${PROGRESS_PREFIX}${encodeURIComponent(key)}`;
 const detailKey = (key: string) => `${NS}:detail:${encodeURIComponent(key)}`;
@@ -145,6 +147,19 @@ export class AsyncStorageLibraryStore implements LibraryStore {
   }
   async deleteProgressForEntry(key: string): Promise<void> {
     await AsyncStorage.removeItem(progressKey(key));
+  }
+  async deleteProgress(key: string, chapterIds: string[]): Promise<void> {
+    const all = await readRecord<ChapterProgress>(progressKey(key));
+    let changed = false;
+    for (const id of chapterIds) {
+      if (id in all) {
+        delete all[id];
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    if (Object.keys(all).length === 0) await AsyncStorage.removeItem(progressKey(key));
+    else await write(progressKey(key), all);
   }
 
   // ── Collection items ───────────────────────────────────────────────────────
@@ -355,5 +370,18 @@ export class AsyncStorageLibraryStore implements LibraryStore {
   }
   async clearActivity(): Promise<void> {
     await AsyncStorage.removeItem(ACTIVITY);
+  }
+
+  // ── Id-migration marks ───────────────────────────────────────────────────────
+  async getIdMigrationMark(bridgeId: string): Promise<string | undefined> {
+    return (await readRecord<string>(ID_MIGRATIONS))[bridgeId];
+  }
+  async setIdMigrationMark(bridgeId: string, version: string): Promise<void> {
+    const all = await readRecord<string>(ID_MIGRATIONS);
+    all[bridgeId] = version;
+    await write(ID_MIGRATIONS, all);
+  }
+  async clearIdMigrationMarks(): Promise<void> {
+    await AsyncStorage.removeItem(ID_MIGRATIONS);
   }
 }
