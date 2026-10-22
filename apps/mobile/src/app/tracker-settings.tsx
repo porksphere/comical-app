@@ -10,6 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import type { SettingValue, TrackerSettingsInfo } from '@/data/api';
+import { isSecretSetting } from '@/data/secret-settings';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
@@ -19,7 +20,7 @@ import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 /** The sign-in field(s) still empty, by label — the import needs an account before it can list anything. */
 function signInPending(data: TrackerSettingsInfo): string | null {
-  const secrets = data.settings.filter((d) => (d.type === 'string' && !!d.secret) || d.type === 'oauth-pin' || d.type === 'oauth-callback');
+  const secrets = data.settings.filter(isSecretSetting);
   if (secrets.length === 0 || secrets.some((d) => data.secretsSet.includes(d.key))) return null;
   return secrets.map((d) => d.label).join(' or ');
 }
@@ -61,9 +62,8 @@ export default function TrackerSettingsScreen() {
     if (!data) return body;
     const source = { ...edits, ...extra };
     for (const d of data.settings) {
-      const isSecret = (d.type === 'string' && d.secret) || d.type === 'oauth-pin' || d.type === 'oauth-callback';
       if (d.key in source) body[d.key] = source[d.key];
-      else if (!isSecret && d.key in data.values) body[d.key] = data.values[d.key];
+      else if (!isSecretSetting(d) && d.key in data.values) body[d.key] = data.values[d.key];
     }
     return body;
   };

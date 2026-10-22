@@ -11,8 +11,15 @@ import { settingsRowFrame, SettingsRow } from '@/components/settings/settings-ro
 import { ThemedText } from '@/components/themed-text';
 import { IntStepper } from '@/components/reader/int-stepper';
 import { ThemedView } from '@/components/themed-view';
+import { canSignInNatively, WebLoginSheet } from '@/components/settings/web-login-sheet';
 import { Spacing } from '@/constants/theme';
-import { completeOAuthCallback, type OAuthReturnTo, type SettingDescriptor, type SettingValue } from '@/data/api';
+import {
+  completeOAuthCallback,
+  type OAuthReturnTo,
+  type SettingDescriptor,
+  type SettingValue,
+  type WebLoginSetting,
+} from '@/data/api';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useHovered } from '@/hooks/use-hovered';
@@ -33,9 +40,9 @@ type FieldProps<D extends SettingDescriptor> = {
    *  declare oauth fields, so `bridge-settings.tsx` omits it. */
   trackerId?: string;
   onChange: (v: SettingValue) => void;
-  /** When set (tracker settings only), an OAuth capture *persists immediately* through this instead
-   *  of staging for the screen's Save button — signing in is the commit, so there's no separate Save
-   *  step. Bridges omit it (they never declare oauth fields), so their oauth-less rows still stage. */
+  /** When set, a sign-in (an OAuth capture, a `web-login`) *persists immediately* through this
+   *  instead of staging for the screen's Save button — signing in is the commit, so there's no
+   *  separate Save step. */
   onCommit?: (v: SettingValue) => Promise<void>;
 };
 
@@ -46,6 +53,7 @@ type FieldProps<D extends SettingDescriptor> = {
 export function isAutoPersistedField(d: SettingDescriptor): boolean {
   if (d.type === 'oauth-callback') return true;
   if (d.type === 'oauth-pin') return isImplicitCapture(d);
+  if (d.type === 'web-login') return canSignInHere();
   return false;
 }
 
@@ -119,7 +127,129 @@ export function SettingFieldEditor({ descriptor, value, secretSet, trackerId, on
       return <OAuthPinRow descriptor={descriptor} value={value} secretSet={secretSet} onChange={onChange} onCommit={onCommit} />;
     case 'oauth-callback':
       return <OAuthCallbackRow descriptor={descriptor} secretSet={secretSet} trackerId={trackerId} />;
+    case 'web-login':
+      return <WebLoginRow descriptor={descriptor} value={value} secretSet={secretSet} onChange={onChange} onCommit={onCommit} />;
   }
+}
+
+/** The app itself can watch a sign-in happen: on a phone, or in the desktop shell. A browser tab can't. */
+function canSignInHere(): boolean {
+  return canSignInNatively || !!desktopShell()?.webLogin;
+}
+
+/** A `web-login` field: the site's own sign-in page, after which the cookies it set are the value.
+ *  A browser tab can't read another site's cookies, so there it opens the page and takes a paste. */
+function WebLoginRow({
+  descriptor,
+  value,
+  secretSet,
+  onChange,
+  onCommit,
+}: {
+  descriptor: WebLoginSetting;
+  value: SettingValue | undefined;
+  secretSet?: boolean;
+  onChange: (v: SettingValue) => void;
+  onCommit?: (v: SettingValue) => Promise<void>;
+}) {
+  const theme = useTheme();
+  const [sheet, setSheet] = useState<WebLoginSetting | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const store = async (cookies: string) => {
+    onChange(cookies);
+    if (onCommit) await onCommit(cookies);
+  };
+  const settle = async (cookies: string | null) => {
+    setSheet(null);
+    if (cookies === null) return;
+    setBusy(true);
+    try {
+      await store(cookies);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Sign-in failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const signIn = async () => {
+    setError(null);
+    const shell = desktopShell();
+    if (canSignInNatively || !shell?.webLogin) {
+      setSheet(descriptor);
+      return;
+    }
+    setBusy(true);
+    try {
+      const cookies = await shell.webLogin({ url: descriptor.url, cookies: descriptor.cookies, cookieUrls: descriptor.cookieUrls ?? [] });
+      setBusy(false);
+      await settle(cookies);
+    } catch (e) {
+      setBusy(false);
+      setError(e instanceof Error ? e.message : 'Sign-in failed');
+    }
+  };
+  const signedIn = secretSet && value !== '';
+
+  if (!canSignInHere()) {
+    return (
+      <>
+        <SettingsRow
+          label={fieldLabel(descriptor)}
+          description={signedIn ? 'Signed in' : (descriptor.description ?? 'Not signed in')}
+          descriptionColor={signedIn ? undefined : theme.badgeWarn}
+          right={
+            <ThemedText type="smallBold" style={{ color: theme.accent }}>
+              Open
+            </ThemedText>
+          }
+          onPress={() => void openBrowserAsync(descriptor.url)}
+          testID={testId('settings.web-login.open', descriptor.label)}
+        />
+        <SettingsTextRow
+          label="Cookies"
+          description={`After signing in, copy ${descriptor.cookies.join(' and ')} from the site's cookies.`}
+          value={(value as string | undefined) ?? ''}
+          onChange={onChange}
+          placeholder={secretSet ? '••••••••' : 'Paste here…'}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <SettingsRow
+        label={fieldLabel(descriptor)}
+        description={error ?? (signedIn ? 'Signed in' : (descriptor.description ?? 'Not signed in'))}
+        descriptionColor={error ? theme.danger : signedIn ? undefined : theme.badgeWarn}
+        right={
+          busy ? (
+            <ActivityIndicator />
+          ) : (
+            <ThemedText type="smallBold" style={{ color: theme.accent }}>
+              {signedIn ? 'Sign in again' : 'Sign in'}
+            </ThemedText>
+          )
+        }
+        onPress={busy ? undefined : () => void signIn()}
+        testID={testId('settings.web-login', descriptor.label)}
+      />
+      {onCommit && (
+        <SettingsRow
+          label="Sign out"
+          disabled={!signedIn || busy}
+          onPress={() => void settle('')}
+          testID={testId('settings.web-login.sign-out', descriptor.label)}
+        />
+      )}
+      <WebLoginSheet login={sheet} onDone={(cookies) => void settle(cookies)} />
+    </>
+  );
 }
 
 /** An `oauth-callback` field: no value is ever typed in — the whole exchange happens through a

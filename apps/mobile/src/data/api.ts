@@ -511,21 +511,43 @@ const transport: Transport = (path, init) => {
   );
 };
 
+/** A bridge that can't go on until someone signs in: the setting that does it, and on which bridge. */
+export type LoginRequired = { key: string; reason: string; bridgeId?: string };
+
 /** A failed response's error, carrying its status — and, on a 410, the source's word that the series
- *  no longer exists there. */
-export type ResponseError = Error & { status: number; gone?: { reason: string } };
+ *  no longer exists there; on a 401, the sign-in that would let it through. */
+export type ResponseError = Error & { status: number; gone?: { reason: string }; loginRequired?: LoginRequired };
 
 /** The removal a failed request reported, if that's why it failed. */
 export function seriesGoneReason(e: unknown): string | undefined {
   return (e as Partial<ResponseError> | null)?.gone?.reason;
 }
 
+/** The sign-in a failed request is waiting on, if that's why it failed. */
+export function loginRequiredOf(e: unknown): LoginRequired | undefined {
+  return (e as Partial<ResponseError> | null)?.loginRequired;
+}
+
+function bridgeOfPath(path?: string): string | undefined {
+  const id = path?.match(/^\/bridges\/([^/?]+)/)?.[1];
+  return id ? decodeURIComponent(id) : undefined;
+}
+
 /** The error an unsuccessful response becomes: the route's own `{ error }` where it gave one. */
 async function responseError(res: Response, path?: string): Promise<Error> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string; gone?: { reason?: string } };
-  const error: ResponseError = Object.assign(new Error(body.error ?? `${res.status} ${res.statusText}`), {
+  const body = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    gone?: { reason?: string };
+    loginRequired?: { key?: string; reason?: string };
+  };
+  const login =
+    res.status === 401 && body.loginRequired?.key
+      ? { key: body.loginRequired.key, reason: body.loginRequired.reason || 'Sign in to continue', bridgeId: bridgeOfPath(path) }
+      : undefined;
+  const error: ResponseError = Object.assign(new Error(login?.reason ?? body.error ?? `${res.status} ${res.statusText}`), {
     status: res.status,
     ...(res.status === 410 && { gone: { reason: body.gone?.reason || 'Removed from the source' } }),
+    ...(login && { loginRequired: login }),
   });
   return reportRequestError(error, path);
 }
@@ -987,7 +1009,13 @@ export function dlDeleteAll(): Promise<{ files: string[] }> {
 // methods return — live in `manager.ts` itself, not `schema.ts`, so they're hand-defined below
 // instead of imported; they're tiny (3-4 fields) and just wrap the imported entry types.
 
-import type { BridgeInfo as ApiBridgeInfo, ContentRating, SettingDescriptor, SettingOption, SettingValue } from '@comical/contract';
+import type {
+  BridgeInfo as ApiBridgeInfo,
+  ContentRating,
+  SettingDescriptor as ContractSettingDescriptor,
+  SettingOption,
+  SettingValue,
+} from '@comical/contract';
 import type { RegistryBridgeEntry, RegistryTrackerEntry, SavedRegistry } from '@comical/registry';
 // The local-library model — the user's own collection + reading progress, spanning every bridge.
 // Type-only re-exports of `@comical/library` (mapped in tsconfig.json to the sibling package's
@@ -1012,7 +1040,6 @@ export type {
   ReadState,
   ApiBridgeInfo,
   ContentRating,
-  SettingDescriptor,
   SettingOption,
   SettingValue,
   RegistryBridgeEntry,
@@ -1058,6 +1085,21 @@ export interface BridgeSettingsInfo {
    *  on servers older than the form. */
   settingsForm?: boolean;
 }
+
+/** A sign-in on the site itself (contract 2.1): `url` opens in a web view and the setting's value
+ *  becomes the cookies it set, once every one in `cookies` is among them. Defined here until the
+ *  `@comical/contract` this app pins has it. */
+export type WebLoginSetting = {
+  type: 'web-login';
+  key: string;
+  label: string;
+  description?: string;
+  required?: boolean;
+  url: string;
+  cookies: string[];
+  cookieUrls?: string[];
+};
+export type SettingDescriptor = ContractSettingDescriptor | WebLoginSetting;
 
 /** A button on a bridge's live settings form ("Test login") — it stores nothing. */
 export type SettingAction = { type: 'action'; key: string; label: string; description?: string };

@@ -104,6 +104,11 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
   moveDataDir: (dir: string, copy: boolean) => ipcRenderer.invoke("data-dir-move", dir, copy === true) as Promise<string | null>,
   /** Open the data's folder in the file manager. */
   showDataDir: () => ipcRenderer.send("data-dir-show"),
+  /** Sign in on a site for a bridge, in a window of the shell's own. Resolves to the cookies that
+   *  sign-in set, as a `Cookie` string, once every one named in `cookies` is among them; null when
+   *  the window is closed first. */
+  webLogin: (login: { url: string; cookies: string[]; cookieUrls: string[] }) =>
+    ipcRenderer.invoke("web-login", login) as Promise<string | null>,
   /** Fade the caption buttons' glyphs back, for a screen that has hidden its own chrome. */
   dimCaptionButtons: (dim: boolean) => ipcRenderer.send("caption-dim", dim === true),
   /** Reports the pointer entering and leaving the top `edge` px of the window — over a drag

@@ -491,7 +491,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // to match the Browse/Library grids.
   const showEmpty = gridItems.length === 0 && (bridgesLoaded || bridges.length > 0);
   const emptyBody = !showEmpty ? null : gridError ? (
-    <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />
+    <RetryBlock message={gridError} error={resultsQuery.error} onRetry={() => resultsQuery.refetch()} />
   ) : !scope ? null : resultsQuery.isLoading ? (
     <GridSkeleton numColumns={numColumns} />
   ) : (

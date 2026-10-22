@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["WebCookiesModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.webcookies.WebCookiesModule"]
+  }
+}

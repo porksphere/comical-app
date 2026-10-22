@@ -1,4 +1,5 @@
 import type { BridgeSummary } from '@/data/api';
+import { isSecretSetting } from '@/data/secret-settings';
 
 /**
  * Whether one bridge's favorites can be used right now, and if not, why:
@@ -31,9 +32,7 @@ export function favoritesStatusOf(summary: BridgeSummary): FavoritesStatus {
   if (summary.missingRequired.length > 0) return 'login';
   const { secretsSet, settings } = summary;
   if (secretsSet && settings) {
-    const secretKeys = settings
-      .filter((d) => (d.type === 'string' && !!d.secret) || d.type === 'oauth-pin' || d.type === 'oauth-callback')
-      .map((d) => d.key);
+    const secretKeys = settings.filter(isSecretSetting).map((d) => d.key);
     if (secretKeys.length > 0 && !secretKeys.some((k) => secretsSet.includes(k))) return 'login';
   }
   return 'available';

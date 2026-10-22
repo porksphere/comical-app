@@ -20,6 +20,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import type { BridgeSettingsInfo, SettingDescriptor, SettingsFormSection, SettingValue } from '@/data/api';
+import { isSecretSetting } from '@/data/secret-settings';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
@@ -39,8 +40,7 @@ function buildSettingsBody(
 ): Record<string, SettingValue> {
   const body: Record<string, SettingValue> = {};
   for (const d of settings) {
-    const isSecret = d.type === 'string' && d.secret;
-    if (isSecret) {
+    if (isSecretSetting(d)) {
       if (d.key in edits) body[d.key] = edits[d.key];
       continue;
     }
@@ -56,7 +56,7 @@ function buildSettingsBody(
  *  spoken to here. */
 function favoritesLoginPending(data: BridgeSettingsInfo): string | null {
   if (data.missingRequired.length > 0) return null;
-  const secrets = data.settings.filter((d) => (d.type === 'string' && !!d.secret) || d.type === 'oauth-pin' || d.type === 'oauth-callback');
+  const secrets = data.settings.filter(isSecretSetting);
   if (secrets.length === 0 || secrets.some((d) => data.secretsSet.includes(d.key))) return null;
   return secrets.map((d) => d.label).join(' or ');
 }
@@ -86,6 +86,17 @@ export default function BridgeSettingsScreen() {
   // (the server's settings store patches by key, so an omitted key is a no-op).
   const [edits, setEdits] = useState<Record<string, SettingValue>>({});
   const setField = (key: string, value: SettingValue) => setEdits((prev) => ({ ...prev, [key]: value }));
+  // A sign-in is its own save: stored the moment it completes, so leaving the screen can't lose it.
+  const commitField = async (key: string, value: SettingValue) => {
+    if (!bridgeId) return;
+    await ds.putBridgeSettings(bridgeId, { [key]: value });
+    setEdits(({ [key]: _, ...rest }) => rest);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(bridgeId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSummaries() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettingsForm(bridgeId) }),
+    ]);
+  };
 
   // Auto-save on leave (no Save button): PUT any pending edits when the screen unmounts. A ref holds
   // the latest values so the once-only unmount cleanup reads what's current, not what was set at mount.
@@ -262,7 +273,9 @@ export default function BridgeSettingsScreen() {
                           key={item.key}
                           descriptor={item}
                           value={item.key in edits ? edits[item.key] : data.values[item.key]}
+                          secretSet={data.secretsSet.includes(item.key)}
                           onChange={(v) => setField(item.key, v)}
+                          onCommit={(v) => commitField(item.key, v)}
                         />
                       );
                     }

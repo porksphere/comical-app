@@ -44,6 +44,9 @@ export class UserFacingError extends Error {
  */
 export function friendlyError(err: unknown, fallback = "This couldn't load right now. Try again."): string {
   if (err instanceof UserFacingError) return err.message;
+  // A bridge asking for a sign-in wrote its reason for the user (see `ResponseError.loginRequired`).
+  const login = (err as { loginRequired?: { reason?: string } } | null)?.loginRequired;
+  if (login?.reason) return login.reason;
   const raw = (err instanceof Error ? err.message : String(err ?? '')).toLowerCase();
   if (!raw) return fallback;
   // Match against the message with URLs removed. Several of the checks below key off a bare word

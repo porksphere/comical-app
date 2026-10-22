@@ -1,0 +1,31 @@
+# Web copy of ../mobile/web-login.yaml, kept in sync by hand. A browser can't read another site's
+# cookies, so on web the same web-login field renders as an Open row (the site in a new tab) plus a
+# secret Cookies field to paste into — this flow checks that fallback instead of the sheet.
+#
+# Selectors hitting the web-only aria-label quirk (see ../README.md):
+#   - tab bar: "Settings"; settings.category.bridges: "Bridges"; the bridge row: "Panelfox".
+#   - the Open row is a SettingsRow, so it is matched by its label, "Account".
+#   - the paste field's hint is plain Text; matched by `text:`.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Settings"
+- tapOn:
+    id: "Bridges"
+- tapOn:
+    id: "Panelfox"
+
+- scrollUntilVisible:
+    element:
+      id: "Account"
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    text: "Open"
+- assertVisible:
+    text: "After signing in, copy session_id from the site's cookies."
+- assertNotVisible:
+    text: "Sign in"
+- takeScreenshot: web-login-paste

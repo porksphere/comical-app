@@ -1,0 +1,55 @@
+# A bridge setting that signs in on the site itself (`web-login`): Settings -> Bridges -> Panelfox
+# -> the Account row -> the in-app sign-in sheet -> Cancel.
+#
+# Panelfox's mock settings (mock.ts, mockGetBridgeSettings) declare a web-login field, so this needs
+# no real site or account. The sheet loads the descriptor's URL in a WebView; the flow only checks
+# that it opens and that Cancel returns to the row without storing anything — a real sign-in can't be
+# scripted against a mock bridge.
+#
+# Needs a dev client built with react-native-webview and the web-cookies module: on an older build
+# `canSignInNatively` is false and the row falls back to the browser's Open + paste pair, which
+# ../web/web-login.yaml covers.
+#
+# Selectors:
+#   - settings.row.panelfox — see favorites-import.yaml.
+#   - settings.web-login.account — the row's testID is testId('settings.web-login', label).
+#   - settings.web-login.cancel — the sheet header's Cancel.
+#   - settings.web-login.sign-out.account — greyed out while nothing is stored (never hidden).
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.bridges"
+- tapOn:
+    id: "settings.row.panelfox"
+
+- scrollUntilVisible:
+    element:
+      id: "settings.web-login.account"
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    text: "Sign in"
+- assertVisible:
+    id: "settings.web-login.sign-out.account"
+    enabled: false
+
+- tapOn:
+    id: "settings.web-login.account"
+- extendedWaitUntil:
+    visible:
+      id: "settings.web-login.cancel"
+    timeout: 10000
+- takeScreenshot: web-login-sheet
+- tapOn:
+    id: "settings.web-login.cancel"
+
+- extendedWaitUntil:
+    visible:
+      id: "settings.web-login.account"
+    timeout: 10000
+- assertVisible:
+    text: "Sign in"

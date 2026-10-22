@@ -81,7 +81,7 @@ export default function ResultsScreen() {
   // Loading / error / empty, folded into the list header like the other grids.
   const emptyBody =
     gridItems.length > 0 ? null : gridError ? (
-      <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />
+      <RetryBlock message={gridError} error={resultsQuery.error} onRetry={() => resultsQuery.refetch()} />
     ) : resultsQuery.isLoading ? (
       <GridSkeleton numColumns={numColumns} />
     ) : (

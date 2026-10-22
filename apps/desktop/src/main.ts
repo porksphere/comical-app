@@ -25,6 +25,7 @@ import { shellSettings, updateShellSettings } from "./shell-settings.ts";
 import { setTray, trayNotice } from "./tray.ts";
 import { startAutoUpdate, updatesSupported } from "./updater.ts";
 import { savedWindowState, trackWindowState } from "./window-state.ts";
+import { registerWebLogin } from "./web-login.ts";
 
 /** The web export, which `scripts/build-web.ts` writes to `build/web` beside the bundled main.
  *
@@ -560,6 +561,7 @@ ipcMain.on("sync-pairing-close", () => gate().closeCode());
 ipcMain.handle("sync-device-unlink", (_e, id: unknown) => typeof id === "string" && gate().unlink(id));
 
 registerDataLocation();
+registerWebLogin(() => mainWindow);
 
 if (primary) {
   app

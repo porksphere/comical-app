@@ -61,6 +61,8 @@ type DesktopShell = {
   defaultDataDir?(): Promise<DataDirTarget>;
   moveDataDir?(dir: string, copy: boolean): Promise<string | null>;
   showDataDir?(): void;
+  /** Absent before the shell could sign in on a site for a bridge. */
+  webLogin?(login: { url: string; cookies: string[]; cookieUrls: string[] }): Promise<string | null>;
   setRunInTray(on: boolean): void;
   setOpenAtLogin(on: boolean): void;
   dimCaptionButtons(dim: boolean): void;

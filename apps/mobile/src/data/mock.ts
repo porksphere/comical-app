@@ -1832,6 +1832,7 @@ export async function mockGetBridgeSettings(bridgeId: string): Promise<BridgeSet
     info,
     settings: [
       { type: 'string', key: 'apiKey', label: 'API key', description: 'Your personal access token.', required: true, secret: true },
+      { type: 'web-login', key: 'session', label: 'Account', description: 'Sign in on the site.', url: 'https://example.com/login', cookies: ['session_id'] },
       { type: 'string', key: 'username', label: 'Username', placeholder: 'you@example.com' },
       { type: 'boolean', key: 'hd', label: 'High quality', description: 'Load full-resolution images.', default: true },
       { type: 'number', key: 'perPage', label: 'Items per page', min: 10, max: 100, default: 20 },

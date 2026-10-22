@@ -751,7 +751,7 @@ export default function BrowseScreen() {
   // there's no back banner here. The composed Home's rails/grid are virtualized rows of ContentFeed.
   const resultsHeader = gridError ? (
     <View style={styles.bleed}>
-      <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />
+      <RetryBlock message={gridError} error={resultsQuery.error} onRetry={() => resultsQuery.refetch()} />
     </View>
   ) : null;
 
@@ -806,7 +806,7 @@ export default function BrowseScreen() {
       terminalGridPreview,
     ],
   );
-  const homeHeader = homeError ? <RetryBlock message={homeError} onRetry={() => homeQuery.refetch()} /> : null;
+  const homeHeader = homeError ? <RetryBlock message={homeError} error={homeQuery.error} onRetry={() => homeQuery.refetch()} /> : null;
 
   // No REAL bridges installed (a successful empty load — not an error). Comical is still shown (it's
   // always present), so instead of a full-screen takeover we render the "add a registry" onboarding as
