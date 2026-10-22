@@ -142,9 +142,11 @@ type SwipeableRowProps = {
    *  (History's ⋯ button) keeps its lanes. Native ignores it. */
   overlay?: boolean;
   /** What the row sits on. Native paints the row at rest in that surface's colour (it slides to
-   *  uncover the pills beneath, so it can't be transparent) and lifts one step up as it opens. A row
-   *  inside a `SettingsCard` left on the page colour was a darker strip with the card showing round
-   *  it. Web ignores it — the hover row paints nothing. */
+   *  uncover the pills beneath, so it can't be transparent). On the page it lifts one step up as it
+   *  opens; in a card it keeps the card's colour and the slot it leaves shows the page, so it reads
+   *  as taken out of the card rather than just tinted. A row inside a `SettingsCard` left on the page
+   *  colour was a darker strip with the card showing round it. Web ignores it — the hover row paints
+   *  nothing. */
   surface?: 'page' | 'card';
   /** The row's own content (rendered as the swipeable surface / hover body). */
   children: ReactNode;
@@ -631,8 +633,10 @@ function SwipeRow({ name, actions, edgeInset, trailingInset: trailingGap, recycl
 
   // Hoist the two colours to local strings so the worklet closes over primitives, not the whole
   // `theme` object (which Reanimated would otherwise deep-clone into the shareable — per row).
+  // Either way the open row is a step above what shows behind it: the page's row lifts onto the
+  // element colour over the page, the card's row stays the card over the page-coloured slot below.
   const bgClosed = surface === 'card' ? theme.backgroundElement : theme.background;
-  const bgOpen = surface === 'card' ? theme.backgroundSelected : theme.backgroundElement;
+  const bgOpen = theme.backgroundElement;
   const rowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
     // UNIFORM radius (all four corners), NOT just the trailing two. Only the trailing edge's
@@ -648,6 +652,10 @@ function SwipeRow({ name, actions, edgeInset, trailingInset: trailingGap, recycl
     backgroundColor: interpolateColor(liftProgress.value, [0, 1], [bgClosed, bgOpen]),
   }));
 
+  // A card's row uncovers the page colour (see `surface`) — only once it has moved, so a resting row
+  // can never show a hairline of it at a subpixel edge.
+  const slotStyle = useAnimatedStyle(() => ({ opacity: tx.value < -0.5 ? 1 : 0 }));
+
   // The lone action's slot stretches LEFTWARD as the row is dragged past open (its right edge is
   // pinned by the slot's `right`): the circle grows into a pill whose width chases the row's live
   // (spring-lagged) position — the fill visibly pursues the finger toward the commit.
@@ -659,6 +667,12 @@ function SwipeRow({ name, actions, edgeInset, trailingInset: trailingGap, recycl
     <View
       style={[styles.swipeContainer, { marginHorizontal: -edgeInset }]}
       onLayout={fullSwipeable ? (e) => rowW.set(e.nativeEvent.layout.width) : undefined}>
+      {surface === 'card' && (
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: theme.background }, slotStyle]}
+        />
+      )}
       {/* Solid pills, uncovered by the sliding row (no fade) — that's what makes a one-pill rest read
           as fully revealed. Actions lay out left→right, so the last sits at the edge. */}
       <Animated.View
