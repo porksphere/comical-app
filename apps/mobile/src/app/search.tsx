@@ -39,6 +39,7 @@ import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useGridLayout } from '@/hooks/use-grid-layout';
+import { useOpenLink } from '@/hooks/use-open-link';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
@@ -98,6 +99,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   const mock = useMockActive();
   const theme = useTheme();
   const router = useRouter();
+  const openLink = useOpenLink();
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
@@ -573,7 +575,9 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
               key={focusRequest}
               testID="search.field"
               value={query}
-              onSubmit={(q) => setQuery(q.trim())}
+              onSubmit={(q) => {
+                if (!openLink(q)) setQuery(q.trim());
+              }}
               onClear={() => setQuery('')}
               onChangeText={setTyped}
               autoFocus={!initialIntent || initialIntent.kind === 'open'}

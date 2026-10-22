@@ -6,6 +6,7 @@ import { NO_OUTLINE, rowInput } from '@/components/input-style';
 import { Fonts, Spacing } from '@/constants/theme';
 import SearchScreen from '@/app/search';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
+import { useOpenLink } from '@/hooks/use-open-link';
 import { useTheme } from '@/hooks/use-theme';
 import { closeBridgeSearchPane } from '@/lib/bridge-search-pane';
 import { closeResultsPane } from '@/lib/results-pane';
@@ -28,6 +29,7 @@ export function SidebarSearchField({ hint }: { hint: string }) {
   const { typed, focusPending } = useSidebarSearch();
   const inputRef = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
+  const openLink = useOpenLink();
 
   useEffect(() => {
     if (!focusPending) return;
@@ -45,6 +47,8 @@ export function SidebarSearchField({ hint }: { hint: string }) {
     closeBridgeSearchPane();
   };
   const submit = () => {
+    // A link opens its series in the pane, which the closes below would take straight back down.
+    if (openLink(typed)) return;
     submitSidebarSearch(typed);
     closeSeriesPane();
     closeResultsPane();

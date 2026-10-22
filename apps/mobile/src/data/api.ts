@@ -566,6 +566,29 @@ export async function getMissingBridges(signal?: AbortSignal): Promise<MissingBr
   return (await fetchJsonOptional<MissingBridge[]>('/library/missing-bridges', signal)) ?? [];
 }
 
+/** Where a pasted web link leads: the installed bridge that opens it and the series (and chapter). */
+export type LinkTarget = { bridgeId: string; seriesId: string; chapterId?: string };
+
+/** Why a link opened nothing — no installed bridge covers the site, or the one that does can't open
+ *  this page (a search, a profile). */
+export type LinkMiss = 'no-bridge' | 'not-recognized';
+
+/** GET /resolve-link → the series a pasted web link points at. A host without the route (an older
+ *  server) answers a plain 404, which reads as no bridge covering the site. */
+export async function resolveLink(
+  url: string,
+  signal?: AbortSignal,
+): Promise<{ ok: true; target: LinkTarget } | { ok: false; reason: LinkMiss }> {
+  const path = `/resolve-link?url=${encodeURIComponent(url)}`;
+  const res = await transport(path, { signal });
+  if (res.status === 404) {
+    const body = (await res.json().catch(() => null)) as { reason?: string } | null;
+    return { ok: false, reason: body?.reason === 'not-recognized' ? 'not-recognized' : 'no-bridge' };
+  }
+  if (!res.ok) throw await responseError(res, path);
+  return { ok: true, target: (await res.json()) as LinkTarget };
+}
+
 /** One entry of the raw `GET /bridges` response — unlike `getBridges()` above (which discards
  *  everything but the browse-card fields), this keeps `configured`/`missingRequired`/`source`/
  *  `availableVersion` for the Settings screen's bridge rows (status badges, Uninstall visibility

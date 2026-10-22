@@ -65,6 +65,8 @@ export interface DataSource {
   getBridges(signal?: AbortSignal): Promise<Bridge[]>;
   /** Bridges the library still references but that aren't installed. */
   getMissingBridges(signal?: AbortSignal): Promise<MissingBridge[]>;
+  /** The series a pasted web link points at, via the installed bridge that covers its site. */
+  resolveLink(url: string, signal?: AbortSignal): ReturnType<typeof api.resolveLink>;
   getBridgeLists(bridgeId: string, signal?: AbortSignal): Promise<BridgeList[]>;
   getHomeSections(
     bridgeId: string,
@@ -589,6 +591,7 @@ function fetchSeriesPages(bridgeId: string, seriesId: string): Promise<api.ApiPa
 const realDataSource: DataSource = {
   getBridges: (signal) => api.getBridges(signal),
   getMissingBridges: (signal) => api.getMissingBridges(signal),
+  resolveLink: (url, signal) => api.resolveLink(url, signal),
   getBridgeLists: (bridgeId, signal) => api.getBridgeLists(bridgeId, signal),
 
   async getHomeSections(bridgeId, signal) {
@@ -1045,6 +1048,7 @@ const realDataSource: DataSource = {
 const mockDataSource: DataSource = {
   getBridges: () => mock.mockGetBridges(),
   getMissingBridges: async () => [],
+  resolveLink: async () => ({ ok: false, reason: 'no-bridge' }),
   getBridgeLists: (bridgeId) => mock.mockGetBridgeLists(bridgeId),
   getHomeSections: (bridgeId) => mock.mockGetHomeSections(bridgeId),
   getGridPage: (bridgeId, listId, cursor) => mock.mockGetGridPage(bridgeId, listId, cursor),
