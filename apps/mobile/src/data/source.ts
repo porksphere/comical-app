@@ -314,6 +314,9 @@ export interface DataSource {
   getBridgeSummaries(signal?: AbortSignal): Promise<api.BridgeSummary[]>;
   getBridgeSettings(bridgeId: string, signal?: AbortSignal): Promise<api.BridgeSettingsInfo>;
   putBridgeSettings(bridgeId: string, values: Record<string, api.SettingValue>, signal?: AbortSignal): Promise<void>;
+  /** The bridge's live settings screen, when `BridgeSettingsInfo.settingsForm` says it has one. */
+  getBridgeSettingsForm(bridgeId: string, signal?: AbortSignal): Promise<api.SettingsForm>;
+  runBridgeSettingAction(bridgeId: string, key: string, signal?: AbortSignal): Promise<api.SettingActionResult>;
   /** Update a registry-installed bridge to its latest version. */
   updateBridge(bridgeId: string, signal?: AbortSignal): Promise<void>;
   /** Uninstall a registry-installed bridge. */
@@ -965,6 +968,8 @@ const realDataSource: DataSource = {
   async putBridgeSettings(bridgeId, values, signal) {
     await api.putBridgeSettings(bridgeId, values, signal);
   },
+  getBridgeSettingsForm: (bridgeId, signal) => api.getBridgeSettingsForm(bridgeId, signal),
+  runBridgeSettingAction: (bridgeId, key, signal) => api.runBridgeSettingAction(bridgeId, key, signal),
   async updateBridge(bridgeId, signal) {
     await api.updateBridge(bridgeId, signal);
   },
@@ -1129,6 +1134,10 @@ const mockDataSource: DataSource = {
   getBridgeSummaries: () => mock.mockGetBridgeSummaries(),
   getBridgeSettings: (bridgeId) => mock.mockGetBridgeSettings(bridgeId),
   putBridgeSettings: (bridgeId, values) => mock.mockPutBridgeSettings(bridgeId, values),
+  getBridgeSettingsForm: async () => {
+    throw new Error('Mock bridges have no settings form');
+  },
+  runBridgeSettingAction: async () => ({ ok: true }),
   updateBridge: (bridgeId) => mock.mockUpdateBridge(bridgeId),
   uninstallBridge: (bridgeId) => mock.mockUninstallBridge(bridgeId),
   putExcludedTags: (bridgeId, tags) => mock.mockPutExcludedTags(bridgeId, tags),

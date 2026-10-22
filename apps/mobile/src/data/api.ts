@@ -1054,7 +1054,18 @@ export interface BridgeSettingsInfo {
   /** Reserved, host-managed content-rating ceiling (capability "content-rating"); `null` = no
    *  limit. Entries above it are redacted the same way as tag exclusions — see `MAX_CONTENT_RATING_KEY`. */
   maxContentRating: ContentRating | null;
+  /** The bridge builds its screen live (`getBridgeSettingsForm`); `settings` is the fallback. Absent
+   *  on servers older than the form. */
+  settingsForm?: boolean;
 }
+
+/** A button on a bridge's live settings form ("Test login") — it stores nothing. */
+export type SettingAction = { type: 'action'; key: string; label: string; description?: string };
+export type SettingsFormItem = SettingDescriptor | SettingAction;
+export type SettingsFormSection = { title?: string; footer?: string; items: SettingsFormItem[] };
+/** GET /bridges/{id}/settings/form — the server has already held it to the bridge's `settings`. */
+export type SettingsForm = { sections: SettingsFormSection[] };
+export type SettingActionResult = { ok: boolean; message?: string };
 
 /** GET/PUT /library/bridges/{id}/prefs response. */
 export interface BridgePrefs {
@@ -1191,6 +1202,17 @@ async function fetchDelete<T>(path: string, signal?: AbortSignal): Promise<T> {
 /** GET /bridges/{id} → settings form data for one bridge. */
 export function getBridgeSettings(bridgeId: string, signal?: AbortSignal): Promise<BridgeSettingsInfo> {
   return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}`, signal);
+}
+
+/** GET /bridges/{id}/settings/form → the bridge's live settings screen. */
+export function getBridgeSettingsForm(bridgeId: string, signal?: AbortSignal): Promise<SettingsForm> {
+  return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/settings/form`, signal);
+}
+
+/** POST /bridges/{id}/settings/actions/{key} → press a form's action button. It runs against the
+ *  SAVED settings, so save pending edits first. */
+export function runBridgeSettingAction(bridgeId: string, key: string, signal?: AbortSignal): Promise<SettingActionResult> {
+  return fetchPost(`/bridges/${encodeURIComponent(bridgeId)}/settings/actions/${encodeURIComponent(key)}`, {}, signal);
 }
 
 /** PUT /bridges/{id}/settings → persist a settings patch. Omit a secret key to keep its

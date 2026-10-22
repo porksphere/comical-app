@@ -19,7 +19,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import type { BridgeSettingsInfo, SettingDescriptor, SettingValue } from '@/data/api';
+import type { BridgeSettingsInfo, SettingDescriptor, SettingsFormSection, SettingValue } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
@@ -113,6 +113,46 @@ export default function BridgeSettingsScreen() {
     [],
   );
 
+  // Refetched on every open: a live form's labels can change on the site between visits. While it is
+  // missing — first load, an error, an older server — the flat `settings` list stands in.
+  const form = useQuery({
+    queryKey: queryKeys.bridgeSettingsForm(bridgeId ?? ''),
+    queryFn: ({ signal }) => ds.getBridgeSettingsForm(bridgeId ?? '', signal),
+    enabled: !!bridgeId && !!data?.settingsForm,
+    staleTime: 0,
+    retry: false,
+  });
+  const formFailed = !!data?.settingsForm && form.isError && !form.data;
+  const sections: SettingsFormSection[] =
+    data?.settingsForm && form.data
+      ? form.data.sections
+      : data && data.settings.length > 0
+        ? [{ title: 'Configuration', items: data.settings }]
+        : [];
+
+  const [actionResults, setActionResults] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const actionMutation = useMutation({
+    // The action reads the SAVED settings, so whatever is typed above it is saved first — "Test login"
+    // straight after typing a password has to test that password.
+    mutationFn: async (key: string) => {
+      const pending = edits;
+      if (data && Object.keys(pending).length > 0) {
+        await ds.putBridgeSettings(bridgeId!, buildSettingsBody(data.settings, data.values, pending));
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(bridgeId!) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSummaries() }),
+        ]);
+        setEdits((prev) => Object.fromEntries(Object.entries(prev).filter(([k, v]) => pending[k] !== v)));
+      }
+      return ds.runBridgeSettingAction(bridgeId!, key);
+    },
+    onSuccess: (result, key) =>
+      setActionResults((prev) => ({ ...prev, [key]: { ok: result.ok, message: result.message || (result.ok ? 'Done' : 'Failed') } })),
+    onError: (err, key) =>
+      setActionResults((prev) => ({ ...prev, [key]: { ok: false, message: (err as Error).message || 'Failed' } })),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettingsForm(bridgeId!) }),
+  });
+
   const uninstallMutation = useMutation({
     mutationFn: () => ds.uninstallBridge(bridgeId!),
     onSuccess: async () => {
@@ -203,21 +243,47 @@ export default function BridgeSettingsScreen() {
 
             <BridgeMetaInfo info={data.info} />
 
-            {data.settings.length === 0 ? (
+            {data.settingsForm && form.isLoading ? (
+              <ActivityIndicator />
+            ) : sections.length === 0 ? (
               <ThemedText type="small" themeColor="textSecondary">
                 This bridge has no configurable settings.
               </ThemedText>
             ) : (
-              <SettingsSection title="Configuration">
-                {data.settings.map((d) => (
-                  <SettingFieldEditor
-                    key={d.key}
-                    descriptor={d}
-                    value={d.key in edits ? edits[d.key] : data.values[d.key]}
-                    onChange={(v) => setField(d.key, v)}
-                  />
-                ))}
-              </SettingsSection>
+              sections.map((section, i) => (
+                <SettingsSection
+                  key={i}
+                  title={section.title}
+                  footer={formFailed ? "Couldn't load this bridge's latest options, so these are its basics." : section.footer}>
+                  {section.items.map((item) => {
+                    if (item.type !== 'action') {
+                      return (
+                        <SettingFieldEditor
+                          key={item.key}
+                          descriptor={item}
+                          value={item.key in edits ? edits[item.key] : data.values[item.key]}
+                          onChange={(v) => setField(item.key, v)}
+                        />
+                      );
+                    }
+                    const running = actionMutation.isPending && actionMutation.variables === item.key;
+                    const result = running ? undefined : actionResults[item.key];
+                    return (
+                      <SettingsRow
+                        key={item.key}
+                        testID={`settings.bridge.action.${item.key}`}
+                        label={item.label}
+                        labelBold
+                        description={result?.message ?? item.description}
+                        descriptionColor={result && !result.ok ? theme.danger : undefined}
+                        right={running ? <ActivityIndicator /> : undefined}
+                        disabled={actionMutation.isPending}
+                        onPress={() => actionMutation.mutate(item.key)}
+                      />
+                    );
+                  })}
+                </SettingsSection>
+              ))
             )}
 
             {/* Gated on the CAPABILITY alone, not on whether credentials are set: every favorites
