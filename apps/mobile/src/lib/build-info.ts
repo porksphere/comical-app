@@ -74,9 +74,8 @@ export const JS_ENGINE: string =
 /** Expo SDK the bundle was built against, e.g. "56.0.0". */
 export const EXPO_SDK_VERSION = Constants.expoConfig?.sdkVersion || '';
 
-/** The web export's base path (`/comical-app`, or `/comical-app/branches/<slug>` for a PR/branch
- *  preview) — baked in by deploy-web.yml from the same value it patches into app.json's
- *  `experiments.baseUrl` before `expo export`. Only meaningful on the web-pages channel; empty
+/** The web export's base path (`/comical-app`) — baked in by deploy-web.yml from app.json's
+ *  `experiments.baseUrl`, the same value `expo export` uses. Only meaningful on the web-pages channel; empty
  *  everywhere else. Exists so the in-app update checker (`data/use-app-update.ts`) can build an
  *  absolute, route-independent URL for `version.json` — a plain relative fetch breaks once
  *  expo-router's client-side navigation has moved off the root path, and Expo's static web export

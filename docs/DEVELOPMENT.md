@@ -153,7 +153,7 @@ channel's own Release body carries). Between them they fill:
 | `android-release` / `desktop-release` — `version.json` `notes` + the Release body | `changelog-section.sh` for that tag |
 | `ios-nightly` source — its one version + the Release body | `rolling-changelog.sh ios-nightly` |
 | `desktop-nightly` — `version.json` `notes` + the Release body | `rolling-changelog.sh desktop-nightly` |
-| gh-pages `version.json` `notes` | `rolling-changelog.sh web-pages` |
+| GitHub Pages `version.json` `notes` | `rolling-changelog.sh web-pages` |
 
 The app reads the SAME artifacts its update check already fetches, so Settings → About → the
 **Version** row shows both the update's changes and the running build's with no second request — see
@@ -174,13 +174,14 @@ resets, which is what the OS orders two builds of the same version by.
 
 The Expo app also targets web via react-native-web (`build:web` = `expo export --platform web`,
 static output to `dist/`). `deploy-web.yml` builds it and publishes to **GitHub Pages** on each
-push, giving a public URL you can open on a phone — no computer in the loop:
+push to `main` (other branches don't deploy), giving a public URL you can open on a phone — no
+computer in the loop:
 
 > **https://porksphere.github.io/comical-app/**
 
 `experiments.baseUrl` in `app.json` sets the `/comical-app` Pages subpath. One-time setup:
-**Settings → Pages → Source: Deploy from a branch → `gh-pages` / `root`** (the workflow
-publishes the static export to the `gh-pages` branch via `peaceiris/actions-gh-pages`).
+**Settings → Pages → Source: GitHub Actions** — the workflow uploads `dist/` straight to Pages via
+`actions/deploy-pages`; there is no `gh-pages` branch.
 
 The public Pages build runs in demo mode (`EXPO_PUBLIC_COMICAL_DEMO_MODE=1`, set only in
 `deploy-web.yml`) since static hosting has no backend to reach — see `components/demo-banner.tsx`.
