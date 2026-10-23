@@ -27,6 +27,7 @@ const heroHtml = `<figure class="device device-phone"><img src="${hero.src}" src
       image: { html: heroHtml },
       actions: [
         { text: 'Download', link: '#download', icon: 'down-caret', variant: 'primary' },
+        { text: 'Try the demo', link: href('demo/'), icon: 'rocket', variant: 'secondary' },
         { text: 'Read the docs', link: href('getting-started/'), icon: 'right-arrow', variant: 'minimal' },
       ],
     },
@@ -34,11 +35,10 @@ const heroHtml = `<figure class="device device-phone"><img src="${hero.src}" src
 >
   <section class="feature">
     <div class="copy">
-      <h2>A reader that gets out of the way</h2>
+      <h2>Made for reading</h2>
       <p>
-        Paged or long-strip, left-to-right or right-to-left. Pages fit the screen whole; a spread
-        rests at full height and pans. Double-tap to switch fit, pinch to look closer, swipe
-        between chapters. The chrome hides itself a few seconds in.
+        Pages, long strips and right-to-left manga all read the way they were drawn. Pinch to look
+        closer, swipe to the next chapter, and pick up exactly where you left off.
       </p>
       <a href={href('guides/reader/')}>Reader guide →</a>
     </div>
@@ -47,11 +47,10 @@ const heroHtml = `<figure class="device device-phone"><img src="${hero.src}" src
 
   <section class="feature reverse">
     <div class="copy">
-      <h2>Your library, offline</h2>
+      <h2>Your library, with you</h2>
       <p>
-        Save a series and it's yours to organise into collections and groups. Download chapters for
-        the plane, or let Comical fetch every new chapter of a saved series as it lands — over
-        Wi-Fi only, if you like.
+        Save the series you follow and sort them into collections. Download chapters to read
+        offline, or let new chapters download themselves as they come out.
       </p>
       <a href={href('guides/library/')}>Library →</a> · <a href={href('guides/downloads/')}>Downloads →</a>
     </div>
@@ -60,11 +59,10 @@ const heroHtml = `<figure class="device device-phone"><img src="${hero.src}" src
 
   <section class="feature">
     <div class="copy">
-      <h2>Keep up without checking</h2>
+      <h2>Never miss a chapter</h2>
       <p>
-        An Activity feed of new chapters across everything you follow, with a badge that only
-        counts what you haven't seen. Notifications on your phone. AniList and MyAnimeList stay in
-        step with what you've read.
+        One feed of everything new across the series you follow, with notifications on your phone.
+        AniList and MyAnimeList stay up to date with what you've read.
       </p>
       <a href={href('guides/activity/')}>Activity →</a> · <a href={href('guides/tracking/')}>Tracking →</a>
     </div>
@@ -72,16 +70,25 @@ const heroHtml = `<figure class="device device-phone"><img src="${hero.src}" src
   </section>
 
   <section class="desktop">
-    <h2>The same app on a big screen</h2>
+    <h2>On your computer too</h2>
     <p>
-      Sources and library shelves in a sidebar, a grid that uses the width, and a keyboard map
-      built for one hand. Phones pair with the desktop app over your local network and keep their
-      library, progress and bridges in step — end-to-end encrypted, no account.
+      A desktop app for Windows and Linux, and a web app you can host yourself. Your phone and
+      computer keep your library and reading progress in sync over your home network, with no
+      account to sign up for.
     </p>
     <DeviceFrame src={desktop} alt="Browsing in the desktop app" kind="window" class="wide" />
     <p class="links">
-      <a href={href('guides/keyboard-shortcuts/')}>Keyboard shortcuts →</a> · <a href={href('guides/sync/')}>Sync →</a>
+      <a href={href('guides/sync/')}>Sync →</a> · <a href={href('guides/keyboard-shortcuts/')}>Keyboard shortcuts →</a>
     </p>
+  </section>
+
+  <section class="try">
+    <h2>See it before you install it</h2>
+    <p>
+      The demo is the real app running in your browser on sample data. Browse, open a series, read
+      a chapter, save it to a library. Nothing to install and nothing to sign in to.
+    </p>
+    <a class="btn" href={href('demo/')}>Open the demo</a>
   </section>
 
   <section class="how">
@@ -166,13 +173,34 @@ const heroHtml = `<figure class="device device-phone"><img src="${hero.src}" src
   }
 
   .desktop,
+  .try,
   .how {
     text-align: center;
   }
   .desktop p,
+  .try p,
   .how > p {
     max-width: 60ch;
     margin-inline: auto;
+  }
+  .try {
+    padding: clamp(2rem, 5vw, 3.5rem) 1.5rem;
+    border-radius: 18px;
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-hairline-light);
+  }
+  .try .btn {
+    display: inline-block;
+    padding: 0.7rem 1.4rem;
+    border-radius: 999px;
+    background: var(--sl-color-accent);
+    color: #fff;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .try .btn:hover {
+    background: #5a90ff;
+    text-decoration: none;
   }
   .desktop :global(.wide) {
     margin: 2rem auto;
