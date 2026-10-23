@@ -30,6 +30,10 @@ on:
     paths:
       - 'apps/mobile/**'
       - 'apps/desktop/**'
+      - 'apps/site/**'
+      # The site syncs these in as pages, so a broken link in them breaks its build.
+      - 'docs/*.md'
+      - 'CHANGELOG.md'
       - '.github/workflows/checks.yml'
       # A submodule bump moves the `@comical/*` types the app compiles against, so it can break
       # typecheck without a single file under apps/mobile changing.
@@ -41,6 +45,9 @@ on:
     paths:
       - 'apps/mobile/**'
       - 'apps/desktop/**'
+      - 'apps/site/**'
+      - 'docs/*.md'
+      - 'CHANGELOG.md'
       - '.github/workflows/checks.yml'
       - 'external/comical'
       - 'bun.lock'
@@ -147,3 +154,33 @@ jobs:
         if: ${{ always() }}
         working-directory: apps/mobile
         run: bun run lint:ci
+
+  site:
+    name: Website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      - name: Typecheck site
+        working-directory: apps/site
+        run: bun run typecheck
+
+      # A build is the only thing that resolves every internal link, image import and synced doc,
+      # so it runs even after a type error.
+      - name: Build site
+        if: ${{ always() }}
+        working-directory: apps/site
+        run: bun run build

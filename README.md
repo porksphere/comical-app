@@ -12,6 +12,12 @@
 </p>
 
 <p align="center">
+  <a href="https://porksphere.github.io/comical-app/">Website</a> ·
+  <a href="https://porksphere.github.io/comical-app/getting-started/">Getting started</a> ·
+  <a href="https://porksphere.github.io/comical-app/install/">Install</a>
+</p>
+
+<p align="center">
   <img src="docs/media/01-browse.png" alt="Browsing featured series" width="240" />
   <img src="docs/media/02-series.png" alt="A series page" width="240" />
   <img src="docs/media/03-reader.png" alt="The reader" width="240" />
@@ -66,8 +72,8 @@ Warning: the installers aren't code-signed, so Windows SmartScreen will warn on 
 The frontend and backend can be run as two Docker containers. See
 **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)** for the compose file and configuration.
 
-A mock preview is deployed to
-**[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**.
+A demo on sample data runs at
+**[porksphere.github.io/comical-app/demo](https://porksphere.github.io/comical-app/demo/)**.
 
 ## How it works
 

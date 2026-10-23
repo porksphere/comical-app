@@ -1,8 +1,10 @@
 name: Deploy Web (GitHub Pages)
 
-# Builds the Expo app for web (demo mode) and publishes the static export to GitHub Pages:
+# Builds the website (apps/site) and the Expo app for web (demo mode), and publishes both to
+# GitHub Pages as one upload:
 #
-#   main -> https://porksphere.github.io/comical-app/
+#   main -> https://porksphere.github.io/comical-app/        the site
+#           https://porksphere.github.io/comical-app/demo/   the app, on sample data
 #
 # Only main deploys. The export is uploaded straight to Pages via actions/deploy-pages — there is
 # no gh-pages branch in the loop, and the repo's Settings → Pages → Source must stay on
@@ -51,10 +53,24 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Astro 7 (apps/site) needs 22.23+.
+          node-version: 24
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # The site owns the Pages root; the demo sits under it. app.json keeps `/comical-app` as its
+      # checked-in value because the e2e and screenshot-capture flows serve local exports under
+      # that path — only the published demo moves, so it's patched here, before the stamps step
+      # reads it back.
+      - name: Place the demo under /demo
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp)"
+          jq '.expo.experiments.baseUrl += "/demo"' app.json > "$tmp"
+          mv "$tmp" app.json
+          echo "experiments.baseUrl = $(jq -r '.expo.experiments.baseUrl' app.json)"
 
       # The same `<base>.<Nth build of this release series>` string the iOS and Android lanes
       # stamp — see .github/scripts/compute-build-version.sh. Without it `build-info.ts` falls
@@ -122,18 +138,34 @@ jobs:
             '{commit: $commit, version: $version, notes: $notes, publishedAt: $publishedAt}' \
             > dist/version.json
 
+      # astro.config.mjs defaults to the Pages root, so no SITE_BASE is needed here.
+      - name: Build website
+        working-directory: apps/site
+        run: bun run build
+
+      # A Pages deploy is a single upload, so the two outputs are laid out together first.
+      - name: Assemble site + demo
+        run: |
+          set -euo pipefail
+          mkdir -p _publish/demo
+          cp -r apps/site/dist/. _publish/
+          cp -r apps/mobile/dist/. _publish/demo/
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/mobile/dist
+          path: _publish
 
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
 
-      - name: Publish URL to job summary
+      - name: Publish URLs to job summary
         env:
           PAGE_URL: ${{ steps.deploy.outputs.page_url }}
         run: |
-          echo "## 🌐 Web demo: **[${PAGE_URL}](${PAGE_URL})**" >> "$GITHUB_STEP_SUMMARY"
-          echo "::notice title=Web demo::${PAGE_URL}"
+          {
+            echo "## 🌐 Website: **[${PAGE_URL}](${PAGE_URL})**"
+            echo "Demo: [${PAGE_URL}demo/](${PAGE_URL}demo/)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Website::${PAGE_URL} (demo: ${PAGE_URL}demo/)"

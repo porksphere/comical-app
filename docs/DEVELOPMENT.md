@@ -173,15 +173,25 @@ resets, which is what the OS orders two builds of the same version by.
 ### Web (same codebase, react-native-web)
 
 The Expo app also targets web via react-native-web (`build:web` = `expo export --platform web`,
-static output to `dist/`). `deploy-web.yml` builds it and publishes to **GitHub Pages** on each
-push to `main` (other branches don't deploy), giving a public URL you can open on a phone — no
-computer in the loop:
+static output to `dist/`). `deploy-web.yml` builds it — together with the website in `apps/site`
+— and publishes both to **GitHub Pages** on each push to `main` (other branches don't deploy),
+giving a public URL you can open on a phone — no computer in the loop:
 
-> **https://porksphere.github.io/comical-app/**
+> **https://porksphere.github.io/comical-app/** — the site
+> **https://porksphere.github.io/comical-app/demo/** — the app
 
-`experiments.baseUrl` in `app.json` sets the `/comical-app` Pages subpath. One-time setup:
-**Settings → Pages → Source: GitHub Actions** — the workflow uploads `dist/` straight to Pages via
-`actions/deploy-pages`; there is no `gh-pages` branch.
+`experiments.baseUrl` in `app.json` is `/comical-app`, which is what local exports are served
+under (the e2e flows and the screenshot capture both depend on it); the workflow appends `/demo`
+before exporting so only the published demo moves. One-time setup: **Settings → Pages → Source:
+GitHub Actions** — the workflow lays the site and `dist/` out together and uploads that straight
+to Pages via `actions/deploy-pages`; there is no `gh-pages` branch.
+
+### Website (`apps/site`)
+
+Astro + Starlight. `bun run dev` there serves it with hot reload; `bun run build` writes `dist/`.
+Both first run `scripts/sync-docs.ts`, which copies this file, `ARCHITECTURE.md`, `PROFILING.md`
+and the `CHANGELOG` into the site as pages — edit them here, not in the site. The screenshots it
+shows are the ones in `docs/media/`, copied into `apps/site/src/assets/screens/`.
 
 The public Pages build runs in demo mode (`EXPO_PUBLIC_COMICAL_DEMO_MODE=1`, set only in
 `deploy-web.yml`) since static hosting has no backend to reach — see `components/demo-banner.tsx`.
