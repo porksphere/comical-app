@@ -23,12 +23,12 @@
 
 ## Features
 
-- **Paged and long-strip readers**
-- **Library, collections and groups** for organising what you follow
-- **Offline downloads**, including auto-downloading new chapters
-- **Activity**: new chapters from your library in one feed, with notifications
-- **Tracking** to AniList and MyAnimeList
-- **Sync** between your phones and computer, with no cloud account
+- **Paged and long-strip** readers
+- **Library**, collections and groups
+- **Offline downloads**, with auto-download for new chapters
+- **New-chapter feed**, with notifications
+- **AniList and MyAnimeList** tracking
+- **Sync** between your phones and computer
 
 ## Install
 
@@ -61,8 +61,6 @@ or the
 
 Warning: the installers aren't code-signed, so Windows SmartScreen will warn on first run.
 
-The desktop app is also the hub your phones [sync](#sync) with.
-
 ### Web
 
 The frontend and backend can be run as two Docker containers. See
@@ -80,8 +78,7 @@ A mock preview is deployed to
 - A **bridge** is an adapter for one source or service, downloaded and verified from a registry.
 - **Series** are what a bridge sources, and what you browse and read.
 
-Registries can also carry **trackers**, which sync your reading progress to a service like AniList.
-They're installed and updated the same way as bridges.
+Registries can also carry **trackers**, which sync your reading progress to services like AniList.
 
 On iOS and Android, bridges run on-device and no server is involved. On the web they run in the
 backend you host.
@@ -92,14 +89,11 @@ which is written to embed in any JS environment. For the full picture, see
 
 ## Sync
 
-The desktop app keeps your phones' libraries in step. On the computer, open **Settings → Sync**,
-turn on **Sync with your phone** and tap **Pair a phone**. Then scan the code from the phone's own
-Sync settings. Your library, collections, reading progress, history, tracker links and installed
-bridges sync over your local network. Logins never leave the device they were entered on, and
-everything between the phone and the computer is end-to-end encrypted.
+Phones sync their library, progress and installed bridges with the **desktop app** over your
+local network. Pair one by scanning the code in **Settings → Sync**. Logins stay on the device, and
+everything sent is end-to-end encrypted.
 
-Sync is for phones that run bridges on-device. A browser doesn't need it, since it reads its
-server's library directly.
+A browser doesn't need sync, since it already reads its server's library.
 
 ## Development
 
