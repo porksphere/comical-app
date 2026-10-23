@@ -1,0 +1,240 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { getImage } from 'astro:assets';
+import DeviceFrame from '../components/DeviceFrame.astro';
+import PlatformPicker from '../components/PlatformPicker.astro';
+import { href, links } from '../lib/links';
+import browse from '../assets/screens/01-browse.png';
+import series from '../assets/screens/02-series.png';
+import reader from '../assets/screens/03-reader.png';
+import desktop from '../assets/screens/04-desktop.png';
+
+// Starlight's hero takes its image as raw HTML, so the phone there is the DeviceFrame markup by
+// hand, over the same optimised asset and the same global .device styles.
+const hero = await getImage({ src: browse, widths: [440, 720], sizes: '(max-width: 50rem) 70vw, 25rem', format: 'webp' });
+const heroHtml = `<figure class="device device-phone"><img src="${hero.src}" srcset="${hero.srcSet.attribute}" sizes="${hero.attributes.sizes}" width="${hero.attributes.width}" height="${hero.attributes.height}" alt="Browsing featured series on a phone" loading="eager" fetchpriority="high" decoding="async"></figure>`;
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'Comical',
+    description: 'A comic reader for iOS, Android, desktop and the web.',
+    template: 'splash',
+    hero: {
+      title: 'A comic reader for every screen you own.',
+      tagline:
+        'iOS, Android, Windows, Linux and the web. Comical ships with no sources — you add a registry, install the bridges you want, and read from those.',
+      image: { html: heroHtml },
+      actions: [
+        { text: 'Download', link: '#download', icon: 'down-caret', variant: 'primary' },
+        { text: 'Read the docs', link: href('getting-started/'), icon: 'right-arrow', variant: 'minimal' },
+      ],
+    },
+  }}
+>
+  <section class="feature">
+    <div class="copy">
+      <h2>A reader that gets out of the way</h2>
+      <p>
+        Paged or long-strip, left-to-right or right-to-left. Pages fit the screen whole; a spread
+        rests at full height and pans. Double-tap to switch fit, pinch to look closer, swipe
+        between chapters. The chrome hides itself a few seconds in.
+      </p>
+      <a href={href('guides/reader/')}>Reader guide →</a>
+    </div>
+    <DeviceFrame src={reader} alt="The reader, with a page shown full-bleed" />
+  </section>
+
+  <section class="feature reverse">
+    <div class="copy">
+      <h2>Your library, offline</h2>
+      <p>
+        Save a series and it's yours to organise into collections and groups. Download chapters for
+        the plane, or let Comical fetch every new chapter of a saved series as it lands — over
+        Wi-Fi only, if you like.
+      </p>
+      <a href={href('guides/library/')}>Library →</a> · <a href={href('guides/downloads/')}>Downloads →</a>
+    </div>
+    <DeviceFrame src={series} alt="A series page with resume, library, download and tracker actions" />
+  </section>
+
+  <section class="feature">
+    <div class="copy">
+      <h2>Keep up without checking</h2>
+      <p>
+        An Activity feed of new chapters across everything you follow, with a badge that only
+        counts what you haven't seen. Notifications on your phone. AniList and MyAnimeList stay in
+        step with what you've read.
+      </p>
+      <a href={href('guides/activity/')}>Activity →</a> · <a href={href('guides/tracking/')}>Tracking →</a>
+    </div>
+    <DeviceFrame src={browse} alt="Browse, with new and hot badges on series" />
+  </section>
+
+  <section class="desktop">
+    <h2>The same app on a big screen</h2>
+    <p>
+      Sources and library shelves in a sidebar, a grid that uses the width, and a keyboard map
+      built for one hand. Phones pair with the desktop app over your local network and keep their
+      library, progress and bridges in step — end-to-end encrypted, no account.
+    </p>
+    <DeviceFrame src={desktop} alt="Browsing in the desktop app" kind="window" class="wide" />
+    <p class="links">
+      <a href={href('guides/keyboard-shortcuts/')}>Keyboard shortcuts →</a> · <a href={href('guides/sync/')}>Sync →</a>
+    </p>
+  </section>
+
+  <section class="how">
+    <h2>How it works</h2>
+    <ol class="not-content">
+      <li>
+        <strong>Registry</strong>
+        <span>A list of bridges you add in Settings. Public ones are tagged <a href={links.registryTopic}><code>comical-registry</code></a> on GitHub.</span>
+      </li>
+      <li>
+        <strong>Bridge</strong>
+        <span>An adapter for one source or service, downloaded and verified from a registry. On a phone, bridges run on the device; on the web, on the server you host.</span>
+      </li>
+      <li>
+        <strong>Series</strong>
+        <span>What a bridge sources, and what you browse, save and read.</span>
+      </li>
+    </ol>
+    <p class="links"><a href={href('concepts/')}>More on registries, bridges and trackers →</a></p>
+  </section>
+
+  <section class="download" id="download">
+    <h2>Download</h2>
+    <PlatformPicker />
+  </section>
+
+  <footer class="fine">
+    <p>
+      Screenshots show sample data. The comic pages pictured are from
+      <a href="https://www.peppercarrot.com"><em>Pepper&amp;Carrot</em></a> by David Revoy,
+      <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
+    </p>
+  </footer>
+</StarlightPage>
+
+<style>
+  section {
+    margin-block: clamp(3rem, 8vw, 6rem);
+  }
+  h2 {
+    font-size: clamp(var(--sl-text-2xl), calc(0.5rem + 2.5vw), var(--sl-text-4xl));
+    font-weight: 600;
+    color: var(--sl-color-white);
+    line-height: 1.15;
+    margin: 0 0 0.75rem;
+  }
+  p {
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-lg);
+    line-height: 1.6;
+    margin: 0 0 1rem;
+  }
+  a {
+    color: var(--sl-color-text-accent);
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+
+  .feature {
+    display: grid;
+    gap: 2rem;
+    align-items: center;
+  }
+  .feature :global(.device) {
+    width: min(70%, 18rem);
+    justify-self: center;
+  }
+  @media (min-width: 50rem) {
+    .feature {
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+    }
+    .feature.reverse .copy {
+      order: 2;
+    }
+  }
+
+  .desktop,
+  .how {
+    text-align: center;
+  }
+  .desktop p,
+  .how > p {
+    max-width: 60ch;
+    margin-inline: auto;
+  }
+  .desktop :global(.wide) {
+    margin: 2rem auto;
+    max-width: 60rem;
+  }
+  .links {
+    font-size: var(--sl-text-base);
+  }
+
+  .how ol {
+    list-style: none;
+    padding: 0;
+    margin: 2rem 0;
+    display: grid;
+    gap: 1rem;
+    counter-reset: step;
+    text-align: start;
+  }
+  @media (min-width: 50rem) {
+    .how ol {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+  .how li {
+    counter-increment: step;
+    padding: 1.25rem;
+    border-radius: 14px;
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-hairline-light);
+    display: grid;
+    align-content: start;
+    gap: 0.5rem;
+  }
+  .how li::before {
+    content: counter(step);
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    background: var(--sl-color-accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: var(--sl-text-sm);
+    display: grid;
+    place-items: center;
+  }
+  .how strong {
+    color: var(--sl-color-white);
+    font-size: var(--sl-text-lg);
+  }
+  .how span {
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-sm);
+    line-height: 1.5;
+  }
+
+  .download h2 {
+    text-align: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .fine {
+    margin-block: 3rem 1rem;
+    text-align: center;
+  }
+  .fine p {
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+  }
+</style>

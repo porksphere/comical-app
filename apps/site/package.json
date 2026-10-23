@@ -1,0 +1,25 @@
+{
+  "name": "comical-site",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Comical's website and documentation — a static Astro/Starlight site.",
+  "type": "module",
+  "scripts": {
+    "sync-docs": "bun run scripts/sync-docs.ts",
+    "dev": "bun run sync-docs && astro dev",
+    "build": "bun run sync-docs && astro build",
+    "preview": "astro preview",
+    "typecheck": "bun run sync-docs && astro check",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.7",
+    "astro": "^7.4.2",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.6",
+    "@types/bun": "^1.4.0",
+    "typescript": "~6.0.3"
+  }
+}

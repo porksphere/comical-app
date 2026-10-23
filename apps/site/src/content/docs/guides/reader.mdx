@@ -1,0 +1,54 @@
+---
+title: Reader
+description: Reading modes, fit, direction, zoom, and the reader's settings.
+---
+
+import DeviceFrame from '../../../components/DeviceFrame.astro';
+import reader from '../../../assets/screens/03-reader.png';
+
+<DeviceFrame src={reader} alt="The reader with its toolbar showing, a page fitted to the screen" class="doc-phone" />
+
+## Modes
+
+- **Paged** — one page per screen, swipe or tap the sides to turn. For comics and manga.
+- **Long strip** — pages flow vertically in one continuous scroll. For webtoons.
+
+A series remembers its mode, so a webtoon stays a strip and a manga stays paged. The default for
+new series is in the reader settings.
+
+## Direction
+
+Paged reading runs **left-to-right** or **right-to-left**. Right-to-left flips page turns, the
+tap zones and the chapter keys together, so "next" is always toward the end of the chapter.
+
+## Fit
+
+Pages fit the screen whole by default. A **spread** — a page wider than it is tall — is shown at
+full height instead and read by panning sideways, since squeezing it into the width would make it
+a strip. You can also pin the fit to the width or the height for every page.
+
+**Double-tap** switches the fit on the page under your finger: zooms in to fill the other axis
+when there's room, out when the page overflows. The double-tap can instead be set to a plain zoom
+toggle.
+
+## Zoom and pan
+
+Pinch to zoom; a zoomed page pans to its own edges and no further. Swiping past the edge of a
+zoomed page turns to the next one. Pages are decoded at the size they're drawn, so large pages
+don't cost memory until you zoom into them — **Downsample** in the reader settings turns that off
+if you'd rather trade memory for sharpness.
+
+## Controls
+
+The reader's toolbar hides a few seconds after you open a chapter; tap the middle of the page to
+bring it back. From it: the page slider, jump to the previous or next chapter, bookmark, and the
+reader settings. On desktop, **Tab** shows the toolbar and focuses it — see
+[Keyboard shortcuts](../keyboard-shortcuts/).
+
+Swiping down on a page (or back on the series page) closes the reader with the page shrinking back
+into the card it came from.
+
+## Saving a page
+
+**Save** in the toolbar — or **F** on desktop — keeps the current page in your collection of saved
+pages, reachable from the Library tab.

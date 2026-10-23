@@ -1,0 +1,47 @@
+/* The abstract device around a screenshot — see components/DeviceFrame.astro. Global rather than
+   scoped because the landing page's hero builds the same markup as a raw HTML string. */
+
+.device {
+  margin: 0;
+  background: #0c0c0e;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 24px 60px -20px rgba(0, 0, 0, 0.6);
+}
+.device img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #000;
+}
+.device-phone {
+  padding: 2.4%;
+  border-radius: 18% / 8.5%;
+}
+.device-phone img {
+  border-radius: 15% / 7%;
+}
+.device-tablet {
+  padding: 1.6%;
+  border-radius: 24px;
+}
+.device-tablet img {
+  border-radius: 12px;
+}
+.device-window {
+  border-radius: 10px;
+}
+.device-window .titlebar {
+  display: flex;
+  gap: 6px;
+  padding: 9px 12px;
+  background: #17181b;
+  border-bottom: 1px solid #313436;
+}
+.device-window .titlebar span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #47474a;
+}

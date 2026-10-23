@@ -1,0 +1,66 @@
+/* Starlight re-skinned with the app's own tokens (apps/mobile/src/constants/theme.ts), so the site
+   and the app read as one thing. Dark values are the app's dark palette, light the light one. */
+
+:root {
+  --sl-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --sl-font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Dark (Starlight's default scheme) */
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #e9eaee;
+  --sl-color-gray-2: #b0b4ba;
+  --sl-color-gray-3: #8e8e93;
+  --sl-color-gray-4: #47474a;
+  --sl-color-gray-5: #2e3135;
+  --sl-color-gray-6: #17181b;
+  --sl-color-black: #000000;
+
+  --sl-color-accent-low: #15284f;
+  --sl-color-accent: #3478f6;
+  --sl-color-accent-high: #9fc0ff;
+
+  --sl-color-bg-nav: #000000;
+  --sl-color-bg-sidebar: #000000;
+  --sl-color-bg-inline-code: #212225;
+  --sl-color-hairline-light: #313436;
+  --sl-color-hairline: #212225;
+}
+
+:root[data-theme='light'] {
+  --sl-color-white: #000000;
+  --sl-color-gray-1: #1c1d21;
+  --sl-color-gray-2: #45484f;
+  --sl-color-gray-3: #60646c;
+  --sl-color-gray-4: #b9bcc4;
+  --sl-color-gray-5: #e0e1e6;
+  --sl-color-gray-6: #f0f0f3;
+  --sl-color-gray-7: #f7f7f9;
+  --sl-color-black: #ffffff;
+
+  --sl-color-accent-low: #dbe7ff;
+  --sl-color-accent: #3478f6;
+  --sl-color-accent-high: #2257c7;
+
+  --sl-color-bg-nav: #ffffff;
+  --sl-color-bg-sidebar: #ffffff;
+  --sl-color-bg-inline-code: #f0f0f3;
+  --sl-color-hairline-light: #e0e1e6;
+  --sl-color-hairline: #f0f0f3;
+}
+
+/* The mark is authored for a dark field; on the light header give it a dark tile to sit on. */
+:root[data-theme='light'] .site-title img {
+  background: #000;
+  border-radius: 22%;
+  padding: 2px;
+}
+.site-title img {
+  height: 1.75rem;
+  width: 1.75rem;
+}
+
+/* Screenshots inside docs: same frame treatment as the landing page, inline. */
+.sl-markdown-content .doc-phone {
+  width: min(60%, 16rem);
+  margin: 1.5rem auto 2.5rem;
+}

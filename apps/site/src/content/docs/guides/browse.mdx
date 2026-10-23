@@ -1,0 +1,37 @@
+---
+title: Browse and search
+description: Moving between sources, a source's lists, and searching across all of them.
+---
+
+import DeviceFrame from '../../../components/DeviceFrame.astro';
+import browse from '../../../assets/screens/01-browse.png';
+
+<DeviceFrame src={browse} alt="Browse on a phone, showing featured rails from two sources" class="doc-phone" />
+
+## Sources
+
+The **Browse** tab shows one source — one installed bridge — at a time. The title at the top is a
+menu of every source you have; tap it to switch. On desktop the sources are the sidebar.
+
+A source opens on its **home**: the lists the bridge chose to feature, each a rail you can expand
+with **Show all**. Some bridges offer more lists than fit on home; those are under the second title
+menu next to the source's name.
+
+## Search
+
+The search button searches the source you're looking at. Searching from the top-level search (or
+**Ctrl/⌘ K** on desktop) runs the query across **every** source at once and groups the results by
+source.
+
+Bridges that support it expose **filters** — genre, status, sort order — under the filter button
+on a results page or a list. Which filters exist is up to the bridge.
+
+## Series badges
+
+Cards carry two badges: **NEW** for a series whose latest chapter is recent, and **HOT** for one a
+source marks as trending. A number in the corner is unread chapters, for series in your library.
+
+## Adult content
+
+**Settings → General → NSFW content** sets whether bridges marked adult are shown, hidden, or hidden
+until unlocked. Hidden sources disappear from Browse and search entirely.

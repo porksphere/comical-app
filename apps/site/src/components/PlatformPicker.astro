@@ -1,0 +1,156 @@
+---
+/**
+ * The four ways to install, with the visitor's own platform lifted to the front. Detection is a
+ * few lines of inline script and only reorders — every tile is always there, so a wrong guess
+ * costs one glance.
+ */
+import { href, links } from '../lib/links';
+---
+
+<div class="platforms" id="platforms">
+  <article class="tile" data-platform="ios">
+    <h3>iOS</h3>
+    <p>Through <a href={links.sidestore}>SideStore</a> or <a href={links.altstore}>AltStore</a>. Add the release channel as a source to get updates.</p>
+    <div class="actions">
+      <a class="btn" href={`sidestore://source?url=${links.ios.source}`}>Add to SideStore</a>
+      <a class="btn btn-quiet" href={`altstore://source?url=${links.ios.source}`}>Add to AltStore</a>
+    </div>
+    <code class="source" data-copy={links.ios.source} title="Click to copy">{links.ios.source}</code>
+    <p class="fine">Or install the <a href={links.ios.ipa}>unsigned .ipa</a> yourself.</p>
+  </article>
+
+  <article class="tile" data-platform="android">
+    <h3>Android</h3>
+    <p>A plain APK. Android 8 and up. The app checks for updates itself.</p>
+    <div class="actions">
+      <a class="btn" href={links.android.apk}>Download APK</a>
+    </div>
+  </article>
+
+  <article class="tile" data-platform="desktop">
+    <h3>Windows &amp; Linux</h3>
+    <p>A desktop app that also pairs with your phones over the local network.</p>
+    <div class="actions">
+      <a class="btn" href={links.desktop.windows}>Windows installer</a>
+      <a class="btn btn-quiet" href={links.desktop.appimage}>AppImage</a>
+      <a class="btn btn-quiet" href={links.desktop.deb}>.deb</a>
+    </div>
+    <p class="fine">The installers aren't code-signed, so Windows SmartScreen warns on first run.</p>
+  </article>
+
+  <article class="tile" data-platform="web">
+    <h3>Web</h3>
+    <p>Two containers — the app and the backend that runs your bridges — on a machine you own.</p>
+    <div class="actions">
+      <a class="btn" href={href('self-hosting/')}>Self-hosting guide</a>
+    </div>
+    <p class="fine">Prefer to look first? There's a <a href={href('app/')}>preview with sample data</a>.</p>
+  </article>
+</div>
+
+<script>
+  // Lift the visitor's platform to the front. UA-CH where it exists, the UA string otherwise;
+  // iPadOS reports itself as a Mac, so touch points break the tie.
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const p = (nav.userAgentData?.platform ?? navigator.platform ?? '').toLowerCase();
+  const ua = navigator.userAgent.toLowerCase();
+  let mine: string | null = null;
+  if (/iphone|ipad|ipod/.test(ua) || (p.includes('mac') && navigator.maxTouchPoints > 1)) mine = 'ios';
+  else if (ua.includes('android')) mine = 'android';
+  else if (p.includes('win') || p.includes('linux')) mine = 'desktop';
+
+  const list = document.getElementById('platforms');
+  const tile = mine && list?.querySelector<HTMLElement>(`[data-platform="${mine}"]`);
+  if (list && tile) {
+    tile.classList.add('mine');
+    list.prepend(tile);
+  }
+
+  for (const code of document.querySelectorAll<HTMLElement>('.source[data-copy]')) {
+    code.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(code.dataset.copy ?? '');
+        code.classList.add('copied');
+        setTimeout(() => code.classList.remove('copied'), 1200);
+      } catch {
+        /* no clipboard: the text is selectable anyway */
+      }
+    });
+  }
+</script>
+
+<style>
+  .platforms {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  }
+  .tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1.25rem;
+    border-radius: 14px;
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-hairline-light);
+  }
+  .tile.mine {
+    border-color: var(--sl-color-accent);
+  }
+  .tile h3 {
+    margin: 0;
+    font-size: var(--sl-text-lg);
+    color: var(--sl-color-white);
+  }
+  .tile p {
+    margin: 0;
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-sm);
+    line-height: 1.5;
+  }
+  .tile .fine {
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+    margin-top: auto;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .btn {
+    display: inline-block;
+    padding: 0.5rem 0.9rem;
+    border-radius: 999px;
+    background: var(--sl-color-accent);
+    color: #fff;
+    text-decoration: none;
+    font-size: var(--sl-text-sm);
+    font-weight: 600;
+  }
+  .btn:hover {
+    background: #5a90ff;
+  }
+  .btn-quiet {
+    background: var(--sl-color-gray-5);
+    color: var(--sl-color-white);
+  }
+  .btn-quiet:hover {
+    background: var(--sl-color-gray-4);
+  }
+  .source {
+    display: block;
+    padding: 0.5rem 0.65rem;
+    border-radius: 8px;
+    background: var(--sl-color-black);
+    border: 1px solid var(--sl-color-hairline-light);
+    font-size: var(--sl-text-2xs);
+    color: var(--sl-color-gray-2);
+    overflow-wrap: anywhere;
+    cursor: copy;
+  }
+  .source.copied {
+    border-color: var(--sl-color-accent);
+    color: var(--sl-color-white);
+  }
+</style>

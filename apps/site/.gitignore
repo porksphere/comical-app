@@ -1,0 +1,20 @@
+# build output
+dist/
+# generated types
+.astro/
+
+# dependencies
+node_modules/
+
+# Pages generated from the repo's own docs by scripts/sync-docs.ts (run on every build/dev)
+src/content/docs/changelog.md
+src/content/docs/developers/development.md
+src/content/docs/developers/architecture.md
+src/content/docs/developers/profiling.md
+
+# environment variables
+.env
+.env.production
+
+# macOS-specific files
+.DS_Store
