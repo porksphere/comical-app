@@ -20,6 +20,7 @@ import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyOrder, setTrackerOrder, useTrackerOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
+import { usePackageUpdate, useUpdatingIds } from '@/data/use-package-update';
 import { useRecheckRegistryUpdates, useTrackerUpdateMap } from '@/data/use-settings-badge';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
@@ -82,13 +83,11 @@ export default function TrackersScreen() {
       },
     });
 
-  // Update a single tracker in place (the row's swipe "Update" action), then broad-invalidate so its
-  // "Update available" state and the Settings/tab pips clear at once.
+  const update = usePackageUpdate('tracker');
+  const updatingIds = useUpdatingIds('tracker');
   const updateOne = async (t: TrackerSummary) => {
     try {
-      await ds.updateTracker(t.info.id);
-      bumpDataEpoch();
-      await queryClient.invalidateQueries();
+      await update.mutateAsync(t.info.id);
       showToast(`${t.info.name} updated`);
     } catch (e) {
       showToast(friendlyError(e, 'Failed to update tracker'));
@@ -97,10 +96,14 @@ export default function TrackersScreen() {
 
   const renderRow = (t: TrackerSummary) => {
     const availableVersion = updateMap.get(t.info.id);
-    const hasUpdate = !!availableVersion;
-    const status = hasUpdate
-      ? { text: `Update available — v${availableVersion}`, color: theme.badgeInfo }
-      : t.configured
+    const updating = updatingIds.has(t.info.id);
+    const hasUpdate = !!availableVersion && !updating;
+    const spinner = updating ? <ActivityIndicator size="small" testID={testId('trackers.updating', t.info.id)} /> : undefined;
+    const status = updating
+      ? { text: availableVersion ? `Updating to v${availableVersion}…` : 'Updating…', color: theme.badgeInfo }
+      : hasUpdate
+        ? { text: `Update available — v${availableVersion}`, color: theme.badgeInfo }
+        : t.configured
         ? undefined
         : { text: 'Needs setup', color: theme.badgeWarn };
     const openTracker = () => router.push({ pathname: '/tracker-settings', params: { trackerId: t.info.id } });
@@ -113,6 +116,7 @@ export default function TrackersScreen() {
           label={t.info.name}
           description={status?.text}
           descriptionColor={status?.color}
+          right={spinner}
           onPress={openTracker}
           testID={testId('trackers.row', t.info.id)}
         />
@@ -130,7 +134,7 @@ export default function TrackersScreen() {
         label={t.info.name}
         description={status?.text}
         descriptionColor={status?.color}
-        right={hasUpdate ? <UpdateDot /> : undefined}
+        right={spinner ?? (hasUpdate ? <UpdateDot /> : undefined)}
         onPress={openTracker}
         actions={rowActions}
         testID={testId('trackers.row', t.info.id)}
@@ -183,7 +187,7 @@ export default function TrackersScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ReorderableList data={ordered} keyOf={(t) => t.info.id} renderRow={renderRow} onReorder={(keys) => setTrackerOrder(keys)} refresh={() => refetch()} />
+        <ReorderableList data={ordered} keyOf={(t) => t.info.id} renderRow={renderRow} onReorder={(keys) => setTrackerOrder(keys)} refresh={checkForUpdates} />
       )}
     </ThemedView>
   );

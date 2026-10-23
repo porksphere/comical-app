@@ -1,18 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
+import { RefreshableScrollView } from '@/components/settings/refreshable-scroll';
 import { SettingFieldEditor, isAutoPersistedField } from '@/components/settings/setting-field';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import type { SettingValue, TrackerSettingsInfo } from '@/data/api';
 import { isSecretSetting } from '@comical/contract';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
+import { usePackageUpdate, useUpdatingIds } from '@/data/use-package-update';
+import { useRecheckRegistryUpdates, useTrackerUpdateMap } from '@/data/use-settings-badge';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { useLocalSearchParams, useRouter } from '@/lib/nav';
@@ -90,12 +94,30 @@ export default function TrackerSettingsScreen() {
     ]);
   };
 
+  const updateMap = useTrackerUpdateMap();
+  const availableVersion = trackerId ? updateMap.get(trackerId) : undefined;
+  const updateMutation = usePackageUpdate('tracker');
+  const updatingIds = useUpdatingIds('tracker');
+  const updating = !!trackerId && updatingIds.has(trackerId);
+  const updateError = updateMutation.isError ? (updateMutation.error as Error).message || 'Failed to update tracker' : null;
+  const performUpdate = () => {
+    if (trackerId) updateMutation.mutate(trackerId);
+  };
+
+  const { recheck } = useRecheckRegistryUpdates();
+  const refresh = async () => {
+    const [updates] = await Promise.all([recheck(), refetch()]);
+    if (trackerId && !updates.trackers.some((u) => u.id === trackerId)) showToast(`${data?.info.name ?? 'Tracker'} is up to date`);
+  };
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title={data?.info.name ?? 'Tracker settings'} />
-      <ScrollView
+      <RefreshableScrollView
+        refresh={refresh}
         style={scrollbarInset(contentPadding.paddingTop)}
-        contentContainerStyle={[styles.content, contentPadding]}>
+        contentContainerStyle={contentPadding}
+        contentStyle={styles.content}>
         {isLoading ? (
           <ActivityIndicator />
         ) : error ? (
@@ -111,6 +133,28 @@ export default function TrackerSettingsScreen() {
           </View>
         ) : data ? (
           <>
+            {(availableVersion || updating) && (
+              <ThemedView type="backgroundElement" style={[styles.updateBanner, { borderColor: theme.hairline }]}>
+                <ThemedText type="small" style={styles.updateBannerText}>
+                  {updating ? (availableVersion ? `Updating to v${availableVersion}…` : 'Updating…') : `Update available — v${availableVersion}`}
+                </ThemedText>
+                {updating ? (
+                  <ActivityIndicator size="small" testID="settings.tracker.updating" />
+                ) : (
+                  <Pressable testID="settings.tracker.update" onPress={performUpdate} hitSlop={8}>
+                    <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                      Update
+                    </ThemedText>
+                  </Pressable>
+                )}
+              </ThemedView>
+            )}
+            {updateError && (
+              <ThemedText type="small" style={{ color: theme.danger }}>
+                {updateError}
+              </ThemedText>
+            )}
+
             {data.settings.length === 0 ? (
               <ThemedText type="small" themeColor="textSecondary">
                 This tracker has no configurable settings.
@@ -181,7 +225,7 @@ export default function TrackerSettingsScreen() {
             )}
           </>
         ) : null}
-      </ScrollView>
+      </RefreshableScrollView>
     </ThemedView>
   );
 }
@@ -196,6 +240,18 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
+  },
+  updateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  updateBannerText: {
+    flex: 1,
   },
   note: {
     paddingHorizontal: Spacing.three,

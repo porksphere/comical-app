@@ -27,6 +27,7 @@ import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyOrder, setBridgeOrder, useBridgeOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
+import { usePackageUpdate, useUpdatingIds } from '@/data/use-package-update';
 import { useBridgeUpdateMap, useRecheckRegistryUpdates } from '@/data/use-settings-badge';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
@@ -42,7 +43,12 @@ const IS_WEB = Platform.OS === 'web';
  *  "needs setup" hint, so the user sees the most actionable state at a glance. `tone` picks the
  *  status color (amber for something needing attention, blue for an informational update) so the
  *  more urgent states are visually distinct instead of blending into the secondary-text color. */
-function bridgeStatus(b: BridgeSummary, availableVersion: string | undefined): { text: string; tone: 'warn' | 'info' } | undefined {
+function bridgeStatus(
+  b: BridgeSummary,
+  availableVersion: string | undefined,
+  updating: boolean,
+): { text: string; tone: 'warn' | 'info' } | undefined {
+  if (updating) return { text: availableVersion ? `Updating to v${availableVersion}…` : 'Updating…', tone: 'info' };
   if (b.discontinued) return { text: 'No longer offered by its registry', tone: 'warn' };
   if (availableVersion) return { text: `Update available — v${availableVersion}`, tone: 'info' };
   if (!b.configured) return { text: 'Needs setup', tone: 'warn' };
@@ -173,13 +179,11 @@ export default function BridgesScreen() {
       },
     });
 
-  // Update a single bridge in place (the row's swipe "Update" action), then broad-invalidate so its
-  // "Update available" state, the count pills, and the Settings/tab pips all clear at once.
+  const update = usePackageUpdate('bridge');
+  const updatingIds = useUpdatingIds('bridge');
   const updateOne = async (b: BridgeSummary) => {
     try {
-      await ds.updateBridge(b.info.id);
-      bumpDataEpoch();
-      await queryClient.invalidateQueries();
+      await update.mutateAsync(b.info.id);
       showToast(`${b.info.name} updated`);
     } catch (e) {
       showToast(friendlyError(e, 'Failed to update bridge'));
@@ -193,13 +197,11 @@ export default function BridgesScreen() {
     // its dot/swipe without waiting for the annotation to be re-persisted; fall back to the annotation
     // when the check hasn't resolved (or is offline) so a known update still surfaces.
     const availableVersion = updateMap.get(b.info.id) ?? b.availableVersion;
-    const status = bridgeStatus(b, availableVersion);
-    const hasUpdate = !!availableVersion;
-    const openBridge = () =>
-      router.push({
-        pathname: '/bridge-settings',
-        params: { bridgeId: b.info.id, source: b.source, ...(availableVersion ? { availableVersion } : {}) },
-      });
+    const updating = updatingIds.has(b.info.id);
+    const status = bridgeStatus(b, availableVersion, updating);
+    const hasUpdate = !!availableVersion && !updating;
+    const spinner = updating ? <ActivityIndicator size="small" testID={testId('bridges.updating', b.info.id)} /> : undefined;
+    const openBridge = () => router.push({ pathname: '/bridge-settings', params: { bridgeId: b.info.id, source: b.source } });
     const statusColor = status && (status.tone === 'warn' ? theme.badgeWarn : theme.badgeInfo);
     // The row's own accent dot — the per-bridge form of the counted pip on the Settings "Bridges"
     // icon, so a bridge that surfaced that pip is identifiable in the list itself.
@@ -229,6 +231,7 @@ export default function BridgesScreen() {
               {icon}
             </>
           }
+          right={spinner}
           onPress={selecting ? undefined : openBridge}
         />
       );
@@ -261,6 +264,7 @@ export default function BridgesScreen() {
                 {icon}
               </>
             }
+            right={spinner}
             swipeEnabled={!selecting}
             onPress={selecting ? () => ms.toggle(key) : openBridge}
             onLongPress={selecting ? onLongPress : undefined}
@@ -323,8 +327,8 @@ export default function BridgesScreen() {
         </View>
       ) : (
         // The live list IS the reorderable list (long-press drag on touch, a hover handle with a
-        // mouse). It owns its own scroll, so there's no pull-to-refresh wrapper here.
-        <ReorderableList data={visible} keyOf={(b) => b.info.id} renderRow={renderRow} onReorder={onReorder} dragEnabled={!selecting} refresh={() => refetch()} />
+        // mouse). It owns its own scroll and pull-to-refresh; a pull runs the update check.
+        <ReorderableList data={visible} keyOf={(b) => b.info.id} renderRow={renderRow} onReorder={onReorder} dragEnabled={!selecting} refresh={checkForUpdates} />
       )}
 
       {/* The + install affordance: a floating FAB in normal mode, hidden while selecting. */}

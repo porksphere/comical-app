@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import {
   BridgeMetaInfo,
@@ -13,10 +13,12 @@ import {
   TagExclusionsControl,
 } from '@/components/settings/bridge-extras';
 import { openConfirm } from '@/components/confirm-popup';
+import { RefreshableScrollView } from '@/components/settings/refreshable-scroll';
 import { SettingFieldEditor } from '@/components/settings/setting-field';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import type { BridgeSettingsInfo, SettingDescriptor, SettingsFormSection, SettingValue } from '@/data/api';
@@ -24,6 +26,8 @@ import { isSecretSetting } from '@comical/contract';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
+import { usePackageUpdate, useUpdatingIds } from '@/data/use-package-update';
+import { useBridgeUpdateMap, useRecheckRegistryUpdates } from '@/data/use-settings-badge';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { UNINSTALL_ONE_MESSAGE } from '@/lib/bridge-uninstall';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
@@ -62,10 +66,9 @@ function favoritesLoginPending(data: BridgeSettingsInfo): string | null {
 }
 
 export default function BridgeSettingsScreen() {
-  const { bridgeId, source, availableVersion } = useLocalSearchParams<{
+  const { bridgeId, source } = useLocalSearchParams<{
     bridgeId?: string;
     source?: string;
-    availableVersion?: string;
   }>();
   const ds = useDataSource();
   const theme = useTheme();
@@ -189,27 +192,43 @@ export default function BridgeSettingsScreen() {
     });
   };
 
-  const updateMutation = useMutation({
-    mutationFn: () => ds.updateBridge(bridgeId!),
-    onSuccess: async () => {
-      bumpDataEpoch();
-      // Broad invalidate — same reasoning as uninstall() above.
-      await queryClient.invalidateQueries();
-    },
+  // The same two sources the Bridges list reads (live check, then the summary's annotation), so the
+  // banner shows however this page was reached and clears once the update lands.
+  const updateMap = useBridgeUpdateMap();
+  const { data: summaries } = useQuery({
+    queryKey: queryKeys.bridgeSummaries(),
+    queryFn: ({ signal }) => ds.getBridgeSummaries(signal),
+    enabled: !!bridgeId,
   });
-  const updating = updateMutation.isPending;
-  const updated = updateMutation.isSuccess;
+  const summary = summaries?.find((b) => b.info.id === bridgeId);
+  const availableVersion = bridgeId ? (updateMap.get(bridgeId) ?? summary?.availableVersion) : undefined;
+  const updateMutation = usePackageUpdate('bridge');
+  const updatingIds = useUpdatingIds('bridge');
+  const updating = !!bridgeId && updatingIds.has(bridgeId);
   const updateError = updateMutation.isError ? (updateMutation.error as Error).message || 'Failed to update bridge' : null;
   const performUpdate = () => {
-    if (bridgeId) updateMutation.mutate();
+    if (bridgeId) updateMutation.mutate(bridgeId);
+  };
+
+  const { recheck } = useRecheckRegistryUpdates();
+  const refresh = async () => {
+    const [updates] = await Promise.all([
+      recheck(),
+      refetch(),
+      data?.settingsForm ? form.refetch() : undefined,
+      queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSummaries() }),
+    ]);
+    if (bridgeId && !updates.bridges.some((u) => u.id === bridgeId)) showToast(`${data?.info.name ?? 'Bridge'} is up to date`);
   };
 
   return (
     <ThemedView style={styles.container}>
       <TopBar title={data?.info.name ?? 'Bridge settings'} />
-      <ScrollView
+      <RefreshableScrollView
+        refresh={refresh}
         style={scrollbarInset(contentPadding.paddingTop)}
-        contentContainerStyle={[styles.content, contentPadding]}>
+        contentContainerStyle={contentPadding}
+        contentStyle={styles.content}>
         {isLoading ? (
           <ActivityIndicator />
         ) : error ? (
@@ -225,16 +244,20 @@ export default function BridgeSettingsScreen() {
           </View>
         ) : data ? (
           <>
-            {availableVersion && !updated && (
+            {(availableVersion || updating) && (
               <ThemedView type="backgroundElement" style={[styles.banner, styles.updateBanner, { borderColor: theme.hairline }]}>
                 <ThemedText type="small" style={styles.updateBannerText}>
-                  Update available — v{availableVersion}
+                  {updating ? (availableVersion ? `Updating to v${availableVersion}…` : 'Updating…') : `Update available — v${availableVersion}`}
                 </ThemedText>
-                <Pressable testID="settings.bridge.update" onPress={performUpdate} disabled={updating} hitSlop={8}>
-                  <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                    {updating ? 'Updating…' : 'Update'}
-                  </ThemedText>
-                </Pressable>
+                {updating ? (
+                  <ActivityIndicator size="small" testID="settings.bridge.updating" />
+                ) : (
+                  <Pressable testID="settings.bridge.update" onPress={performUpdate} hitSlop={8}>
+                    <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                      Update
+                    </ThemedText>
+                  </Pressable>
+                )}
               </ThemedView>
             )}
             {updateError && (
@@ -348,7 +371,7 @@ export default function BridgeSettingsScreen() {
             )}
           </>
         ) : null}
-      </ScrollView>
+      </RefreshableScrollView>
     </ThemedView>
   );
 }
