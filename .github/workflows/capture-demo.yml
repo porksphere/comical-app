@@ -2,8 +2,9 @@ name: Capture demo screenshots
 
 # Photographs the app for the README and uploads the screenshots as an artifact — Actions →
 # Capture demo screenshots → Run workflow, or `gh workflow run capture-demo.yml --ref <branch>`.
-# Download the artifact, drop the PNGs in docs/media/, commit. Deliberately not committed by the
-# workflow itself: a promo image is a thing you look at before you ship it.
+# Download the artifacts (`demo-screens` from the iOS lane, `demo-screens-desktop` from the desktop
+# one), drop the PNGs in docs/media/, commit. Deliberately not committed by the workflow itself: a
+# promo image is a thing you look at before you ship it.
 #
 # THIS USED TO RECORD A GIF, and the reason it doesn't is worth keeping. The series page's entry
 # transition does not render cleanly on a CI simulator: the recorder caught it partway through,
@@ -33,6 +34,10 @@ on:
         description: Width to downscale each screenshot to, in px.
         type: string
         default: '440'
+      desktop_width:
+        description: Width to downscale the desktop screenshot to, in px.
+        type: string
+        default: '1360'
       from_run:
         description: >-
           Reuse the Simulator .app built by an earlier run of this workflow instead of building
@@ -202,4 +207,67 @@ jobs:
           name: maestro-debug
           path: ${{ runner.temp }}/maestro-debug
           retention-days: 7
+
+  # The desktop shot. The desktop app is an Electron shell over the web build, so this photographs
+  # the web build in a browser at the shell's default window size (scripts/capture-desktop.mjs has
+  # why). Independent of the iOS lane — no simulator, no 26-minute build — so it runs beside it.
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      # Metro resolves the submodule's deps even for web; see e2e.yml's test-web for the full note.
+      - name: Install submodule dependencies (hoisted, for Metro resolution)
+        run: bun install --linker hoisted
+        working-directory: external/comical
+
+      - name: Export + serve web build (capture mode)
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_COMICAL_DEMO_MODE: '1'
+          EXPO_PUBLIC_COMICAL_DEMO_FAST: '1'
+          EXPO_PUBLIC_COMICAL_CAPTURE_MODE: '1'
+        run: |
+          set -euo pipefail
+          bunx expo export --platform web
+          # Served under /comical-app because app.json's baseUrl is baked into every asset path.
+          mkdir -p serve-root/comical-app
+          cp -r dist/. serve-root/comical-app/
+          npx --yes serve@latest serve-root -l 4000 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4000/comical-app/ >/dev/null && exit 0
+            sleep 1
+          done
+          echo "web server never came up"; exit 1
+
+      - run: bunx playwright install --with-deps chromium
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pillow
+
+      - name: Screenshot
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/screens"
+          node scripts/capture-desktop.mjs http://localhost:4000/comical-app/ "$RUNNER_TEMP/screens"
+          python3 scripts/shape-screenshots.py --window "${{ inputs.desktop_width || '1360' }}" "$RUNNER_TEMP/screens"/*.png
+          du -h "$RUNNER_TEMP/screens"/*.png
+
+      # Its own artifact: two jobs can't upload into one, and a merge job to make them would cost a
+      # runner to save a second download.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-screens-desktop
+          path: ${{ runner.temp }}/screens/*.png
+          retention-days: 14
 

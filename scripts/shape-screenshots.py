@@ -2,7 +2,8 @@
 """Turn raw simulator captures into the README's screenshots: round the corners and downscale.
 Rewrites each file in place.
 
-Used by `.github/workflows/capture-demo.yml` over the PNGs `e2e/demo/screens.yaml` shoots.
+Used by `.github/workflows/capture-demo.yml` over the PNGs `e2e/demo/screens.yaml` shoots, and with
+`--window` over the desktop shot from `scripts/capture-desktop.mjs`.
 
 THE CORNERS ARE SYNTHESISED, not the device's own. The simulator does have a real screen mask, and
 `xcrun simctl io <udid> screenshot --mask=alpha` bakes it in exactly — but Maestro takes these
@@ -30,8 +31,12 @@ from PIL import Image, ImageDraw
 # pins it to 9:41 with fixed battery and signal, so re-shoots stay identical.
 RADIUS = 0.154
 
+# The desktop shot (scripts/capture-desktop.mjs) is a window, not a phone: ~10px at its 1280px width,
+# about where both macOS and Windows 11 round their windows.
+WINDOW_RADIUS = 0.008
 
-def shape(path: str, width: int) -> None:
+
+def shape(path: str, width: int, radius: float = RADIUS) -> None:
     im = Image.open(path).convert("RGB")
     w, h = im.size
 
@@ -39,7 +44,7 @@ def shape(path: str, width: int) -> None:
     # edge, and the ~3x reduction below is what averages it into a smooth one — masking after the
     # resize would leave the curve visibly stepped.
     mask = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=round(w * RADIUS), fill=255)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=round(w * radius), fill=255)
     im.putalpha(mask)
 
     im.resize((width, round(h * width / w)), Image.LANCZOS).save(path, "PNG", optimize=True)
@@ -47,11 +52,15 @@ def shape(path: str, width: int) -> None:
 
 def main() -> None:
     args = sys.argv[1:]
+    radius = RADIUS
+    if args[:1] == ["--window"]:
+        radius = WINDOW_RADIUS
+        args = args[1:]
     if len(args) < 2:
-        sys.exit("usage: shape-screenshots.py <width> <png>...")
+        sys.exit("usage: shape-screenshots.py [--window] <width> <png>...")
     width = int(args[0])
     for path in args[1:]:
-        shape(path, width)
+        shape(path, width, radius)
         print(f"  shaped {path}")
 
 
