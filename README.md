@@ -17,6 +17,19 @@
   <img src="docs/media/03-reader.png" alt="The reader" width="240" />
 </p>
 
+<p align="center">
+  <img src="docs/media/04-desktop.png" alt="Browsing on the desktop app" width="744" />
+</p>
+
+## Features
+
+- **Paged and long-strip readers**
+- **Library, collections and groups** for organising what you follow
+- **Offline downloads**, including auto-downloading new chapters
+- **Activity**: new chapters from your library in one feed, with notifications
+- **Tracking** to AniList and MyAnimeList
+- **Sync** between your phones and computer, with no cloud account
+
 ## Install
 
 ### iOS
@@ -48,6 +61,8 @@ or the
 
 Warning: the installers aren't code-signed, so Windows SmartScreen will warn on first run.
 
+The desktop app is also the hub your phones [sync](#sync) with.
+
 ### Web
 
 The frontend and backend can be run as two Docker containers. See
@@ -65,12 +80,26 @@ A mock preview is deployed to
 - A **bridge** is an adapter for one source or service, downloaded and verified from a registry.
 - **Series** are what a bridge sources, and what you browse and read.
 
+Registries can also carry **trackers**, which sync your reading progress to a service like AniList.
+They're installed and updated the same way as bridges.
+
 On iOS and Android, bridges run on-device and no server is involved. On the web they run in the
 backend you host.
 
 Bridges run against [**comical**](https://github.com/porksphere/comical), the TypeScript core,
 which is written to embed in any JS environment. For the full picture, see
 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+
+## Sync
+
+The desktop app keeps your phones' libraries in step. On the computer, open **Settings → Sync**,
+turn on **Sync with your phone** and tap **Pair a phone**. Then scan the code from the phone's own
+Sync settings. Your library, collections, reading progress, history, tracker links and installed
+bridges sync over your local network. Logins never leave the device they were entered on, and
+everything between the phone and the computer is end-to-end encrypted.
+
+Sync is for phones that run bridges on-device. A browser doesn't need it, since it reads its
+server's library directly.
 
 ## Development
 
