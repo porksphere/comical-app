@@ -10,10 +10,16 @@ mock.module('../api', () => ({ getApiBase: () => 'http://hub.test:3130', getSync
 mock.module('../embedded/preference', () => ({ getResolvedModeSync: () => mode }));
 mock.module('./prefs', () => ({ getDownloadPrefsSync: () => prefs }));
 mock.module('@/lib/diagnostics', () => ({ logDiagnostic: () => {} }));
+type Invalidation = { predicate: (q: { queryKey: readonly unknown[] }) => boolean };
+const invalidated: Invalidation[] = [];
+mock.module('../query-client', () => ({
+  queryClient: { invalidateQueries: async (f: Invalidation) => void invalidated.push(f), setQueryData: () => {} },
+}));
 mock.module('react-native', () => ({ AppState: { addEventListener: () => ({ remove: () => {} }) } }));
 mock.module('expo-network', () => ({ addNetworkStateListener: () => ({ remove: () => {} }) }));
 
-const { hubChapterPages, hubFirst, hubState, noteSyncStatus, resetHubDownloads, HAVE_TTL_MS, RECENT_MS } = await import('./hub');
+const { hubChapterPages, hubFirst, hubPageFailed, hubState, noteSyncStatus, resetHubDownloads, HAVE_TTL_MS, RECENT_MS } = await import('./hub');
+const { DIRECT_DOWNLOAD_CHAPTER_ID } = await import('./constants');
 
 /** What the hub answers a sealed read of a path with — or a hang, or a dead network. */
 type Answer = { status: number; body: unknown } | 'hang' | 'down';
@@ -61,6 +67,7 @@ beforeEach(async () => {
   resetHubDownloads();
   hub.clear();
   reads.length = 0;
+  invalidated.length = 0;
   hub.set('/downloads', { status: 200, body: usage([chapter('c1'), chapter('part', 3, { state: 'downloading' }), chapter('few', 2, { onlyPages: true })]) });
   hub.set('/downloads/entries/b/s', { status: 200, body: { series: {}, chapters: [chapter('c1')] } });
   hub.set('/sync/ticket', ticket());
@@ -213,5 +220,41 @@ describe('hubFirst', () => {
       throw new Error('should not be called');
     };
     expect([...(await fetcher(CTX, page(1))).data]).toEqual([1]);
+  });
+});
+
+describe('hubPageFailed', () => {
+  const matches = (inv: Invalidation, key: readonly unknown[]) => inv.predicate({ queryKey: key });
+
+  test("a hub page that won't load clears the latch and drops exactly that chapter's list", () => {
+    expect(hubPageFailed(HUB_PAGE('c1', 2), 'load failed')).toBe(true);
+    expect(hubState().reachable).toBe(false);
+    expect(invalidated).toHaveLength(1);
+    const inv = invalidated[0]!;
+    expect(matches(inv, ['chapterPages', false, 'b', 's', 'c1'])).toBe(true);
+    expect(matches(inv, ['chapterPages', false, 'b', 's', 'c2'])).toBe(false);
+    expect(matches(inv, ['chapterPages', false, 'b', 'other', 'c1'])).toBe(false);
+    expect(matches(inv, ['directPages', false, 'b', 's'])).toBe(false);
+    expect(matches(inv, ['seriesDetail', false, 'b', 's'])).toBe(false);
+  });
+
+  test("a direct series' page drops its direct page list", () => {
+    expect(hubPageFailed(HUB_PAGE(encodeURIComponent(DIRECT_DOWNLOAD_CHAPTER_ID), 0), 'load failed')).toBe(true);
+    const inv = invalidated[0]!;
+    expect(matches(inv, ['directPages', false, 'b', 's'])).toBe(true);
+    expect(matches(inv, ['chapterPages', false, 'b', 's', DIRECT_DOWNLOAD_CHAPTER_ID])).toBe(true);
+  });
+
+  test("any other URL is not the hub's business", () => {
+    for (const uri of [
+      'https://cdn.test/p.png',
+      'file:///data/downloads/entries/b/s/chapters/c1/pages/0/file',
+      'http://hub.test:3130/downloads/entries/b/s/chapters/c1/pages/0/file', // no ticket: not one we served
+      'http://hub.test:3130/downloads/entries/b/s/cover?t=T1',
+    ]) {
+      expect(hubPageFailed(uri, 'load failed')).toBe(false);
+    }
+    expect(hubState().reachable).toBe(true);
+    expect(invalidated).toEqual([]);
   });
 });

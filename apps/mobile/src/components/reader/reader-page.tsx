@@ -18,6 +18,7 @@ import {
   releaseAssetResolve,
   resolveAssetSourceCached,
 } from '@/data/api';
+import { hubPageFailed } from '@/data/downloads/hub';
 import { coverDelayMs } from '@/data/mock';
 import { useDownsampleImages } from '@/hooks/use-reader-settings';
 import { logDiagnostic } from '@/lib/diagnostics';
@@ -266,6 +267,9 @@ export function ReaderPage({
       url: uri,
       context: `page=${page} attempt=${attempt + 1}/${RETRY_DELAYS_MS.length + 1}`,
     });
+    // A page served from the paired computer has outlived it: swap the chapter's list back to the
+    // source (a refetch the new URI resets this page into). The backoff below stays as the net.
+    if (attempt === 0) hubPageFailed(uri, e.error || 'page failed to load');
     if (attempt < RETRY_DELAYS_MS.length) {
       setRetrying(true);
       retryTimerRef.current = setTimeout(() => {

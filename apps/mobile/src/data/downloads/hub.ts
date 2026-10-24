@@ -20,6 +20,10 @@
  * re-reads that one series. Pages are plain `GET`s of the hub's `/downloads/.../pages/:i/file`
  * carrying a per-device ticket the hub issued through the sealed channel — the reader loads a page
  * as a URL, so the bytes can't be sealed, and the ticket is what keeps the door shut to anyone else.
+ *
+ * A list once served is the reader's for the query's lifetime, so a hub that goes away mid-chapter
+ * is caught at the page: the reader reports a hub page that failed (`hubPageFailed`), which clears
+ * the latch and drops that chapter's list, and the refetch goes to the bridge.
  */
 import type { DownloadedChapter, FetchedPage, PageFetcher, StorageUsage } from '@comical/downloads';
 import { HttpBackend } from '@comical/sync';
@@ -29,7 +33,9 @@ import { AppState } from 'react-native';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { getApiBase, getSyncPairing } from '../api';
 import { getResolvedModeSync } from '../embedded/preference';
+import { queryClient } from '../query-client';
 import type { SyncStatus } from '../sync/controller';
+import { DIRECT_DOWNLOAD_CHAPTER_ID } from './constants';
 import { getDownloadPrefsSync } from './prefs';
 
 /** Where a device asks the hub for its page ticket; answered by the hub's gate, never its API. */
@@ -44,6 +50,8 @@ export const HAVE_TTL_MS = 60_000;
 const TICKET_MARGIN_MS = 10 * 60_000;
 
 type Ticket = { value: string; expiresAt: number };
+
+const HUB_PAGE_PATH = /^\/downloads\/entries\/([^/]+)\/([^/]+)\/chapters\/([^/]+)\/pages\/\d+\/file$/;
 
 const key = (bridgeId: string, seriesId: string, chapterId: string) => `${bridgeId}:${seriesId}:${chapterId}`;
 
@@ -171,6 +179,29 @@ export async function hubChapterPages(bridgeId: string, seriesId: string, chapte
 /** One page of the above, for the download engine. */
 export async function hubPageUrl(bridgeId: string, seriesId: string, chapterId: string, index: number): Promise<string | undefined> {
   return (await hubChapterPages(bridgeId, seriesId, chapterId))?.[index];
+}
+
+/**
+ * The reader could not load `uri`. If it is one of the hub's pages the hub has gone — or lost the
+ * chapter — since the list was served: clear the latch and invalidate the chapter's page list, so
+ * the refetch comes from the bridge. The reader keeps its own retry as the net until that lands.
+ * False, and nothing done, for any other URL.
+ */
+export function hubPageFailed(uri: string, why: string): boolean {
+  const base = `${getApiBase()}/downloads/entries/`;
+  const query = uri.indexOf('?');
+  if (!uri.startsWith(base) || query < 0 || !uri.slice(query).includes('t=')) return false;
+  const m = HUB_PAGE_PATH.exec(uri.slice(getApiBase().length, query));
+  if (!m) return false;
+  const [bridgeId, seriesId, chapterId] = m.slice(1).map(decodeURIComponent);
+  lost(why);
+  void queryClient.invalidateQueries({
+    predicate: ({ queryKey: k }) =>
+      k[2] === bridgeId &&
+      k[3] === seriesId &&
+      ((k[0] === 'chapterPages' && k[4] === chapterId) || (k[0] === 'directPages' && chapterId === DIRECT_DOWNLOAD_CHAPTER_ID)),
+  });
+  return true;
 }
 
 /**
