@@ -3,13 +3,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 
 import { openConfirm } from '@/components/confirm-popup';
 import { UndoIcon } from '@/components/icons/ui-icons';
-import {
-  KEY_ZOOM_SPEED_MAX,
-  KEY_ZOOM_SPEED_MIN,
-  KEY_ZOOM_SPEED_STEP,
-  setKeyZoomSpeed,
-  useKeyZoomSpeed,
-} from '@/components/reader/desktop-zoom';
+import { setKeyZoomSpeed, useKeyZoomSpeed } from '@/components/reader/desktop-zoom';
 import { RangeSlider } from '@/components/settings/range-slider';
 import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
@@ -20,6 +14,7 @@ import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, SettingsCardInset, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
+import { KEY_SPEED_MAX, KEY_SPEED_MIN, KEY_SPEED_STEP, setKeyPanSpeed, useKeyPanSpeed } from '@/lib/key-hold';
 import {
   captureChord,
   KEY_ACTIONS,
@@ -80,6 +75,7 @@ function rebind(action: KeyAction, chord: KeyChord, overrides: KeyOverrides): vo
 export default function KeyboardShortcutsScreen() {
   const contentPadding = useSettingsScrollPadding();
   const overrides = useKeyOverrides();
+  const panSpeed = useKeyPanSpeed();
   const zoomSpeed = useKeyZoomSpeed();
   const [capturing, setCapturing] = useState<KeyAction | null>(null);
 
@@ -113,7 +109,7 @@ export default function KeyboardShortcutsScreen() {
           <SettingsSection
             key={scope}
             title={KEY_SCOPE_LABELS[scope]}
-            footer={scope === 'reader' ? 'The zoom speed is the keys’ alone: the mouse wheel and the zoom buttons keep their own pace.' : undefined}>
+            footer={scope === 'reader' ? 'The speeds are the keys’ alone: the mouse, the wheel and the zoom buttons keep their own pace.' : undefined}>
             {actionsIn(scope).map((action) => (
               <ShortcutRow
                 key={action}
@@ -125,21 +121,18 @@ export default function KeyboardShortcutsScreen() {
               />
             ))}
             {scope === 'reader' ? (
-              <SettingsRow
-                testID="shortcuts.zoom-speed"
-                label="Zoom speed"
-                right={
-                  <RangeSlider
-                    value={zoomSpeed}
-                    min={KEY_ZOOM_SPEED_MIN}
-                    max={KEY_ZOOM_SPEED_MAX}
-                    step={KEY_ZOOM_SPEED_STEP}
-                    onChange={setKeyZoomSpeed}
-                    format={(v) => `${v}×`}
-                    testIdPrefix="shortcuts.zoom-speed"
-                  />
-                }
-              />
+              <>
+                <SettingsRow
+                  testID="shortcuts.pan-speed"
+                  label="Pan speed"
+                  right={<SpeedSlider value={panSpeed} onChange={setKeyPanSpeed} testIdPrefix="shortcuts.pan-speed" />}
+                />
+                <SettingsRow
+                  testID="shortcuts.zoom-speed"
+                  label="Zoom speed"
+                  right={<SpeedSlider value={zoomSpeed} onChange={setKeyZoomSpeed} testIdPrefix="shortcuts.zoom-speed" />}
+                />
+              </>
             ) : null}
           </SettingsSection>
         ))}
@@ -212,6 +205,22 @@ function KeyCap({ label }: { label: string }) {
     <View style={[styles.cap, { borderColor: theme.barHairline, backgroundColor: theme.backgroundElement }]}>
       <ThemedText type="small">{label}</ThemedText>
     </View>
+  );
+}
+
+
+/** One keyboard speed over the shared range (lib/key-hold), read as a multiple of the default. */
+function SpeedSlider({ value, onChange, testIdPrefix }: { value: number; onChange: (v: number) => void; testIdPrefix: string }) {
+  return (
+    <RangeSlider
+      value={value}
+      min={KEY_SPEED_MIN}
+      max={KEY_SPEED_MAX}
+      step={KEY_SPEED_STEP}
+      onChange={onChange}
+      format={(v) => `${v}×`}
+      testIdPrefix={testIdPrefix}
+    />
   );
 }
 

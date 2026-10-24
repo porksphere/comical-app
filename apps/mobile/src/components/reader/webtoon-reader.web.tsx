@@ -26,7 +26,7 @@ import {
 } from '@/components/reader/reader-zoom';
 import { webtoonFit } from '@/components/reader/settings-panel';
 import type { PageFit } from '@/hooks/use-reader-settings';
-import { createKeyHold, isControlTarget, isTypingTarget, PAGE_KEY_SCROLL } from '@/lib/key-hold';
+import { createKeyHold, isControlTarget, isTypingTarget, keyPanSpeed, PAGE_KEY_SCROLL } from '@/lib/key-hold';
 import { keyActionOf, moveDirectionOf } from '@/lib/keybindings';
 
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
@@ -575,7 +575,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       el.scrollLeft = clamp(el.scrollLeft + dx, 0, el.scrollWidth - el.clientWidth);
       el.scrollTop = clamp(el.scrollTop + dy, 0, el.scrollHeight - el.clientHeight);
       if (dy !== 0) userScrolledRef.current = true;
-    });
+    }, keyPanSpeed);
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
       const page = keyActionOf(e, ['page-next', 'page-prev']);

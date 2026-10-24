@@ -2,9 +2,8 @@ import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
 import { showToast } from '@/components/toast';
-import { createKeyHold, HOLD_SPEED } from '@/lib/key-hold';
+import { createKeyHold, HOLD_SPEED, keySpeedStore } from '@/lib/key-hold';
 import { keyActionOf } from '@/lib/keybindings';
-import { persisted$ } from '@/lib/observable';
 
 // Mouse-and-keyboard zoom for the web readers: Ctrl/⌘+wheel (which is also what a trackpad pinch
 // arrives as), the +/-/0 keys, Q/E held and the toolbar's stepper. All of them speak a LEVEL — a multiple of
@@ -78,23 +77,12 @@ const HOLD_ZOOM_PER_S = 4;
 /** How fast the KEYBOARD zooms — Q/E held and the +/- keys — as a power on the default pace: 1 is
  *  the pace above, 2 is twice the rate in log-zoom (twice as many doublings a second, and a +/-
  *  step twice as far). The mouse wheel, a pinch and the toolbar's stepper don't read it: a wheel
- *  notch is the browser's own unit, and a button is a fixed step. */
-export const KEY_ZOOM_SPEED_MIN = 0.25;
-export const KEY_ZOOM_SPEED_MAX = 3;
-export const KEY_ZOOM_SPEED_STEP = 0.25;
-const KEY_ZOOM_SPEED_DEFAULT = 1;
-const keyZoomSpeed$ = persisted$<number>('comical:keyZoomSpeed', KEY_ZOOM_SPEED_DEFAULT);
-const clampSpeed = (v: unknown) =>
-  Number.isFinite(v) ? Math.min(KEY_ZOOM_SPEED_MAX, Math.max(KEY_ZOOM_SPEED_MIN, v as number)) : KEY_ZOOM_SPEED_DEFAULT;
-export function keyZoomSpeed(): number {
-  return clampSpeed(keyZoomSpeed$.peek());
-}
-export function useKeyZoomSpeed(): number {
-  return clampSpeed(use$(keyZoomSpeed$));
-}
-export function setKeyZoomSpeed(speed: number): void {
-  keyZoomSpeed$.set(clampSpeed(speed));
-}
+ *  notch is the browser's own unit, and a button is a fixed step. The range is the keyboard
+ *  speeds' shared one (lib/key-hold), where the pan's lives. */
+const zoomSpeed = keySpeedStore('comical:keyZoomSpeed');
+export const keyZoomSpeed = zoomSpeed.get;
+export const useKeyZoomSpeed = zoomSpeed.use;
+export const setKeyZoomSpeed = zoomSpeed.set;
 /** A second Q/E press within this long of the first goes all the way out/in. */
 const DOUBLE_PRESS_MS = 300;
 

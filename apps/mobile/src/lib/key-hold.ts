@@ -4,8 +4,39 @@
 // rest after release, and a fresh press starts from a kick rather than from nothing — so a quick tap
 // still moves about the browser's own arrow step, without the jump that step is.
 
-/** Pixels per second while a direction is held. */
+import { use$ } from '@legendapp/state/react';
+
+import { persisted$ } from '@/lib/observable';
+
+/** Pixels per second while a direction is held, at the default `keyPanSpeed`. */
 export const HOLD_SPEED = 900;
+
+/** The range every keyboard speed setting runs over, as a multiple of its default pace. */
+export const KEY_SPEED_MIN = 0.25;
+export const KEY_SPEED_MAX = 3;
+export const KEY_SPEED_STEP = 0.25;
+const KEY_SPEED_DEFAULT = 1;
+
+/** A persisted keyboard speed under `key`: read (`get`, outside React), subscribe (`use`) and set,
+ *  each clamped to the range above (a stored value out of it, or not a number, reads as the default). */
+export function keySpeedStore(key: string) {
+  const store$ = persisted$<number>(key, KEY_SPEED_DEFAULT);
+  const clampSpeed = (v: unknown) =>
+    Number.isFinite(v) ? Math.min(KEY_SPEED_MAX, Math.max(KEY_SPEED_MIN, v as number)) : KEY_SPEED_DEFAULT;
+  return {
+    get: () => clampSpeed(store$.peek()),
+    use: () => clampSpeed(use$(store$)),
+    set: (speed: number) => store$.set(clampSpeed(speed)),
+  };
+}
+
+/** How fast the KEYBOARD pans — the move keys held — as a multiple of HOLD_SPEED. A tap's step
+ *  scales with it too, so the hand that likes a fast hold isn't left with a slow tap. The mouse,
+ *  the wheel and a touch don't read it. */
+const panSpeed = keySpeedStore('comical:keyPanSpeed');
+export const keyPanSpeed = panSpeed.get;
+export const useKeyPanSpeed = panSpeed.use;
+export const setKeyPanSpeed = panSpeed.set;
 /** The velocity a fresh press starts from, so a tap that is up before the ease-in gets going still
  *  travels (about KICK_SPEED · GLIDE_S). */
 const KICK_SPEED = 600;
@@ -34,8 +65,11 @@ export function isControlTarget(target: EventTarget | null): boolean {
 }
 
 /** Calls `move(dx, dy)` every frame — in pixels, along the held directions — until every key held
- *  through `press` has come back up through `release` and the glide that follows has died out. */
-export function createKeyHold(move: (dx: number, dy: number) => void) {
+ *  through `press` has come back up through `release` and the glide that follows has died out.
+ *  `speed` multiplies the held speed and the kick, read at each press and frame so a change to the
+ *  setting takes mid-hold; without it the hold runs at the one pace (the zoom's, which scales its
+ *  own rate off the distance). */
+export function createKeyHold(move: (dx: number, dy: number) => void, speed: () => number = () => 1) {
   const held = new Map<string, KeyDirection>();
   let vx = 0;
   let vy = 0;
@@ -52,8 +86,9 @@ export function createKeyHold(move: (dx: number, dy: number) => void) {
       x += d.x;
       y += d.y;
     }
-    vx = ease(vx, Math.sign(x) * HOLD_SPEED, dt);
-    vy = ease(vy, Math.sign(y) * HOLD_SPEED, dt);
+    const top = HOLD_SPEED * speed();
+    vx = ease(vx, Math.sign(x) * top, dt);
+    vy = ease(vy, Math.sign(y) * top, dt);
     if (held.size === 0 && Math.abs(vx) < REST_SPEED && Math.abs(vy) < REST_SPEED) {
       vx = vy = 0;
       rafId = null;
@@ -72,8 +107,9 @@ export function createKeyHold(move: (dx: number, dy: number) => void) {
     press(key: string, dir: KeyDirection) {
       const k = key.toLowerCase();
       if (!held.has(k)) {
-        if (dir.x !== 0 && vx * dir.x < KICK_SPEED) vx = dir.x * KICK_SPEED;
-        if (dir.y !== 0 && vy * dir.y < KICK_SPEED) vy = dir.y * KICK_SPEED;
+        const kick = KICK_SPEED * speed();
+        if (dir.x !== 0 && vx * dir.x < kick) vx = dir.x * kick;
+        if (dir.y !== 0 && vy * dir.y < kick) vy = dir.y * kick;
       }
       held.set(k, dir);
       if (rafId == null) {
