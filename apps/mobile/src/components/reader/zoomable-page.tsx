@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
@@ -15,11 +15,13 @@ import {
   type Size,
 } from '@/components/reader/page-geometry';
 import { ReaderPage } from '@/components/reader/reader-page';
+import { spreadImage } from '@/components/reader/spreads';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 
-// A single paged-reader page (NATIVE only — web has its own gesture pager in
-// paged-reader.web.tsx and never renders this).
+// A single paged-reader page — or a two-page spread, which is the same thing to everything but
+// the layout inside it (NATIVE only — web has its own gesture pager in paged-reader.web.tsx and
+// never renders this).
 //
 // Pinch / double-tap / pan all come from the shared `useZoomable` primitive (also used by the
 // webtoon reader). This file adds only the things that are page-specific: the tap-zone
@@ -31,9 +33,13 @@ import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 // Navigation is handled by a single-tap gesture composed Exclusive with the
 // double-tap so it waits out a possible second tap.
 
+/** One page of the cell: its key (what sizes are reported against), its source and its 1-based
+ *  number. */
+export type CellPage = { key: string; uri: string; page: number };
+
 type Props = {
-  uri: string;
-  page: number;
+  /** One page, or the two of a spread in reading order. */
+  pages: CellPage[];
   width: number;
   height: number;
   pageFit: PageFit;
@@ -73,6 +79,8 @@ type Props = {
    *  Omitted where the scroller isn't in RNGH's graph at all, which is how this file used to get
    *  away with declaring nothing. */
   scrollGesture?: GestureType[];
+  /** Every page's real size as it loads, in either layout — what spread pairing is decided from. */
+  onPageSize?: (key: string, size: Size) => void;
 };
 
 // Non-interactive markers only: navigation taps are handled by the GestureDetector
@@ -91,8 +99,7 @@ function TapZones() {
 }
 
 export function ZoomablePage({
-  uri,
-  page,
+  pages,
   width,
   height,
   pageFit,
@@ -110,18 +117,36 @@ export function ZoomablePage({
   onPinchChange,
   scrubbing,
   scrollGesture,
+  onPageSize,
 }: Props) {
-  const [pageFailed, setPageFailed] = useState(false);
-  // The picture's real dimensions, once loaded — what the page's box and rest are read from.
-  const [image, setImage] = useState<Size | null>(null);
+  const double = pages.length > 1;
+  const [failedPages, setFailedPages] = useState<Record<string, boolean>>({});
+  const pageFailed = pages.some((p) => failedPages[p.uri]);
+  // The pictures' real dimensions, once loaded — what the page's box and rest are read from. By
+  // source, so a spread that loses its second page keeps what it knew of the first.
+  const [sizes, setSizes] = useState<Record<string, Size>>({});
+  // Both halves of a spread can load in one tick; each folds into the latest set, not its render's.
+  const sizesRef = useRef(sizes);
+  const viewport = useMemo(() => ({ width, height }), [width, height]);
+  const imageOf = useCallback(
+    (known: Record<string, Size>) =>
+      double ? spreadImage(pages.map((p) => known[p.uri] ?? null), viewport) : (known[pages[0]!.uri] ?? null),
+    [double, pages, viewport],
+  );
+  const image = useMemo(() => imageOf(sizes), [imageOf, sizes]);
 
   // Which pages rest above 1× under the fit (see `fillRule`). Every page is drawn in the contain
   // box, under either axis — a box the viewport's size that never changes, which is what keeps a
   // page from shifting as its picture arrives — except a STRIP under fit-width, a page taller than
   // the viewport at its width, which gets a box that tall (see `stripGeometry`) and is panned
   // down it. Before the picture's shape is known every page is contain.
-  const fill = standby ? 'none' : fillRule(pageFit);
-  const strip = pageFit === 'fit-width' && isStrip(image, { width, height });
+  //
+  // A spread is two pages side by side: it never lies as a strip, and under `auto` it rests whole —
+  // the "spreads fill the height" rule is about ONE picture that is a spread, not two pages that
+  // happen to be shown as one.
+  const rule = standby ? 'none' : fillRule(pageFit);
+  const fill = double && rule === 'wide' ? 'none' : rule;
+  const strip = !double && pageFit === 'fit-width' && isStrip(image, { width, height });
 
   // The edge this page rests at, latched while active (see `restAtFarEdge`). React's own form of
   // the previous-prop pattern, so a discarded render re-runs the comparison.
@@ -177,20 +202,30 @@ export function ZoomablePage({
     simultaneousExternal: scrollGesture,
   });
 
-  const onLoadDims = (w: number, h: number) => {
+  const onLoadDims = (key: string, uri: string, w: number, h: number) => {
     if (w <= 0 || h <= 0) return;
-    const img = { width: w, height: h };
+    const known = { ...sizesRef.current, [uri]: { width: w, height: h } };
+    sizesRef.current = known;
+    onPageSize?.(key, known[uri]!);
+    const img = imageOf(known);
     // The rest this picture's shape gives the page, applied BEFORE the render that carries it
     // (see useZoomable's `settle`), so the page is drawn at rest from its first frame rather
-    // than growing into it — a strip from its top.
-    const g =
-      pageFit === 'fit-width' && isStrip(img, { width, height })
-        ? stripGeometry(img, { width, height })
-        : pageGeometry(img, { width, height }, fill, rtl);
-    const off = edgeOffset(edgeFor(g.restEdge), panLimits(g.restScale, g.content, { width, height }));
-    settle(g.restScale, off.x, off.y);
-    setImage(img);
+    // than growing into it — a strip from its top. A spread has no shape until both have loaded.
+    if (img) {
+      const g =
+        !double && pageFit === 'fit-width' && isStrip(img, viewport)
+          ? stripGeometry(img, viewport)
+          : pageGeometry(img, viewport, fill, rtl);
+      const off = edgeOffset(edgeFor(g.restEdge), panLimits(g.restScale, g.content, viewport));
+      settle(g.restScale, off.x, off.y);
+    }
+    setSizes(known);
   };
+  const onFailedChange = (uri: string, failed: boolean) =>
+    setFailedPages((prev) => (!!prev[uri] === failed ? prev : { ...prev, [uri]: failed }));
+
+  // Left to right across the screen: the first page sits on the right when reading right to left.
+  const shown = double && rtl ? [...pages].reverse() : pages;
 
   // A page that goes away mid-pinch (a mode switch, a window that dropped it) never reaches the
   // gesture's own `onFinalize`, and the pager would be left frozen on a pinch nothing can end.
@@ -202,23 +237,30 @@ export function ZoomablePage({
         {/* The transformed view is the viewport's size and centres its box: the viewport-sized
             contain box for most pages, a taller one for a strip, which overflows it equally top
             and bottom and is clipped by `styles.page`. */}
-        <Animated.View style={[{ width, height }, styles.centred, animatedStyle]}>
-          <ReaderPage
-            fadeMs={fadeMs}
-            uri={uri}
-            page={page}
-            fit="contain"
-            width={width}
-            height={strip ? geometry.content.height : height}
-            // Answered by the FIT, not by `strip` — see ReaderPage's `boxIsFinal`. Under any other
-            // fit the box is the viewport's and never moves; under fit-width a page that turns out
-            // to be a strip gets a box its own height, and nothing knows which pages those are
-            // until they have loaded, which is exactly too late.
-            boxIsFinal={pageFit !== 'fit-width'}
-            onLoadDims={onLoadDims}
-            onFailedChange={setPageFailed}
-            scrubbing={scrubbing}
-          />
+        <Animated.View style={[{ width, height }, styles.centred, double && styles.row, animatedStyle]}>
+          {shown.map((p, i) => (
+            <ReaderPage
+              // Remounted when the cell changes layout: a page's decode box is frozen at mount (see
+              // ReaderPage's `boxIsFinal`), and a half-width decode drawn full width is soft.
+              key={`${p.uri}:${pages.length}`}
+              fadeMs={fadeMs}
+              uri={p.uri}
+              page={p.page}
+              fit="contain"
+              width={double ? width / 2 : width}
+              height={strip ? geometry.content.height : height}
+              // Both halves meet at the spine instead of each centring in its own half.
+              contentPosition={double ? (i === 0 ? 'right' : 'left') : undefined}
+              // Answered by the FIT, not by `strip` — see ReaderPage's `boxIsFinal`. Under any other
+              // fit the box is the viewport's and never moves; under fit-width a page that turns out
+              // to be a strip gets a box its own height, and nothing knows which pages those are
+              // until they have loaded, which is exactly too late. A spread's halves never strip.
+              boxIsFinal={double || pageFit !== 'fit-width'}
+              onLoadDims={(w, h) => onLoadDims(p.key, p.uri, w, h)}
+              onFailedChange={(failed) => onFailedChange(p.uri, failed)}
+              scrubbing={scrubbing}
+            />
+          ))}
         </Animated.View>
         <TapZones />
       </View>
@@ -234,6 +276,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  row: {
+    flexDirection: 'row',
+  },
+
   zones: {
     flexDirection: 'row',
   },

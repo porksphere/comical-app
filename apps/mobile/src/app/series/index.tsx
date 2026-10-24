@@ -38,6 +38,7 @@ import { BOTTOM_CHROME_HEIGHT, ChapterNavigator, bottomChromeInset } from '@/com
 import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
+import { readsDouble } from '@/components/reader/spreads';
 import {
   createZoomHold,
   isDesktopPointer,
@@ -78,7 +79,7 @@ import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useMissingBridge } from '@/hooks/use-bridges';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
-import { useReaderSettings, setFitOverride, useFitOverride } from '@/hooks/use-reader-settings';
+import { useReaderSettings, setFitOverride, useFitOverride, useSpreadShift } from '@/hooks/use-reader-settings';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { LARGE_SCREEN_BREAKPOINT, useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -3765,7 +3766,7 @@ function SeriesReaderInstance({
                       />
                       {/* Held up while the menu is open: it is anchored to the gear, and the
                           toolbar fading out from under it would leave it pointing at nothing. */}
-                      <SettingsControl onOpenChange={holdChrome} />
+                      <SettingsControl seriesKey={bridgeId && id ? `${bridgeId}:${id}` : null} onOpenChange={holdChrome} />
                     </>
                   }
                 />
@@ -4789,6 +4790,8 @@ const ReaderPane = forwardRef<
   const insetTop = settings.respectSafeArea ? insets.top : 0;
   const insetBottom = settings.respectSafeArea && insets.bottom > SYSTEM_BAR_MIN_INSET ? insets.bottom : 0;
   const pageHeight = height - insetTop - insetBottom;
+  const double = settings.mode === 'paged' && readsDouble(settings.pageLayout, { width, height: pageHeight });
+  const shift = useSpreadShift(bridgeId && seriesId ? `${bridgeId}:${seriesId}` : null);
   // The double-tap under its switch-fit mode: fit the axis this page does NOT currently fill
   // (see `otherFit`), for every page until the next double-tap, which clears it. Never written to
   // the setting: from `auto` there is no single axis to write, and a double-tap is a moment's
@@ -4801,6 +4804,11 @@ const ReaderPane = forwardRef<
   const startIndex = Math.max(0, Math.min(pages.length - 1, start === 'last' ? pages.length - 1 : start));
   const [currentPage, setCurrentPage] = useState(startIndex);
   const currentRef = useRef(startIndex);
+  // Pairing is fixed for a pager's lifetime (see PagedReader's `double`), so a layout change —
+  // the setting, the shift, or a rotation under `auto` — remounts it on the page being read.
+  const pagerLayout = `${double}:${shift}`;
+  const [pagerMount, setPagerMount] = useState({ layout: pagerLayout, page: startIndex });
+  if (pagerMount.layout !== pagerLayout) setPagerMount({ layout: pagerLayout, page: currentPage });
   // Whether the mounted list has REPORTED a position yet. A recording answered how much this
   // signal is worth: it lands within ~10ms of mount — it is the list's JS-side position map
   // speaking, NOT the native scroll view. For a non-zero `initialScrollIndex` the NATIVE
@@ -4986,12 +4994,24 @@ const ReaderPane = forwardRef<
     },
     [stitched, prefixLen, pages.length, setCurrent, goFlat, handleFlatVisiblePage],
   );
+  // The chapter-local pages sharing the screen with `page`. A turn steps off the spread's ends:
+  // stepping off the page last reported would land on the other half of the same spread whenever
+  // the report hasn't caught up with a quick run of taps.
+  const spreadAround = useCallback(
+    (page: number) => {
+      const base = stitched ? prefixLen : 0;
+      const spread = settings.mode === 'paged' ? pagedRef.current?.spreadOf(base + page) : undefined;
+      return spread ? { first: spread.first - base, last: spread.last - base } : { first: page, last: page };
+    },
+    [settings.mode, stitched, prefixLen],
+  );
   // Boundary page-turns: prefer stepping within the stitched flat list (the same seamless relabel
   // path a swipe crossing takes); the explicit-jump fallback only covers a cold window (adjacent
   // pages not loaded yet) — or web/webtoon, whose readers aren't stitched.
   const turnPrev = useCallback(() => {
-    if (currentRef.current > 0) {
-      goTo(currentRef.current - 1, false);
+    const { first } = spreadAround(currentRef.current);
+    if (first > 0) {
+      goTo(first - 1, false);
       return;
     }
     if (stitched && prefixLen > 0) {
@@ -5000,10 +5020,13 @@ const ReaderPane = forwardRef<
       return;
     }
     if (chaptered && hasPrevChapter) onCrossChapter(-1);
-  }, [goTo, stitched, prefixLen, handleFlatPageChange, goFlat, chaptered, hasPrevChapter, onCrossChapter]);
+  }, [spreadAround, goTo, stitched, prefixLen, handleFlatPageChange, goFlat, chaptered, hasPrevChapter, onCrossChapter]);
   const turnNext = useCallback(() => {
-    if (currentRef.current < pages.length - 1) {
-      goTo(currentRef.current + 1, false);
+    const { last } = spreadAround(currentRef.current);
+    if (last < pages.length - 1) {
+      // Named by the page the landing spread will report, so the counter doesn't step through its
+      // first page on the way.
+      goTo(spreadAround(last + 1).last, false);
       return;
     }
     const nextFlat = prefixLen + pages.length;
@@ -5014,6 +5037,7 @@ const ReaderPane = forwardRef<
     }
     if (chaptered && hasNextChapter) onCrossChapter(1);
   }, [
+    spreadAround,
     goTo,
     stitched,
     prefixLen,
@@ -5067,10 +5091,11 @@ const ReaderPane = forwardRef<
     (index: number) => {
       const at = stitched ? prefixLen + index : index;
       const from = Math.max(0, at - WARM_BEHIND);
-      const to = at + 1 + settings.prefetchAhead;
+      // "Preload ahead" counts screens, and a spread is two pages.
+      const to = at + 1 + settings.prefetchAhead * (double ? 2 : 1);
       warmPageImages(stitched ? flatItems.slice(from, to).map((item) => item.uri) : pages.slice(from, to));
     },
-    [pages, stitched, flatItems, prefixLen, settings.prefetchAhead],
+    [pages, stitched, flatItems, prefixLen, settings.prefetchAhead, double],
   );
   // Warm where the reader COMES TO REST — see WARM_IDLE_MS. Both callers go through this: the page
   // the reader has settled on, and the scrubber's live position as it is dragged.
@@ -5227,6 +5252,7 @@ const ReaderPane = forwardRef<
       <View style={{ width, height: pageHeight, marginTop: insetTop }}>
       {settings.mode === 'paged' ? (
         <PagedReader
+          key={pagerMount.layout}
           ref={pagedRef}
           // Stitched: the whole window as ONE flat pager, so a boundary swipe is an ordinary page
           // turn (position reports come back flat and get located/relabeled above). Web keeps
@@ -5238,7 +5264,9 @@ const ReaderPane = forwardRef<
           pageFit={pageFit}
           doubleTap={settings.doubleTap}
           onSwitchFit={switchFit}
-          initialPage={stitched ? prefixLen + startIndex : startIndex}
+          initialPage={stitched ? prefixLen + pagerMount.page : pagerMount.page}
+          double={double}
+          shift={shift}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // Keep the counter live during fast flicks — against the segment the page belongs to
           // when stitched (a crossing must count against the chapter being entered).

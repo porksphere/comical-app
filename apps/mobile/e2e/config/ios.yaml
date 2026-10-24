@@ -22,6 +22,7 @@ executionOrder:
     - library-sync
     - history-activity
     - reader-navigation
+    - reader-double-page
     - collect-page
     - series-trackers
     - trackers-uninstall

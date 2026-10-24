@@ -1,0 +1,141 @@
+// Two-page spreads: which pages of the reader's list share a screen.
+//
+// The pager's alignment rests on every item being exactly one viewport wide, so double-page reading
+// doesn't size pages differently — it changes what an item IS: one spread of one or two pages.
+// Everything here is pure; the readers translate between page indices (what the host speaks) and
+// spread indices (what the pager scrolls) with the maps it returns.
+
+import { containedSize, type Size } from '@/components/reader/page-geometry';
+
+export type { Size };
+
+export type SpreadPage = { key: string; pageNumber: number };
+
+export interface Spread<T extends SpreadPage> {
+  /** The first page's key — stable for as long as that page opens the spread, which is what the
+   *  list anchors to while pairing settles around it. */
+  key: string;
+  /** Index of the first page in the page list. */
+  first: number;
+  /** One or two pages, in reading order. */
+  pages: T[];
+}
+
+export interface SpreadLayout<T extends SpreadPage> {
+  spreads: Spread<T>[];
+  /** Page index → spread index. */
+  spreadOf: number[];
+}
+
+/** Drawn alone: a page that is wider than tall is already a spread of its own. */
+export function isWidePage(size: Size | undefined): boolean {
+  return !!size && size.width > size.height;
+}
+
+/**
+ * Pairs pages two by two, the way print does: a chapter's first page (its cover) stands alone, as
+ * does any wide page, and pairing starts over after every lone page so one wide page in the middle
+ * of a chapter doesn't throw the rest out of step. `shift` pairs from the first page instead — for
+ * releases without a cover, whose spreads otherwise land one page off. Spreads never cross into
+ * the next chapter. A page whose size isn't known yet counts as portrait.
+ */
+export function buildSpreads<T extends SpreadPage>(
+  pages: readonly T[],
+  sizeOf: (page: T, index: number) => Size | undefined,
+  shift: boolean,
+): SpreadLayout<T> {
+  const spreads: Spread<T>[] = [];
+  const spreadOf: number[] = new Array(pages.length);
+  let i = 0;
+  while (i < pages.length) {
+    const page = pages[i]!;
+    const next = pages[i + 1];
+    const lone =
+      (page.pageNumber === 1 && !shift) ||
+      isWidePage(sizeOf(page, i)) ||
+      !next ||
+      next.pageNumber === 1 ||
+      isWidePage(sizeOf(next, i + 1));
+    const members = lone ? [page] : [page, next!];
+    for (let k = 0; k < members.length; k++) spreadOf[i + k] = spreads.length;
+    spreads.push({ key: page.key, first: i, pages: members });
+    i += members.length;
+  }
+  return { spreads, spreadOf };
+}
+
+/** One spread per page — what single-page reading is in these terms. */
+export function singleSpreads<T extends SpreadPage>(pages: readonly T[]): SpreadLayout<T> {
+  return {
+    spreads: pages.map((page, i) => ({ key: page.key, first: i, pages: [page] })),
+    spreadOf: pages.map((_, i) => i),
+  };
+}
+
+/** The page a spread reports as read: its LAST, so finishing a chapter's final spread finishes the
+ *  chapter even when that spread's first page isn't the last one. */
+export function reportedPage<T extends SpreadPage>(spread: Spread<T>): number {
+  return spread.first + spread.pages.length - 1;
+}
+
+/**
+ * Fractional spread position at the start of each page, plus one trailing entry for the end — the
+ * scrubber drags a fractional PAGE index and the pager scrolls by spread, so a worklet interpolates
+ * through this. A two-page spread spans two pages, so each of its pages covers half of it.
+ */
+export function spreadPositions<T extends SpreadPage>({ spreads }: SpreadLayout<T>): number[] {
+  const at: number[] = [];
+  spreads.forEach((spread, s) => {
+    for (let k = 0; k < spread.pages.length; k++) at.push(s + k / spread.pages.length);
+  });
+  at.push(spreads.length);
+  return at;
+}
+
+/** Maps a fractional page index through `spreadPositions`. Callable from a worklet. */
+export function pageToSpreadPosition(positions: readonly number[], page: number): number {
+  'worklet';
+  const last = positions.length - 1;
+  if (last <= 0) return 0;
+  const p = Math.max(0, Math.min(last, page));
+  const i = Math.min(last - 1, Math.floor(p));
+  return positions[i]! + (positions[i + 1]! - positions[i]!) * (p - i);
+}
+
+/** Should pages pair at all: 'auto' reads double exactly when the reading frame is landscape. */
+export function readsDouble(layout: 'single' | 'double' | 'auto', viewport: Size): boolean {
+  return layout === 'double' || (layout === 'auto' && viewport.width > viewport.height);
+}
+
+// Page sizes seen this session, by source. A page's size is only known once it has loaded, so a
+// reader opened on pages read before (a chapter reopened, the same pages under the other layout)
+// pairs them right from its first frame instead of re-pairing as they arrive. Bounded; the oldest
+// go first.
+const SIZE_CACHE_LIMIT = 4000;
+const sizeCache = new Map<string, Size>();
+
+export function rememberPageSize(uri: string, size: Size): void {
+  sizeCache.delete(uri);
+  sizeCache.set(uri, size);
+  if (sizeCache.size > SIZE_CACHE_LIMIT) sizeCache.delete(sizeCache.keys().next().value!);
+}
+
+export function knownPageSize(uri: string): Size | undefined {
+  return sizeCache.get(uri);
+}
+
+/**
+ * The picture a two-page spread draws at 1×: each page contained in its half of the viewport and
+ * pushed against the spine, measured as a box twice the wider page's width so it stays centred —
+ * which is what pan clamping and the rest assume of any content. Already contained, so it comes
+ * back out of `pageGeometry` unscaled. Null until both pages have loaded.
+ */
+export function spreadImage(images: (Size | null)[], viewport: Size): Size | null {
+  if (images.some((image) => !image)) return null;
+  const half = { width: viewport.width / 2, height: viewport.height };
+  const boxes = images.map((image) => containedSize(image!, half));
+  return {
+    width: 2 * Math.max(...boxes.map((b) => b.width)),
+    height: Math.max(...boxes.map((b) => b.height)),
+  };
+}

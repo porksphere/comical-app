@@ -1,0 +1,98 @@
+# Two-page spreads (components/reader/spreads.ts): the settings sheet's Page layout row, page turns
+# stepping a whole spread at a time, and the per-series shift.
+#
+# Mobile-only for the same reason as reader-navigation.yaml: the prev/next taps go through the
+# NATIVE tap-zone markers (reader.control.*), which the web pager doesn't set.
+#
+# Selectors (confirmed against source):
+#   - reader.settings.page-layout.single / .double / .auto   settings-panel.tsx's Page layout row.
+#     Auto (the default) only pairs in landscape, so the flow picks Double to pair on a portrait
+#     phone.
+#   - reader.settings.spread-shift          Switch: pair from the chapter's first page instead of
+#                                           after it. Stored per series.
+#   - reader.navigator.page                 The current page alone (see reader-navigation.yaml). A
+#                                           spread reports its LATER page, so a turn onto pages 2–3
+#                                           reads "3".
+#
+# Every mock page is portrait (assets/mock/pages, 800x1107), so nothing breaks the pairing and the
+# page numbers below are exact. The newest chapter is tapped, and every mock chapter is at least 8
+# pages, so there is room for the five pages this turns through.
+#
+# Ends on the defaults (Auto, no shift) — both persist across a plain `launchApp`.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.cover"
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^1$"
+
+- tapOn:
+    id: "reader.settings.open"
+- tapOn:
+    id: "reader.settings.page-layout.double"
+- tapOn:
+    point: "50%, 8%"
+
+# The first page stands alone; after it the pages pair two by two.
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^3$"
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^5$"
+- tapOn:
+    id: "reader.control.prev"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^3$"
+- tapOn:
+    id: "reader.control.prev"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^1$"
+
+# Shifted, the first page pairs with the second, so the next spread is pages 3–4.
+- tapOn:
+    id: "reader.settings.open"
+- tapOn:
+    id: "reader.settings.spread-shift"
+- tapOn:
+    point: "50%, 8%"
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^4$"
+
+# Back to the defaults.
+- tapOn:
+    id: "reader.settings.open"
+- tapOn:
+    id: "reader.settings.spread-shift"
+- tapOn:
+    id: "reader.settings.page-layout.auto"
+- tapOn:
+    point: "50%, 8%"
+
+# Maestro's back, not the toolbar's — see reader-navigation.yaml.
+- back

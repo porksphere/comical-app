@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -32,6 +33,8 @@ import {
 } from '@/components/reader/desktop-zoom';
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
+import { reportedPage, spreadImage, type Spread } from '@/components/reader/spreads';
+import { useSpreadLayout } from '@/components/reader/use-spread-layout';
 import {
   clamp,
   distance,
@@ -52,6 +55,8 @@ export type PagedReaderHandle = {
   /** Web has no continuous scrubber (it keeps the tap-to-jump progress pill), so this is just the
    *  nearest-page jump — present only to satisfy the shared handle shape. */
   scrubTo: (logical: number) => void;
+  /** The pages sharing the screen with `logical` — see the native handle. */
+  spreadOf: (logical: number) => { first: number; last: number };
 };
 
 type Props = {
@@ -78,6 +83,10 @@ type Props = {
    *  strip): shrinks the mounted-image radius to the visible page only, so neighbouring pages
    *  aren't requested until the reader becomes primary again. (Mirrors the native prop.) */
   standby?: boolean;
+  /** Two pages to a screen, and pairing from the first page — see the native props. Fixed for the
+   *  pager's lifetime. */
+  double?: boolean;
+  shift?: boolean;
 };
 
 /**
@@ -114,6 +123,9 @@ type Props = {
  * to logical: the reported page number (`toLogical`) and, at either end of the
  * track, which chapter a hand-off goes to — physical n−1 is the LAST page in
  * reading order in LTR but the FIRST in RTL.
+ *
+ * Double-page reading makes each cell a SPREAD of one or two pages (see `spreads`), exactly as the
+ * native pager does: indices here are spreads, positions in and out are pages.
  */
 
 // Fraction of the width a swipe must cover (or the fling velocity it must beat)
@@ -161,16 +173,36 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     onNext,
     onToggleChrome,
     standby,
+    double = false,
+    shift = false,
   },
   ref,
 ) {
-  const n = pages.length;
+  // The cell on screen, by key, for pairing to hold still around — see useSpreadLayout. A render
+  // behind, which is all the freeze needs.
+  const [anchorKey, setAnchorKey] = useState<string | null>(null);
+  const { layout, onPageSize } = useSpreadLayout(pages, double, shift, anchorKey, initialPage);
+  const { spreads, spreadOf } = layout;
+  const n = spreads.length;
   const clampIndex = useCallback((i: number) => Math.max(0, Math.min(n - 1, i)), [n]);
   const toPhysical = useCallback((logical: number) => (rtl ? n - 1 - logical : logical), [rtl, n]);
   const toLogical = useCallback((physical: number) => (rtl ? n - 1 - physical : physical), [rtl, n]);
-  const data = useMemo(() => (rtl ? [...pages].reverse() : pages), [pages, rtl]);
+  // Page (logical) → spread (logical), clamped.
+  const spreadAt = useCallback(
+    (page: number) => spreadOf[Math.max(0, Math.min(pages.length - 1, page))] ?? 0,
+    [spreadOf, pages.length],
+  );
+  // The page a physical index reports — the spread's last (see `reportedPage`).
+  const reportOf = useCallback(
+    (physical: number) => {
+      const spread = spreads[toLogical(physical)];
+      return spread ? reportedPage(spread) : 0;
+    },
+    [spreads, toLogical],
+  );
+  const data = useMemo(() => (rtl ? [...spreads].reverse() : spreads), [spreads, rtl]);
 
-  const [index, setIndex] = useState(() => toPhysical(clampIndex(initialPage)));
+  const [index, setIndex] = useState(() => toPhysical(spreadAt(initialPage)));
   const [zoomed, setZoomed] = useState(false);
   // Whether the CURRENT page is showing its failed/Retry state. When true, the
   // pointer handlers below back off entirely (no capture, no swipe/tap
@@ -178,10 +210,19 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // normal click dispatch — `setPointerCapture` below would otherwise redirect
   // every subsequent pointer event to this surface, and the nested Retry
   // Pressable would never see a matching pointerup to fire its own onPress.
-  const [currentFailed, setCurrentFailed] = useState(false);
+  const [failedKeys, setFailedKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const setPageFailed = useCallback((key: string, failed: boolean) => {
+    setFailedKeys((prev) => {
+      if (prev.has(key) === failed) return prev;
+      const next = new Set(prev);
+      if (failed) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
+  const currentFailed = !!data[index]?.pages.some((p) => failedKeys.has(p.key));
   const currentFailedRef = useRef(false);
   currentFailedRef.current = currentFailed;
-  useEffect(() => setCurrentFailed(false), [index]);
 
   // Every mounted page's real picture dimensions, by key. Kept for ALL of them, not just the
   // current page: neighbours are mounted (and loaded) ahead of being read, and an image that
@@ -191,13 +232,23 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const [dims, setDims] = useState<ReadonlyMap<string, Size>>(() => new Map());
   const recordDims = useCallback((key: string, w: number, h: number) => {
     if (w <= 0 || h <= 0) return;
+    onPageSize(key, { width: w, height: h });
     setDims((prev) => {
       const had = prev.get(key);
       if (had && had.width === w && had.height === h) return prev;
       return new Map(prev).set(key, { width: w, height: h });
     });
-  }, []);
-  const image = dims.get(data[index]?.key ?? '') ?? null;
+  }, [onPageSize]);
+  // A cell's picture: its page's, or for a two-page spread the pair as drawn (see `spreadImage`).
+  const imageOf = useCallback(
+    (cell: Spread<ReaderPageItem> | undefined) => {
+      if (!cell) return null;
+      if (cell.pages.length > 1) return spreadImage(cell.pages.map((p) => dims.get(p.key) ?? null), { width, height });
+      return dims.get(cell.key) ?? null;
+    },
+    [dims, width, height],
+  );
+  const image = imageOf(data[index]);
   // Held at 1× while parked or still entering — the poster over it is the contain picture, and a
   // page resting zoomed under it would be revealed mid-jump. It grows into its rest once primary.
   const fill = standby ? 'none' : fillRule(pageFit);
@@ -206,19 +257,22 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // STRIP under fit-width, a page taller than the viewport at its width, which gets a box that
   // tall (see `stripGeometry`) and is panned down it. Before a picture's shape is known it is
   // contain.
+  //
+  // A two-page spread never strips and under `auto` rests whole — see ZoomablePage.
   const geometryOf = useCallback(
-    (key: string) => {
-      const img = dims.get(key) ?? null;
+    (cell: Spread<ReaderPageItem> | undefined) => {
+      const img = imageOf(cell);
+      if (cell && cell.pages.length > 1) return pageGeometry(img, { width, height }, fill === 'wide' ? 'none' : fill, rtl);
       return pageFit === 'fit-width' && img && isStrip(img, { width, height })
         ? stripGeometry(img, { width, height })
         : pageGeometry(img, { width, height }, fill, rtl);
     },
-    [dims, pageFit, width, height, fill, rtl],
+    [imageOf, pageFit, width, height, fill, rtl],
   );
 
   // Where the current page RESTS — 1× for most pages, fit-height at the reading edge for a spread,
   // the top of a strip — and the box its pan is clamped to (see page-geometry).
-  const geometry = useMemo(() => geometryOf(data[index]?.key ?? ''), [geometryOf, data, index]);
+  const geometry = useMemo(() => geometryOf(data[index]), [geometryOf, data, index]);
   const box: Size = geometry.content;
   const { restScale, restEdge } = geometry;
   const maxScale = Math.max(MAX_SCALE, restScale * WIDE_ZOOM_HEADROOM);
@@ -523,25 +577,49 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         writeZoom(false);
         setZoomedNow(false);
         setIndex(clamped);
-        onPageChange(toLogical(clamped));
+        onPageChange(reportOf(clamped));
       }
       writeTrack(0, animate);
     },
-    [clampIndex, cancelInertia, setZoomedNow, writeZoom, zoom, onPageChange, toLogical, writeTrack],
+    [clampIndex, cancelInertia, setZoomedNow, writeZoom, zoom, onPageChange, reportOf, writeTrack],
   );
 
   useImperativeHandle(
     ref,
     () => ({
       goToPage(logical: number, animated = true) {
-        settleTo(toPhysical(clampIndex(logical)), animated);
+        settleTo(toPhysical(spreadAt(logical)), animated);
       },
       scrubTo(logical: number) {
-        settleTo(toPhysical(clampIndex(Math.round(logical))), false);
+        settleTo(toPhysical(spreadAt(Math.round(logical))), false);
+      },
+      spreadOf(logical: number) {
+        const spread = spreads[spreadAt(logical)];
+        return spread ? { first: spread.first, last: reportedPage(spread) } : { first: logical, last: logical };
       },
     }),
-    [settleTo, toPhysical, clampIndex],
+    [settleTo, toPhysical, spreadAt, spreads],
   );
+
+  // Pairing settling around the cell on screen can move its INDEX without moving it — under RTL
+  // every spread after it in reading order sits before it on the track. Nothing here anchors by
+  // key the way the native list does, so the track follows the cell's key itself.
+  const cellKeyRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const key = cellKeyRef.current;
+    const at = key == null ? -1 : data.findIndex((cell) => cell.key === key);
+    if (at < 0 || at === indexRef.current) return;
+    indexRef.current = at;
+    setIndex(at);
+    writeTrack(0, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-anchors on a data change only
+  }, [data]);
+  useLayoutEffect(() => {
+    cellKeyRef.current = data[index]?.key ?? null;
+  });
+  useEffect(() => {
+    setAnchorKey(data[index]?.key ?? null);
+  }, [data, index]);
 
   // `initialPage` only seeds `index`'s initial state (read once, at mount) —
   // but the screen's own `currentPage` briefly starts at 0 before its
@@ -552,18 +630,21 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // than on the effect re-running: `writeTrack` is rebuilt on every resize, and
   // a re-run that compared against the start sent the reader back to it.
   // A direction flip mirrors the index instead, so the same page stays up.
-  const synced = useRef({ start: clampIndex(initialPage), rtl });
+  //
+  // Compared as a PAGE: the spread holding it moves whenever pairing settles, and that is not the
+  // start moving.
+  const synced = useRef({ start: initialPage, rtl });
   useEffect(() => {
-    const start = clampIndex(initialPage);
+    const start = initialPage;
     const prev = synced.current;
     if (start === prev.start && rtl === prev.rtl) return;
     synced.current = { start, rtl };
-    const target = start !== prev.start ? toPhysical(start) : n - 1 - indexRef.current;
+    const target = start !== prev.start ? toPhysical(spreadAt(start)) : n - 1 - indexRef.current;
     if (target === indexRef.current) return;
     indexRef.current = target;
     setIndex(target);
     writeTrack(0, false);
-  }, [initialPage, rtl, n, toPhysical, clampIndex, writeTrack]);
+  }, [initialPage, rtl, n, toPhysical, spreadAt, writeTrack]);
 
   // Position the track on mount and whenever the viewport (width) changes.
   useEffect(() => {
@@ -1123,8 +1204,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // The box a page is DRAWN in: the viewport for everything but a strip, whose box is as tall as
   // the strip (see `geometryOf`) and is centred in the cell, overflowing it equally top and
   // bottom.
-  const boxHeightOf = (key: string) => {
-    const g = geometryOf(key);
+  const boxHeightOf = (cell: Spread<ReaderPageItem>) => {
+    const g = geometryOf(cell);
     return g.restEdge === 'top' || g.restEdge === 'bottom' ? g.content.height : height;
   };
 
@@ -1145,21 +1226,31 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           // memory); the rest are empty placeholders that still hold the slot.
           // Standby (a decorative background strip) keeps only the page ON screen.
           const near = Math.abs(i - index) <= (standby ? 0 : RENDER_RADIUS);
+          const pair = item.pages.length > 1;
+          // Left to right across the screen: the first page sits on the right when reading RTL.
+          const shown = pair && rtl ? [...item.pages].reverse() : item.pages;
+          const boxHeight = boxHeightOf(item);
           return (
             <div key={item.key} style={cellStyle(width, height)}>
-              <div ref={i === index ? zoomRef : undefined} style={zoomWrapperStyle(width, boxHeightOf(item.key))}>
-                {near ? (
-                  <ReaderPage
-                    fadeMs={standby ? STANDBY_FADE_MS : undefined}
-                    uri={item.uri}
-                    page={item.pageNumber}
-                    fit="contain"
-                    width={width}
-                    height={boxHeightOf(item.key)}
-                    onLoadDims={(w, h) => recordDims(item.key, w, h)}
-                    onFailedChange={i === index ? setCurrentFailed : undefined}
-                  />
-                ) : null}
+              <div ref={i === index ? zoomRef : undefined} style={zoomWrapperStyle(width, boxHeight, pair)}>
+                {near
+                  ? shown.map((p, k) => (
+                      <ReaderPage
+                        // Remounted when the cell changes layout, like native's.
+                        key={`${p.key}:${item.pages.length}`}
+                        fadeMs={standby ? STANDBY_FADE_MS : undefined}
+                        uri={p.uri}
+                        page={p.pageNumber}
+                        fit="contain"
+                        width={pair ? width / 2 : width}
+                        height={boxHeight}
+                        // The pair meets at the spine.
+                        contentPosition={pair ? (k === 0 ? 'right' : 'left') : undefined}
+                        onLoadDims={(w, h) => recordDims(p.key, w, h)}
+                        onFailedChange={(failed) => setPageFailed(p.key, failed)}
+                      />
+                    ))
+                  : null}
               </div>
             </div>
           );
@@ -1207,6 +1298,14 @@ function cellStyle(width: number, height: number): React.CSSProperties {
     justifyContent: 'center',
   };
 }
-function zoomWrapperStyle(width: number, boxHeight: number): React.CSSProperties {
-  return { width, height: boxHeight, flexShrink: 0, transformOrigin: 'center center', willChange: 'transform' };
+function zoomWrapperStyle(width: number, boxHeight: number, pair: boolean): React.CSSProperties {
+  return {
+    width,
+    height: boxHeight,
+    flexShrink: 0,
+    transformOrigin: 'center center',
+    willChange: 'transform',
+    ...(pair ? { display: 'flex', flexDirection: 'row' } : null),
+  };
 }
+

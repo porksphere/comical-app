@@ -25,7 +25,9 @@ import Animated, {
 import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { ScrubBackdrop } from '@/components/reader/scrub-backdrop';
 import type { Size } from '@/components/reader/page-geometry';
-import { ZoomablePage } from '@/components/reader/zoomable-page';
+import { pageToSpreadPosition, reportedPage, spreadPositions } from '@/components/reader/spreads';
+import { useSpreadLayout } from '@/components/reader/use-spread-layout';
+import { ZoomablePage, type CellPage } from '@/components/reader/zoomable-page';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommittedEitherWay } from '@/lib/gesture-release';
@@ -38,6 +40,9 @@ export type PagedReaderHandle = {
    *  whole pixel space 1:1 with the finger, is the `scrubTarget` shared value instead and never
    *  comes through here; a fractional `logical` therefore lands on the nearest page. */
   scrubTo: (logical: number) => void;
+  /** The pages sharing the screen with `logical` — itself alone outside double-page reading. A
+   *  turn steps off the spread's ends, not off whichever page of it was last reported. */
+  spreadOf: (logical: number) => { first: number; last: number };
 };
 
 /** One pager cell. The pager itself is chapter-agnostic — the reader screen may
@@ -47,6 +52,9 @@ export type PagedReaderHandle = {
  *  pager re-anchor the visible page when segments come and go) and its own
  *  per-chapter display number (`pageNumber`, what ReaderPage's failed state shows). */
 export type ReaderPageItem = { uri: string; key: string; pageNumber: number };
+
+/** One pager item: a spread of one or two pages (see `spreads`), keyed by its first page. */
+type PagerCell = { key: string; pages: CellPage[] };
 
 /** Module-level so it's stable without a hook — a list may keep the first one it's given. */
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
@@ -109,6 +117,10 @@ type Props = {
    *  strip): shrinks the virtualization window to the visible page only, so neighbouring pages
    *  aren't mounted — or their images requested — until the reader becomes primary again. */
   standby?: boolean;
+  /** Two pages to a screen (see `spreads`), and whether pairing starts from the first page rather
+   *  than after it. Fixed for the pager's lifetime — the host remounts it to change either. */
+  double?: boolean;
+  shift?: boolean;
 };
 
 /**
@@ -156,6 +168,12 @@ type Props = {
  * A swipe that runs off either END of the list — where the scroller has nothing
  * left to give and can only rubber-band — is handed to `onPrev`/`onNext` as a
  * chapter turn, the same thing a tap in that zone does there (see `edgeTurn`).
+ *
+ * DOUBLE-PAGE reading keeps every one of these as it is by changing what an item is: one SPREAD of
+ * one or two pages, still exactly one viewport wide. The host still speaks pages — positions in are
+ * pages and are taken to the spread holding them, positions out are the spread's LAST page (see
+ * `reportedPage`) — so everything below this paragraph that says "page" of a list index means a
+ * spread.
  */
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
   {
@@ -176,6 +194,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     scrubTarget,
     scrubbing,
     standby,
+    double = false,
+    shift = false,
   },
   ref,
 ) {
@@ -186,15 +206,41 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // what lets the scrubber's reaction scroll from the UI thread without a hop to JS.
   const listRef = useRef<LegendListRef>(null);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
-  const n = pages.length;
+
+  // WHICH PAGE IS ON SCREEN — held as a KEY, and turned back into an index by looking it up in the
+  // current data. That indirection is the whole point: a chapter joining at the head moves every
+  // index after it, and an index remembered from before the insert would name a different page
+  // (the standby strip's blanking and the zoom reset both hang off this, and both were wrong for a
+  // beat under the old index-held version). A key can't drift.
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+
+  const { layout, onPageSize } = useSpreadLayout(pages, double, shift, activeKey, initialPage);
+  const { spreads, spreadOf } = layout;
+  const n = spreads.length;
+  const lastPage = pages.length - 1;
+  // Page (logical) → spread (logical), clamped.
+  const spreadAt = (page: number) => spreadOf[Math.max(0, Math.min(lastPage, page))] ?? 0;
 
   const toPhysical = (logical: number) => (rtl ? n - 1 - logical : logical);
   const toLogical = (physical: number) => (rtl ? n - 1 - physical : physical);
+  // The page a physical index reports — see `reportedPage`.
+  const reportOf = (physical: number) => {
+    const spread = spreads[toLogical(Math.max(0, Math.min(n - 1, physical)))];
+    return spread ? reportedPage(spread) : 0;
+  };
 
-  const data = useMemo(() => (rtl ? [...pages].reverse() : pages), [pages, rtl]);
+  const data = useMemo(() => {
+    const cells: PagerCell[] = spreads.map((spread) => ({
+      key: spread.key,
+      pages: spread.pages.map((p) => ({ key: p.key, uri: p.uri, page: p.pageNumber })),
+    }));
+    return rtl ? cells.reverse() : cells;
+  }, [spreads, rtl]);
   // Display numbers by the same index as `data`, for the scrub backdrop to read from a worklet — a
   // stitched window restarts at 1 per chapter, so the index is not the number.
-  const pageNumbers = useMemo(() => data.map((item) => item.pageNumber), [data]);
+  const pageNumbers = useMemo(() => data.map((cell) => cell.pages[0]!.page), [data]);
+  // Where each page starts in spreads, for the scrub (which drags in pages) to scroll by.
+  const positions = useMemo(() => spreadPositions(layout), [layout]);
 
   const [zoomed, setZoomed] = useState(false);
   const handleZoomChange = useCallback(
@@ -215,14 +261,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   useEffect(() => () => onZoomChange?.(false), [onZoomChange]);
   // Where the pager opens, resolved once — the list reads `initialScrollIndex` at mount and never
   // again, so this must not be recomputed as the window grows around it.
-  const [initialIndex] = useState(() => toPhysical(Math.max(0, Math.min(n - 1, initialPage))));
+  const [initialIndex] = useState(() => toPhysical(spreadAt(initialPage)));
 
-  // WHICH PAGE IS ON SCREEN — held as a KEY, and turned back into an index by looking it up in the
-  // current data. That indirection is the whole point: a chapter joining at the head moves every
-  // index after it, and an index remembered from before the insert would name a different page
-  // (the standby strip's blanking and the zoom reset both hang off this, and both were wrong for a
-  // beat under the old index-held version). A key can't drift.
-  const [activeKey, setActiveKey] = useState<string | null>(null);
   const activeIndex = useMemo(() => {
     const found = activeKey ? data.findIndex((item) => item.key === activeKey) : -1;
     return found >= 0 ? found : initialIndex;
@@ -232,8 +272,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     ref,
     () => ({
       goToPage(logical: number, animated = true) {
-        const clamped = Math.max(0, Math.min(n - 1, logical));
-        void listRef.current?.scrollToIndex({ index: toPhysical(clamped), animated });
+        void listRef.current?.scrollToIndex({ index: toPhysical(spreadAt(logical)), animated });
       },
       // The JS-side fallback for the same move (the webtoon reader's scrubber path
       // and web). The native paged scrubber doesn't come through here at all — it
@@ -241,12 +280,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       // Rounded, because an index is what the list can place exactly; the fractional
       // path is the UI-thread one.
       scrubTo(logical: number) {
-        const clamped = Math.max(0, Math.min(n - 1, Math.round(logical)));
-        void listRef.current?.scrollToIndex({ index: toPhysical(clamped), animated: false });
+        void listRef.current?.scrollToIndex({ index: toPhysical(spreadAt(Math.round(logical))), animated: false });
+      },
+      spreadOf(logical: number) {
+        const spread = spreads[spreadAt(logical)];
+        return spread ? { first: spread.first, last: reportedPage(spread) } : { first: logical, last: logical };
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [n, rtl],
+    [n, rtl, layout],
   );
 
   // ── UI-thread state, read by the scrub reaction and the edge pan further down ──
@@ -301,7 +343,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // question directly, and at rest exactly one page is over the threshold.
   const settledRef = useRef(initialIndex);
   const onMomentumEnd = () => {
-    onPageChange(toLogical(Math.max(0, Math.min(n - 1, settledRef.current))));
+    onPageChange(reportOf(settledRef.current));
   };
 
   // Reported live from viewability below. Kept in a ref so the callback can stay
@@ -321,10 +363,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const scrubbingRef = useRef(false);
   const [onViewableItemsChanged] = useState(
     () =>
-      ({ viewableItems }: { viewableItems: ViewToken<ReaderPageItem>[] }) => {
+      ({ viewableItems }: { viewableItems: ViewToken<PagerCell>[] }) => {
         // Lowest index, not `[0]`: the page in front is the one with the smallest index, and
         // nothing promises the callback hands them over in that order.
-        let first: ViewToken<ReaderPageItem> | undefined;
+        let first: ViewToken<PagerCell> | undefined;
         for (const token of viewableItems) if (!first || token.index < first.index) first = token;
         if (!first) return;
         settledRef.current = first.index;
@@ -350,7 +392,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // enough, and it deliberately has no dependency array: every render's values
   // are the ones the next callback should see.
   useLayoutEffect(() => {
-    reportVisibleRef.current = (physical: number) => onVisiblePageChange?.(toLogical(physical));
+    reportVisibleRef.current = (physical: number) => onVisiblePageChange?.(reportOf(physical));
     scrubbingRef.current = !!scrubbing;
     atStart.set(activeIndex <= 0);
     atEnd.set(activeIndex >= n - 1);
@@ -395,14 +437,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     () => scrubTarget?.value ?? -1,
     (target, previous) => {
       if (target < 0) return;
-      const logical = Math.max(0, Math.min(n - 1, target));
+      // The target is in pages; the list scrolls by spread (the identity outside double-page).
+      const logical = Math.max(0, Math.min(n - 1, pageToSpreadPosition(positions, target)));
       const to = scrubOrigin.value + (rtl ? n - 1 - logical : logical) * width;
       // Once per drag: what the first target mapped to, in pages. `to` against `target` is the
       // whole question — they should differ by nothing but the leading adjustment.
       if ((previous ?? -1) < 0) trace('scrub', 'map', { target, to: to / width, origin: scrubOrigin.value / width });
       scrollTo(scrollRef, to, 0, false);
     },
-    [scrubTarget, n, rtl, width],
+    [scrubTarget, n, rtl, width, positions],
   );
 
   // Tap-zone meaning flips with direction (RTL: left = next, right = prev),
@@ -534,6 +577,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       onToggleChrome,
       handleZoomChange,
       pageExternals,
+      onPageSize,
     }),
     [
       activeIndex,
@@ -549,6 +593,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       onToggleChrome,
       handleZoomChange,
       pageExternals,
+      onPageSize,
     ],
   );
 
@@ -628,8 +673,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
             <ZoomablePage
               // Standing page, not a turned one — see ReaderPage's `fadeMs`.
               fadeMs={standby ? STANDBY_FADE_MS : undefined}
-              uri={item.uri}
-              page={item.pageNumber}
+              pages={item.pages}
               width={width}
               height={height}
               pageFit={pageFit}
@@ -650,7 +694,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               // captures it once and the value it carries changes on the UI thread.
               scrubbing={scrubTarget}
               scrollGesture={pageExternals}
+              onPageSize={onPageSize}
             />
+
           )
         }
       />

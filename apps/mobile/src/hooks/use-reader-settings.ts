@@ -21,6 +21,9 @@ export type PageFit = 'auto' | 'fit-width' | 'fit-height';
 /** What a double-tap does: magnify the page, switch `pageFit` to the other axis, or nothing (a
  *  lone tap then acts at once instead of waiting out a second one). */
 export type DoubleTapMode = 'magnify' | 'switch-fit' | 'off';
+/** How many pages share the paged reader's screen: one, two (a spread), or two exactly when the
+ *  reading frame is landscape. See `components/reader/spreads`. */
+export type PageLayout = 'single' | 'double' | 'auto';
 /** Pages warmed ahead of the one being read — any whole number from none to PREFETCH_AHEAD_MAX. */
 export type PrefetchAhead = number;
 export const PREFETCH_AHEAD_MIN = 0;
@@ -30,6 +33,7 @@ export type ReaderSettings = {
   direction: ReaderDirection;
   pageFit: PageFit;
   doubleTap: DoubleTapMode;
+  pageLayout: PageLayout;
   /** Hold the screen awake while a page is on screen. */
   keepAwake: boolean;
   /** Keep the page count faintly on screen after the rest of the chrome has hidden. */
@@ -50,6 +54,9 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   direction: 'ltr',
   pageFit: 'auto',
   doubleTap: 'magnify',
+  // Like other readers: a phone held upright reads one page, turned sideways (or a tablet, or a
+  // desktop window) two.
+  pageLayout: 'auto',
   keepAwake: true,
   pageCountWhenHidden: true,
   respectSafeArea: false,
@@ -117,4 +124,21 @@ export function useReaderSettings(): [ReaderSettings, (patch: Partial<ReaderSett
     Math.max(PREFETCH_AHEAD_MIN, Math.round(Number(merged.prefetchAhead) || 0)),
   );
   return [merged, setReaderSettings];
+}
+
+// Per-series "pair from the first page", for releases without a cover page — whose spreads
+// otherwise land one page off for the whole series. Keyed `bridgeId:seriesId`; only the series it is
+// turned on for are stored.
+const spreadShift$ = persisted$<Record<string, true>>('comical:spreadShift', {});
+
+export function useSpreadShift(seriesKey: string | null): boolean {
+  return use$(() => (seriesKey ? !!spreadShift$.get()?.[seriesKey] : false));
+}
+export function setSpreadShift(seriesKey: string, on: boolean): void {
+  // Replaces the whole record, so the root's identity changes for every `use$` reader — a nested
+  // set can leave it as it was.
+  const next: Record<string, true> = { ...spreadShift$.peek() };
+  if (on) next[seriesKey] = true;
+  else delete next[seriesKey];
+  spreadShift$.set(next);
 }

@@ -1,19 +1,23 @@
 import { useEffect, type ComponentType } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
 import type { IconProps } from '@/components/icons/ui-icons';
 import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
 import { IntStepper } from '@/components/reader/int-stepper';
+import { readsDouble } from '@/components/reader/spreads';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import {
   PREFETCH_AHEAD_MAX,
   PREFETCH_AHEAD_MIN,
+  setSpreadShift,
   useReaderSettings,
+  useSpreadShift,
   type DoubleTapMode,
   type PageFit,
+  type PageLayout,
   type ReaderDirection,
   type ReaderSettings,
 } from '@/hooks/use-reader-settings';
@@ -37,7 +41,14 @@ const SHEET_SETTLE_MS = 600;
  *  gear (`CollectPageControl`); a chapter has its row's long-press menu on the series screen
  *  (`series.chapter-menu.collect`); a series has the series screen. Nothing was lost, and the sheet
  *  is now only the three things that actually change how the reader behaves. */
-export function SettingsControl({ onOpenChange }: { onOpenChange?: (open: boolean) => void }) {
+export function SettingsControl({
+  seriesKey,
+  onOpenChange,
+}: {
+  /** `bridgeId:seriesId` — what the per-series spread shift is stored against. */
+  seriesKey: string | null;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const { ref, openAt, isOpen } = useAnchoredOverlay();
   useEffect(() => {
     if (!isOpen || !onOpenChange) return;
@@ -50,7 +61,7 @@ export function SettingsControl({ onOpenChange }: { onOpenChange?: (open: boolea
       testID="reader.settings.open"
       ref={ref}
       hitSlop={12}
-      onPress={() => openAt(() => <SettingsContent />)}
+      onPress={() => openAt(() => <SettingsContent seriesKey={seriesKey} />)}
       style={styles.gear}
       accessibilityRole="button"
       accessibilityLabel="Reader settings">
@@ -64,8 +75,14 @@ export function SettingsControl({ onOpenChange }: { onOpenChange?: (open: boolea
  *  light appearance it renders light while the reader keeps its own always-dark
  *  viewing surface — an intentional split, matching how media
  *  readers stay dark for immersion while their controls track the app theme. */
-function SettingsContent() {
+function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
   const [settings, set] = useReaderSettings();
+  const shift = useSpreadShift(seriesKey);
+  // The window stands in for the reader's frame, which is the window less any safe-area inset —
+  // close enough to say whether `auto` is pairing right now.
+  const window = useWindowDimensions();
+  const paged = settings.mode === 'paged';
+  const pairing = paged && readsDouble(settings.pageLayout, window);
   return (
     <View style={styles.content}>
       <OverlayHeading>Reader settings</OverlayHeading>
@@ -98,6 +115,28 @@ function SettingsContent() {
           ['off', 'Off'],
         ]}
         onChange={(v) => set({ doubleTap: v as DoubleTapMode })}
+      />
+      <Segment
+        label="Page layout"
+        testIdPrefix="reader.settings.page-layout"
+        value={settings.pageLayout}
+        options={[
+          ['single', 'Single'],
+          ['double', 'Double'],
+          ['auto', 'Auto'],
+        ]}
+        onChange={(v) => set({ pageLayout: v as PageLayout })}
+        disabled={!paged}
+      />
+      {paged && settings.pageLayout === 'auto' && (
+        <ThemedText style={styles.hint}>Two pages side by side in landscape</ThemedText>
+      )}
+      <ToggleRow
+        label="Shift spreads by a page"
+        testID="reader.settings.spread-shift"
+        value={shift}
+        onChange={(v) => seriesKey && setSpreadShift(seriesKey, v)}
+        disabled={!pairing || !seriesKey}
       />
       <ToggleRow
         label="Keep screen on"
@@ -224,16 +263,18 @@ function ToggleRow({
   value,
   onChange,
   testID,
+  disabled = false,
 }: {
   label: string;
   value: boolean;
   onChange: (value: boolean) => void;
   testID: string;
+  disabled?: boolean;
 }) {
   return (
-    <View style={styles.toggleRow}>
+    <View style={[styles.toggleRow, disabled && styles.disabled]}>
       <ThemedText style={styles.segLabel}>{label}</ThemedText>
-      <ThemedSwitch testID={testID} value={value} onValueChange={onChange} />
+      <ThemedSwitch testID={testID} value={value} onValueChange={onChange} disabled={disabled} />
     </View>
   );
 }
@@ -244,15 +285,17 @@ function Segment({
   options,
   onChange,
   testIdPrefix,
+  disabled = false,
 }: {
   label: string;
   value: string;
   options: [string, string][];
   onChange: (value: string) => void;
   testIdPrefix: string;
+  disabled?: boolean;
 }) {
   return (
-    <View style={styles.seg}>
+    <View style={[styles.seg, disabled && styles.disabled]}>
       <ThemedText style={styles.segLabel}>{label}</ThemedText>
       <View style={styles.segRow}>
         {options.map(([v, l]) => {
@@ -262,6 +305,8 @@ function Segment({
               key={v}
               testID={testId(testIdPrefix, v)}
               onPress={() => onChange(v)}
+              disabled={disabled}
+              accessibilityState={{ disabled, selected: on }}
               style={[styles.opt, on && styles.optOn]}>
               <ThemedText style={[styles.optText, on && styles.optTextOn]}>{l}</ThemedText>
             </Pressable>
@@ -319,6 +364,9 @@ const styles = StyleSheet.create({
   hint: {
     color: 'rgba(255,255,255,0.4)',
     fontSize: 11,
+  },
+  disabled: {
+    opacity: 0.4,
   },
   toggleRow: {
     flexDirection: 'row',

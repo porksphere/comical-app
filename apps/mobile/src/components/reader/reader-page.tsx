@@ -137,6 +137,7 @@ export function ReaderPage({
   onFailedChange,
   fadeMs,
   scrubbing,
+  contentPosition,
 }: {
   uri: string;
   page: number;
@@ -176,6 +177,9 @@ export function ReaderPage({
    *  mounted cell at exactly the moment the list is trying to build more is what opens the gaps the
    *  strip exists to fill. */
   scrubbing?: SharedValue<number>;
+  /** Which side of a `contain` box the picture hugs — a two-page spread pushes its pages together
+   *  at the spine rather than centring each in its half. */
+  contentPosition?: 'left' | 'right';
 }) {
   const downsample = useDownsampleImages();
   const [loaded, setLoaded] = useState(false);
@@ -516,6 +520,7 @@ export function ReaderPage({
           source={{ uri: source }}
           style={StyleSheet.absoluteFill}
           contentFit={fit === 'contain' ? 'contain' : 'cover'}
+          contentPosition={contentPosition}
           cachePolicy="memory-disk"
           /**
            * DOWNSAMPLING — on by default, and the default is expo-image's own (`allowDownscaling`),
