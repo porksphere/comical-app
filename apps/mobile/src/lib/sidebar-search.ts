@@ -85,3 +85,17 @@ export function focusSidebarSearch(): void {
 export function sidebarSearchFocused(): void {
   sidebarSearch$.focusPending.set(false);
 }
+
+/** Every key with a search up — what `AppTabs` mounts a pane for. */
+export function sidebarSearchKeys(): string[] {
+  return openKeys(sidebarSearch$.searches.peek());
+}
+
+/** A `use`-prefixed wrapper holding nothing but `use$` — see `useSeriesPaneParams`. */
+export function useSidebarSearchKeys(): string[] {
+  return use$(() => openKeys(sidebarSearch$.searches.get()));
+}
+
+function openKeys(searches: Record<string, Search>): string[] {
+  return Object.keys(searches).filter((key) => isOpen(searches[key]));
+}

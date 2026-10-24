@@ -35,12 +35,8 @@ import { useCollections } from '@/hooks/use-collections';
 import { useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
-import {
-  closeBridgeSearchPane,
-  isBridgeSearchPaneOpen,
-  setBridgeSearchPaneAvailable,
-  useBridgeSearchPaneOpen,
-} from '@/lib/bridge-search-pane';
+import { setBridgeSearchPaneAvailable, useBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
+import { closeContentPanes, hasContentPanes, openContentPaneKeys, useOpenContentPaneKeys } from '@/lib/content-panes';
 import { isTypingTarget } from '@/lib/key-hold';
 import { keyActionOf } from '@/lib/keybindings';
 import { TAB_KEY_ACTIONS } from '@/lib/keymap';
@@ -48,16 +44,19 @@ import { router } from '@/lib/nav';
 import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { closeSettingsModal, openSettingsModal } from '@/lib/settings-modal';
-import { PaneTabContext, setPaneTab, useActivePaneTab } from '@/lib/pane-tab';
-import { closeResultsPane, isResultsPaneOpen, setResultsPaneAvailable, useResultsPaneOpen } from '@/lib/results-pane';
-import { closeSeriesPane, isSeriesPaneOpen, setSeriesPaneAvailable, useSeriesPaneParams } from '@/lib/series-pane';
 import {
-  clearSidebarSearches,
-  closeSidebarSearch,
-  focusSidebarSearch,
-  isSidebarSearchOpen,
-  useSidebarSearchOpen,
-} from '@/lib/sidebar-search';
+  paneKey,
+  paneKeyOf,
+  paneKeyScope,
+  paneKeyTab,
+  PaneTabContext,
+  setPaneTab,
+  setTabPaneKeys,
+  useActivePaneTab,
+} from '@/lib/pane-tab';
+import { setResultsPaneAvailable, useResultsPaneOpen } from '@/lib/results-pane';
+import { setSeriesPaneAvailable, useSeriesPaneParams } from '@/lib/series-pane';
+import { clearSidebarSearches, focusSidebarSearch, useSidebarSearchOpen } from '@/lib/sidebar-search';
 import { setSidebarDragWidth, sidebarDragWidth } from '@/lib/sidebar-drag';
 import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
@@ -86,7 +85,7 @@ const TABS: {
   label: string;
   Icon: LucideIcon;
   noRecede?: boolean;
-  Scope?: React.ComponentType<{ active?: boolean; onNavigate?: () => void }>;
+  Scope?: React.ComponentType<{ active?: boolean; onReselect?: () => void }>;
   /** What pressing the DESTINATION row means for its scope: back to the front door. Browse's rows
    *  are bridges and Library's are collections, so "go to Browse" with no further qualification is
    *  the aggregate, and "go to Library" is the whole library — the same rows their groups already
@@ -137,19 +136,6 @@ const SETTINGS_AS_MODAL = Platform.OS === 'web';
 const SERIES_AS_PANE = Platform.OS === 'web';
 /** And search's field moves into the rail, with its results in a pane of their own. */
 const SEARCH_IN_RAIL = Platform.OS === 'web';
-
-/** Every pane over a tab's content region, the active tab's unless told otherwise — what that tab's
- *  own destination, pressed while you are on it, clears (see TabButton's press). */
-function closeContentPanes(tab?: string): void {
-  closeSeriesPane(tab);
-  closeResultsPane(tab);
-  closeSidebarSearch(tab);
-  closeBridgeSearchPane(tab);
-}
-
-function hasContentPanes(tab: string): boolean {
-  return isSeriesPaneOpen(tab) || isResultsPaneOpen(tab) || isSidebarSearchOpen(tab) || isBridgeSearchPaneOpen(tab);
-}
 
 const SEARCH_HINT =
   Platform.OS === 'web' && typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘K' : 'Ctrl K';
@@ -446,19 +432,6 @@ export default function AppTabs() {
   // selection puts two (or three) filled rows on screen at once. Exact pathname match, no fallback —
   // on a pushed screen over the tabs nothing in the rail is current.
   const activeTab = TABS.find((t) => t.href === pathname)?.name;
-  // Layout, not passive: the slot has already switched screens this render, and the panes of the tab
-  // you left must not paint a frame over the one you arrived on. Over a pushed screen there is no
-  // `activeTab`, and the panes stay those of the tab it covers.
-  //
-  // With the setting off, only the tab you are on has panes: leaving one closes what it had open,
-  // and so does turning the setting off while other tabs still hold some.
-  const keepTabPanes = useKeepTabPanes();
-  useLayoutEffect(() => {
-    if (!activeTab) return;
-    if (!keepTabPanes) for (const tab of TABS) if (tab.name !== activeTab) closeContentPanes(tab.name);
-    setPaneTab(activeTab);
-  }, [activeTab, keepTabPanes]);
-  const paneTab = useActivePaneTab();
   const openSearch = useOpenComicalSearch();
   // The rail's field only where it is drawn: collapsed it is an icon that expands the rail to reach
   // it, and over a pushed screen (a reader, Settings on native) the rail is covered, so the shortcut
@@ -508,9 +481,10 @@ export default function AppTabs() {
         return [
           row,
           <SidebarGroup key={`${tab.name}-scope`} name={tab.name} testID={`sidebar.group.${tab.name}`}>
-            {/* Same reason as the destination rows above: a scope picked in the rail changes what
-                the covered screen shows, so the pane has to get out of its way. */}
-            <tab.Scope active={activeTab === tab.name} onNavigate={() => closeContentPanes(tab.name)} />
+            {/* Each scope keeps its own panes (lib/pane-tab), so picking ANOTHER bridge or collection
+                swaps what is over the content region rather than closing it. Picking the one you are
+                already on is its front door, as pressing the tab you are on is: its panes close. */}
+            <tab.Scope active={activeTab === tab.name} onReselect={() => closeContentPanes(paneKeyOf(tab.name))} />
           </SidebarGroup>,
         ];
       }),
@@ -622,19 +596,10 @@ export default function AppTabs() {
           an overlay opened from within it (a chapter menu, a selector) still paints over it.
           It covers the CONTENT REGION and nothing else: the rail stays lit and usable beside it, so
           the series is over the grid you opened it from rather than over the whole app. */}
-      {paneAvailable
-        ? TABS.map((tab) => (
-            <PaneTabContext.Provider key={tab.name} value={tab.name}>
-              <TabPanes
-                hidden={tab.name !== paneTab}
-                railSearch={railSearch}
-                left={contentInset}
-                width={width - contentInset}
-                top={insets.top}
-              />
-            </PaneTabContext.Provider>
-          ))
-        : null}
+      {paneAvailable ? (
+        <AllTabPanes railSearch={railSearch} left={contentInset} width={width - contentInset} top={insets.top} />
+      ) : null}
+      <PaneKeySync activeTab={activeTab} />
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
       <TabKeys activeTab={activeTab} />
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
@@ -678,7 +643,7 @@ function TabKeys({ activeTab }: { activeTab: string | undefined }) {
         return scrollToTopFor(tab.name);
       }
       // Arriving where you left something open is coming back to it, as the rail's press is.
-      if (!hasContentPanes(tab.name)) tab.selectDefault?.();
+      if (!hasContentPanes(paneKeyOf(tab.name))) tab.selectDefault?.();
       router.navigate(tab.href as never);
     };
     document.addEventListener('keydown', onKey);
@@ -700,10 +665,70 @@ function useSeriesPaneOpen(): boolean {
 }
 
 /**
- * One tab's panes, read under that tab's `PaneTabContext` — mounted for every tab, shown for the
- * active one alone (see lib/pane-tab), and hidden the way the slot hides a tab's screen, so a tab
- * you come back to has its panes exactly as it has its screen. In stacking order: the rail's
- * results and Browse's Search at the bottom, "See all" over them, the series over everything.
+ * Which key's panes show, and which tab's scope each destination row leads to (see lib/pane-tab).
+ *
+ * Its own component rather than part of `AppTabs`: the bridge and collection selections, and the
+ * lists they resolve against, would otherwise re-render the whole rail on every change.
+ *
+ * Layout, not passive: the slot has already switched screens this render, and the panes of the key
+ * you left must not paint a frame over the one you arrived on. Over a pushed screen there is no
+ * `activeTab`, and the panes stay those of the key it covers.
+ *
+ * With the setting off, only the key you are on has panes: leaving a tab OR a scope closes what it
+ * had open, and so does turning the setting off while other keys still hold some. Either way a pane
+ * whose scope has gone — an uninstalled or NSFW-hidden bridge, a deleted collection — is closed,
+ * since nothing in the rail can ever lead back to it.
+ */
+function PaneKeySync({ activeTab }: { activeTab: string | undefined }) {
+  const { visibleBridges, bridgeId, bridgesLoaded } = useSelectedBridge();
+  const { collections, isLoading: collectionsLoading } = useCollections();
+  const collection = useSelectedCollectionId();
+  const keepTabPanes = useKeepTabPanes();
+  const scopes: Record<string, string | undefined> = { browse: bridgeId, library: collection ?? 'all' };
+  const activeKey = activeTab ? paneKey(activeTab, scopes[activeTab]) : undefined;
+  useLayoutEffect(() => {
+    setTabPaneKeys(Object.fromEntries(TABS.map((tab) => [tab.name, paneKey(tab.name, scopes[tab.name])])));
+    if (!activeKey) return;
+    for (const key of openContentPaneKeys()) {
+      if (key === activeKey) continue;
+      if (!keepTabPanes || scopeGone(key)) closeContentPanes(key);
+    }
+    setPaneTab(activeKey);
+    function scopeGone(key: string): boolean {
+      const scope = paneKeyScope(key);
+      if (scope === null) return false;
+      switch (paneKeyTab(key)) {
+        case 'browse':
+          return bridgesLoaded && !visibleBridges.some((b) => b.id === scope);
+        case 'library':
+          return !collectionsLoading && scope !== 'all' && !collections.some((c) => c.id === scope);
+        default:
+          return false;
+      }
+    }
+  });
+  return null;
+}
+
+/** Every key with a pane open, each under its own `PaneTabContext`, the active key's shown and the
+ *  rest hidden the way the slot hides a tab's screen — so a key you come back to has its panes
+ *  exactly as it has its screen. The active key is always among them, open or not, so a pane it opens
+ *  has a mount to land in. Its own component so a pane opening or closing re-renders this list and
+ *  not the rail. */
+function AllTabPanes(frame: { railSearch: boolean; left: number; width: number; top: number }) {
+  const paneTab = useActivePaneTab();
+  const openKeys = useOpenContentPaneKeys();
+  const keys = openKeys.includes(paneTab) ? openKeys : [...openKeys, paneTab];
+  return keys.map((key) => (
+    <PaneTabContext.Provider key={key} value={key}>
+      <TabPanes hidden={key !== paneTab} {...frame} />
+    </PaneTabContext.Provider>
+  ));
+}
+
+/**
+ * One key's panes, read under that key's `PaneTabContext`. In stacking order: the rail's results
+ * and Browse's Search at the bottom, "See all" over them, the series over everything.
  */
 function TabPanes({
   hidden,
@@ -774,7 +799,7 @@ function TabButton({
     // Each tab keeps its own panes (lib/pane-tab), so pressing ANOTHER tab comes back to whatever it
     // had open, scope and all, and leaves the one you were on waiting. Pressing the tab you are on
     // is going to its front door: its panes close.
-    const returning = !isFocused && hasContentPanes(routeName);
+    const returning = !isFocused && hasContentPanes(paneKeyOf(routeName));
     // Only where the rail is showing the scope this resets — see `selectDefault` on the tab table.
     if (sidebar && !returning) selectDefault?.();
     if (isFocused) closeContentPanes();

@@ -134,3 +134,17 @@ export function useSeriesPaneShowsTop(key: string): boolean {
 function useTabShowsTop(tab: string, key: string): boolean {
   return use$(() => (seriesPane$.params[tab].get() ?? null) !== null && seriesPane$.top[tab].get() === key);
 }
+
+/** Every key with a series open — what `AppTabs` mounts a pane for. */
+export function seriesPaneKeys(): string[] {
+  return openKeys(seriesPane$.params.peek());
+}
+
+/** A `use`-prefixed wrapper holding nothing but `use$` — see `useSeriesPaneParams`. */
+export function useSeriesPaneKeys(): string[] {
+  return use$(() => openKeys(seriesPane$.params.get()));
+}
+
+function openKeys(params: Record<string, PaneParams | null>): string[] {
+  return Object.keys(params).filter((key) => params[key] != null);
+}

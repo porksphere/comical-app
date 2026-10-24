@@ -19,7 +19,7 @@ import { libraryViews, setSelectedCollection, useSelectedCollectionId } from '@/
 import { useCollections } from '@/hooks/use-collections';
 import { router } from '@/lib/nav';
 
-export function SidebarCollections({ active, onNavigate }: { active?: boolean; onNavigate?: () => void }) {
+export function SidebarCollections({ active, onReselect }: { active?: boolean; onReselect?: () => void }) {
   const selected = useSelectedCollectionId();
   const { collections } = useCollections();
 
@@ -33,9 +33,9 @@ export function SidebarCollections({ active, onNavigate }: { active?: boolean; o
           active={active === true && row.id === selected}
           thumbnail={<CollectionThumb view={row.id} name={row.name} size={SidebarThumbSize} style={styles.thumb} />}
           onPress={() => {
+            if (active && row.id === selected) onReselect?.();
             setSelectedCollection(row.id);
             router.navigate('/library');
-            onNavigate?.();
           }}
         />
       ))}

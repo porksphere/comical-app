@@ -4,11 +4,15 @@
 # series page covers the tab bar, so there is no tab to switch to while it is up.
 #
 # Journey: Browse -> open a series (series.pane) -> Library (pane hidden) -> Browse (the same series
-# is still open) -> Browse again (its front door: the pane closes).
+# is still open) -> Browse again (its front door: the pane closes). Then the same for a SCOPE: a
+# bridge is a sub-tab of Browse, so a series opened on one bridge is hidden by picking another and
+# back when you return to it, and re-pressing the bridge you're on is its front door.
 #
 # Selectors: the rail's destination rows hit the web-only aria-label quirk (see ../README.md), so
-# they're selected by label ("Browse", "Library"), as series-page.yaml does. series.pane has no
-# competing accessibilityLabel — selected by its testID.
+# they're selected by label ("Browse", "Library"), as series-page.yaml does. series.pane and the
+# rail's bridge rows (`sidebar.bridge.<id>`) have no competing accessibilityLabel — selected by
+# testID. The ids are demo mode's mock bridges: `comical` (the aggregate, Browse's default) and
+# `panelfox`.
 url: http://localhost:4000/comical-app
 ---
 - launchApp
@@ -39,5 +43,31 @@ url: http://localhost:4000/comical-app
 # Pressing the tab you're on is its front door, which closes what it had open.
 - tapOn:
     id: "Browse"
+- assertNotVisible:
+    id: "series.pane"
+
+# A scope now. Open a series on the aggregate again...
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.pane"
+
+# ...pick another bridge: Browse's content changes, the aggregate's series is kept out of sight.
+- tapOn:
+    id: "sidebar.bridge.panelfox"
+- assertNotVisible:
+    id: "series.pane"
+
+# Back to the aggregate: its series is still up.
+- tapOn:
+    id: "sidebar.bridge.comical"
+- assertVisible:
+    id: "series.pane"
+- assertVisible:
+    id: "series.action.read"
+
+# Re-pressing the bridge you're on is its front door, like re-pressing the tab.
+- tapOn:
+    id: "sidebar.bridge.comical"
 - assertNotVisible:
     id: "series.pane"

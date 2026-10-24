@@ -57,3 +57,17 @@ export function isBridgeSearchPaneOpen(tab = activePaneTab()): boolean {
 export function closeBridgeSearchPane(tab = activePaneTab()): void {
   bridgeSearchPane$.open[tab].set(false);
 }
+
+/** Every key with Search open — what `AppTabs` mounts a pane for. */
+export function bridgeSearchPaneKeys(): string[] {
+  return openKeys(bridgeSearchPane$.open.peek());
+}
+
+/** A `use`-prefixed wrapper holding nothing but `use$` — see `useSeriesPaneParams`. */
+export function useBridgeSearchPaneKeys(): string[] {
+  return use$(() => openKeys(bridgeSearchPane$.open.get()));
+}
+
+function openKeys(open: Record<string, boolean>): string[] {
+  return Object.keys(open).filter((key) => open[key]);
+}

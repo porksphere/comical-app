@@ -62,3 +62,17 @@ export function isResultsPaneOpen(tab = activePaneTab()): boolean {
 export function closeResultsPane(tab = activePaneTab()): void {
   resultsPane$.params[tab].set(null);
 }
+
+/** Every key with results open — what `AppTabs` mounts a pane for. */
+export function resultsPaneKeys(): string[] {
+  return openKeys(resultsPane$.params.peek());
+}
+
+/** A `use`-prefixed wrapper holding nothing but `use$` — see `useSeriesPaneParams`. */
+export function useResultsPaneKeys(): string[] {
+  return use$(() => openKeys(resultsPane$.params.get()));
+}
+
+function openKeys(params: Record<string, PaneParams | null>): string[] {
+  return Object.keys(params).filter((key) => params[key] != null);
+}

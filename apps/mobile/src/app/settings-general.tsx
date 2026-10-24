@@ -161,7 +161,7 @@ export default function GeneralSettingsScreen() {
           title="Browsing"
           footer={`NSFW content decides whether NSFW-flagged bridges are visible. Holding the bridge icon at the top of Browse or Library runs the chosen action.${
             Platform.OS === 'web'
-              ? ' Keep pages open per tab leaves a series or search you opened beside the sidebar open on its tab while you visit another.'
+              ? ' Keep pages open per tab leaves a series or search you opened beside the sidebar open on its tab — and on its bridge or collection — while you visit another.'
               : ''
           }`}>
           <SettingsSelectRow label="NSFW content" value={nsfwMode} options={NSFW_MODE_OPTIONS} onChange={setNsfwMode} />

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { closeBridgeSearchPane, isBridgeSearchPaneOpen, openBridgeSearchPane, setBridgeSearchPaneAvailable } from './bridge-search-pane';
-import { isPaneTabLive, setPaneTab } from './pane-tab';
+import { isPaneTabLive, paneKey, paneKeyOf, paneKeyScope, paneKeyTab, setPaneTab, setTabPaneKeys } from './pane-tab';
 import { closeResultsPane, isResultsPaneOpen, openResultsPane, setResultsPaneAvailable } from './results-pane';
 import { closeSeriesPane, isSeriesPaneOpen, openSeriesPane, setSeriesPaneAvailable } from './series-pane';
 import { closeSidebarSearch, isSidebarSearchOpen, submitSidebarSearch } from './sidebar-search';
@@ -64,5 +64,30 @@ describe('per-tab panes', () => {
     expect(isPaneTabLive(null)).toBe(true);
     expect(isPaneTabLive('library')).toBe(true);
     expect(isPaneTabLive('browse')).toBe(false);
+  });
+});
+
+describe('per-scope keys', () => {
+  test('a key carries the tab and its scope', () => {
+    expect(paneKey('browse', 'pub.bridge')).toBe('browse/pub.bridge');
+    expect(paneKey('history')).toBe('history');
+    expect(paneKeyTab('browse/pub.bridge')).toBe('browse');
+    expect(paneKeyScope('browse/pub.bridge')).toBe('pub.bridge');
+    expect(paneKeyScope('history')).toBeNull();
+  });
+
+  test('what one bridge opened is still open when you come back to it', () => {
+    setPaneTab(paneKey('browse', 'a'));
+    expect(openSeriesPane({ bridgeId: 'a', id: '1' })).toBe(true);
+    setPaneTab(paneKey('browse', 'b'));
+    expect(isSeriesPaneOpen()).toBe(false);
+    setPaneTab(paneKey('browse', 'a'));
+    expect(isSeriesPaneOpen()).toBe(true);
+  });
+
+  test("a tab's destination leads to its current scope's key", () => {
+    setTabPaneKeys({ browse: paneKey('browse', 'a'), library: paneKey('library', 'all') });
+    expect(paneKeyOf('browse')).toBe('browse/a');
+    expect(paneKeyOf('history')).toBe('history');
   });
 });
