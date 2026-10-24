@@ -123,6 +123,9 @@ type Props = {
    *  than after it. Fixed for the pager's lifetime — the host remounts it to change either. */
   double?: boolean;
   shift?: boolean;
+  /** Every page's real picture size as it loads, by key — for whoever reads shapes besides the
+   *  pairing (see `use-webtoon-detection`). */
+  onPageSize?: (key: string, size: Size) => void;
 };
 
 /**
@@ -199,6 +202,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     standby,
     double = false,
     shift = false,
+    onPageSize: onPageSizeProp,
   },
   ref,
 ) {
@@ -217,7 +221,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // beat under the old index-held version). A key can't drift.
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
-  const { layout, onPageSize } = useSpreadLayout(pages, double, shift, activeKey, initialPage);
+  const { layout, onPageSize: onPairingSize } = useSpreadLayout(pages, double, shift, activeKey, initialPage);
+  const onPageSize = useCallback(
+    (key: string, size: Size) => {
+      onPairingSize(key, size);
+      onPageSizeProp?.(key, size);
+    },
+    [onPairingSize, onPageSizeProp],
+  );
   const { spreads, spreadOf } = layout;
   const n = spreads.length;
   const lastPage = pages.length - 1;

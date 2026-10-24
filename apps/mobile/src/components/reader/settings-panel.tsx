@@ -76,7 +76,7 @@ export function SettingsControl({
  *  viewing surface — an intentional split, matching how media
  *  readers stay dark for immersion while their controls track the app theme. */
 function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
-  const [settings, set] = useReaderSettings();
+  const [settings, set] = useReaderSettings(seriesKey);
   const shift = useSpreadShift(seriesKey);
   // The window stands in for the reader's frame, which is the window less any safe-area inset —
   // close enough to say whether `auto` is pairing right now.

@@ -6,6 +6,7 @@
 // spread indices (what the pager scrolls) with the maps it returns.
 
 import { containedSize, type Size } from '@/components/reader/page-geometry';
+import { STRIP_ASPECT } from '@/components/reader/page-slicing';
 
 export type { Size };
 
@@ -38,6 +39,13 @@ export function isWidePage(size: Size | undefined): boolean {
   return !!size && size.width > size.height;
 }
 
+/** A stitched strip of panels (see `STRIP_ASPECT`): read by scrolling, so it never shares a screen
+ *  — two strips side by side in a landscape frame are slivers a few panels wide — and is never
+ *  pushed against a spine it doesn't have. */
+export function isStripPage(size: Size | undefined): boolean {
+  return !!size && size.height > size.width * STRIP_ASPECT;
+}
+
 // Halves of one printed sheet scan alike; a page whose shape differs by more than this (a credits
 // page, an insert from another source) is a different sheet and doesn't pair. Mihon's tolerance.
 const PAIR_ASPECT_TOLERANCE = 0.1;
@@ -50,10 +58,12 @@ export function shapesPair(a: Size | undefined, b: Size | undefined): boolean {
 
 /**
  * Pairs pages two by two, the way print does: a chapter's first page (its cover) stands alone, as
- * does any wide page, and pairing starts over after every lone page so one wide page in the middle
- * of a chapter doesn't throw the rest out of step. Two pages of different shapes don't pair either
- * (see `shapesPair`). `shift` pairs from the first page instead — for releases without a cover,
- * whose spreads otherwise land one page off. Spreads never cross into the next chapter. A page
+ * does any wide page or strip, and pairing starts over after every lone page so one wide page in the
+ * middle of a chapter doesn't throw the rest out of step. Two pages of different shapes don't pair
+ * either (see `shapesPair`). `shift` pairs from the first page instead — for releases without a
+ * cover, whose spreads otherwise land one page off. A chapter of exactly two pages pairs them
+ * whatever the cover rule says: there is no spread for the cover to open, and two padded lone
+ * pages is the one layout nobody wants from it. Spreads never cross into the next chapter. A page
  * whose size isn't known yet counts as portrait.
  */
 export function buildSpreads<T extends SpreadPage>(
@@ -69,17 +79,26 @@ export function buildSpreads<T extends SpreadPage>(
     const size = sizeOf(page, i);
     const next = pages[i + 1];
     const nextSize = next && sizeOf(next, i + 1);
-    const cover = page.pageNumber === 1 && !shift;
     const wide = isWidePage(size);
-    const lone =
-      cover || wide || !next || next.pageNumber === 1 || isWidePage(nextSize) || !shapesPair(size, nextSize);
+    const strip = isStripPage(size);
+    const pairable =
+      !!next &&
+      next.pageNumber !== 1 &&
+      !wide &&
+      !strip &&
+      !isWidePage(nextSize) &&
+      !isStripPage(nextSize) &&
+      shapesPair(size, nextSize);
+    const twoPageChapter = page.pageNumber === 1 && next?.pageNumber === 2 && (pages[i + 2]?.pageNumber ?? 1) === 1;
+    const cover = page.pageNumber === 1 && !shift && !(twoPageChapter && pairable);
+    const lone = cover || !pairable;
     const members = lone ? [page] : [page, next!];
     for (let k = 0; k < members.length; k++) spreadOf[i + k] = spreads.length;
     spreads.push({
       key: page.key,
       first: i,
       pages: members,
-      ...(lone && !wide ? { pad: cover ? ('before' as const) : ('after' as const) } : {}),
+      ...(lone && !wide && !strip ? { pad: cover ? ('before' as const) : ('after' as const) } : {}),
     });
     i += members.length;
   }

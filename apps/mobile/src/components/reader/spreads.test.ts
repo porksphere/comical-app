@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   buildSpreads,
+  isStripPage,
   isWidePage,
   pageToSpreadPosition,
   readsDouble,
@@ -24,11 +25,18 @@ const groups = (pages: SpreadPage[], sizes: Record<string, Size> = {}, shift = f
 
 const wide = { width: 2000, height: 1400 };
 const tall = { width: 1000, height: 1400 };
+const strip = { width: 800, height: 12000 };
 
 describe('isWidePage', () => {
   test('unknown counts as portrait', () => expect(isWidePage(undefined)).toBe(false));
   test('square is not wide', () => expect(isWidePage({ width: 10, height: 10 })).toBe(false));
   test('landscape is wide', () => expect(isWidePage(wide)).toBe(true));
+});
+
+describe('isStripPage', () => {
+  test('unknown is not a strip', () => expect(isStripPage(undefined)).toBe(false));
+  test('a page is not a strip', () => expect(isStripPage(tall)).toBe(false));
+  test('three times taller than wide is', () => expect(isStripPage({ width: 800, height: 2401 })).toBe(true));
 });
 
 describe('buildSpreads', () => {
@@ -112,6 +120,37 @@ describe('buildSpreads', () => {
   test('a wide cover is not padded', () => {
     const { spreads } = buildSpreads(chapter('a', 3), (p) => (p.key === 'a:0' ? wide : undefined), false);
     expect(spreads[0]!.pad).toBeUndefined();
+  });
+
+  test('a chapter of two pages pairs them despite the cover rule', () => {
+    expect(groups(chapter('a', 2))).toEqual([['a:0', 'a:1']]);
+    expect(groups(chapter('a', 2), { 'a:0': tall, 'a:1': tall })).toEqual([['a:0', 'a:1']]);
+    expect(groups([...chapter('a', 2), ...chapter('b', 3)])).toEqual([['a:0', 'a:1'], ['b:0'], ['b:1', 'b:2']]);
+    expect(groups([...chapter('a', 3), ...chapter('b', 2)])).toEqual([['a:0'], ['a:1', 'a:2'], ['b:0', 'b:1']]);
+  });
+
+  test('two pages that would not pair anyway keep the cover rule', () => {
+    const { spreads } = buildSpreads(chapter('a', 2), (p) => (p.key === 'a:1' ? wide : undefined), false);
+    expect(spreads.map((s) => s.pages.map((p) => p.key))).toEqual([['a:0'], ['a:1']]);
+    expect(spreads[0]!.pad).toBe('before');
+    expect(groups(chapter('a', 2), { 'a:0': tall, 'a:1': { width: 1000, height: 2000 } })).toEqual([['a:0'], ['a:1']]);
+  });
+
+  test('strips never pair and are never padded', () => {
+    const sizes = { 'a:0': strip, 'a:1': strip, 'a:2': strip, 'a:3': strip };
+    const { spreads } = buildSpreads(chapter('a', 4), (p) => sizes[p.key as keyof typeof sizes], false);
+    expect(spreads.map((s) => s.pages.map((p) => p.key))).toEqual([['a:0'], ['a:1'], ['a:2'], ['a:3']]);
+    expect(spreads.map((s) => s.pad)).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  test('a page before a strip stands alone and pairing restarts after it', () => {
+    const { spreads } = buildSpreads(chapter('a', 5), (p) => (p.key === 'a:2' ? strip : undefined), false);
+    expect(spreads.map((s) => s.pages.map((p) => p.key))).toEqual([['a:0'], ['a:1'], ['a:2'], ['a:3', 'a:4']]);
+    expect(spreads.map((s) => s.pad)).toEqual(['before', 'after', undefined, undefined]);
+  });
+
+  test('a two-page chapter of strips stays two strips', () => {
+    expect(groups(chapter('a', 2), { 'a:0': strip, 'a:1': strip })).toEqual([['a:0'], ['a:1']]);
   });
 });
 

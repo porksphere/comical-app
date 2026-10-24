@@ -80,7 +80,8 @@ import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useMissingBridge } from '@/hooks/use-bridges';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
-import { useReaderSettings, setFitOverride, useFitOverride, useSpreadShift } from '@/hooks/use-reader-settings';
+import { useReaderSettings, setFitOverride, useFitOverride, useSeriesReaderMode, useSpreadShift } from '@/hooks/use-reader-settings';
+import { useWebtoonDetection } from '@/components/reader/use-webtoon-detection';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { LARGE_SCREEN_BREAKPOINT, useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -1057,7 +1058,6 @@ function SeriesReaderInstance({
   const { width, height } = useViewport();
   const insets = useSafeAreaInsets();
   const mock = useMockActive();
-  const [settings] = useReaderSettings();
   const fitOverride = useFitOverride();
 
   const {
@@ -1073,6 +1073,8 @@ function SeriesReaderInstance({
     start: seedStart,
     picked: seedPicked,
   } = params;
+  const seriesKey = bridgeId && id ? `${bridgeId}:${id}` : null;
+  const [settings] = useReaderSettings(seriesKey);
   // Opened straight into the reader (History / Activity), rather than onto the details.
   const readerFirst = readerParam === '1';
   const bridge = bridgeParam ? decodeURIComponent(bridgeParam) : undefined;
@@ -3780,7 +3782,7 @@ function SeriesReaderInstance({
                       />
                       {/* Held up while the menu is open: it is anchored to the gear, and the
                           toolbar fading out from under it would leave it pointing at nothing. */}
-                      <SettingsControl seriesKey={bridgeId && id ? `${bridgeId}:${id}` : null} onOpenChange={holdChrome} />
+                      <SettingsControl seriesKey={seriesKey} onOpenChange={holdChrome} />
                     </>
                   }
                 />
@@ -4793,7 +4795,8 @@ const ReaderPane = forwardRef<
   const ds = useDataSource();
   const mock = useMockActive();
   const queryClient = useQueryClient();
-  const [settings] = useReaderSettings();
+  const seriesKey = bridgeId && seriesId ? `${bridgeId}:${seriesId}` : null;
+  const [settings] = useReaderSettings(seriesKey);
   // The fit the pages are drawn to: the setting, or the axis a `switch-fit` double-tap has put in
   // its place for the moment (see `fitOverride$`). Cleared with this pane, so leaving the reader
   // — a chapter crossing the run doesn't cover, or the series page — returns to the setting.
@@ -4810,7 +4813,11 @@ const ReaderPane = forwardRef<
   const insetBottom = settings.respectSafeArea && insets.bottom > SYSTEM_BAR_MIN_INSET ? insets.bottom : 0;
   const pageHeight = height - insetTop - insetBottom;
   const double = settings.mode === 'paged' && readsDouble(settings.pageLayout, { width, height: pageHeight });
-  const shift = useSpreadShift(bridgeId && seriesId ? `${bridgeId}:${seriesId}` : null);
+  const shift = useSpreadShift(seriesKey);
+  // A series whose pages turn out to be strips switches itself to vertical (see the hook); nothing
+  // to decide once the series has a mode of its own, by detection or by hand.
+  const seriesMode = useSeriesReaderMode(seriesKey);
+  const onPageSize = useWebtoonDetection(seriesKey, settings.mode === 'paged' && !seriesMode);
   // The double-tap under its switch-fit mode: fit the axis this page does NOT currently fill
   // (see `otherFit`), for every page until the next double-tap, which clears it. Never written to
   // the setting: from `auto` there is no single axis to write, and a double-tap is a moment's
@@ -4824,8 +4831,9 @@ const ReaderPane = forwardRef<
   const [currentPage, setCurrentPage] = useState(startIndex);
   const currentRef = useRef(startIndex);
   // Pairing is fixed for a pager's lifetime (see PagedReader's `double`), so a layout change —
-  // the setting, the shift, or a rotation under `auto` — remounts it on the page being read.
-  const pagerLayout = `${double}:${shift}`;
+  // the setting, the shift, or a rotation under `auto` — remounts it on the page being read. The
+  // mode is in it so the reader a switch brings up opens on that page too.
+  const pagerLayout = `${settings.mode}:${double}:${shift}`;
   const [pagerMount, setPagerMount] = useState({ layout: pagerLayout, page: startIndex });
   if (pagerMount.layout !== pagerLayout) setPagerMount({ layout: pagerLayout, page: currentPage });
   // Whether the mounted list has REPORTED a position yet. A recording answered how much this
@@ -5341,6 +5349,7 @@ const ReaderPane = forwardRef<
           initialPage={stitched ? prefixLen + pagerMount.page : pagerMount.page}
           double={double}
           shift={shift}
+          onPageSize={onPageSize}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // Keep the counter live during fast flicks — against the segment the page belongs to
           // when stitched (a crossing must count against the chapter being entered).
@@ -5366,7 +5375,7 @@ const ReaderPane = forwardRef<
           pageFit={settings.pageFit}
           // Webtoon has no axis to switch, so its double-tap is the magnification or nothing.
           doubleTapZoom={settings.doubleTap === 'magnify'}
-          initialPage={stitched ? prefixLen + startIndex : startIndex}
+          initialPage={stitched ? prefixLen + pagerMount.page : pagerMount.page}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // The live half, the same one the pager has always had: the chrome counts along with the
           // page going past instead of waiting for the scroll to come to rest.

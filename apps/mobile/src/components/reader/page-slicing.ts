@@ -24,7 +24,7 @@ export const MAX_DRAWABLE_PX = 4096;
  * cutting one of those in half puts a seam across artwork that was drawn to be seen whole. Nothing
  * drawn as one picture is three times taller than it is wide; only a strip of panels is.
  */
-const STRIP_ASPECT = 3;
+export const STRIP_ASPECT = 3;
 
 /** Where one slice is taken from in the source picture. Matches expo-image-manipulator's crop rect. */
 export type SliceRect = { originX: number; originY: number; width: number; height: number };

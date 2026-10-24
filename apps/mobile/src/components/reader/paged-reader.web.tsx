@@ -91,6 +91,8 @@ type Props = {
    *  pager's lifetime. */
   double?: boolean;
   shift?: boolean;
+  /** See the native prop. */
+  onPageSize?: (key: string, size: Size) => void;
 };
 
 /**
@@ -181,6 +183,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     standby,
     double = false,
     shift = false,
+    onPageSize: onPageSizeProp,
   },
   ref,
 ) {
@@ -254,12 +257,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const recordDims = useCallback((key: string, w: number, h: number) => {
     if (w <= 0 || h <= 0) return;
     onPageSize(key, { width: w, height: h });
+    onPageSizeProp?.(key, { width: w, height: h });
     setDims((prev) => {
       const had = prev.get(key);
       if (had && had.width === w && had.height === h) return prev;
       return new Map(prev).set(key, { width: w, height: h });
     });
-  }, [onPageSize]);
+  }, [onPageSize, onPageSizeProp]);
   // A cell's picture: its page's, or for a two-page spread the pair as drawn (see `spreadImage`).
   const imageOf = useCallback(
     (cell: Spread<ReaderPageItem> | undefined) => {

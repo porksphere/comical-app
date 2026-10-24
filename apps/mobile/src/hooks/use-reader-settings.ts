@@ -1,4 +1,5 @@
 import { observable } from '@legendapp/state';
+import { useCallback } from 'react';
 import { use$ } from '@legendapp/state/react';
 import { persisted$ } from '@/lib/observable';
 
@@ -111,9 +112,21 @@ export function useReadsRightToLeft(): boolean {
 }
 
 /** `[settings, patch]`. Reads spread over the defaults so a blob persisted before a
- *  field existed still surfaces every key. */
-export function useReaderSettings(): [ReaderSettings, (patch: Partial<ReaderSettings>) => void] {
-  const value = use$(settings$);
+ *  field existed still surfaces every key. Given a series, `mode` is that series' own where it has
+ *  one (see `seriesMode$`), and a patch to `mode` then stays with the series — as the reader's
+ *  choice, which detection never overrides again. Everything else is global either way. */
+// `use$` is not a hook by name, so once `useReaderSettings` had a real hook beside it the React
+// Compiler cached this call after the first render and the subscription's own hooks vanished from
+// the order. A hook-named wrapper keeps it in every render.
+function useSettingsValue(): ReaderSettings {
+  return use$(settings$);
+}
+
+export function useReaderSettings(
+  seriesKey: string | null = null,
+): [ReaderSettings, (patch: Partial<ReaderSettings>) => void] {
+  const value = useSettingsValue();
+  const seriesMode = useSeriesReaderMode(seriesKey);
   const merged = { ...DEFAULT_SETTINGS, ...value };
   merged.pageFit = LEGACY_PAGE_FIT[merged.pageFit] ?? merged.pageFit;
   merged.doubleTap = LEGACY_DOUBLE_TAP[merged.doubleTap] ?? merged.doubleTap;
@@ -123,7 +136,41 @@ export function useReaderSettings(): [ReaderSettings, (patch: Partial<ReaderSett
     PREFETCH_AHEAD_MAX,
     Math.max(PREFETCH_AHEAD_MIN, Math.round(Number(merged.prefetchAhead) || 0)),
   );
-  return [merged, setReaderSettings];
+  if (seriesMode) merged.mode = seriesMode.mode;
+  const set = useCallback(
+    (patch: Partial<ReaderSettings>) => {
+      if (seriesKey && seriesMode && patch.mode !== undefined) {
+        const { mode, ...rest } = patch;
+        setSeriesReaderMode(seriesKey, { mode, by: 'user' });
+        if (Object.keys(rest).length) setReaderSettings(rest);
+      } else setReaderSettings(patch);
+    },
+    [seriesKey, seriesMode],
+  );
+  return [merged, set];
+}
+
+/** A series' own reader mode, in place of the global one: `auto` when the reader's own detection
+ *  put it there (a series whose pages are strips reads vertically — see
+ *  `components/reader/webtoon-detection`), `user` once it has been chosen in the sheet for this
+ *  series, which detection then leaves alone for good. Keyed `bridgeId:seriesId`; only series that
+ *  differ from the global setting are stored, so the global one stays the default everywhere else. */
+export type SeriesReaderMode = { mode: ReaderMode; by: 'auto' | 'user' };
+const seriesMode$ = persisted$<Record<string, SeriesReaderMode>>('comical:seriesReaderMode', {});
+
+export function useSeriesReaderMode(seriesKey: string | null): SeriesReaderMode | undefined {
+  return use$(() => (seriesKey ? seriesMode$.get()?.[seriesKey] : undefined));
+}
+export function peekSeriesReaderMode(seriesKey: string): SeriesReaderMode | undefined {
+  return seriesMode$.peek()?.[seriesKey];
+}
+export function setSeriesReaderMode(seriesKey: string, entry: SeriesReaderMode | null): void {
+  // Replaces the whole record, so the root's identity changes for every `use$` reader — a nested
+  // set can leave it as it was.
+  const next: Record<string, SeriesReaderMode> = { ...seriesMode$.peek() };
+  if (entry) next[seriesKey] = entry;
+  else delete next[seriesKey];
+  seriesMode$.set(next);
 }
 
 // Per-series "pair from the first page", for releases without a cover page — whose spreads
