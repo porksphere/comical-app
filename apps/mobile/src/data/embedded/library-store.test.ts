@@ -1,8 +1,11 @@
 /**
  * The store contract sync and id migrations lean on: an activity row is recorded once, a drop takes
- * exactly the rows it names, and a progress delete takes exactly the chapters it names.
+ * exactly the rows it names, and a progress delete takes exactly the chapters it names — and the
+ * shared conformance suite every `LibraryStore` runs (records are the caller's; every synced change
+ * a `Library` makes over it is recorded).
  */
 import { describe, expect, mock, test } from 'bun:test';
+import { libraryStoreConformance } from '@comical/sync/conformance';
 
 const mem = new Map<string, string>();
 
@@ -15,6 +18,8 @@ mock.module('@react-native-async-storage/async-storage', () => ({
     removeItem: async (k: string) => {
       mem.delete(k);
     },
+    getAllKeys: async () => [...mem.keys()],
+    multiGet: async (keys: string[]) => keys.map((k) => [k, mem.get(k) ?? null]),
   },
 }));
 
@@ -68,4 +73,12 @@ describe('AsyncStorageLibraryStore id-migration marks', () => {
     await store.clearIdMigrationMarks();
     expect(await store.getIdMigrationMark('bridge-b')).toBeUndefined();
   });
+});
+
+describe('AsyncStorageLibraryStore conformance', () => {
+  const make = () => {
+    mem.clear();
+    return new AsyncStorageLibraryStore();
+  };
+  for (const c of libraryStoreConformance(make)) test(c.name, c.run);
 });

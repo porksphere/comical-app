@@ -37,6 +37,9 @@
       "@comical/sync": [
         "../../external/comical/packages/sync/src/index.ts"
       ],
+      "@comical/sync/conformance": [
+        "../../external/comical/packages/sync/src/conformance.ts"
+      ],
       "@comical/downloads": [
         "../../external/comical/packages/downloads/src/index.ts"
       ],
