@@ -2007,6 +2007,12 @@ const styles = StyleSheet.create({
   skelTileRow: {
     flexDirection: 'row',
     gap: Spacing.two,
+    // Stands in for a loaded row, trailing gap included: a real cell ends in `pageCell`'s
+    // paddingBottom, and LegendList's row container always carries a `marginBottom: -gap` to cancel
+    // the last row's gap — with no rows yet that margin is all that's left, pulling the footer (the
+    // related-rail skeleton) `PAGE_GRID_GAP` up into this row. Reserve both so the rail skeleton's
+    // heading sits as far below these tiles as a loaded rail's does below the grid.
+    paddingBottom: Spacing.two + PAGE_GRID_GAP,
   },
   skelTile: {
     flex: 1,
