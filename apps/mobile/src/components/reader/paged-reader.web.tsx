@@ -48,7 +48,7 @@ import {
 } from '@/components/reader/reader-zoom';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 import { createKeyHold, isControlTarget, isTypingTarget, keyPanSpeed, PAGE_KEY_SCROLL } from '@/lib/key-hold';
-import { isKey, keyActionOf, moveDirectionOf } from '@/lib/keybindings';
+import { isKey, keyActionOf, moveDirectionOf, readerScopeActive } from '@/lib/keybindings';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
@@ -1030,7 +1030,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // a page at a time); Left/Right with none are left to the screen's own page turn — except on a page
   // zoomed past its rest, where they only ever pan: a page being looked at closely is not turned out
   // from under the look by the key that was moving it. Claimed in the capture phase, ahead of that
-  // turn and the app-wide W/S scroll (lib/keyboard-scroll).
+  // turn and the app-wide W/S scroll (lib/keyboard-scroll). Only while the reader holds the keys:
+  // `standby` comes on a beat after the details cover the reader, and the keys are theirs at once.
   //
   // Space goes a screen down a page that runs on below it before the screen turns it, and X is the
   // switch-fit double-tap aimed at the middle.
@@ -1048,7 +1049,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       writeZoom(false);
     }, keyPanSpeed);
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return;
+      if (!readerScopeActive() || isTypingTarget(e.target)) return;
       const page = keyActionOf(e, ['page-next', 'page-prev']);
       if (page) {
         const limit = room().y;

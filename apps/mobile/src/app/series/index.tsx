@@ -3996,7 +3996,7 @@ function SeriesReaderInstance({
               standby={detailsSettled || !entranceSettled}
               entering={!entranceSettled}
               inLibrary={inLibrary}
-              keyboard={isTop}
+              keyboard={isTop && !detailsActive}
             />
           )}
             {/* The Details pill — the guaranteed collapse path in both modes (webtoon's expanded
@@ -4749,7 +4749,8 @@ const ReaderPane = forwardRef<
     /** Library membership (undefined while still resolving) — picks the progress-recording path.
      *  Queried by the screen, not here: this pane re-renders every page sweep. */
     inLibrary?: boolean;
-    /** Whether the arrow keys turn this reader's pages (web) — only the top layer's should. */
+    /** Whether the arrow keys turn this reader's pages (web) — only the top layer's, and not while
+     *  the details cover it. */
     keyboard: boolean;
   }
 >(function ReaderPane(
