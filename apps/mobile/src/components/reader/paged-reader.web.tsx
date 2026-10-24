@@ -33,7 +33,7 @@ import {
 } from '@/components/reader/desktop-zoom';
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
-import { reportedPage, spreadImage, type Spread } from '@/components/reader/spreads';
+import { reportedPage, spreadHalves, spreadImage, type Spread } from '@/components/reader/spreads';
 import { useSpreadLayout } from '@/components/reader/use-spread-layout';
 import {
   clamp,
@@ -243,7 +243,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const imageOf = useCallback(
     (cell: Spread<ReaderPageItem> | undefined) => {
       if (!cell) return null;
-      if (cell.pages.length > 1) return spreadImage(cell.pages.map((p) => dims.get(p.key) ?? null), { width, height });
+      const halves = spreadHalves(cell);
+      if (halves.length > 1)
+        return spreadImage(
+          halves.map((p) => (p ? (dims.get(p.key) ?? null) : undefined)),
+          { width, height },
+        );
       return dims.get(cell.key) ?? null;
     },
     [dims, width, height],
@@ -262,7 +267,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const geometryOf = useCallback(
     (cell: Spread<ReaderPageItem> | undefined) => {
       const img = imageOf(cell);
-      if (cell && cell.pages.length > 1) return pageGeometry(img, { width, height }, fill === 'wide' ? 'none' : fill, rtl);
+      if (cell && spreadHalves(cell).length > 1) return pageGeometry(img, { width, height }, fill === 'wide' ? 'none' : fill, rtl);
       return pageFit === 'fit-width' && img && isStrip(img, { width, height })
         ? stripGeometry(img, { width, height })
         : pageGeometry(img, { width, height }, fill, rtl);
@@ -1247,30 +1252,35 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           // memory); the rest are empty placeholders that still hold the slot.
           // Standby (a decorative background strip) keeps only the page ON screen.
           const near = Math.abs(i - index) <= (standby ? 0 : RENDER_RADIUS);
-          const pair = item.pages.length > 1;
+          const halves = spreadHalves(item);
+          const pair = halves.length > 1;
           // Left to right across the screen: the first page sits on the right when reading RTL.
-          const shown = pair && rtl ? [...item.pages].reverse() : item.pages;
+          const shown = pair && rtl ? [...halves].reverse() : halves;
           const boxHeight = boxHeightOf(item);
           return (
             <div key={item.key} style={cellStyle(width, height)}>
               <div ref={i === index ? zoomRef : undefined} style={zoomWrapperStyle(width, boxHeight, pair)}>
                 {near
-                  ? shown.map((p, k) => (
-                      <ReaderPage
-                        // Remounted when the cell changes layout, like native's.
-                        key={`${p.key}:${item.pages.length}`}
-                        fadeMs={standby ? STANDBY_FADE_MS : undefined}
-                        uri={p.uri}
-                        page={p.pageNumber}
-                        fit="contain"
-                        width={pair ? width / 2 : width}
-                        height={boxHeight}
-                        // The pair meets at the spine.
-                        contentPosition={pair ? (k === 0 ? 'right' : 'left') : undefined}
-                        onLoadDims={(w, h) => recordDims(p.key, w, h)}
-                        onFailedChange={(failed) => setPageFailed(p.key, failed)}
-                      />
-                    ))
+                  ? shown.map((p, k) =>
+                      !p ? (
+                        <div key="blank" style={{ width: width / 2, height: boxHeight }} />
+                      ) : (
+                        <ReaderPage
+                          // Remounted when the cell changes layout, like native's.
+                          key={`${p.key}:${halves.length}`}
+                          fadeMs={standby ? STANDBY_FADE_MS : undefined}
+                          uri={p.uri}
+                          page={p.pageNumber}
+                          fit="contain"
+                          width={pair ? width / 2 : width}
+                          height={boxHeight}
+                          // The pair meets at the spine.
+                          contentPosition={pair ? (k === 0 ? 'right' : 'left') : undefined}
+                          onLoadDims={(w, h) => recordDims(p.key, w, h)}
+                          onFailedChange={(failed) => setPageFailed(p.key, failed)}
+                        />
+                      ),
+                    )
                   : null}
               </div>
             </div>

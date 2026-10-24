@@ -6,7 +6,10 @@ import {
   pageToSpreadPosition,
   readsDouble,
   reportedPage,
+  shapesPair,
   singleSpreads,
+  spreadHalves,
+  spreadImage,
   spreadPositions,
   type Size,
   type SpreadPage,
@@ -89,6 +92,49 @@ describe('buildSpreads', () => {
   test('empty', () => {
     expect(buildSpreads([], () => undefined, false)).toEqual({ spreads: [], spreadOf: [] });
   });
+
+  test('pages of different shapes stand apart', () => {
+    const credits = { width: 1000, height: 2000 };
+    expect(groups(chapter('a', 6), { 'a:2': tall, 'a:3': credits, 'a:4': tall })).toEqual([
+      ['a:0'],
+      ['a:1', 'a:2'],
+      ['a:3'],
+      ['a:4', 'a:5'],
+    ]);
+  });
+
+  test('a lone page sits at the spine: the cover after a blank, a cut-off page before one', () => {
+    const { spreads } = buildSpreads(chapter('a', 8), (p) => (p.key === 'a:4' ? wide : undefined), false);
+    expect(spreads.map((s) => s.pad)).toEqual(['before', undefined, 'after', undefined, undefined, 'after']);
+  });
+
+  test('a wide cover is not padded', () => {
+    const { spreads } = buildSpreads(chapter('a', 3), (p) => (p.key === 'a:0' ? wide : undefined), false);
+    expect(spreads[0]!.pad).toBeUndefined();
+  });
+});
+
+describe('shapesPair', () => {
+  test('unknown pairs', () => expect(shapesPair(undefined, tall)).toBe(true));
+  test('near shapes pair', () => expect(shapesPair(tall, { width: 1050, height: 1400 })).toBe(true));
+  test('different shapes do not', () => expect(shapesPair(tall, { width: 1000, height: 2000 })).toBe(false));
+});
+
+describe('spreadHalves', () => {
+  const [a, b] = chapter('a', 2);
+  test('a pair is its pages', () => expect(spreadHalves({ pages: [a!, b!] })).toEqual([a, b]));
+  test('padding puts a blank on the named side', () => {
+    expect(spreadHalves({ pages: [a!], pad: 'before' })).toEqual([null, a]);
+    expect(spreadHalves({ pages: [a!], pad: 'after' })).toEqual([a, null]);
+  });
+});
+
+describe('spreadImage', () => {
+  const viewport = { width: 1600, height: 1000 };
+  test('a blank half measures as its page twin', () => {
+    expect(spreadImage([undefined, tall], viewport)).toEqual(spreadImage([tall, tall], viewport));
+  });
+  test('null until the page loads', () => expect(spreadImage([undefined, null], viewport)).toBeNull());
 });
 
 describe('singleSpreads', () => {

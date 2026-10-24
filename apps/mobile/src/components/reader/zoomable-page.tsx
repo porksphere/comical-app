@@ -15,7 +15,7 @@ import {
   type Size,
 } from '@/components/reader/page-geometry';
 import { ReaderPage } from '@/components/reader/reader-page';
-import { spreadImage } from '@/components/reader/spreads';
+import { spreadHalves, spreadImage, type SpreadPad } from '@/components/reader/spreads';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
 
@@ -40,6 +40,8 @@ export type CellPage = { key: string; uri: string; page: number };
 type Props = {
   /** One page, or the two of a spread in reading order. */
   pages: CellPage[];
+  /** Which half a lone page leaves blank — see `Spread.pad`. */
+  pad?: SpreadPad;
   width: number;
   height: number;
   pageFit: PageFit;
@@ -100,6 +102,7 @@ function TapZones() {
 
 export function ZoomablePage({
   pages,
+  pad,
   width,
   height,
   pageFit,
@@ -119,7 +122,8 @@ export function ZoomablePage({
   scrollGesture,
   onPageSize,
 }: Props) {
-  const double = pages.length > 1;
+  const halves = useMemo(() => spreadHalves({ pages, pad }), [pages, pad]);
+  const double = halves.length > 1;
   const [failedPages, setFailedPages] = useState<Record<string, boolean>>({});
   const pageFailed = pages.some((p) => failedPages[p.uri]);
   // The pictures' real dimensions, once loaded — what the page's box and rest are read from. By
@@ -130,8 +134,13 @@ export function ZoomablePage({
   const viewport = useMemo(() => ({ width, height }), [width, height]);
   const imageOf = useCallback(
     (known: Record<string, Size>) =>
-      double ? spreadImage(pages.map((p) => known[p.uri] ?? null), viewport) : (known[pages[0]!.uri] ?? null),
-    [double, pages, viewport],
+      double
+        ? spreadImage(
+            halves.map((p) => (p ? (known[p.uri] ?? null) : undefined)),
+            viewport,
+          )
+        : (known[pages[0]!.uri] ?? null),
+    [double, halves, pages, viewport],
   );
   const image = useMemo(() => imageOf(sizes), [imageOf, sizes]);
 
@@ -225,7 +234,7 @@ export function ZoomablePage({
     setFailedPages((prev) => (!!prev[uri] === failed ? prev : { ...prev, [uri]: failed }));
 
   // Left to right across the screen: the first page sits on the right when reading right to left.
-  const shown = double && rtl ? [...pages].reverse() : pages;
+  const shown = double && rtl ? [...halves].reverse() : halves;
 
   // A page that goes away mid-pinch (a mode switch, a window that dropped it) never reaches the
   // gesture's own `onFinalize`, and the pager would be left frozen on a pinch nothing can end.
@@ -238,29 +247,33 @@ export function ZoomablePage({
             contain box for most pages, a taller one for a strip, which overflows it equally top
             and bottom and is clipped by `styles.page`. */}
         <Animated.View style={[{ width, height }, styles.centred, double && styles.row, animatedStyle]}>
-          {shown.map((p, i) => (
-            <ReaderPage
-              // Remounted when the cell changes layout: a page's decode box is frozen at mount (see
-              // ReaderPage's `boxIsFinal`), and a half-width decode drawn full width is soft.
-              key={`${p.uri}:${pages.length}`}
-              fadeMs={fadeMs}
-              uri={p.uri}
-              page={p.page}
-              fit="contain"
-              width={double ? width / 2 : width}
-              height={strip ? geometry.content.height : height}
-              // Both halves meet at the spine instead of each centring in its own half.
-              contentPosition={double ? (i === 0 ? 'right' : 'left') : undefined}
-              // Answered by the FIT, not by `strip` — see ReaderPage's `boxIsFinal`. Under any other
-              // fit the box is the viewport's and never moves; under fit-width a page that turns out
-              // to be a strip gets a box its own height, and nothing knows which pages those are
-              // until they have loaded, which is exactly too late. A spread's halves never strip.
-              boxIsFinal={double || pageFit !== 'fit-width'}
-              onLoadDims={(w, h) => onLoadDims(p.key, p.uri, w, h)}
-              onFailedChange={(failed) => onFailedChange(p.uri, failed)}
-              scrubbing={scrubbing}
-            />
-          ))}
+          {shown.map((p, i) =>
+            !p ? (
+              <View key="blank" style={{ width: width / 2, height }} />
+            ) : (
+              <ReaderPage
+                // Remounted when the cell changes layout: a page's decode box is frozen at mount (see
+                // ReaderPage's `boxIsFinal`), and a half-width decode drawn full width is soft.
+                key={`${p.uri}:${halves.length}`}
+                fadeMs={fadeMs}
+                uri={p.uri}
+                page={p.page}
+                fit="contain"
+                width={double ? width / 2 : width}
+                height={strip ? geometry.content.height : height}
+                // Both halves meet at the spine instead of each centring in its own half.
+                contentPosition={double ? (i === 0 ? 'right' : 'left') : undefined}
+                // Answered by the FIT, not by `strip` — see ReaderPage's `boxIsFinal`. Under any other
+                // fit the box is the viewport's and never moves; under fit-width a page that turns out
+                // to be a strip gets a box its own height, and nothing knows which pages those are
+                // until they have loaded, which is exactly too late. A spread's halves never strip.
+                boxIsFinal={double || pageFit !== 'fit-width'}
+                onLoadDims={(w, h) => onLoadDims(p.key, p.uri, w, h)}
+                onFailedChange={(failed) => onFailedChange(p.uri, failed)}
+                scrubbing={scrubbing}
+              />
+            ),
+          )}
         </Animated.View>
         <TapZones />
       </View>

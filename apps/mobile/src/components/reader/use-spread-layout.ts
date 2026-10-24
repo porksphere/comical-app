@@ -3,7 +3,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import {
   buildSpreads,
-  isWidePage,
   knownPageSize,
   rememberPageSize,
   singleSpreads,
@@ -11,20 +10,35 @@ import {
   type SpreadLayout,
 } from '@/components/reader/spreads';
 
-function cachedWide(pages: readonly ReaderPageItem[]): string[] {
-  return pages.filter((p) => isWidePage(knownPageSize(p.uri))).map((p) => p.key);
+type Sizes = ReadonlyMap<string, Size>;
+
+// The sizes pairing may use: everything this session has seen of these pages, less those held back.
+function sizesOf(pages: readonly ReaderPageItem[], held: ReadonlySet<string>): Sizes {
+  const sizes = new Map<string, Size>();
+  for (const p of pages) {
+    const size = held.has(p.key) ? undefined : knownPageSize(p.uri);
+    if (size) sizes.set(p.key, size);
+  }
+  return sizes;
 }
+
+function pair(pages: readonly ReaderPageItem[], sizes: Sizes, shift: boolean): SpreadLayout<ReaderPageItem> {
+  return buildSpreads(pages, (p) => sizes.get(p.key), shift);
+}
+
+const shapeOf = ({ spreads }: SpreadLayout<ReaderPageItem>) =>
+  spreads.map((s) => `${s.key}/${s.pages.length}/${s.pad ?? ''}`).join(',');
 
 /**
  * The spreads both pagers show, and the sink for the page sizes that decide them.
  *
- * Only WIDENESS moves pairing (an unknown page already counts as portrait), so that is all that is
- * held. And it is held back where acting on it would move the page being read: a page learning it
- * is wide re-pairs everything after it, so a size that arrives for a page BEHIND the spread on
- * screen waits until reading goes back to it. Applied only at or after the anchor, every change
- * leaves the anchor's spread opening on the same page — the same key — which is what the list
- * anchors to. A whole chapter joining the window can't disturb it either: spreads never cross a
- * chapter boundary.
+ * A size only reaches the layout when it changes it — most pages arrive the shape their neighbours
+ * already assumed, and re-pairing on each would re-render every mounted cell for nothing. And it is
+ * held back where acting on it would move the page being read: a page's shape decides the pairing
+ * after it, so a size that arrives for a page BEHIND the spread on screen waits until reading goes
+ * back to it. Applied only at or after the anchor, every change leaves the anchor's spread opening
+ * on the same page — the same key — which is what the list anchors to. A whole chapter joining the
+ * window can't disturb it either: spreads never cross a chapter boundary.
  *
  * `double` and `shift` re-pair everything at once and aren't expected to change under a mounted
  * reader — the host remounts it on the page being read instead.
@@ -36,8 +50,8 @@ export function useSpreadLayout(
   anchorKey: string | null,
   initialPage: number,
 ): { layout: SpreadLayout<ReaderPageItem>; onPageSize: (key: string, size: Size) => void } {
-  const [wide, setWide] = useState<ReadonlySet<string>>(() => new Set(cachedWide(pages)));
-  const pending = useRef(new Set<string>());
+  const held = useRef(new Set<string>());
+  const [sizes, setSizes] = useState<Sizes>(() => sizesOf(pages, new Set()));
   const pageIndex = useMemo(() => new Map(pages.map((p, i) => [p.key, i])), [pages]);
 
   // A chapter joining the window brings whatever this session already knows about its pages.
@@ -46,13 +60,12 @@ export function useSpreadLayout(
     const fresh = pages.filter((p) => !seen.current.has(p.key));
     if (!fresh.length) return;
     for (const p of fresh) seen.current.add(p.key);
-    const known = cachedWide(fresh);
-    if (known.length) setWide((prev) => new Set([...prev, ...known]));
+    if (fresh.some((p) => knownPageSize(p.uri))) setSizes(sizesOf(pages, held.current));
   }, [pages]);
 
   const layout = useMemo(
-    () => (double ? buildSpreads(pages, (p) => (wide.has(p.key) ? { width: 2, height: 1 } : undefined), shift) : singleSpreads(pages)),
-    [pages, double, shift, wide],
+    () => (double ? pair(pages, sizes, shift) : singleSpreads(pages)),
+    [pages, double, shift, sizes],
   );
 
   const anchorPage =
@@ -62,24 +75,26 @@ export function useSpreadLayout(
 
   // What reading went back to: sizes held for it can land now.
   useEffect(() => {
-    const ready = [...pending.current].filter((key) => (pageIndex.get(key) ?? -1) >= anchorPage);
+    const ready = [...held.current].filter((key) => (pageIndex.get(key) ?? -1) >= anchorPage);
     if (!ready.length) return;
-    for (const key of ready) pending.current.delete(key);
-    setWide((prev) => new Set([...prev, ...ready]));
-  }, [anchorPage, pageIndex]);
+    for (const key of ready) held.current.delete(key);
+    setSizes(sizesOf(pages, held.current));
+  }, [anchorPage, pageIndex, pages]);
 
-  const live = useRef({ pages, pageIndex, anchorPage, double });
+  const live = useRef({ pages, pageIndex, anchorPage, double, shift, layout });
   useLayoutEffect(() => {
-    live.current = { pages, pageIndex, anchorPage, double };
+    live.current = { pages, pageIndex, anchorPage, double, shift, layout };
   });
   const onPageSize = useCallback((key: string, size: Size) => {
-    const { pages, pageIndex, anchorPage, double } = live.current;
+    const { pages, pageIndex, anchorPage, double, shift, layout } = live.current;
     const at = pageIndex.get(key);
     if (at === undefined) return;
     rememberPageSize(pages[at]!.uri, size);
-    if (!double || !isWidePage(size)) return;
-    if (at >= anchorPage) setWide((prev) => (prev.has(key) ? prev : new Set([...prev, key])));
-    else pending.current.add(key);
+    if (!double) return;
+    const next = sizesOf(pages, held.current);
+    if (shapeOf(pair(pages, next, shift)) === shapeOf(layout)) return;
+    if (at >= anchorPage) setSizes(next);
+    else held.current.add(key);
   }, []);
 
   return { layout, onPageSize };

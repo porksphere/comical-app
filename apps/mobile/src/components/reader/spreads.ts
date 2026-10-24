@@ -11,6 +11,8 @@ export type { Size };
 
 export type SpreadPage = { key: string; pageNumber: number };
 
+export type SpreadPad = 'before' | 'after';
+
 export interface Spread<T extends SpreadPage> {
   /** The first page's key — stable for as long as that page opens the spread, which is what the
    *  list anchors to while pairing settles around it. */
@@ -19,6 +21,10 @@ export interface Spread<T extends SpreadPage> {
   first: number;
   /** One or two pages, in reading order. */
   pages: T[];
+  /** A lone page that isn't wide is drawn in one half, against the spine, the way it sits in print:
+   *  `before` leaves the half ahead of it in reading order blank (a cover, which opens on the far
+   *  side), `after` the half behind it (a page whose partner was cut off). */
+  pad?: SpreadPad;
 }
 
 export interface SpreadLayout<T extends SpreadPage> {
@@ -32,12 +38,23 @@ export function isWidePage(size: Size | undefined): boolean {
   return !!size && size.width > size.height;
 }
 
+// Halves of one printed sheet scan alike; a page whose shape differs by more than this (a credits
+// page, an insert from another source) is a different sheet and doesn't pair. Mihon's tolerance.
+const PAIR_ASPECT_TOLERANCE = 0.1;
+
+/** Whether two pages are shaped alike enough to share a spread. Unknown pairs, like it's portrait. */
+export function shapesPair(a: Size | undefined, b: Size | undefined): boolean {
+  if (!a || !b) return true;
+  return Math.abs(a.width / a.height - b.width / b.height) <= PAIR_ASPECT_TOLERANCE;
+}
+
 /**
  * Pairs pages two by two, the way print does: a chapter's first page (its cover) stands alone, as
  * does any wide page, and pairing starts over after every lone page so one wide page in the middle
- * of a chapter doesn't throw the rest out of step. `shift` pairs from the first page instead — for
- * releases without a cover, whose spreads otherwise land one page off. Spreads never cross into
- * the next chapter. A page whose size isn't known yet counts as portrait.
+ * of a chapter doesn't throw the rest out of step. Two pages of different shapes don't pair either
+ * (see `shapesPair`). `shift` pairs from the first page instead — for releases without a cover,
+ * whose spreads otherwise land one page off. Spreads never cross into the next chapter. A page
+ * whose size isn't known yet counts as portrait.
  */
 export function buildSpreads<T extends SpreadPage>(
   pages: readonly T[],
@@ -49,19 +66,33 @@ export function buildSpreads<T extends SpreadPage>(
   let i = 0;
   while (i < pages.length) {
     const page = pages[i]!;
+    const size = sizeOf(page, i);
     const next = pages[i + 1];
+    const nextSize = next && sizeOf(next, i + 1);
+    const cover = page.pageNumber === 1 && !shift;
+    const wide = isWidePage(size);
     const lone =
-      (page.pageNumber === 1 && !shift) ||
-      isWidePage(sizeOf(page, i)) ||
-      !next ||
-      next.pageNumber === 1 ||
-      isWidePage(sizeOf(next, i + 1));
+      cover || wide || !next || next.pageNumber === 1 || isWidePage(nextSize) || !shapesPair(size, nextSize);
     const members = lone ? [page] : [page, next!];
     for (let k = 0; k < members.length; k++) spreadOf[i + k] = spreads.length;
-    spreads.push({ key: page.key, first: i, pages: members });
+    spreads.push({
+      key: page.key,
+      first: i,
+      pages: members,
+      ...(lone && !wide ? { pad: cover ? ('before' as const) : ('after' as const) } : {}),
+    });
     i += members.length;
   }
   return { spreads, spreadOf };
+}
+
+/** What a spread draws across the screen's halves, in reading order: its pages, with null for the
+ *  blank half of a padded one. */
+export function spreadHalves<T>(spread: { pages: T[]; pad?: SpreadPad }): (T | null)[] {
+  const page = spread.pages[0]!;
+  if (spread.pad === 'before') return [null, page];
+  if (spread.pad === 'after') return [page, null];
+  return spread.pages;
 }
 
 /** One spread per page — what single-page reading is in these terms. */
@@ -128,10 +159,13 @@ export function knownPageSize(uri: string): Size | undefined {
  * The picture a two-page spread draws at 1×: each page contained in its half of the viewport and
  * pushed against the spine, measured as a box twice the wider page's width so it stays centred —
  * which is what pan clamping and the rest assume of any content. Already contained, so it comes
- * back out of `pageGeometry` unscaled. Null until both pages have loaded.
+ * back out of `pageGeometry` unscaled. Null until both pages have loaded. A padded spread's blank
+ * half (`undefined`) is measured as its page's twin, so the page stays at the spine under zoom.
  */
-export function spreadImage(images: (Size | null)[], viewport: Size): Size | null {
-  if (images.some((image) => !image)) return null;
+export function spreadImage(halves: (Size | null | undefined)[], viewport: Size): Size | null {
+  const known = halves.filter((h) => h !== undefined);
+  const images = halves.map((h) => (h === undefined ? known[0] : h));
+  if (!known.length || images.some((image) => !image)) return null;
   const half = { width: viewport.width / 2, height: viewport.height };
   const boxes = images.map((image) => containedSize(image!, half));
   return {

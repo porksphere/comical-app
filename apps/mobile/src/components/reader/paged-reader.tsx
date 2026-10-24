@@ -25,7 +25,7 @@ import Animated, {
 import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { ScrubBackdrop } from '@/components/reader/scrub-backdrop';
 import type { Size } from '@/components/reader/page-geometry';
-import { pageToSpreadPosition, reportedPage, spreadPositions } from '@/components/reader/spreads';
+import { pageToSpreadPosition, reportedPage, spreadPositions, type SpreadPad } from '@/components/reader/spreads';
 import { useSpreadLayout } from '@/components/reader/use-spread-layout';
 import { ZoomablePage, type CellPage } from '@/components/reader/zoomable-page';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
@@ -54,7 +54,7 @@ export type PagedReaderHandle = {
 export type ReaderPageItem = { uri: string; key: string; pageNumber: number };
 
 /** One pager item: a spread of one or two pages (see `spreads`), keyed by its first page. */
-type PagerCell = { key: string; pages: CellPage[] };
+type PagerCell = { key: string; pages: CellPage[]; pad?: SpreadPad };
 
 /** Module-level so it's stable without a hook — a list may keep the first one it's given. */
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
@@ -233,6 +233,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     const cells: PagerCell[] = spreads.map((spread) => ({
       key: spread.key,
       pages: spread.pages.map((p) => ({ key: p.key, uri: p.uri, page: p.pageNumber })),
+      pad: spread.pad,
     }));
     return rtl ? cells.reverse() : cells;
   }, [spreads, rtl]);
@@ -674,6 +675,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               // Standing page, not a turned one — see ReaderPage's `fadeMs`.
               fadeMs={standby ? STANDBY_FADE_MS : undefined}
               pages={item.pages}
+              pad={item.pad}
               width={width}
               height={height}
               pageFit={pageFit}
