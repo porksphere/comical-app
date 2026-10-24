@@ -158,6 +158,14 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
 
   // Live zoom, kept in a ref so pinch frames don't re-render.
   const zoom = useRef(1);
+  // Where the keys' zoom pivots, sideways: the content under the middle of the window when a strip
+  // zoomed wider than it was last panned sideways or zoomed in (null until it has been), so zooming
+  // back in after a zoom out returns to the part of the strip the reader had gone to, not its middle.
+  // Up and down the scroll itself is the pan — whatever is under the middle IS where the reader is —
+  // so only X is kept. `lastLeft` is the scroll the strip itself last set, so the scroll events that
+  // follow a zoom aren't read as a pan. The paged reader keeps the same in `focusRef`.
+  const focusXRef = useRef<number | null>(null);
+  const lastLeftRef = useRef(0);
   const pinch = useRef({
     active: false,
     startDist: 0,
@@ -203,9 +211,13 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     [marginAt],
   );
 
+  // The content X under the middle of the window — what `focusXRef` remembers.
+  const contentXAtMiddle = (el: HTMLElement) => (el.scrollLeft + el.clientWidth / 2 - marginAt(zoom.current)) / zoom.current;
+
   // Zoom to `target` keeping the content point under the viewport point (fx, fy) in place — the
   // double-tap, the wheel and the stepper all land here (the touch pinch keeps its own frame loop).
-  const zoomAt = (target: number, fx: number, fy: number) => {
+  // A zoom IN remembers the focus (see `focusXRef`), a zoom out leaves it; `remember` overrides.
+  const zoomAt = (target: number, fx: number, fy: number, remember?: boolean) => {
     const el = scrollerRef.current;
     if (!el) return;
     const z0 = zoom.current;
@@ -219,6 +231,8 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     el.style.touchAction = magnified ? 'pan-x pan-y' : 'pan-y';
     el.scrollLeft = magnified ? clamp(cpX * z + marginAt(z) - fx, 0, Math.max(0, el.scrollWidth - el.clientWidth)) : 0;
     el.scrollTop = clamp(cpY * z - fy, 0, Math.max(0, el.scrollHeight - el.clientHeight));
+    lastLeftRef.current = el.scrollLeft;
+    if (remember ?? z > z0) focusXRef.current = contentXAtMiddle(el);
   };
 
   // Double-tap tracking: a click is deferred by DOUBLE_TAP_MS so a second click
@@ -470,7 +484,8 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
 
   // The desktop zoom (see desktop-zoom): Ctrl/⌘+wheel — or a trackpad pinch, which arrives as one
   // (Safari's as a gesture event) — about the pointer, claimed so the browser doesn't zoom the whole
-  // app; the stepper and +/-/0 keys about the middle. Whatever level it leaves is kept, and a strip
+  // app; the stepper and +/-/0 keys about the middle, Q/E and +/- about the focus (see `focusXRef`).
+  // Whatever level it leaves is kept, and a strip
   // mounting (the next chapter) picks it up. A plain wheel stays the browser's own scroll.
   useEffect(() => {
     const el = scrollerRef.current;
@@ -503,15 +518,28 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       const g = e as Event & { scale: number; clientX: number; clientY: number };
       zoomAtClient(gestureFrom * g.scale, g.clientX, g.clientY);
     };
+    // A sideways scroll the strip didn't set itself is a pan: the keys, a mouse drag, Shift+wheel.
+    const onScroll = () => {
+      if (el.scrollLeft === lastLeftRef.current) return;
+      lastLeftRef.current = el.scrollLeft;
+      if (zoom.current > ZOOM_EPSILON) focusXRef.current = contentXAtMiddle(el);
+    };
     el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('scroll', onScroll, { passive: true });
     const desktop = isDesktopPointer();
     if (desktop) {
       el.addEventListener('gesturestart', onGestureStart);
       el.addEventListener('gesturechange', onGestureChange);
     }
     const unregister = registerZoomTarget({
+      // About the focus — where the content last panned to sits on screen now, held within the
+      // window — rather than the middle, and without re-remembering: a fixed-point zoom about the
+      // focus leaves it where it is, so a held key keeps the one pivot from first frame to last.
       zoomTo(level) {
-        zoomAt(level, el.clientWidth / 2, el.clientHeight / 2);
+        const z0 = zoom.current;
+        const f = focusXRef.current;
+        const x = f == null ? el.clientWidth / 2 : clamp(f * z0 + marginAt(z0) - el.scrollLeft, 0, el.clientWidth);
+        zoomAt(level, x, el.clientHeight / 2, false);
         keepZoomLevel(zoom.current);
       },
       reset() {
@@ -522,6 +550,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     return () => {
       unregister();
       el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('scroll', onScroll);
       if (desktop) {
         el.removeEventListener('gesturestart', onGestureStart);
         el.removeEventListener('gesturechange', onGestureChange);
