@@ -111,6 +111,8 @@ type Props = {
    *  displayed when the user ISN'T dragging — a scrub shows its own position
    *  instead, which it knows before the reader does. */
   page: number;
+  /** Shown in place of `page` — a spread's range. A scrub still shows its one page. */
+  pageLabel?: string;
   total: number;
   /** Reading right-to-left — flips the slider and what the skip buttons do. */
   rtl: boolean;
@@ -170,6 +172,7 @@ type Props = {
 
 export function ChapterNavigator({
   page,
+  pageLabel,
   total,
   rtl,
   visible,
@@ -432,7 +435,7 @@ export function ChapterNavigator({
           {/* The one node holding the current page as its own text — e2e reads a page number off
               the bar by this id, so the total stays a separate node. */}
           <ThemedText testID="reader.navigator.page" style={styles.counterText}>
-            {(scrubPage ?? page) + 1}
+            {scrubPage !== null ? scrubPage + 1 : (pageLabel ?? page + 1)}
           </ThemedText>
           <ThemedText style={[styles.counterText, styles.counterTotal]}>/ {total}</ThemedText>
         </View>

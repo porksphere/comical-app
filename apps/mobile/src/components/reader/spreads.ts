@@ -119,6 +119,12 @@ export function reportedPage<T extends SpreadPage>(spread: Spread<T>, pages: rea
   return !after || after.pageNumber === 1 ? last : spread.first;
 }
 
+/** The counter's text for a spread on screen, 1-based and in screen order, as Tachiyomi's forks
+ *  and Suwayomi print it: "3-4", or "4-3" right-to-left. */
+export function spreadRangeLabel(first: number, last: number, rtl: boolean): string {
+  return rtl ? `${last + 1}-${first + 1}` : `${first + 1}-${last + 1}`;
+}
+
 /**
  * Fractional spread position at the start of each page, plus one trailing entry for the end — the
  * scrubber drags a fractional PAGE index and the pager scrolls by spread, so a worklet interpolates

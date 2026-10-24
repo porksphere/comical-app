@@ -93,6 +93,8 @@ type Props = {
    *  fast flick, not just the one it lands on. For display only (the pill and
    *  toolbar count along); nothing that writes should hang off it. */
   onVisiblePageChange?: (logical: number) => void;
+  /** The pages on screen with each `onVisiblePageChange`, first and last, fired just ahead of it. */
+  onVisibleSpreadChange?: (first: number, last: number) => void;
   /** A page turn the list itself can't make: the tap zones fire these at any page, and a swipe off
    *  either END of the stitched window is handed to them too (see `edgeTurn`) — which is how a
    *  chapter boundary the window doesn't cover is crossed by swiping rather than only by tapping. */
@@ -187,6 +189,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     initialPage,
     onPageChange,
     onVisiblePageChange,
+    onVisibleSpreadChange,
     onPrev,
     onNext,
     onToggleChrome,
@@ -393,7 +396,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // enough, and it deliberately has no dependency array: every render's values
   // are the ones the next callback should see.
   useLayoutEffect(() => {
-    reportVisibleRef.current = (physical: number) => onVisiblePageChange?.(reportOf(physical));
+    reportVisibleRef.current = (physical: number) => {
+      const spread = spreads[toLogical(Math.max(0, Math.min(n - 1, physical)))];
+      if (spread) onVisibleSpreadChange?.(spread.first, lastPageOf(spread));
+      onVisiblePageChange?.(reportOf(physical));
+    };
     scrubbingRef.current = !!scrubbing;
     atStart.set(activeIndex <= 0);
     atEnd.set(activeIndex >= n - 1);

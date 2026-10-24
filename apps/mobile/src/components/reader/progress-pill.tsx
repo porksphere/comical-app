@@ -13,6 +13,7 @@ const HIDDEN_FAINT = 0.6;
 /** Bottom-centre "X / Y" pill; tapping reveals a numeric jump input + Go. */
 export function ProgressPill({
   current,
+  label,
   total,
   visible,
   countWhenHidden = true,
@@ -20,6 +21,8 @@ export function ProgressPill({
   onEditingChange,
 }: {
   current: number;
+  /** Shown in place of `current` — a spread's range. The jump still takes one page. */
+  label?: string;
   total: number;
   visible: boolean;
   /** Whether the pill stays faintly on screen with the chrome hidden
@@ -116,7 +119,7 @@ export function ProgressPill({
       ) : (
         <Pressable testID="reader.progress-pill" style={styles.pill} onPress={startEditing}>
           <ThemedText style={styles.text}>
-            {current + 1} / {total}
+            {label ?? current + 1} / {total}
           </ThemedText>
         </Pressable>
       )}

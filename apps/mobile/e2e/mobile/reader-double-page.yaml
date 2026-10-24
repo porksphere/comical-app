@@ -12,9 +12,8 @@
 #   - reader.settings.spread-shift          Switch: pair from the chapter's first page instead of
 #                                           after it. Stored per series.
 #   - reader.navigator.page                 The current page alone (see reader-navigation.yaml). A
-#                                           spread reports its FIRST page (only a chapter's final
-#                                           spread reports its last), so a turn onto pages 2–3 reads
-#                                           "2".
+#                                           spread reads as its range in screen order, so a turn
+#                                           onto pages 2–3 reads "2-3" left-to-right (the default).
 #   - reader.toolbar.collect-page           The save button (see collect-page.yaml). On a spread it
 #                                           opens a picker first:
 #   - reader.collect-page.left / .right / .both   spread-pick.tsx's tiles, laid out as the spread is.
@@ -61,7 +60,7 @@ appId: com.porksphere.comical
     id: "reader.control.next"
 - assertVisible:
     id: "reader.navigator.page"
-    text: "^2$"
+    text: "^2-3$"
 
 # Saving on a spread asks which page. Nothing is picked — whether a page is already saved depends on
 # earlier runs, and collect-page.yaml owns the save itself — so the picker is dismissed by tapping
@@ -85,12 +84,12 @@ appId: com.porksphere.comical
     id: "reader.control.next"
 - assertVisible:
     id: "reader.navigator.page"
-    text: "^4$"
+    text: "^4-5$"
 - tapOn:
     id: "reader.control.prev"
 - assertVisible:
     id: "reader.navigator.page"
-    text: "^2$"
+    text: "^2-3$"
 - tapOn:
     id: "reader.control.prev"
 - assertVisible:
@@ -108,7 +107,7 @@ appId: com.porksphere.comical
     id: "reader.control.next"
 - assertVisible:
     id: "reader.navigator.page"
-    text: "^3$"
+    text: "^3-4$"
 
 # Back to the defaults.
 - tapOn:

@@ -38,7 +38,7 @@ import { BOTTOM_CHROME_HEIGHT, ChapterNavigator, bottomChromeInset } from '@/com
 import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
-import { buildSpreads, knownPageSize, readsDouble, spreadHalves } from '@/components/reader/spreads';
+import { buildSpreads, knownPageSize, readsDouble, spreadHalves, spreadRangeLabel } from '@/components/reader/spreads';
 import {
   createZoomHold,
   isDesktopPointer,
@@ -4995,6 +4995,24 @@ const ReaderPane = forwardRef<
     onVisiblePage?.(shownWithChapter);
   }, [onVisiblePage, shownWithChapter]);
 
+  // The spread around the visible page, held against its chapter rather than as flat indices, which
+  // move whenever a chapter joins the window's head. Shown only while it still holds the page `shown`
+  // names — a jump names its page before the pager has paired around it.
+  const [shownSpread, setShownSpread] = useState<{ id: string; first: number; last: number } | null>(null);
+  const handleVisibleSpread = useCallback(
+    (first: number, last: number) => {
+      const loc = stitched ? locateFlat(first) : { segment: { id: chapterId ?? DIRECT_CHAPTER_ID }, page: first };
+      if (loc) setShownSpread({ id: loc.segment.id, first: loc.page, last: loc.page + last - first });
+    },
+    [stitched, chapterId, locateFlat],
+  );
+  const shownRange = useMemo(() => {
+    const s = settings.mode === 'paged' ? shownSpread : null;
+    const { pageIndex, chapterId: id } = shownWithChapter;
+    if (!s || s.id !== id || s.last === s.first || pageIndex < s.first || pageIndex > s.last) return undefined;
+    return spreadRangeLabel(s.first, s.last, settings.direction === 'rtl');
+  }, [settings.mode, settings.direction, shownSpread, shownWithChapter]);
+
   // Move to a FLAT index — an index into the window, whichever reader is mounted. Both take the
   // same coordinate now that both are stitched.
   const goFlat = useCallback(
@@ -5327,6 +5345,7 @@ const ReaderPane = forwardRef<
           // Keep the counter live during fast flicks — against the segment the page belongs to
           // when stitched (a crossing must count against the chapter being entered).
           onVisiblePageChange={stitched ? handleFlatVisiblePage : setCurrent}
+          onVisibleSpreadChange={handleVisibleSpread}
           scrubTarget={scrubFlat}
           scrubbing={scrubbing}
           standby={standby}
@@ -5424,6 +5443,7 @@ const ReaderPane = forwardRef<
       {IS_WEB ? (
         <ProgressPill
           current={shown.page}
+          label={shownRange}
           total={shown.total}
           visible={chromeVisible}
           countWhenHidden={settings.pageCountWhenHidden}
@@ -5438,6 +5458,7 @@ const ReaderPane = forwardRef<
           // `shown`, not the committed page: mid-crossing the counter reads the entering
           // chapter's page/length, turning over WITH the swipe.
           page={shown.page}
+          pageLabel={shownRange}
           total={shown.total}
           rtl={settings.mode === 'paged' && settings.direction === 'rtl'}
           visible={chromeVisible}

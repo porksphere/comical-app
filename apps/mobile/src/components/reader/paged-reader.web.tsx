@@ -78,6 +78,8 @@ type Props = {
   /** See the native prop. A turn here never passes through pages it doesn't land on, so this fires
    *  with every `onPageChange`, just ahead of it. */
   onVisiblePageChange?: (logical: number) => void;
+  /** See the native prop. */
+  onVisibleSpreadChange?: (first: number, last: number) => void;
   onPrev: () => void;
   onNext: () => void;
   onToggleChrome: () => void;
@@ -172,6 +174,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     initialPage,
     onPageChange,
     onVisiblePageChange,
+    onVisibleSpreadChange,
     onPrev,
     onNext,
     onToggleChrome,
@@ -644,12 +647,27 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         setZoomedNow(false);
         setIndex(clamped);
         const page = reportOf(clamped);
+        const spread = spreads[toLogical(clamped)];
+        if (spread) onVisibleSpreadChange?.(spread.first, lastPageOf(spread));
         onVisiblePageChange?.(page);
         onPageChange(page);
       }
       writeTrack(0, animate);
     },
-    [clampIndex, cancelInertia, setZoomedNow, writeZoom, zoom, onPageChange, onVisiblePageChange, reportOf, writeTrack],
+    [
+      clampIndex,
+      cancelInertia,
+      setZoomedNow,
+      writeZoom,
+      zoom,
+      onPageChange,
+      onVisiblePageChange,
+      onVisibleSpreadChange,
+      reportOf,
+      spreads,
+      toLogical,
+      writeTrack,
+    ],
   );
 
   useImperativeHandle(
