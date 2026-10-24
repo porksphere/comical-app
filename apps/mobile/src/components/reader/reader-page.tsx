@@ -522,6 +522,10 @@ export function ReaderPage({
           contentFit={fit === 'contain' ? 'contain' : 'cover'}
           contentPosition={contentPosition}
           cachePolicy="memory-disk"
+          // Web: expo-image defaults to `lazy`, and the browser judges "near the viewport" through
+          // the pager's overflow clip, so a neighbour mounted ahead never paints until it slides
+          // into frame — and then plays its fade on arrival. The readers window their pages already.
+          loading="eager"
           /**
            * DOWNSAMPLING — on by default, and the default is expo-image's own (`allowDownscaling`),
            * so pages were already being decoded at the size of their box before this prop said so.
