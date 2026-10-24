@@ -27,6 +27,14 @@ export function useBrowseHoldAction(): [BrowseHoldAction, (action: BrowseHoldAct
   return [use$(holdAction$), (next) => holdAction$.set(next)];
 }
 
+/** Whether the ramp's beats click as well as buzz. On iOS the mute switch silences them regardless;
+ *  Android plays media audio through silent mode, so this switch is the only way off there. */
+const holdSound$ = persisted$('comical:browseHoldSound', true);
+
+export function useBrowseHoldSound(): [boolean, (enabled: boolean) => void] {
+  return [use$(holdSound$), (next) => holdSound$.set(next)];
+}
+
 /**
  * Run the configured action and return what to toast, or null if there is nothing to say.
  *

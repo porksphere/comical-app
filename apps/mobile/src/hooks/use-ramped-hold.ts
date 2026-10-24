@@ -11,7 +11,7 @@
  * Returns `onPressIn`/`onPressOut` to spread onto a `Pressable`, plus `pulseStyle` for an
  * `Animated.View` around the held thing: it swells once per beat, by as much as the beat is felt,
  * so the countdown is seen as well as felt (and seen at all on desktop, where there is no
- * haptic). Timer-driven off the press events, so it works anywhere a Pressable does — including
+ * haptic). With `sound`, each beat also clicks (`lib/hold-sounds`). Timer-driven off the press events, so it works anywhere a Pressable does — including
  * web, where RNGH long-press gestures don't. (Don't use it on rows inside native scroll views:
  * press-in there is unreliable, same reason `Holdable` exists.)
  */
@@ -20,6 +20,7 @@ import type { ViewStyle } from 'react-native';
 import { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 import { hapticImpactHeavy, hapticImpactLight, hapticImpactMedium, hapticImpactSoft } from '@/lib/haptics';
+import { playHoldSound, primeHoldSounds } from '@/lib/hold-sounds';
 
 /** The gaps BETWEEN beats, each longer than the last — the cadence of "bip. bip.. bip… BIP": the
  *  countdown stretches as it builds, so the closing thump lands after the longest pause. */
@@ -34,12 +35,19 @@ const BEAT_SCALE = [0.06, 0.1, 0.15, 0.24] as const;
 const PULSE_UP_MS = 70;
 const PULSE_DOWN_MS = 120;
 
-export function useRampedHold(onArm: () => void): {
+export function useRampedHold(
+  onArm: () => void,
+  { sound = false }: { sound?: boolean } = {},
+): {
   onPressIn: () => void;
   onPressOut: () => void;
   pulseStyle: ReturnType<typeof useAnimatedStyle<ViewStyle>>;
 } {
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // Loaded on mount, not first press: a cold player can't be ready for a beat 200ms away.
+  useEffect(() => {
+    if (sound) primeHoldSounds();
+  }, [sound]);
   // Read at fire time so the armed callback is always the latest render's, without the handlers
   // themselves changing identity per render.
   const armRef = useRef(onArm);
@@ -68,10 +76,12 @@ export function useRampedHold(onArm: () => void): {
   return {
     onPressIn: () => {
       clear();
+      if (sound) primeHoldSounds();
       const beats = [hapticImpactSoft, hapticImpactLight, hapticImpactMedium];
       timers.current = beats.map((beat, i) =>
         setTimeout(() => {
           beat();
+          if (sound) playHoldSound(i);
           pulse(BEAT_SCALE[i]);
         }, BEAT_AT_MS[i]),
       );
@@ -81,6 +91,7 @@ export function useRampedHold(onArm: () => void): {
           // The BIP: one clean heavy impact, not a multi-pulse notification (which read as a
           // weird stuttered buzz at the top of the ramp).
           hapticImpactHeavy();
+          if (sound) playHoldSound(3);
           pulse(BEAT_SCALE[3]);
           armRef.current();
         }, BEAT_AT_MS[3]),

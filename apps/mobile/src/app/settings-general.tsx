@@ -32,7 +32,7 @@ import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } fr
 import { errorToasts$, useErrorToasts } from '@/data/error-toasts';
 import { queryClient } from '@/data/query-client';
 import { requestOverlay$, useRequestOverlayEnabled } from '@/data/request-monitor';
-import { useBrowseHoldAction, type BrowseHoldAction } from '@/data/browse-hold-action';
+import { useBrowseHoldAction, useBrowseHoldSound, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useDataSource, useMockActive, useNsfwMode, type NsfwMode } from '@/data/source';
 import { connectServer } from '@/data/switch-server';
 import { setFeedTint, useFeedTint } from '@/hooks/use-feed-tint';
@@ -86,6 +86,7 @@ export default function GeneralSettingsScreen() {
   const contentPadding = useSettingsScrollPadding();
   const [nsfwMode, setNsfwMode] = useNsfwMode();
   const [holdAction, setHoldAction] = useBrowseHoldAction();
+  const [holdSound, setHoldSound] = useBrowseHoldSound();
   const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase] = useApiBase();
@@ -159,13 +160,14 @@ export default function GeneralSettingsScreen() {
             gesture's only documentation — nothing on Browse or Library says the icon is holdable. */}
         <SettingsSection
           title="Browsing"
-          footer={`NSFW content decides whether NSFW-flagged bridges are visible. Holding the bridge icon at the top of Browse or Library runs the chosen action.${
+          footer={`NSFW content decides whether NSFW-flagged bridges are visible. Holding the bridge icon at the top of Browse or Library runs the chosen action; Hold sound clicks along with its countdown.${
             Platform.OS === 'web'
               ? ' Keep pages open per tab leaves a series or search you opened beside the sidebar open on its tab — and on its bridge or collection — while you visit another.'
               : ''
           }`}>
           <SettingsSelectRow label="NSFW content" value={nsfwMode} options={NSFW_MODE_OPTIONS} onChange={setNsfwMode} />
           <SettingsSelectRow label="Hold bridge icon" value={holdAction} options={HOLD_ACTION_OPTIONS} onChange={setHoldAction} />
+          <SettingsToggleRow label="Hold sound" value={holdSound} onChange={setHoldSound} disabled={holdAction === 'none'} />
           {/* Web only, like the panes themselves: a phone's series page covers the tab bar. Greyed
               out below the sidebar's width, where there are no panes to keep. */}
           {Platform.OS === 'web' && (

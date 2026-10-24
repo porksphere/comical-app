@@ -4,7 +4,7 @@ import Animated from 'react-native-reanimated';
 
 import { BridgeThumbRadius } from '@/components/selector';
 import { showToast } from '@/components/toast';
-import { runBrowseHoldAction, useBrowseHoldAction } from '@/data/browse-hold-action';
+import { runBrowseHoldAction, useBrowseHoldAction, useBrowseHoldSound } from '@/data/browse-hold-action';
 import { useRampedHold } from '@/hooks/use-ramped-hold';
 
 /**
@@ -18,10 +18,14 @@ import { useRampedHold } from '@/hooks/use-ramped-hold';
  */
 export function HoldActionTarget({ size, testID, children }: { size: number; testID?: string; children: ReactNode }) {
   const [holdAction] = useBrowseHoldAction();
-  const hold = useRampedHold(() => {
-    const message = runBrowseHoldAction();
-    if (message) showToast(message);
-  });
+  const [sound] = useBrowseHoldSound();
+  const hold = useRampedHold(
+    () => {
+      const message = runBrowseHoldAction();
+      if (message) showToast(message);
+    },
+    { sound: holdAction !== 'none' && sound },
+  );
   return (
     <Pressable
       testID={testID}
