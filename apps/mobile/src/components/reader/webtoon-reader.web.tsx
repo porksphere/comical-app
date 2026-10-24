@@ -158,9 +158,10 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
 
   // Live zoom, kept in a ref so pinch frames don't re-render.
   const zoom = useRef(1);
-  // Where the keys' zoom pivots, sideways: the content under the middle of the window when a strip
-  // zoomed wider than it was last panned sideways or zoomed in (null until it has been), so zooming
-  // back in after a zoom out returns to the part of the strip the reader had gone to, not its middle.
+  // What the keys' zoom keeps under the middle of the window, sideways: the content that was there
+  // when a strip zoomed wider than the window was last panned sideways or zoomed in (null until it
+  // has been), so zooming back in after a zoom out returns to the part of the strip the reader had
+  // gone to — exactly, as near as the strip's width at each level allows — not to its middle.
   // Up and down the scroll itself is the pan — whatever is under the middle IS where the reader is —
   // so only X is kept. `lastLeft` is the scroll the strip itself last set, so the scroll events that
   // follow a zoom aren't read as a pan. The paged reader keeps the same in `focusRef`.
@@ -217,6 +218,9 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   // Zoom to `target` keeping the content point under the viewport point (fx, fy) in place — the
   // double-tap, the wheel and the stepper all land here (the touch pinch keeps its own frame loop).
   // A zoom IN remembers the focus (see `focusXRef`), a zoom out leaves it; `remember` overrides.
+  // Neither records a strip that isn't magnified: there the middle is all that can be under the
+  // middle, and a +/- step up through 1× (`stepZoom` snaps to it, through `reset`) would otherwise
+  // overwrite the focus with it on the way back to the place it remembers.
   const zoomAt = (target: number, fx: number, fy: number, remember?: boolean) => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -232,7 +236,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     el.scrollLeft = magnified ? clamp(cpX * z + marginAt(z) - fx, 0, Math.max(0, el.scrollWidth - el.clientWidth)) : 0;
     el.scrollTop = clamp(cpY * z - fy, 0, Math.max(0, el.scrollHeight - el.clientHeight));
     lastLeftRef.current = el.scrollLeft;
-    if (remember ?? z > z0) focusXRef.current = contentXAtMiddle(el);
+    if (magnified && (remember ?? z > z0)) focusXRef.current = contentXAtMiddle(el);
   };
 
   // Double-tap tracking: a click is deferred by DOUBLE_TAP_MS so a second click
@@ -532,14 +536,33 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       el.addEventListener('gesturechange', onGestureChange);
     }
     const unregister = registerZoomTarget({
-      // About the focus — where the content last panned to sits on screen now, held within the
-      // window — rather than the middle, and without re-remembering: a fixed-point zoom about the
-      // focus leaves it where it is, so a held key keeps the one pivot from first frame to last.
+      // About the middle up and down (the scroll is the pan there), and sideways with the focus
+      // under the middle as near as the strip's width allows: the one scroll for a level and a
+      // focus, however it is arrived at. Where the strip doesn't sit where the focus would put it
+      // at the CURRENT level (a wheel zoom about the pointer since the last pan), the focus is
+      // first moved to what is under the middle now, so the first frame carries on from where the
+      // strip is rather than jumping. Only a MAGNIFIED strip is read that way: narrower than the
+      // window it sits at scroll 0 whatever the focus (the scroller still reports a sliver of
+      // hidden overflow there, which is not a pan), and the focus waits for the next magnified
+      // level. The browser keeps the scroll to whole pixels, hence the tolerance. See the paged
+      // reader's `zoomFocused`.
       zoomTo(level) {
         const z0 = zoom.current;
-        const f = focusXRef.current;
-        const x = f == null ? el.clientWidth / 2 : clamp(f * z0 + marginAt(z0) - el.scrollLeft, 0, el.clientWidth);
-        zoomAt(level, x, el.clientHeight / 2, false);
+        const half = el.clientWidth / 2;
+        let f = focusXRef.current;
+        if (f != null && z0 > ZOOM_EPSILON) {
+          const ideal = clamp(f * z0 + marginAt(z0) - half, 0, Math.max(0, el.scrollWidth - el.clientWidth));
+          if (Math.abs(ideal - el.scrollLeft) > 1) f = contentXAtMiddle(el);
+        }
+        zoomAt(level, half, el.clientHeight / 2, false);
+        // Only a strip wider than the window has a sideways scroll to place; narrower, zoomAt
+        // has set it to 0 and left the strip centred.
+        if (f != null && zoom.current > ZOOM_EPSILON) {
+          const z = zoom.current;
+          el.scrollLeft = clamp(f * z + marginAt(z) - half, 0, Math.max(0, el.scrollWidth - el.clientWidth));
+          lastLeftRef.current = el.scrollLeft;
+          focusXRef.current = f;
+        }
         keepZoomLevel(zoom.current);
       },
       reset() {
