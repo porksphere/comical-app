@@ -35,7 +35,7 @@ import { SplashGate } from '@/components/splash-gate';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ConfirmPopupHost } from '@/components/confirm-popup';
-import { ContextMenuHost } from '@/components/context-menu-host';
+import { ContextMenuHost, installMenuKeys } from '@/components/context-menu-host';
 import { CollectionPickerHost } from '@/components/collection-picker';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { RequestOverlay } from '@/components/request-overlay';
@@ -78,6 +78,7 @@ installErrorToasts();
 // "Browser zoom 110%" for Ctrl/⌘ +/-/0, which the page leaves to the browser (web only).
 installBrowserZoomToast();
 
+installMenuKeys();
 // W/S and ↑/↓ scroll whichever screen is under the pointer (web only).
 installFocusNav();
 installKeyboardScroll();

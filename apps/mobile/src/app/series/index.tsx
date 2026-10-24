@@ -3654,6 +3654,17 @@ function SeriesReaderInstance({
         }),
       };
 
+  // A sequence entry's page stands alone; the chapter reader can be showing a spread.
+  const sourceUrlOf = (i: number) => (sequence ? pageAction?.sourceUrl : pages?.[i]);
+  const pagesOnScreen =
+    sequence || !visiblePage
+      ? undefined
+      : () =>
+          paneRef.current?.pagesOnScreen(visiblePage.chapterId, visiblePage.pageIndex) ?? {
+            pages: [visiblePage.pageIndex],
+            rtl: false,
+          };
+
   // Same "<Bridge> / <Title>" the /series TopBar shows (shared truncation rule). Detail-side
   // identity, so in sequence mode the details top bar names the VISIBLE entry's series.
   const topBarSeries = series?.title ?? detailTitle;
@@ -3738,7 +3749,8 @@ function SeriesReaderInstance({
                   chapterName={pageAction?.chapterName}
                   pageIndex={pageAction?.pageIndex ?? 0}
                   pageCount={pageAction?.pageCount}
-                  sourceUrl={pageAction?.sourceUrl}
+                  sourceUrlOf={sourceUrlOf}
+                  pagesOnScreen={pagesOnScreen}
                 />
                 <ReaderToolbar
                   // In sequence mode the chrome describes the VISIBLE entry — which series the
@@ -3762,7 +3774,8 @@ function SeriesReaderInstance({
                         chapterName={pageAction?.chapterName}
                         pageIndex={pageAction?.pageIndex ?? 0}
                         pageCount={pageAction?.pageCount}
-                        sourceUrl={pageAction?.sourceUrl}
+                        sourceUrlOf={sourceUrlOf}
+                        pagesOnScreen={pagesOnScreen}
                         onPress={showChrome}
                       />
                       {/* Held up while the menu is open: it is anchored to the gear, and the
@@ -4661,7 +4674,11 @@ function SeriesDetailsHost({
   );
 }
 
-type ReaderPaneHandle = { goTo: (index: number, animated?: boolean) => void };
+type ReaderPaneHandle = {
+  goTo: (index: number, animated?: boolean) => void;
+  /** The pages of `chapterId` on screen with `page`, in reading order. */
+  pagesOnScreen: (chapterId: string, page: number) => { pages: number[]; rtl: boolean };
+};
 
 /** The reader itself + its bottom chrome, keyed to ONE RUN (the stitched window — native paged)
  *  or one chapter (web/webtoon/direct), and mounted only once its pages are in — so the start
@@ -4996,7 +5013,21 @@ const ReaderPane = forwardRef<
     [pages, setCurrent, stitched, prefixLen, goFlat],
   );
   // The details card's page-thumbnail taps jump the mounted pane directly (see openPageFromDetails).
-  useImperativeHandle(ref, () => ({ goTo }), [goTo]);
+  const pagesOnScreen = useCallback(
+    (segmentId: string, page: number) => {
+      let base = 0;
+      if (stitched) for (const s of segments) {
+        if (s.id === segmentId) break;
+        base += s.pages.length;
+      }
+      const spread = settings.mode === 'paged' ? pagedRef.current?.spreadOf(base + page) : undefined;
+      const pages = [];
+      for (let i = spread ? spread.first - base : page; i <= (spread ? spread.last - base : page); i++) pages.push(i);
+      return { pages, rtl: settings.direction === 'rtl' };
+    },
+    [stitched, segments, settings.mode, settings.direction],
+  );
+  useImperativeHandle(ref, () => ({ goTo, pagesOnScreen }), [goTo, pagesOnScreen]);
   // Where a scrub release lands: name the landing page immediately (viewability is suppressed
   // during the drag), so the chrome is correct in the same commit.
   const seekTo = useCallback(

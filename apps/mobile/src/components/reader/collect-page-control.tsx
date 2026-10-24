@@ -1,7 +1,9 @@
-import { useEffect, useEffectEvent } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { useEffect, useEffectEvent, useRef } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { openCollectionPicker } from '@/components/collection-picker';
+import { openContextMenu, type ContextMenuRequest } from '@/components/context-menu-host';
+import { MENU_WIDTH, type MenuRowSpec } from '@/components/context-menu-material';
 import { BookmarkIcon } from '@/components/icons/reader-icons';
 import { showToast } from '@/components/toast';
 import { peekResolvedAssetSource } from '@/data/api';
@@ -20,9 +22,16 @@ type CollectPageProps = {
   chapterName?: string;
   pageIndex: number;
   pageCount?: number;
-  /** The page's image URL right now. A re-anchor key server-side; expected to rot, never rendered. */
-  sourceUrl?: string;
+  /** A page's image URL right now. A re-anchor key server-side; expected to rot, never rendered. */
+  sourceUrlOf: (pageIndex: number) => string | undefined;
+  /** The pages on screen with `pageIndex`, in reading order: two on a spread, where a save has to
+   *  ask which. Asked at the press, since the pager's pairing isn't render state up here. */
+  pagesOnScreen?: () => OnScreen;
 };
+
+type OnScreen = { pages: number[]; rtl: boolean };
+
+const MENU_GAP = 6;
 
 function useCollectPage({
   bridgeId,
@@ -32,44 +41,89 @@ function useCollectPage({
   chapterName,
   pageIndex,
   pageCount,
-  sourceUrl,
+  sourceUrlOf,
+  pagesOnScreen,
 }: CollectPageProps) {
   // expo-image's disk-cache key is the URI actually handed to `<Image>`, which is the RESOLVED
   // asset source — the reader resolves a bridge's relative page path before rendering it. Peeking
   // the same memo the reader filled avoids threading the string up through the pager; a miss (or
   // web, where the rendered source can be an object URL) just means no hash, which is safe.
-  const cacheKey = sourceUrl ? (peekResolvedAssetSource(sourceUrl) ?? null) : null;
+  const cacheKeyOf = (page: number) => {
+    const url = sourceUrlOf(page);
+    return url ? (peekResolvedAssetSource(url) ?? null) : null;
+  };
 
-  const snapshot = () => ({
-    seriesTitle,
-    ...(chapterName !== undefined && { chapterName }),
-    ...(pageCount !== undefined && { pageCount }),
-    ...(sourceUrl !== undefined && { sourceUrl }),
-  });
+  const snapshot = (page: number) => {
+    const sourceUrl = sourceUrlOf(page);
+    return {
+      seriesTitle,
+      ...(chapterName !== undefined && { chapterName }),
+      ...(pageCount !== undefined && { pageCount }),
+      ...(sourceUrl !== undefined && { sourceUrl }),
+    };
+  };
 
-  const { collected, toggle } = usePageCollected(
-    bridgeId,
-    seriesId ?? '',
-    chapterId,
-    pageIndex,
-    snapshot,
-    cacheKey,
-  );
+  const { isCollected, toggle } = usePageCollected(bridgeId, seriesId ?? '', chapterId, snapshot, cacheKeyOf);
 
-  const openPicker = () => {
+  const openPicker = (page: number) => {
     if (!bridgeId || !seriesId || !chapterId) return;
     openCollectionPicker({
       kind: 'page',
       bridgeId,
       seriesId,
       chapterId,
-      pageIndex,
+      pageIndex: page,
       title: chapterName ? `${seriesTitle} — ${chapterName}` : seriesTitle,
-      snapshot,
+      snapshot: () => snapshot(page),
     });
   };
 
-  return { collected, toggle, openPicker };
+  const save = (page: number, announce: boolean) => {
+    const result = toggle(page);
+    if (result === 'saved' && announce) showToast('Page saved');
+    else if (result === 'pick') openPicker(page);
+  };
+
+  const spread = (): OnScreen | null => {
+    const shown = pagesOnScreen?.();
+    return shown && shown.pages.length > 1 ? shown : null;
+  };
+
+  // Which page of a spread, named by the side it is on, since that is what the reader sees. A save
+  // can take both; filing is one page at a time, so the picker's menu only offers the sides.
+  const spreadMenu = (
+    { pages, rtl }: OnScreen,
+    intent: 'save' | 'pick',
+    at: Pick<ContextMenuRequest, 'x' | 'y' | 'anchor' | 'keyboard'>,
+  ) => {
+    const across = rtl ? [...pages].reverse() : pages;
+    const rows: MenuRowSpec[] = across.map((page, k) => ({
+      label: `${k === 0 ? 'Left' : 'Right'} page · ${page + 1}`,
+      Icon: BookmarkIcon,
+      iconFilled: !!isCollected(page),
+      loading: false,
+      onPress: () => (intent === 'pick' ? openPicker(page) : save(page, true)),
+      testID: `reader.collect-page.${k === 0 ? 'left' : 'right'}`,
+    }));
+    if (intent === 'save') {
+      const unsaved = pages.filter((page) => !isCollected(page));
+      rows.push({
+        label: 'Both pages',
+        Icon: BookmarkIcon,
+        iconFilled: !unsaved.length,
+        loading: false,
+        disabled: !unsaved.length,
+        onPress: () => {
+          for (const page of unsaved) toggle(page);
+          showToast(unsaved.length > 1 ? 'Pages saved' : 'Page saved');
+        },
+        testID: 'reader.collect-page.both',
+      });
+    }
+    openContextMenu({ ...at, title: intent === 'pick' ? 'Choose collections for' : 'Save', rows });
+  };
+
+  return { collected: isCollected(pageIndex), save, openPicker, spread, spreadMenu };
 }
 
 /**
@@ -77,7 +131,7 @@ function useCollectPage({
  * slot.
  *
  * **Tap** saves the page, unfiled; on a saved page it opens the picker, where it is filed or
- * removed. **Long press** opens the picker outright.
+ * removed. **Long press** opens the picker outright. On a spread either one first asks which page.
  *
  * Like the rest of the reader chrome this is deliberately UNTHEMED — white on the dark gradient,
  * never `useTheme()`, because the reader stays dark whatever the app theme is.
@@ -93,19 +147,31 @@ export function CollectPageControl({
    *  bar can fade out from under the finger just as it's tapped. */
   onPress?: () => void;
 }) {
-  const { collected, toggle, openPicker } = useCollectPage(page);
+  const { collected, save, openPicker, spread, spreadMenu } = useCollectPage(page);
+  const ref = useRef<View>(null);
+
+  // Hung from the button like a dropdown, right edge to the button's.
+  const menuFromButton = (shown: OnScreen, intent: 'save' | 'pick') =>
+    ref.current?.measure((_x, _y, w, h, pageX, pageY) =>
+      spreadMenu(shown, intent, { x: pageX + w - MENU_WIDTH, y: pageY + h + MENU_GAP, anchor: 'fixed' }),
+    );
 
   return (
     <Pressable
+      ref={ref}
       testID="reader.toolbar.collect-page"
       onPress={() => {
         onPress?.();
-        if (toggle() === 'pick') openPicker();
+        const shown = spread();
+        if (shown) menuFromButton(shown, 'save');
+        else save(page.pageIndex, false);
       }}
       onLongPress={() => {
         onPress?.();
         hapticImpactLight();
-        openPicker();
+        const shown = spread();
+        if (shown) menuFromButton(shown, 'pick');
+        else openPicker(page.pageIndex);
       }}
       hitSlop={12}
       disabled={collected === null}
@@ -124,18 +190,19 @@ export function CollectPageControl({
 
 /**
  * The save button's key (web, lib/keymap's `save`): it does what a tap does — saves the page, or on a saved one opens the
- * picker — and says so, since nothing else on a hidden chrome would. Rendered once per screen, apart
- * from the button: the reader's chrome can be mounted twice over.
+ * picker — and says so, since nothing else on a hidden chrome would. On a spread it asks which page,
+ * in a menu the move keys walk (`installMenuKeys`). Rendered once per screen, apart from the button:
+ * the reader's chrome can be mounted twice over.
  */
 export function CollectPageShortcut({ enabled, ...page }: CollectPageProps & { enabled: boolean }) {
-  const { toggle, openPicker } = useCollectPage(page);
+  const { save, spread, spreadMenu } = useCollectPage(page);
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (!isKey(e, 'save')) return;
     if (e.repeat || e.defaultPrevented || isTypingTarget(e.target)) return;
     e.preventDefault();
-    const result = toggle();
-    if (result === 'saved') showToast('Page saved');
-    else if (result === 'pick') openPicker();
+    const shown = spread();
+    if (shown) spreadMenu(shown, 'save', { x: window.innerWidth / 2, y: window.innerHeight / 3, keyboard: true });
+    else save(page.pageIndex, true);
   });
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return;

@@ -8,7 +8,7 @@ import { hapticSelection } from '@/lib/haptics';
 import { hashPageFromCache } from '@/lib/page-hash';
 
 /**
- * Whether the currently visible page is saved, plus the reader's one-tap save.
+ * Which of a chapter's pages are saved, plus the reader's one-tap save for any of them.
  *
  * Same model as the series button: a tap on an unsaved page saves it, unfiled; a tap on a saved one
  * asks the caller to open the picker (`'pick'`), which is where filing and removal live.
@@ -21,11 +21,10 @@ export function usePageCollected(
   bridgeId: string | undefined,
   seriesId: string,
   chapterId: string | undefined,
-  pageIndex: number,
-  snapshot: () => PageItemSnapshotBody,
+  snapshot: (pageIndex: number) => PageItemSnapshotBody,
   /** The exact URI string handed to the reader's `<Image>` — expo-image's disk-cache key, used to
-   *  hash the bytes already on disk. Omit it and the page is simply saved without a hash. */
-  imageCacheKey?: string | null,
+   *  hash the bytes already on disk. Null and the page is simply saved without a hash. */
+  imageCacheKey: (pageIndex: number) => string | null,
 ) {
   const ds = useDataSource();
   const mock = useMockActive();
@@ -42,11 +41,10 @@ export function usePageCollected(
   });
   // `null` while the first load is in flight → the button renders disabled rather than wrong.
   const indices = data ?? (isError ? [] : null);
-  const collected = indices === null ? null : indices.includes(pageIndex);
 
   const mutation = useMutation({
-    mutationFn: async () => {
-      const snap = snapshot();
+    mutationFn: async (pageIndex: number) => {
+      const snap = snapshot(pageIndex);
       await ds.collectPage(bridgeId!, seriesId, chapterId!, pageIndex, snap);
       autoDownloadPage(mock, {
         bridgeId: bridgeId!,
@@ -60,15 +58,15 @@ export function usePageCollected(
       // SHA-256 over a ~1MB page through Hermes' JS crypto shim is slow enough to feel. Safe to
       // send partially — the route MERGES, so `chapterName`/`pageCount`/`sourceUrl` survive
       // untouched (and `pageCount` matters: it's reconcile's fallback re-anchor signal).
-      const contentHash = await hashPageFromCache(imageCacheKey);
+      const contentHash = await hashPageFromCache(imageCacheKey(pageIndex));
       if (contentHash) {
         await ds.collectPage(bridgeId!, seriesId, chapterId!, pageIndex, {
-          seriesTitle: snapshot().seriesTitle,
+          seriesTitle: snap.seriesTitle,
           contentHash,
         });
       }
     },
-    onMutate: async () => {
+    onMutate: async (pageIndex) => {
       await queryClient.cancelQueries({ queryKey: key });
       const prev = queryClient.getQueryData<number[]>(key);
       if (prev) queryClient.setQueryData(key, [...prev, pageIndex].sort((a, b) => a - b));
@@ -77,7 +75,7 @@ export function usePageCollected(
     onError: (_e, _next, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(key, ctx.prev);
     },
-    onSettled: () => {
+    onSettled: (_data, _error, pageIndex) => {
       void queryClient.invalidateQueries({ queryKey: key });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.pageCollections(mock, bridgeId ?? '', seriesId, chapterId ?? '', pageIndex),
@@ -89,13 +87,13 @@ export function usePageCollected(
 
   return {
     /** `null` while unknown — the button stays disabled rather than showing a wrong state. */
-    collected,
+    isCollected: (pageIndex: number) => (indices === null ? null : indices.includes(pageIndex)),
     /** Saves an unsaved page; for a saved one returns `'pick'` for the caller to open the picker. */
-    toggle: (): 'saved' | 'pick' | 'noop' => {
-      if (!enabled || collected === null) return 'noop';
-      if (collected) return 'pick';
+    toggle: (pageIndex: number): 'saved' | 'pick' | 'noop' => {
+      if (!enabled || indices === null) return 'noop';
+      if (indices.includes(pageIndex)) return 'pick';
       hapticSelection();
-      mutation.mutate();
+      mutation.mutate(pageIndex);
       return 'saved';
     },
   };

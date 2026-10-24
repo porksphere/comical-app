@@ -66,6 +66,8 @@ import {
   type MenuRowSpec,
 } from '@/components/context-menu-material';
 import { useDismissKey } from '@/lib/dismiss-key';
+import { isTypingTarget } from '@/lib/key-hold';
+import { moveDirectionOf, readerScopeActive } from '@/lib/keybindings';
 import { HOLD_ARM_DISTANCE } from '@/lib/series-card-menu';
 import { useActiveColorScheme } from '@/hooks/use-theme';
 import { windowModalLayer } from '@/lib/window-controls';
@@ -103,6 +105,9 @@ export type ContextMenuRequest = {
    *  web's default: a menu opened by a click is a dropdown, and frosting the whole window for one
    *  makes it read as a modal. The clear backdrop still catches the click that dismisses it. */
   backdrop?: BackdropBlurMode | 'none';
+  /** Opened from a key: the first row starts highlighted, for the move keys to walk from
+   *  (`installMenuKeys`). */
+  keyboard?: boolean;
   /** Runs once the menu is gone, however it went — dismissed, replaced, or a row run. */
   onClose?: () => void;
 };
@@ -144,12 +149,43 @@ export const ctxHoldX = makeMutable(0);
 export const ctxHoldY = makeMutable(0);
 export const ctxHoveredRow = makeMutable(-1);
 
-let rowActions: (() => void)[] = [];
-function setRowActions(actions: (() => void)[]): void {
+let rowActions: ((() => void) | null)[] = [];
+function setRowActions(actions: ((() => void) | null)[]): void {
   rowActions = actions;
 }
 function commitRow(index: number): void {
   rowActions[index]?.();
+}
+
+/**
+ * Keys for a menu open over the reader, where nothing else would take them: the `lists` scope's
+ * focus movement stands down there, and the reader's own capture listeners would turn the page
+ * under the menu. The move keys walk the enabled rows, Space or Enter runs the highlighted one, and
+ * every other key stops here — Escape excepted, which `useDismissKey` closes the menu with.
+ * Installed once at startup, ahead of any reader, so its capture listener runs first.
+ */
+export function installMenuKeys(): void {
+  if (typeof window === 'undefined') return;
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (!contextMenu$.peek() || !readerScopeActive() || isTypingTarget(e.target)) return;
+      if (e.key === 'Escape' || e.ctrlKey || e.metaKey || e.altKey) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const move = moveDirectionOf(e);
+      if (move) {
+        const step = move.x + move.y;
+        const enabled = rowActions.flatMap((action, i) => (action ? [i] : []));
+        const at = enabled.indexOf(ctxHoveredRow.value);
+        const next = at < 0 ? enabled[step > 0 ? 0 : enabled.length - 1] : enabled[at + step];
+        if (next !== undefined) ctxHoveredRow.set(next);
+      } else if (!e.repeat && (e.key === 'Enter' || e.key === ' ')) {
+        commitRow(ctxHoveredRow.value);
+      }
+    },
+    true,
+  );
 }
 
 function selectionTick(): void {
@@ -315,9 +351,16 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
   // What a commit (lift over a row) runs — registered, since the lifting finger belongs to the
   // pressed row's gesture, which knows nothing about this component.
   useEffect(() => {
-    setRowActions(rows.map((r) => (r.loading || r.disabled ? () => {} : r.onPress)));
+    setRowActions(rows.map((r) => (r.loading || r.disabled ? null : r.onPress)));
     return () => setRowActions([]);
   }, [rows]);
+
+  const keyboard = !!req.keyboard;
+  useEffect(() => {
+    if (!keyboard) return;
+    ctxHoveredRow.set(rowActions.findIndex(Boolean));
+    return () => ctxHoveredRow.set(-1);
+  }, [keyboard]);
 
   // ── Peek: hit-test the held finger into a row, light it up, tick as it crosses rows ──
   useAnimatedReaction(
@@ -329,7 +372,8 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
       return index >= 0 && index < specs.length ? index : -1;
     },
     (row, prev) => {
-      if (row === prev) return;
+      // A first run with no hold leaves the highlight be: a keyboard-opened menu has set one.
+      if (row === prev || (prev == null && row < 0)) return;
       ctxHoveredRow.set(row);
       if (row >= 0) runOnJS(selectionTick)();
     },
