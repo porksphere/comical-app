@@ -28,6 +28,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
+import { SavedBadge } from '@/components/card-badge';
 import { openCollectionPicker } from '@/components/collection-picker';
 import { ContextMenuHold, openContextMenu, type ContextMenuPoint } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
@@ -71,9 +72,9 @@ import { mirrorGridRows } from '@/lib/grid-rows';
 import { stableScrollbarGutter, useScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useSeriesPageWidth } from '@/lib/series-pane-context';
-import { chapterProgressQuery, collectionItemsQuery, queryKeys } from '@/data/queries';
+import { chapterPageIndicesQuery, chapterProgressQuery, collectionItemsQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive, type DataSource } from '@/data/source';
-import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
+import { DIRECT_CHAPTER_ID, type Chapter, type PageThumbSource, type SpriteThumb } from '@/data/types';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT, wholePictureStyle } from '@/lib/aspect-ratio';
 import { applyReadState, groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
@@ -1227,6 +1228,19 @@ export function PageThumbList({
   const rtl = useReadsRightToLeft();
   const [expanded, setExpanded] = useState(false);
   const showMoreHover = useHovered();
+  // Which pages are in a collection, for the tile badge. A direct series' pages are filed under the
+  // DIRECT_CHAPTER_ID sentinel, so this is the same per-chapter index set the reader's heart reads
+  // (and the picker invalidates) — one query for the grid, never a membership check per tile.
+  const ds = useDataSource();
+  const mock = useMockActive();
+  const { data: collectedIndices } = useQuery({
+    ...chapterPageIndicesQuery(ds, mock, bridgeId ?? '', seed, DIRECT_CHAPTER_ID),
+    enabled: !!bridgeId && !!seed,
+    // A library-less server 404s every collected route; that reads as "nothing saved", not a retry
+    // loop behind a decoration.
+    retry: false,
+  });
+  const collected = useMemo(() => new Set(collectedIndices ?? []), [collectedIndices]);
 
   const cols = pageGridCols(screenW);
   const gap = PAGE_GRID_GAP;
@@ -1271,6 +1285,8 @@ export function PageThumbList({
       onScrollEndDrag={onScrollEndDrag}
       {...pullScrollProps}
       data={data}
+      // A save changes no row's data, so without this the recycled cells keep their old badge state.
+      extraData={collected}
       keyExtractor={(_, i) => String(i)}
       numColumns={cols}
       recycleItems
@@ -1353,6 +1369,7 @@ export function PageThumbList({
               bridgeId={bridgeId}
               page={item.pageIndex + 1}
               width={tileW}
+              collected={collected.has(item.pageIndex)}
               onPress={() => onOpenPage(item.pageIndex)}
             />
           ) : null}
@@ -1450,6 +1467,7 @@ export function PageThumb({
   width,
   onPress,
   showPageNumber = true,
+  collected = false,
   slotHeight,
 }: {
   thumb: PageThumbSource | null;
@@ -1461,6 +1479,8 @@ export function PageThumb({
   onPress?: () => void;
   /** The page-number badge — on for the series page grid, off for the compact card-preview rail. */
   showPageNumber?: boolean;
+  /** The page is in a collection — the same mark a saved series carries on its cover. */
+  collected?: boolean;
   /** When set, the tile fills this fixed height and its WIDTH follows the page's real aspect ratio
    *  (variable-width, for the card-preview rail) instead of the grid's default width-driven, constant
    *  2:3 slot. `width` is then ignored for layout — the sprite crop scales to `slotHeight * aspect`. */
@@ -1704,6 +1724,11 @@ export function PageThumb({
           {showPageNumber && (
             <View style={styles.pageNum}>
               <ThemedText style={styles.pageNumText}>{page}</ThemedText>
+            </View>
+          )}
+          {collected && (
+            <View style={[styles.collectedMark, { pointerEvents: 'none' }]}>
+              <SavedBadge accessibilityLabel="In a collection" />
             </View>
           )}
         </View>
@@ -2225,5 +2250,12 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 11,
     fontWeight: '600',
+  },
+  // Where CardOverlays puts a series' saved mark: the top-left corner, inset Spacing.one.
+  collectedMark: {
+    position: 'absolute',
+    top: Spacing.one,
+    left: Spacing.one,
+    zIndex: 2,
   },
 });

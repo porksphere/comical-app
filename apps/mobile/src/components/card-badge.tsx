@@ -72,12 +72,13 @@ function CardBadge({ badge }: { badge: CardBadgeData }) {
 }
 
 // An icon, not text: bridges can only author text badges, so nothing a bridge sends can be
-// mistaken for this one, or imitate it.
-function SavedBadge() {
+// mistaken for this one, or imitate it. Exported for the direct-series page grid, where the same
+// mark on a page tile says the PAGE is in a collection.
+export function SavedBadge({ accessibilityLabel = 'In your library' }: { accessibilityLabel?: string }) {
   const theme = useTheme();
   return (
     <View
-      accessibilityLabel="In your library"
+      accessibilityLabel={accessibilityLabel}
       style={[styles.badge, styles.lifted, styles.saved, { backgroundColor: theme.accent }]}>
       <SavedIcon color={theme.accentOn} size={11} />
     </View>
