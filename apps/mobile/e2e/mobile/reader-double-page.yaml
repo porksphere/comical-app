@@ -16,8 +16,8 @@
 #                                           spread reports its last), so a turn onto pages 2–3 reads
 #                                           "2".
 #   - reader.toolbar.collect-page           The save button (see collect-page.yaml). On a spread it
-#                                           opens a menu first:
-#   - reader.collect-page.left / .right / .both   collect-page-control.tsx's spread menu rows.
+#                                           opens a picker first:
+#   - reader.collect-page.left / .right / .both   spread-pick.tsx's tiles, laid out as the spread is.
 #   - reader.control.toggle-chrome          Brings the auto-hiding toolbar back (see
 #                                           collect-page.yaml).
 #
@@ -64,8 +64,8 @@ appId: com.porksphere.comical
     text: "^2$"
 
 # Saving on a spread asks which page. Nothing is picked — whether a page is already saved depends on
-# earlier runs, and collect-page.yaml owns the save itself — so the menu is dismissed by tapping
-# outside it.
+# earlier runs, and collect-page.yaml owns the save itself — so the picker is dismissed by tapping
+# its backdrop, below the panel.
 - tapOn:
     id: "reader.control.toggle-chrome"
 - tapOn:

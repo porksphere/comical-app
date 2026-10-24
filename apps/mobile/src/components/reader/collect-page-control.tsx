@@ -1,10 +1,9 @@
 import { useEffect, useEffectEvent, useRef } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { openCollectionPicker } from '@/components/collection-picker';
-import { openContextMenu, type ContextMenuRequest } from '@/components/context-menu-host';
-import { MENU_WIDTH, type MenuRowSpec } from '@/components/context-menu-material';
 import { BookmarkIcon } from '@/components/icons/reader-icons';
+import { openSpreadPick, type SpreadPickRequest, type SpreadSide } from '@/components/reader/spread-pick';
 import { showToast } from '@/components/toast';
 import { peekResolvedAssetSource } from '@/data/api';
 import { usePageCollected } from '@/hooks/use-page-collected';
@@ -89,38 +88,32 @@ function useCollectPage({
     return shown && shown.pages.length > 1 ? shown : null;
   };
 
-  // Which page of a spread, named by the side it is on, since that is what the reader sees. A save
-  // can take both; filing is one page at a time, so the picker's menu only offers the sides.
+  // Which page of a spread, by the side it is on, since that is what the reader sees. A save can take
+  // both; filing is one page at a time, so the picker only offers the sides.
   const spreadMenu = (
     { pages, rtl }: OnScreen,
     intent: 'save' | 'pick',
-    at: Pick<ContextMenuRequest, 'x' | 'y' | 'anchor' | 'keyboard'>,
+    at: Pick<SpreadPickRequest, 'under' | 'keyboard'>,
   ) => {
-    const across = rtl ? [...pages].reverse() : pages;
-    const rows: MenuRowSpec[] = across.map((page, k) => ({
-      label: `${k === 0 ? 'Left' : 'Right'} page · ${page + 1}`,
-      Icon: BookmarkIcon,
-      iconFilled: !!isCollected(page),
-      loading: false,
-      onPress: () => (intent === 'pick' ? openPicker(page) : save(page, true)),
-      testID: `reader.collect-page.${k === 0 ? 'left' : 'right'}`,
-    }));
-    if (intent === 'save') {
-      const unsaved = pages.filter((page) => !isCollected(page));
-      rows.push({
-        label: 'Both pages',
-        Icon: BookmarkIcon,
-        iconFilled: !unsaved.length,
-        loading: false,
-        disabled: !unsaved.length,
-        onPress: () => {
+    const [l, r] = rtl ? [pages[1]!, pages[0]!] : [pages[0]!, pages[1]!];
+    const side = (page: number): SpreadSide => ({ page, uri: cacheKeyOf(page) ?? undefined, saved: !!isCollected(page) });
+    openSpreadPick({
+      ...at,
+      title: intent === 'pick' ? 'Choose collections for' : 'Save',
+      sides: [side(l), side(r)],
+      onSide: (k) => {
+        const page = k === 0 ? l : r;
+        if (intent === 'pick') openPicker(page);
+        else save(page, true);
+      },
+      ...(intent === 'save' && {
+        onBoth: () => {
+          const unsaved = pages.filter((page) => !isCollected(page));
           for (const page of unsaved) toggle(page);
           showToast(unsaved.length > 1 ? 'Pages saved' : 'Page saved');
         },
-        testID: 'reader.collect-page.both',
-      });
-    }
-    openContextMenu({ ...at, title: intent === 'pick' ? 'Choose collections for' : 'Save', rows });
+      }),
+    });
   };
 
   return { collected: isCollected(pageIndex), save, openPicker, spread, spreadMenu };
@@ -149,11 +142,12 @@ export function CollectPageControl({
 }) {
   const { collected, save, openPicker, spread, spreadMenu } = useCollectPage(page);
   const ref = useRef<View>(null);
+  const { width: winW } = useWindowDimensions();
 
   // Hung from the button like a dropdown, right edge to the button's.
   const menuFromButton = (shown: OnScreen, intent: 'save' | 'pick') =>
     ref.current?.measure((_x, _y, w, h, pageX, pageY) =>
-      spreadMenu(shown, intent, { x: pageX + w - MENU_WIDTH, y: pageY + h + MENU_GAP, anchor: 'fixed' }),
+      spreadMenu(shown, intent, { under: { right: winW - pageX - w, top: pageY + h + MENU_GAP }, keyboard: false }),
     );
 
   return (
@@ -191,7 +185,7 @@ export function CollectPageControl({
 /**
  * The save button's key (web, lib/keymap's `save`): it does what a tap does — saves the page, or on a saved one opens the
  * picker — and says so, since nothing else on a hidden chrome would. On a spread it asks which page,
- * in a menu the move keys walk (`installMenuKeys`). Rendered once per screen, apart from the button:
+ * which a move key answers outright (`installSpreadPickKeys`). Rendered once per screen, apart from the button:
  * the reader's chrome can be mounted twice over.
  */
 export function CollectPageShortcut({ enabled, ...page }: CollectPageProps & { enabled: boolean }) {
@@ -201,7 +195,7 @@ export function CollectPageShortcut({ enabled, ...page }: CollectPageProps & { e
     if (e.repeat || e.defaultPrevented || isTypingTarget(e.target)) return;
     e.preventDefault();
     const shown = spread();
-    if (shown) spreadMenu(shown, 'save', { x: window.innerWidth / 2, y: window.innerHeight / 3, keyboard: true });
+    if (shown) spreadMenu(shown, 'save', { keyboard: true });
     else save(page.pageIndex, true);
   });
   useEffect(() => {

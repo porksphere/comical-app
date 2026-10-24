@@ -36,6 +36,7 @@ import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ConfirmPopupHost } from '@/components/confirm-popup';
 import { ContextMenuHost, installMenuKeys } from '@/components/context-menu-host';
+import { installSpreadPickKeys, SpreadPickHost } from '@/components/reader/spread-pick';
 import { CollectionPickerHost } from '@/components/collection-picker';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { RequestOverlay } from '@/components/request-overlay';
@@ -79,6 +80,7 @@ installErrorToasts();
 installBrowserZoomToast();
 
 installMenuKeys();
+installSpreadPickKeys();
 // W/S and ↑/↓ scroll whichever screen is under the pointer (web only).
 installFocusNav();
 installKeyboardScroll();
@@ -208,6 +210,8 @@ function RootNavigation() {
         {/* Root host for the GENERIC hold menu — the card popup's menu system without its preview
             panel (chapter rows use it). Only renders while open, via openContextMenu. */}
         <ContextMenuHost />
+        {/* Root host for the reader's which-page-of-the-spread picker (openSpreadPick). */}
+        <SpreadPickHost />
         {/* Root host for the "Add to collection…" picker. Mounted AFTER the card menu host so it STACKS
             on top of it (open it from the card menu's "Add to collection…" row), via openCollectionPicker. */}
         <CollectionPickerHost />
