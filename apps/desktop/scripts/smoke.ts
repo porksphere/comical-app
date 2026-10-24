@@ -19,7 +19,7 @@ import {
 } from "@comical/sync";
 import { createDesktopHost } from "../src/host/create-host.ts";
 import { startLoopbackServer } from "../src/host/serve.ts";
-import { createSyncGate, startSyncListener } from "../src/host/sync-listener.ts";
+import { createSyncGate, startSyncListener, TICKET_PATH } from "../src/host/sync-listener.ts";
 
 async function main(): Promise<void> {
   const WEB_ROOT = process.env.COMICAL_WEB_ROOT ?? join(__dirname, "..", "build", "web");
@@ -147,7 +147,7 @@ async function main(): Promise<void> {
   //    its own that a one-time code got it.
   let savedPairings: StoredPairing[] = [];
   const gate = createSyncGate({ getHost: () => host, pairings: [], save: (pairings) => (savedPairings = pairings) });
-  const lan = await startSyncListener({ gate, port: 0 });
+  const lan = await startSyncListener({ gate, getHost: () => host, port: 0 });
   const address = await lan.address();
   check("the sync listener has an address to hand a phone", Boolean(address), address);
   // Whatever interface that names, the listener is on all of them — loopback is the one a CI
@@ -182,6 +182,27 @@ async function main(): Promise<void> {
   const beyond = await fetch(`${local}/bridges`);
   check("…nothing but sync is there", beyond.status === 404, beyond.status);
 
+  // What the phone may read besides syncing: what this computer has downloaded, and a ticket that
+  // lets its reader GET those pages in the clear. Nothing else, and nothing without the ticket.
+  const have = await paired.read("/downloads").catch((err: unknown) => err);
+  check("a paired phone reads what is downloaded", (have as { status?: number }).status === 200 && Array.isArray((have as { body?: { bySeries?: unknown } }).body?.bySeries), JSON.stringify(have));
+  const prefs = await paired.read("/downloads/prefs").catch((err: unknown) => err);
+  check("…but not the download preferences", (prefs as { status?: number }).status === 404, JSON.stringify(prefs));
+  const ticketed = (await paired.read(TICKET_PATH).catch((err: unknown) => err)) as { status?: number; body?: { ticket?: string } };
+  const ticket = ticketed.body?.ticket ?? "";
+  check("…and is given a page ticket", ticketed.status === 200 && ticket.length > 20, JSON.stringify(ticketed));
+  const pagePath = "/downloads/entries/some-bridge/some-series/chapters/1/pages/0/file";
+  const unticketed = await fetch(`${local}${pagePath}`);
+  check("a page GET without the ticket → 404", unticketed.status === 404, unticketed.status);
+  const wrongTicket = await fetch(`${local}${pagePath}?t=${ticket.slice(1)}x`);
+  check("…with a made-up ticket → 404", wrongTicket.status === 404, wrongTicket.status);
+  const withTicket = await fetch(`${local}${pagePath}?t=${ticket}`);
+  // Nothing is downloaded here, so the host's own answer is "not downloaded"; what matters is
+  // that the ticket got the request through to it rather than being refused at the door.
+  check("…with the ticket reaches the host (page not downloaded → 404 from it)", withTicket.status === 404, withTicket.status);
+  const otherRoute = await fetch(`${local}/bridges?t=${ticket}`);
+  check("…and opens no other route", otherRoute.status === 404, otherRoute.status);
+
   // A phone's whole exchange: its own engine, the app's own client, one new collection.
   const phoneStore = new InMemoryLibraryStore();
   const phone = new SyncEngine({
@@ -213,6 +234,7 @@ async function main(): Promise<void> {
     fetch: viaFetch,
   });
   check("unlinking a phone takes it off the list", gate.unlink(pairing.id) && gate.devices().map((d) => d.name).join() === "Other phone", JSON.stringify(gate.devices()));
+  check("…and its page ticket dies with it", gate.ticketHolder(ticket) === null, gate.ticketHolder(ticket));
   const cutOff = await paired.pull({ device: "smoke-phone", name: "Smoke phone", have: {} }).catch((err: unknown) => err);
   check("…and it is told so when it next syncs", cutOff instanceof SyncUnlinkedError, String(cutOff));
   const untouched = await other.pull({ device: "other-phone", name: "Other phone", have: {} }).catch((err: unknown) => err);

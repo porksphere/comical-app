@@ -12,7 +12,7 @@
 import { app, BrowserWindow, ipcMain, Notification, screen, shell, session } from "electron";
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
-import type { PairingGate } from "@comical/sync";
+import type { SyncGate } from "./host/sync-listener.ts";
 import { clearScratch, currentDataDir, locateData, registerDataLocation, settleData } from "./data-location.ts";
 import { createDesktopHost, type DesktopHost } from "./host/create-host.ts";
 import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
@@ -179,14 +179,14 @@ function notify(title: string, body: string, route: string | null): void {
   notice.show();
 }
 
-let syncGate: PairingGate | null = null;
+let syncGate: SyncGate | null = null;
 let syncListener: SyncListener | null = null;
 let syncListenerChange: Promise<unknown> = Promise.resolve();
 /** Series other devices added, held until the page takes them (`synced-series-take`): a sync can
  *  land while it is still loading or mid-reload, and only the page knows whether to download them. */
 const syncedSeries: { bridgeId: string; seriesId: string }[] = [];
 
-function gate(): PairingGate {
+function gate(): SyncGate {
   syncGate ??= createSyncGate({
     getHost: () => host,
     pairings: shellSettings().syncPairings,
@@ -210,6 +210,7 @@ function applyNetworkSync(): Promise<string | null> {
     if (!syncListener) {
       syncListener = await startSyncListener({
         gate: gate(),
+        getHost: () => host,
         port: process.env.COMICAL_SYNC_PORT ? Number(process.env.COMICAL_SYNC_PORT) : undefined,
       });
     }
