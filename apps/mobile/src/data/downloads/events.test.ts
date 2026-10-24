@@ -42,6 +42,7 @@ mock.module('@comical/host-rn', () => ({
 mock.module('../api', () => ({
   dlStorageUsage: async () => usageTree(),
   getApiBase: () => 'http://test.local',
+  getSyncPairing: () => null,
 }));
 mock.module('./index-cache', () => ({
   clearDownloadIndex: () => {},

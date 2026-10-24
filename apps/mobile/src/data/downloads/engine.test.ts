@@ -28,6 +28,7 @@ mock.module('../api', () => ({
   dlRequeue: async () => [],
   dlStorageUsage: async () => ({ totalBytes: 0, seriesCount: 0, chapterCount: 0, pageCount: 0, bySeries: [] }),
   getApiBase: () => 'http://test.local',
+  getSyncPairing: () => null,
   invalidateAssetSource: () => {},
   resolveAssetSourceCached: async (u: string) => u,
 }));

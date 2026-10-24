@@ -28,6 +28,7 @@ import * as mock from './mock';
 import { feedCounts } from './activity/feed-counts';
 import { getNotifyPrefsSync } from './activity/prefs';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './downloads/constants';
+import { hubChapterPages } from './downloads/hub';
 import { localChapterPages } from './downloads/index-cache';
 import type {
   ActivityEntry,
@@ -857,7 +858,7 @@ const realDataSource: DataSource = {
       // Served BEFORE asking the bridge, not only when it fails: the bridge's grid is a page-list
       // round-trip plus one rate-limited lookup per tile it didn't inline, which on a slow source
       // filled a downloaded series' grid in over many seconds while the same pages sat on disk.
-      const local = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
+      const local = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID) ?? (await hubChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID));
       if (local) {
         return {
           chapterCount: local.length,
@@ -908,7 +909,8 @@ const realDataSource: DataSource = {
     // Offline serving: a fully-downloaded chapter serves its local `file://` pages directly — instant,
     // works with the network off, and each URI (absolute) passes straight through `resolveAssetSource`
     // untouched. On a bridge/network error, fall back to the downloaded copy if we have one.
-    const local = localChapterPages(bridgeId, seriesId, chapterId);
+    // Between the two: the computer this phone syncs with, when it holds the chapter and answers.
+    const local = localChapterPages(bridgeId, seriesId, chapterId) ?? (await hubChapterPages(bridgeId, seriesId, chapterId));
     if (local) return local;
     try {
       const pages = await api.getChapterPages(bridgeId, seriesId, chapterId, signal);
@@ -922,7 +924,8 @@ const realDataSource: DataSource = {
 
   async getDirectPages(bridgeId, seriesId, signal) {
     // Offline serving for a direct (chapterless) series — filed under the reserved direct chapter id.
-    const local = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
+    const local =
+      localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID) ?? (await hubChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID));
     if (local) return local;
     try {
       const pages = await fetchSeriesPages(bridgeId, seriesId);

@@ -9,6 +9,8 @@ mock.module('../api', () => ({
     return resolve(url, opts);
   },
   invalidateAssetSource: () => {},
+  getApiBase: () => 'http://test.local',
+  getSyncPairing: () => null,
 }));
 
 const { devicePageFetcher } = await import('./fetch-page');

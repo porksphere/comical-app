@@ -55,6 +55,7 @@ mock.module('../api', () => ({
     return activity;
   },
   getApiBase: () => 'http://test.local',
+  getSyncPairing: () => null,
   getBridges: async () => bridges,
   getLibrary: async () => library,
   getSavedChapters: async (_b: string, s: string) =>

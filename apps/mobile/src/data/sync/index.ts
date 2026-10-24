@@ -16,6 +16,7 @@ import { syncDeviceName } from '@/lib/device-name';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { getApiBase, getSyncPairing, setApiBaseOverride } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
+import { noteSyncStatus } from '../downloads/hub';
 import { autoDownloadSynced } from '../downloads/synced';
 import { getResolvedModeSync } from '../embedded/preference';
 import { queryClient } from '../query-client';
@@ -62,7 +63,10 @@ export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): Lib
       setApiBaseOverride(null);
       showToast('Your computer unlinked this device. Pair again to keep syncing.');
     },
-    onStatus: (next) => status$.set(next),
+    onStatus: (next) => {
+      status$.set(next);
+      noteSyncStatus(next);
+    },
     log: (message) => logDiagnostic('sync', message),
   });
   sync = s;

@@ -20,6 +20,7 @@ import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useApiBase, useSyncPaired } from '@/data/api';
+import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { connectServer } from '@/data/switch-server';
 import { setSyncEnabled, syncLibraryNow, useSyncStatus, type SyncStatus } from '@/data/sync';
@@ -79,6 +80,7 @@ function DeviceRows() {
   const paired = useSyncPaired();
   const sync = useSyncStatus();
   const [chosenName, setChosenName] = useChosenSyncDeviceName();
+  const { fromHub } = useDownloadPrefs();
   // Only an on-device library needs syncing — a remote server's library is already shared by every
   // client reading it, so a phone running bridges on a server has nothing to do here.
   const embeddedAvailable = isEmbeddedRuntimeAvailable();
@@ -144,6 +146,14 @@ function DeviceRows() {
               { accessibilityLabel: 'Sync server' },
             )
           }
+        />
+      )}
+      {sync.enabled && (
+        <SettingsToggleRow
+          label="Read from your computer"
+          description="When it can be reached, take the pages it has downloaded from it instead of the source."
+          value={fromHub}
+          onChange={(v) => downloadPrefs$.fromHub.set(v)}
         />
       )}
       {sync.enabled && (

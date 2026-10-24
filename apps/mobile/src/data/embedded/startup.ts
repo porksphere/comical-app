@@ -43,6 +43,7 @@ import { expoBlobStore } from '../downloads/blob-store';
 import { installNetworkAutoResume, mayDownloadNow, resumePendingDownloads } from '../downloads/engine';
 import { installDownloadProgress } from '../downloads/events';
 import { devicePageFetcher, onDevicePageRetry } from '../downloads/fetch-page';
+import { hubFirst, installHubDownloads } from '../downloads/hub';
 import { hydrateDownloadIndex } from '../downloads/index-cache';
 import { getDownloadPrefsSync } from '../downloads/prefs';
 import { swapDataSourceMode } from './apply-mode';
@@ -92,7 +93,7 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     // and the Wi-Fi-only policy gates the drain. See `getEmbeddedDownloadEngine()` for the lifecycle.
     downloadsEngine: {
       blobs: expoBlobStore,
-      fetchPage: devicePageFetcher,
+      fetchPage: hubFirst(devicePageFetcher),
       mayDownload: mayDownloadNow,
       onPageRetry: onDevicePageRetry,
     },
@@ -165,6 +166,8 @@ export function startEmbeddedRuntime(): void {
   });
   // Warm the sync offline index from the manifest, then resume any downloads interrupted last session.
   void hydrateDownloadIndex().then(() => resumePendingDownloads());
+  // Pages from the paired computer: take it for reachable again whenever the network or foreground changes.
+  installHubDownloads();
   // Pipe live download progress for the resolved mode (embedded engine subscription / remote SSE).
   installDownloadProgress();
   // Auto-resume when connectivity/Wi-Fi returns (not just on next launch).

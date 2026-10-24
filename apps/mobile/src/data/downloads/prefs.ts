@@ -20,6 +20,8 @@ export interface DownloadPrefs {
   autoPages: boolean;
   /** Download chapters a library sync finds on series already saved. */
   autoNew: boolean;
+  /** Read pages the computer this phone syncs with has downloaded, from it, when it can be reached (`hub.ts`). */
+  fromHub: boolean;
 }
 
 const DEFAULTS: DownloadPrefs = {
@@ -29,6 +31,7 @@ const DEFAULTS: DownloadPrefs = {
   autoChapters: false,
   autoPages: false,
   autoNew: false,
+  fromHub: true,
 };
 
 export const downloadPrefs$ = persisted$<DownloadPrefs>('comical:dl:prefs-local', DEFAULTS);
