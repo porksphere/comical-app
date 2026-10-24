@@ -297,6 +297,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
   // Live zoom transform for the current page (scale + pan), written to the DOM.
   const zoom = useRef({ scale: 1, tx: 0, ty: 0 });
+  // The content point the reader is looking AT — what was under the middle of the viewport the last
+  // time the page was panned or zoomed in on — in the page's own unscaled coordinates, from its
+  // centre. The keyboard's zoom pivots about wherever this sits on screen (`registerZoomTarget`),
+  // so a page zoomed in on, panned to a panel, zoomed all the way out and zoomed in again comes
+  // back to that panel rather than to the middle of the page. Only a pan or a zoom IN moves it: a
+  // zoom out is clamped toward the centre as the page shrinks into the viewport, and reading the
+  // focus back off that would lose the place at exactly the moment it is needed. Null (a page just
+  // arrived at) means whatever is under the middle now.
+  const focusRef = useRef<Point | null>(null);
 
   // rAF handle for the in-flight pan-momentum glide (null when idle).
   const inertiaRef = useRef<number | null>(null);
@@ -361,10 +370,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     [width],
   );
 
-  const writeZoom = useCallback((animate: boolean) => {
+  // `remember` is whether this write moves the focus (see `focusRef`) — a pan or a zoom in does,
+  // a rest or a zoom out leaves it where the reader last put it.
+  const writeZoom = useCallback((animate: boolean, remember = true) => {
     const el = zoomRef.current;
     if (!el) return;
     const { scale, tx, ty } = zoom.current;
+    if (remember) focusRef.current = { x: -tx / scale, y: -ty / scale };
     el.style.transition = animate ? `transform ${ZOOM_SNAP_MS}ms ease-out` : 'none';
     el.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`;
     if (!standby) zoomLevel$.set(scale / restRef.current.restScale);
@@ -433,16 +445,18 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         tx = clamp(tap.x - cx - s * contentX, -limit.x, limit.x);
       }
       zoom.current = { scale: s, tx, ty: restTy };
-      writeZoom(animate);
+      writeZoom(animate, false);
       setZoomedNow(s > ZOOM_EPSILON);
     },
     [cancelInertia, restTarget, setZoomedNow, writeZoom, zoom, width, height],
   );
 
   // Scale the current page to `target` about a viewport point, keeping the content under it in
-  // place — the wheel's zoom, and the stepper's about the middle.
+  // place — the wheel's zoom about the pointer, the keyboard's about the focus. A zoom IN here is
+  // an aim and moves the focus (see `focusRef`) unless `remember` says otherwise; a zoom out never
+  // does.
   const zoomAround = useCallback(
-    (target: number, x: number, y: number, animate: boolean) => {
+    (target: number, x: number, y: number, animate: boolean, remember?: boolean) => {
       cancelInertia();
       const { maxScale: max } = restRef.current;
       const s = clamp(target, Math.min(1, restRef.current.restScale), max);
@@ -455,7 +469,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         tx: clamp(x - cx - s * ((x - cx - tx0) / s0), -limit.x, limit.x),
         ty: clamp(y - cy - s * ((y - cy - ty0) / s0), -limit.y, limit.y),
       };
-      writeZoom(animate);
+      writeZoom(animate, remember ?? s > s0);
       setZoomedNow(s > ZOOM_EPSILON);
     },
     [cancelInertia, setZoomedNow, writeZoom, zoom, panRoom, width, height],
@@ -476,6 +490,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     const prev = restedRef.current;
     restedRef.current = { index, known: imageKnown };
     const arriving = prev == null || prev.index !== index;
+    if (arriving) focusRef.current = null;
     // Physical order IS reading order here (`data` is pre-reversed for RTL), so a lower index is
     // a page swiped back onto: it is entered at its far edge.
     const fromFarEdge = prev != null && index < prev.index;
@@ -574,7 +589,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         // the effect on its own rest, once its shape is known; until then it stands at 1×.
         cancelInertia();
         zoom.current = { scale: 1, tx: 0, ty: 0 };
-        writeZoom(false);
+        writeZoom(false, false);
         setZoomedNow(false);
         setIndex(clamped);
         onPageChange(reportOf(clamped));
@@ -734,7 +749,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     zoomLevel$.set(zoom.current.scale / restRef.current.restScale);
     return registerZoomTarget({
       zoomTo(level, animate = true) {
-        zoomAround(restRef.current.restScale * level, width / 2, height / 2, animate);
+        // About the focus, where it sits on screen now — kept inside the viewport, since a wheel
+        // zoom elsewhere since the last pan can have carried it just past an edge.
+        const { scale: s0, tx: tx0, ty: ty0 } = zoom.current;
+        const f = focusRef.current;
+        const x = f ? clamp(width / 2 + tx0 + s0 * f.x, 0, width) : width / 2;
+        const y = f ? clamp(height / 2 + ty0 + s0 * f.y, 0, height) : height / 2;
+        zoomAround(restRef.current.restScale * level, x, y, animate, false);
         keepZoomLevel(zoom.current.scale / restRef.current.restScale);
       },
       reset() {

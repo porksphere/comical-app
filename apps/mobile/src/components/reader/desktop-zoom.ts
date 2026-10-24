@@ -22,9 +22,10 @@ export const zoomLevel$ = observable(1);
 /** What a reader exposes to the stepper and the keys. Only the PRIMARY reader registers — a pager
  *  parked as the series page's backdrop must not zoom under the details card. */
 export type ZoomTarget = {
-  /** Zoom to `level` about the middle of the viewport (clamped to what the page allows) — eased,
-   *  unless `animate` is false: a held key moves it every frame, and an ease restarted every frame
-   *  only trails behind. */
+  /** Zoom to `level` (clamped to what the page allows) about the point the reader is FOCUSED on —
+   *  the content last panned to, wherever it sits on screen now, so zooming back in after a zoom
+   *  out returns to it rather than to the middle of the page — eased, unless `animate` is false: a
+   *  held key moves it every frame, and an ease restarted every frame only trails behind. */
   zoomTo: (level: number, animate?: boolean) => void;
   /** Back to the page's rest, as a double-click from a zoomed page does. */
   reset: () => void;
