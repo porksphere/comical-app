@@ -1286,16 +1286,17 @@ function SeriesReaderInstance({
     [nextChapter, prevChapter],
   );
 
-  // ── Stitching (native paged mode): the pager's window ────────────────────
+  // ── Stitching: the reader's window ───────────────────────────────────────
   // Adjacent chapters' page lists, subscribed eagerly (cache-first; a list is just URLs) so the
-  // native paged reader can stitch them into ONE flat pager — swiping across a chapter boundary
-  // is then an ordinary page turn with an in-place relabel, no remount.
-  // BOTH native modes stitch now. It was paged-only for as long as the pager was the only list
-  // that could take a chapter joining in front of the reader without lurching — vertical mode was
-  // left crossing chapters by jumping, which is why it never had the paged reader's peek of the
-  // page you are about to reach, and why it needed sentinels and buttons to do what scrolling
-  // should. Both readers are LegendLists that anchor on the item now, so both can hold a window.
-  const stitched = !IS_WEB && !isDirect && !sequence;
+  // reader can stitch them into ONE flat list — crossing a chapter boundary is then an ordinary
+  // page turn with an in-place relabel, no remount.
+  // Every reader stitches now. It was native-paged-only for as long as the pager was the only list
+  // that could take a chapter joining in front of the reader without lurching — the others were
+  // left crossing chapters by jumping, which is why they never had the paged reader's peek of the
+  // page you are about to reach, and why they needed sentinels and buttons to do what scrolling
+  // should. The native readers are LegendLists that anchor on the item; the web ones hold the page
+  // on screen by key themselves.
+  const stitched = !isDirect && !sequence;
   // The committed side of the reveal (declared up here — the stitching queries below gate on
   // it). The screen opens ON the details; see the reveal section further down.
   const [detailsActive, setDetailsActive] = useState(!readerFirst);
@@ -1531,9 +1532,8 @@ function SeriesReaderInstance({
     });
   }, [readerReady, target, pages, segments]);
 
-  // The backward jump's destination, warmed. Wherever the previous chapter is not in the pager's
-  // window — the whole of vertical mode, which never stitches, plus the paged cases where the
-  // window couldn't take it — going back lands on that chapter's LAST page, and the pane's own
+  // The backward jump's destination, warmed. Wherever the previous chapter is not in the reader's
+  // window — the window couldn't take it — going back lands on that chapter's LAST page, and the pane's own
   // warm-ahead can't reach it: that walks the window, and this page is outside it by definition. So
   // the screen warms the few pages the jump can land on, and the crossing arrives on an image like
   // any other. Standby is excluded like every other image request on this screen.
@@ -3950,10 +3950,10 @@ function SeriesReaderInstance({
           ) : (
             <ReaderPane
               onVisiblePage={setVisiblePage}
-              // Stitched native paged mode is keyed by the RUN (plus the explicit-jump nonce), so
-              // a boundary crossing's relabel does NOT remount it — only leaving the run (chapter
-              // list tap, skip button, cold-window fallback) does. Web/webtoon stay keyed by
-              // chapter (their crossings are the remount path).
+              // Stitched, the pane is keyed by the RUN (plus the explicit-jump nonce), so a boundary
+              // crossing's relabel does NOT remount it — only leaving the run (chapter list tap,
+              // skip button, cold-window fallback) does. Direct and sequence reads stay keyed by
+              // chapter.
               key={stitched ? `run:${runKey}:${jumpNonce}` : `${target.chapterId ?? DIRECT_CHAPTER_ID}:${jumpNonce}`}
               ref={paneRef}
               pages={pages}
@@ -4680,8 +4680,8 @@ type ReaderPaneHandle = {
   pagesOnScreen: (chapterId: string, page: number) => { pages: number[]; rtl: boolean };
 };
 
-/** The reader itself + its bottom chrome, keyed to ONE RUN (the stitched window — native paged)
- *  or one chapter (web/webtoon/direct), and mounted only once its pages are in — so the start
+/** The reader itself + its bottom chrome, keyed to ONE RUN (the stitched window) or one chapter
+ *  (direct/sequence), and mounted only once its pages are in — so the start
  *  position seeds `useState`/`useRef` directly at mount (the pagers read `initialPage` exactly
  *  once). Stitched crossings relabel in place through `onRelabel`; explicit jumps swap the whole
  *  pane; the unmount flush records the outgoing chapter's final position. */
@@ -4689,8 +4689,8 @@ const ReaderPane = forwardRef<
   ReaderPaneHandle,
   {
     pages: string[];
-    /** The stitched window ([prev?, current, next?]) for the NATIVE PAGED reader — empty for
-     *  web/webtoon/direct, which read per-chapter. See the screen's run machinery. */
+    /** The stitched window ([prev?, current, next?]) — empty for direct/sequence reads, which are
+     *  per-chapter. See the screen's run machinery. */
     segments: Segment[];
     /** A stitched crossing settled on a page of a NEIGHBOURING segment: the screen relabels which
      *  chapter is "current" in place (no remount — the pane is keyed by the run). */
@@ -4862,11 +4862,11 @@ const ReaderPane = forwardRef<
     [pages, chapterId],
   );
 
-  // ── Stitched flat pager (native paged, chaptered) ──────────────────────────
+  // ── Stitched flat list (chaptered) ─────────────────────────────────────────
   // Declared early (a noop until the record section below fills it) so the flat handlers can
   // flush the outgoing chapter's progress at a crossing.
   const recordRef = useRef<() => void>(() => {});
-  const stitched = !IS_WEB && segments.length > 0;
+  const stitched = segments.length > 0;
   const flatItems: ReaderPageItem[] = useMemo(
     () => segments.flatMap((s) => s.pages.map((uri, i) => ({ uri, key: `${s.id}:${i}`, pageNumber: i + 1 }))),
     [segments],
@@ -5062,7 +5062,7 @@ const ReaderPane = forwardRef<
   );
   // Boundary page-turns: prefer stepping within the stitched flat list (the same seamless relabel
   // path a swipe crossing takes); the explicit-jump fallback only covers a cold window (adjacent
-  // pages not loaded yet) — or web/webtoon, whose readers aren't stitched.
+  // pages not loaded yet) and the unstitched direct/sequence reads.
   const turnPrev = useCallback(() => {
     const { first } = spreadAround(currentRef.current);
     if (first > 0) {
@@ -5312,8 +5312,7 @@ const ReaderPane = forwardRef<
           key={pagerMount.layout}
           ref={pagedRef}
           // Stitched: the whole window as ONE flat pager, so a boundary swipe is an ordinary page
-          // turn (position reports come back flat and get located/relabeled above). Web keeps
-          // per-chapter pages (its pager hands boundary turns to onPrev/onNext itself).
+          // turn (position reports come back flat and get located/relabeled above).
           pages={stitched ? flatItems : items}
           width={width}
           height={pageHeight}
@@ -5327,7 +5326,7 @@ const ReaderPane = forwardRef<
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // Keep the counter live during fast flicks — against the segment the page belongs to
           // when stitched (a crossing must count against the chapter being entered).
-          onVisiblePageChange={IS_WEB ? undefined : stitched ? handleFlatVisiblePage : setCurrent}
+          onVisiblePageChange={stitched ? handleFlatVisiblePage : setCurrent}
           scrubTarget={scrubFlat}
           scrubbing={scrubbing}
           standby={standby}
@@ -5424,8 +5423,8 @@ const ReaderPane = forwardRef<
       <Animated.View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       {IS_WEB ? (
         <ProgressPill
-          current={currentPage}
-          total={pages.length}
+          current={shown.page}
+          total={shown.total}
           visible={chromeVisible}
           countWhenHidden={settings.pageCountWhenHidden}
           onJump={(i) => {

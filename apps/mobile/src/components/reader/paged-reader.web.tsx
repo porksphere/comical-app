@@ -60,9 +60,8 @@ export type PagedReaderHandle = {
 };
 
 type Props = {
-  /** Per-chapter on web (nothing is stitched here): this pager hands a swipe
-   *  past the last/first page to onNext/onPrev (see finalizeSwipe), so chapter
-   *  transitions stay the screen's business. Item shape shared with native. */
+  /** The stitched window, as on native: crossing into a neighbouring chapter is an ordinary turn. A
+   *  swipe past either END of it goes to onNext/onPrev (see finalizeSwipe). */
   pages: ReaderPageItem[];
   width: number;
   height: number;
@@ -76,6 +75,9 @@ type Props = {
   onSwitchFit: (image: Size | null) => void;
   initialPage: number;
   onPageChange: (logical: number) => void;
+  /** See the native prop. A turn here never passes through pages it doesn't land on, so this fires
+   *  with every `onPageChange`, just ahead of it. */
+  onVisiblePageChange?: (logical: number) => void;
   onPrev: () => void;
   onNext: () => void;
   onToggleChrome: () => void;
@@ -169,6 +171,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     onSwitchFit,
     initialPage,
     onPageChange,
+    onVisiblePageChange,
     onPrev,
     onNext,
     onToggleChrome,
@@ -202,7 +205,22 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   );
   const data = useMemo(() => (rtl ? [...spreads].reverse() : spreads), [spreads, rtl]);
 
+  // `initialPage` is read once, as native reads it: in a stitched window it moves with every chapter
+  // joining at the head and every relabel, none of which moves the reader.
   const [index, setIndex] = useState(() => toPhysical(spreadAt(initialPage)));
+  // The cell on screen holds still by KEY when the track changes under it: a chapter joining the
+  // window, pairing settling (under RTL every spread after it in reading order sits before it), the
+  // direction flipping. Re-indexed during render, so no frame — and no `near` window — is ever
+  // computed against the old index: one that was would unmount the page being read and fade it in
+  // again.
+  const [indexed, setIndexed] = useState({ data, moves: 0 });
+  if (indexed.data !== data) {
+    const key = indexed.data[index]?.key;
+    const at = key == null ? -1 : data.findIndex((cell) => cell.key === key);
+    const moved = at >= 0 && at !== index;
+    setIndexed({ data, moves: indexed.moves + (moved ? 1 : 0) });
+    if (moved) setIndex(at);
+  }
   const [zoomed, setZoomed] = useState(false);
   // Whether the CURRENT page is showing its failed/Retry state. When true, the
   // pointer handlers below back off entirely (no capture, no swipe/tap
@@ -516,20 +534,22 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // shape brings with it is applied at once, so a page is drawn at rest from its first frame
   // rather than growing into it.
   const imageKnown = image != null;
-  const restedRef = useRef<{ index: number; known: boolean } | null>(null);
+  const cellKey = data[index]?.key;
+  const restedRef = useRef<{ index: number; key: string | undefined; known: boolean } | null>(null);
   useEffect(() => {
     const prev = restedRef.current;
-    restedRef.current = { index, known: imageKnown };
-    const arriving = prev == null || prev.index !== index;
+    restedRef.current = { index, key: cellKey, known: imageKnown };
+    // By key: a cell re-indexed under the reader (see `indexed`) hasn't arrived anywhere.
+    const arriving = prev == null || prev.key !== cellKey;
     if (arriving) focusRef.current = null;
     // Physical order IS reading order here (`data` is pre-reversed for RTL), so a lower index is
     // a page swiped back onto: it is entered at its far edge.
-    const fromFarEdge = prev != null && index < prev.index;
+    const fromFarEdge = arriving && prev != null && index < prev.index;
     const { scale, tx, ty } = zoom.current;
     const want = restTarget(fromFarEdge);
     if (Math.abs(scale - want.scale) < 0.001 && Math.abs(tx - want.tx) < 0.5 && Math.abs(ty - want.ty) < 0.5) return;
     goToRest(!arriving && prev.known && imageKnown, fromFarEdge);
-  }, [index, restScale, restTx, restTy, imageKnown, goToRest, restTarget, zoom]);
+  }, [index, cellKey, restScale, restTx, restTy, imageKnown, goToRest, restTarget, zoom]);
 
   // Momentum after a pan release: keep gliding from the last pan velocity,
   // decelerating each frame and stopping dead at the pan bounds. Grabbing again
@@ -623,11 +643,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         writeZoom(false, false);
         setZoomedNow(false);
         setIndex(clamped);
-        onPageChange(reportOf(clamped));
+        const page = reportOf(clamped);
+        onVisiblePageChange?.(page);
+        onPageChange(page);
       }
       writeTrack(0, animate);
     },
-    [clampIndex, cancelInertia, setZoomedNow, writeZoom, zoom, onPageChange, reportOf, writeTrack],
+    [clampIndex, cancelInertia, setZoomedNow, writeZoom, zoom, onPageChange, onVisiblePageChange, reportOf, writeTrack],
   );
 
   useImperativeHandle(
@@ -647,50 +669,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     [settleTo, toPhysical, spreadAt, spreads],
   );
 
-  // Pairing settling around the cell on screen can move its INDEX without moving it — under RTL
-  // every spread after it in reading order sits before it on the track. Nothing here anchors by
-  // key the way the native list does, so the track follows the cell's key itself.
-  const cellKeyRef = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    const key = cellKeyRef.current;
-    const at = key == null ? -1 : data.findIndex((cell) => cell.key === key);
-    if (at < 0 || at === indexRef.current) return;
-    indexRef.current = at;
-    setIndex(at);
-    writeTrack(0, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-anchors on a data change only
-  }, [data]);
-  useLayoutEffect(() => {
-    cellKeyRef.current = data[index]?.key ?? null;
-  });
   useEffect(() => {
     setAnchorKey(data[index]?.key ?? null);
   }, [data, index]);
 
-  // `initialPage` only seeds `index`'s initial state (read once, at mount) —
-  // but the screen's own `currentPage` briefly starts at 0 before its
-  // pages-loaded effect corrects it to the real requested start index, and
-  // this component mounts in that same
-  // window (gated behind `!pages`). Re-sync when the requested start itself
-  // moves (or stops being clamped by a short `n`). Keyed on that value rather
-  // than on the effect re-running: `writeTrack` is rebuilt on every resize, and
-  // a re-run that compared against the start sent the reader back to it.
-  // A direction flip mirrors the index instead, so the same page stays up.
-  //
-  // Compared as a PAGE: the spread holding it moves whenever pairing settles, and that is not the
-  // start moving.
-  const synced = useRef({ start: initialPage, rtl });
-  useEffect(() => {
-    const start = initialPage;
-    const prev = synced.current;
-    if (start === prev.start && rtl === prev.rtl) return;
-    synced.current = { start, rtl };
-    const target = start !== prev.start ? toPhysical(spreadAt(start)) : n - 1 - indexRef.current;
-    if (target === indexRef.current) return;
-    indexRef.current = target;
-    setIndex(target);
-    writeTrack(0, false);
-  }, [initialPage, rtl, n, toPhysical, spreadAt, writeTrack]);
+  // A re-indexed cell is placed before paint, under the finger if a swipe is carrying it.
+  useLayoutEffect(() => {
+    if (indexed.moves) writeTrack(gesture.mode === 'swipe' ? gesture.dx : 0, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a re-index places the track here
+  }, [indexed.moves]);
 
   // Position the track on mount and whenever the viewport (width) changes.
   useEffect(() => {

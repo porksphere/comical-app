@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useReducer, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useReducer, useRef, useState } from 'react';
 
 import {
   isDesktopPointer,
@@ -32,9 +32,8 @@ import { keyActionOf, moveDirectionOf, readerScopeActive } from '@/lib/keybindin
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
 
 type Props = {
-  /** Item shape shared with native (see paged-reader's ReaderPageItem). Web is never stitched, so
-   *  this is always one chapter's worth — but the shape is common so the pane has one thing to
-   *  pass. */
+  /** The stitched window, as on native: scrolling off a chapter carries on into the next. Chapters
+   *  join at either end; one joining above the reader is absorbed without moving it. */
   pages: ReaderPageItem[];
   width: number;
   /** Viewport height — only used by the `'fit-page'` paginated variant, to
@@ -44,8 +43,12 @@ type Props = {
   /** Whether a double-tap magnifies. Off, a click toggles chrome at once instead of waiting out a
    *  second one. */
   doubleTapZoom: boolean;
+  /** Read once, at mount — see the paged reader's. */
   initialPage: number;
+  /** The page the scroll came to rest on. */
   onPageChange: (index: number) => void;
+  /** The page under the middle of the window, every frame it changes. Display only. */
+  onVisiblePageChange?: (index: number) => void;
   onToggleChrome: () => void;
   /** See the native variant: the series page's strip cross-fades its standing page in. */
   standby?: boolean;
@@ -93,9 +96,12 @@ const DRAG_SLOP = 5;
 const DRAG_FRICTION = 0.94;
 const DRAG_MIN_V = 0.02;
 
-function seedWindow(center: number, n: number): Set<number> {
-  const s = new Set<number>();
-  for (let i = Math.max(0, center - 2); i <= Math.min(n - 1, center + 2); i++) s.add(i);
+// How long the scroll has to be still before the page under it counts as settled.
+const SETTLE_MS = 150;
+
+function withWindow(prev: ReadonlySet<string>, pages: ReaderPageItem[], center: number): Set<string> {
+  const s = new Set(prev);
+  for (let i = Math.max(0, center - 2); i <= Math.min(pages.length - 1, center + 2); i++) s.add(pages[i]!.key);
   return s;
 }
 
@@ -113,7 +119,7 @@ function rel(touch: Touch, rect: DOMRect): Point {
 // explicit instant jump `goToPage` already does for Left/Right/A/D.
 
 export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(
-  { pages, width, height, pageFit, doubleTapZoom, initialPage, onPageChange, onToggleChrome, standby },
+  { pages, width, height, pageFit, doubleTapZoom, initialPage, onPageChange, onVisiblePageChange, onToggleChrome, standby },
   ref,
 ) {
   const n = pages.length;
@@ -121,9 +127,24 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const slotsRef = useRef<(HTMLDivElement | null)[]>([]);
+  const pagesRef = useRef(pages);
+  useLayoutEffect(() => {
+    pagesRef.current = pages;
+  }, [pages]);
 
-  // Which slots currently mount a real image (lazy; viewport-driven).
-  const [loaded, setLoaded] = useState<Set<number>>(() => seedWindow(initialPage, n));
+  // Which slots currently mount a real image (lazy; viewport-driven), by key, so a chapter joining
+  // above doesn't hand every mounted image to the slot that now sits at its index.
+  const [loaded, setLoaded] = useState<ReadonlySet<string>>(() => withWindow(new Set(), pages, initialPage));
+
+  // How far the strip's indices moved the last time a chapter joined above the reader (see the
+  // layout effect that absorbs it). Caught up during render, so the slots are never drawn a frame
+  // against the old indices.
+  const [head, setHead] = useState({ pages, shift: 0, joins: 0 });
+  if (head.pages !== pages) {
+    const firstKey = head.pages[0]?.key;
+    const shift = firstKey == null ? 0 : Math.max(0, pages.findIndex((p) => p.key === firstKey));
+    setHead({ pages, shift, joins: head.joins + (shift > 0 ? 1 : 0) });
+  }
 
   // Running estimate (height/width) for slots that haven't loaded a real image
   // yet, refined from every slot that does. `bump` forces a re-render when it
@@ -178,7 +199,11 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   });
 
   const onPageChangeRef = useRef(onPageChange);
-  onPageChangeRef.current = onPageChange;
+  const onVisiblePageChangeRef = useRef(onVisiblePageChange);
+  useLayoutEffect(() => {
+    onPageChangeRef.current = onPageChange;
+    onVisiblePageChangeRef.current = onVisiblePageChange;
+  });
 
   // Where the strip's left edge sits in the scrolled content, in screen pixels. Below 1× (the
   // desktop zoom's way of narrowing a window-wide strip) it is centred in the room it leaves. Above
@@ -316,32 +341,54 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   // with your position. `lastCurrentRef` lets it pick up from where it left
   // off instead of restarting each time.
   const lastCurrentRef = useRef(initialPage);
+  const reportedRef = useRef(initialPage);
+  // The slot the reader is on and where it stood, as of the last scroll frame: what a chapter
+  // joining above is measured against.
+  const anchorRef = useRef<{ key: string; top: number } | null>(null);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (settleTimerRef.current != null) clearTimeout(settleTimerRef.current);
+    },
+    [],
+  );
   const updateCurrent = useCallback(() => {
     const root = scrollerRef.current;
     if (!root) return;
     const slots = slotsRef.current;
-    const count = slots.length;
+    const count = Math.min(slots.length, pagesRef.current.length);
     if (count === 0) return;
-    if (paged && height > 0) {
-      // Fixed-height slots in this mode — direct arithmetic, no DOM reads.
-      const idx = clamp(Math.floor((root.scrollTop + root.clientHeight * 0.5) / height), 0, count - 1);
-      lastCurrentRef.current = idx;
-      onPageChangeRef.current(idx);
-      return;
-    }
     const rootTop = root.getBoundingClientRect().top;
-    const half = root.clientHeight * 0.5;
     const topOf = (i: number) => {
       const el = slots[i];
       return el ? el.getBoundingClientRect().top - rootTop : null;
     };
-    let i = clamp(lastCurrentRef.current, 0, count - 1);
-    // Scrolled up: walk back while the current slot hasn't reached halfway yet.
-    while (i > 0 && (topOf(i) ?? 0) > half) i--;
-    // Scrolled down: walk forward while the next slot has already passed halfway.
-    while (i < count - 1 && (topOf(i + 1) ?? half + 1) <= half) i++;
+    let i: number;
+    if (paged && height > 0) {
+      // Fixed-height slots in this mode — direct arithmetic.
+      i = clamp(Math.floor((root.scrollTop + root.clientHeight * 0.5) / height), 0, count - 1);
+    } else {
+      const half = root.clientHeight * 0.5;
+      i = clamp(lastCurrentRef.current, 0, count - 1);
+      // Scrolled up: walk back while the current slot hasn't reached halfway yet.
+      while (i > 0 && (topOf(i) ?? 0) > half) i--;
+      // Scrolled down: walk forward while the next slot has already passed halfway.
+      while (i < count - 1 && (topOf(i + 1) ?? half + 1) <= half) i++;
+    }
     lastCurrentRef.current = i;
-    onPageChangeRef.current(i);
+    const top = topOf(i);
+    anchorRef.current = top == null ? null : { key: pagesRef.current[i]!.key, top };
+    if (reportedRef.current !== i) {
+      reportedRef.current = i;
+      onVisiblePageChangeRef.current?.(i);
+    }
+    // Settling is what may relabel the chapter, and a relabel can grow the strip above the reader:
+    // never under a scroll still in motion, where correcting for it would stop a fling dead.
+    if (settleTimerRef.current != null) clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = setTimeout(() => {
+      settleTimerRef.current = null;
+      onPageChangeRef.current(lastCurrentRef.current);
+    }, SETTLE_MS);
   }, [paged, height]);
 
   const ticking = useRef(false);
@@ -371,12 +418,13 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
           const next = new Set(prev);
           let changed = false;
           for (const e of entries) {
-            const idx = Number((e.target as HTMLElement).dataset.index);
-            if (e.isIntersecting && !next.has(idx)) {
-              next.add(idx);
+            const key = (e.target as HTMLElement).dataset.key;
+            if (key == null) continue;
+            if (e.isIntersecting && !next.has(key)) {
+              next.add(key);
               changed = true;
-            } else if (!e.isIntersecting && next.has(idx)) {
-              next.delete(idx);
+            } else if (!e.isIntersecting && next.has(key)) {
+              next.delete(key);
               changed = true;
             }
           }
@@ -728,28 +776,36 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     };
   }, [standby]);
 
+  // A chapter joined above: the reader's slot is put back where it stood, before paint. Not left to
+  // the browser's scroll anchoring, which doesn't anchor a scroller at the very top (the reader on
+  // the first page of the window, about to scroll back into the chapter arriving) and isn't in
+  // every WebKit; where it did anchor, the slot is already in place and this measures nothing to do.
+  useLayoutEffect(() => {
+    if (!head.joins) return;
+    lastCurrentRef.current += head.shift;
+    reportedRef.current += head.shift;
+    const root = scrollerRef.current;
+    const anchor = anchorRef.current;
+    if (!root || !anchor) return;
+    const slot = slotsRef.current[pages.findIndex((p) => p.key === anchor.key)];
+    if (!slot) return;
+    root.scrollTop += slot.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.top;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a chapter joining above moves the strip here
+  }, [head.joins]);
+
   // Jump to the entry page once mounted, then correct twice more shortly after:
   // the first jump only has the generic estimate to go on for most slots (real
   // heights are unknown until each image loads), so as the seeded window around
   // the target loads and refines `aspectRef`, re-running scrollIntoView tightens
   // the landing spot instead of leaving it wherever the initial guess put it.
-  // Skipped once the user starts scrolling on their own.
-  //
-  // Reacts to `initialPage` changing (not just mount): the screen's own
-  // `currentPage` briefly starts at 0 before its pages-loaded effect corrects
-  // it to the real requested start index, and this component can mount in
-  // that window (gated behind `!pages`) — so the very first `initialPage` it
-  // sees may already be stale. `lastTargetRef` de-dupes so this only re-runs
-  // for an actual change (that one correction, or an imperative `goToPage`'s
-  // own prop echo), not on every ordinary scroll-driven update.
-  const lastTargetRef = useRef<number | null>(null);
+  // Skipped once the user starts scrolling on their own. The target is held by
+  // KEY: a chapter joining above inside those 800ms moves its index.
+  const [entryKey] = useState(() => (initialPage > 0 ? pages[Math.min(n - 1, initialPage)]?.key : undefined));
   useEffect(() => {
-    if (initialPage === lastTargetRef.current) return;
-    lastTargetRef.current = initialPage;
-    if (initialPage <= 0) return;
-    const target = Math.min(n - 1, initialPage);
+    if (entryKey == null) return;
     const jump = () => {
-      if (!userScrolledRef.current) slotsRef.current[target]?.scrollIntoView({ block: 'start' });
+      if (userScrolledRef.current) return;
+      slotsRef.current[pagesRef.current.findIndex((p) => p.key === entryKey)]?.scrollIntoView({ block: 'start' });
     };
     const id = requestAnimationFrame(jump);
     const t1 = setTimeout(jump, 250);
@@ -759,18 +815,20 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [initialPage, n]);
+  }, [entryKey]);
+  // A strip that opens at the top never scrolls to get there, and a chapter joining above it still
+  // needs an anchor to hold.
+  useEffect(() => {
+    const id = requestAnimationFrame(updateCurrent);
+    return () => cancelAnimationFrame(id);
+  }, [updateCurrent]);
 
   useImperativeHandle(
     ref,
     () => ({
       goToPage(index: number) {
         const clamped = Math.max(0, Math.min(n - 1, index));
-        setLoaded((prev) => {
-          const next = new Set(prev);
-          for (let i = clamped - 2; i <= clamped + 2; i++) if (i >= 0 && i < n) next.add(i);
-          return next;
-        });
+        setLoaded((prev) => withWindow(prev, pages, clamped));
         // Left/Right/A/D jump straight to the target page — a direct `scrollTop`
         // write, not `scrollIntoView`, so nothing can animate it (no ambient
         // `scroll-behavior: smooth`, no scroll-snap easing on the transition).
@@ -782,7 +840,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
         });
       },
     }),
-    [n],
+    [n, pages],
   );
 
   // See `isDesktopPointer` — CSS scroll-snap only applies on touch sessions.
@@ -792,7 +850,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     <div ref={scrollerRef} onScroll={onScroll} onClick={onSurfaceClick} style={scrollerStyle(paged, snapEnabled)}>
       <div ref={contentRef} style={contentStyle}>
         {pages.map((item, i) => {
-          const isLoaded = loaded.has(i);
+          const isLoaded = loaded.has(item.key);
           const slotStyle = paged
             ? pagedSlotStyle(height)
             : isLoaded
@@ -801,7 +859,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
           return (
             <div
               key={item.key}
-              data-index={i}
+              data-key={item.key}
               ref={(el) => {
                 slotsRef.current[i] = el;
               }}
