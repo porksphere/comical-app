@@ -1,21 +1,11 @@
 import { IntStepper } from '@/components/reader/int-stepper';
+import { snapToStep, type RangeSliderProps } from '@/components/settings/range-slider-shared';
 
-// A bounded number chosen along a track. This is the NATIVE fallback: the stops counted out on the
-// platform's own integer control, since no row that holds one is reachable there today (the only
-// one is the Keyboard screen, which is web's). Web draws a real track — see the `.web.tsx` sibling.
+// A bounded number chosen along a track: the system slider on iOS and Android (the `.ios.tsx` and
+// `.android.tsx` siblings), a restyled range input on web (`.web.tsx`). This is the fallback for any
+// other platform: the stops counted out on the integer stepper.
 
-export type RangeSliderProps = {
-  value: number;
-  min: number;
-  max: number;
-  /** The distance between stops; the value is always one of them. */
-  step: number;
-  onChange: (value: number) => void;
-  /** The value as it reads beside the track. */
-  format: (value: number) => string;
-  /** `<prefix>.value` names the number, `<prefix>.track` the control. */
-  testIdPrefix: string;
-};
+export type { RangeSliderProps } from '@/components/settings/range-slider-shared';
 
 export function RangeSlider({ value, min, max, step, onChange, testIdPrefix }: RangeSliderProps) {
   const stops = Math.round((max - min) / step);
@@ -24,7 +14,7 @@ export function RangeSlider({ value, min, max, step, onChange, testIdPrefix }: R
       value={Math.round((value - min) / step)}
       min={0}
       max={stops}
-      onChange={(i) => onChange(min + i * step)}
+      onChange={(i) => onChange(snapToStep(min + i * step, min, max, step))}
       testIdPrefix={testIdPrefix}
     />
   );
