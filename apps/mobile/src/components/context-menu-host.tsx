@@ -165,7 +165,9 @@ function commitRow(index: number): void {
  * Installed once at startup, ahead of any reader, so its capture listener runs first.
  */
 export function installMenuKeys(): void {
-  if (typeof window === 'undefined') return;
+  // React Native aliases `window` to the global, with no `addEventListener` on it, so the typeof
+  // check alone passes there and the call below is a fatal at startup.
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
   window.addEventListener(
     'keydown',
     (e) => {

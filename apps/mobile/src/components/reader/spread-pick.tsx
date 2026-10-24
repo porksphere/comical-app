@@ -58,7 +58,9 @@ function pickBoth(req: SpreadPickRequest): void {
  * would turn the page under it. Installed once at startup, ahead of any reader, so it runs first.
  */
 export function installSpreadPickKeys(): void {
-  if (typeof window === 'undefined') return;
+  // React Native aliases `window` to the global, with no `addEventListener` on it, so the typeof
+  // check alone passes there and the call below is a fatal at startup.
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
   window.addEventListener(
     'keydown',
     (e) => {
