@@ -12,7 +12,7 @@ import desktop from '../assets/screens/04-desktop.png';
 // Starlight's hero takes its image as raw HTML, so the phone there is the DeviceFrame markup by
 // hand, over the same optimised asset and the same global .device styles.
 const hero = await getImage({ src: browse, widths: [440, 720], sizes: '(max-width: 50rem) 70vw, 25rem', format: 'webp' });
-const heroHtml = `<figure class="device device-phone"><img src="${hero.src}" srcset="${hero.srcSet.attribute}" sizes="${hero.attributes.sizes}" width="${hero.attributes.width}" height="${hero.attributes.height}" alt="Browsing featured series on a phone" loading="eager" fetchpriority="high" decoding="async"></figure>`;
+const heroHtml = `<figure class="device not-content device-phone"><img src="${hero.src}" srcset="${hero.srcSet.attribute}" sizes="${hero.attributes.sizes}" width="${hero.attributes.width}" height="${hero.attributes.height}" alt="Browsing featured series on a phone" loading="eager" fetchpriority="high" decoding="async"></figure>`;
 ---
 
 <StarlightPage

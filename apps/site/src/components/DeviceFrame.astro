@@ -5,6 +5,9 @@
  * — and a window needs a title strip. No vendor bezel art: it's megabytes per PNG, goes stale with
  * the hardware, and carries trade dress this site has no business reproducing. Styles are in
  * styles/device.css, shared with the hero's raw-HTML copy of this markup.
+ *
+ * `not-content` opts the figure out of Starlight's markdown sibling-margin rule, which would
+ * otherwise push the screenshot a rem down from the title strip.
  */
 import { Image } from 'astro:assets';
 import type { ImageMetadata } from 'astro';
@@ -13,20 +16,25 @@ interface Props {
   src: ImageMetadata;
   alt: string;
   kind?: 'phone' | 'tablet' | 'window';
+  /** Which desktop's title strip a window gets. The app ships for Windows and Linux, so that's the default. */
+  chrome?: 'windows' | 'mac';
   /** CSS width of the whole device, any unit. */
   width?: string;
   class?: string;
   loading?: 'eager' | 'lazy';
 }
 
-const { src, alt, kind = 'phone', width, class: className, loading = 'lazy' } = Astro.props;
+const { src, alt, kind = 'phone', chrome = 'windows', width, class: className, loading = 'lazy' } = Astro.props;
 const sizes = kind === 'window' ? '(max-width: 60rem) 92vw, 60rem' : '(max-width: 40rem) 70vw, 22rem';
 ---
 
-<figure class:list={['device', `device-${kind}`, className]} style={width ? `width:${width}` : undefined}>
+<figure
+  class:list={['device', 'not-content', `device-${kind}`, kind === 'window' && `chrome-${chrome}`, className]}
+  style={width ? `width:${width}` : undefined}
+>
   {kind === 'window' && (
     <div class="titlebar" aria-hidden="true">
-      <span></span><span></span><span></span>
+      <span class="min"></span><span class="max"></span><span class="close"></span>
     </div>
   )}
   <Image src={src} alt={alt} loading={loading} widths={[440, 720, 1360]} sizes={sizes} />

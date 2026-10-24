@@ -13,6 +13,7 @@
   display: block;
   width: 100%;
   height: auto;
+  margin: 0;
   background: #000;
 }
 .device-phone {
@@ -29,19 +30,71 @@
 .device-tablet img {
   border-radius: 12px;
 }
+
+/* Windows: the title strip and its controls scale with the window (the figure's width), so on a
+   phone the strip stays a strip rather than a band taller than the app's own toolbar. */
 .device-window {
-  border-radius: 10px;
+  border-radius: 8px;
+  container-type: inline-size;
 }
 .device-window .titlebar {
   display: flex;
-  gap: 6px;
-  padding: 9px 12px;
+  align-items: center;
+  margin: 0;
   background: #17181b;
   border-bottom: 1px solid #313436;
 }
 .device-window .titlebar span {
-  width: 10px;
-  height: 10px;
+  display: block;
+  box-sizing: border-box;
+  flex: none;
+}
+
+/* Windows 11: three glyphs at the right end of a 32px strip, each in a 46px cell. */
+.chrome-windows .titlebar {
+  justify-content: flex-end;
+  height: clamp(16px, 2.5cqw, 32px);
+  padding-inline-end: clamp(4px, 0.7cqw, 9px);
+  gap: clamp(14px, 2.8cqw, 36px);
+}
+.chrome-windows .titlebar span {
+  width: clamp(5px, 0.8cqw, 10px);
+  height: clamp(5px, 0.8cqw, 10px);
+  position: relative;
+}
+.chrome-windows .titlebar .min {
+  height: 1px;
+  background: #9a9a9e;
+}
+.chrome-windows .titlebar .max {
+  border: 1px solid #9a9a9e;
+  border-radius: 1px;
+}
+.chrome-windows .titlebar .close::before,
+.chrome-windows .titlebar .close::after {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto 0;
+  height: 1px;
+  background: #9a9a9e;
+  transform: rotate(45deg);
+}
+.chrome-windows .titlebar .close::after {
+  transform: rotate(-45deg);
+}
+
+/* macOS: three lights at the left. */
+.chrome-mac {
+  border-radius: 10px;
+}
+.chrome-mac .titlebar {
+  height: clamp(16px, 2.2cqw, 28px);
+  padding-inline-start: clamp(6px, 0.95cqw, 12px);
+  gap: clamp(3px, 0.5cqw, 6px);
+}
+.chrome-mac .titlebar span {
+  width: clamp(5px, 0.8cqw, 10px);
+  height: clamp(5px, 0.8cqw, 10px);
   border-radius: 50%;
   background: #47474a;
 }
