@@ -11,8 +11,9 @@
 #   - reader.settings.spread-shift          Switch: pair from the chapter's first page instead of
 #                                           after it. Stored per series.
 #   - reader.navigator.page                 The current page alone (see reader-navigation.yaml). A
-#                                           spread reports its LATER page, so a turn onto pages 2–3
-#                                           reads "3".
+#                                           spread reports its FIRST page (only a chapter's final
+#                                           spread reports its last), so a turn onto pages 2–3 reads
+#                                           "2".
 #
 # Every mock page is portrait (assets/mock/pages, 800x1107), so nothing breaks the pairing and the
 # page numbers below are exact. The newest chapter is tapped, and every mock chapter is at least 8
@@ -54,17 +55,17 @@ appId: com.porksphere.comical
     id: "reader.control.next"
 - assertVisible:
     id: "reader.navigator.page"
-    text: "^3$"
+    text: "^2$"
 - tapOn:
     id: "reader.control.next"
 - assertVisible:
     id: "reader.navigator.page"
-    text: "^5$"
+    text: "^4$"
 - tapOn:
     id: "reader.control.prev"
 - assertVisible:
     id: "reader.navigator.page"
-    text: "^3$"
+    text: "^2$"
 - tapOn:
     id: "reader.control.prev"
 - assertVisible:
@@ -82,7 +83,7 @@ appId: com.porksphere.comical
     id: "reader.control.next"
 - assertVisible:
     id: "reader.navigator.page"
-    text: "^4$"
+    text: "^3$"
 
 # Back to the defaults.
 - tapOn:

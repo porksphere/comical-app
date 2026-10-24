@@ -25,7 +25,7 @@ import Animated, {
 import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { ScrubBackdrop } from '@/components/reader/scrub-backdrop';
 import type { Size } from '@/components/reader/page-geometry';
-import { pageToSpreadPosition, reportedPage, spreadPositions, type SpreadPad } from '@/components/reader/spreads';
+import { lastPageOf, pageToSpreadPosition, reportedPage, spreadPositions, type SpreadPad } from '@/components/reader/spreads';
 import { useSpreadLayout } from '@/components/reader/use-spread-layout';
 import { ZoomablePage, type CellPage } from '@/components/reader/zoomable-page';
 import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
@@ -171,9 +171,9 @@ type Props = {
  *
  * DOUBLE-PAGE reading keeps every one of these as it is by changing what an item is: one SPREAD of
  * one or two pages, still exactly one viewport wide. The host still speaks pages — positions in are
- * pages and are taken to the spread holding them, positions out are the spread's LAST page (see
- * `reportedPage`) — so everything below this paragraph that says "page" of a list index means a
- * spread.
+ * pages and are taken to the spread holding them, positions out are the page the spread reports
+ * (see `reportedPage`) — so everything below this paragraph that says "page" of a list index means
+ * a spread.
  */
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
   {
@@ -226,7 +226,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // The page a physical index reports — see `reportedPage`.
   const reportOf = (physical: number) => {
     const spread = spreads[toLogical(Math.max(0, Math.min(n - 1, physical)))];
-    return spread ? reportedPage(spread) : 0;
+    return spread ? reportedPage(spread, pages) : 0;
   };
 
   const data = useMemo(() => {
@@ -285,7 +285,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       },
       spreadOf(logical: number) {
         const spread = spreads[spreadAt(logical)];
-        return spread ? { first: spread.first, last: reportedPage(spread) } : { first: logical, last: logical };
+        return spread ? { first: spread.first, last: lastPageOf(spread) } : { first: logical, last: logical };
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

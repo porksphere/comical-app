@@ -4881,8 +4881,8 @@ const ReaderPane = forwardRef<
   }, [stitched, flatItems, items, prefixLen, startIndex, double, shift]);
   // The poster's whole life, in one place: down the moment the user actually pages away from the
   // start (a swipe mid-entrance must not freeze under a static image), else up until BOTH the
-  // entrance has finished and the list has reported — or the backstop calls time. A spread reports
-  // its later page, so "the start" is the whole spread.
+  // entrance has finished and the list has reported — or the backstop calls time. A spread can
+  // report either of its pages (see `reportedPage`), so "the start" is the whole spread.
   const posterUp =
     !!startSpread &&
     currentPage >= startSpread.first &&

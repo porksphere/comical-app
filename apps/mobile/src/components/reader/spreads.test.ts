@@ -5,6 +5,7 @@ import {
   isWidePage,
   pageToSpreadPosition,
   readsDouble,
+  lastPageOf,
   reportedPage,
   shapesPair,
   singleSpreads,
@@ -146,9 +147,17 @@ describe('singleSpreads', () => {
 });
 
 describe('reportedPage', () => {
-  test('a pair reports its later page', () => {
-    const { spreads } = buildSpreads(chapter('a', 3), () => undefined, false);
-    expect(spreads.map(reportedPage)).toEqual([0, 2]);
+  test('a pair reports its first page', () => {
+    const pages = chapter('a', 5);
+    const { spreads } = buildSpreads(pages, () => undefined, false); // [0] [1 2] [3 4]
+    expect(spreads.map((s) => reportedPage(s, pages))).toEqual([0, 1, 4]);
+  });
+
+  test("a chapter's final spread reports its last page, mid-window too", () => {
+    const pages = [...chapter('a', 3), ...chapter('b', 3)];
+    const { spreads } = buildSpreads(pages, () => undefined, false); // [a0] [a1 a2] [b0] [b1 b2]
+    expect(spreads.map((s) => reportedPage(s, pages))).toEqual([0, 2, 3, 5]);
+    expect(spreads.map(lastPageOf)).toEqual([0, 2, 3, 5]);
   });
 });
 

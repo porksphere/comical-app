@@ -33,7 +33,7 @@ import {
 } from '@/components/reader/desktop-zoom';
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
-import { reportedPage, spreadHalves, spreadImage, type Spread } from '@/components/reader/spreads';
+import { lastPageOf, reportedPage, spreadHalves, spreadImage, type Spread } from '@/components/reader/spreads';
 import { useSpreadLayout } from '@/components/reader/use-spread-layout';
 import {
   clamp,
@@ -192,13 +192,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     (page: number) => spreadOf[Math.max(0, Math.min(pages.length - 1, page))] ?? 0,
     [spreadOf, pages.length],
   );
-  // The page a physical index reports — the spread's last (see `reportedPage`).
+  // The page a physical index reports — see `reportedPage`.
   const reportOf = useCallback(
     (physical: number) => {
       const spread = spreads[toLogical(physical)];
-      return spread ? reportedPage(spread) : 0;
+      return spread ? reportedPage(spread, pages) : 0;
     },
-    [spreads, toLogical],
+    [spreads, pages, toLogical],
   );
   const data = useMemo(() => (rtl ? [...spreads].reverse() : spreads), [spreads, rtl]);
 
@@ -615,7 +615,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       },
       spreadOf(logical: number) {
         const spread = spreads[spreadAt(logical)];
-        return spread ? { first: spread.first, last: reportedPage(spread) } : { first: logical, last: logical };
+        return spread ? { first: spread.first, last: lastPageOf(spread) } : { first: logical, last: logical };
       },
     }),
     [settleTo, toPhysical, spreadAt, spreads],

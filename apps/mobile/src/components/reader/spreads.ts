@@ -103,10 +103,20 @@ export function singleSpreads<T extends SpreadPage>(pages: readonly T[]): Spread
   };
 }
 
-/** The page a spread reports as read: its LAST, so finishing a chapter's final spread finishes the
- *  chapter even when that spread's first page isn't the last one. */
-export function reportedPage<T extends SpreadPage>(spread: Spread<T>): number {
+/** The index of a spread's last page. */
+export function lastPageOf<T extends SpreadPage>(spread: Spread<T>): number {
   return spread.first + spread.pages.length - 1;
+}
+
+/**
+ * The page a spread reports as read: its FIRST, as Tachiyomi's forks, Kavita and YACReader record a
+ * spread — except a chapter's final spread, which reports its last, since a chapter is finished
+ * only once its last page has been reported. `pages` is the list the spread indexes into.
+ */
+export function reportedPage<T extends SpreadPage>(spread: Spread<T>, pages: readonly SpreadPage[]): number {
+  const last = lastPageOf(spread);
+  const after = pages[last + 1];
+  return !after || after.pageNumber === 1 ? last : spread.first;
 }
 
 /**
