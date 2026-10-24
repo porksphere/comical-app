@@ -43,6 +43,7 @@ import {
   createZoomHold,
   isDesktopPointer,
   keepZoomLevel,
+  keyZoomSpeed,
   resetZoom,
   stepZoom,
   zoomHoldDirection,
@@ -5224,7 +5225,9 @@ const ReaderPane = forwardRef<
       if (!action) return;
       e.preventDefault();
       if (action === 'zoom-reset') return resetZoom();
-      if (action === 'zoom-step-in' || action === 'zoom-step-out') return stepZoom(action === 'zoom-step-in' ? 1 : -1);
+      if (action === 'zoom-step-in' || action === 'zoom-step-out') {
+        return stepZoom(action === 'zoom-step-in' ? 1 : -1, { speed: keyZoomSpeed() });
+      }
       if (e.repeat) return;
       const forward = (action === 'right') !== (settings.direction === 'rtl');
       (forward ? turnNext : turnPrev)();

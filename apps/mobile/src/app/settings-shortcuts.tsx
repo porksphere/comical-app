@@ -3,6 +3,14 @@ import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 
 import { openConfirm } from '@/components/confirm-popup';
 import { UndoIcon } from '@/components/icons/ui-icons';
+import {
+  KEY_ZOOM_SPEED_MAX,
+  KEY_ZOOM_SPEED_MIN,
+  KEY_ZOOM_SPEED_STEP,
+  setKeyZoomSpeed,
+  useKeyZoomSpeed,
+} from '@/components/reader/desktop-zoom';
+import { RangeSlider } from '@/components/settings/range-slider';
 import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
@@ -72,6 +80,7 @@ function rebind(action: KeyAction, chord: KeyChord, overrides: KeyOverrides): vo
 export default function KeyboardShortcutsScreen() {
   const contentPadding = useSettingsScrollPadding();
   const overrides = useKeyOverrides();
+  const zoomSpeed = useKeyZoomSpeed();
   const [capturing, setCapturing] = useState<KeyAction | null>(null);
 
   useEffect(() => {
@@ -101,7 +110,10 @@ export default function KeyboardShortcutsScreen() {
           <SettingsRow testID="shortcuts.reset-all" label="Reset all shortcuts" disabled={!changed} onPress={resetAllKeyBindings} />
         </SettingsSection>
         {SCOPES.map((scope) => (
-          <SettingsSection key={scope} title={KEY_SCOPE_LABELS[scope]}>
+          <SettingsSection
+            key={scope}
+            title={KEY_SCOPE_LABELS[scope]}
+            footer={scope === 'reader' ? 'The zoom speed is the keys’ alone: the mouse wheel and the zoom buttons keep their own pace.' : undefined}>
             {actionsIn(scope).map((action) => (
               <ShortcutRow
                 key={action}
@@ -112,6 +124,23 @@ export default function KeyboardShortcutsScreen() {
                 onPress={() => setCapturing((c) => (c === action ? null : action))}
               />
             ))}
+            {scope === 'reader' ? (
+              <SettingsRow
+                testID="shortcuts.zoom-speed"
+                label="Zoom speed"
+                right={
+                  <RangeSlider
+                    value={zoomSpeed}
+                    min={KEY_ZOOM_SPEED_MIN}
+                    max={KEY_ZOOM_SPEED_MAX}
+                    step={KEY_ZOOM_SPEED_STEP}
+                    onChange={setKeyZoomSpeed}
+                    format={(v) => `${v}×`}
+                    testIdPrefix="shortcuts.zoom-speed"
+                  />
+                }
+              />
+            ) : null}
           </SettingsSection>
         ))}
       </ScrollView>

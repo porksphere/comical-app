@@ -39,6 +39,16 @@ url: http://localhost:4000/comical-app
 - assertNotVisible:
     text: "Press a key…"
 
+# The reader section ends in the keyboard's zoom speed — a slider (components/settings/range-slider),
+# at its default; the SettingsRow's label is its aria-label.
+- scrollUntilVisible:
+    element:
+      id: "Zoom speed"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    text: "1×"
+
 - tapOn:
     id: "Go back"
 - assertVisible:

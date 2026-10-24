@@ -4,6 +4,7 @@ import { use$ } from '@legendapp/state/react';
 import { showToast } from '@/components/toast';
 import { createKeyHold, HOLD_SPEED } from '@/lib/key-hold';
 import { keyActionOf } from '@/lib/keybindings';
+import { persisted$ } from '@/lib/observable';
 
 // Mouse-and-keyboard zoom for the web readers: Ctrl/⌘+wheel (which is also what a trackpad pinch
 // arrives as), the +/-/0 keys, Q/E held and the toolbar's stepper. All of them speak a LEVEL — a multiple of
@@ -71,8 +72,29 @@ export function showZoomToast(level: number): void {
   showToast(`Page zoom ${formatZoom(level)}`, { slot: 'reader-zoom', durationMs: 1200 });
 }
 
-/** The factor Q/E zoom by over a second at full speed. */
+/** The factor Q/E zoom by over a second at full speed, at the default `keyZoomSpeed`. */
 const HOLD_ZOOM_PER_S = 4;
+
+/** How fast the KEYBOARD zooms — Q/E held and the +/- keys — as a power on the default pace: 1 is
+ *  the pace above, 2 is twice the rate in log-zoom (twice as many doublings a second, and a +/-
+ *  step twice as far). The mouse wheel, a pinch and the toolbar's stepper don't read it: a wheel
+ *  notch is the browser's own unit, and a button is a fixed step. */
+export const KEY_ZOOM_SPEED_MIN = 0.25;
+export const KEY_ZOOM_SPEED_MAX = 3;
+export const KEY_ZOOM_SPEED_STEP = 0.25;
+const KEY_ZOOM_SPEED_DEFAULT = 1;
+const keyZoomSpeed$ = persisted$<number>('comical:keyZoomSpeed', KEY_ZOOM_SPEED_DEFAULT);
+const clampSpeed = (v: unknown) =>
+  Number.isFinite(v) ? Math.min(KEY_ZOOM_SPEED_MAX, Math.max(KEY_ZOOM_SPEED_MIN, v as number)) : KEY_ZOOM_SPEED_DEFAULT;
+export function keyZoomSpeed(): number {
+  return clampSpeed(keyZoomSpeed$.peek());
+}
+export function useKeyZoomSpeed(): number {
+  return clampSpeed(use$(keyZoomSpeed$));
+}
+export function setKeyZoomSpeed(speed: number): void {
+  keyZoomSpeed$.set(clampSpeed(speed));
+}
 /** A second Q/E press within this long of the first goes all the way out/in. */
 const DOUBLE_PRESS_MS = 300;
 
@@ -87,7 +109,7 @@ export function createZoomHold() {
   const hold = createKeyHold((dx) => {
     if (!target || dx === 0) return;
     const from = zoomLevel$.peek();
-    target.zoomTo(from * HOLD_ZOOM_PER_S ** (dx / HOLD_SPEED), false);
+    target.zoomTo(from * HOLD_ZOOM_PER_S ** ((dx / HOLD_SPEED) * keyZoomSpeed()), false);
     const level = zoomLevel$.peek();
     if (Math.round(level * 100) !== Math.round(from * 100)) showZoomToast(level);
   });
@@ -136,11 +158,12 @@ export function zoomToLimit(dir: 1 | -1, opts?: { toast?: boolean }): void {
 
 /** One step in or out from whatever the page shows now (not from the kept level: after a
  *  double-click the step should start from what is on screen). Lands exactly on 100% when it
- *  passes it, so stepping back out always finds the rest again. */
-export function stepZoom(dir: 1 | -1, opts?: { toast?: boolean }): void {
+ *  passes it, so stepping back out always finds the rest again. `speed` scales the step (the keys
+ *  pass `keyZoomSpeed()`; the stepper's buttons take the plain step). */
+export function stepZoom(dir: 1 | -1, opts?: { toast?: boolean; speed?: number }): void {
   if (!target) return;
   const from = zoomLevel$.peek();
-  let next = from * ZOOM_STEP ** dir;
+  let next = from * ZOOM_STEP ** (dir * (opts?.speed ?? 1));
   if ((from < 1 && next > 1) || (from > 1 && next < 1) || Math.abs(next - 1) < 0.02) next = 1;
   if (next === 1) target.reset();
   else target.zoomTo(next);
