@@ -96,7 +96,7 @@ function useCollectPage({
     at: Pick<SpreadPickRequest, 'under' | 'keyboard'>,
   ) => {
     const [l, r] = rtl ? [pages[1]!, pages[0]!] : [pages[0]!, pages[1]!];
-    const side = (page: number): SpreadSide => ({ page, uri: cacheKeyOf(page) ?? undefined, saved: !!isCollected(page) });
+    const side = (page: number): SpreadSide => ({ page, saved: !!isCollected(page) });
     openSpreadPick({
       ...at,
       title: intent === 'pick' ? 'Choose collections for' : 'Save',

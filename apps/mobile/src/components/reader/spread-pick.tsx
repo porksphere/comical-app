@@ -1,5 +1,4 @@
 import { observable, ObservableHint, type OpaqueObject } from '@legendapp/state';
-import { Image } from 'expo-image';
 import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -13,7 +12,7 @@ import { isKey, moveDirectionOf, useKeyBindings } from '@/lib/keybindings';
 import { windowModalLayer } from '@/lib/window-controls';
 
 /** One page of the spread, as it sits on screen. */
-export type SpreadSide = { page: number; uri: string | undefined; saved: boolean };
+export type SpreadSide = { page: number; saved: boolean };
 
 export type SpreadPickRequest = {
   title: string;
@@ -92,15 +91,10 @@ export function SpreadPickHost() {
   return req ? <SpreadPick req={req} /> : null;
 }
 
-const THUMB_W = 72;
-const THUMB_H = 104;
-const PAIR_W = 54;
-const PAIR_GAP = 2;
-
 /**
  * Like the rest of the reader chrome it is deliberately UNTHEMED — white on dark — because the
- * reader stays dark whatever the app theme is. Laid out as the spread is, so the choice reads as the
- * page itself rather than a label for it.
+ * reader stays dark whatever the app theme is. Laid out as the spread is, left to right, so each
+ * choice sits where its page does.
  */
 function SpreadPick({ req }: { req: SpreadPickRequest }) {
   const shown = useSharedValue(0);
@@ -121,9 +115,8 @@ function SpreadPick({ req }: { req: SpreadPickRequest }) {
           label={`Left · ${left.page + 1}`}
           keys={req.keyboard ? <SideKeys action="left" /> : null}
           saved={left.saved}
-          onPress={() => pickSide(req, 0)}>
-          <Thumb side={left} width={THUMB_W} />
-        </Tile>
+          onPress={() => pickSide(req, 0)}
+        />
         {req.onBoth ? (
           <Tile
             testID="reader.collect-page.both"
@@ -131,21 +124,16 @@ function SpreadPick({ req }: { req: SpreadPickRequest }) {
             keys={req.keyboard ? <BothKeys /> : null}
             saved={!both}
             disabled={!both}
-            onPress={() => pickBoth(req)}>
-            <View style={styles.pair}>
-              <Thumb side={left} width={PAIR_W} />
-              <Thumb side={right} width={PAIR_W} />
-            </View>
-          </Tile>
+            onPress={() => pickBoth(req)}
+          />
         ) : null}
         <Tile
           testID="reader.collect-page.right"
           label={`Right · ${right.page + 1}`}
           keys={req.keyboard ? <SideKeys action="right" /> : null}
           saved={right.saved}
-          onPress={() => pickSide(req, 1)}>
-          <Thumb side={right} width={THUMB_W} />
-        </Tile>
+          onPress={() => pickSide(req, 1)}
+        />
       </View>
     </Animated.View>
   );
@@ -178,7 +166,6 @@ function Tile({
   disabled,
   onPress,
   testID,
-  children,
 }: {
   label: string;
   keys: ReactNode;
@@ -186,7 +173,6 @@ function Tile({
   disabled?: boolean;
   onPress: () => void;
   testID: string;
-  children: ReactNode;
 }) {
   return (
     <Pressable
@@ -202,31 +188,14 @@ function Tile({
         state.pressed && styles.tilePressed,
         disabled && styles.tileDisabled,
       ]}>
-      <View>
-        {children}
-        {saved ? (
-          <View style={styles.badge}>
-            <BookmarkIcon color="#fff" size={12} filled />
-          </View>
-        ) : null}
+      <View style={styles.labelRow}>
+        {saved ? <BookmarkIcon color="#fff" size={13} filled /> : null}
+        <Text style={styles.label} numberOfLines={1}>
+          {label}
+        </Text>
       </View>
-      <Text style={styles.label} numberOfLines={1}>
-        {label}
-      </Text>
       {keys}
     </Pressable>
-  );
-}
-
-function Thumb({ side, width }: { side: SpreadSide; width: number }) {
-  return (
-    <View style={[styles.thumb, { width }]}>
-      {side.uri ? (
-        <Image source={{ uri: side.uri }} style={StyleSheet.absoluteFill} contentFit="contain" />
-      ) : (
-        <Text style={styles.thumbNumber}>{side.page + 1}</Text>
-      )}
-    </View>
   );
 }
 
@@ -289,10 +258,13 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   tile: {
+    minWidth: 84,
     alignItems: 'center',
     gap: Spacing.one + Spacing.half,
-    padding: Spacing.two,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
     borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   tileHover: {
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -303,33 +275,10 @@ const styles = StyleSheet.create({
   tileDisabled: {
     opacity: 0.45,
   },
-  pair: {
+  labelRow: {
     flexDirection: 'row',
-    gap: PAIR_GAP,
-  },
-  thumb: {
-    height: THUMB_H,
-    borderRadius: 4,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.07)',
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  thumbNumber: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  badge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: Spacing.one,
   },
   label: {
     color: '#fff',
