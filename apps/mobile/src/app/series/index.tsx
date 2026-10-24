@@ -38,7 +38,7 @@ import { BOTTOM_CHROME_HEIGHT, ChapterNavigator, bottomChromeInset } from '@/com
 import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
-import { readsDouble } from '@/components/reader/spreads';
+import { buildSpreads, knownPageSize, readsDouble } from '@/components/reader/spreads';
 import {
   createZoomHold,
   isDesktopPointer,
@@ -4836,10 +4836,6 @@ const ReaderPane = forwardRef<
     const t = setTimeout(() => setPosterExpired(true), POSTER_BACKSTOP_MS);
     return () => clearTimeout(t);
   }, []);
-  // The poster's whole life, in one place: down the moment the user actually pages away from the
-  // start (a swipe mid-entrance must not freeze under a static image), else up until BOTH the
-  // entrance has finished and the list has reported — or the backstop calls time.
-  const posterUp = currentPage === startIndex && !posterExpired && (entering || !parked);
 
   const pagedRef = useRef<PagedReaderHandle>(null);
   const webtoonRef = useRef<WebtoonReaderHandle>(null);
@@ -4867,6 +4863,28 @@ const ReaderPane = forwardRef<
     }
     return acc;
   }, [segments, chapterId]);
+  // What the reader opens on: the start page, or the spread holding it, paired from the same size
+  // cache the pager seeds its own pairing from at mount, so the poster draws what the list will.
+  const startSpread = useMemo(() => {
+    const list = stitched ? flatItems : items;
+    if (!list.length) return null;
+    const base = stitched ? prefixLen : 0;
+    const at = Math.max(0, Math.min(list.length - 1, base + startIndex));
+    if (!double) return { pages: [list[at]!], first: startIndex, last: startIndex };
+    const { spreads, spreadOf } = buildSpreads(list, (p) => knownPageSize(p.uri), shift);
+    const spread = spreads[spreadOf[at]!]!;
+    return { pages: spread.pages, first: spread.first - base, last: spread.first - base + spread.pages.length - 1 };
+  }, [stitched, flatItems, items, prefixLen, startIndex, double, shift]);
+  // The poster's whole life, in one place: down the moment the user actually pages away from the
+  // start (a swipe mid-entrance must not freeze under a static image), else up until BOTH the
+  // entrance has finished and the list has reported — or the backstop calls time. A spread reports
+  // its later page, so "the start" is the whole spread.
+  const posterUp =
+    !!startSpread &&
+    currentPage >= startSpread.first &&
+    currentPage <= startSpread.last &&
+    !posterExpired &&
+    (entering || !parked);
   // Where the chapter being scrubbed STARTS, latched for the duration of the drag — the reader's
   // half of the navigator's latched frame. A drag is resolved against the window it began in, and
   // `prefixLen` is not that: it moves when a neighbouring chapter joins at the head, and again on
@@ -5325,29 +5343,34 @@ const ReaderPane = forwardRef<
           animation would otherwise expose as a blank. */}
       {posterUp &&
         (() => {
-          const list = stitched ? flatItems : items;
-          const at = stitched ? prefixLen + startIndex : startIndex;
-          const raw = list[Math.max(0, Math.min(list.length - 1, at))]?.uri;
-          // The page's RESOLVED source, not its raw path: a server-relative path (a lazy resolve
+          // The pages' RESOLVED sources, not their raw paths: a server-relative path (a lazy resolve
           // route, say) loaded as-is resolves against the app's own origin and 404s. Not resolved
           // yet means the page under it has nothing to show either, so there's nothing to paper over.
-          const uri = raw && peekResolvedAssetSource(raw);
-          if (!uri) return null;
+          const uris = startSpread!.pages.map((p) => peekResolvedAssetSource(p.uri));
+          if (uris.some((u) => !u)) return null;
+          const pair = uris.length > 1;
+          // Left to right across the screen, like the pager draws a spread.
+          const shown = pair && settings.direction === 'rtl' ? [...uris].reverse() : uris;
           return (
-            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-              <Image
-                source={{ uri }}
-                style={StyleSheet.absoluteFill}
-                // Contain, whichever axis the fit is: a page under the poster stands at 1× (see
-                // ZoomablePage's `standby`), and at 1× both fits draw the contain picture — a
-                // fit-width page shorter than the screen sits centred, exactly where contain puts
-                // it. `cover` here (the old fit-width mapping) crops the page to the frame and then
-                // hands over to the letterboxed one: the page visibly shifts as the poster leaves.
-                // The one page this doesn't match is a strip taller than the screen under fit-width,
-                // which is drawn from its top rather than whole.
-                contentFit="contain"
-                cachePolicy="memory-disk"
-              />
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, pair && styles.posterSpread]}>
+              {shown.map((uri, k) => (
+                <Image
+                  key={k}
+                  source={{ uri: uri! }}
+                  style={pair ? styles.posterHalf : StyleSheet.absoluteFill}
+                  // Contain, whichever axis the fit is: a page under the poster stands at 1× (see
+                  // ZoomablePage's `standby`), and at 1× both fits draw the contain picture — a
+                  // fit-width page shorter than the screen sits centred, exactly where contain puts
+                  // it. `cover` here (the old fit-width mapping) crops the page to the frame and then
+                  // hands over to the letterboxed one: the page visibly shifts as the poster leaves.
+                  // The one page this doesn't match is a strip taller than the screen under fit-width,
+                  // which is drawn from its top rather than whole.
+                  contentFit="contain"
+                  // A spread's halves meet at the spine, as in the pager.
+                  contentPosition={pair ? (k === 0 ? 'right' : 'left') : undefined}
+                  cachePolicy="memory-disk"
+                />
+              ))}
             </View>
           );
         })()}
@@ -5518,6 +5541,13 @@ const styles = StyleSheet.create({
   },
   pageWrap: {
     flex: 1,
+  },
+  posterSpread: {
+    flexDirection: 'row',
+  },
+  posterHalf: {
+    flex: 1,
+    height: '100%',
   },
   // The top-bar crossfade layers (see headerBarStyle/headerBackStyle): above the band overlay
   // (zIndex 3) so whichever is visible takes the taps.
