@@ -32,8 +32,8 @@ const anyShift = (key: string): KeyChord[] => [k(key), k(key, { shift: true })];
 export const KEY_ACTIONS = {
   up: { label: 'Up', scope: 'global', keys: [k('w'), k('arrowup')], hint: 'Scrolls, pans a zoomed page, or moves the focus' },
   down: { label: 'Down', scope: 'global', keys: [k('s'), k('arrowdown')], hint: 'Scrolls, pans a zoomed page, or moves the focus' },
-  left: { label: 'Left', scope: 'global', keys: [k('a'), k('arrowleft')], hint: 'Turns the page, or moves the focus' },
-  right: { label: 'Right', scope: 'global', keys: [k('d'), k('arrowright')], hint: 'Turns the page, or moves the focus' },
+  left: { label: 'Left', scope: 'global', keys: [k('a'), k('arrowleft')], hint: 'Turns the page, or moves the focus; with nothing focused, focuses the rightmost thing at the top' },
+  right: { label: 'Right', scope: 'global', keys: [k('d'), k('arrowright')], hint: 'Turns the page, or moves the focus; with nothing focused, focuses the leftmost thing at the top' },
   back: { label: 'Back', scope: 'global', keys: [k('a', { alt: true })] },
   forward: { label: 'Forward', scope: 'global', keys: [k('d', { alt: true })] },
   dismiss: {

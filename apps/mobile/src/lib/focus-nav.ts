@@ -6,9 +6,9 @@ import { isKey, moveDirectionOf, readerScopeActive } from '@/lib/keybindings';
 import { largestScroller } from '@/lib/keyboard-scroll';
 
 // Spatial focus for the desktop's `lists` keys (lib/keymap). Once the keyboard holds the focus —
-// Tab, or Space with nothing focused — the move keys carry it to the nearest control in that
-// direction instead of scrolling, Space presses it and R opens its menu. A pointer press hands the
-// keys back to scrolling (the `data-input` latch in app/+html).
+// Tab, or Space or a sideways key with nothing focused — the move keys carry it to the nearest
+// control in that direction instead of scrolling, Space presses it and R opens its menu. A pointer
+// press hands the keys back to scrolling (the `data-input` latch in app/+html).
 //
 // Only what is on TOP is a candidate, judged by hit-testing its centre: whatever covers the screen
 // (a pane, the settings panel, a menu) takes the focus with it, with no layer bookkeeping. A list
@@ -144,8 +144,10 @@ function nearest(from: Rect, self: HTMLElement | null, dir: Direction, anchor: n
 }
 
 // Where a run of moves set out from across their axis, so a run keeps to its column (or row) through
-// a heading or a shorter row rather than drifting toward whatever each one puts closest.
-let anchor: { el: HTMLElement; horizontal: boolean; at: number } | null = null;
+// a heading or a shorter row rather than drifting toward whatever each one puts closest. Held as an
+// offset from the control it landed on, not a screen position: the list scrolls between presses (the
+// wheel, a focus scrolling itself in, `uncover`), and a stale screen position names another row.
+let anchor: { el: HTMLElement; horizontal: boolean; off: number } | null = null;
 
 // What the keyboard last landed on. A list recycles a row out from under the focus, which drops it on
 // the body, and the next move carries on from here instead of going nowhere.
@@ -207,11 +209,11 @@ function uncover(el: HTMLElement, tries = 2): void {
 
 function move(from: HTMLElement | null, rect: Rect, dir: Direction): void {
   const horizontal = dir.x !== 0;
-  const centre = horizontal ? (rect.top + rect.bottom) / 2 : (rect.left + rect.right) / 2;
-  const at = anchor && anchor.el === from && anchor.horizontal === horizontal ? anchor.at : centre;
+  const cross = (r: Rect) => (horizontal ? (r.top + r.bottom) / 2 : (r.left + r.right) / 2);
+  const at = cross(rect) + (anchor && anchor.el === from && anchor.horizontal === horizontal ? anchor.off : 0);
   const land = (to: HTMLElement) => {
+    anchor = { el: to, horizontal, off: at - cross(to.getBoundingClientRect()) };
     focusKeyboard(to);
-    anchor = { el: to, horizontal, at };
   };
   const origin = from ?? document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
   const region = origin && regionOf(origin, horizontal);
@@ -316,6 +318,26 @@ function focusFirst(): void {
   if (first) focusKeyboard(first[1]);
 }
 
+/** A sideways key with nothing focused brings the focus in from that side of the main list, at the
+ *  top of what it shows: Right lands on its leftmost control there, Left on its rightmost. */
+function enterFrom(dir: Direction): void {
+  const main = largestScroller();
+  const onScreen = candidates().filter(onTop);
+  const inMain = onScreen.filter((el) => main?.contains(el));
+  const pool = inMain.length ? inMain : onScreen;
+  const box = inMain.length && main ? main.getBoundingClientRect() : { left: 0, right: innerWidth, top: 0, bottom: innerHeight };
+  const x = dir.x > 0 ? Math.max(box.left, 0) : Math.min(box.right, innerWidth);
+  const y = Math.max(box.top, 0);
+  // As tall as the list, so everything in it is level with where the move sets out.
+  const i = nextInDirection(
+    { left: x, right: x, top: y, bottom: Math.min(box.bottom, innerHeight) },
+    pool.map((el) => el.getBoundingClientRect()),
+    dir,
+    y,
+  );
+  if (i !== null) focusKeyboard(pool[i]!);
+}
+
 const pressesItselfOnSpace = (el: HTMLElement) => el.tagName === 'BUTTON' || el.getAttribute('role') === 'button';
 
 function onKeyDown(e: KeyboardEvent): void {
@@ -327,6 +349,7 @@ function onKeyDown(e: KeyboardEvent): void {
     if (from) move(from, from.getBoundingClientRect(), dir);
     else if (focusCovered()) enterLayer(heldFocus());
     else if (lost) move(lost.el, lost.rect, dir);
+    else if (dir.x) enterFrom(dir);
     else return;
     e.preventDefault();
     return;

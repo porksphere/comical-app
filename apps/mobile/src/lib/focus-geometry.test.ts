@@ -63,4 +63,18 @@ describe('nextInDirection', () => {
     const options = [box(150, 0), box(150, 290), box(150, 600)];
     expect(nextInDirection(from, options, LEFT, centreY(from))).toBe(1);
   });
+
+  test('sideways, something level beats a nearer box in another row', () => {
+    const from = box(256, 133, 213, 340);
+    const logo = box(256, 17, 30, 30);
+    const sidebar = box(8, 250, 223, 34);
+    expect(nextInDirection(from, [logo, sidebar], LEFT, centreY(from))).toBe(1);
+    const staggered = [box(480, -40, 70), box(560, 133, 213, 340)];
+    expect(nextInDirection(from, staggered, RIGHT, centreY(from))).toBe(1);
+  });
+
+  test("sideways past a row's end goes nowhere rather than into another row", () => {
+    const from = box(400, 300);
+    expect(nextInDirection(from, [box(150, 0), box(150, 600), box(520, 0)], LEFT, centreY(from))).toBeNull();
+  });
 });

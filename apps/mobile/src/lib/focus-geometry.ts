@@ -39,7 +39,12 @@ export function nextInDirection(from: Rect, options: readonly Rect[], dir: Direc
   const offCentre = (r: Rect) => Math.abs((crossLo(r) + crossHi(r)) / 2 - anchor);
   const closer = (a: Rect, b: Rect) => reach(a) - reach(b) || offCentre(a) - offCentre(b);
 
-  const inWay = options.map((r, i) => [r, i] as const).filter(([r]) => ahead(r));
+  // Sideways only reaches what is level with `from`. Otherwise the nearest column is found down the
+  // whole list, and a box in another row that starts a few points nearer — the top bar's logo above
+  // a first card, a row whose columns don't line up, anything at all past a row's end — takes the
+  // move off the row.
+  const level = (r: Rect) => !horizontal || (crossLo(r) < crossHi(from) && crossHi(r) > crossLo(from));
+  const inWay = options.map((r, i) => [r, i] as const).filter(([r]) => ahead(r) && level(r));
   if (!inWay.length) return null;
   const [first] = inWay.reduce((best, cur) => {
     const d = gap(cur[0]) - gap(best[0]);
