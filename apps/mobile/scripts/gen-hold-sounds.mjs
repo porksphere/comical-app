@@ -4,11 +4,12 @@
  * than sourced so there is no licence to carry and the ramp can be retuned by editing numbers:
  * `node scripts/gen-hold-sounds.mjs`, then commit the WAVs.
  *
- * Three countdown ticks climbing an E-major arpeggio, getting louder as the haptics get stronger,
- * then the commit: lower and fuller, a fifth with a thump under it, so the arm reads as an arrival
- * rather than a fourth tick. Every voice is a woodblock-style strike — an inharmonic overtone, a
- * pitch that drops in the first few ms, and a burst of noise for the contact — because a pure sine
- * at this length is a beep, not a tap.
+ * Modelled on the Apple Watch Digital Crown's detent: a click, not a note. Each one is a few
+ * milliseconds of high, inharmonic resonance over a sub-millisecond contact, so nothing in it lasts
+ * long enough to be heard as a pitch; a click that rings for 15ms+ reads as a woodblock or a beep.
+ * The countdown's three get louder and a little heavier as the haptics do, the way a detent feels
+ * firmer the harder it is pushed, and the commit is the same click with a short low body under it,
+ * so it lands as a detent bottoming out rather than as a sound of its own.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -51,9 +52,10 @@ function contact(out, { gain, decayMs = 2 }) {
 function render(ms, peak, build) {
   const out = new Float64Array(Math.round((RATE * ms) / 1000));
   build(out);
-  // A 1ms attack and 15ms release, so neither edge of the clip is a click of its own.
-  const attack = RATE / 1000;
-  const release = (RATE * 15) / 1000;
+  // The attack is short enough to keep the transient's snap; the release only has to stop the tail
+  // being cut off mid-sample.
+  const attack = (RATE * 0.1) / 1000;
+  const release = (RATE * 4) / 1000;
   for (let i = 0; i < out.length; i++) {
     out[i] *= Math.min(1, i / attack, (out.length - i) / release);
   }
@@ -81,21 +83,29 @@ function wav(samples) {
   return Buffer.concat([header, data]);
 }
 
-/** 2.76 is a woodblock's first overtone; it is what keeps the tick from sounding like a beep. */
-const tick = (freq, peak) =>
-  render(70, peak, (out) => {
-    strike(out, { freq, partials: [[1, 1, 16], [2.76, 0.35, 7]] });
-    contact(out, { gain: 0.5 });
+/** The detent's modes, as [ratio, gain, decay ms]: inharmonic so they never agree on a pitch, and
+ *  gone within a few ms. `weight` lowers them and lets them ring fractionally longer. */
+const click = (out, { weight = 0, gain = 1 }) => {
+  const k = 1 + weight;
+  strike(out, {
+    freq: 3400 / k,
+    partials: [[1, 1, 1.4 * k], [1.71, 0.6, 0.8 * k], [0.58, 0.35, 2.2 * k], [2.43, 0.3, 0.5]],
+    bend: 0,
+    gain,
   });
+  contact(out, { gain: 0.9 * gain, decayMs: 0.35 });
+};
+
+const tick = (weight, peak) => render(18, peak, (out) => click(out, { weight }));
 
 const sounds = {
-  'hold-1.wav': tick(1318.5, 0.35), // E6
-  'hold-2.wav': tick(1661.2, 0.5), // G#6
-  'hold-3.wav': tick(1975.5, 0.65), // B6
-  'hold-arm.wav': render(320, 0.85, (out) => {
-    strike(out, { freq: 659.3, partials: [[1, 1, 90], [1.5, 0.55, 70], [2, 0.3, 45], [5.4, 0.12, 10]], bend: 0.02 }); // E5 + B5
-    strike(out, { freq: 140, partials: [[1, 0.9, 28]], bend: 0.3, bendMs: 12 });
-    contact(out, { gain: 0.6, decayMs: 3 });
+  'hold-1.wav': tick(0, 0.3),
+  'hold-2.wav': tick(0.06, 0.42),
+  'hold-3.wav': tick(0.12, 0.55),
+  'hold-arm.wav': render(40, 0.85, (out) => {
+    click(out, { weight: 0.22 });
+    // The body: low enough to feel like mass rather than a note, and over before it can sing.
+    strike(out, { freq: 420, partials: [[1, 0.8, 6], [2.3, 0.3, 3]], bend: 0.25, bendMs: 2 });
   }),
 };
 
