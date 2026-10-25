@@ -77,7 +77,7 @@ import {
   seriesListQuery,
 } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
+import { DIRECT_CHAPTER_ID, type Chapter, type HistoryEntry } from '@/data/types';
 import { useMissingBridge } from '@/hooks/use-bridges';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
@@ -4877,7 +4877,7 @@ const ReaderPane = forwardRef<
   // ── Stitched flat list (chaptered) ─────────────────────────────────────────
   // Declared early (a noop until the record section below fills it) so the flat handlers can
   // flush the outgoing chapter's progress at a crossing.
-  const recordRef = useRef<() => void>(() => {});
+  const recordRef = useRef<(flush?: boolean) => void>(() => {});
   const stitched = segments.length > 0;
   const flatItems: ReaderPageItem[] = useMemo(
     () => segments.flatMap((s) => s.pages.map((uri, i) => ({ uri, key: `${s.id}:${i}`, pageNumber: i + 1 }))),
@@ -4968,7 +4968,7 @@ const ReaderPane = forwardRef<
       // a scrub has no business crossing a boundary at all, and the release commits explicitly
       // through `seekTo`; anything genuinely across one is reported again by the settle after it.
       if (scrubPrefixRef.current !== null) return;
-      recordRef.current(); // the outgoing chapter's final settled position
+      recordRef.current(true); // the outgoing chapter's final settled position
       setCurrent(loc.page);
       onRelabel(loc.segment.id, loc.segment.name, loc.page);
     },
@@ -5223,15 +5223,45 @@ const ReaderPane = forwardRef<
     if (picked || (!standby && (currentPage !== seenPageRef.current || pages.length === 1))) engagedRef.current = true;
     seenPageRef.current = currentPage;
   }, [currentPage, standby, pages.length, picked]);
-  const record = useCallback(() => {
+  //
+  // A page turn changes ONE history row, so the cached history list is patched in place rather than
+  // refetched: on-device every library-store call waits in one queue, and a full history read is a
+  // scan of every series plus a progress read per read series. Invalidating it (and the activity
+  // feed) after every settle queued hundreds of reads per page turn, behind which the next progress
+  // write sat for 10s+. The full refresh still happens where the shape of things changes — a chapter
+  // finished (feed items leave it), a chapter left (`flush`) — and when the row isn't cached yet, so
+  // the host decides whether this bridge's reads belong in history at all.
+  const record = useCallback((flush = false) => {
     if (!recordProgress || !engagedRef.current) return;
     if (!bridgeId || !seriesId || !pages.length) return;
     const lastPage = currentRef.current;
     const pageCount = pages.length;
+    const reachedEnd = lastPage >= pageCount - 1;
+    const entry = {
+      bridgeId,
+      seriesId,
+      title: seriesTitle,
+      ...(seriesCover ? { thumbnailUrl: seriesCover } : {}),
+      chapterId: chapterId ?? DIRECT_CHAPTER_ID,
+      ...(chapterName ? { chapterName } : {}),
+      lastPage,
+      pageCount,
+    };
+    const row: HistoryEntry = { ...entry, lastReadAt: Date.now() };
     const invalidateHistory = () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.history(mock) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
+      const key = queryKeys.history(mock);
+      const cached = queryClient.getQueryData<HistoryEntry[]>(key);
+      const known = cached?.some((h) => h.bridgeId === bridgeId && h.seriesId === seriesId) ?? false;
+      if (known) {
+        queryClient.setQueryData<HistoryEntry[]>(key, (cur) =>
+          cur ? [row, ...cur.filter((h) => !(h.bridgeId === bridgeId && h.seriesId === seriesId))] : cur,
+        );
+      }
+      if (!known || flush || reachedEnd) {
+        void queryClient.invalidateQueries({ queryKey: key });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
+      }
       void queryClient.invalidateQueries({ queryKey: queryKeys.chapterProgress(mock, bridgeId, seriesId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.librarySeries(mock, bridgeId, seriesId) });
     };
@@ -5246,16 +5276,7 @@ const ReaderPane = forwardRef<
       return;
     }
     void ds
-      .recordReadingHistory({
-        bridgeId,
-        seriesId,
-        title: seriesTitle,
-        ...(seriesCover ? { thumbnailUrl: seriesCover } : {}),
-        chapterId: chapterId ?? DIRECT_CHAPTER_ID,
-        ...(chapterName ? { chapterName } : {}),
-        lastPage,
-        pageCount,
-      })
+      .recordReadingHistory(entry)
       .catch(() => {})
       .then(() => (chapterId ? recordChapter(chapterId) : undefined))
       .then(invalidateHistory)
@@ -5272,7 +5293,7 @@ const ReaderPane = forwardRef<
     const t = setTimeout(() => recordRef.current(), 1500);
     return () => clearTimeout(t);
   }, [currentPage]);
-  useEffect(() => () => recordRef.current(), []);
+  useEffect(() => () => recordRef.current(true), []);
 
   // ── Web keyboard nav ─────────────────────────────────────────────────────────
   // Boxed: the screen hands this down as a fresh arrow every render, and re-subscribing the keys
