@@ -1,10 +1,10 @@
-import { Image } from 'expo-image';
-
+import { warmImage } from '@/components/reader/image-progress';
 import { assetResolvesInFlight, resolveAssetSourceCached, supersedeBackgroundResolves } from '@/data/api';
 import { traceJS } from '@/lib/gesture-trace';
 
-// Warm expo-image's cache around the read position. Deduped through a module-level memo, and only
-// http(s) sources are prefetched — a resolved local/data URI is already there.
+// Warm the cache the reader will read pages from around the read position (expo-image's on native,
+// the browser's on web — `warmImage` asks the way the reader will). Deduped through a module-level
+// memo, and only http(s) sources are prefetched — a resolved local/data URI is already there.
 const warmed = new Set<string>();
 const WARM_MEMO_MAX = 2000;
 export function warmPageImages(pages: string[]): void {
@@ -28,7 +28,7 @@ export function warmPageImages(pages: string[]): void {
   for (const p of [...fresh].reverse()) {
     resolveAssetSourceCached(p, { background: true })
       .then((u) => {
-        if (!u.startsWith('data:')) void Image.prefetch(u);
+        if (!u.startsWith('data:')) warmImage(u);
       })
       .catch(() => {
         // FORGET it. `warmed` is a "don't ask twice" memo, and a warm that produced no URL — dropped

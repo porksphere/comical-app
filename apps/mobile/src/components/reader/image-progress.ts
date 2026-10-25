@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useCallback, useState } from 'react';
 
 // How a reader page learns *how much* of its image has downloaded (NATIVE).
@@ -24,6 +25,12 @@ export type ImageProgress = {
  *  stale — it's discarded by key mismatch at read time rather than cleared in an effect, which
  *  would cost an extra render pass on every page mount. */
 const keyOf = (uri: string | null, attempt: number) => `${uri ?? ''}#${attempt}`;
+
+/** Warm the cache a page will later be read from — on native expo-image's own, which `prefetch`
+ *  fills exactly as `<Image>` would. The web copy has to match the reader's request instead. */
+export function warmImage(uri: string): void {
+  void Image.prefetch(uri);
+}
 
 /** How much the percentage has to move to be worth a render. expo-image reports every chunk, which
  *  for a page over a fast connection is dozens of events — each one a setState, on every page the

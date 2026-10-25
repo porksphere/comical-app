@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
 
 import { getApiBase } from '@/data/api';
@@ -55,6 +56,33 @@ function measurable(uri: string): boolean {
   return origin !== null && !unreadableOrigins.has(origin);
 }
 
+/** The Accept header Chromium puts on an <img> request. Our XHRs send it too, so that a page is ONE
+ *  entry in the HTTP cache however it was asked for: a CDN answering `Vary: accept` makes an <img>'s
+ *  load and an XHR's default `*\/*` two variants of the same URL, and Chromium keeps one per URL —
+ *  each kind of load evicted the other's, and a page was downloaded again every time the asking side
+ *  changed (the warm-ahead's prefetch, then the reader's read, then the entrance poster, then the
+ *  read again on paging back). An <img> cannot be told what to send, so the XHR matches it. */
+const IMAGE_ACCEPT = 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8';
+
+/** Warm the browser's HTTP cache for a page the reader is expected to reach, asking THE WAY THE
+ *  READER WILL: by XHR where `useImageProgress` would read the bytes (the shape matches by
+ *  construction, whatever Accept a future Chromium puts on an <img>), and as the <img> that
+ *  `Image.prefetch` makes where the page would be handed to <Image> whole. */
+export function warmImage(uri: string): void {
+  if (!measurable(uri)) {
+    void Image.prefetch(uri);
+    return;
+  }
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', uri, true);
+  xhr.setRequestHeader('Accept', IMAGE_ACCEPT);
+  xhr.responseType = 'blob';
+  // Whether this origin refuses reads is the page's own attempt to learn; the warm just falls back
+  // to the <img> that page would end up with.
+  xhr.onerror = () => void Image.prefetch(uri);
+  xhr.send();
+}
+
 /** See `image-progress.ts` — scopes a download's state to the URI+attempt that produced it, so a
  *  stale one is dropped by key mismatch at read time rather than cleared in an effect. */
 const keyOf = (uri: string | null, attempt: number) => `${uri ?? ''}#${attempt}`;
@@ -82,6 +110,7 @@ export function useImageProgress(uri: string | null, attempt: number): ImageProg
     const xhr = new XMLHttpRequest();
     let objectUrl: string | null = null;
     xhr.open('GET', uri, true);
+    xhr.setRequestHeader('Accept', IMAGE_ACCEPT);
     xhr.responseType = 'blob';
     xhr.onprogress = (e) => {
       // `lengthComputable` is false without a Content-Length (a chunked upstream): no denominator,
