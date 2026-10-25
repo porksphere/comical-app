@@ -31,6 +31,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { useDismissKey } from '@/lib/dismiss-key';
 import {
   overlayPresentation,
   topUsesWebOutsideClick,
@@ -555,6 +556,10 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const topId = items.length ? items[items.length - 1].id : null;
+  // Only dialogs used to take Escape, so with a sheet or popover open it reached whatever the overlay
+  // was opened over — Escape over the reader's settings closed the READER, and left the popover
+  // floating over the series page. Android's back button had the same hole.
+  useDismissKey(closeTop, items.length > 0);
   const api = useMemo(() => ({ open, openDialog, closeTop, topId }), [open, openDialog, closeTop, topId]);
 
   // Desktop shows anchored popovers; the mobile sheet's scale-the-app-back and
