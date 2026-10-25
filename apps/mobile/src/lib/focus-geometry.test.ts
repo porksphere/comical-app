@@ -39,6 +39,24 @@ describe('nextInDirection', () => {
     expect(nextInDirection(button, options, UP, centreX(button))).toBe(1);
   });
 
+  test('coming up to a row, a button flush with its bottom is met first, whichever column', () => {
+    const row = [box(0, 0), box(120, 0), box(240, 0)];
+    const button = box(130, 110, 80, 40);
+    const rail = [box(0, 200), box(240, 200)];
+    const options = [...row, button];
+    expect(nextInDirection(rail[0]!, options, UP, centreX(rail[0]!))).toBe(3);
+    expect(nextInDirection(rail[1]!, options, UP, centreX(rail[1]!))).toBe(3);
+  });
+
+  test("into a card, the card — not the menu button in its corner, however near the anchor", () => {
+    const card = box(0, 200);
+    const corner = box(70, 204, 26, 26);
+    const above = box(40, 0, 100, 30);
+    const below = box(40, 400, 100, 30);
+    expect(nextInDirection(above, [corner, card], DOWN, 85)).toBe(1);
+    expect(nextInDirection(below, [corner, card], UP, 85)).toBe(1);
+  });
+
   test("the next rail's heading comes before its cards, however far left it sits", () => {
     const card = box(700, 0);
     const heading = box(20, 200, 250, 30);

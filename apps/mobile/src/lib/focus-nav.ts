@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, type ViewProps } from 'react-native';
 
 import { nextInDirection, type Direction, type Rect } from '@/lib/focus-geometry';
 import { isTypingTarget } from '@/lib/key-hold';
@@ -25,6 +25,23 @@ const FOCUSABLE =
 // A pinned section heading is a COPY of one in the list, re-based onto another section as the list
 // scrolls, so the focus would change headings under itself; the list's own heading is the one moved to.
 const SKIPPED = '[aria-hidden="true"], [inert], [data-focus-skip]';
+
+// Where the keyboard comes into a screen that has a better answer than its first control: the series
+// page's actions, not the cover above them that only repeats Read.
+const LANDING = '[data-focus-landing]';
+
+// Side-by-side columns, like the series page's actions beside its details. Up and down keep to the
+// column they are in, and run out of it only onto what is in no column; left and right cross to the
+// neighbouring column's nearest control even when nothing in it is level. The geometry alone goes to the
+// nearest ROW, which in two columns of different rhythms zig-zags between them.
+const COLUMN = '[data-focus-column]';
+
+type FocusMark = 'skip' | 'landing' | 'column';
+
+/** react-native-web renders `dataSet` as data-* attributes; react-native's types don't know it. */
+export const focusMarks = (...marks: FocusMark[]) =>
+  ({ dataSet: Object.fromEntries(marks.map((m) => [`focus${m[0]!.toUpperCase()}${m.slice(1)}`, ''])) }) as ViewProps;
+export const focusSkip = focusMarks('skip');
 
 const pointerMode = () => document.documentElement.getAttribute('data-input') === 'pointer';
 
@@ -130,9 +147,19 @@ function canScroll(el: HTMLElement, dir: Direction): boolean {
 
 /** Inside `region`, anything counts, on screen or not: focusing it scrolls it in, and one under the
  *  top bar or a pinned heading is brought out (`uncover`). Outside one, only what is on top. */
-function nearest(from: Rect, self: HTMLElement | null, dir: Direction, anchor: number, region: HTMLElement | null) {
+function nearest(
+  from: Rect,
+  self: HTMLElement | null,
+  dir: Direction,
+  anchor: number,
+  region: HTMLElement | null,
+  barred?: (el: HTMLElement) => boolean,
+) {
   const pool = candidates().filter(
-    (el) => !(self && (el.contains(self) || self.contains(el))) && (region ? region.contains(el) : onTop(el)),
+    (el) =>
+      !(self && (el.contains(self) || self.contains(el))) &&
+      (region ? region.contains(el) : onTop(el)) &&
+      !barred?.(el),
   );
   const i = nextInDirection(
     from,
@@ -216,11 +243,26 @@ function move(from: HTMLElement | null, rect: Rect, dir: Direction): void {
     focusKeyboard(to);
   };
   const origin = from ?? document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+  const column = origin?.closest<HTMLElement>(COLUMN) ?? null;
+  let barred: ((el: HTMLElement) => boolean) | undefined;
+  if (column) {
+    const within = nearest(rect, from, dir, at, column);
+    if (within) return land(within);
+    if (horizontal) {
+      // As tall as the page, so the neighbour's nearest control is level with it.
+      const across = { left: rect.left, right: rect.right, top: -Infinity, bottom: Infinity };
+      const notANeighbour = (el: HTMLElement) => column.contains(el) || !el.closest(COLUMN);
+      const beside = nearest(across, from, dir, at, regionOf(column, false), notANeighbour);
+      if (beside) land(beside);
+      return;
+    }
+    barred = (el) => !!el.closest(COLUMN);
+  }
   const region = origin && regionOf(origin, horizontal);
-  const inside = region && nearest(rect, from, dir, at, region);
+  const inside = region && nearest(rect, from, dir, at, region, barred);
   if (inside) return land(inside);
   if (!region || !canScroll(region, dir)) {
-    const outside = nearest(rect, from, dir, at, null);
+    const outside = nearest(rect, from, dir, at, null, barred);
     if (outside) land(outside);
     return;
   }
@@ -230,7 +272,7 @@ function move(from: HTMLElement | null, rect: Rect, dir: Direction): void {
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
       if (from && !from.isConnected) return;
-      const next = nearest(from?.getBoundingClientRect() ?? rect, from, dir, at, region);
+      const next = nearest(from?.getBoundingClientRect() ?? rect, from, dir, at, region, barred);
       if (next) land(next);
     }),
   );
@@ -307,15 +349,63 @@ function onFocusIn(e: FocusEvent): void {
   wearHover(el);
 }
 
-/** Where the keyboard comes in: the first thing in the screen's main list, else anything on top. */
+function topLeft(pool: HTMLElement[]): HTMLElement | null {
+  const first = pool
+    .map((el) => [el.getBoundingClientRect(), el] as const)
+    .sort(([a], [b]) => a.top * 2 + a.left - (b.top * 2 + b.left))[0];
+  return first ? first[1] : null;
+}
+
+function landingTarget(): HTMLElement | null {
+  const onScreen = candidates().filter(onTop);
+  for (const zone of document.querySelectorAll(LANDING)) {
+    const first = topLeft(onScreen.filter((el) => zone.contains(el)));
+    if (first) return first;
+  }
+  return null;
+}
+
+/** Where the keyboard comes in: the screen's landing, else the first thing in its main list, else
+ *  anything on top. */
 function focusFirst(): void {
   const main = largestScroller();
   const onScreen = candidates().filter(onTop);
   const pool = onScreen.filter((el) => main?.contains(el));
-  const first = (pool.length ? pool : onScreen)
-    .map((el) => [el.getBoundingClientRect(), el] as const)
-    .sort(([a], [b]) => a.top * 2 + a.left - (b.top * 2 + b.left))[0];
-  if (first) focusKeyboard(first[1]);
+  const first = landingTarget() ?? topLeft(pool.length ? pool : onScreen);
+  if (first) focusKeyboard(first);
+}
+
+// Long enough for a cold series load behind the zoom; a press that opened nothing just stops looking.
+const ARRIVAL_WAIT_FRAMES = 180;
+
+const sameRect = (a: DOMRect, b: DOMRect) =>
+  a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height;
+
+/**
+ * A press that opens a screen over the keyboard's focus — a card opening its series — puts the focus
+ * on that screen's landing, so the first key goes on from there instead of from whatever the screen
+ * happens to start with. Only once the landing has stopped moving: it arrives inside the zoom, and
+ * focusing it mid-flight scrolls its list to wherever it was that frame. A landing already showing
+ * when the key went down belongs to the screen underneath (Space on Library opens a menu beside Read).
+ */
+function arriveAfter(from: HTMLElement): void {
+  const before = landingTarget();
+  let frames = ARRIVAL_WAIT_FRAMES;
+  let last: { el: HTMLElement; rect: DOMRect } | null = null;
+  const check = () => {
+    const at = document.activeElement;
+    if (pointerMode() || (at !== from && at !== document.body) || --frames <= 0) return;
+    const to = from.isConnected && onTop(from) ? null : landingTarget();
+    const rect = to?.getBoundingClientRect();
+    if (to && rect && to !== before && last?.el === to && sameRect(last.rect, rect)) {
+      returnTo = from;
+      focusKeyboard(to);
+      return;
+    }
+    last = to && rect ? { el: to, rect } : null;
+    requestAnimationFrame(check);
+  };
+  requestAnimationFrame(check);
 }
 
 /** A sideways key with nothing focused brings the focus in from that side of the main list, at the
@@ -356,12 +446,17 @@ function onKeyDown(e: KeyboardEvent): void {
   }
   if (isKey(e, 'activate')) {
     const active = document.activeElement;
-    if (e.key === ' ' && active instanceof HTMLElement && pressesItselfOnSpace(active)) return;
+    if (e.key === ' ' && active instanceof HTMLElement && pressesItselfOnSpace(active)) {
+      if (!e.repeat && keyboardFocus() === active) arriveAfter(active);
+      return;
+    }
     e.preventDefault();
     if (e.repeat) return;
     const focused = keyboardFocus();
-    if (focused) focused.click();
-    else focusFirst();
+    if (focused) {
+      arriveAfter(focused);
+      focused.click();
+    } else focusFirst();
     return;
   }
   if (isKey(e, 'menu')) {

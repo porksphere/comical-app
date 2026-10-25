@@ -47,6 +47,7 @@ import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
+import { focusMarks, focusSkip } from '@/lib/focus-nav';
 import { isTypingTarget } from '@/lib/key-hold';
 import { isKey } from '@/lib/keybindings';
 import { useOpenSearchLayer } from '@/lib/series-nav';
@@ -537,6 +538,8 @@ export function SeriesBody({
   const coverEl = (
     <Pressable
       testID="series.cover"
+      // Read, again: the keyboard comes in on Read itself (`actionsMarks`).
+      {...focusSkip}
       style={isLarge ? styles.coverWrapLarge : styles.coverWrap}
       onPress={startReading}
       accessibilityRole="button"
@@ -599,7 +602,7 @@ export function SeriesBody({
 
   // Action buttons — shared between layouts; width controlled by parent.
   const actionsEl = (
-    <View style={[styles.actions, !isLarge && { width: actionsWidth }]}>
+    <View {...actionsMarks} style={[styles.actions, !isLarge && { width: actionsWidth }]}>
       <ActionButton
         testID="series.action.read"
         label={primaryLabel}
@@ -854,7 +857,7 @@ export function SeriesBody({
             {coverEl}
             {loading ? actionsSkel : actionsEl}
           </View>
-          <View style={styles.rightCol}>{loading ? contentSkel : contentEl}</View>
+          <View {...columnMark} style={styles.rightCol}>{loading ? contentSkel : contentEl}</View>
         </View>
       ) : (
         /* Small screen: hero row then content stacked below. */
@@ -929,7 +932,7 @@ export function SeriesBody({
         {coverEl}
         {loading ? actionsSkel : actionsEl}
       </View>
-      <View style={styles.rightCol}>{loading ? contentSkel : contentEl}</View>
+      <View {...columnMark} style={styles.rightCol}>{loading ? contentSkel : contentEl}</View>
     </View>
   ) : (
     <>
@@ -967,6 +970,11 @@ export function SeriesBody({
 }
 
 
+
+// The keyboard comes in on Read, and up and down keep to the actions rather than zig-zagging into the
+// details beside them (lib/focus-nav).
+const actionsMarks = focusMarks('landing', 'column');
+const columnMark = focusMarks('column');
 
 const styles = StyleSheet.create({
   container: {

@@ -51,7 +51,20 @@ export function nextInDirection(from: Rect, options: readonly Rect[], dir: Direc
     return d < 0 || (d === 0 && closer(cur[0], best[0]) < 0) ? cur : best;
   });
   const row = inWay.filter(([r]) => lo(r) < hi(first) && hi(r) > lo(first));
+  // A box drawn inside another — Show all over the bottom of the row it fades, a card's menu button
+  // in its corner. Along the edge the move comes in over, it is the first thing met, wherever the
+  // anchor is; anywhere else it is part of the box it sits in, and the move lands on that box.
+  const inside = (r: Rect, c: Rect) =>
+    r !== c && r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom;
+  const entry = (r: Rect) => (s > 0 ? lo(r) : hi(r));
+  const holder = (r: Rect) => row.find(([c]) => inside(r, c))?.[0];
+  const onEdge = row.filter(([r]) => {
+    const c = holder(r);
+    return !!c && Math.abs(entry(r) - entry(c)) <= 1;
+  });
+  const whole = row.filter(([r]) => !holder(r));
+  const pick = onEdge.length ? onEdge : whole.length ? whole : row;
   // Level, as near the anchor: the one whose middle is nearer, which is the one laid over the other.
   const nearer = (a: Rect, b: Rect) => closer(a, b) || s * (centre(a) - centre(b));
-  return row.reduce((best, cur) => (nearer(cur[0], best[0]) < 0 ? cur : best))[1];
+  return pick.reduce((best, cur) => (nearer(cur[0], best[0]) < 0 ? cur : best))[1];
 }

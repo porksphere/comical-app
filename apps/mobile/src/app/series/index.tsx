@@ -48,6 +48,7 @@ import {
   stepZoom,
   zoomHoldDirection,
 } from '@/components/reader/desktop-zoom';
+import { focusSkip } from '@/lib/focus-nav';
 import { isControlTarget, isTypingTarget } from '@/lib/key-hold';
 import { claimReaderScope, isKey, keyActionOf } from '@/lib/keybindings';
 import { TAB_KEY_ACTIONS } from '@/lib/keymap';
@@ -3908,6 +3909,8 @@ function SeriesReaderInstance({
       <GestureDetector gesture={collapsePan}>
         <Animated.View
           testID="series-page.reader-card"
+          // Under the details its chrome still shows through the seam; the keys stay on the details.
+          {...(detailsActive ? focusSkip : null)}
           style={[styles.readerFrame, { top: 0, width, height }, readerCardStyle]}>
           <View style={styles.readerClip}>
           {error ? (
@@ -4021,6 +4024,7 @@ function SeriesReaderInstance({
           <Animated.View style={[styles.dockBand, { height: headerTopInset }, headerBandStyle]}>
             <Pressable
               testID="series-page.header-band"
+              {...focusSkip}
               onPress={() => setRevealed(0)}
               accessibilityRole="button"
               accessibilityLabel="Read full screen"

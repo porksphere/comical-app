@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import { StyleSheet, View, type ViewProps } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, {
   runOnJS,
   useAnimatedReaction,
@@ -9,6 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useTheme } from '@/hooks/use-theme';
+import { focusSkip } from '@/lib/focus-nav';
 
 /** One pinnable section: the row key of its header (so the list can hide the heading the pinned
  *  copy is standing in for), its label, an optional count, and the CONTENT offset its header ROW
@@ -505,9 +506,6 @@ export function StickySectionHeader<S extends StickySection>({
     </>
   );
 }
-
-// react-native-web renders `dataSet` as data-* attributes; react-native's types don't know it.
-const focusSkip = { dataSet: { focusSkip: '' } } as ViewProps;
 
 const styles = StyleSheet.create({
   clip: {
