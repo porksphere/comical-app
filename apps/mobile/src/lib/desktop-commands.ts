@@ -7,6 +7,7 @@ import { Platform } from 'react-native';
 
 import { closeBridgeSearchPane, isBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
 import { desktopShell } from '@/lib/desktop-shell';
+import { dismissKeyHeld } from '@/lib/dismiss-key';
 import { letGoOfFocus } from '@/lib/focus-nav';
 import { isTypingTarget } from '@/lib/key-hold';
 import { keyActionOf } from '@/lib/keybindings';
@@ -44,17 +45,28 @@ export const goForward = () => window.history.forward();
 
 /**
  * Escape is the one key that always does something: out of a text field, then whatever is open
- * closes, then out of the keyboard's focus, then back. The listeners that close things are window and document listeners added after
- * this one, so whether one took the key is only known once the event has finished dispatching.
- * `goBack`'s own Escape is left to `goBack`.
+ * closes, then out of the keyboard's focus, then back.
+ *
+ * Out of a text field is decided on the capture, since react-native-web's TextInput stops every key
+ * event at the field (its #612) and no bubbling listener sees one — unless a popup is open, which
+ * takes Escape first (lib/dismiss-key) and keeps the field as it was, with the keys free once the
+ * popup is gone.
+ */
+function onEscapeInField(e: KeyboardEvent): void {
+  if (e.key !== 'Escape' || e.defaultPrevented || !isTypingTarget(e.target) || dismissKeyHeld()) return;
+  e.preventDefault();
+  (e.target as HTMLElement).blur();
+}
+
+/**
+ * The listeners that close things are window and document listeners added after this one, so
+ * whether one took the key is only known once the event has finished dispatching. `goBack`'s own
+ * Escape is left to `goBack`.
  */
 function onKeyDown(e: KeyboardEvent): void {
   if (e.defaultPrevented) return;
   if (e.key === 'Escape') {
-    if (isTypingTarget(e.target)) {
-      e.preventDefault();
-      (e.target as HTMLElement).blur();
-    } else if (e.isTrusted) {
+    if (e.isTrusted && !isTypingTarget(e.target)) {
       setTimeout(() => {
         if (e.defaultPrevented) return;
         if (!letGoOfFocus()) stepBack();
@@ -74,8 +86,12 @@ function onKeyDown(e: KeyboardEvent): void {
 export function useNavigationKeys(): void {
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    window.addEventListener('keydown', onEscapeInField, true);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onEscapeInField, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, []);
 }
 

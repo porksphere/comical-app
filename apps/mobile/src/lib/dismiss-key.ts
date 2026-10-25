@@ -12,6 +12,9 @@ import { BackHandler, Platform } from 'react-native';
  */
 const stack: { current: () => void }[] = [];
 
+/** Whether a popup is open that would take Escape. */
+export const dismissKeyHeld = () => stack.length > 0;
+
 function onKeyDown(e: KeyboardEvent): void {
   const top = stack[stack.length - 1];
   if (e.key !== 'Escape' || !top) return;

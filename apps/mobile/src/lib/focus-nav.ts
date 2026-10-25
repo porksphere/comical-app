@@ -40,7 +40,12 @@ const COLUMN = '[data-focus-column]';
 // screen's body is still arriving, its bars are all that is there, and its back button is top-left.
 const CHROME = '[data-focus-chrome]';
 
-type FocusMark = 'skip' | 'landing' | 'column' | 'chrome';
+// A menu, sheet or dialog open over the page. The keys stay inside it: a move with nothing further
+// in that direction stops at its edge rather than landing on the page beside it, and Tab goes round
+// in it. Only the layer's own scrollers are scrolled for more.
+const LAYER = '[data-focus-layer]';
+
+type FocusMark = 'skip' | 'landing' | 'column' | 'chrome' | 'layer';
 
 /** react-native-web renders `dataSet` as data-* attributes; react-native's types don't know it. */
 export const focusMarks = (...marks: FocusMark[]) =>
@@ -86,6 +91,22 @@ let returnTo: HTMLElement | null = null;
 function enterLayer(from: HTMLElement | null): void {
   returnTo = from;
   focusFirst();
+}
+
+/**
+ * A layer that has just opened takes the keyboard's focus: its selected row, else its first control.
+ * The focus goes back to what opened it once the layer closes (`returnSoon`), however it closes.
+ * Nothing moves for a pointer's open — the mouse is on the menu already — nor over a field the
+ * layer has focused itself.
+ */
+export function focusLayer(root: HTMLElement | null): void {
+  if (!root || pointerMode() || root.contains(document.activeElement)) return;
+  const from = heldFocus();
+  const pool = candidates().filter((el) => root.contains(el));
+  const to = pool.find((el) => el.getAttribute('aria-selected') === 'true') ?? topLeft(pool);
+  if (!to) return;
+  if (from && !root.contains(from)) returnTo = from;
+  focusKeyboard(to);
 }
 
 /** Watches for a quarter of a second or so, since a closing layer animates out. */
@@ -136,10 +157,12 @@ function candidates(): HTMLElement[] {
   });
 }
 
-/** What a move along that axis stays inside while it can: the scroller it runs through. */
-function regionOf(el: Element, horizontal: boolean): HTMLElement | null {
+/** What a move along that axis stays inside while it can: the scroller it runs through, looked for
+ *  no further out than `within`. */
+function regionOf(el: Element, horizontal: boolean, within: HTMLElement | null = null): HTMLElement | null {
   for (let p = el.parentElement; p; p = p.parentElement) {
     if (scrolls(p, horizontal)) return p;
+    if (p === within) break;
   }
   return null;
 }
@@ -334,22 +357,24 @@ function move(from: HTMLElement | null, rect: Rect, dir: Direction): void {
     focusKeyboard(to);
   };
   const origin = from ?? document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+  const layer = origin?.closest<HTMLElement>(LAYER) ?? null;
+  const outsideLayer = (el: HTMLElement) => !!layer && !layer.contains(el);
   const column = origin?.closest<HTMLElement>(COLUMN) ?? null;
-  let barred: ((el: HTMLElement) => boolean) | undefined;
+  let barred = outsideLayer;
   if (column) {
-    const within = nearest(rect, from, dir, at, column);
+    const within = nearest(rect, from, dir, at, column, outsideLayer);
     if (within) return land(within);
     if (horizontal) {
       // As tall as the page, so the neighbour's nearest control is level with it.
       const across = { left: rect.left, right: rect.right, top: -Infinity, bottom: Infinity };
-      const notANeighbour = (el: HTMLElement) => column.contains(el) || !el.closest(COLUMN);
-      const beside = nearest(across, from, dir, at, regionOf(column, false), notANeighbour);
+      const notANeighbour = (el: HTMLElement) => outsideLayer(el) || column.contains(el) || !el.closest(COLUMN);
+      const beside = nearest(across, from, dir, at, regionOf(column, false, layer), notANeighbour);
       if (beside) land(beside);
       return;
     }
-    barred = (el) => !!el.closest(COLUMN);
+    barred = (el) => outsideLayer(el) || !!el.closest(COLUMN);
   }
-  const region = origin && regionOf(origin, horizontal);
+  const region = origin && regionOf(origin, horizontal, layer);
   const inside = region && nearest(rect, from, dir, at, region, barred);
   if (inside) return land(inside);
   if (!region || !canScroll(region, dir)) {
@@ -647,6 +672,25 @@ function onKeyDown(e: KeyboardEvent): void {
   }
 }
 
+/**
+ * Tab goes round the layer the focus is in, instead of out to the page under it. Captured, since the
+ * reader's chrome takes Tab for its own ring from the window too.
+ */
+function onTabInLayer(e: KeyboardEvent): void {
+  if (e.key !== 'Tab' || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+  const active = document.activeElement;
+  const layer = active instanceof HTMLElement ? active.closest<HTMLElement>(LAYER) : null;
+  if (!layer) return;
+  const ring = [...layer.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (el) => el.getClientRects().length > 0 && !el.closest(SKIPPED),
+  );
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (ring.length === 0) return;
+  const at = ring.indexOf(active as HTMLElement);
+  ring[(at + (e.shiftKey ? -1 : 1) + ring.length) % ring.length]!.focus();
+}
+
 /** Ahead of lib/keyboard-scroll, which scrolls only what this leaves alone. */
 export function installFocusNav(): void {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return;
@@ -663,6 +707,7 @@ export function installFocusNav(): void {
     if (returnTo) returnSoon();
   });
   window.addEventListener('keydown', (e) => e.isTrusted && holdOffMouse(), true);
+  window.addEventListener('keydown', onTabInLayer, true);
   for (const type of BOUNDARY) window.addEventListener(type, onBoundary, true);
   // The real mouse takes its hover back the moment it is used, and the wheel its scroll.
   window.addEventListener('pointermove', onPointerMove, { capture: true, passive: true });

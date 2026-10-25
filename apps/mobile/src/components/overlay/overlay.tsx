@@ -32,6 +32,7 @@ import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { useDismissKey } from '@/lib/dismiss-key';
+import { focusLayer, focusMarks } from '@/lib/focus-nav';
 import {
   overlayPresentation,
   topUsesWebOutsideClick,
@@ -724,6 +725,14 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** Keyboard-opened, the layer takes the focus in with it; see `focusLayer`. */
+function useFocusLayer(ref: RefObject<View | null>): void {
+  useEffect(() => {
+    if (Platform.OS === 'web') focusLayer(ref.current as unknown as HTMLElement | null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on open
+  }, []);
+}
+
 function OverlaySheet({
   id,
   depthFromTop,
@@ -771,6 +780,8 @@ function OverlaySheet({
   // but kept for the focus signal.
   const isFocused = useSharedValue(false);
   const sheetHeightSV = useSharedValue(0);
+  const sheetRef = useRef<View>(null);
+  useFocusLayer(sheetRef);
   const keyboard = useAnimatedKeyboard();
   const keyboardShift = useDerivedValue(() => {
     const kbHeight = keyboard.height.value;
@@ -997,6 +1008,8 @@ function OverlaySheet({
             trailing padding (`listContent` above) / the overflow-filters
             sheet's own content padding, not this outer container. */}
         <View
+          ref={sheetRef}
+          {...focusMarks('layer')}
           onLayout={(e) => { sheetHeightSV.set(e.nativeEvent.layout.height); }}
           style={[
             styles.sheet,
@@ -1115,43 +1128,7 @@ function OverlayDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!isTop || Platform.OS !== 'web' || typeof document === 'undefined') return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        closeRef.current();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-
-      const root = dialogRef.current as unknown as HTMLElement | null;
-      if (!root) return;
-      const focusable = Array.from(
-        root.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((element) => element.getAttribute('aria-hidden') !== 'true');
-      if (focusable.length === 0) {
-        event.preventDefault();
-        root.focus();
-        return;
-      }
-
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, [isTop]);
+  useFocusLayer(dialogRef);
 
   const animStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
@@ -1165,6 +1142,7 @@ function OverlayDialog({
     <View style={styles.dialogWrap} pointerEvents="box-none">
       <Animated.View
         ref={dialogRef}
+        {...focusMarks('layer')}
         role="dialog"
         aria-modal
         aria-label={accessibilityLabel}
@@ -1239,6 +1217,8 @@ function OverlayPopover({
   const controls = useWindowControlsStrip();
   const theme = useTheme();
   const [card, setCard] = useState<{ width: number; height: number } | null>(null);
+  const cardRef = useRef<View>(null);
+  useFocusLayer(cardRef);
   const progress = useSharedValue(0);
   const entered = useRef(false);
   // Same one-way latch and backstop as `OverlaySheet` — see the long note on its `close`. A stuck
@@ -1344,6 +1324,8 @@ function OverlayPopover({
     <Animated.View
       style={[styles.popoverWrap, { left, top, width, pointerEvents: 'box-none' }, animStyle]}>
       <View
+        ref={cardRef}
+        {...focusMarks('layer')}
         style={[
           styles.popover,
           { backgroundColor: theme.overlaySurface, maxHeight },
