@@ -11,7 +11,8 @@ transport (so JS-only lanes are unaffected).
 ## Trackers (AniList/MAL) — registry-installed, exactly like bridges
 
 `ComicalRuntimeModule.swift`/`.kt` implement `initTracker`/`callTracker`/`disposeTracker`/
-`drainTrackerSettingsPatch` alongside the bridge functions, keyed per-id; the underlying
+`drainTrackerSettingsPatch` alongside the bridge functions, keyed per-id (plus the app-local
+`directorySize`, a background-thread directory walk expo-file-system has no async form of); the underlying
 `ComicalTrackerContext.swift`/`.kt` (in `comical`'s `host-ios`/`host-android`) mirror
 `ComicalBridgeContext` and share the same harness (`comical_init_tracker`/`comical_call_tracker`/
 `comical_drain_tracker_patch`, installed unconditionally alongside the bridge pair by

@@ -15,6 +15,8 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import type { BlobStore } from '@comical/downloads';
 
+import { directorySize } from '../../../modules/comical-runtime';
+
 const ROOT = 'comical-downloads';
 
 /** The `File` for a stored relative path, rooted at the (current) document directory. */
@@ -64,18 +66,21 @@ export const expoBlobStore: BlobStore = {
 };
 
 // ── Disk-usage cache ──────────────────────────────────────────────────────────
-// `downloadsDiskUsage()` recursively walks the whole downloads tree (expensive, and it grows with the
-// download). The usage query refetches on every progress invalidation (~3×/s during a download), and
-// re-walking the disk each time showed up as a top cost in a CPU profile. The manifest already tracks
+// `downloadsDiskUsage()` recursively walks the whole downloads tree (off the JS thread, but still
+// expensive, and it grows with the download). The usage query refetches on every progress
+// invalidation (~3×/s during a download), and re-walking the disk each time showed up as a top cost
+// in a CPU profile. The manifest already tracks
 // `totalBytes` live; `diskBytes` (this walk) only exists as an occasional DRIFT check against it (to
 // surface orphaned blobs), so a value that's stale by a few seconds during an active download is fine.
 // So walk at most once per TTL, and invalidate immediately on a delete (the one thing that should drop
 // the number promptly). Orphans come from deletes/failures, never from active downloads adding tracked
 // bytes — so nothing meaningful is missed between walks.
 const DISK_USAGE_TTL_MS = 4000;
-let diskUsageCache: { bytes: number; at: number } | null = null;
+// The entry holds the walk's PROMISE, not its result, so the refetches that land while one walk is
+// still running share it instead of starting their own.
+let diskUsageCache: { bytes: Promise<number>; at: number } | null = null;
 
-function cachedDiskUsage(): number {
+function cachedDiskUsage(): Promise<number> {
   const now = Date.now();
   if (diskUsageCache && now - diskUsageCache.at < DISK_USAGE_TTL_MS) return diskUsageCache.bytes;
   const bytes = downloadsDiskUsage();
@@ -113,10 +118,10 @@ export function removeAllBlobs(): void {
  * The ACTUAL bytes the downloads directory occupies on disk (durable, under Documents). Shown next to
  * the manifest's rolled-up total so a gap surfaces any orphaned blobs. Returns 0 if unavailable (web).
  */
-export function downloadsDiskUsage(): number {
+export async function downloadsDiskUsage(): Promise<number> {
   try {
     const dir = new Directory(Paths.document, ROOT);
-    return dir.exists ? (dir.size ?? 0) : 0;
+    return dir.exists ? await directorySize(dir.uri) : 0;
   } catch {
     return 0;
   }

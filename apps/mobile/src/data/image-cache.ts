@@ -15,6 +15,7 @@ import { Image } from 'expo-image';
 import { use$ } from '@legendapp/state/react';
 
 import { persisted$ } from '@/lib/observable';
+import { directorySize } from '../../modules/comical-runtime';
 
 /** Max reclaimable-cache size in bytes; 0 = unlimited. */
 export interface CachePrefs {
@@ -33,10 +34,10 @@ export function getCacheMaxSync(): number {
 }
 
 /** Bytes the app's reclaimable cache currently occupies on disk (expo-image cache dominates). */
-export function cacheDiskUsage(): number {
+export async function cacheDiskUsage(): Promise<number> {
   try {
     const dir = new Directory(Paths.cache);
-    return dir.exists ? (dir.size ?? 0) : 0;
+    return dir.exists ? await directorySize(dir.uri) : 0;
   } catch {
     return 0;
   }
@@ -54,14 +55,18 @@ export interface CacheEntry {
  * into "expo-image images" (SDWebImage's subfolder) vs. everything else the OS parks alongside it
  * (our bridge-bundle cache, NSURLCache, framework caches). Largest first. Native only; [] on web.
  */
-export function cacheBreakdown(): CacheEntry[] {
+export async function cacheBreakdown(): Promise<CacheEntry[]> {
   try {
     const dir = new Directory(Paths.cache);
     if (!dir.exists) return [];
-    return dir
-      .list()
-      .map((e) => ({ name: e.name, bytes: e.size ?? 0, isDir: e instanceof Directory }))
-      .sort((a, b) => b.bytes - a.bytes);
+    // One readdir, then a native walk per subfolder — `e.size` on a Directory is the synchronous walk.
+    const entries = await Promise.all(
+      dir.list().map(async (e) => {
+        const isDir = e instanceof Directory;
+        return { name: e.name, bytes: isDir ? await directorySize(e.uri) : (e.size ?? 0), isDir };
+      }),
+    );
+    return entries.sort((a, b) => b.bytes - a.bytes);
   } catch {
     return [];
   }
@@ -74,15 +79,13 @@ export interface CacheUsage {
 }
 
 /**
- * The Storage screen's measurement, shaped for TanStack Query: the walk is synchronous and can be
- * chunky on a multi-GB cache, so it yields to the event loop first (the screen paints, then the
- * walk runs) and the result is cached under `queryKeys.cacheUsage()` — persisted, so a re-open
- * within the stale window shows the last number instantly instead of walking the disk again.
- * Clearing the cache invalidates it.
+ * The Storage screen's measurement, shaped for TanStack Query: the result is cached under
+ * `queryKeys.cacheUsage()` — persisted, so a re-open within the stale window shows the last number
+ * instantly instead of walking the disk again. Clearing the cache invalidates it.
  */
 export async function measureCacheUsage(): Promise<CacheUsage> {
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
-  return { bytes: cacheDiskUsage(), breakdown: cacheBreakdown() };
+  const [bytes, breakdown] = await Promise.all([cacheDiskUsage(), cacheBreakdown()]);
+  return { bytes, breakdown };
 }
 
 /** Clear the image cache (disk + in-memory). */

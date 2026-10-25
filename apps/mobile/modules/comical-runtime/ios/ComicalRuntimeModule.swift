@@ -115,6 +115,26 @@ public final class ComicalRuntimeModule: Module {
       }
       return ctx.drainSettingsPatch()
     }
+
+    // expo-file-system only sizes a directory synchronously (`Directory.size` stats every file while
+    // the JS thread waits), which stalled the Storage/Downloads screens on open. Same walk, off-thread.
+    AsyncFunction("directorySize") { (url: URL) -> Double in
+      Self.directorySize(at: url)
+    }
+  }
+
+  /// Logical bytes of every regular file under `url`, recursively; 0 for a missing path.
+  private static func directorySize(at url: URL) -> Double {
+    let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
+    guard let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: keys, options: []) else {
+      return 0
+    }
+    var total: Int64 = 0
+    for case let file as URL in files {
+      guard let values = try? file.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
+      total += Int64(values.fileSize ?? 0)
+    }
+    return Double(total)
   }
 
   /// A persistent, per-bridge data directory: `<Application Support>/comical/bridges/<id>`. Falls back

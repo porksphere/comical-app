@@ -14,5 +14,24 @@
 import type { NativeBridgeRuntime, NativeTrackerRuntime } from '@comical/host-rn';
 import { requireOptionalNativeModule } from 'expo';
 
+/**
+ * App-local filesystem helpers on the same module — not part of the `@comical/host-rn` contracts.
+ * `directorySize` exists because expo-file-system can only size a directory synchronously, on the JS
+ * thread; this is the same recursive walk on a native background thread.
+ */
+interface ComicalRuntimeFs {
+  /** Logical bytes of every file under the `file://` directory URI, recursively; 0 for a missing path. */
+  directorySize(uri: string): Promise<number>;
+}
+
+const comicalRuntime = requireOptionalNativeModule<NativeBridgeRuntime & NativeTrackerRuntime & ComicalRuntimeFs>(
+  'ComicalRuntime',
+);
+
 /** The native module, or null when it isn't linked (web / not-yet-built). */
-export default requireOptionalNativeModule<NativeBridgeRuntime & NativeTrackerRuntime>('ComicalRuntime');
+export default comicalRuntime;
+
+/** Recursive on-disk size of a directory, measured off the JS thread. 0 where the module isn't linked (web). */
+export function directorySize(uri: string): Promise<number> {
+  return comicalRuntime ? comicalRuntime.directorySize(uri) : Promise.resolve(0);
+}

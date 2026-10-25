@@ -7,8 +7,11 @@ import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -77,6 +80,15 @@ class ComicalRuntimeModule : Module() {
     AsyncFunction("drainTrackerSettingsPatch") Coroutine { id: String ->
       val ctx = trackers[id] ?: throw IllegalStateException("tracker not initialised: $id")
       ctx.drainSettingsPatch()
+    }
+
+    // expo-file-system only sizes a directory synchronously (`Directory.size` stats every file while
+    // the JS thread waits), which stalled the Storage/Downloads screens on open. Same walk, off-thread.
+    AsyncFunction("directorySize") Coroutine { uri: String ->
+      withContext(Dispatchers.IO) {
+        val root = File(URI(uri))
+        if (!root.exists()) 0.0 else root.walkTopDown().filter { it.isFile }.sumOf { it.length() }.toDouble()
+      }
     }
 
     OnDestroy {
