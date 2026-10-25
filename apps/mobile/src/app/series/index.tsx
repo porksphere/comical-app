@@ -5207,8 +5207,8 @@ const ReaderPane = forwardRef<
 
   // ── Progress recording: every chaptered read records chapter progress. Outside the library the
   // reading log is written FIRST: its row is the series' history entry and resume point, and only
-  // this call carries the title and cover to create it. A direct series goes to the log alone,
-  // under the DIRECT_CHAPTER_ID sentinel. Unknown membership writes both — the host ignores a log
+  // this call carries the title and cover to create it. A direct series records under the
+  // DIRECT_CHAPTER_ID sentinel. Unknown membership writes both — the host ignores a log
   // write for a library series, and waiting on the answer dropped reads whenever the check failed. ──
   //
   // A read is a page TURNED, not a pane mounted. This pane sits behind the details page as a
@@ -5271,14 +5271,17 @@ const ReaderPane = forwardRef<
         pageCount,
         ...(chapterName ? { chapterName } : {}),
       });
-    if (chapterId && inLibrary) {
-      void recordChapter(chapterId).then(invalidateHistory).catch(() => {});
+    // A direct series' page goes through chapter progress too, under the sentinel: the log write is
+    // ignored once the series is collected, and progress is the only thing that moves its resume point.
+    const progressId = chapterId ?? DIRECT_CHAPTER_ID;
+    if (inLibrary) {
+      void recordChapter(progressId).then(invalidateHistory).catch(() => {});
       return;
     }
     void ds
       .recordReadingHistory(entry)
       .catch(() => {})
-      .then(() => (chapterId ? recordChapter(chapterId) : undefined))
+      .then(() => recordChapter(progressId))
       .then(invalidateHistory)
       .catch(() => {});
   }, [recordProgress, bridgeId, seriesId, pages, inLibrary, chapterId, chapterName, seriesTitle, seriesCover, ds, mock, queryClient]);
