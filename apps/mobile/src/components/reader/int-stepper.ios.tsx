@@ -18,20 +18,20 @@ import { testId } from '@/lib/test-id';
 const STEPPER_WIDTH = 94;
 const STEPPER_HEIGHT = 32;
 
-export function IntStepper({ value, min, max, onChange, testIdPrefix, tone = 'theme', deferMountMs = 0 }: IntStepperProps) {
+export function IntStepper({ value, min, max, onChange, testIdPrefix, deferMountMs = 0 }: IntStepperProps) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
   const mounted = useDeferredMount(deferMountMs);
   return (
     <View style={styles.row}>
-      <ThemedText testID={testId(testIdPrefix, 'value')} style={[styles.value, { color: tone === 'dark' ? '#fff' : theme.text }]}>
+      <ThemedText testID={testId(testIdPrefix, 'value')} style={[styles.value, { color: theme.text }]}>
         {value}
       </ThemedText>
       {/* `ignoreSafeArea`: SwiftUI keeps its content out of the safe area by default, and a host at
           the bottom of the sheet was pushed up by the home indicator's inset — the whole control
           drawn a row above where it belonged. */}
       {mounted ? (
-        <Host colorScheme={tone === 'dark' ? 'dark' : scheme} style={styles.host} ignoreSafeArea="all">
+        <Host colorScheme={scheme} style={styles.host} ignoreSafeArea="all">
           <Stepper label="" value={value} min={min} max={max} step={1} onValueChange={(v) => onChange(Math.round(v))} />
         </Host>
       ) : (

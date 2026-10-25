@@ -11,7 +11,7 @@ import { testId } from '@/lib/test-id';
 // iOS and Android each get the platform's own control instead — see the `.ios.tsx` and
 // `.android.tsx` siblings — since neither platform draws a stepper the way the other does, and a
 // native control is what a settings row is expected to hold there. Used by the Settings screen's
-// numeric fields (on the app theme) and by the reader sheet (always dark — `tone`).
+// numeric fields and by the reader sheet, both on the app theme.
 
 export type IntStepperProps = {
   value: number;
@@ -20,8 +20,6 @@ export type IntStepperProps = {
   onChange: (value: number) => void;
   /** `<prefix>.value` names the number; the web control adds `.decrement` / `.increment`. */
   testIdPrefix: string;
-  /** `'theme'` follows the app theme; `'dark'` is the reader sheet's own always-dark palette. */
-  tone?: 'theme' | 'dark';
   /** Mount the native control only after this many ms, holding its space meanwhile. For a host
    *  inside a view that is still animating into place — the reader sheet springs up from below
    *  the screen — since the platform view lays its content out from where the host IS at mount
@@ -31,10 +29,10 @@ export type IntStepperProps = {
   deferMountMs?: number;
 };
 
-export function IntStepper({ value, min, max, onChange, testIdPrefix, tone = 'theme' }: IntStepperProps) {
+export function IntStepper({ value, min, max, onChange, testIdPrefix }: IntStepperProps) {
   const theme = useTheme();
-  const text = tone === 'dark' ? '#fff' : theme.text;
-  const button = tone === 'dark' ? 'rgba(255,255,255,0.08)' : theme.backgroundSelected;
+  const text = theme.text;
+  const button = theme.backgroundSelected;
   return (
     <View style={styles.row}>
       <StepButton

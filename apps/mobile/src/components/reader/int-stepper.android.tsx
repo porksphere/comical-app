@@ -15,19 +15,18 @@ import { testId } from '@/lib/test-id';
 const TRACK_WIDTH = 160;
 const TRACK_HEIGHT = 44;
 
-export function IntStepper({ value, min, max, onChange, testIdPrefix, tone = 'theme', deferMountMs = 0 }: IntStepperProps) {
+export function IntStepper({ value, min, max, onChange, testIdPrefix, deferMountMs = 0 }: IntStepperProps) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
-  const dark = tone === 'dark';
   const mounted = useDeferredMount(deferMountMs);
   return (
     <View style={styles.row}>
-      <ThemedText testID={testId(testIdPrefix, 'value')} style={[styles.value, { color: dark ? '#fff' : theme.text }]}>
+      <ThemedText testID={testId(testIdPrefix, 'value')} style={[styles.value, { color: theme.text }]}>
         {value}
       </ThemedText>
       {!mounted && <View style={styles.host} />}
       {mounted && (
-      <Host colorScheme={dark ? 'dark' : scheme} style={styles.host}>
+      <Host colorScheme={scheme} style={styles.host}>
         <Slider
           value={value}
           min={min}
@@ -37,7 +36,7 @@ export function IntStepper({ value, min, max, onChange, testIdPrefix, tone = 'th
           colors={{
             thumbColor: theme.accent,
             activeTrackColor: theme.accent,
-            inactiveTrackColor: dark ? 'rgba(255,255,255,0.25)' : theme.backgroundSelected,
+            inactiveTrackColor: theme.backgroundSelected,
           }}
           onValueChange={(v) => onChange(Math.round(v))}
         />

@@ -1,5 +1,5 @@
 import { useEffect, type ComponentType } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
 import type { IconProps } from '@/components/icons/ui-icons';
@@ -21,6 +21,7 @@ import {
   type ReaderDirection,
   type ReaderSettings,
 } from '@/hooks/use-reader-settings';
+import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
 /** How long the sheet's entrance spring takes to come to rest, generously — the native controls in
@@ -74,7 +75,8 @@ export function SettingsControl({
  *  Note: the overlay panel follows the app's theme (`useTheme`), so under a
  *  light appearance it renders light while the reader keeps its own always-dark
  *  viewing surface — an intentional split, matching how media
- *  readers stay dark for immersion while their controls track the app theme. */
+ *  readers stay dark for immersion while their controls track the app theme.
+ *  So every colour in here is the theme's: a hardcoded white was white on white. */
 function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
   const [settings, set] = useReaderSettings(seriesKey);
   const shift = useSpreadShift(seriesKey);
@@ -83,6 +85,8 @@ function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
   const window = useWindowDimensions();
   const paged = settings.mode === 'paged';
   const pairing = paged && readsDouble(settings.pageLayout, window);
+  const theme = useTheme();
+  const hint = [styles.hint, { color: theme.textSecondary }];
   return (
     <View style={styles.content}>
       <OverlayHeading>Reader settings</OverlayHeading>
@@ -101,7 +105,7 @@ function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
         onChange={(v) => set({ pageFit: v as PageFit })}
       />
       {settings.mode === 'webtoon' && (
-        <ThemedText style={styles.hint}>
+        <ThemedText style={hint}>
           {webtoonFit(settings.pageFit) === 'fit-page' ? 'One page at a time, like Paged' : 'Continuous scroll'}
         </ThemedText>
       )}
@@ -129,7 +133,7 @@ function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
         disabled={!paged}
       />
       {paged && settings.pageLayout === 'auto' && (
-        <ThemedText style={styles.hint}>Two pages side by side in landscape</ThemedText>
+        <ThemedText style={hint}>Two pages side by side in landscape</ThemedText>
       )}
       <ToggleRow
         label="Shift spreads by a page"
@@ -156,12 +160,15 @@ function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
         value={settings.respectSafeArea}
         onChange={(v) => set({ respectSafeArea: v })}
       />
-      <ToggleRow
-        label="Downsample images"
-        testID="reader.settings.downsample"
-        value={settings.downsample}
-        onChange={(v) => set({ downsample: v })}
-      />
+      {/* The web image ignores `allowDownscaling` — the browser decodes an <img> its own way. */}
+      {Platform.OS !== 'web' && (
+        <ToggleRow
+          label="Downsample images"
+          testID="reader.settings.downsample"
+          value={settings.downsample}
+          onChange={(v) => set({ downsample: v })}
+        />
+      )}
       <StepperRow
         label="Preload ahead"
         testIdPrefix="reader.settings.preload-ahead"
@@ -196,12 +203,13 @@ function DirectionRow({
   settings: ReaderSettings;
   set: (patch: Partial<ReaderSettings>) => void;
 }) {
+  const c = useSegmentColors();
   const value = settings.mode === 'webtoon' ? 'vertical' : settings.direction;
   const onChange = (v: 'ltr' | 'vertical' | 'rtl') =>
     v === 'vertical' ? set({ mode: 'webtoon' }) : set({ mode: 'paged', direction: v as ReaderDirection });
   return (
     <View style={styles.seg}>
-      <ThemedText style={styles.segLabel}>Reading direction</ThemedText>
+      <ThemedText style={c.label}>Reading direction</ThemedText>
       <View style={styles.segRow}>
         {DIRECTION_OPTIONS.map(({ value: v, label, Icon }) => {
           const on = value === v;
@@ -210,9 +218,9 @@ function DirectionRow({
               key={v}
               testID={testId('reader.settings.direction', v)}
               onPress={() => onChange(v)}
-              style={[styles.opt, styles.optIcon, on && styles.optOn]}>
-              <Icon color={on ? '#fff' : 'rgba(255,255,255,0.8)'} size={18} />
-              <ThemedText style={[styles.optText, on && styles.optTextOn]}>{label}</ThemedText>
+              style={[styles.opt, styles.optIcon, on ? c.optOn : c.opt]}>
+              <Icon color={on ? c.onColor : c.offColor} size={18} />
+              <ThemedText style={on ? c.optTextOn : c.optText}>{label}</ThemedText>
             </Pressable>
           );
         })}
@@ -238,16 +246,16 @@ function StepperRow({
   onChange: (value: number) => void;
   testIdPrefix: string;
 }) {
+  const c = useSegmentColors();
   return (
     <View style={styles.toggleRow}>
-      <ThemedText style={styles.segLabel}>{label}</ThemedText>
+      <ThemedText style={c.label}>{label}</ThemedText>
       <IntStepper
         value={value}
         min={min}
         max={max}
         onChange={onChange}
         testIdPrefix={testIdPrefix}
-        tone="dark"
         // The sheet springs up from below the screen; the native control is mounted once it has
         // arrived — see `deferMountMs`.
         deferMountMs={SHEET_SETTLE_MS}
@@ -271,9 +279,10 @@ function ToggleRow({
   testID: string;
   disabled?: boolean;
 }) {
+  const c = useSegmentColors();
   return (
     <View style={[styles.toggleRow, disabled && styles.disabled]}>
-      <ThemedText style={styles.segLabel}>{label}</ThemedText>
+      <ThemedText style={c.label}>{label}</ThemedText>
       <ThemedSwitch testID={testID} value={value} onValueChange={onChange} disabled={disabled} />
     </View>
   );
@@ -294,9 +303,10 @@ function Segment({
   testIdPrefix: string;
   disabled?: boolean;
 }) {
+  const c = useSegmentColors();
   return (
     <View style={[styles.seg, disabled && styles.disabled]}>
-      <ThemedText style={styles.segLabel}>{label}</ThemedText>
+      <ThemedText style={c.label}>{label}</ThemedText>
       <View style={styles.segRow}>
         {options.map(([v, l]) => {
           const on = value === v;
@@ -307,14 +317,27 @@ function Segment({
               onPress={() => onChange(v)}
               disabled={disabled}
               accessibilityState={{ disabled, selected: on }}
-              style={[styles.opt, on && styles.optOn]}>
-              <ThemedText style={[styles.optText, on && styles.optTextOn]}>{l}</ThemedText>
+              style={[styles.opt, on ? c.optOn : c.opt]}>
+              <ThemedText style={on ? c.optTextOn : c.optText}>{l}</ThemedText>
             </Pressable>
           );
         })}
       </View>
     </View>
   );
+}
+
+function useSegmentColors() {
+  const theme = useTheme();
+  return {
+    label: [styles.segLabel, { color: theme.text }],
+    opt: { backgroundColor: theme.overlayHover },
+    optOn: { backgroundColor: theme.accent },
+    optText: [styles.optText, { color: theme.text }],
+    optTextOn: [styles.optText, styles.optTextOn, { color: theme.accentOn }],
+    offColor: theme.text,
+    onColor: theme.accentOn,
+  };
 }
 
 const styles = StyleSheet.create({
@@ -332,7 +355,6 @@ const styles = StyleSheet.create({
   },
   // One label style for every row, segment and switch alike.
   segLabel: {
-    color: 'rgba(255,255,255,0.8)',
     fontSize: 13,
   },
   segRow: {
@@ -345,24 +367,17 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.one,
     ...ContinuousCorner,
     borderRadius: Spacing.two,
-    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   optIcon: {
     gap: 4,
   },
-  optOn: {
-    backgroundColor: '#3478F6',
-  },
   optText: {
-    color: 'rgba(255,255,255,0.8)',
     fontSize: 13,
   },
   optTextOn: {
-    color: '#fff',
     fontWeight: '600',
   },
   hint: {
-    color: 'rgba(255,255,255,0.4)',
     fontSize: 11,
   },
   disabled: {
