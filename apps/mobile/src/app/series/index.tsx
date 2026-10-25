@@ -4918,7 +4918,14 @@ const ReaderPane = forwardRef<
   // start (a swipe mid-entrance must not freeze under a static image), else up until BOTH the
   // entrance has finished and the list has reported — or the backstop calls time. A spread can
   // report either of its pages (see `reportedPage`), so "the start" is the whole spread.
+  //
+  // Never on web. What it papers over is the native offset transient, and the web pager has none:
+  // its track is positioned synchronously. It only ever showed there as a defect — the web pager
+  // reports no page at mount, so `parked` never flips and the poster outlived the backstop, drawn
+  // as a contain picture over a page the pager had meanwhile re-paired (a wide first page, found
+  // wide only on load) and rested at fit-height: two pictures of the page, one over the other.
   const posterUp =
+    !IS_WEB &&
     !!startSpread &&
     currentPage >= startSpread.first &&
     currentPage <= startSpread.last &&
