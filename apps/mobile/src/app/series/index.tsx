@@ -4005,9 +4005,14 @@ function SeriesReaderInstance({
             />
           )}
             {/* The Details pill — the guaranteed collapse path in both modes (webtoon's expanded
-                reader owns vertical drags, and no longer reveals by dragging at all). */}
+                reader owns vertical drags, and no longer reveals by dragging at all). Not on a
+                desktop: its details are the pane's, or the chevron's (`backStepsHome`), and the
+                full-screen card the pill reveals is the phone's layout. */}
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-              <DetailsHint visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
+              <DetailsHint
+                visible={chromeVisible && !detailsActive && !isDesktop && !desktopShell()}
+                onPress={() => setRevealed(1)}
+              />
             </View>
           </View>
         </Animated.View>

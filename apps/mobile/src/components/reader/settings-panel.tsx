@@ -21,6 +21,7 @@ import {
   type ReaderDirection,
   type ReaderSettings,
 } from '@/hooks/use-reader-settings';
+import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
@@ -87,6 +88,8 @@ function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
   const pairing = paged && readsDouble(settings.pageLayout, window);
   const theme = useTheme();
   const hint = [styles.hint, { color: theme.textSecondary }];
+  // A desktop window has no orientation to speak of; it is nearly always wider than tall.
+  const desktop = useIsDesktop();
   return (
     <View style={styles.content}>
       <OverlayHeading>Reader settings</OverlayHeading>
@@ -133,7 +136,9 @@ function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
         disabled={!paged}
       />
       {paged && settings.pageLayout === 'auto' && (
-        <ThemedText style={hint}>Two pages side by side in landscape</ThemedText>
+        <ThemedText style={hint}>
+          {desktop ? 'Two pages side by side when the window is wider than tall' : 'Two pages side by side in landscape'}
+        </ThemedText>
       )}
       <ToggleRow
         label="Shift spreads by a page"

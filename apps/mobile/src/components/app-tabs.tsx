@@ -67,6 +67,7 @@ import {
   tabBarHideOffset,
   tabBarProgress,
 } from '@/lib/tab-bar-slide';
+import { ROOT_TAB_PATHS } from '@/lib/root-tabs';
 import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility';
 
 // A custom-rendered bar on every platform (no OS-native tab bar) — responsive: an app-like black
@@ -102,7 +103,7 @@ const TABS: {
   // The compass came off Trackers to get here — see `TrackersIcon` before moving it back.
   {
     name: 'browse',
-    href: '/',
+    href: ROOT_TAB_PATHS.browse,
     label: 'Browse',
     Icon: Compass,
     Scope: SidebarBridges,
@@ -110,15 +111,15 @@ const TABS: {
   },
   {
     name: 'library',
-    href: '/library',
+    href: ROOT_TAB_PATHS.library,
     label: 'Library',
     Icon: Library,
     Scope: SidebarCollections,
     selectDefault: () => setSelectedCollection(null),
   },
-  { name: 'history', href: '/history', label: 'History', Icon: History, noRecede: true },
-  { name: 'activity', href: '/activity', label: 'Activity', Icon: Bell, noRecede: true },
-  { name: 'settings', href: '/settings', label: 'Settings', Icon: Settings },
+  { name: 'history', href: ROOT_TAB_PATHS.history, label: 'History', Icon: History, noRecede: true },
+  { name: 'activity', href: ROOT_TAB_PATHS.activity, label: 'Activity', Icon: Bell, noRecede: true },
+  { name: 'settings', href: ROOT_TAB_PATHS.settings, label: 'Settings', Icon: Settings },
 ];
 
 // No mid-size layout. A top-right icon row used to sit between the bar and the rail, and it was the

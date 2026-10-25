@@ -14,6 +14,7 @@ import { keyActionOf } from '@/lib/keybindings';
 import { router } from '@/lib/nav';
 import { deliverOAuthReturn } from '@/lib/oauth-return';
 import { closeResultsPane, isResultsPaneOpen } from '@/lib/results-pane';
+import { isRootTabPath } from '@/lib/root-tabs';
 import { closeSeriesPane, isSeriesPaneCovered, isSeriesPaneOpen } from '@/lib/series-pane';
 import { openSettingsModal } from '@/lib/settings-modal';
 import { closeSidebarSearch, isSidebarSearchOpen } from '@/lib/sidebar-search';
@@ -21,13 +22,16 @@ import { closeSidebarSearch, isSidebarSearchOpen } from '@/lib/sidebar-search';
 /**
  * What is left once nothing listening for Escape took it. The panes have no history entries, so
  * they come first, top one first; only then does the page go back — and never off the app's first
- * page, which in a browser would leave the app.
+ * page, which in a browser would leave the app. A key stops at a tab too: the tabs are roots, and
+ * Escape on Library has nothing to close, whatever the browser's history holds (Browse, from the
+ * click that opened Library). A back button is history's, and leaves through it.
  */
-function stepBack(): void {
+function stepBack(key = false): void {
   if (isSeriesPaneOpen() && !isSeriesPaneCovered()) return closeSeriesPane();
   if (isResultsPaneOpen()) return closeResultsPane();
   if (isSidebarSearchOpen()) return closeSidebarSearch();
   if (isBridgeSearchPaneOpen()) return closeBridgeSearchPane();
+  if (key && isRootTabPath(window.location.pathname)) return;
   if (router.canGoBack()) window.history.back();
 }
 
@@ -69,7 +73,7 @@ function onKeyDown(e: KeyboardEvent): void {
     if (e.isTrusted && !isTypingTarget(e.target)) {
       setTimeout(() => {
         if (e.defaultPrevented) return;
-        if (!letGoOfFocus()) stepBack();
+        if (!letGoOfFocus()) stepBack(true);
       });
     }
     return;
