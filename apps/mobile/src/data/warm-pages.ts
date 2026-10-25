@@ -18,20 +18,25 @@ export function warmPageImages(pages: string[]): void {
   traceJS('warm', 'enqueue', { n: fresh.length, of: pages.length, inflight: assetResolvesInFlight() });
   // `background`: a warm is a GUESS about where the reader is going, and must never be served ahead
   // of a page that has actually mounted. See the resolve queue in data/api.ts.
-  void Promise.all(
-    fresh.map((p) =>
-      resolveAssetSourceCached(p, { background: true }).catch(() => {
+  //
+  // Enqueued FARTHEST FIRST. The queue drains newest-first — for a page that mounts, newest means
+  // nearest the viewport — so a window queued in reading order had its most distant page answered
+  // first and the next page last. Reversed, the next page is the newest ask and goes first.
+  //
+  // Each page's bytes are fetched as ITS resolve lands, not once the whole window has: on a bridge
+  // that answers resolves serially, waiting for all of them meant nothing moved until the slowest.
+  for (const p of [...fresh].reverse()) {
+    resolveAssetSourceCached(p, { background: true })
+      .then((u) => {
+        if (!u.startsWith('data:')) void Image.prefetch(u);
+      })
+      .catch(() => {
         // FORGET it. `warmed` is a "don't ask twice" memo, and a warm that produced no URL — dropped
         // because the reader passed the page or moved its window, or a round-trip that just failed —
         // warmed nothing. Left in the memo it would retire that page from the warm-ahead for the
         // rest of the session, so coming back to it would pay for a resolve at the moment it is
         // shown: precisely the cost `prefetchAhead` is set to avoid.
         warmed.delete(p);
-        return null;
-      }),
-    ),
-  ).then((urls) => {
-    const http = urls.filter((u): u is string => !!u && !u.startsWith('data:'));
-    if (http.length) void Image.prefetch(http);
-  });
+      });
+  }
 }

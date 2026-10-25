@@ -1284,14 +1284,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           const near = Math.abs(i - index) <= (standby ? 0 : RENDER_RADIUS);
           const halves = spreadHalves(item);
           const pair = halves.length > 1;
-          // Left to right across the screen: the first page sits on the right when reading RTL.
-          const shown = pair && rtl ? [...halves].reverse() : halves;
+          // Mounted in READING order, whatever the direction: the first page sits on the right when
+          // reading RTL, but that is the wrapper's row-reverse, not the array's. Mount order is
+          // request order — the byte fetch runs in an effect, so tree order decides — and reversing
+          // the array asked for the second page of every spread before the one read first.
           const boxHeight = boxHeightOf(item);
           return (
             <div key={item.key} style={cellStyle(width, height)}>
-              <div ref={i === index ? zoomRef : undefined} style={zoomWrapperStyle(width, boxHeight, pair)}>
+              <div ref={i === index ? zoomRef : undefined} style={zoomWrapperStyle(width, boxHeight, pair, rtl)}>
                 {near
-                  ? shown.map((p, k) =>
+                  ? halves.map((p, k) =>
                       !p ? (
                         <div key="blank" style={{ width: width / 2, height: boxHeight }} />
                       ) : (
@@ -1304,8 +1306,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
                           fit="contain"
                           width={pair ? width / 2 : width}
                           height={boxHeight}
-                          // The pair meets at the spine.
-                          contentPosition={pair ? (k === 0 ? 'right' : 'left') : undefined}
+                          // The pair meets at the spine: the half drawn on the left hugs its right edge.
+                          contentPosition={pair ? ((k === 0) !== rtl ? 'right' : 'left') : undefined}
                           onLoadDims={(w, h) => recordDims(p.key, w, h)}
                           onFailedChange={(failed) => setPageFailed(p.key, failed)}
                         />
@@ -1359,14 +1361,15 @@ function cellStyle(width: number, height: number): React.CSSProperties {
     justifyContent: 'center',
   };
 }
-function zoomWrapperStyle(width: number, boxHeight: number, pair: boolean): React.CSSProperties {
+function zoomWrapperStyle(width: number, boxHeight: number, pair: boolean, rtl: boolean): React.CSSProperties {
   return {
     width,
     height: boxHeight,
     flexShrink: 0,
     transformOrigin: 'center center',
     willChange: 'transform',
-    ...(pair ? { display: 'flex', flexDirection: 'row' } : null),
+    // Children are in reading order; RTL lays them out from the right.
+    ...(pair ? { display: 'flex', flexDirection: rtl ? 'row-reverse' : 'row' } : null),
   };
 }
 

@@ -233,8 +233,10 @@ export function ZoomablePage({
   const onFailedChange = (uri: string, failed: boolean) =>
     setFailedPages((prev) => (!!prev[uri] === failed ? prev : { ...prev, [uri]: failed }));
 
-  // Left to right across the screen: the first page sits on the right when reading right to left.
-  const shown = double && rtl ? [...halves].reverse() : halves;
+  // The halves mount in READING order whatever the direction — the first page sits on the right
+  // when reading right to left by way of `styles.rowReverse`, not a reversed array. Mount order is
+  // the order expo-image is asked in, and reversing the array requested the second page of every
+  // spread before the one read first.
 
   // A page that goes away mid-pinch (a mode switch, a window that dropped it) never reaches the
   // gesture's own `onFinalize`, and the pager would be left frozen on a pinch nothing can end.
@@ -246,8 +248,10 @@ export function ZoomablePage({
         {/* The transformed view is the viewport's size and centres its box: the viewport-sized
             contain box for most pages, a taller one for a strip, which overflows it equally top
             and bottom and is clipped by `styles.page`. */}
-        <Animated.View style={[{ width, height }, styles.centred, double && styles.row, animatedStyle]}>
-          {shown.map((p, i) =>
+        <Animated.View
+          style={[{ width, height }, styles.centred, double && (rtl ? styles.rowReverse : styles.row), animatedStyle]}
+        >
+          {halves.map((p, i) =>
             !p ? (
               <View key="blank" style={{ width: width / 2, height }} />
             ) : (
@@ -261,8 +265,9 @@ export function ZoomablePage({
                 fit="contain"
                 width={double ? width / 2 : width}
                 height={strip ? geometry.content.height : height}
-                // Both halves meet at the spine instead of each centring in its own half.
-                contentPosition={double ? (i === 0 ? 'right' : 'left') : undefined}
+                // Both halves meet at the spine instead of each centring in its own half: the half
+                // drawn on the left hugs its right edge.
+                contentPosition={double ? ((i === 0) !== rtl ? 'right' : 'left') : undefined}
                 // Answered by the FIT, not by `strip` — see ReaderPage's `boxIsFinal`. Under any other
                 // fit the box is the viewport's and never moves; under fit-width a page that turns out
                 // to be a strip gets a box its own height, and nothing knows which pages those are
@@ -291,6 +296,9 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
+  },
+  rowReverse: {
+    flexDirection: 'row-reverse',
   },
 
   zones: {
