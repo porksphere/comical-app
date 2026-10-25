@@ -18,7 +18,13 @@ import type { ImageProgress } from './image-progress';
 // remember the origins that refuse: a blocked read falls back to letting <Image> load the URL
 // itself — no percentage, but the page still appears — and every later page from that origin skips
 // the attempt outright. Worst case is one wasted request per origin per session, not per page.
+//
+// Our own server is readable, with one exception: a bridge's image route may REDIRECT to the
+// source's image server rather than proxy it, and the XHR follows that redirect into the same CORS
+// wall. Which bridges' routes do that isn't knowable up front (the same route proxies for another
+// bridge), so those are learned the same way, per route rather than per origin.
 const unreadableOrigins = new Set<string>();
+const unreadableRoutes = new Set<string>();
 
 function originOf(uri: string): string | null {
   try {
@@ -28,15 +34,22 @@ function originOf(uri: string): string | null {
   }
 }
 
+/** The bridge image route an own-server URL goes through (`…/bridges/<id>/image`), if it is one. */
+function imageRouteOf(uri: string): string | null {
+  const q = uri.indexOf('?');
+  const path = q === -1 ? uri : uri.slice(0, q);
+  return /\/bridges\/[^/?#]+\/image$/.test(path) ? path : null;
+}
+
 /** Is it worth trying to read this URL's bytes? */
 function measurable(uri: string): boolean {
   if (uri.startsWith('data:') || uri.startsWith('blob:')) return false; // already local — instant
   if (uri.startsWith(getApiBase())) {
-    // Ours is always readable — except a lazy page-image route, which answers with a redirect to
-    // the source's own image server, whose CORS we can't know. A read that fails there looks like
-    // our server failing (so it can't fall back the way a foreign origin does), and every retry
-    // re-resolves the page against the source.
-    return !uri.includes('/page-image/');
+    // Ours is readable — except a lazy page-image route, which always answers with a redirect to
+    // the source's own image server, and a bridge image route already seen to do the same.
+    if (uri.includes('/page-image/')) return false;
+    const route = imageRouteOf(uri);
+    return route === null || !unreadableRoutes.has(route);
   }
   const origin = originOf(uri);
   return origin !== null && !unreadableOrigins.has(origin);
@@ -96,10 +109,16 @@ export function useImageProgress(uri: string | null, attempt: number): ImageProg
       // as a bare onerror with status 0). So for anything that isn't ours, assume CORS, stop
       // measuring that origin, and let <Image> fetch the URL itself — if the network really is the
       // problem, the <Image> fails too and the caller's retry/failure path handles it as before.
-      // Only our own server's failures are reported as errors, where status 0 can't mean CORS.
+      // Our own server's failures are reported as errors, where status 0 can't mean CORS — unless
+      // the URL is a bridge image route, which may have redirected the read into a foreign origin.
       const origin = originOf(uri);
-      if (origin && !uri.startsWith(getApiBase())) {
+      const ours = uri.startsWith(getApiBase());
+      const route = ours ? imageRouteOf(uri) : null;
+      if (origin && !ours) {
         unreadableOrigins.add(origin);
+        setDownload({ key, source: uri, percent: null, error: null });
+      } else if (route) {
+        unreadableRoutes.add(route);
         setDownload({ key, source: uri, percent: null, error: null });
       } else {
         setDownload({ key, source: null, percent: null, error: 'network error' });

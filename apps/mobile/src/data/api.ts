@@ -162,11 +162,12 @@ async function responseToDataUri(res: Response): Promise<string> {
  */
 export async function resolveAssetSource(url: string): Promise<string> {
   if (!url.startsWith('/')) return url;
-  if (getResolvedModeSync() !== 'embedded') return `${getApiBase()}${url}`;
+  const path = wantsFreshResolve.delete(url) ? withRefresh(url) : url;
+  if (getResolvedModeSync() !== 'embedded') return `${getApiBase()}${path}`;
   try {
     // Not `transport`: a cover that won't resolve already shows its placeholder, and reporting every
     // one would bury the failures someone acted on.
-    const res = await activeTransport(url);
+    const res = await activeTransport(path);
     const location = res.headers.get('Location');
     if (location && res.status >= 300 && res.status < 400) return location;
     if (!res.ok) {
@@ -185,6 +186,15 @@ export async function resolveAssetSource(url: string): Promise<string> {
     throw e;
   }
 }
+
+/**
+ * Paths whose last resolution was invalidated as stale. The host remembers what its image route
+ * resolved a URL to, and so does the browser, so re-asking the same path after a dead target would
+ * get the same dead target back: the next resolve of one of these asks with `refresh=<now>`, which
+ * the host answers afresh and the browser has never seen.
+ */
+const wantsFreshResolve = new Set<string>();
+const withRefresh = (path: string) => `${path}${path.includes('?') ? '&' : '?'}refresh=${Date.now()}`;
 
 /**
  * Per-path memoized `resolveAssetSource`. The reader resolves a page's asset lazily as it scrolls
@@ -443,6 +453,7 @@ export function peekResolvedAssetSource(url: string): string | undefined {
 /** Drop a cached resolution so the next `resolveAssetSourceCached` re-runs it (retry after a stale/
  *  expired resolved URL fails to load). */
 export function invalidateAssetSource(url: string): void {
+  if (url.startsWith('/')) wantsFreshResolve.add(url);
   const queued = resolveQueue.get(url);
   if (queued) {
     resolveQueue.delete(url);

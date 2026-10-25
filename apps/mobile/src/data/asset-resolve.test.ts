@@ -28,6 +28,7 @@ const {
   invalidateAssetSource,
   peekResolvedAssetSource,
   releaseAssetResolve,
+  resolveAssetSource,
   resolveAssetSourceCached,
   setTransport,
   supersedeBackgroundResolves,
@@ -56,6 +57,20 @@ describe('peekResolvedAssetSource', () => {
 
     invalidateAssetSource(url);
     expect(peekResolvedAssetSource(url)).toBeUndefined();
+  });
+
+  test('a resolve after invalidation asks for a fresh answer, and only that once', async () => {
+    const url = '/bridges/b/image?url=page-fresh.webp';
+    const first = await resolveAssetSourceCached(url);
+    expect(first.endsWith(url)).toBe(true);
+
+    invalidateAssetSource(url);
+    const second = await resolveAssetSourceCached(url);
+    expect(second).toMatch(/\/bridges\/b\/image\?url=page-fresh\.webp&refresh=\d+$/);
+    expect(peekResolvedAssetSource(url)).toBe(second);
+
+    // The ask was consumed: nothing invalidated since, so a resolve is the plain path again.
+    expect((await resolveAssetSource(url)).endsWith(url)).toBe(true);
   });
 
   test('never answers for a path it has not resolved (no stale/adjacent hits)', () => {
