@@ -4826,7 +4826,7 @@ const ReaderPane = forwardRef<
   // A series whose pages turn out to be strips switches itself to vertical (see the hook); nothing
   // to decide once the series has a mode of its own, by detection or by hand.
   const seriesMode = useSeriesReaderMode(seriesKey);
-  const onPageSize = useWebtoonDetection(seriesKey, settings.mode === 'paged' && !seriesMode);
+  const detectPageSize = useWebtoonDetection(seriesKey, settings.mode === 'paged' && !seriesMode);
   // The double-tap under its switch-fit mode: fit the axis this page does NOT currently fill
   // (see `otherFit`), for every page until the next double-tap, which clears it. Never written to
   // the setting: from `auto` there is no single axis to write, and a double-tap is a moment's
@@ -4898,22 +4898,43 @@ const ReaderPane = forwardRef<
     }
     return acc;
   }, [segments, chapterId]);
+  // The start page's place in the list the pager was given.
+  const startAt = useMemo(() => {
+    const list = stitched ? flatItems : items;
+    const base = stitched ? prefixLen : 0;
+    return { list, base, at: Math.max(0, Math.min(list.length - 1, base + startIndex)) };
+  }, [stitched, flatItems, items, prefixLen, startIndex]);
+  // Sizes that land, under the poster, for the start page and the one after it: the two whose
+  // shapes can re-pair the spread it opens on. The pager re-pairs on them the moment they arrive
+  // (sizes BEHIND its anchor it holds back — see useSpreadLayout — so those two are the whole
+  // story), and the poster's pairing is computed from the same cache at mount and nothing after, so
+  // a first page found wide on load had the pager draw it full width under a poster still showing
+  // it in the cover's half-width slot. Fed through here, the poster re-pairs on the same commit.
+  const [landedSizes, setLandedSizes] = useState<ReadonlyMap<string, Size>>(() => new Map());
+  const onPageSize = useCallback(
+    (key: string, size: Size) => {
+      detectPageSize(key, size);
+      if (posterExpired || !double) return;
+      const { list, at } = startAt;
+      if (list[at]?.key !== key && list[at + 1]?.key !== key) return;
+      setLandedSizes((prev) => (prev.get(key) ? prev : new Map(prev).set(key, size)));
+    },
+    [detectPageSize, posterExpired, double, startAt],
+  );
   // What the reader opens on: the start page, or the spread holding it, paired from the same size
   // cache the pager seeds its own pairing from at mount, so the poster draws what the list will.
   const startSpread = useMemo(() => {
-    const list = stitched ? flatItems : items;
+    const { list, base, at } = startAt;
     if (!list.length) return null;
-    const base = stitched ? prefixLen : 0;
-    const at = Math.max(0, Math.min(list.length - 1, base + startIndex));
     if (!double) return { halves: [list[at]!], first: startIndex, last: startIndex };
-    const { spreads, spreadOf } = buildSpreads(list, (p) => knownPageSize(p.uri), shift);
+    const { spreads, spreadOf } = buildSpreads(list, (p) => landedSizes.get(p.key) ?? knownPageSize(p.uri), shift);
     const spread = spreads[spreadOf[at]!]!;
     return {
       halves: spreadHalves(spread),
       first: spread.first - base,
       last: spread.first - base + spread.pages.length - 1,
     };
-  }, [stitched, flatItems, items, prefixLen, startIndex, double, shift]);
+  }, [startAt, startIndex, double, shift, landedSizes]);
   // The poster's whole life, in one place: down the moment the user actually pages away from the
   // start (a swipe mid-entrance must not freeze under a static image), else up until BOTH the
   // entrance has finished and the list has reported — or the backstop calls time. A spread can
