@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
+import { focusMarks } from '@/lib/focus-nav';
 import { windowControlsLayer, windowDragOff } from '@/lib/window-controls';
 
 /**
@@ -31,7 +32,7 @@ export function TopBarSwitch({
   persistent?: ReactNode;
 }) {
   return (
-    <View style={styles.slot} pointerEvents="box-none">
+    <View {...chromeMark} style={styles.slot} pointerEvents="box-none">
       {Object.entries(bars).map(([key, node]) => (
         <BarLayer key={key} active={key === mode}>
           {node}
@@ -60,6 +61,8 @@ function BarLayer({ active, children }: { active: boolean; children: ReactNode }
     </Animated.View>
   );
 }
+
+const chromeMark = focusMarks('chrome');
 
 const styles = StyleSheet.create({
   // Zero-height by design: the bars inside position themselves (absolute, top-anchored); the slot

@@ -4,6 +4,7 @@ import Animated, { type AnimatedProps } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/hooks/use-theme';
+import { focusMarks } from '@/lib/focus-nav';
 import { windowDragRegion } from '@/lib/window-controls';
 
 /**
@@ -44,6 +45,7 @@ export function BarSurface({
   const insets = useSafeAreaInsets();
   return (
     <Animated.View
+      {...chromeMark}
       // A bar at the top of the window is what moves it, where the window has no title bar.
       {...(safeAreaTop ? windowDragRegion : {})}
       // box-none so the bar's own controls stay tappable while taps outside them fall through.
@@ -71,6 +73,8 @@ export function BarSurface({
     </Animated.View>
   );
 }
+
+const chromeMark = focusMarks('chrome');
 
 const styles = StyleSheet.create({
   bar: {

@@ -36,7 +36,11 @@ const LANDING = '[data-focus-landing]';
 // nearest ROW, which in two columns of different rhythms zig-zags between them.
 const COLUMN = '[data-focus-column]';
 
-type FocusMark = 'skip' | 'landing' | 'column';
+// A screen's bars. The keyboard moves onto them but never comes INTO a screen on one: while a
+// screen's body is still arriving, its bars are all that is there, and its back button is top-left.
+const CHROME = '[data-focus-chrome]';
+
+type FocusMark = 'skip' | 'landing' | 'column' | 'chrome';
 
 /** react-native-web renders `dataSet` as data-* attributes; react-native's types don't know it. */
 export const focusMarks = (...marks: FocusMark[]) =>
@@ -44,6 +48,8 @@ export const focusMarks = (...marks: FocusMark[]) =>
 export const focusSkip = focusMarks('skip');
 
 const pointerMode = () => document.documentElement.getAttribute('data-input') === 'pointer';
+
+const notChrome = (el: HTMLElement) => !el.closest(CHROME);
 
 function onTop(el: HTMLElement): boolean {
   const r = el.getBoundingClientRect();
@@ -454,8 +460,11 @@ function landingTarget(): HTMLElement | null {
 function focusFirst(): void {
   const main = largestScroller();
   const onScreen = candidates().filter(onTop);
-  const pool = onScreen.filter((el) => main?.contains(el));
-  const first = landingTarget() ?? topLeft(pool.length ? pool : onScreen);
+  const body = onScreen.filter(notChrome);
+  const pool = body.filter((el) => main?.contains(el));
+  // Chrome only on a screen that has nothing else — not one whose body is on its way (`arriveAfter`
+  // keeps watching for it while the focus stays put).
+  const first = landingTarget() ?? topLeft(pool.length ? pool : body.length || arriving() ? body : onScreen);
   if (first) focusKeyboard(first);
 }
 
@@ -464,6 +473,13 @@ const ARRIVAL_WAIT_FRAMES = 180;
 
 const sameRect = (a: DOMRect, b: DOMRect) =>
   a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height;
+
+// The press whose screen the keyboard is waiting to land on, and whether a second press came in
+// while it waited — that one goes to the landing, since it was meant for what the screen opens with.
+let arrival: { from: HTMLElement; press: boolean } | null = null;
+
+/** The press's screen has started covering what was pressed, and the landing hasn't been reached. */
+const arriving = () => !!arrival && !(arrival.from.isConnected && onTop(arrival.from));
 
 /**
  * A press that opens a screen over the keyboard's focus — a card opening its series — puts the focus
@@ -474,16 +490,21 @@ const sameRect = (a: DOMRect, b: DOMRect) =>
  */
 function arriveAfter(from: HTMLElement): void {
   const before = landingTarget();
+  const mine = { from, press: false };
+  arrival = mine;
   let frames = ARRIVAL_WAIT_FRAMES;
   let last: { el: HTMLElement; rect: DOMRect } | null = null;
   const check = () => {
+    if (arrival !== mine) return;
     const at = document.activeElement;
-    if (pointerMode() || (at !== from && at !== document.body) || --frames <= 0) return;
+    if (pointerMode() || (at !== from && at !== document.body) || --frames <= 0) return void (arrival = null);
     const to = from.isConnected && onTop(from) ? null : landingTarget();
     const rect = to?.getBoundingClientRect();
     if (to && rect && to !== before && last?.el === to && sameRect(last.rect, rect)) {
       returnTo = from;
+      arrival = null;
       focusKeyboard(to);
+      if (mine.press) press(to);
       return;
     }
     last = to && rect ? { el: to, rect } : null;
@@ -492,13 +513,19 @@ function arriveAfter(from: HTMLElement): void {
   requestAnimationFrame(check);
 }
 
+function press(el: HTMLElement): void {
+  arriveAfter(el);
+  el.click();
+}
+
 /** A sideways key with nothing focused brings the focus in from that side of the main list, at the
  *  top of what it shows: Right lands on its leftmost control there, Left on its rightmost. */
 function enterFrom(dir: Direction): void {
   const main = largestScroller();
   const onScreen = candidates().filter(onTop);
-  const inMain = onScreen.filter((el) => main?.contains(el));
-  const pool = inMain.length ? inMain : onScreen;
+  const body = onScreen.filter(notChrome);
+  const inMain = body.filter((el) => main?.contains(el));
+  const pool = inMain.length ? inMain : body.length ? body : onScreen;
   const box = inMain.length && main ? main.getBoundingClientRect() : { left: 0, right: innerWidth, top: 0, bottom: innerHeight };
   const x = dir.x > 0 ? Math.max(box.left, 0) : Math.min(box.right, innerWidth);
   const y = Math.max(box.top, 0);
@@ -521,6 +548,8 @@ function onKeyDown(e: KeyboardEvent): void {
     const from = keyboardFocus();
     const lost = from ? null : recover();
     if (from) move(from, from.getBoundingClientRect(), dir);
+    // A screen still arriving has its landing to come in on; going in now lands on its back button.
+    else if (arriving() && landingTarget()) void 0;
     else if (focusCovered()) enterLayer(heldFocus());
     else if (lost) move(lost.el, lost.rect, dir);
     else if (dir.x) enterFrom(dir);
@@ -529,6 +558,13 @@ function onKeyDown(e: KeyboardEvent): void {
     return;
   }
   if (isKey(e, 'activate')) {
+    // Pressed again before the screen the first press opened has landed: meant for its landing (Read,
+    // on a series), not for the covered card the focus still sits on or whatever is top-left so far.
+    if (arriving()) {
+      e.preventDefault();
+      if (!e.repeat) arrival!.press = true;
+      return;
+    }
     const active = document.activeElement;
     if (e.key === ' ' && active instanceof HTMLElement && pressesItselfOnSpace(active)) {
       if (!e.repeat && keyboardFocus() === active) arriveAfter(active);
@@ -537,10 +573,8 @@ function onKeyDown(e: KeyboardEvent): void {
     e.preventDefault();
     if (e.repeat) return;
     const focused = keyboardFocus();
-    if (focused) {
-      arriveAfter(focused);
-      focused.click();
-    } else focusFirst();
+    if (focused) press(focused);
+    else focusFirst();
     return;
   }
   if (isKey(e, 'menu')) {
