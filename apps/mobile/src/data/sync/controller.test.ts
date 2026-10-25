@@ -237,7 +237,13 @@ describe('createLibrarySync', () => {
     await a.sync.syncNow();
 
     const added: string[][] = [];
-    const b = device(hub, { onApplied: ({ addedSeries }) => void added.push(addedSeries.map((s) => s.seriesId)) });
+    let tables: string[] = [];
+    const b = device(hub, {
+      onApplied: (applied) => {
+        added.push(applied.addedSeries.map((s) => s.seriesId));
+        tables = applied.tables;
+      },
+    });
     await b.library.collectSeries({ bridgeId: 'bridge-a', seriesId: 'mine' }, { seriesTitle: 'Mine' });
     await b.sync.enable();
     expect(added).toEqual([['s1']]);
@@ -246,6 +252,7 @@ describe('createLibrarySync', () => {
     await a.sync.syncNow();
     await b.sync.syncNow();
     expect(added).toEqual([['s1'], []]);
+    expect(tables).toEqual(['collections']);
   });
 
   test('a write made before the saved state loads is still recorded', async () => {
@@ -469,7 +476,13 @@ describe('createLibrarySync', () => {
     await a.sync.syncNow();
 
     let applied = 0;
-    const b = device(hub, { onApplied: () => applied++ });
+    let tables: string[] = [];
+    const b = device(hub, {
+      onApplied: (a) => {
+        applied++;
+        tables = a.tables;
+      },
+    });
     b.heldBridges.declares.clear();
     await b.sync.enable();
     expect(b.heldBridges.stored.has('bridge-a')).toBe(false);
@@ -480,6 +493,7 @@ describe('createLibrarySync', () => {
     await b.sync.syncNow();
     expect(b.heldBridges.stored.get('bridge-a')).toEqual({ dataSaver: true });
     expect(applied).toBe(before + 1);
+    expect(tables).toEqual(['bridgeSettings']);
     // Stored from a's record, so b has nothing of its own to send.
     const segments = (await hub.pull(PROBE)).segments.length;
     await b.sync.syncNow();

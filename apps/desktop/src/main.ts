@@ -257,9 +257,9 @@ async function boot(): Promise<void> {
     //   COMICAL_BRIDGES_DIR=../../external/comical/bridges bun run start
     bridgesDir: process.env.COMICAL_BRIDGES_DIR ?? join(dataDir, "bridges"),
     baseUrl: `${server.origin}/api`,
-    onSynced: ({ addedSeries }) => {
+    onSynced: ({ addedSeries, tables }) => {
       syncedSeries.push(...addedSeries);
-      mainWindow?.webContents.send("synced");
+      mainWindow?.webContents.send("synced", tables);
     },
   });
   if (shellSettings().networkSync) void applyNetworkSync();

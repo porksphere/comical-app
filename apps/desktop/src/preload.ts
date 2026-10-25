@@ -86,9 +86,9 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
       ipcRenderer.off("sync-devices", listener);
     };
   },
-  /** Called when another device's changes have landed in this library. Returns the unsubscribe. */
-  onSynced: (onSynced: () => void) => {
-    const listener = () => onSynced();
+  /** Called when another device's changes have landed in this library, with the tables they touched. Returns the unsubscribe. */
+  onSynced: (onSynced: (tables: string[]) => void) => {
+    const listener = (_e: IpcRendererEvent, tables: string[]) => onSynced(tables);
     ipcRenderer.on("synced", listener);
     return () => {
       ipcRenderer.off("synced", listener);

@@ -15,12 +15,12 @@ import { showToast } from '@/components/toast';
 import { syncDeviceName } from '@/lib/device-name';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { getApiBase, getSyncPairing, setApiBaseOverride } from '../api';
-import { bumpDataEpoch } from '../data-epoch';
 import { noteSyncStatus } from '../downloads/hub';
 import { autoDownloadSynced } from '../downloads/synced';
 import { getResolvedModeSync } from '../embedded/preference';
 import { queryClient } from '../query-client';
 import { createLibrarySync, type LibrarySync, type SyncDoc, type SyncStatus } from './controller';
+import { refreshAfterSync } from './refresh';
 
 export type { SyncStatus } from './controller';
 
@@ -52,9 +52,8 @@ export function initLibrarySync(raw: LibraryStore, registry: RegistryLists): Lib
     canSync: () => getResolvedModeSync() === 'embedded',
     newDeviceId: () => `app-${crypto.randomUUID()}`,
     deviceName: syncDeviceName,
-    onApplied: ({ addedSeries }) => {
-      bumpDataEpoch();
-      void queryClient.invalidateQueries();
+    onApplied: ({ addedSeries, tables }) => {
+      refreshAfterSync(queryClient, tables);
       void autoDownloadSynced(addedSeries);
     },
     onRepaired: () => showToast('Sync paired again — the computer had been reset.'),

@@ -7,8 +7,8 @@
  */
 import { autoDownloadSynced } from '../downloads/synced';
 import { desktopShell } from '@/lib/desktop-shell';
-import { bumpDataEpoch } from '../data-epoch';
 import { queryClient } from '../query-client';
+import { refreshAfterSync } from './refresh';
 
 let installed = false;
 
@@ -20,9 +20,8 @@ export function installDesktopSyncRefresh(): void {
   const takeAdded = () => {
     void shell?.takeSyncedSeries?.().then(autoDownloadSynced, () => {});
   };
-  shell?.onSynced?.(() => {
-    bumpDataEpoch();
-    void queryClient.invalidateQueries();
+  shell?.onSynced?.((tables) => {
+    refreshAfterSync(queryClient, tables);
     takeAdded();
   });
   takeAdded();

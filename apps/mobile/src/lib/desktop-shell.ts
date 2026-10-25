@@ -54,7 +54,8 @@ type DesktopShell = {
   syncDevices?(): Promise<PairedDevice[]>;
   unlinkSyncDevice?(id: string): Promise<boolean>;
   onSyncDevices?(onDevices: (devices: PairedDevice[]) => void): () => void;
-  onSynced?(onSynced: () => void): () => void;
+  /** `tables` is absent from a shell that predates reporting them. */
+  onSynced?(onSynced: (tables?: readonly string[]) => void): () => void;
   /** Absent before the shell reported which series a sync added. */
   takeSyncedSeries?(): Promise<{ bridgeId: string; seriesId: string }[]>;
   /** Absent before the data could live anywhere but the default folder. */

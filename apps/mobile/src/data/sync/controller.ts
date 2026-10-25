@@ -37,9 +37,10 @@ import {
   type SyncBackend,
   type SyncStateSnapshot,
   type SyncStats,
+  type TableId,
 } from '@comical/sync';
 
-export type SyncApplied = { addedSeries: { bridgeId: string; seriesId: string }[] };
+export type SyncApplied = { addedSeries: { bridgeId: string; seriesId: string }[]; tables: TableId[] };
 
 /** What's saved between launches; its absence means sync is off. */
 export type SyncDoc = {
@@ -224,6 +225,7 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
     try {
       const stats = await a.engine.sync();
       let applied = stats.applied;
+      const applyTables = new Set(stats.tables);
       // Everything on a first round; on a device already paired, only a table that has started to
       // sync since. The flag outranks the engine's list: a state saved before the list existed
       // reads as having adopted every table of its day, which a never-adopted device has not.
@@ -235,18 +237,22 @@ export function createLibrarySync(opts: LibrarySyncOptions): LibrarySync {
         await adoptBridgeSettings(lateBridges, bridgeIds, a.engine, tables);
         a.engine.markAdopted();
         a.adopted = true;
-        applied += (await a.engine.sync()).applied;
+        const adoption = await a.engine.sync();
+        applied += adoption.applied;
+        for (const t of adoption.tables) applyTables.add(t);
       }
       await a.registry.retry();
       // After the registry's, so a preference held for a bridge that just installed lands this
       // round. Under the engine's lock, so the recording wrapper never takes it for a local change.
-      applied += await a.engine.exclusive(() => a.settings.retry());
+      const late = await a.engine.exclusive(() => a.settings.retry());
+      applied += late;
+      if (late > 0) for (const t of SETTINGS_TABLES) applyTables.add(t);
       await save();
       const added = addedSeries;
       addedSeries = [];
-      if (applied > 0 || added.length > 0) opts.onApplied({ addedSeries: added });
+      if (applied > 0 || added.length > 0) opts.onApplied({ addedSeries: added, tables: [...applyTables] });
       setStatus({ running: false, lastSyncAt: Date.now(), lastError: undefined, repairedAt: repaired ? Date.now() : undefined });
-      return { ...stats, applied };
+      return { ...stats, applied, tables: [...applyTables] };
     } catch (e) {
       // The hub no longer holds this device's earlier segments — it was wiped, or restored from an
       // older backup — so its numbering can't continue there. (A device that is itself the older
