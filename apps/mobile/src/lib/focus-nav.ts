@@ -205,33 +205,118 @@ function regain(el: EventTarget | null): boolean {
 
 function focusKeyboard(el: HTMLElement): void {
   document.documentElement.removeAttribute('data-input');
-  el.focus({ focusVisible: true } as FocusOptions);
-  requestAnimationFrame(() => uncover(el));
+  // The browser's own scroll-into-view is a jump; the glide below is the same scroll, over GLIDE_MS.
+  el.focus({ focusVisible: true, preventScroll: true } as FocusOptions);
+  reveal(el, () => {
+    if (landed?.el === el) landed.rect = el.getBoundingClientRect();
+    uncover(el);
+  });
+}
+
+// ── Scrolling that catches up with the focus rather than snapping to it ──
+
+const GLIDE_MS = 180;
+
+// One flight per scroller: a new glide on the same one takes over from wherever it has got to, so a
+// held key keeps converging on the newest focus instead of queueing a scroll per press.
+const flights = new Map<HTMLElement, number>();
+
+function cancelGlides(): void {
+  for (const raf of flights.values()) cancelAnimationFrame(raf);
+  flights.clear();
+}
+
+/** Scrolls `scroller` by `by` over GLIDE_MS, easing out; `done` runs only if nothing took over. */
+function glide(scroller: HTMLElement, by: { top?: number; left?: number }, done?: () => void): void {
+  const prior = flights.get(scroller);
+  if (prior !== undefined) cancelAnimationFrame(prior);
+  const fromTop = scroller.scrollTop;
+  const fromLeft = scroller.scrollLeft;
+  const top = by.top ?? 0;
+  const left = by.left ?? 0;
+  const start = performance.now();
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / GLIDE_MS);
+    const eased = 1 - (1 - t) ** 3;
+    scroller.scrollTop = fromTop + top * eased;
+    scroller.scrollLeft = fromLeft + left * eased;
+    if (t < 1) return void flights.set(scroller, requestAnimationFrame(step));
+    flights.delete(scroller);
+    done?.();
+  };
+  flights.set(scroller, requestAnimationFrame(step));
+}
+
+/** How far past the box's near edge a span sticks out, or 0 if it fits inside (the `nearest` rule). */
+function overhang(lo: number, hi: number, boxLo: number, boxHi: number): number {
+  if (lo < boxLo) return lo - boxLo;
+  if (hi > boxHi) return Math.min(hi - boxHi, lo - boxLo);
+  return 0;
+}
+
+/** Brings `el` into every scroller it sits in, innermost first, and calls `done` once they have all
+ *  landed — at once when nothing needs to move. */
+function reveal(el: HTMLElement, done: () => void): void {
+  const r = el.getBoundingClientRect();
+  const rect = { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+  let pending = 0;
+  const landedOne = () => --pending === 0 && done();
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const vertical = scrolls(p, false);
+    const horizontal = scrolls(p, true);
+    if (!vertical && !horizontal) continue;
+    const box = p.getBoundingClientRect();
+    let top = vertical
+      ? overhang(rect.top, rect.bottom, Math.max(box.top, 0), Math.min(box.bottom, window.innerHeight))
+      : 0;
+    // Into view is not out from under the bars: one glide takes both, judged where it is about to land.
+    if (vertical) top += coverShift(p, { left: rect.left, right: rect.right, top: rect.top - top, bottom: rect.bottom - top });
+    const left = horizontal
+      ? overhang(rect.left, rect.right, Math.max(box.left, 0), Math.min(box.right, window.innerWidth))
+      : 0;
+    if (!top && !left) continue;
+    // Where it will be once this scroller has moved, for the scrollers outside it.
+    rect.top -= top;
+    rect.bottom -= top;
+    rect.left -= left;
+    rect.right -= left;
+    pending++;
+    glide(p, { top, left }, landedOne);
+  }
+  if (!pending) done();
 }
 
 const UNCOVER_MARGIN = 8;
 const EDGE_PROBE = 2;
 
-/** Scrolls a control out from under whatever is drawn over its list — the top bar, a pinned heading,
- *  the tab bar — which focusing it doesn't do, since it is inside the scroller's view all along. */
-function uncover(el: HTMLElement, tries = 2): void {
-  const scroller = regionOf(el, false);
-  if (!scroller || !el.isConnected || document.activeElement !== el) return;
-  const r = el.getBoundingClientRect();
+/** How far `scroller` has to move for a control at `r` to come out from under whatever is drawn over
+ *  the list — the top bar, a pinned heading, the tab bar, all overlays OUTSIDE the scroller, so what
+ *  the list itself has at that spot (another row, before the scroll) is never taken for one. */
+function coverShift(scroller: HTMLElement, r: Rect): number {
   const x = (r.left + r.right) / 2;
   const coverAt = (y: number) => {
     const hit = document.elementFromPoint(x, y);
-    if (!hit || el.contains(hit)) return null;
+    if (!hit || scroller.contains(hit)) return null;
     let cover: Element = hit;
-    while (cover.parentElement && !cover.parentElement.contains(el)) cover = cover.parentElement;
+    while (cover.parentElement && !cover.parentElement.contains(scroller)) cover = cover.parentElement;
     return cover.getBoundingClientRect();
   };
   const over = coverAt(Math.max(r.top, 0) + EDGE_PROBE);
-  const under = over ? null : coverAt(Math.min(r.bottom, window.innerHeight) - EDGE_PROBE);
-  if (!over && !under) return;
-  scroller.scrollBy({ top: over ? r.top - over.bottom - UNCOVER_MARGIN : r.bottom - under!.top + UNCOVER_MARGIN });
-  // What covers it can change with the scroll: a pinned heading hands over to the next section's.
-  if (tries > 1) requestAnimationFrame(() => requestAnimationFrame(() => uncover(el, tries - 1)));
+  if (over) return r.top - over.bottom - UNCOVER_MARGIN;
+  const under = coverAt(Math.min(r.bottom, window.innerHeight) - EDGE_PROBE);
+  return under ? r.bottom - under.top + UNCOVER_MARGIN : 0;
+}
+
+/** Scrolls a control out from under a cover `reveal` could not see coming: what covers a spot can
+ *  change with the scroll, as a pinned heading hands over to the next section's. */
+function uncover(el: HTMLElement, tries = 2): void {
+  const scroller = regionOf(el, false);
+  if (!scroller || !el.isConnected || document.activeElement !== el) return;
+  const top = coverShift(scroller, el.getBoundingClientRect());
+  if (!top) return;
+  glide(scroller, { top }, () => {
+    if (tries > 1) requestAnimationFrame(() => uncover(el, tries - 1));
+  });
 }
 
 function move(from: HTMLElement | null, rect: Rect, dir: Direction): void {
@@ -267,9 +352,8 @@ function move(from: HTMLElement | null, rect: Rect, dir: Direction): void {
     return;
   }
   const step = (horizontal ? region.clientWidth : region.clientHeight) / 2;
-  region.scrollBy({ [horizontal ? 'left' : 'top']: (horizontal ? dir.x : dir.y) * step });
-  // Two frames: the scroll event, then the list rendering what it scrolled into.
-  requestAnimationFrame(() =>
+  // Then a frame: the list rendering what it scrolled into.
+  glide(region, { [horizontal ? 'left' : 'top']: (horizontal ? dir.x : dir.y) * step }, () =>
     requestAnimationFrame(() => {
       if (from && !from.isConnected) return;
       const next = nearest(from?.getBoundingClientRect() ?? rect, from, dir, at, region, barred);
@@ -490,6 +574,7 @@ export function installFocusNav(): void {
     // A menu closes itself on Escape and takes the focus with it.
     if (returnTo) returnSoon();
   });
-  // The real pointer takes its hover back the moment it moves.
+  // The real pointer takes its hover back the moment it moves, and the wheel its scroll.
   window.addEventListener('pointermove', () => hovered && hoverTo(null), { passive: true });
+  window.addEventListener('wheel', cancelGlides, { passive: true });
 }
