@@ -68,7 +68,6 @@ import { forgetChapter } from '@/data/downloads/index-cache';
 import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
 import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
-import { mirrorGridRows } from '@/lib/grid-rows';
 import { stableScrollbarGutter, useScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useSeriesPageWidth } from '@/lib/series-pane-context';
@@ -1153,25 +1152,22 @@ function chapterMenuRows(
 // Rows of tiles shown before a long page set collapses behind "Show all".
 const COLLAPSED_ROWS = 4;
 const PAGE_GRID_GAP = Spacing.two;
-/** LegendList's web build pads every column by half the gap and leaves it there, so a row laid out
- *  in the column starts half a gap inside it — right of the heading above. On web the row is given
- *  that much more room on each side, and the header and footer take it back. Its native build
- *  resizes the row itself, so there is nothing to give back there. */
-const PAGE_ROW_BLEED = Platform.OS === 'web' ? PAGE_GRID_GAP / 2 : 0;
+/**
+ * One grid cell. `thumb` is `null` for a page whose thumbnail isn't inlined yet — the absence lives
+ * inside the descriptor, since `@legendapp/list` treats a bare `null` entry in `data` as the end of
+ * the list and stops virtualizing past it.
+ */
+type PageCell = { pageIndex: number; thumb: PageThumbSource | null };
 
 /**
- * One grid cell fed to the `LegendList`. A discriminated, always-non-null value on purpose:
- * `@legendapp/list` treats a bare `null` entry in `data` as the end of the list and stops
- * virtualizing past it (both its web and native builds share this core), which capped the grid
- * at the first lazily-fetched page. So a page whose thumbnail isn't inlined yet is still a real
- * `page` cell carrying a `null` thumb — the absence lives *inside* the descriptor, not as the
- * cell itself.
- *
- * A `spacer` is an empty cell, and only a right-to-left grid has any: the list places cells by
- * index from the left, so a short last row is padded at its start to sit against the right edge
- * (see `mirrorGridRows`). Left to right a short row simply ends — the cell is pinned to `tileW`.
+ * One ROW of the grid is one list item, laid out by a plain flex row rather than the list's own
+ * `numColumns`. The list places column cells absolutely, by index from the left, so a right-to-left
+ * grid could only be mirrored by reversing the data — and cells mount in data order, so every row
+ * asked for its LAST page's thumbnail first, which is the order a rate-limited source then serves
+ * them in. A row's cells stay in reading order and `row-reverse` draws them from the right, which
+ * also puts a short last row against the right edge for free.
  */
-type PageCell = { kind: 'page'; pageIndex: number; thumb: PageThumbSource | null } | { kind: 'spacer' };
+type PageRow = { cells: PageCell[] };
 
 /**
  * The direct-series page-thumbnail grid — and the series screen's own scroll
@@ -1267,15 +1263,18 @@ export function PageThumbList({
   //
   // The slice happens INSIDE the memo. Computed outside it, `base` was a fresh array on every render
   // in two of the three cases (the `[]` literal while loading, and `thumbs.slice()` while collapsed),
-  // so the only dep never matched and this rebuilt the whole `PageCell[]` — and handed LegendList a
-  // new `data` identity — on every single render. Depending on the inputs instead means the array is
-  // rebuilt when it actually changes.
-  const data = useMemo<PageCell[]>(() => {
+  // so the only dep never matched and this rebuilt every row — and handed LegendList a new `data`
+  // identity — on every single render. Depending on the inputs instead means the array is rebuilt
+  // when it actually changes.
+  const data = useMemo<PageRow[]>(() => {
     // `base` is sliced from index 0 (collapsed or not), so its position IS the page index.
     const base = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
-    const cells = base.map((thumb, pageIndex): PageCell => ({ kind: 'page', pageIndex, thumb }));
-    return rtl ? mirrorGridRows(cells, cols, () => ({ kind: 'spacer' })) : cells;
-  }, [loading, collapsed, thumbs, collapsedCount, rtl, cols]);
+    const rows: PageRow[] = [];
+    for (let start = 0; start < base.length; start += cols) {
+      rows.push({ cells: base.slice(start, start + cols).map((thumb, k) => ({ pageIndex: start + k, thumb })) });
+    }
+    return rows;
+  }, [loading, collapsed, thumbs, collapsedCount, cols]);
 
   const list = (
     <AnimatedLegendList
@@ -1288,25 +1287,22 @@ export function PageThumbList({
       // A save changes no row's data, so without this the recycled cells keep their old badge state.
       extraData={collected}
       keyExtractor={(_, i) => String(i)}
-      numColumns={cols}
       recycleItems
-      // Every cell's real height is this, exactly, regardless of content — the slot never resizes
+      // Every row's real height is this, exactly, regardless of content — the slot never resizes
       // once mounted (`thumbShell` is a constant 2:3 slot), so unlike a
       // normal dynamic-height list this doesn't need to be *learned* via onLayout. Declaring it
       // via getFixedItemSize (not just estimatedItemSize, which is only ever a pre-measurement
       // guess) tells LegendList every row's exact position upfront, so it can jump straight to
       // any scroll offset — e.g. dragging a scrollbar or `scrollToEnd` to the last row of a long
       // page grid — without needing to render (and thus mount/fetch) every row above it first
-      // just to measure its way there. Excludes `gap` here since the library adds its own
-      // `ctx.scrollAxisGap` (derived from columnWrapperStyle.gap below) on top automatically.
-      getFixedItemSize={() => slotHeightPx}
+      // just to measure its way there. The row carries its own trailing gap (`pageRow`).
+      getFixedItemSize={() => slotHeightPx + gap}
       estimatedItemSize={slotHeightPx + gap}
-      columnWrapperStyle={{ gap }}
       contentContainerStyle={{
         paddingTop: BarContentGap + topInset,
         paddingBottom: insets.bottom + Spacing.five,
-        paddingLeft: sidePad - PAGE_ROW_BLEED,
-        paddingRight: sidePad - PAGE_ROW_BLEED,
+        paddingLeft: sidePad,
+        paddingRight: sidePad,
       }}
       ListHeaderComponent={
         <View style={styles.pageHeader}>
@@ -1358,21 +1354,23 @@ export function PageThumbList({
         </View>
       }
       renderItem={({ item }) => (
-        // Pinned to `tileW` — the same width the tile inside it is drawn at. An elastic cell would
-        // stretch across a short final row.
-        <View style={[styles.pageCell, { width: tileW }]}>
-          {item.kind === 'page' ? (
-            <PageThumb
-              thumb={item.thumb}
-              index={item.pageIndex}
-              seed={seed}
-              bridgeId={bridgeId}
-              page={item.pageIndex + 1}
-              width={tileW}
-              collected={collected.has(item.pageIndex)}
-              onPress={() => onOpenPage(item.pageIndex)}
-            />
-          ) : null}
+        <View style={[styles.pageRow, rtl && styles.pageRowRtl, { gap }]}>
+          {item.cells.map((cell) => (
+            // Pinned to `tileW` — the same width the tile inside it is drawn at. An elastic cell
+            // would stretch across a short final row.
+            <View key={cell.pageIndex} style={{ width: tileW }}>
+              <PageThumb
+                thumb={cell.thumb}
+                index={cell.pageIndex}
+                seed={seed}
+                bridgeId={bridgeId}
+                page={cell.pageIndex + 1}
+                width={tileW}
+                collected={collected.has(cell.pageIndex)}
+                onPress={() => onOpenPage(cell.pageIndex)}
+              />
+            </View>
+          ))}
         </View>
       )}
     />
@@ -1949,12 +1947,10 @@ const styles = StyleSheet.create({
   },
   pageHeader: {
     gap: Spacing.four,
-    marginHorizontal: PAGE_ROW_BLEED,
   },
   pageFooter: {
     gap: Spacing.four,
     paddingTop: Spacing.two,
-    marginHorizontal: PAGE_ROW_BLEED,
   },
   // The collapsed "Show all" overlay: pulled up over the last visible row (height
   // + negative marginTop set inline), the gradient fades that row out and the
@@ -1973,11 +1969,14 @@ const styles = StyleSheet.create({
   pageFooterRails: {
     marginHorizontal: -Spacing.four,
   },
-  // A grid cell. NO `flex: 1` — it's pinned to `tileW` at the call site, so a short last row ends
-  // instead of stretching. The paddingBottom is the inter-row gap (LegendList's columnWrapperStyle
-  // only supplies the column gap).
-  pageCell: {
-    paddingBottom: Spacing.two,
+  // A grid row; its cells are pinned to `tileW` at the call site. The paddingBottom is the
+  // inter-row gap — the list adds none of its own.
+  pageRow: {
+    flexDirection: 'row',
+    paddingBottom: PAGE_GRID_GAP,
+  },
+  pageRowRtl: {
+    flexDirection: 'row-reverse',
   },
   head: {
     gap: Spacing.two,
@@ -2007,12 +2006,9 @@ const styles = StyleSheet.create({
   skelTileRow: {
     flexDirection: 'row',
     gap: Spacing.two,
-    // Stands in for a loaded row, trailing gap included: a real cell ends in `pageCell`'s
-    // paddingBottom, and LegendList's row container always carries a `marginBottom: -gap` to cancel
-    // the last row's gap — with no rows yet that margin is all that's left, pulling the footer (the
-    // related-rail skeleton) `PAGE_GRID_GAP` up into this row. Reserve both so the rail skeleton's
-    // heading sits as far below these tiles as a loaded rail's does below the grid.
-    paddingBottom: Spacing.two + PAGE_GRID_GAP,
+    // Stands in for a loaded row, trailing gap included (`pageRow`), so the rail skeleton's heading
+    // sits as far below these tiles as a loaded rail's does below the grid.
+    paddingBottom: PAGE_GRID_GAP,
   },
   skelTile: {
     flex: 1,
