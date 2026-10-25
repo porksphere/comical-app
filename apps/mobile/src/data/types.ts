@@ -180,9 +180,9 @@ export type SeriesDetail = SeriesEntry & {
   cached?: boolean;
   /** When the cached detail was captured (epoch ms) — shown as "updated X ago". */
   cachedAt?: number;
-  /** The source has said this series no longer exists there. One answer is only a suspicion;
-   *  `confirmedAt` is set once a second, hours later, agrees. Downloads stay readable. */
-  removal?: { reason: string; firstSeenAt: number; confirmedAt?: number };
+  /** The source has said this series no longer exists there (one answer confirms it; `via` is the
+   *  call that heard it, and only that call succeeding clears it). Downloads stay readable. */
+  removal?: { reason: string; firstSeenAt: number; confirmedAt?: number; via?: 'details' | 'chapters' | 'pages' };
 };
 
 /** Result of the deferred `getSeriesList` fetch: the chapter list (chaptered) OR

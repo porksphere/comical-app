@@ -826,10 +826,12 @@ const realDataSource: DataSource = {
     // The host flags a response served from the library's offline metadata cache with additive
     // fields on the SeriesInfo shape — carry them through so the page can show the affordance.
     const offline = info as { cached?: boolean; cachedAt?: number; removal?: SeriesDetail['removal'] };
+    // A removal rides on live answers too: the host keeps one the pages call heard even while the
+    // detail call succeeds (some sources' metadata API still describes a taken-down series).
+    if (offline.removal) base.removal = offline.removal;
     if (offline.cached) {
       base.cached = true;
       if (offline.cachedAt !== undefined) base.cachedAt = offline.cachedAt;
-      if (offline.removal) base.removal = offline.removal;
       // A captured cover arrives as the host's server-relative cover route — resolve it into
       // something <Image> can load (remote: apiBase-prefixed URL; embedded: an in-process data URI).
       // Best-effort: an unresolvable cover just leaves the hero on its normal fallback path.
