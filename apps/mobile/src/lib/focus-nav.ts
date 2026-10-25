@@ -384,14 +384,12 @@ function lineage(el: HTMLElement | null): HTMLElement[] {
 const pointer = (type: string, relatedTarget: Element | null, bubbles: boolean) =>
   new PointerEvent(type, { pointerType: 'mouse', isPrimary: true, bubbles, composed: bubbles, relatedTarget });
 
-function hoverTo(next: HTMLElement | null): void {
-  const prev = hovered?.isConnected ? hovered : null;
-  hovered = next;
+/** The boundary events a pointer going from `prev` to `next` would send, in the browser's order. */
+function cross(prev: HTMLElement | null, next: HTMLElement | null): void {
   if (prev === next) return;
   const left = lineage(prev);
   const entered = lineage(next);
   if (prev) {
-    prev.removeAttribute('data-key-tint');
     prev.dispatchEvent(pointer('pointerout', next, true));
     for (const el of left) {
       if (entered.includes(el)) break;
@@ -402,6 +400,62 @@ function hoverTo(next: HTMLElement | null): void {
     next.dispatchEvent(pointer('pointerover', prev, true));
     for (const el of entered.filter((e) => !left.includes(e)).reverse()) el.dispatchEvent(pointer('pointerenter', prev, false));
   }
+}
+
+function hoverTo(next: HTMLElement | null): void {
+  const prev = hovered?.isConnected ? hovered : null;
+  hovered = next;
+  if (prev === next) return;
+  prev?.removeAttribute('data-key-tint');
+  cross(prev, next);
+}
+
+// ── A mouse left lying while the keyboard is used ──
+// The browser hovers whatever comes to lie under a mouse that hasn't moved — a key scrolled the list,
+// opened a screen, turned a page — exactly as if the mouse had gone there. So from a key press until
+// the mouse is really used again, its hover is held off: what it was on is left, and every boundary
+// event the browser sends for it is dropped before any listener (RN-web's on the element, React's on
+// the root). Using the mouse again — a move to a NEW position, since the browser also "moves" it in
+// place after a scroll, a press, the wheel — takes the hover straight back onto whatever is under it.
+
+const BOUNDARY = ['pointerover', 'pointerout', 'pointerenter', 'pointerleave', 'mouseover', 'mouseout', 'mouseenter', 'mouseleave'];
+let mouseHeldOff = false;
+let mouseAt: { x: number; y: number } | null = null;
+let underMouse: HTMLElement | null = null;
+
+function holdOffMouse(): void {
+  if (mouseHeldOff) return;
+  mouseHeldOff = true;
+  const was = underMouse;
+  underMouse = null;
+  if (was?.isConnected) cross(was, null);
+}
+
+function mouseBack(e: PointerEvent | WheelEvent): void {
+  if (e instanceof PointerEvent && hovered) hoverTo(null);
+  if (!mouseHeldOff) return;
+  mouseHeldOff = false;
+  if (e instanceof PointerEvent && e.pointerType !== 'mouse') return;
+  const at = mouseAt && document.elementFromPoint(mouseAt.x, mouseAt.y);
+  if (!(at instanceof HTMLElement)) return;
+  underMouse = at;
+  cross(null, at);
+}
+
+function onBoundary(e: Event): void {
+  if (!e.isTrusted) return;
+  if (e instanceof MouseEvent) mouseAt = { x: e.clientX, y: e.clientY };
+  if (mouseHeldOff) return e.stopImmediatePropagation();
+  if (e.type !== 'pointerover' && e.type !== 'pointerout') return;
+  const to = e.type === 'pointerover' ? e.target : (e as PointerEvent).relatedTarget;
+  underMouse = to instanceof HTMLElement ? to : null;
+}
+
+function onPointerMove(e: PointerEvent): void {
+  if (!e.isTrusted) return;
+  const moved = !mouseAt || e.clientX !== mouseAt.x || e.clientY !== mouseAt.y;
+  mouseAt = { x: e.clientX, y: e.clientY };
+  if (moved) mouseBack(e);
 }
 
 const LOOK_DEPTH = 4;
@@ -608,7 +662,11 @@ export function installFocusNav(): void {
     // A menu closes itself on Escape and takes the focus with it.
     if (returnTo) returnSoon();
   });
-  // The real pointer takes its hover back the moment it moves, and the wheel its scroll.
-  window.addEventListener('pointermove', () => hovered && hoverTo(null), { passive: true });
+  window.addEventListener('keydown', (e) => e.isTrusted && holdOffMouse(), true);
+  for (const type of BOUNDARY) window.addEventListener(type, onBoundary, true);
+  // The real mouse takes its hover back the moment it is used, and the wheel its scroll.
+  window.addEventListener('pointermove', onPointerMove, { capture: true, passive: true });
+  window.addEventListener('pointerdown', (e) => e.isTrusted && mouseBack(e), { capture: true, passive: true });
+  window.addEventListener('wheel', (e) => e.isTrusted && mouseBack(e), { capture: true, passive: true });
   window.addEventListener('wheel', cancelGlides, { passive: true });
 }
