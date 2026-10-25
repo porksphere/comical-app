@@ -73,7 +73,10 @@ const settings$ = persisted$<ReaderSettings>(STORAGE_KEY, DEFAULT_SETTINGS);
 /** `patch` merges into the stored settings; the observable persists and notifies readers. */
 export function setReaderSettings(patch: Partial<ReaderSettings>): void {
   if (patch.pageFit !== undefined) fitOverride$.set(null);
-  settings$.assign(patch);
+  // Whole, never `assign`: that mutates the stored object in place, so `use$(settings$)` re-renders
+  // with the SAME reference and the compiler-memoized merge in `useReaderSettings` stays stale —
+  // the open sheet showed the old value until it was closed and reopened.
+  settings$.set({ ...settings$.peek(), ...patch });
 }
 
 /** Values a blob may still hold from before: `fit-page` was the contain fit with the spread
