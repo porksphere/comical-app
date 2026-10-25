@@ -822,7 +822,7 @@ export function SeriesBody({
       ) : null}
 
       {series.description ? (
-        <ThemedText themeColor="textSecondary" style={styles.description}>
+        <ThemedText themeColor="textSecondary" style={styles.description} selectable>
           {series.description}
         </ThemedText>
       ) : null}
@@ -846,7 +846,7 @@ export function SeriesBody({
   // header.
   const heroBlock = (
     <>
-      <ThemedText type="subtitle" style={styles.title}>
+      <ThemedText type="subtitle" style={styles.title} selectable>
         {series.title}
       </ThemedText>
 

@@ -670,7 +670,7 @@ export function ChapterScrollList({
   // Series title — full-width above the two-column hero. series.tsx no longer bundles it into
   // `header`, so every layout below renders it from the `title` prop here.
   const titleEl = (
-    <ThemedText type="subtitle" style={styles.seriesTitle}>
+    <ThemedText type="subtitle" style={styles.seriesTitle} selectable>
       {title}
     </ThemedText>
   );
