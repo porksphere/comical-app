@@ -176,8 +176,7 @@ function RootNavigation() {
             except the settings categories, which take the system bar on iOS. */}
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          {/* Search renders its own top bar (search field + back button), so hide the native one. */}
-          <Stack.Screen name="search" options={{ headerShown: false }} />
+          <Stack.Screen name="search" options={pushedScreen} />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-collections" options={{ headerShown: false }} />
           <Stack.Screen name="results" options={pushedScreen} />

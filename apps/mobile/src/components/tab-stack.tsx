@@ -22,7 +22,8 @@ import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@
  * (one-line re-exports under each tab directory; `inTabHref` in lib/nav sends a push there) — so
  * they open under the tab bar like any system app's detail page, rather than over the whole shell.
  * The series copy is the same contained transparent modal the root route is (its rationale is in
- * app/_layout), with no native edge-swipe: the page runs its own back-swipe and collapse.
+ * app/_layout), with no native edge-swipe: the page runs its own back-swipe and collapse. Search
+ * and results take the stack's bar as it is — search puts its field in it (`Stack.SearchBar`).
  */
 export default function TabStack() {
   if (!NATIVE_HEADER) return <Slot />;
@@ -45,8 +46,6 @@ export default function TabStack() {
           contentStyle: { backgroundColor: 'transparent' },
         }}
       />
-      {/* Search renders its own top bar (search field + back button). */}
-      <Stack.Screen name="search" options={{ headerShown: false }} />
     </Stack>
   );
 }
