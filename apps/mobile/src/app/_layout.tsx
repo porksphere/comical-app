@@ -53,6 +53,7 @@ import { installAppUpdateAutoCheck } from '@/data/use-app-update';
 import { installBrowserZoomToast } from '@/lib/browser-zoom-toast';
 import { useDesktopShellCommands, useNavigationKeys } from '@/lib/desktop-commands';
 import { installFocusNav } from '@/lib/focus-nav';
+import { FocusedTabTracker } from '@/lib/focused-tab';
 import { installKeyboardScroll } from '@/lib/keyboard-scroll';
 import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
@@ -126,20 +127,28 @@ function FrameTrace() {
 }
 
 /**
- * A settings category screen: on iOS the system navigation bar (title, back chevron, the same
- * transparent bar over a soft scroll edge the tab stacks use — see `tab-stack`), elsewhere hidden
- * behind the screen's own TopBar. The screens pad past whichever is there via `useSettingsScrollPadding`.
+ * The system navigation bar on a pushed iOS screen: title, back chevron, the same transparent bar
+ * over a soft scroll edge the tab stacks use — see `tab-stack`.
+ */
+const NATIVE_BAR: ComponentProps<typeof Stack.Screen>['options'] = {
+  headerTransparent: true,
+  headerShadowVisible: false,
+  headerBackButtonDisplayMode: 'minimal',
+  scrollEdgeEffects: { top: 'soft' },
+};
+
+/**
+ * A pushed screen that titles itself (results): the system bar on iOS, elsewhere hidden behind the
+ * screen's own TopBar. The in-tab copies of the same screen get this from the tab's stack.
+ */
+const pushedScreen: ComponentProps<typeof Stack.Screen>['options'] = NATIVE_HEADER ? NATIVE_BAR : { headerShown: false };
+
+/**
+ * A settings category screen: the system bar on iOS, elsewhere hidden behind the screen's own
+ * TopBar. The screens pad past whichever is there via `useSettingsScrollPadding`.
  */
 function settingsScreen(title: string): ComponentProps<typeof Stack.Screen>['options'] {
-  return NATIVE_HEADER
-    ? {
-        title,
-        headerTransparent: true,
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-        scrollEdgeEffects: { top: 'soft' },
-      }
-    : { headerShown: false };
+  return NATIVE_HEADER ? { title, ...NATIVE_BAR } : { headerShown: false };
 }
 
 function RootNavigation() {
@@ -158,6 +167,7 @@ function RootNavigation() {
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       <SplashGate />
       <FrameTrace />
+      <FocusedTabTracker />
       {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
       <OverlayProvider>
         {/* Native stack: real UINavigationController on iOS (large titles, back
@@ -170,7 +180,7 @@ function RootNavigation() {
           <Stack.Screen name="search" options={{ headerShown: false }} />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-collections" options={{ headerShown: false }} />
-          <Stack.Screen name="results" options={{ headerShown: false }} />
+          <Stack.Screen name="results" options={pushedScreen} />
           {/* THE series page — and the only reader there is: details and pages are one screen,
               either side one gesture from the other. Everything that used to push a standalone
               /reader (a History row, the card menu's Read, a chapter row, a page thumbnail) opens

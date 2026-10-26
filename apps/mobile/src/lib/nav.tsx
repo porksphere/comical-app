@@ -9,6 +9,7 @@ import {
 import { useMemo, type ComponentProps } from 'react';
 
 import { openBridgeSearchPane } from '@/lib/bridge-search-pane';
+import { focusedTabRoute } from '@/lib/focused-tab';
 import { usePaneNav, usePaneParams, type PaneParams } from '@/lib/pane';
 import { openResultsPane } from '@/lib/results-pane';
 import { openSeriesPane } from '@/lib/series-pane';
@@ -50,12 +51,12 @@ function guard(base: Router): Router {
     push: (href, options) => {
       if (!claimNavigation(navTargetKey(href))) return;
       if (takeContentPane(href)) return;
-      base.push(href, options);
+      base.push(inTabHref(href), options);
     },
     navigate: (href, options) => {
       if (!claimNavigation(navTargetKey(href))) return;
       if (takeContentPane(href)) return;
-      base.navigate(href, options);
+      base.navigate(inTabHref(href), options);
     },
     replace: (href, options) => {
       if (claimNavigation(navTargetKey(href))) base.replace(href, options);
@@ -122,6 +123,25 @@ function takeContentPane(href: unknown): boolean {
   if (pathname === '/results') return openResultsPane(params);
   if (pathname === '/search') return openBridgeSearchPane();
   return false;
+}
+
+/**
+ * iOS: a series, search or results page pushed from inside a tab opens INSIDE that tab's native
+ * stack — the twin routes under `app/(tabs)/<tab>/` — so the tab bar stays up over it as it does in
+ * every system app, instead of on the root stack over the whole tab shell. Here, with the pane
+ * hand-off, for the same reason: the push sites are many and context-free. From on top of an
+ * in-tab series (and from outside the tabs) the page goes to the root route as before — see
+ * `focusedTabRoute`. Android and web keep their single root copies.
+ */
+type PushHref = Parameters<Router['push']>[0];
+const IN_TAB_PATHS = new Set(['/series', '/search', '/results']);
+function inTabHref(href: PushHref): PushHref {
+  if (Platform.OS !== 'ios') return href;
+  const { pathname, params } = splitHref(href);
+  if (!pathname || !IN_TAB_PATHS.has(pathname)) return href;
+  const tab = focusedTabRoute();
+  if (!tab) return href;
+  return { pathname: `/(tabs)/${tab}${pathname}`, params } as unknown as PushHref;
 }
 
 /** Both shapes expo-router accepts, reduced to the pathname and params the pane needs to render. */

@@ -1,16 +1,16 @@
 import { usePathname } from 'expo-router';
 import { NativeTabs } from 'expo-router/native-tabs';
 import { useCallback, useEffect, useState, type ComponentProps } from 'react';
-import { StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
-import Animated from 'react-native-reanimated';
+import { useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 
 import { useActivityBadgeCount } from '@/data/activity/use-activity-badge';
 import { useSettingsBadgeCount } from '@/data/use-settings-badge';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useTheme } from '@/hooks/use-theme';
+import { useNativeTabBarHidden } from '@/lib/native-tab-bar';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { ROOT_TAB_PATHS } from '@/lib/root-tabs';
-import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
+import { setBackdropRecede } from '@/lib/series-backdrop';
 
 /**
  * iOS: the real `UITabBarController`, through `NativeTabs`. Android and web keep the custom bar in
@@ -25,6 +25,10 @@ import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBack
  *
  * Route NAMES (`(home)`, `library`, …) are the trigger names; the TABS table in `app-tabs.tsx` keys
  * everything else by the tab's own name (`browse`, …), so the two are mapped here once.
+ *
+ * The bar stays up over every page a tab pushes (they live in the tab's own stack — see
+ * `tab-stack`) and goes only under the reader (`native-tab-bar`). The series page's backdrop —
+ * the scale and dim behind it — is per screen inside the tab stacks now, not around this shell.
  */
 const TAB_OF_ROUTE: Record<string, keyof typeof ROOT_TAB_PATHS> = {
   '(home)': 'browse',
@@ -43,8 +47,7 @@ export default function AppTabs() {
   const pathname = usePathname();
   const activityBadge = useActivityBadgeCount();
   const settingsBadge = useSettingsBadgeCount();
-  const backdropStyle = useSeriesReaderBackdropStyle();
-  const dimStyle = useSeriesReaderBackdropDimStyle();
+  const hidden = useNativeTabBarHidden();
 
   useEffect(() => {
     if ((Object.values(ROOT_TAB_PATHS) as string[]).includes(pathname)) setBackdropRecede(!NO_RECEDE.has(pathname));
@@ -75,43 +78,36 @@ export default function AppTabs() {
   );
 
   return (
-    <Animated.View style={[styles.root, backdropStyle]}>
-      <ContentWidthProvider width={contentWidth ?? windowWidth} sidebar={false}>
-        <NativeTabs
-          sidebarAdaptable
-          tintColor={theme.tabIconActive}
-          iconColor={theme.tabIconInactive}
-          screenListeners={screenListeners}>
-          <NativeTabs.Trigger name="(home)" disableAutomaticContentInsets unstable_nativeProps={measured}>
-            <NativeTabs.Trigger.Label>Browse</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'safari', selected: 'safari.fill' }} />
-          </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="library" disableAutomaticContentInsets unstable_nativeProps={measured}>
-            <NativeTabs.Trigger.Label>Library</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'books.vertical', selected: 'books.vertical.fill' }} />
-          </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="history" disableAutomaticContentInsets unstable_nativeProps={measured}>
-            <NativeTabs.Trigger.Label>History</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf="clock.arrow.circlepath" />
-          </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="activity" disableAutomaticContentInsets unstable_nativeProps={measured}>
-            <NativeTabs.Trigger.Label>Activity</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'bell', selected: 'bell.fill' }} />
-            <NativeTabs.Trigger.Badge hidden={activityBadge === 0}>{String(activityBadge)}</NativeTabs.Trigger.Badge>
-          </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="settings" disableAutomaticContentInsets unstable_nativeProps={measured}>
-            <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
-            <NativeTabs.Trigger.Badge hidden={settingsBadge === 0}>{String(settingsBadge)}</NativeTabs.Trigger.Badge>
-          </NativeTabs.Trigger>
-        </NativeTabs>
-      </ContentWidthProvider>
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} />
-    </Animated.View>
+    <ContentWidthProvider width={contentWidth ?? windowWidth} sidebar={false}>
+      <NativeTabs
+        sidebarAdaptable
+        hidden={hidden}
+        tintColor={theme.tabIconActive}
+        iconColor={theme.tabIconInactive}
+        screenListeners={screenListeners}>
+        <NativeTabs.Trigger name="(home)" disableAutomaticContentInsets unstable_nativeProps={measured}>
+          <NativeTabs.Trigger.Label>Browse</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon sf={{ default: 'safari', selected: 'safari.fill' }} />
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="library" disableAutomaticContentInsets unstable_nativeProps={measured}>
+          <NativeTabs.Trigger.Label>Library</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon sf={{ default: 'books.vertical', selected: 'books.vertical.fill' }} />
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="history" disableAutomaticContentInsets unstable_nativeProps={measured}>
+          <NativeTabs.Trigger.Label>History</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon sf="clock.arrow.circlepath" />
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="activity" disableAutomaticContentInsets unstable_nativeProps={measured}>
+          <NativeTabs.Trigger.Label>Activity</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon sf={{ default: 'bell', selected: 'bell.fill' }} />
+          <NativeTabs.Trigger.Badge hidden={activityBadge === 0}>{String(activityBadge)}</NativeTabs.Trigger.Badge>
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="settings" disableAutomaticContentInsets unstable_nativeProps={measured}>
+          <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
+          <NativeTabs.Trigger.Badge hidden={settingsBadge === 0}>{String(settingsBadge)}</NativeTabs.Trigger.Badge>
+        </NativeTabs.Trigger>
+      </NativeTabs>
+    </ContentWidthProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1 },
-  dim: { backgroundColor: '#000' },
-});

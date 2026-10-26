@@ -1,4 +1,4 @@
-import { useNavigation, usePathname } from 'expo-router';
+import { useNavigation, useSegments } from 'expo-router';
 import { createContext, useCallback, useContext, useMemo } from 'react';
 
 import { claimNavigation, navTargetKey } from '@/lib/nav-guard';
@@ -16,10 +16,15 @@ type SeriesSubPath = '/series-downloads' | '/downloads';
  * `app/series/_layout.tsx`). This hook keeps the push SITES context-free: on the
  * series page (or one of its sub-pages) it prefixes the target into the nested stack — a real
  * native push with the edge-swipe back — and everywhere else it returns the path untouched.
+ *
+ * Only the ROOT series route has the nested stack. Its copies inside the iOS tab stacks
+ * (`app/(tabs)/<tab>/series`) can't push a card over themselves either, so from one of those the
+ * sub-page goes to the root route, over the tab shell — hence the segments, not the pathname,
+ * which strips the `(tabs)` group and reads the same for both.
  *  */
 export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/series${SeriesSubPath}` {
-  const pathname = usePathname();
-  const inSeriesPage = pathname === '/series' || pathname.startsWith('/series/');
+  const segments: readonly string[] = useSegments();
+  const inSeriesPage = segments[0] === 'series';
   return useCallback(
     (path: SeriesSubPath) => (inSeriesPage ? (`/series${path}` as const) : path),
     [inSeriesPage],
@@ -140,9 +145,12 @@ export function useDrillRelatedSeries(): ((params: Record<string, string>) => vo
     (params: Record<string, string>) => {
       if (!claimNavigation(navTargetKey({ pathname: '/series', params }))) return;
       // Only when actually ON a sub-page — from the combined page itself the nested stack is at
-      // its root and the stack router rejects POP_TO_TOP (a noisy dev warning).
+      // its root and the stack router rejects POP_TO_TOP (a noisy dev warning). By the top route's
+      // NAME, not the index: inside an iOS tab stack the nearest navigator is the tab's, where the
+      // series page itself sits above the tab screen, and popping to top there would close it.
       const state = navigation.getState();
-      if (state && state.index > 0) navigation.dispatch({ type: 'POP_TO_TOP' });
+      const top = state?.routes[state.index]?.name;
+      if (top === 'downloads' || top === 'series-downloads') navigation.dispatch({ type: 'POP_TO_TOP' });
       drillSeriesHandlers.current()?.(params);
     },
     [navigation],

@@ -1,5 +1,6 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
+import { Stack } from 'expo-router';
 import { useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,13 +17,15 @@ import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScop
 import { useDataSource, useMockActive } from '@/data/source';
 import { friendlyError } from '@/lib/friendly-error';
 import { useGridLayout } from '@/hooks/use-grid-layout';
+import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useLocalSearchParams } from '@/lib/nav';
 
 /**
  * A rail's "See all" destination — a single bridge's infinite-scroll results, with NO search bar.
  * Pushed from any `ContentFeed` rail (Browse home rails, the Comical aggregate, and cross-bridge
- * search rails). Uses the shared `TopBar` like every other pushed screen; the title is a breadcrumb
- * "{bridge} › {title}" (e.g. "Example › Featured"). Params (all strings — expo-router): `bridgeId`,
+ * search rails). Uses the shared `TopBar` like every other pushed screen — the system bar on iOS,
+ * where the route's options draw it; the title is a breadcrumb "{bridge} › {title}" (e.g.
+ * "Example › Featured"). Params (all strings — expo-router): `bridgeId`,
  * `title`, `bridge`? (name), `direct`? ('1'), and EITHER `listId` (a list drill → that list's items)
  * OR `query` (a search drill → that bridge's search). Back returns cleanly.
  */
@@ -31,6 +34,7 @@ export default function ResultsScreen() {
   const mock = useMockActive();
   const insets = useSafeAreaInsets();
   const topBarInset = useTopBarInset();
+  const topChrome = useTopChromeHeight();
   const listRef = useRef<LegendListRef>(null);
   const { numColumns } = useGridLayout();
 
@@ -99,15 +103,15 @@ export default function ResultsScreen() {
         scopeKey={`${bridgeId}|${params.favorites === '1' ? 'favorites' : (params.listId ?? params.query ?? '')}`}
         listRef={listRef}
         header={emptyBody}
-        // The TopBar overlays the list, so reserve its height (content scrolls behind it).
-        paddingTop={topBarInset + BarContentGap}
+        // The bar overlays the list, so reserve its height (content scrolls behind it).
+        paddingTop={(NATIVE_HEADER ? topChrome : topBarInset) + BarContentGap}
         paddingBottom={insets.bottom + Spacing.five}
         bridge={params.bridge}
         bridgeId={bridgeId}
         direct={direct}
         onEndReached={loadMore}
       />
-      <TopBar title={headerTitle} />
+      {NATIVE_HEADER ? <Stack.Screen options={{ title: headerTitle }} /> : <TopBar title={headerTitle} />}
     </ThemedView>
   );
 }

@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -80,6 +81,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter, type HistoryEntry } from '@/data/types';
 import { useMissingBridge } from '@/hooks/use-bridges';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
 import { useReaderSettings, setFitOverride, useFitOverride, useSeriesReaderMode, useSpreadShift } from '@/hooks/use-reader-settings';
 import { useWebtoonDetection } from '@/components/reader/use-webtoon-detection';
@@ -88,6 +90,7 @@ import { sizeClassFor, useIsDesktop, useTopBarHeight } from '@/hooks/use-respons
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
+import { hideNativeTabBar } from '@/lib/native-tab-bar';
 import { useLocalSearchParams, useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
@@ -183,6 +186,8 @@ const WARM_BEHIND = 2;
  */
 const PREV_WINDOW_GRACE_MS = 600;
 const IS_WEB = Platform.OS === 'web';
+/** See the SearchLayer's `Stack.Screen`. */
+const SEARCH_LAYER_BAR = { headerShown: false } as const;
 
 /**
  * The box this page is laid out in — the window, unless it is being rendered in the right-hand pane
@@ -1308,6 +1313,12 @@ function SeriesReaderInstance({
   useEffect(() => {
     if (detailsActive) keepZoomLevel(1);
     return () => keepZoomLevel(1);
+  }, [detailsActive]);
+  // iOS: the system tab bar stays up over the details, as over any page a tab pushes, and goes
+  // with the pages — the reader is full-bleed.
+  useEffect(() => {
+    if (!NATIVE_HEADER || detailsActive) return;
+    return hideNativeTabBar();
   }, [detailsActive]);
   useWindowThemeColor(detailsActive ? null : READER_BACKDROP, 1);
   // True while a horizontal details gesture (back-swipe or webtoon reveal) is ACTIVE. The pans
@@ -3703,14 +3714,51 @@ function SeriesReaderInstance({
   // treatment). Above the band overlay so its taps win. Rendered in one of two spots below:
   // inside the edge-swipe slide for the modal root, outside it (fading, statically stuck) for a
   // drilled layer.
+  // iOS: the system bar is the details' top chrome, through the route's options — transparent over
+  // the cover, the glass material and the title arriving where the custom bar went solid, and its
+  // chevron the one back button; the custom chevron below steps aside for it and returns in the
+  // reader, which has no bar. Only the top instance sets the options (they are the route's, shared
+  // by every layer), and the elements mount only while it is top, so a layer that becomes top again
+  // re-applies them — Stack.Screen's effect runs on mount, and the toolbar unregisters its item on
+  // unmount. Works the same for the root route (its nested stack's index) and a tab's copy.
+  const nativeBarUp = NATIVE_HEADER && detailsActive;
+  const nativeBar =
+    NATIVE_HEADER && isTop ? (
+      <>
+        <Stack.Screen
+          options={{
+            headerShown: detailsActive,
+            headerTransparent: true,
+            headerShadowVisible: false,
+            headerBackVisible: false,
+            title: barSolid ? headerBarTitle : '',
+            headerBlurEffect: barSolid ? 'systemChromeMaterial' : undefined,
+          }}
+        />
+        {detailsActive ? (
+          <Stack.Toolbar placement="left">
+            <Stack.Toolbar.Button
+              icon="chevron.left"
+              accessibilityLabel="Go back"
+              onPress={backStepsHome ? revealDetails : closeLayer}
+            />
+          </Stack.Toolbar>
+        ) : null}
+      </>
+    ) : null;
   const topChrome = (
     <TopBarSwitch
           mode={detailsActive ? 'details' : 'reader'}
           persistent={
             <Animated.View
               nativeID={`${chromeId}-back`}
-              pointerEvents={detailsActive || chromeVisible ? 'box-none' : 'none'}
-              style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, backPersistStyle]}>
+              pointerEvents={!nativeBarUp && (detailsActive || chromeVisible) ? 'box-none' : 'none'}
+              style={[
+                styles.headerBackWrap,
+                { top: insets.top, height: topBarHeight },
+                backPersistStyle,
+                nativeBarUp ? styles.nativeBarHidden : null,
+              ]}>
               <Pressable
                 testID="series-page.header-back"
                 // A drilled layer's chevron slides it back out to the parent series; the modal
@@ -3730,7 +3778,8 @@ function SeriesReaderInstance({
             </Animated.View>
           }
           bars={{
-            details: (
+            // Under the native bar (iOS) the details have no custom bar at all.
+            details: NATIVE_HEADER ? null : (
               <Animated.View
                 testID="series-page.header-topbar"
                 pointerEvents={barSolid ? 'box-none' : 'none'}
@@ -4041,6 +4090,7 @@ function SeriesReaderInstance({
 
       {/* ONE statically-stuck top-bar slot serving BOTH modes (see `topChrome` above) — every
           instance's bar rides its own slide (drill entrance, edge swipe, dismissal alike). */}
+      {nativeBar}
       {topChrome}
 
       </Animated.View>
@@ -4519,6 +4569,9 @@ function SearchLayer({
   );
   return (
     <View style={styles.container}>
+      {/* iOS: the search draws its own bar, so the route's system bar (the series' below) goes
+          while this layer is top; the series re-applies its own when it is top again. */}
+      {NATIVE_HEADER && isTop ? <Stack.Screen options={SEARCH_LAYER_BAR} /> : null}
       <GestureDetector gesture={edgePan}>
         <Animated.View style={[styles.searchSlide, { backgroundColor: theme.background }, slideStyle]}>
           <SearchScreen embedded={embedded} />
@@ -5694,6 +5747,7 @@ const styles = StyleSheet.create({
     zIndex: 4,
     justifyContent: 'center',
   },
+  nativeBarHidden: { opacity: 0 },
   headerBackBtn: {
     justifyContent: 'center',
   },
