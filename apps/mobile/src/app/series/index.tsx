@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { Stack } from 'expo-router';
+import { Stack, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -4279,8 +4279,19 @@ export default function SeriesReaderScreen() {
     });
   }, []);
   // The handlers are a stack whose top answers, and another tab's pane stays mounted while hidden —
-  // so only the one you can see holds them, re-taking the top when its tab comes back.
-  const live = usePaneTabLive();
+  // so only the one you can see holds them, re-taking the top when its tab comes back. Two things
+  // say "hidden": a pane in a tab that isn't the active one, and — since every tab's stack keeps
+  // its own series page — a copy in a tab that isn't the focused one. A page left open in another
+  // tab is blurred, not gone, and while it held the top, a tag tapped on the page you could see
+  // opened the search layer on the one you couldn't.
+  const [focused, setFocused] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
+  );
+  const live = usePaneTabLive() && focused;
   useEffect(() => (live ? registerDrillSeries(drill) : undefined), [drill, live]);
   useEffect(() => (live ? registerOpenSearchLayer(openSearch) : undefined), [openSearch, live]);
   // The IN-TREE push parallax, now serving the SEARCH layer alone: how much it covers what's under
