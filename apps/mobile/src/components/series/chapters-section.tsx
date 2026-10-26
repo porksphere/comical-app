@@ -51,7 +51,7 @@ import { showToast } from '@/components/toast';
 import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
-import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
+import { sizeClassFor } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
 import {
@@ -526,7 +526,7 @@ export function ChapterScrollList({
   // (the strip overflowed ~34pt past the right edge). There, the strip fills the row and its tabs
   // share the width equally; large screens (chapters live in a roomy right column) keep the
   // content-sized tabs.
-  const fillTabs = width < LARGE_SCREEN_BREAKPOINT;
+  const fillTabs = sizeClassFor(width) === 'compact';
 
   // Per-chapter download state for the trailing indicators. Same query key the series Download
   // button subscribes to, so it's already fetched on this page AND live-patched page-by-page by the

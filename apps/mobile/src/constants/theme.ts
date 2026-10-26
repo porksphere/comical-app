@@ -7,6 +7,8 @@ import '@/global.css';
 
 import { Platform, type ImageStyle, type ViewStyle } from 'react-native';
 
+import { navModeFor, SidebarBreakpoint } from '@/constants/size-class';
+
 export const Colors = {
   light: {
     text: '#000000',
@@ -256,18 +258,13 @@ export const topLevelCenterInset = (width: number): number =>
 /**
  * The side navigation, on viewports wide enough for it.
  *
- * Three layouts, not two: a bottom bar on phones, the compact top-right icon row in between, and a
- * labelled sidebar once there's width to spare. The sidebar REPLACES the top row rather than joining
- * it — two nav surfaces at once reads as a mistake.
- *
- * `SidebarBreakpoint` is `MaxTopLevelWidth - 160`, not a round number picked by eye: below it the
- * sidebar would eat into content that hasn't yet reached its max width, so the grid loses a column
- * to gain a nav rail. Above it the content column is already capped and the sidebar takes space the
- * page was leaving as margin anyway.
+ * Which nav a width gets — the bottom bar, the forced-collapsed rail, or the labelled sidebar — is
+ * `navModeFor` in `constants/size-class`, which also owns `SidebarBreakpoint` (`MaxTopLevelWidth -
+ * 160`; that module can't import this one, so the number is spelled out there and re-exported here).
  */
+export { SidebarBreakpoint };
 /** The rail's DEFAULT width. The live value is a preference — see `use-sidebar-width`. */
 export const SidebarWidth = 240;
-export const SidebarBreakpoint = MaxTopLevelWidth - 160;
 
 /**
  * How far the left nav insets content at this width — 0 when the sidebar isn't showing.
@@ -287,7 +284,7 @@ export const SidebarBreakpoint = MaxTopLevelWidth - 160;
  * can drag would let a resize flip the layout out from under them.
  */
 export const navInsetFor = (width: number, railWidth: number = SidebarWidth): number =>
-  width >= SidebarBreakpoint ? railWidth : 0;
+  navModeFor(width, Platform.OS === 'web') === 'bar' ? 0 : railWidth;
 /** Standard height of a tappable row — the filter bar's own controls
  *  (`CONTROL_HEIGHT` in filter-types.ts) and every selectable list row inside
  *  an overlay (genre/tag checkboxes, bridge/page picker rows, …), so a row

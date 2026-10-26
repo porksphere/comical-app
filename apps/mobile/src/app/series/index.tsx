@@ -84,7 +84,7 @@ import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams 
 import { useReaderSettings, setFitOverride, useFitOverride, useSeriesReaderMode, useSpreadShift } from '@/hooks/use-reader-settings';
 import { useWebtoonDetection } from '@/components/reader/use-webtoon-detection';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
-import { LARGE_SCREEN_BREAKPOINT, useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
+import { sizeClassFor, useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
@@ -4619,7 +4619,7 @@ function SeriesDetailsHost({
     setCoverAspect((prev) => (Math.abs(next - prev) > 0.02 ? next : prev));
   };
 
-  const isLarge = width >= LARGE_SCREEN_BREAKPOINT;
+  const isLarge = sizeClassFor(width) === 'regular';
   const actionsWidth = Math.round(Math.min(width * 0.4, 220));
 
   const goneReason = seriesGoneReason(queryError);

@@ -19,7 +19,7 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { DEFAULT_THUMB_ASPECT, rowCoverAspect, rowCoverAspects } from '@/lib/aspect-ratio';
 import { GRID_ROW_GAP, gridGeometry } from '@/hooks/use-grid-layout';
 import { useHovered } from '@/hooks/use-hovered';
-import { useIsCompact, useIsDesktop, useIsLargeScreen } from '@/hooks/use-responsive';
+import { sizeClassFor, useIsCompact, useIsDesktop, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
 import { ZoomSurfaceContext, useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
@@ -55,9 +55,9 @@ function wideGridItems<T>(kind: RailSection['kind'], items: readonly T[], column
 const STRIP_PAD = TopLevelGutter;
 
 /** Reference: carousel gap is 1rem desktop / 0.5rem mobile (`@media max-width:
- *  560px`). 768px matches this file's other mobile/desktop split. */
+ *  560px`); here it follows the size class, like this file's other compact/regular split. */
 function stripGapFor(viewport: number): number {
-  return viewport < 768 ? Spacing.two : Spacing.three;
+  return sizeClassFor(viewport) === 'compact' ? Spacing.two : Spacing.three;
 }
 
 /**
@@ -80,7 +80,7 @@ function peekWidth(viewport: number, fullCards: number, gap: number): number {
 }
 
 function cardWidthFor(kind: RailSection['kind'], viewport: number): number {
-  if (viewport >= 768) {
+  if (sizeClassFor(viewport) === 'regular') {
     return kind === 'hero' ? 210 : kind === 'ranked' ? 160 : 150;
   }
   const gap = stripGapFor(viewport);

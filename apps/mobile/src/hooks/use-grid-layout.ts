@@ -14,7 +14,7 @@ import { Platform } from 'react-native';
 
 import { Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { useContentWidth } from '@/hooks/use-content-width';
-import { LARGE_SCREEN_BREAKPOINT, useHydrated } from '@/hooks/use-responsive';
+import { sizeClassFor, useHydrated } from '@/hooks/use-responsive';
 import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
 
 // The reference's mobile grid uses a tighter inter-card gap than its row gap; Spacing.two (8px) is
@@ -68,7 +68,7 @@ export function gridGeometry(
   hydrated: boolean,
   gutter: number,
 ): Pick<GridLayout, 'numColumns' | 'sidePad' | 'cardWidth' | 'columnGap'> {
-  const large = hydrated && width >= LARGE_SCREEN_BREAKPOINT;
+  const large = hydrated && sizeClassFor(width) === 'regular';
   const numColumns = large ? Math.min(6, Math.max(3, Math.floor(width / 200))) : 3;
   const columnGap = large && Platform.OS === 'web' ? GRID_COLUMN_GAP_DESKTOP : GRID_COLUMN_GAP;
   // Center content within MaxTopLevelWidth (web only — see topLevelCenterInset) plus the edge gutter;

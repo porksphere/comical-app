@@ -27,7 +27,8 @@ import { COMICAL_BRIDGE_ID, setSelectedBridge, useSelectedBridge } from '@/data/
 import { libraryViews, setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
-import { navInsetFor, SidebarBreakpoint, Spacing } from '@/constants/theme';
+import { navModeFor } from '@/constants/size-class';
+import { navInsetFor, Spacing } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
 import { expandSidebar, SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
@@ -341,15 +342,25 @@ export default function AppTabs() {
   const [hydrated, setHydrated] = useState(false);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the point IS the post-hydration render: React's own remedy for an SSR mismatch, and the cascade is the fix rather than a cost.
   useEffect(() => setHydrated(true), []);
-  const isMobile = !hydrated || width < SidebarBreakpoint;
-  // Two layouts, not three: the bar below, the rail above. There is no in-between any more — see the
-  // note at MOBILE_BREAKPOINT's removal below.
+  // Where the nav sits is a function of the window's width alone (see `navModeFor`): the bottom bar
+  // at compact widths, the side rail otherwise. Pre-hydration is forced to the bar so the first
+  // client render matches the prerender (above).
+  const navMode = hydrated ? navModeFor(width, Platform.OS === 'web') : 'bar';
+  const isMobile = navMode === 'bar';
+  // Two nav SURFACES, not three: the bar below, the rail above. The rail has two forms — icon-only
+  // and labelled — but they are one component in one place, which is what the removed in-between
+  // layout (the top-right icon row, see the note at its removal below) was not.
   const sidebar = !isMobile;
   // The rail's width is a preference now, so the ONE number that pads the slot is read rather than
   // assumed. `navInsetFor` takes it as an argument for the same reason it always did: so the
   // breakpoint above can't depend on a value the user can drag.
-  const collapsed = useSidebarCollapsed();
+  const userCollapsed = useSidebarCollapsed();
   const draggedWidth = useSidebarWidth();
+  // At a regular width that is still short of `SidebarBreakpoint` — a Fold or Duo inner display, a
+  // portrait iPad — the rail is collapsed by LAYOUT, not by the user: a labelled sidebar there would
+  // take a column from a grid that hasn't reached its max width. The user's own collapsed/expanded
+  // preference is untouched underneath it and applies again once the window is wide enough.
+  const collapsed = navMode === 'rail' || userCollapsed;
   // Collapsed is a STATE, not a width: the dragged width is remembered underneath it, so expanding
   // comes back to what you set rather than to whatever the collapsed rail happened to be.
   const railWidth = collapsed ? SidebarCollapsedWidth : draggedWidth;
@@ -506,7 +517,7 @@ export default function AppTabs() {
     // instead (see lib/series-backdrop.ts). With no series page open the transform is identity and
     // the dim fully transparent, so this costs nothing at rest.
     <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
-      {/* Everything under `Tabs` lays out inside the slot's padding, so this is the width those
+      {/* Everything under `Tabs` lays out beside the slot's margin, so this is the width those
           screens actually have. It wraps `Tabs` from OUTSIDE — a provider renders no view, but
           putting it between `Tabs` and `TabSlot` would still break the child-type discovery the
           slot and the registration TabList both depend on. The stack screens that cover the rail
@@ -515,11 +526,15 @@ export default function AppTabs() {
         <Tabs style={styles.tabs}>
           {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
               appearing in one frame — see `tab-slot-fade`. */}
-          {/* Padded, not overlaid: the sidebar is a real column, so content centres in what's left.
+          {/* Inset, not overlaid: the sidebar is a real column, so content centres in what's left.
               `TabSlot` stays a DIRECT child of `Tabs` — wrapping it in a row View alongside the rail
               would read better, but the navigator discovers its slot by child type the same way it
-              discovers TabList (see TAB_REGISTRATION), and nesting it yields a blank screen. */}
-          <TabSlot style={[styles.slot, { paddingLeft: contentInset }]} renderFn={renderFadingTabScreen} />
+              discovers TabList (see TAB_REGISTRATION), and nesting it yields a blank screen.
+              A MARGIN, not padding: the slot is a native `ScreenContainer`, and on Android (iOS too)
+              that container places its screens over its whole frame itself, padding or not — the
+              screen then sat at x=0 under the rail, with the rail's width left empty on the right.
+              The margin moves the frame, which every layout honours. */}
+          <TabSlot style={[styles.slot, { marginLeft: contentInset }]} renderFn={renderFadingTabScreen} />
 
           {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
           {sidebar && (
@@ -527,6 +542,7 @@ export default function AppTabs() {
               <AppSidebar
                 top={insets.top}
                 collapsed={collapsed}
+                collapsible={navMode === 'sidebar'}
                 settingsButton={
                   SETTINGS_AS_MODAL
                     ? {
@@ -883,7 +899,7 @@ const styles = StyleSheet.create({
   },
   // --- Desktop top-right icon nav ---
   // Absolute so TabSlot can stay a direct child of Tabs (see the note at the slot); the slot's own
-  // paddingLeft is what actually reserves the space, so this never covers content.
+  // marginLeft is what actually reserves the space, so this never covers content.
   sidebarWrap: {
     position: 'absolute',
     top: 0,
