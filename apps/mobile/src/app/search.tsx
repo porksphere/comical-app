@@ -539,9 +539,12 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // bottom-toolbar menus; the chevron is the stack's own. The field is centred in the bar on
   // iOS 26 (older systems fall back to the inline placement) and left in place by a scroll — the
   // filter shutter is what gives the results room, not a collapsing field — with the system's
-  // search dimming off, since the results under the field are the thing being typed at.
+  // search dimming off, since the results under the field are the thing being typed at. The route
+  // has no title: the field IS the bar's middle, on the chevron's row, and a "Search" over it only
+  // said what the field already shows.
   const nativeItems = nativeBar ? (
     <>
+      <Stack.Screen options={{ title: '' }} />
       <Stack.SearchBar
         ref={searchBarRef}
         placeholder="Search…"
