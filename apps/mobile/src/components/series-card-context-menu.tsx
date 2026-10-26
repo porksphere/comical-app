@@ -50,7 +50,7 @@ import { CheckIcon, DownloadsIcon, LogInIcon, PlayIcon, PlusIcon, RetryIcon, Sta
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { RootTabBarInset, Spacing } from '@/constants/theme';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import type { TagGroup } from '@/data/mock';
 import { seriesDetailQuery, seriesListQuery } from '@/data/queries';
@@ -406,7 +406,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // stores rather than constants. The band also bounds the panel + menu below, so the RESTING cover is
   // always inside it (a popup that reached into the top bar would clip its own cover).
   const chromeTop = Math.max(0, insets.top + useTopBarHeight() - getTopBarHidden());
-  const tabBarH = BottomTabInset + insets.bottom;
+  const tabBarH = RootTabBarInset + insets.bottom;
   const hasTabBar = !useIsLargeScreen() && TAB_ROUTES.has(pathname);
   const tabBarShown = hasTabBar ? Math.max(0, tabBarH - getTabBarHideOffset() * getTabBarProgress()) : 0;
   const chromeBottom = winH - tabBarShown;

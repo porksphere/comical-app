@@ -22,18 +22,28 @@ cross-platform via react-native-web, so one `*.tsx` file per icon group covers
 every platform with no `.web.tsx` split needed. Don't hand-roll glyphs. See
 `apps/mobile/src/components/icons/ui-icons.tsx` for the pattern.
 
-# Bottom nav: a custom-rendered bar, not the OS-native one
+# Bottom nav: the system bar on iOS, a custom-rendered bar on Android and web
 
-`apps/mobile/src/components/app-tabs.tsx` is a single cross-platform component (`expo-router/ui`'s
-headless `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s) used on iOS,
-Android, and web alike — there's no `NativeTabs`/`unstable-native-tabs` wrapper over the real
-`UITabBarController`/Material 3 `NavigationBar` anymore. That was tried and reverted: iOS 26's
-`tabBarMinimizeBehavior` needed react-native-screens patches to even find the content scroll
-view, and even with that (plus pushing both edges imperatively, confirmed via on-device
-diagnostics) the tab bar still only re-expanded once scrolled all the way back to the top, never
-mid-scroll — a dead end inside UIKit's private implementation, not fixable from app code.
+`apps/mobile/src/components/app-tabs.ios.tsx` is the iOS shell: `NativeTabs`
+(`expo-router/unstable-native-tabs`) over the real `UITabBarController`, so UIKit itself moves the
+bar to the side as a symbol-only column on a regular-width resizable scene and to a sidebar on iPad.
+That is the whole reason it exists — a custom bar can only imitate that adaptation. It asks for NO
+`minimizeBehavior`: that was the earlier native shell's dead end (iOS 26's
+`tabBarMinimizeBehavior` needed react-native-screens patches to find the content scroll view, and
+even then only re-expanded at the very top), and the default bar is what the system apps show. It is
+the one place SF Symbols are used instead of lucide, because the system bar draws its own items. Its
+triggers are named by ROUTE (`index`, `library`, …); the custom shell's `TABS` table keys by tab name
+(`browse`, …), and `app-tabs.ios.tsx` maps between the two for scroll-to-top. Per-tab safe-area
+insets already include the system bar, so `BottomTabInset` is 0 on iOS and `useHideTabBarOnScroll`
+leaves `tabBarProgress` at 0 there; a ROOT overlay (toast, request pill, card context menu) pads by
+`RootTabBarInset` instead, since the root provider's insets don't know about the bar. The bar has no
+testIDs, so the Maestro `tab.<name>` taps are Android/web only.
 
-The visible bar is NOT the `TabList`. Its slide is a Reanimated animated style, which a
+`apps/mobile/src/components/app-tabs.tsx` is the Android + web shell (`expo-router/ui`'s headless
+`Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the icon rail at the regular size class, the
+sliding bottom bar on phones, and the web-only panes.
+
+The visible bar there is NOT the `TabList`. Its slide is a Reanimated animated style, which a
 `TabList` can't carry (it renders a plain `View`, and `asChild` routes through a Slot that
 flattens and object-spreads the style). So routes are registered by a `display: 'none'`
 `TabList` — Expo's documented custom-tab-bar structure — and the bar is our own

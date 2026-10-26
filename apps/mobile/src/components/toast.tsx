@@ -23,7 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ANDROID_BLUR } from '@/components/context-menu-material';
 import { ThemedText } from '@/components/themed-text';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { RootTabBarInset, Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 
 const OPEN_SPRING = { damping: 18, stiffness: 320, mass: 0.7 } as const;
@@ -132,7 +132,7 @@ function HostToast({ req }: { req: ToastRequest }) {
     // box-none: the toast never blocks the screen — only the pill itself is touchable.
     <View
       pointerEvents="box-none"
-      style={[styles.host, { paddingBottom: BottomTabInset + insets.bottom + Spacing.four }]}>
+      style={[styles.host, { paddingBottom: RootTabBarInset + insets.bottom + Spacing.four }]}>
       <Animated.View style={[styles.pillShadow, pillStyle]}>
         <BlurView
           tint={scheme}

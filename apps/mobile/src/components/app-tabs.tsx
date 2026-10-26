@@ -71,10 +71,10 @@ import {
 import { ROOT_TAB_PATHS } from '@/lib/root-tabs';
 import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility';
 
-// A custom-rendered bar on every platform (no OS-native tab bar) — responsive: an app-like black
-// icon bottom bar on phones; on wider/desktop viewports a compact icon-only row pinned to the
-// top-right, sitting on the same line as the Browse screen's bridge/page selector bar (so there's
-// no separate nav bar).
+// Android and web: a custom-rendered bar (iOS has the system one — see app-tabs.ios.tsx, which
+// Metro picks there) — responsive: an app-like black icon bottom bar on phones; on wider/desktop
+// viewports a compact icon-only row pinned to the top-right, sitting on the same line as the
+// Browse screen's bridge/page selector bar (so there's no separate nav bar).
 /** `noRecede`: this tab's rows reorder as you read, and one that re-renders under the scaled
  *  backdrop measures short — see `setBackdropRecede`. */
 /** `Scope`: the group of things this destination can be narrowed to — bridges for Browse,

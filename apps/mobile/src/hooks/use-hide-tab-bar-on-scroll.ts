@@ -1,6 +1,6 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import { Platform, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useAnimatedReaction, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
 import { notifyScrollActivity, subscribeScrollPhase, type ScrollPhase } from '@/lib/scroll-release';
@@ -25,8 +25,12 @@ import {
   tabBarProgress,
 } from '@/lib/tab-bar-slide';
 
+// iOS draws the system tab bar (app-tabs.ios.tsx), which nothing here moves: the reaction and the
+// commit leave `tabBarProgress` at 0, so everything that offsets by the bar keeps it fully shown.
+const SYSTEM_TAB_BAR = Platform.OS === 'ios';
+
 /**
- * Native only: slides the bottom bar away as the screen scrolls down and back in as it scrolls up,
+ * Android and web: slides the bottom bar away as the screen scrolls down and back in as it scrolls up,
  * committing to shown-or-hidden when the gesture ends, snapping fully shown at the top or when the
  * screen (re)gains focus.
  *
@@ -79,7 +83,7 @@ export function useHideTabBarOnScroll(source?: {
       // Reanimated runs a mapper ONCE when it registers, before any scrolling — `prevY` is null only
       // for that fire, and it carries no movement.
       if (prevY === null) return;
-      if (!focused.value || tabBarPinned.value) return;
+      if (SYSTEM_TAB_BAR || !focused.value || tabBarPinned.value) return;
       // The first real offset after mount/focus is a POSITION, not a gesture: a list that comes up
       // already scrolled (a restored offset, or a warm query cache rendering the whole feed at once)
       // reports it in one step, and diffing that against a `scrollY` still sitting at 0 reads as one
@@ -151,7 +155,7 @@ export function useHideTabBarOnScroll(source?: {
   // blurred screen keeps its subscription, so it has to ignore what it hears.
   const settle = useCallback(
     (phase: ScrollPhase) => {
-      if (!focusedJs.current) return;
+      if (SYSTEM_TAB_BAR || !focusedJs.current) return;
       if (phase === 'begin') {
         // A new gesture takes the bar over wherever the settle had got to.
         cancelSettle();

@@ -206,12 +206,16 @@ export const Spacing = {
   six: 64,
 } as const;
 
-// Bottom padding a scrolling screen reserves so its last content clears the tab
-// bar. The bar (app-tabs.tsx) is the same custom-rendered absolute overlay on
-// every platform — content scrolls behind it and stays visible when it fades on
-// scroll (web only) — so this is roughly its height everywhere. Screens add
-// `insets.bottom` on top of this.
-export const BottomTabInset = 48;
+// Bottom padding a scrolling screen reserves so its last content clears the tab bar, on top of
+// `insets.bottom`. Android and web draw their own absolute overlay bar (app-tabs.tsx) that the
+// screen's insets know nothing about, so this is roughly its height there. iOS has the system bar
+// (app-tabs.ios.tsx): each tab's safe area already includes it — and is zero where UIKit has moved
+// the bar to the side — so a screen inside a tab reserves nothing beyond its insets.
+export const BottomTabInset = Platform.OS === 'ios' ? 0 : 48;
+// The same clearance for a ROOT overlay (toast, request pill, the card context menu), whose
+// `insets.bottom` comes from the root provider and never includes the iOS tab bar. UIKit's bar is
+// 49pt on an iPhone; where the bar is beside the content instead this is a little extra air.
+export const RootTabBarInset = Platform.OS === 'ios' ? 49 : BottomTabInset;
 /**
  * Breathing room between a top bar and the first content beneath it — added ON TOP of the bar's own
  * height (which only gets content *clear* of the bar, flush against it).

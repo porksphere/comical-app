@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { BottomTabInset, Fonts, Spacing } from '@/constants/theme';
+import { Fonts, RootTabBarInset, Spacing } from '@/constants/theme';
 import { expireRecentFailures, useRequestMonitor, useRequestOverlayEnabled, type FailureKind } from '@/data/request-monitor';
 
 // A request this old is waiting on something: the source, or our own rate-limiter queue.
@@ -42,7 +42,7 @@ function Panel() {
     <View
       pointerEvents="none"
       testID="request-overlay"
-      style={[styles.host, { bottom: BottomTabInset + insets.bottom + Spacing.three, right: Math.max(insets.right, Spacing.three) }]}>
+      style={[styles.host, { bottom: RootTabBarInset + insets.bottom + Spacing.three, right: Math.max(insets.right, Spacing.three) }]}>
       <View style={styles.panel}>
         <ThemedText style={[styles.line, styles.head]}>
           {inFlight.length} in flight{slow > 0 ? ` · ${slow} waiting` : ''}
