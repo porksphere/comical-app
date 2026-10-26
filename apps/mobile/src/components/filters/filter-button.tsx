@@ -1,5 +1,5 @@
 import { memo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View, type TextInputInstance } from 'react-native';
 
 import { NO_OUTLINE, rowInput, singleLineInput } from '@/components/input-style';
 import { useAnchoredOverlay, useKeyboardAvoidingInput } from '@/components/overlay/overlay';
@@ -162,7 +162,7 @@ function StringFilterRow({
 }) {
   const theme = useTheme();
   const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [text, setText] = useState(value ?? '');
   const [focused, setFocused] = useState(false);
   // A tapped Author/Artist reaches this row as a meta intent AFTER it has mounted empty (the intent
@@ -222,7 +222,7 @@ function NumberFilterRow({
   const theme = useTheme();
   const { hovered, handlers } = useHover();
   const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   // Snapshot at press-*start* (mousedown), before this same click's own focus
   // shift has happened — by press time (click), a blur triggered by this very
   // click has already fired, so checking "is it focused" there can never tell

@@ -25,7 +25,7 @@ every platform with no `.web.tsx` split needed. Don't hand-roll glyphs. See
 # Bottom nav: the system bar on iOS, a custom-rendered bar on Android and web
 
 `apps/mobile/src/components/app-tabs.ios.tsx` is the iOS shell: `NativeTabs`
-(`expo-router/unstable-native-tabs`) over the real `UITabBarController`, so UIKit itself moves the
+(`expo-router/native-tabs`) over the real `UITabBarController`, so UIKit itself moves the
 bar to the side as a symbol-only column on a regular-width resizable scene and to a sidebar on iPad.
 That is the whole reason it exists — a custom bar can only imitate that adaptation. It asks for NO
 `minimizeBehavior`: that was the earlier native shell's dead end (iOS 26's

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useRef } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 
 import {
   AboutIcon,
@@ -59,7 +59,7 @@ const HAS_SHORTCUTS = Platform.OS === 'web';
 export default function SettingsScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   useScrollToTopOnReselect('settings', scrollRef);
   // Settings keeps its bottom bar: this screen IS navigation, so sliding the nav away under the
   // finger only takes away the thing you came here to tap. See `usePinnedTabBar`.

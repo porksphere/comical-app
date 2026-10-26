@@ -3,7 +3,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -288,7 +288,7 @@ function HistoryItem({
   const standing = chapters ? `${chapters.read} of ${chapters.known} chapters` : undefined;
   const sub = historySub(item, { withTime: !standing && !desktop, long: desktop });
   const detail = standing ? (desktop ? standing : [standing, relTime(item.lastReadAt)].join('  ·  ')) : undefined;
-  const thumbRef = useRef<View>(null);
+  const thumbRef = useRef<ViewInstance>(null);
   // The row's thumbnail is the zoom transition's source rect,
   // captured on press-IN because measuring answers asynchronously — measuring at press
   // would put a native round trip in front of the navigation. And while its copy is in the air the

@@ -3,7 +3,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -396,7 +396,7 @@ function ActivityItem({
   bridge: string;
   direct: boolean;
 }) {
-  const thumbRef = useRef<View>(null);
+  const thumbRef = useRef<ViewInstance>(null);
   // On desktop the time is the row's own column (`when`), so the secondary line drops it.
   const desktop = useIsDesktop();
   // The row's thumbnail is the zoom transition's source rect,

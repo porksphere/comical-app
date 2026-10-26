@@ -4,7 +4,7 @@ import { Platform, type TextStyle } from 'react-native';
  * Suppress react-native-web's default focus outline on the <input> so the container border carries
  * the focus highlight instead. No-op on native.
  */
-export const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
+export const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as unknown as TextStyle | undefined;
 
 /**
  * Baseline for every single-line TextInput that sits inside a row (search pills, inline filter

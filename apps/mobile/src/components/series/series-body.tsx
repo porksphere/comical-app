@@ -15,9 +15,10 @@ import {
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ViewInstance,
   type ViewStyle,
 } from 'react-native';
-import type { ComposedGesture } from 'react-native-gesture-handler';
+import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { BridgeMissingNotice } from '@/components/bridge-missing';
@@ -79,7 +80,7 @@ function SeriesCoverBox({
     aspectSV.set(withTiming(aspect, { duration: ASPECT_TRANSITION_MS }));
   }, [aspect, aspectSV]);
   const boxStyle = useAnimatedStyle(() => ({ aspectRatio: aspectSV.value }));
-  const boxRef = useRef<View>(null);
+  const boxRef = useRef<ViewInstance>(null);
   // `onRect` is a stable callback at its one call site, so depending on it directly (rather than
   // latching it in a ref during render) costs nothing and keeps the ref rules happy.
   const reportRect = useCallback(() => {

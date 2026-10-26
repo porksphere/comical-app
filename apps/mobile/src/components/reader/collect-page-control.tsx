@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, type ViewInstance } from 'react-native';
 
 import { openCollectionPicker } from '@/components/collection-picker';
 import { BookmarkIcon } from '@/components/icons/reader-icons';
@@ -141,7 +141,7 @@ export function CollectPageControl({
   onPress?: () => void;
 }) {
   const { collected, save, openPicker, spread, spreadMenu } = useCollectPage(page);
-  const ref = useRef<View>(null);
+  const ref = useRef<ViewInstance>(null);
   const { width: winW } = useWindowDimensions();
 
   // Hung from the button like a dropdown, right edge to the button's.

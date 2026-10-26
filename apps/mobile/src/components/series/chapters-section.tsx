@@ -1,6 +1,6 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
-import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
+import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';

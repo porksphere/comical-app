@@ -787,7 +787,7 @@ function TabButton({
   noRecede,
   onPress,
   ...props
-}: TabTriggerSlotProps & {
+}: Omit<TabTriggerSlotProps, 'ref'> & {
   mobile?: boolean;
   sidebar?: boolean;
   scope?: boolean;

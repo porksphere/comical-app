@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import type { View } from 'react-native';
+import type { ViewInstance } from 'react-native';
 
 type Box = { left: number; top: number; width: number; height: number };
 
@@ -13,7 +13,7 @@ type Box = { left: number; top: number; width: number; height: number };
  * block of a `position: fixed` inside it too, and react-native-web gives every view `z-index: 0`, so
  * a card's z-index never reaches past its own row.
  */
-export function FloatOver({ anchor, children }: { anchor: RefObject<View | null>; children: ReactNode }) {
+export function FloatOver({ anchor, children }: { anchor: RefObject<ViewInstance | null>; children: ReactNode }) {
   const [box, setBox] = useState<Box | null>(null);
 
   useLayoutEffect(() => {

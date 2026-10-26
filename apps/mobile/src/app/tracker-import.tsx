@@ -22,7 +22,7 @@ import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, useWindowDimensions, View, type ViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Holdable } from '@/components/context-menu';
@@ -237,7 +237,7 @@ export default function TrackerImportScreen() {
   }, [data, lookupBridges]);
 
   // The header row: one more bridge over everything still unmatched.
-  const findRowRef = useRef<View>(null);
+  const findRowRef = useRef<ViewInstance>(null);
   const openFindAllMenu = () => {
     if (matchBridges.length === 0) {
       setBanner('No bridge can search — add one first.');

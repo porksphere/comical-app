@@ -3,7 +3,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-qu
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import type { ComposedGesture } from 'react-native-gesture-handler';
+import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 

@@ -1,5 +1,5 @@
 import { type RefObject, useCallback, useMemo, useRef, useState } from 'react';
-import { View, type GestureResponderEvent } from 'react-native';
+import { View, type GestureResponderEvent, type ViewInstance } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
@@ -48,7 +48,7 @@ export type SeriesCardMenuProps = {
   /** Measure THIS element for the lifted-preview rect instead of the wrapped content. For a row whose
    *  tappable area is wide but whose "card" is a small thumbnail (History), point it at the thumbnail so
    *  the preview lifts from there — otherwise the wide row rect makes the flying cover start huge. */
-  measureRef?: RefObject<View | null>;
+  measureRef?: RefObject<ViewInstance | null>;
   /** This card's zoom-source key — forwarded so a navigating row's zoom blanks this card alone
    *  (see `SeriesCardMenuRequest.zoomSource`). Omitted on web, which has no zoom entrance. */
   zoomSource?: ZoomSourceKey;
@@ -63,7 +63,7 @@ export type SeriesCardMenuProps = {
 };
 
 export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, coverAspect, startRadius, measureRef, zoomSource, children }: SeriesCardMenuProps) {
-  const anchorRef = useRef<View>(null);
+  const anchorRef = useRef<ViewInstance>(null);
   // Where the hold began — the arming distance is measured from here (see `holdArmed`). Shared values,
   // because the gesture's worklets are the only thing that reads or writes them.
   const holdOriginX = useSharedValue(0);

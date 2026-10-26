@@ -12,7 +12,7 @@
  * Native is untouched: nothing renders this, and the rail keeps its Settings row there.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View, type ViewInstance } from 'react-native';
 
 import AboutScreen from '@/app/settings-about';
 import BridgesScreen from '@/app/bridges';
@@ -124,7 +124,7 @@ function SettingsPanel() {
   const [paneWidth, setPaneWidth] = useState(0);
   const [actionsSlot, setActionsSlot] = useState<Element | null>(null);
   // Stable, or React detaches and re-attaches the ref every render. On web the View's ref IS its DOM node.
-  const actionsRef = useCallback((node: View | null) => setActionsSlot(node as unknown as Element | null), []);
+  const actionsRef = useCallback((node: ViewInstance | null) => setActionsSlot(node as unknown as Element | null), []);
   // Read by `nav.canGoBack`, which is built once and must not go stale as the stack moves.
   const stackDepth = useRef(stack.length);
   useEffect(() => {

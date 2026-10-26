@@ -1,7 +1,7 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import type { ComposedGesture } from 'react-native-gesture-handler';
+import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { FeedBackdrop, type FeedBand } from '@/components/feed-backdrop';

@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type View as ViewType, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { CardOverlays } from '@/components/card-badge';
@@ -141,7 +141,7 @@ export function CoverFrame({
 }: {
   aspect: number;
   /** The box itself, which is what a zoom's source rect is measured off — see `useZoomOriginSource`. */
-  coverRef?: RefObject<ViewType | null>;
+  coverRef?: RefObject<ViewInstance | null>;
   /** Blanks just the cover while a COPY of it is on screen — a long-press menu's lifted preview, a
    *  zoom in flight — since leaving the original visible would double it. Layout is preserved. */
   hidden?: boolean;
@@ -470,7 +470,7 @@ export function SeriesCard({
   // instances — see useZoomSourceKey for what that broke. The id is compared alongside it.
   const zoomSource = useZoomSourceKey();
   const zoomFlying = useIsZoomingSeries(entry.id, zoomSource);
-  const coverRef = useRef<ViewType>(null);
+  const coverRef = useRef<ViewInstance>(null);
   // Radius 10 = CARD_COVER_RADIUS, matching `coverBoxClip` / `coverClip` below. The hook also
   // registers this cover as re-measurable, so a collapse asks where it is NOW — see series-zoom.
   const captureZoomOrigin = useZoomOriginSource(entry.id, zoomSource, coverRef, 10, !isWeb);
@@ -589,7 +589,7 @@ export function SeriesCard({
   // Full-title peek. Web only — on native the full title is shown by the long-press context menu
   // instead (see SeriesCardMenu's `title`).
   const showPeek = active && truncated && isWeb;
-  const titleRef = useRef<ViewType>(null);
+  const titleRef = useRef<ViewInstance>(null);
 
   // Matched the user's persistent tag/genre exclusions: a redacted, non-tappable
   // placeholder that keeps the slot (grid counts/columns stay stable) but never
@@ -895,7 +895,7 @@ export function CardCaption({ title, sub }: { title: string; sub?: string }) {
  * The full-title popover, floated over the clamped title it expands (`anchor`). Its content box
  * matches the clamped title's width so the first lines wrap identically.
  */
-function TitlePeek({ title, anchor }: { title: string; anchor: RefObject<ViewType | null> }) {
+function TitlePeek({ title, anchor }: { title: string; anchor: RefObject<ViewInstance | null> }) {
   const theme = useTheme();
   // Match the card title's responsive size so the popover wraps identically.
   const compact = useIsCompact();

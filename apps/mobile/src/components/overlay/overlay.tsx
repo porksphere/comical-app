@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type TextInput } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type TextInputInstance, type ViewInstance } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
@@ -88,7 +88,7 @@ export function useOverlay(): OverlayApi {
  */
 export function useAnchoredOverlay() {
   const { open, closeTop, topId } = useOverlay();
-  const ref = useRef<View>(null);
+  const ref = useRef<ViewInstance>(null);
   // The id of the overlay THIS trigger opened. State, not a ref: `isOpen` is derived from it during
   // render, and a ref read during render isn't tracked by React (nor allowed — react-hooks/refs), so
   // the toggle could paint stale. As state, the write that records the id is itself what re-renders,
@@ -154,7 +154,7 @@ export function useKeyboardAvoidingInput() {
   const ctx = useContext(SheetKeyboardContext);
   return useMemo(
     () => ({
-      onFocus: (node: Pick<TextInput, 'measureInWindow'> | null) => {
+      onFocus: (node: Pick<TextInputInstance, 'measureInWindow'> | null) => {
         node?.measureInWindow((_x, y, _w, h) => ctx?.reportFocus(y + h));
       },
       onBlur: () => ctx?.reportBlur(),
@@ -726,7 +726,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
 }
 
 /** Keyboard-opened, the layer takes the focus in with it; see `focusLayer`. */
-function useFocusLayer(ref: RefObject<View | null>): void {
+function useFocusLayer(ref: RefObject<ViewInstance | null>): void {
   useEffect(() => {
     if (Platform.OS === 'web') focusLayer(ref.current as unknown as HTMLElement | null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on open
@@ -780,7 +780,7 @@ function OverlaySheet({
   // but kept for the focus signal.
   const isFocused = useSharedValue(false);
   const sheetHeightSV = useSharedValue(0);
-  const sheetRef = useRef<View>(null);
+  const sheetRef = useRef<ViewInstance>(null);
   useFocusLayer(sheetRef);
   const keyboard = useAnimatedKeyboard();
   const keyboardShift = useDerivedValue(() => {
@@ -1077,7 +1077,7 @@ function OverlayDialog({
   const { width, height } = useWindowDimensions();
   const theme = useTheme();
   const progress = useSharedValue(0);
-  const dialogRef = useRef<View>(null);
+  const dialogRef = useRef<ViewInstance>(null);
   const isTopRef = useRef(isTop);
   const closingRef = useRef(false);
   const backstopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1217,7 +1217,7 @@ function OverlayPopover({
   const controls = useWindowControlsStrip();
   const theme = useTheme();
   const [card, setCard] = useState<{ width: number; height: number } | null>(null);
-  const cardRef = useRef<View>(null);
+  const cardRef = useRef<ViewInstance>(null);
   useFocusLayer(cardRef);
   const progress = useSharedValue(0);
   const entered = useRef(false);

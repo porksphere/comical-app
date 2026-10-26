@@ -2,7 +2,7 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ComponentProps, ReactElement, RefObject } from 'react';
 import { Platform, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
+import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';

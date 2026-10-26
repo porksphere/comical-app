@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import type { RefObject } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, type ViewInstance } from 'react-native';
 
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -77,7 +77,7 @@ export function HistoryRow({
   /** The row's moment (last read / latest chapter), drawn as the desktop time column — see above. */
   when?: number;
   /** Ref on the thumbnail — the anchor for the long-press preview's lift (see SeriesCardMenu). */
-  thumbRef?: RefObject<View | null>;
+  thumbRef?: RefObject<ViewInstance | null>;
   /** Blank just the thumbnail while this row's long-press menu is open (its lifted preview is a copy). */
   coverHidden?: boolean;
   /** Automation selector for the row. Defaults to `history-row.<title>`; the trailing controls derive

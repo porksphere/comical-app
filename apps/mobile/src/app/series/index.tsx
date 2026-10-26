@@ -13,7 +13,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { Gesture, GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, {
   makeMutable,
   Easing,

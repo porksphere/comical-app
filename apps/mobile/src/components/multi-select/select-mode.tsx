@@ -16,8 +16,8 @@
  */
 import { BlurView } from 'expo-blur';
 import type { ReactElement } from 'react';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { Gesture, GestureDetector, type PanGesture } from 'react-native-gesture-handler';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type ViewInstance } from 'react-native';
+import { Gesture, GestureDetector, type LegacyPanGesture as PanGesture } from 'react-native-gesture-handler';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useEffect, useRef, useState } from 'react';
 
@@ -77,7 +77,7 @@ export function useSelectMode(initial = false): {
 function SelectOptionsButton({ rows, testID }: { rows: MenuRowSpec[]; testID: string }) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
-  const anchorRef = useRef<View>(null);
+  const anchorRef = useRef<ViewInstance>(null);
   return (
     <View ref={anchorRef} collapsable={false} style={styles.pillShadow}>
       <BlurView

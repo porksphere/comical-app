@@ -1,6 +1,6 @@
 import { useNavigation } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, TextInput } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput, type TextInputInstance } from 'react-native';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { NO_OUTLINE, rowInput } from '@/components/input-style';
@@ -48,7 +48,7 @@ export function SearchField({
 }) {
   const theme = useTheme();
   const navigation = useNavigation();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [text, setText] = useState(value);
   const [focused, setFocused] = useState(false);
   // Keep the field in sync when the committed query is cleared elsewhere. During render rather than

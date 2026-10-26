@@ -1,5 +1,5 @@
 import { usePathname } from 'expo-router';
-import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { NativeTabs } from 'expo-router/native-tabs';
 import { useCallback, useEffect, useState, type ComponentProps } from 'react';
 import { StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import Animated from 'react-native-reanimated';
@@ -18,7 +18,8 @@ import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBack
  *
  * The point is what UIKit does with the bar on its own: the sidebar on iPad, and the side-mounted
  * symbol bar the system draws when a resizable scene is at the regular width class — the layout an
- * adaptable app gets for free and a custom bar can only imitate. Nothing here asks for a minimize
+ * adaptable app gets for free and a custom bar can only imitate. `sidebarAdaptable` is what opts the
+ * controller into that (iOS 18+ on iPad; iOS 27+ on the wide iPhones). Nothing here asks for a minimize
  * behaviour: `tabBarMinimizeBehavior` was the dead end that got the previous native shell reverted
  * (it only re-expanded at the very top), and the default bar is what every system app shows.
  *
@@ -77,6 +78,7 @@ export default function AppTabs() {
     <Animated.View style={[styles.root, backdropStyle]}>
       <ContentWidthProvider width={contentWidth ?? windowWidth} sidebar={false}>
         <NativeTabs
+          sidebarAdaptable
           tintColor={theme.tabIconActive}
           iconColor={theme.tabIconInactive}
           screenListeners={screenListeners}>

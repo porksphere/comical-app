@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/add-fab';
@@ -232,7 +232,7 @@ export function NamePromptForm({
   const theme = useTheme();
   const { closeTop } = useOverlay();
   const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [name, setName] = useState(initialValue);
   const trimmed = name.trim();
 
