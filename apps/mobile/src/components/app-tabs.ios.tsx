@@ -19,9 +19,15 @@ import { setBackdropRecede } from '@/lib/series-backdrop';
  * The point is what UIKit does with the bar on its own: the sidebar on iPad, and the side-mounted
  * symbol bar the system draws when a resizable scene is at the regular width class — the layout an
  * adaptable app gets for free and a custom bar can only imitate. `sidebarAdaptable` is what opts the
- * controller into that (iOS 18+ on iPad; iOS 27+ on the wide iPhones). Nothing here asks for a minimize
- * behaviour: `tabBarMinimizeBehavior` was the dead end that got the previous native shell reverted
- * (it only re-expanded at the very top), and the default bar is what every system app shows.
+ * controller into that (iOS 18+ on iPad; iOS 27+ on the wide iPhones).
+ *
+ * `minimizeBehavior` is the system's own hide-on-scroll (iOS 26): the bar shrinks to the selected
+ * tab's capsule as the content scrolls down, and comes back when the scroll reaches the top or the
+ * capsule is tapped — and ONLY then. That is UIKit's design, not a bug to work around: the previous
+ * native shell spent days trying to make it re-expand mid-scroll like the custom bar does, and it
+ * can't be done from outside UIKit's private implementation (react-native-screens #3954). UIKit
+ * finds the scroll view to watch by walking each tab screen's first-descendant chain, through the
+ * tab's stack to its top screen, so every tab's list is the first child of its screen.
  *
  * Route NAMES (`(home)`, `library`, …) are the trigger names; the TABS table in `app-tabs.tsx` keys
  * everything else by the tab's own name (`browse`, …), so the two are mapped here once.
@@ -81,6 +87,7 @@ export default function AppTabs() {
     <ContentWidthProvider width={contentWidth ?? windowWidth} sidebar={false}>
       <NativeTabs
         sidebarAdaptable
+        minimizeBehavior="onScrollDown"
         hidden={hidden}
         tintColor={theme.tabIconActive}
         iconColor={theme.tabIconInactive}
