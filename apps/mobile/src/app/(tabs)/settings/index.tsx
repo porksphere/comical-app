@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useRef } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type ScrollViewInstance } from 'react-native';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
 import {
   AboutIcon,
@@ -67,6 +68,13 @@ export default function SettingsScreen() {
   // finger only takes away the thing you came here to tap. See `usePinnedTabBar`.
   usePinnedTabBar();
   const contentPadding = useSettingsScrollPadding({ nativeHeader: NATIVE_HEADER });
+  // The offset the native bar's title fades on. The bar is pinned here and the gesture phases stay
+  // unreported (the phase broadcast is global — a blurred screen's bar would still be listening),
+  // so this is the one thing the scroll drives.
+  const scrollY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
 
   const counts = useCategoryCounts();
   // Same sources as the Settings tab pip — badge the exact rows that produced it so opening Settings
@@ -80,11 +88,10 @@ export default function SettingsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView
+      <Animated.ScrollView
         ref={scrollRef}
-        // No scroll reporting and no gesture phases: the bar is pinned here, and the phase
-        // broadcast is global — a blurred screen's bar would still be listening to this one's
-        // scrolling.
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[
           styles.content,
@@ -201,9 +208,9 @@ export default function SettingsScreen() {
             )}
           </SettingsSection>
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
-      {NATIVE_HEADER ? <NativeTabHeader title="Settings" large /> : <TabTitleBar title="Settings" />}
+      {NATIVE_HEADER ? <NativeTabHeader title="Settings" scrollY={scrollY} /> : <TabTitleBar title="Settings" />}
     </ThemedView>
   );
 }

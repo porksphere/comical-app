@@ -64,7 +64,7 @@ export default function HistoryScreen() {
   const zoomSurface = useZoomSurfaceKey('history');
   // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it (hence the
   // AnimatedLegendList below), `onScroll` only keeps the bottom-bounce measurement in sync.
-  const { sharedValues, onScroll } = useHideTabBarOnScroll();
+  const { scrollY, sharedValues, onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
   const ready = useDeferredMount();
 
@@ -239,7 +239,7 @@ export default function HistoryScreen() {
       )}
 
       {NATIVE_HEADER ? (
-        <NativeTabHeader title="History" large filter={filter} placeholder="Filter history…" />
+        <NativeTabHeader title="History" scrollY={scrollY} filter={filter} placeholder="Filter history…" />
       ) : (
         <TabTitleBar
           title="History"
