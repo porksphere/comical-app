@@ -69,6 +69,20 @@ invisible to it — so shared menus are builder FUNCTIONS returning the element 
 reports the RESTING height — a large title collapses on scroll and the stack reports the shrinking
 bar as it goes, but the content pads once, by the expanded height.
 
+Pushed screens stay INSIDE the tab on iOS. A series page, a search and its results open in the
+focused tab's native stack, not the root stack, so the system tab bar (or its side column) stays up
+under them as it does in Apple's apps: every tab directory carries a `series.tsx` / `search.tsx` /
+`results.tsx` that re-exports the root screen, and `lib/nav` rewrites a push to `/series`,
+`/search` or `/results` to the focused tab's copy (`lib/focused-tab.tsx` tracks the tab from the
+segments) — on iOS only; Android and web keep the root routes. A new pushed screen that should
+behave the same gets a stub per tab and its path in `IN_TAB_PATHS`. Only the ROOT `series` route has
+the nested in-series stack (`app/series/_layout.tsx`), so series code asks `useSegments()`, not the
+pathname, to know which copy it is in. The series page takes the system bar in details mode
+(transparent over the hero, `systemChromeMaterial` once the title would collide, a toolbar chevron
+in place of the custom one) and hides the tab bar while the reader is expanded through
+`lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s; the tab stack's `screenLayout`
+applies the series backdrop scale/dim to the screen underneath.
+
 `apps/mobile/src/components/app-tabs.tsx` is the Android + web shell (`expo-router/ui`'s headless
 `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the icon rail at the regular size class, the
 sliding bottom bar on phones, and the web-only panes.
