@@ -1,4 +1,3 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState, type ReactElement } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
@@ -32,9 +31,11 @@ const SNAP_SPEED = 0.12;
 // Under the native bar the pinned heading is text fading in place rather than a band pushed out —
 // see the component doc.
 const FADE = NATIVE_HEADER;
-// How far below the bar's edge the fade-mode scrim runs, in bands: past the heading's own text,
-// short of the content under it reading as dimmed.
-const SCRIM_BANDS = 1.5;
+/** Exported for the heading renderers: in fade mode the PINNED copy sits in a glass capsule
+ *  (`GlassPill`) hugging its text, which is what tells it from the inline rows scrolling under it —
+ *  there is no band to do that. The callers render the capsule, since only they know which of a
+ *  heading's parts is its text. */
+export const STICKY_PILL = FADE;
 
 /**
  * WHICH heading belongs at the pin line, and how far the band has been pushed out — both derived
@@ -419,16 +420,6 @@ export function StickySectionHeader<S extends StickySection>({
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
 
-  // FADE mode's scrim: the bar's fade continued down past the heading. It comes in over the first
-  // heading's last band of approach rather than on the frame it pins, and is constant from then on
-  // — at a hand-off it is the heading that fades, not the ground under it.
-  const scrimStyle = useAnimatedStyle(() => {
-    const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    const firstTop = sections[0]?.top;
-    const approach = firstTop === undefined ? 0 : Math.min(1, Math.max(0, 1 + (line - firstTop) / bandHeight));
-    return { opacity: approach, transform: [{ translateY: barOffset?.value ?? 0 }] };
-  }, [sections, pinLine, scrollOffset, barOffset, bandHeight]);
-
   // THE ride, and the only thing on the visual path. Pure UI thread: `pinAt` picks which of the
   // three pre-rendered headings belongs at the pin line and how far the stack has slid, so a
   // crossing costs a translate — no `runOnJS`, no React commit, no waiting behind LegendList's
@@ -490,15 +481,6 @@ export function StickySectionHeader<S extends StickySection>({
 
   return (
     <>
-      {FADE && (
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.scrim, { top: stickyTop, height: bandHeight * SCRIM_BANDS }, scrimStyle]}>
-          {/* Theme backgrounds are six-digit hex, so the clear end is the same colour at alpha 0 —
-              not 'transparent', which the gradient would blend through grey. */}
-          <LinearGradient colors={[theme.background, `${theme.background}00`]} style={StyleSheet.absoluteFill} />
-        </Animated.View>
-      )}
       {/* The CLIP at the pin line: the ride translates the stack, and the clip is what cuts it off
           at the bar's edge instead of letting a heading slide over the bar — and what keeps the two
           neighbouring slots hidden until they arrive. `box-none` so pressables inside the heading
@@ -559,11 +541,6 @@ export function StickySectionHeader<S extends StickySection>({
 }
 
 const styles = StyleSheet.create({
-  scrim: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-  },
   clip: {
     position: 'absolute',
     left: 0,

@@ -5,6 +5,7 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
 import { BackSwipeBoundary } from '@/components/back-swipe-boundary';
+import { GlassPill } from '@/components/glass-pill';
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import {
   coverStyles,
@@ -610,7 +611,19 @@ export function SectionHeadContent({
   );
 }
 
-export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeAll?: () => void; testID?: string }) {
+export function SectionHead({
+  title,
+  onSeeAll,
+  testID,
+  pill,
+}: {
+  title: string;
+  onSeeAll?: () => void;
+  testID?: string;
+  /** The pinned copy's treatment: the title (and its chevron) in a glass capsule — see
+   *  `STICKY_PILL`. The capsule is pulled back by its own padding, so the text stays on the gutter. */
+  pill?: boolean;
+}) {
   const theme = useTheme();
   const compact = useIsCompact();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
@@ -618,15 +631,19 @@ export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeA
   // stand a different height from one you can't whenever the chevron outgrows the title's line box.
   // Reserving it always also makes SECTION_HEAD_HEIGHT exact rather than a guess.
   const headStyle = [styles.head, compact ? styles.headCompact : styles.headWide];
+  const Wrap = pill ? GlassPill : View;
   if (!onSeeAll) {
     return (
       <View style={headStyle}>
-        <SectionHeadContent title={title} />
+        <Wrap style={pill ? styles.headPill : styles.headPlain}>
+          <SectionHeadContent title={title} />
+        </Wrap>
       </View>
     );
   }
   return (
     <View style={headStyle}>
+      <Wrap style={pill ? styles.headPill : styles.headPlain}>
       <Pressable
         testID={testID}
         onPress={onSeeAll}
@@ -643,6 +660,7 @@ export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeA
         ]}>
         <SectionHeadContent title={title} chevron chevronColor={hovered ? theme.text : theme.textSecondary} />
       </Pressable>
+      </Wrap>
     </View>
   );
 }
@@ -668,6 +686,19 @@ const styles = StyleSheet.create({
   },
   headTitle: {
     flexShrink: 1,
+  },
+  // The title's holder in a plain head: a row that hugs its content, exactly as the head itself
+  // laid it out before there was a holder — so a plain head and a capsuled one differ only in the
+  // capsule.
+  headPlain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+  },
+  // The capsule pads around the title (GlassPill's own padding) and is pulled back by the same
+  // amount, so the title stays on the gutter and the glass reaches a little past it on both sides.
+  headPill: {
+    marginHorizontal: -Spacing.two,
   },
   // The line box is the whole head. `numberOfLines` clips to it, and Segoe UI's font box is 4/3 of
   // its size (32px at 24), so a 30px box cut the descenders off on Windows. The title is centred in

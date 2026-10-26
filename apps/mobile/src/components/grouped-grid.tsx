@@ -3,8 +3,10 @@ import { useCallback, useMemo, useState, type ReactElement, type RefObject } fro
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
+import { GlassPill } from '@/components/glass-pill';
 import { RecyclerList } from '@/components/recycler-list';
 import {
+  STICKY_PILL,
   StickySectionHeader,
   useInlineHeadingStyle,
   type InlineHeadingPin,
@@ -23,14 +25,33 @@ function SectionHeader({
   count,
   hidden,
   pin,
+  pill,
 }: {
   label: string;
   count?: number;
   hidden?: boolean;
   /** Absent on the PINNED copy, which is the thing standing in and so is never the one hidden. */
   pin?: InlineHeadingPin;
+  /** The pinned copy's treatment (see `STICKY_PILL`): label and count together in one glass
+   *  capsule hugging them, rather than the inline row's label-left, count-right spread — a capsule
+   *  around each would be two badges floating over the covers. */
+  pill?: boolean;
 }) {
   const hide = useInlineHeadingStyle(hidden ?? false, pin);
+  if (pill) {
+    return (
+      <View style={styles.header}>
+        <GlassPill style={styles.headerPill}>
+          <ThemedText type="smallBold" numberOfLines={1} style={styles.headerPillLabel}>
+            {label}
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {count}
+          </ThemedText>
+        </GlassPill>
+      </View>
+    );
+  }
   return (
     <Animated.View style={[styles.header, hide]}>
       <ThemedText type="smallBold" numberOfLines={1} style={styles.headerLabel}>
@@ -172,8 +193,9 @@ export function GroupedGrid<T>({
           scrollOffset={sharedValues.scrollOffset}
           onActiveChange={onActiveChange}
           {...(stickyPinned && { pinnedValue: stickyPinned })}
-          // The SAME component the list renders inline — see StickySectionHeader.
-          renderHeader={(s) => <SectionHeader label={s.label} count={s.count} />}
+          // The SAME component the list renders inline — see StickySectionHeader — in the capsule
+          // where the pinned copy is a capsule.
+          renderHeader={(s) => <SectionHeader label={s.label} count={s.count} pill={STICKY_PILL} />}
         />
       )}
     </View>
@@ -193,5 +215,15 @@ const styles = StyleSheet.create({
   },
   headerLabel: {
     flex: 1,
+  },
+  // The capsule is pulled back by its own padding so the label stays where the inline one is; it
+  // hugs label + count, which is why the row's `space-between` has nothing to spread.
+  headerPill: {
+    marginHorizontal: -Spacing.two,
+    gap: Spacing.two,
+    height: RowHeight,
+  },
+  headerPillLabel: {
+    flexShrink: 1,
   },
 });

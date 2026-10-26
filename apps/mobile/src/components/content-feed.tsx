@@ -20,6 +20,7 @@ import { RecyclerList } from '@/components/recycler-list';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import {
+  STICKY_PILL,
   StickySectionHeader,
   useInlineHeadingStyle,
   type InlineHeadingPin,
@@ -492,12 +493,14 @@ export function ContentFeed({
         barOffset={stickyBarOffset}
         onActiveChange={onActiveChange}
         {...(stickyPinned && { pinnedValue: stickyPinned })}
-        // The SAME row the list renders inline, drill chevron and all — see StickySectionHeader.
+        // The SAME row the list renders inline, drill chevron and all — see StickySectionHeader —
+        // in the capsule where the pinned copy is a capsule.
         renderHeader={(s) => {
           const seeAll = s.seeAll;
           return (
             <SectionHead
               title={s.label}
+              pill={STICKY_PILL}
               {...(seeAll ? { onSeeAll: () => router.push({ pathname: '/results', params: seeAllParams(seeAll) }) } : {})}
             />
           );
