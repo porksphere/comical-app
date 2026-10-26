@@ -15,7 +15,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
-import { PAGE_STRIP_HEIGHT, PageStrip } from '@/components/browse/page-strip';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ContentFeed } from '@/components/content-feed';
 import { SearchIcon } from '@/components/icons/ui-icons';
@@ -27,6 +26,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { HoldActionTarget } from '@/components/hold-action-target';
+import { NativeBarTitle } from '@/components/native-bar-title';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import {
   bridgePageOptions,
@@ -614,10 +614,6 @@ export default function BrowseScreen() {
   // expand-at-top/collapse-on-scroll animation, the bar itself never changes size —
   // instead it slides as a whole (see `headerStyle` below), X/Twitter-style.
   const headerHeight = useTopChromeHeight();
-  // On iOS the page picker is a strip under the bar rather than a bar item, so it is chrome the
-  // content has to clear too — see PageStrip.
-  const showPageStrip = NATIVE_HEADER && pageKeys.length > 1;
-  const contentTop = headerHeight + (showPageStrip ? PAGE_STRIP_HEIGHT : 0);
   // The bridge/page bar slides up 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
   // helper — the same one the Search filter bar uses, so their motion can't drift. The slide
   // distance is `barHeight`, NOT `headerHeight`: the bar stops once its content band is gone,
@@ -753,38 +749,46 @@ export default function BrowseScreen() {
       </Animated.View>
     </BarSurface>
   );
-  // On iOS: the bridge as a menu, the search as a bar button, the thumbnail (the NSFW hold target)
-  // as a custom item without the bar's glass capsule — it is a picture, not a button. No title: the
-  // bridge menu's label is the heading, as the selector is in the custom bar. The page picker is
-  // the PageStrip under the bar, not a third capsule.
+  // On iOS: the custom bar's cluster — thumbnail (the NSFW hold target), bridge ▾, page ▾ — stands
+  // in the bar's title slot at the title's size, the same selectors opening the same menus; only
+  // the search is a bar button, so it alone is a glass capsule.
   const nativeHeader = (
     <>
-      <Stack.Title>{''}</Stack.Title>
-      <Stack.Toolbar placement="left">
+      <NativeBarTitle>
         {currentBridge ? (
-          <Stack.Toolbar.View hidesSharedBackground>
-            <HoldActionTarget testID="browse.nsfw-hold" size={thumbSize}>
-              <BridgeThumb
-                uri={currentBridge.thumbnail}
-                source={isComical ? COMICAL_ICON : undefined}
-                label={currentBridge.name}
-                size={thumbSize}
-                fill
-              />
-            </HoldActionTarget>
-          </Stack.Toolbar.View>
+          <HoldActionTarget testID="browse.nsfw-hold" size={thumbSize}>
+            <BridgeThumb
+              uri={currentBridge.thumbnail}
+              source={isComical ? COMICAL_ICON : undefined}
+              label={currentBridge.name}
+              size={thumbSize}
+              fill
+            />
+          </HoldActionTarget>
         ) : null}
         {!railNav && (
-          <Stack.Toolbar.Menu accessibilityLabel="Bridge">
-            <Stack.Toolbar.Label>{currentBridge?.name ?? 'Bridge'}</Stack.Toolbar.Label>
-            {visibleBridges.map((b) => (
-              <Stack.Toolbar.MenuAction key={b.id} isOn={b.id === currentBridge?.id} onPress={() => selectBridge(b.id)}>
-                {bridgeLabels[b.id] ?? b.name}
-              </Stack.Toolbar.MenuAction>
-            ))}
-          </Stack.Toolbar.Menu>
+          <Selector
+            testID="browse.bridge-selector"
+            title="Bridge"
+            value={currentBridge?.id ?? ''}
+            options={visibleBridges.map((b) => b.id)}
+            onChange={selectBridge}
+            size="bar"
+            thumbnails={bridgeThumbnails}
+            sources={COMICAL_SOURCES}
+            labels={bridgeLabels}
+          />
         )}
-      </Stack.Toolbar>
+        <Selector
+          testID="browse.page-selector"
+          title="Page"
+          value={pageKey(page)}
+          options={pageKeys}
+          onChange={selectPage}
+          size="bar"
+          labels={pageLabels}
+        />
+      </NativeBarTitle>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={openSearch} />
       </Stack.Toolbar>
@@ -911,7 +915,7 @@ export default function BrowseScreen() {
           // Terminal-grid first-load skeleton (footer). During homeLoading the terminal rows aren't
           // built yet; this fills that gap the way GridSkeleton did for the old shared list.
           terminalLoading={homeLoading && !!terminalGridPreview}
-          paddingTop={contentTop + BarContentGap}
+          paddingTop={headerHeight + BarContentGap}
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
           // Comical: no feed-level bridge — every rail carries its own BridgeScope so its cards open
           // the correct real bridge. A single-bridge home passes its one bridge as the fallback.
@@ -923,7 +927,7 @@ export default function BrowseScreen() {
           // two blurred surfaces with a strip of unblurred content between them reads as a gap in
           // the chrome, not as breathing room. It RIDES the bar's slide, so it stays met to that
           // edge whether the bar is expanded or docked under the status bar.
-          stickyHeaderTop={contentTop}
+          stickyHeaderTop={headerHeight}
           stickyBarOffset={barOffset}
           stickyPinned={stickyPinned}
           ambient={feedTint}
@@ -944,7 +948,7 @@ export default function BrowseScreen() {
           // No footer skeleton for infinite-scroll pagination (`loadingMore`) — unreliable on web. Only
           // the initial / scope-switch loading state still shows one.
           footer={gridLoading && gridItems.length === 0 ? <GridSkeleton numColumns={numColumns} /> : null}
-          paddingTop={contentTop + BarContentGap}
+          paddingTop={headerHeight + BarContentGap}
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
           bridge={currentBridge?.name ?? undefined}
           bridgeId={bridgeId}
@@ -960,10 +964,7 @@ export default function BrowseScreen() {
         />
       )}
       {NATIVE_HEADER ? nativeHeader : topBar}
-      {showPageStrip && (
-        <PageStrip top={headerHeight} options={pageKeys} labels={pageLabels} value={pageKey(page)} onChange={selectPage} />
-      )}
-      <PullIndicator {...pull.indicator} top={contentTop} />
+      <PullIndicator {...pull.indicator} top={headerHeight} />
     </ThemedView>
   );
 }

@@ -41,15 +41,17 @@ type SelectorProps = {
    * back to the value itself when absent.
    */
   labels?: Record<string, string>;
-  /** Visual size of the trigger text. */
-  size?: 'title' | 'subtitle' | 'small';
+  /** Visual size of the trigger text. `bar` is the iOS navigation bar's title type, for a
+   *  selector standing in the bar's title slot (see `NativeBarTitle`). */
+  size?: 'title' | 'subtitle' | 'small' | 'bar';
   /** Automation selector for the trigger; each option derives `${testID}.option.<value>` (see src/lib/test-id.ts). */
   testID: string;
 };
 
-/** The `subtitle` trigger's type, for a bar title that sits beside a `Selector`. */
-export function useSubtitleSelectorStyle() {
+/** The `subtitle` (or `bar`) trigger's type, for a bar title that sits beside a `Selector`. */
+export function useSubtitleSelectorStyle(size: 'subtitle' | 'bar' = 'subtitle') {
   const compact = useIsCompact();
+  if (size === 'bar') return { label: styles.bar };
   return { label: compact ? styles.subtitleCompact : styles.subtitleWide };
 }
 
@@ -58,8 +60,8 @@ export function useSubtitleSelectorStyle() {
 export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['size'] }) {
   const theme = useTheme();
   const compact = useIsCompact();
-  const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : 8;
-  const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (compact ? 22.4 : 28) : 14;
+  const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : size === 'bar' ? 9 : 8;
+  const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (compact ? 22.4 : 28) : size === 'bar' ? 17 : 14;
   return (
     <View style={[styles.caret, { transform: [{ translateY: Math.round(fontSize * 0.09) }] }]}>
       <CaretDownIcon color={theme.textSecondary} size={px} />
@@ -101,11 +103,12 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
         )
       }>
       <ThemedText
-        type={size}
+        type={size === 'bar' ? 'default' : size}
         numberOfLines={1}
         style={[
           styles.triggerLabel,
           size === 'subtitle' ? (compact ? styles.subtitleCompact : styles.subtitleWide) : null,
+          size === 'bar' ? styles.bar : null,
         ]}>
         {labels?.[value] ?? value}
       </ThemedText>
@@ -231,6 +234,13 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '700',
+  },
+  // The iOS navigation bar's title: 17pt semibold, so a selector in the title slot reads as the
+  // bar's title with a caret, not as a second kind of text.
+  bar: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
   },
   caret: {
     marginLeft: 2,

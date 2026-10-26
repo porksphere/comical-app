@@ -14,6 +14,7 @@ import { type TabFilter, TabFilterField, TabFilterTrigger, useTabFilter } from '
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { HoldActionTarget } from '@/components/hold-action-target';
+import { NativeBarTitle } from '@/components/native-bar-title';
 import { BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -24,7 +25,6 @@ import {
   type ItemKind,
   itemKindOptions,
   type KindsPresent,
-  libraryViews,
   setSelectedCollection,
   setSelectedItemKind,
   useSelectedCollectionId,
@@ -40,7 +40,6 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
-import { useRouter } from '@/lib/nav';
 
 export default function LibraryScreen() {
   const theme = useTheme();
@@ -177,11 +176,10 @@ export default function LibraryScreen() {
 }
 
 /**
- * The iOS navigation bar: the thumbnail and the collection menu leading, the search trailing, and
- * nothing else — the collection menu's label is the heading, so the bar has no separate title. The
- * kind, filter and sort are secondary to what's showing, so they go to the bottom toolbar
- * (LibraryNativeToolbar), where iOS 26 keeps that tier. The thumbnail draws without the bar's glass
- * capsule: it is a picture, not a button, and a capsule around it read as one.
+ * The iOS navigation bar: the custom bar's thumbnail + collection selector standing in the title
+ * slot (plain, as there — the title slot is the one the bar never wraps in a glass capsule), the
+ * search trailing as the one capsule. The kind, filter and sort are secondary to what's showing,
+ * so they go to the bottom toolbar (LibraryNativeToolbar), where iOS 26 keeps that tier.
  */
 function LibraryNativeHeader({
   collection,
@@ -202,33 +200,23 @@ function LibraryNativeHeader({
   railNav: boolean;
   filter: TabFilter;
 }) {
-  const router = useRouter();
   const kinds = itemKindOptions(kindsPresent, selectedKind);
+  const titleType = useSubtitleSelectorStyle('bar');
   return (
     <>
-      <Stack.Title>{''}</Stack.Title>
-      <Stack.Toolbar placement="left">
-        <Stack.Toolbar.View hidesSharedBackground>
-          <HoldActionTarget testID="library.nsfw-hold" size={BridgeThumbSize}>
-            <CollectionThumb view={collection} name={viewName} size={BridgeThumbSize} style={styles.barThumb} />
-          </HoldActionTarget>
-        </Stack.Toolbar.View>
+      <NativeBarTitle>
+        <HoldActionTarget testID="library.nsfw-hold" size={BridgeThumbSize}>
+          <CollectionThumb view={collection} name={viewName} size={BridgeThumbSize} style={styles.barThumb} />
+        </HoldActionTarget>
         {/* The rail lists the collections when it's showing — same reasoning as the custom bar. */}
-        <Stack.Toolbar.Menu hidden={railNav} accessibilityLabel="Collection">
-          <Stack.Toolbar.Label>{viewName}</Stack.Toolbar.Label>
-          {libraryViews(collections).map((view) => (
-            <Stack.Toolbar.MenuAction
-              key={view.testKey}
-              isOn={view.id === collection}
-              onPress={() => setSelectedCollection(view.id)}>
-              {view.name}
-            </Stack.Toolbar.MenuAction>
-          ))}
-          <Stack.Toolbar.MenuAction icon="folder.badge.gearshape" onPress={() => router.push('/manage-collections')}>
-            Manage collections…
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
-      </Stack.Toolbar>
+        {railNav ? (
+          <ThemedText numberOfLines={1} style={[styles.railTitle, titleType.label]}>
+            {viewName}
+          </ThemedText>
+        ) : (
+          <LibraryCollectionSelector value={collection} collections={collections} onChange={setSelectedCollection} size="bar" />
+        )}
+      </NativeBarTitle>
       <Stack.SearchBar
         placeholder="Filter library…"
         placement="integratedButton"

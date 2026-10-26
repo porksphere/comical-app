@@ -28,16 +28,18 @@ export function LibraryCollectionSelector({
   value,
   collections,
   onChange,
+  size = 'subtitle',
 }: {
   /** See `selected-collection.ts`. */
   value: string | null;
   collections: Collection[];
   onChange: (value: string | null) => void;
+  size?: 'subtitle' | 'bar';
 }) {
   const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
-  const type = useSubtitleSelectorStyle();
+  const type = useSubtitleSelectorStyle(size);
 
   const currentLabel = (value && collections.find((c) => c.id === value)?.name) || ALL_VIEW_NAME;
   // Rows, not collections: every view plus "Manage collections…".
@@ -58,7 +60,7 @@ export function LibraryCollectionSelector({
       <ThemedText numberOfLines={1} style={[styles.triggerLabel, type.label]}>
         {currentLabel}
       </ThemedText>
-      <SelectorCaret />
+      <SelectorCaret size={size} />
     </Pressable>
   );
 }

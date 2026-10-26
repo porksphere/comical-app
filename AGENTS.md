@@ -52,13 +52,17 @@ native bar's height on iOS, status bar + custom overlay elsewhere), so a screen 
 relayout. Android and web keep the custom `TopBar`/`TabTitleBar` overlay.
 
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
-names the screen and the search: History/Activity/Settings use a `large` title, Library's
-collection menu and Browse's bridge menu are the heading (empty `Stack.Title`). The thumbnail next
-to them is a picture, not a button, so its `Stack.Toolbar.View` sets `hidesSharedBackground` (iOS
-26+) to drop the glass capsule. Secondary controls leave the bar: Library's kind/filter/sort are a
-`Stack.Toolbar placement="bottom"` (`components/library/library-native-toolbar.tsx`), Browse's page
-picker is the `PageStrip` under the bar (a fixed strip, since `ContentFeed` drops its pinned
-headings when given a list header), and the content pads by that strip too. The native toolbar
+names the screen and the search: History/Activity/Settings use a `large` title; Library's and
+Browse's heading is the custom bar's own cluster — thumbnail, collection/bridge ▾, page ▾ — standing
+in the TITLE slot (`components/native-bar-title.tsx`, `Stack.Title asChild`) at the bar's title
+size (`Selector size="bar"`), opening the same overlay menus as on Android/web. The title slot is the
+one place the bar never wraps in a Liquid Glass capsule — every left/right item is a
+`UIBarButtonItem` and gets one, and `hidesSharedBackground` on a custom-view item did not take it
+off in practice — so the cluster reads plain and only the real buttons beside it (search) are
+glass. The native bar has NO sticky-header primitive (no title menu, palette or scope bar in
+react-native-screens 4.30), so the page picker is a selector in the bar, not a strip under it.
+Secondary controls leave the bar: Library's kind/filter/sort are a `Stack.Toolbar
+placement="bottom"` (`components/library/library-native-toolbar.tsx`). The native toolbar
 only reads `Stack.Toolbar.*` elements that are its DIRECT children — a component wrapping one is
 invisible to it — so shared menus are builder FUNCTIONS returning the element (`libraryFilterMenu`,
 `librarySortMenu`, `collectedSortMenu`), one toolbar component per kind. `useNativeHeaderHeight()`
