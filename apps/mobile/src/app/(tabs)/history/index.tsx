@@ -239,7 +239,7 @@ export default function HistoryScreen() {
       )}
 
       {NATIVE_HEADER ? (
-        <NativeTabHeader title="History" filter={filter} placeholder="Filter history…" />
+        <NativeTabHeader title="History" large filter={filter} placeholder="Filter history…" />
       ) : (
         <TabTitleBar
           title="History"

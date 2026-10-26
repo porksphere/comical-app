@@ -1,4 +1,4 @@
-import { use } from 'react';
+import { use, useState } from 'react';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeaderHeightContext } from 'expo-router/build/react-navigation/elements/Header/HeaderHeightContext.js';
@@ -22,9 +22,16 @@ export const NATIVE_HEADER = Platform.OS === 'ios';
  *
  * Read from the context directly rather than through useHeaderHeight, which throws outside a
  * header-bearing stack — and most of the app is outside one.
+ *
+ * The RESTING height: a large title collapses as the content scrolls and the stack reports the
+ * shrinking bar as it goes, but the content pads by this once, for its top — repadding it
+ * mid-scroll would shift everything under the finger. So the largest height seen stands.
  */
 export function useNativeHeaderHeight(): number {
-  return use(HeaderHeightContext) ?? 0;
+  const reported = use(HeaderHeightContext) ?? 0;
+  const [resting, setResting] = useState(reported);
+  if (reported > resting) setResting(reported);
+  return Math.max(reported, resting);
 }
 
 /**

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
+import { PAGE_STRIP_HEIGHT, PageStrip } from '@/components/browse/page-strip';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ContentFeed } from '@/components/content-feed';
 import { SearchIcon } from '@/components/icons/ui-icons';
@@ -613,6 +614,10 @@ export default function BrowseScreen() {
   // expand-at-top/collapse-on-scroll animation, the bar itself never changes size —
   // instead it slides as a whole (see `headerStyle` below), X/Twitter-style.
   const headerHeight = useTopChromeHeight();
+  // On iOS the page picker is a strip under the bar rather than a bar item, so it is chrome the
+  // content has to clear too — see PageStrip.
+  const showPageStrip = NATIVE_HEADER && pageKeys.length > 1;
+  const contentTop = headerHeight + (showPageStrip ? PAGE_STRIP_HEIGHT : 0);
   // The bridge/page bar slides up 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
   // helper — the same one the Search filter bar uses, so their motion can't drift. The slide
   // distance is `barHeight`, NOT `headerHeight`: the bar stops once its content band is gone,
@@ -748,15 +753,16 @@ export default function BrowseScreen() {
       </Animated.View>
     </BarSurface>
   );
-  // The same controls as system items on iOS: the bridge and the page as menus, the search as a
-  // bar button, the thumbnail (the NSFW hold target) as a custom item. No title — the page menu's
-  // label is the heading, as the selector is in the custom bar.
+  // On iOS: the bridge as a menu, the search as a bar button, the thumbnail (the NSFW hold target)
+  // as a custom item without the bar's glass capsule — it is a picture, not a button. No title: the
+  // bridge menu's label is the heading, as the selector is in the custom bar. The page picker is
+  // the PageStrip under the bar, not a third capsule.
   const nativeHeader = (
     <>
       <Stack.Title>{''}</Stack.Title>
       <Stack.Toolbar placement="left">
         {currentBridge ? (
-          <Stack.Toolbar.View>
+          <Stack.Toolbar.View hidesSharedBackground>
             <HoldActionTarget testID="browse.nsfw-hold" size={thumbSize}>
               <BridgeThumb
                 uri={currentBridge.thumbnail}
@@ -778,14 +784,6 @@ export default function BrowseScreen() {
             ))}
           </Stack.Toolbar.Menu>
         )}
-        <Stack.Toolbar.Menu accessibilityLabel="Page">
-          <Stack.Toolbar.Label>{pageLabels[pageKey(page)] ?? pageKey(page)}</Stack.Toolbar.Label>
-          {pageKeys.map((key) => (
-            <Stack.Toolbar.MenuAction key={key} isOn={key === pageKey(page)} onPress={() => selectPage(key)}>
-              {pageLabels[key] ?? key}
-            </Stack.Toolbar.MenuAction>
-          ))}
-        </Stack.Toolbar.Menu>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={openSearch} />
@@ -913,7 +911,7 @@ export default function BrowseScreen() {
           // Terminal-grid first-load skeleton (footer). During homeLoading the terminal rows aren't
           // built yet; this fills that gap the way GridSkeleton did for the old shared list.
           terminalLoading={homeLoading && !!terminalGridPreview}
-          paddingTop={headerHeight + BarContentGap}
+          paddingTop={contentTop + BarContentGap}
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
           // Comical: no feed-level bridge — every rail carries its own BridgeScope so its cards open
           // the correct real bridge. A single-bridge home passes its one bridge as the fallback.
@@ -925,7 +923,7 @@ export default function BrowseScreen() {
           // two blurred surfaces with a strip of unblurred content between them reads as a gap in
           // the chrome, not as breathing room. It RIDES the bar's slide, so it stays met to that
           // edge whether the bar is expanded or docked under the status bar.
-          stickyHeaderTop={headerHeight}
+          stickyHeaderTop={contentTop}
           stickyBarOffset={barOffset}
           stickyPinned={stickyPinned}
           ambient={feedTint}
@@ -946,7 +944,7 @@ export default function BrowseScreen() {
           // No footer skeleton for infinite-scroll pagination (`loadingMore`) — unreliable on web. Only
           // the initial / scope-switch loading state still shows one.
           footer={gridLoading && gridItems.length === 0 ? <GridSkeleton numColumns={numColumns} /> : null}
-          paddingTop={headerHeight + BarContentGap}
+          paddingTop={contentTop + BarContentGap}
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
           bridge={currentBridge?.name ?? undefined}
           bridgeId={bridgeId}
@@ -962,7 +960,10 @@ export default function BrowseScreen() {
         />
       )}
       {NATIVE_HEADER ? nativeHeader : topBar}
-      <PullIndicator {...pull.indicator} top={headerHeight} />
+      {showPageStrip && (
+        <PageStrip top={headerHeight} options={pageKeys} labels={pageLabels} value={pageKey(page)} onChange={selectPage} />
+      )}
+      <PullIndicator {...pull.indicator} top={contentTop} />
     </ThemedView>
   );
 }

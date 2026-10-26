@@ -1,3 +1,5 @@
+import { Stack } from 'expo-router';
+
 import { SortIcon } from '@/components/icons/ui-icons';
 import { ChoiceMenuButton, choiceSection } from '@/components/overlay/choice-menu';
 import type { LibraryGrouping } from '@/data/library-grouping';
@@ -67,5 +69,37 @@ export function LibrarySortButton({
         }),
       ]}
     />
+  );
+}
+
+/** The same two axes as a system menu for the iOS bottom toolbar — see `libraryFilterMenu`. */
+export function librarySortMenu({
+  value,
+  onChange,
+  grouping,
+  onGroupingChange,
+}: {
+  value: LibraryViewSort;
+  onChange: (s: LibraryViewSort) => void;
+  grouping: LibraryGrouping;
+  onGroupingChange: (g: LibraryGrouping) => void;
+}) {
+  return (
+    <Stack.Toolbar.Menu icon="arrow.up.arrow.down" accessibilityLabel="Sort library">
+      <Stack.Toolbar.Menu inline title="Sort by">
+        {SORT_ORDER.map((sort) => (
+          <Stack.Toolbar.MenuAction key={sort} isOn={sort === value} onPress={() => onChange(sort)}>
+            {SORT_LABELS[sort]}
+          </Stack.Toolbar.MenuAction>
+        ))}
+      </Stack.Toolbar.Menu>
+      <Stack.Toolbar.Menu inline title="Group by">
+        {GROUP_ORDER.map((group) => (
+          <Stack.Toolbar.MenuAction key={group} isOn={group === grouping} onPress={() => onGroupingChange(group)}>
+            {GROUP_LABELS[group]}
+          </Stack.Toolbar.MenuAction>
+        ))}
+      </Stack.Toolbar.Menu>
+    </Stack.Toolbar.Menu>
   );
 }

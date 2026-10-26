@@ -1,3 +1,5 @@
+import { Stack } from 'expo-router';
+
 import { SortIcon } from '@/components/icons/ui-icons';
 import { ChoiceMenuButton, choiceSection } from '@/components/overlay/choice-menu';
 import {
@@ -75,5 +77,44 @@ export function CollectedSortButton({
         }),
       ]}
     />
+  );
+}
+
+/** The same three axes as a system menu for the iOS bottom toolbar — see `libraryFilterMenu`. */
+export function collectedSortMenu({
+  value,
+  onChange,
+}: {
+  value: CollectedViewPrefs;
+  onChange: (patch: Partial<CollectedViewPrefs>) => void;
+}) {
+  const dirLabels = value.sort === 'added' ? DIR_LABELS : POSITIONAL_DIR_LABELS;
+  return (
+    <Stack.Toolbar.Menu icon="arrow.up.arrow.down" accessibilityLabel="Sort saved items">
+      <Stack.Toolbar.Menu inline title="Sort by">
+        {SORT_ORDER.map((sort) => (
+          <Stack.Toolbar.MenuAction
+            key={sort}
+            isOn={sort === value.sort}
+            onPress={() => onChange({ sort, dir: defaultDirFor(sort) })}>
+            {SORT_LABELS[sort]}
+          </Stack.Toolbar.MenuAction>
+        ))}
+      </Stack.Toolbar.Menu>
+      <Stack.Toolbar.Menu inline title="Order">
+        {DIR_ORDER.map((dir) => (
+          <Stack.Toolbar.MenuAction key={dir} isOn={dir === value.dir} onPress={() => onChange({ dir })}>
+            {dirLabels[dir]}
+          </Stack.Toolbar.MenuAction>
+        ))}
+      </Stack.Toolbar.Menu>
+      <Stack.Toolbar.Menu inline title="Group by">
+        {GROUP_ORDER.map((grouping) => (
+          <Stack.Toolbar.MenuAction key={grouping} isOn={grouping === value.grouping} onPress={() => onChange({ grouping })}>
+            {GROUP_LABELS[grouping]}
+          </Stack.Toolbar.MenuAction>
+        ))}
+      </Stack.Toolbar.Menu>
+    </Stack.Toolbar.Menu>
   );
 }

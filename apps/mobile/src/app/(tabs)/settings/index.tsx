@@ -203,7 +203,7 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
 
-      {NATIVE_HEADER ? <NativeTabHeader title="Settings" /> : <TabTitleBar title="Settings" />}
+      {NATIVE_HEADER ? <NativeTabHeader title="Settings" large /> : <TabTitleBar title="Settings" />}
     </ThemedView>
   );
 }

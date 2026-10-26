@@ -51,6 +51,20 @@ has no testIDs either: `screen-title.*`, `*.search-icon`, `browse.bridge-selecto
 native bar's height on iOS, status bar + custom overlay elsewhere), so a screen swaps bars without
 relayout. Android and web keep the custom `TopBar`/`TabTitleBar` overlay.
 
+What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
+names the screen and the search: History/Activity/Settings use a `large` title, Library's
+collection menu and Browse's bridge menu are the heading (empty `Stack.Title`). The thumbnail next
+to them is a picture, not a button, so its `Stack.Toolbar.View` sets `hidesSharedBackground` (iOS
+26+) to drop the glass capsule. Secondary controls leave the bar: Library's kind/filter/sort are a
+`Stack.Toolbar placement="bottom"` (`components/library/library-native-toolbar.tsx`), Browse's page
+picker is the `PageStrip` under the bar (a fixed strip, since `ContentFeed` drops its pinned
+headings when given a list header), and the content pads by that strip too. The native toolbar
+only reads `Stack.Toolbar.*` elements that are its DIRECT children — a component wrapping one is
+invisible to it — so shared menus are builder FUNCTIONS returning the element (`libraryFilterMenu`,
+`librarySortMenu`, `collectedSortMenu`), one toolbar component per kind. `useNativeHeaderHeight()`
+reports the RESTING height — a large title collapses on scroll and the stack reports the shrinking
+bar as it goes, but the content pads once, by the expanded height.
+
 `apps/mobile/src/components/app-tabs.tsx` is the Android + web shell (`expo-router/ui`'s headless
 `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the icon rail at the regular size class, the
 sliding bottom bar on phones, and the web-only panes.

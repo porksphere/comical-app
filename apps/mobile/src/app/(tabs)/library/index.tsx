@@ -1,12 +1,13 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { Stack } from 'expo-router';
 import { useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LibraryCollectionSelector, LibraryKindSelector } from '@/components/library-collection-selector';
 import type { LibraryGridChrome } from '@/components/library/library-listing';
+import { LibraryNativeToolbar } from '@/components/library/library-native-toolbar';
 import { LibrarySavedControls, LibrarySavedView } from '@/components/library/library-saved-view';
 import { LibrarySeriesControls, LibrarySeriesView } from '@/components/library/library-series-view';
 import { type TabFilter, TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
@@ -20,7 +21,6 @@ import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import {
   ALL_VIEW_NAME,
   effectiveItemKind,
-  ITEM_KIND_LABELS,
   type ItemKind,
   itemKindOptions,
   type KindsPresent,
@@ -177,10 +177,11 @@ export default function LibraryScreen() {
 }
 
 /**
- * The iOS navigation bar, with the custom bar's controls as system items. The collection and the
- * kind are menus — a menu is what a picker is in a bar — and the collection menu carries the
- * heading, so the bar has no separate title. The filter and sort buttons keep their overlay menus
- * inside a custom item, since those are shared with the other platforms' bars (and the tests).
+ * The iOS navigation bar: the thumbnail and the collection menu leading, the search trailing, and
+ * nothing else — the collection menu's label is the heading, so the bar has no separate title. The
+ * kind, filter and sort are secondary to what's showing, so they go to the bottom toolbar
+ * (LibraryNativeToolbar), where iOS 26 keeps that tier. The thumbnail draws without the bar's glass
+ * capsule: it is a picture, not a button, and a capsule around it read as one.
  */
 function LibraryNativeHeader({
   collection,
@@ -207,7 +208,7 @@ function LibraryNativeHeader({
     <>
       <Stack.Title>{''}</Stack.Title>
       <Stack.Toolbar placement="left">
-        <Stack.Toolbar.View>
+        <Stack.Toolbar.View hidesSharedBackground>
           <HoldActionTarget testID="library.nsfw-hold" size={BridgeThumbSize}>
             <CollectionThumb view={collection} name={viewName} size={BridgeThumbSize} style={styles.barThumb} />
           </HoldActionTarget>
@@ -227,14 +228,6 @@ function LibraryNativeHeader({
             Manage collections…
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
-        <Stack.Toolbar.Menu hidden={kinds.length < 2} accessibilityLabel="Kind">
-          <Stack.Toolbar.Label>{ITEM_KIND_LABELS[kind]}</Stack.Toolbar.Label>
-          {kinds.map((option) => (
-            <Stack.Toolbar.MenuAction key={option} isOn={option === kind} onPress={() => setSelectedItemKind(option)}>
-              {ITEM_KIND_LABELS[option]}
-            </Stack.Toolbar.MenuAction>
-          ))}
-        </Stack.Toolbar.Menu>
       </Stack.Toolbar>
       <Stack.SearchBar
         placeholder="Filter library…"
@@ -242,27 +235,12 @@ function LibraryNativeHeader({
         onChangeText={(e) => filter.setQuery(e.nativeEvent.text)}
         onCancelButtonPress={filter.close}
       />
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.View>
-          <View style={styles.nativeControls}>
-            {kind === 'series' ? (
-              <LibrarySeriesControls collection={collection} />
-            ) : (
-              <LibrarySavedControls collection={collection} kind={kind} />
-            )}
-          </View>
-        </Stack.Toolbar.View>
-      </Stack.Toolbar>
+      <LibraryNativeToolbar collection={collection} kind={kind} kinds={kinds} />
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  nativeControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-  },
   railTitle: {
     flexShrink: 1,
     minWidth: 0,
