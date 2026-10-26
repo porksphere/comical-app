@@ -86,8 +86,8 @@ export default function LibraryScreen() {
     paddingTop: headerHeight + BarContentGap,
     paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
     // Flush to the bar's bottom edge, as on Browse — NOT the viewport top, which is behind the bar
-    // (content scrolls under it). Inline under the native bar, as on Browse.
-    stickyHeaderTop: NATIVE_HEADER ? undefined : headerHeight,
+    // (content scrolls under it).
+    stickyHeaderTop: headerHeight,
     stickyPinned,
     sharedValues,
     onScroll,
