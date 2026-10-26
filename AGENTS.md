@@ -27,10 +27,16 @@ every platform with no `.web.tsx` split needed. Don't hand-roll glyphs. See
 `apps/mobile/src/components/app-tabs.ios.tsx` is the iOS shell: `NativeTabs`
 (`expo-router/native-tabs`) over the real `UITabBarController`, so UIKit itself moves the
 bar to the side as a symbol-only column on a regular-width resizable scene and to a sidebar on iPad.
-That is the whole reason it exists — a custom bar can only imitate that adaptation. It asks for NO
-`minimizeBehavior`: that was the earlier native shell's dead end (iOS 26's
-`tabBarMinimizeBehavior` needed react-native-screens patches to find the content scroll view, and
-even then only re-expanded at the very top), and the default bar is what the system apps show. It is
+That is the whole reason it exists — a custom bar can only imitate that adaptation. It asks for
+`minimizeBehavior="onScrollDown"`: on iOS 26 the bar collapses to the selected item while the
+content scrolls down and re-expands only at the very top or on a tap. That is UIKit's design
+(react-native-screens #3954), not a list bug — the earlier native shell chased mid-scroll
+re-expansion for days and reverted, so don't. react-native-screens finds the scroll view as the
+screen's first descendant (or the nested stack's top screen); a tab whose list it misses gets a
+`ScrollViewMarker` from `react-native-screens/experimental`. Liquid Glass bars tint from the
+WINDOW's interface style, not from the content, so `ThemeSchemeProvider` mirrors the theme
+preference into `Appearance.setColorScheme` on iOS — without that a dark theme sits over a light
+window and the bar glares white. It is
 the one place SF Symbols are used instead of lucide, because the system bar draws its own items. Its
 triggers are named by ROUTE (`(home)`, `library`, …); the custom shell's `TABS` table keys by tab name
 (`browse`, …), and `app-tabs.ios.tsx` maps between the two for scroll-to-top. Per-tab safe-area
@@ -52,7 +58,9 @@ native bar's height on iOS, status bar + custom overlay elsewhere), so a screen 
 relayout. Android and web keep the custom `TopBar`/`TabTitleBar` overlay.
 
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
-names the screen and the search: History/Activity/Settings use a `large` title; Library's and
+names the screen and the search: History/Activity/Settings use an inline title that fades out
+over the first scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's
+`scrollY`; large titles looked foreign beside the custom clusters); Library's and
 Browse's heading is the custom bar's own cluster — thumbnail, collection/bridge ▾, page ▾ — standing
 in the TITLE slot (`components/native-bar-title.tsx`, `Stack.Title asChild`) at the bar's title
 size (`Selector size="bar"`), opening the same overlay menus as on Android/web. The title slot is the
@@ -62,9 +70,12 @@ off in practice — so the cluster reads plain and only the real buttons beside 
 glass. The native bar has NO sticky-header primitive (no title menu, palette or scope bar in
 react-native-screens 4.30), so the page picker is a selector in the bar, not a strip under it.
 Section headings still pin under it, but as text: `StickySectionHeader` has no band, fill or
-rules on iOS (`FADE`) — the pinned heading sits over a short scrim continuing the bar's fade,
-and a hand-off fades it in place instead of pushing it, since nothing can slide out under a bar
-with no edge.
+rules on iOS (`FADE`), and nothing runs up to the bar (a scrim there read as a second bar). The
+pinned heading sits in a `GlassPill` (`components/glass-pill.tsx`: `expo-glass-effect`'s GlassView
+on iOS 26, a BlurView below) that hugs the text — the caller renders it (`STICKY_PILL`), since only
+it knows which part is the text, and Library's count joins its label in the capsule — and a
+hand-off fades it in place instead of pushing it, since nothing can slide out under a bar with no
+edge.
 Secondary controls leave the bar: Library's kind/filter/sort are a `Stack.Toolbar
 placement="bottom"` (`components/library/library-native-toolbar.tsx`). The native toolbar
 only reads `Stack.Toolbar.*` elements that are its DIRECT children — a component wrapping one is
@@ -87,7 +98,8 @@ in place of the custom one) and hides the tab bar while the reader is expanded t
 `lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s; the tab stack's `screenLayout`
 applies the series backdrop scale/dim to the screen underneath. Search takes the bar as the
 stack's field (`Stack.SearchBar`, `integratedCentered`, uncontrolled: told the committed query,
-focused after the push settles) with sort as a trailing menu; its filter shutter stays the custom
+focused after the push settles) with sort as a trailing menu; the route has no title, so the field
+shares the chevron's row instead of sitting under an empty one; its filter shutter stays the custom
 one under the bar. Search and results share the tab's one UINavigationBar with the screen under
 them, so their push animates the bar natively; the series page is a `containedTransparentModal`
 with its own zoom entrance, so its bar does not.
