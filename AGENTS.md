@@ -61,6 +61,10 @@ one place the bar never wraps in a Liquid Glass capsule — every left/right ite
 off in practice — so the cluster reads plain and only the real buttons beside it (search) are
 glass. The native bar has NO sticky-header primitive (no title menu, palette or scope bar in
 react-native-screens 4.30), so the page picker is a selector in the bar, not a strip under it.
+Section headings still pin under it, but as text: `StickySectionHeader` has no band, fill or
+rules on iOS (`FADE`) — the pinned heading sits over a short scrim continuing the bar's fade,
+and a hand-off fades it in place instead of pushing it, since nothing can slide out under a bar
+with no edge.
 Secondary controls leave the bar: Library's kind/filter/sort are a `Stack.Toolbar
 placement="bottom"` (`components/library/library-native-toolbar.tsx`). The native toolbar
 only reads `Stack.Toolbar.*` elements that are its DIRECT children — a component wrapping one is
@@ -81,7 +85,12 @@ pathname, to know which copy it is in. The series page takes the system bar in d
 (transparent over the hero, `systemChromeMaterial` once the title would collide, a toolbar chevron
 in place of the custom one) and hides the tab bar while the reader is expanded through
 `lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s; the tab stack's `screenLayout`
-applies the series backdrop scale/dim to the screen underneath.
+applies the series backdrop scale/dim to the screen underneath. Search takes the bar as the
+stack's field (`Stack.SearchBar`, `integratedCentered`, uncontrolled: told the committed query,
+focused after the push settles) with sort as a trailing menu; its filter shutter stays the custom
+one under the bar. Search and results share the tab's one UINavigationBar with the screen under
+them, so their push animates the bar natively; the series page is a `containedTransparentModal`
+with its own zoom entrance, so its bar does not.
 
 `apps/mobile/src/components/app-tabs.tsx` is the Android + web shell (`expo-router/ui`'s headless
 `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the icon rail at the regular size class, the
