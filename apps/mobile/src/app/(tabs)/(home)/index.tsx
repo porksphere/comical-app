@@ -926,8 +926,10 @@ export default function BrowseScreen() {
           // Flush to the bar's bottom edge — the pinned heading carries a blurred material, and
           // two blurred surfaces with a strip of unblurred content between them reads as a gap in
           // the chrome, not as breathing room. It RIDES the bar's slide, so it stays met to that
-          // edge whether the bar is expanded or docked under the status bar.
-          stickyHeaderTop={headerHeight}
+          // edge whether the bar is expanded or docked under the status bar. Under the native bar
+          // the headings scroll with their sections instead, as Photos' do: there is no material
+          // for a pinned one to meet, and a heading stuck under a transparent bar floated.
+          stickyHeaderTop={NATIVE_HEADER ? undefined : headerHeight}
           stickyBarOffset={barOffset}
           stickyPinned={stickyPinned}
           ambient={feedTint}

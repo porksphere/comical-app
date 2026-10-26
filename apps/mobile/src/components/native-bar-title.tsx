@@ -3,18 +3,25 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
+import { useContentWidth } from '@/hooks/use-content-width';
 
 /**
  * The iOS navigation bar's title slot holding the custom bar's cluster — thumbnail, name ▾ — in place
  * of a title. The title slot is the one place in the bar UIKit never wraps in a Liquid Glass capsule
  * (every leading/trailing item is a bar button item and gets one), so the cluster reads as it does in
  * the custom bar: a picture and plain text with a caret, with only the real buttons beside it as
- * glass. Centred, because that is where the bar puts its title.
+ * glass.
+ *
+ * UIKit centres a title view in whatever is left between the bar's items, and iOS has no leading
+ * alignment for it. So the row asks for the whole bar's width: UIKit clamps a title view to the
+ * space it has and centres THAT, which puts its leading edge at the bar's margin — and the row,
+ * shrinkable, lays its cluster out from that edge. The cluster lands where the custom bar's did.
  */
 export function NativeBarTitle({ children }: { children: ReactNode }) {
+  const width = useContentWidth();
   return (
     <Stack.Title asChild>
-      <View style={styles.row}>{children}</View>
+      <View style={[styles.row, { width }]}>{children}</View>
     </Stack.Title>
   );
 }
@@ -23,9 +30,10 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-start',
     gap: Spacing.one,
-    // The bar hands the title view the width left between its items; the labels inside shrink and
-    // truncate to it rather than the row overflowing them.
+    // The width above is a request; the bar hands the title view what is left between its items
+    // and the row shrinks to it, the labels inside truncating rather than the row overflowing.
     flexShrink: 1,
     minWidth: 0,
   },

@@ -19,7 +19,8 @@ export type LibraryGridChrome = {
   listRef: RefObject<LegendListRef | null>;
   paddingTop: number;
   paddingBottom: number;
-  stickyHeaderTop: number;
+  /** Omitted where section headings scroll inline rather than pinning under the bar. */
+  stickyHeaderTop?: number;
   stickyPinned: SharedValue<number>;
   sharedValues: { scrollOffset: SharedValue<number> };
   onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;

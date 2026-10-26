@@ -127,17 +127,17 @@ function FrameTrace() {
 
 /**
  * A settings category screen: on iOS the system navigation bar (title, back chevron, the same
- * transparent blur the tab stacks use — see `tab-stack`), elsewhere hidden behind the screen's
- * own TopBar. The screens pad past whichever is there via `useSettingsScrollPadding`.
+ * transparent bar over a soft scroll edge the tab stacks use — see `tab-stack`), elsewhere hidden
+ * behind the screen's own TopBar. The screens pad past whichever is there via `useSettingsScrollPadding`.
  */
 function settingsScreen(title: string): ComponentProps<typeof Stack.Screen>['options'] {
   return NATIVE_HEADER
     ? {
         title,
         headerTransparent: true,
-        headerBlurEffect: 'systemChromeMaterial',
         headerShadowVisible: false,
         headerBackButtonDisplayMode: 'minimal',
+        scrollEdgeEffects: { top: 'soft' },
       }
     : { headerShown: false };
 }
