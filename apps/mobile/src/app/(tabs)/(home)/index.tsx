@@ -1,6 +1,7 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
+import { Stack } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -60,6 +61,7 @@ import { friendlyError } from '@/lib/friendly-error';
 import { useHasSidebar } from '@/hooks/use-content-width';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
+import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -610,7 +612,7 @@ export default function BrowseScreen() {
   // the safe-area inset), overlaid on the scrolling list. Unlike the old
   // expand-at-top/collapse-on-scroll animation, the bar itself never changes size —
   // instead it slides as a whole (see `headerStyle` below), X/Twitter-style.
-  const headerHeight = insets.top + barHeight;
+  const headerHeight = useTopChromeHeight();
   // The bridge/page bar slides up 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
   // helper — the same one the Search filter bar uses, so their motion can't drift. The slide
   // distance is `barHeight`, NOT `headerHeight`: the bar stops once its content band is gone,
@@ -620,7 +622,8 @@ export default function BrowseScreen() {
   // status bar. On a device/viewport with no top inset (web), the same distance hides the bar
   // entirely, so there's no orphaned strip. It's fed the list's UI-thread scroll offset via
   // `sharedValues` + the plain `onListScroll` (both wired on the list below); a `gridScope` change
-  // snaps the bar back to visible and scrolls the list to the top.
+  // snaps the bar back to visible and scrolls the list to the top. The system bar on iOS does not
+  // slide (a distance of 0 pins it), so there the hook only keeps the list's scroll bookkeeping.
   const {
     scrollY,
     maxScrollY,
@@ -629,7 +632,7 @@ export default function BrowseScreen() {
     contentStyle: headerContentStyle,
     sharedValues,
     onScroll: onListScroll,
-  } = useSlidingBar(barHeight, { resetKey: gridScope, listRef });
+  } = useSlidingBar(NATIVE_HEADER ? 0 : barHeight, { resetKey: gridScope, listRef });
   // The tab bar slides off the SAME shared values the top bar does — one offset, one content-end
   // measurement, both read on the UI thread, so the two bars can't disagree about a gesture or about
   // where the elastic bottom bounce starts. This used to be a `runOnJS(reportOffset)` per frame: a
@@ -744,6 +747,50 @@ export default function BrowseScreen() {
         )}
       </Animated.View>
     </BarSurface>
+  );
+  // The same controls as system items on iOS: the bridge and the page as menus, the search as a
+  // bar button, the thumbnail (the NSFW hold target) as a custom item. No title — the page menu's
+  // label is the heading, as the selector is in the custom bar.
+  const nativeHeader = (
+    <>
+      <Stack.Title>{''}</Stack.Title>
+      <Stack.Toolbar placement="left">
+        {currentBridge ? (
+          <Stack.Toolbar.View>
+            <HoldActionTarget testID="browse.nsfw-hold" size={thumbSize}>
+              <BridgeThumb
+                uri={currentBridge.thumbnail}
+                source={isComical ? COMICAL_ICON : undefined}
+                label={currentBridge.name}
+                size={thumbSize}
+                fill
+              />
+            </HoldActionTarget>
+          </Stack.Toolbar.View>
+        ) : null}
+        {!railNav && (
+          <Stack.Toolbar.Menu accessibilityLabel="Bridge">
+            <Stack.Toolbar.Label>{currentBridge?.name ?? 'Bridge'}</Stack.Toolbar.Label>
+            {visibleBridges.map((b) => (
+              <Stack.Toolbar.MenuAction key={b.id} isOn={b.id === currentBridge?.id} onPress={() => selectBridge(b.id)}>
+                {bridgeLabels[b.id] ?? b.name}
+              </Stack.Toolbar.MenuAction>
+            ))}
+          </Stack.Toolbar.Menu>
+        )}
+        <Stack.Toolbar.Menu accessibilityLabel="Page">
+          <Stack.Toolbar.Label>{pageLabels[pageKey(page)] ?? pageKey(page)}</Stack.Toolbar.Label>
+          {pageKeys.map((key) => (
+            <Stack.Toolbar.MenuAction key={key} isOn={key === pageKey(page)} onPress={() => selectPage(key)}>
+              {pageLabels[key] ?? key}
+            </Stack.Toolbar.MenuAction>
+          ))}
+        </Stack.Toolbar.Menu>
+      </Stack.Toolbar>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={openSearch} />
+      </Stack.Toolbar>
+    </>
   );
 
   // Header for the flat results/favorites/page grid (SeriesGrid only): just a results error, if any.
@@ -914,7 +961,7 @@ export default function BrowseScreen() {
           wrapperStyle={[pull.listStyle, listDimStyle]}
         />
       )}
-      {topBar}
+      {NATIVE_HEADER ? nativeHeader : topBar}
       <PullIndicator {...pull.indicator} top={headerHeight} />
     </ThemedView>
   );

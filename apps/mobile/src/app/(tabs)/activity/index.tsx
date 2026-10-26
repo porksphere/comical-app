@@ -24,6 +24,7 @@ import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
+import { NativeTabHeader } from '@/components/native-tab-header';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -39,7 +40,8 @@ import { useContentWidth } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
-import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
+import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
+import { useIsDesktop } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
@@ -231,8 +233,7 @@ export default function ActivityScreen() {
   // by the time the page closes — see useZoomSurfaceList.
   useZoomSurfaceList(zoomSurface, rows, activitySeriesId, listRef);
 
-  const barHeight = useTopBarHeight();
-  const headerHeight = insets.top + barHeight;
+  const headerHeight = useTopChromeHeight();
   // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
   // explicit paddingLeft/Right is the reliable lever. Only the centring inset (web); the row owns its
@@ -358,15 +359,19 @@ export default function ActivityScreen() {
       )}
 
       <PullIndicator {...pull.indicator} top={headerHeight} />
-      <TabTitleBar
-        title="Activity"
-        titleSlot={
-          filter.open ? (
-            <TabFilterField filter={filter} testID="activity.search" placeholder="Filter activity…" />
-          ) : undefined
-        }
-        right={<TabFilterTrigger filter={filter} testID="activity.search" placeholder="Filter activity…" />}
-      />
+      {NATIVE_HEADER ? (
+        <NativeTabHeader title="Activity" filter={filter} placeholder="Filter activity…" />
+      ) : (
+        <TabTitleBar
+          title="Activity"
+          titleSlot={
+            filter.open ? (
+              <TabFilterField filter={filter} testID="activity.search" placeholder="Filter activity…" />
+            ) : undefined
+          }
+          right={<TabFilterTrigger filter={filter} testID="activity.search" placeholder="Filter activity…" />}
+        />
+      )}
     </ThemedView>
     </ZoomSurfaceContext.Provider>
   );

@@ -14,6 +14,7 @@ import { notifyPrefs$, useNotifyPrefs } from '@/data/activity/prefs';
 import { queryKeys } from '@/data/queries';
 import { useMockActive } from '@/data/source';
 import { useHydrated } from '@/hooks/use-responsive';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { desktopShell, trayName } from '@/lib/desktop-shell';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
@@ -21,7 +22,7 @@ import { scrollbarInset } from '@/lib/scrollbar-inset';
 const isNative = Platform.OS !== 'web';
 
 export default function NotificationsSettingsScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding({ nativeHeader: NATIVE_HEADER });
   const queryClient = useQueryClient();
   const mock = useMockActive();
   const { autoCheck, backgroundCheck, wifiOnly, notifications, appBadge, caughtUpOnly } = useNotifyPrefs();
@@ -94,7 +95,7 @@ export default function NotificationsSettingsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar title="Notifications" />
+      {!NATIVE_HEADER && <TopBar title="Notifications" />}
       <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection
           title="Checking"

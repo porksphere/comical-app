@@ -28,10 +28,12 @@ Sentry.init({
    first thing to run. */
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import type { ComponentProps } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { SplashGate } from '@/components/splash-gate';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ConfirmPopupHost } from '@/components/confirm-popup';
@@ -123,6 +125,23 @@ function FrameTrace() {
   return null;
 }
 
+/**
+ * A settings category screen: on iOS the system navigation bar (title, back chevron, the same
+ * transparent blur the tab stacks use — see `tab-stack`), elsewhere hidden behind the screen's
+ * own TopBar. The screens pad past whichever is there via `useSettingsScrollPadding`.
+ */
+function settingsScreen(title: string): ComponentProps<typeof Stack.Screen>['options'] {
+  return NATIVE_HEADER
+    ? {
+        title,
+        headerTransparent: true,
+        headerBlurEffect: 'systemChromeMaterial',
+        headerShadowVisible: false,
+        headerBackButtonDisplayMode: 'minimal',
+      }
+    : { headerShown: false };
+}
+
 function RootNavigation() {
   // Active scheme from context (resolved once by ThemeSchemeProvider above) so the
   // navigation theme + status bar match the app content and re-theme live when the
@@ -143,7 +162,8 @@ function RootNavigation() {
       <OverlayProvider>
         {/* Native stack: real UINavigationController on iOS (large titles, back
             gesture) and the native toolbar on Android. The tab group and every
-            pushed screen below hide the native header and render their own chrome. */}
+            pushed screen below hide the native header and render their own chrome,
+            except the settings categories, which take the system bar on iOS. */}
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           {/* Search renders its own top bar (search field + back button), so hide the native one. */}
@@ -177,13 +197,13 @@ function RootNavigation() {
           {/* These render their own <TopBar> (matching series.tsx), so the native
               stack header is hidden here too. The Settings tab is only a table of
               contents — every category below is a screen it pushes. */}
-          <Stack.Screen name="settings-general" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-notifications" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-shortcuts" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-sync" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-developer" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-about" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-whats-new" options={{ headerShown: false }} />
+          <Stack.Screen name="settings-general" options={settingsScreen('General')} />
+          <Stack.Screen name="settings-notifications" options={settingsScreen('Notifications')} />
+          <Stack.Screen name="settings-shortcuts" options={settingsScreen('Keyboard shortcuts')} />
+          <Stack.Screen name="settings-sync" options={settingsScreen('Sync')} />
+          <Stack.Screen name="settings-developer" options={settingsScreen('Developer')} />
+          <Stack.Screen name="settings-about" options={settingsScreen('About')} />
+          <Stack.Screen name="settings-whats-new" options={settingsScreen("What's new")} />
           <Stack.Screen name="scan-sync-server" options={{ headerShown: false }} />
           <Stack.Screen name="bridges" options={{ headerShown: false }} />
           <Stack.Screen name="trackers" options={{ headerShown: false }} />

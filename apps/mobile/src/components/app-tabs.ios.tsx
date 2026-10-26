@@ -23,11 +23,11 @@ import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBack
  * behaviour: `tabBarMinimizeBehavior` was the dead end that got the previous native shell reverted
  * (it only re-expanded at the very top), and the default bar is what every system app shows.
  *
- * Route NAMES (`index`, `library`, …) are the trigger names; the TABS table in `app-tabs.tsx` keys
+ * Route NAMES (`(home)`, `library`, …) are the trigger names; the TABS table in `app-tabs.tsx` keys
  * everything else by the tab's own name (`browse`, …), so the two are mapped here once.
  */
 const TAB_OF_ROUTE: Record<string, keyof typeof ROOT_TAB_PATHS> = {
-  index: 'browse',
+  '(home)': 'browse',
   library: 'library',
   history: 'history',
   activity: 'activity',
@@ -82,7 +82,7 @@ export default function AppTabs() {
           tintColor={theme.tabIconActive}
           iconColor={theme.tabIconInactive}
           screenListeners={screenListeners}>
-          <NativeTabs.Trigger name="index" disableAutomaticContentInsets unstable_nativeProps={measured}>
+          <NativeTabs.Trigger name="(home)" disableAutomaticContentInsets unstable_nativeProps={measured}>
             <NativeTabs.Trigger.Label>Browse</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'safari', selected: 'safari.fill' }} />
           </NativeTabs.Trigger>

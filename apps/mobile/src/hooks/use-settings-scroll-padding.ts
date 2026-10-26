@@ -4,6 +4,7 @@ import { useInSettingsPane } from '@/lib/settings-pane';
 
 
 import { BottomTabInset, MaxContentWidth, SettingsCardInset, SettingsGutter, SettingsTopGap, Spacing } from '@/constants/theme';
+import { NATIVE_HEADER, useNativeHeaderHeight } from '@/hooks/use-native-header';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 
 /**
@@ -21,11 +22,13 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
  * Getting it from here makes that impossible.
  *
  * The top bar is an absolute overlay on all of these screens, so the content pads PAST it (and
- * scrolls behind it) rather than starting below it.
+ * scrolls behind it) rather than starting below it. A screen that draws the system navigation
+ * bar instead on iOS (`nativeHeader`) pads past THAT — the custom overlay is not there to pad for.
  */
-export function useSettingsScrollPadding() {
+export function useSettingsScrollPadding({ nativeHeader = false }: { nativeHeader?: boolean } = {}) {
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
+  const nativeHeight = useNativeHeaderHeight();
   // In the settings modal the screen has neither of the things this reserves room for: its `TopBar`
   // stands down (see `settings-pane`) and there is no tab bar under the panel. Paying for them
   // anyway left a bar's worth of empty space above the first row and a tab bar's worth below.
@@ -44,7 +47,7 @@ export function useSettingsScrollPadding() {
   return {
     // Same value `useTopBarInset()` returns — the tab screen and the pushed screens have the same
     // bar, so they get the same inset without one of them having to know which it is.
-    paddingTop: insets.top + barHeight + SettingsTopGap,
+    paddingTop: (nativeHeader && NATIVE_HEADER ? nativeHeight : insets.top + barHeight) + SettingsTopGap,
     paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
     paddingHorizontal: SettingsGutter,
   };

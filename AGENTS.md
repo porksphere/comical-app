@@ -32,12 +32,24 @@ That is the whole reason it exists — a custom bar can only imitate that adapta
 `tabBarMinimizeBehavior` needed react-native-screens patches to find the content scroll view, and
 even then only re-expanded at the very top), and the default bar is what the system apps show. It is
 the one place SF Symbols are used instead of lucide, because the system bar draws its own items. Its
-triggers are named by ROUTE (`index`, `library`, …); the custom shell's `TABS` table keys by tab name
+triggers are named by ROUTE (`(home)`, `library`, …); the custom shell's `TABS` table keys by tab name
 (`browse`, …), and `app-tabs.ios.tsx` maps between the two for scroll-to-top. Per-tab safe-area
 insets already include the system bar, so `BottomTabInset` is 0 on iOS and `useHideTabBarOnScroll`
 leaves `tabBarProgress` at 0 there; a ROOT overlay (toast, request pill, card context menu) pads by
 `RootTabBarInset` instead, since the root provider's insets don't know about the bar. The bar has no
 testIDs, so the Maestro `tab.<name>` taps are Android/web only.
+
+The TOP bar follows the same split (`apps/mobile/src/hooks/use-native-header.ts`, `NATIVE_HEADER`):
+on iOS each tab directory is its own native Stack (`components/tab-stack.tsx`; a plain `Slot`
+elsewhere), so the tab screen gets a UINavigationBar INSIDE the UITabBarController — which is
+what lets UIKit carry its toolbar items into the side column together with the tabs. Those screens
+render `Stack.Title` / `Stack.Toolbar` / `Stack.SearchBar` items instead of `TabTitleBar`, and the
+settings categories take the system bar via `settingsScreen()` in the root layout. The system bar
+draws its own items, so its `Stack.Toolbar.Button`/`MenuAction` icons are SF Symbols too, and it
+has no testIDs either: `screen-title.*`, `*.search-icon`, `browse.bridge-selector`,
+`library.collection-selector` are Android/web only. Content pads by `useTopChromeHeight()` (the
+native bar's height on iOS, status bar + custom overlay elsewhere), so a screen swaps bars without
+relayout. Android and web keep the custom `TopBar`/`TabTitleBar` overlay.
 
 `apps/mobile/src/components/app-tabs.tsx` is the Android + web shell (`expo-router/ui`'s headless
 `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the icon rail at the regular size class, the

@@ -21,11 +21,13 @@ import {
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
 import { UpdatePip } from '@/components/tab-badge';
 import { SettingsSection, settingsRowFrame } from '@/components/settings/settings-row';
+import { NativeTabHeader } from '@/components/native-tab-header';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
@@ -64,7 +66,7 @@ export default function SettingsScreen() {
   // Settings keeps its bottom bar: this screen IS navigation, so sliding the nav away under the
   // finger only takes away the thing you came here to tap. See `usePinnedTabBar`.
   usePinnedTabBar();
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding({ nativeHeader: NATIVE_HEADER });
 
   const counts = useCategoryCounts();
   // Same sources as the Settings tab pip — badge the exact rows that produced it so opening Settings
@@ -201,7 +203,7 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
 
-      <TabTitleBar title="Settings" />
+      {NATIVE_HEADER ? <NativeTabHeader title="Settings" /> : <TabTitleBar title="Settings" />}
     </ThemedView>
   );
 }

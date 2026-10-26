@@ -26,6 +26,7 @@ import { useApiBase } from '@/data/api';
 import { getResolvedModeSync } from '@/data/embedded/preference';
 import { IS_DEMO_MODE, useMockActive } from '@/data/source';
 import { useAppUpdateAction, useAppUpdateCheck, useAppUpdateRecheck } from '@/data/use-app-update';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
@@ -63,7 +64,7 @@ function osLabel(): string {
 }
 
 export default function AboutScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding({ nativeHeader: NATIVE_HEADER });
   // Confirmation for the clipboard path, which is otherwise completely silent — no share sheet
   // appears, so without this the row looks broken. Clears itself, so it can't sit there claiming a
   // copy from several minutes ago.
@@ -144,7 +145,7 @@ export default function AboutScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar title="About" />
+      {!NATIVE_HEADER && <TopBar title="About" />}
       <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {/* No blurb above the list: the section headings and row labels already say what every value
             is, and a paragraph explaining a table of facts only pushed the facts down the screen. */}
