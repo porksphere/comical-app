@@ -89,6 +89,14 @@ on iOS 26, a BlurView below) that hugs the text — the caller renders it (`STIC
 it knows which part is the text, and Library's count joins its label in the capsule — and a
 hand-off fades it in place instead of pushing it, since nothing can slide out under a bar with no
 edge.
+The settings screens' enum rows are the same kind of thing: `SettingsSelectRow` is
+platform-split (`components/settings/select-row.ios.tsx` — the whole row a SwiftUI `Menu`
+trigger in iOS Settings' popup-row shape, `label … value ⌃⌄`, opening an inline `Picker` with
+the bridge thumbnails via the same thumb files; `select-row.tsx` keeps the anchored overlay
+picker for Android/web). A UIKit menu has no second line, so an OPTION's `description` is not
+shown on iOS, and the option test ids (`settings.select.<label>.option.<value>`) are not
+reachable there — only the row's. Multi-select enum fields (`MultiEnumRow` in
+`setting-field.tsx`) stay on the overlay everywhere: a system menu can't hold several checks.
 Secondary controls leave the title: Library's kind/filter/sort share one trailing `⋯`
 `Stack.Toolbar.Menu` (`components/library/library-native-toolbar.tsx`) — NOT a
 `placement="bottom"` toolbar, which is the navigation controller's toolbar and lays out UNDER
