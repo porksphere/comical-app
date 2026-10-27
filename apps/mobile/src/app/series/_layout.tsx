@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
+import { settingsScreen } from '@/lib/native-bar';
 import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
 
 // The series page is a CONTAINED TRANSPARENT MODAL (see the root layout), and
@@ -34,8 +35,8 @@ export default function SeriesReaderLayout() {
             gestureEnabled: false,
           }}
         />
-        <Stack.Screen name="series-downloads" />
-        <Stack.Screen name="downloads" />
+        <Stack.Screen name="series-downloads" options={settingsScreen('Downloads')} />
+        <Stack.Screen name="downloads" options={settingsScreen('Downloads')} />
         <Stack.Screen name="search" options={NATIVE_HEADER ? NESTED_SEARCH_BAR : undefined} />
       </Stack>
     </InSeriesPageStack.Provider>

@@ -11,7 +11,6 @@ import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { exportLibraryBackup, getBridges, getTrackers, restoreLibraryBackup, useApiBase } from '@/data/api';
@@ -84,7 +83,7 @@ const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
 ];
 
 export default function GeneralSettingsScreen() {
-  const contentPadding = useSettingsScrollPadding({ nativeHeader: NATIVE_HEADER });
+  const contentPadding = useSettingsScrollPadding();
   const [nsfwMode, setNsfwMode] = useNsfwMode();
   const [holdAction, setHoldAction] = useBrowseHoldAction();
   const [holdSound, setHoldSound] = useBrowseHoldSound();
@@ -145,7 +144,7 @@ export default function GeneralSettingsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {!NATIVE_HEADER && <TopBar title="General" />}
+      <TopBar title="General" />
       <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {/* Section titles name the GROUP, never a row in it: "APPEARANCE" over a row called
             Appearance said nothing the row didn't. */}

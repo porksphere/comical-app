@@ -22,10 +22,10 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
  * Getting it from here makes that impossible.
  *
  * The top bar is an absolute overlay on all of these screens, so the content pads PAST it (and
- * scrolls behind it) rather than starting below it. A screen that draws the system navigation
- * bar instead on iOS (`nativeHeader`) pads past THAT — the custom overlay is not there to pad for.
+ * scrolls behind it) rather than starting below it. On iOS every one of them draws the system
+ * navigation bar instead (`TopBar`), and pads past THAT — the custom overlay is not there to pad for.
  */
-export function useSettingsScrollPadding({ nativeHeader = false }: { nativeHeader?: boolean } = {}) {
+export function useSettingsScrollPadding() {
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
   const nativeHeight = useNativeHeaderHeight();
@@ -47,7 +47,7 @@ export function useSettingsScrollPadding({ nativeHeader = false }: { nativeHeade
   return {
     // Same value `useTopBarInset()` returns — the tab screen and the pushed screens have the same
     // bar, so they get the same inset without one of them having to know which it is.
-    paddingTop: (nativeHeader && NATIVE_HEADER ? nativeHeight : insets.top + barHeight) + SettingsTopGap,
+    paddingTop: (NATIVE_HEADER ? nativeHeight : insets.top + barHeight) + SettingsTopGap,
     paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
     paddingHorizontal: SettingsGutter,
   };

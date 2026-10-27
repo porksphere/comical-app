@@ -12,7 +12,6 @@ import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, SettingsCardInset, Spacing } from '@/constants/theme';
-import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { KEY_SPEED_MAX, KEY_SPEED_MIN, KEY_SPEED_STEP, setKeyPanSpeed, useKeyPanSpeed } from '@/lib/key-hold';
@@ -74,7 +73,7 @@ function rebind(action: KeyAction, chord: KeyChord, overrides: KeyOverrides): vo
 }
 
 export default function KeyboardShortcutsScreen() {
-  const contentPadding = useSettingsScrollPadding({ nativeHeader: NATIVE_HEADER });
+  const contentPadding = useSettingsScrollPadding();
   const overrides = useKeyOverrides();
   const panSpeed = useKeyPanSpeed();
   const zoomSpeed = useKeyZoomSpeed();
@@ -92,7 +91,7 @@ export default function KeyboardShortcutsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {!NATIVE_HEADER && <TopBar title="Keyboard shortcuts" />}
+      <TopBar title="Keyboard shortcuts" />
       <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection
           title="Layout"

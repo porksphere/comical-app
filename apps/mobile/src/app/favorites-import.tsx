@@ -85,7 +85,7 @@ export default function FavoritesImportScreen() {
   const allKeys = useMemo(() => rows.filter((i) => i.status !== 'in-library').map((i) => i.seriesId), [rows]);
   const newKeys = useMemo(() => rows.filter((i) => i.status === 'new').map((i) => i.seriesId), [rows]);
 
-  // Select mode is on from the first frame and never turns off (there's no `SelectToggle` here).
+  // Select mode is on from the first frame and never turns off (there's no select toggle here).
   const mode = useSelectMode(true);
   const ms = useMultiSelect(allKeys);
   const listExtra = useMemo(() => ({ selected: ms.selected }), [ms.selected]);

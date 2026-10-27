@@ -33,7 +33,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { SplashGate } from '@/components/splash-gate';
-import { NATIVE_HEADER } from '@/hooks/use-native-header';
+import { pushedScreen, settingsScreen } from '@/lib/native-bar';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ConfirmPopupHost } from '@/components/confirm-popup';
@@ -126,31 +126,6 @@ function FrameTrace() {
   return null;
 }
 
-/**
- * The system navigation bar on a pushed iOS screen: title, back chevron, the same transparent bar
- * over a soft scroll edge the tab stacks use — see `tab-stack`.
- */
-const NATIVE_BAR: ComponentProps<typeof Stack.Screen>['options'] = {
-  headerTransparent: true,
-  headerShadowVisible: false,
-  headerBackButtonDisplayMode: 'minimal',
-  scrollEdgeEffects: { top: 'soft' },
-};
-
-/**
- * A pushed screen that titles itself (results): the system bar on iOS, elsewhere hidden behind the
- * screen's own TopBar. The in-tab copies of the same screen get this from the tab's stack.
- */
-const pushedScreen: ComponentProps<typeof Stack.Screen>['options'] = NATIVE_HEADER ? NATIVE_BAR : { headerShown: false };
-
-/**
- * A settings category screen: the system bar on iOS, elsewhere hidden behind the screen's own
- * TopBar. The screens pad past whichever is there via `useSettingsScrollPadding`.
- */
-function settingsScreen(title: string): ComponentProps<typeof Stack.Screen>['options'] {
-  return NATIVE_HEADER ? { title, ...NATIVE_BAR } : { headerShown: false };
-}
-
 function RootNavigation() {
   // Active scheme from context (resolved once by ThemeSchemeProvider above) so the
   // navigation theme + status bar match the app content and re-theme live when the
@@ -189,7 +164,7 @@ function RootNavigation() {
               stack of its own and pushes the editors as screens — see app/search-filters. */}
           <Stack.Screen name="search-filters" options={filterSheet} />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
-          <Stack.Screen name="manage-collections" options={{ headerShown: false }} />
+          <Stack.Screen name="manage-collections" options={settingsScreen('Manage Collections')} />
           <Stack.Screen name="results" options={pushedScreen} />
           {/* THE series page — and the only reader there is: details and pages are one screen,
               either side one gesture from the other. Everything that used to push a standalone
@@ -214,9 +189,9 @@ function RootNavigation() {
             name="series"
             options={{ headerShown: false, animation: 'none', presentation: 'containedTransparentModal' }}
           />
-          {/* These render their own <TopBar> (matching series.tsx), so the native
-              stack header is hidden here too. The Settings tab is only a table of
-              contents — every category below is a screen it pushes. */}
+          {/* The Settings tab is only a table of contents — every screen below is one it pushes.
+              Each takes the system bar on iOS (its `TopBar` retitles it and adds its actions)
+              and draws that `TopBar` itself elsewhere. */}
           <Stack.Screen name="settings-general" options={settingsScreen('General')} />
           <Stack.Screen name="settings-notifications" options={settingsScreen('Notifications')} />
           <Stack.Screen name="settings-shortcuts" options={settingsScreen('Keyboard shortcuts')} />
@@ -224,24 +199,24 @@ function RootNavigation() {
           <Stack.Screen name="settings-developer" options={settingsScreen('Developer')} />
           <Stack.Screen name="settings-about" options={settingsScreen('About')} />
           <Stack.Screen name="settings-whats-new" options={settingsScreen("What's new")} />
-          <Stack.Screen name="scan-sync-server" options={{ headerShown: false }} />
-          <Stack.Screen name="bridges" options={{ headerShown: false }} />
-          <Stack.Screen name="trackers" options={{ headerShown: false }} />
-          <Stack.Screen name="bridge-settings" options={{ headerShown: false }} />
-          <Stack.Screen name="tracker-settings" options={{ headerShown: false }} />
-          <Stack.Screen name="registries" options={{ headerShown: false }} />
-          <Stack.Screen name="custom-pages" options={{ headerShown: false }} />
-          <Stack.Screen name="custom-page-editor" options={{ headerShown: false }} />
-          <Stack.Screen name="custom-section-editor" options={{ headerShown: false }} />
-          <Stack.Screen name="registry-browse" options={{ headerShown: false }} />
-          <Stack.Screen name="add-registry" options={{ headerShown: false }} />
-          <Stack.Screen name="diagnostics" options={{ headerShown: false }} />
-          <Stack.Screen name="gesture-trace" options={{ headerShown: false }} />
-          <Stack.Screen name="downloads" options={{ headerShown: false }} />
-          <Stack.Screen name="series-downloads" options={{ headerShown: false }} />
-          <Stack.Screen name="storage" options={{ headerShown: false }} />
-          <Stack.Screen name="favorites-import" options={{ headerShown: false }} />
-          <Stack.Screen name="tracker-import" options={{ headerShown: false }} />
+          <Stack.Screen name="scan-sync-server" options={settingsScreen('Scan a code')} />
+          <Stack.Screen name="bridges" options={settingsScreen('Bridges')} />
+          <Stack.Screen name="trackers" options={settingsScreen('Trackers')} />
+          <Stack.Screen name="bridge-settings" options={settingsScreen('Bridge settings')} />
+          <Stack.Screen name="tracker-settings" options={settingsScreen('Tracker settings')} />
+          <Stack.Screen name="registries" options={settingsScreen('Registries')} />
+          <Stack.Screen name="custom-pages" options={settingsScreen('Custom Pages')} />
+          <Stack.Screen name="custom-page-editor" options={settingsScreen('Custom Page')} />
+          <Stack.Screen name="custom-section-editor" options={settingsScreen('Section')} />
+          <Stack.Screen name="registry-browse" options={settingsScreen('Browse registry')} />
+          <Stack.Screen name="add-registry" options={settingsScreen('Add registry')} />
+          <Stack.Screen name="diagnostics" options={settingsScreen('Diagnostics')} />
+          <Stack.Screen name="gesture-trace" options={settingsScreen('Gesture trace')} />
+          <Stack.Screen name="downloads" options={settingsScreen('Downloads')} />
+          <Stack.Screen name="series-downloads" options={settingsScreen('Downloads')} />
+          <Stack.Screen name="storage" options={settingsScreen('Storage')} />
+          <Stack.Screen name="favorites-import" options={settingsScreen('Import favorites')} />
+          <Stack.Screen name="tracker-import" options={settingsScreen('Import')} />
         </Stack>
         <DemoBanner />
         {/* Root host for the native card long-press context menu (dim + lifted preview + menu). Only

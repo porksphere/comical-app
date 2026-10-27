@@ -7,7 +7,7 @@ import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
 import { ArrowUpIcon, BridgesIcon, CheckIcon, ClearIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { SelectLead, SelectLeadGap, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
+import { SelectLead, SelectLeadGap, SelectPillBar, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
@@ -20,7 +20,7 @@ import { UpdateDot } from '@/components/tab-badge';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { TopBar, TopBarButton } from '@/components/top-bar';
+import { TopBar, type TopBarAction } from '@/components/top-bar';
 import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
 import type { BridgeSummary } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
@@ -112,6 +112,7 @@ export default function BridgesScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'bridges.select-toggle');
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
   const stagingRows = [
     {
@@ -275,29 +276,26 @@ export default function BridgesScreen() {
     );
   };
 
+  const checkUpdates: TopBarAction = {
+    label: 'Check for bridge updates',
+    testID: 'bridges.check-updates',
+    onPress: () => void checkForUpdates(),
+    icon: checking ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />,
+  };
+
   return (
     <ThemedView style={styles.container}>
       <TopBar
         title={selecting ? `${ms.count} selected` : 'Bridges'}
-        right={
-          selecting ? (
-            <SelectToggle selecting onToggle={toggleSelecting} testID="bridges.select-toggle" />
-          ) : (
-            // The + install button now lives in the floating FAB below (hidden in select mode); the
-            // top-right holds the select toggle where the + used to be.
-            <View style={styles.topActions}>
-              {/* Web has no pull-to-refresh on this list, so the check gets a button there. */}
-              {IS_WEB && (visible?.length ?? 0) > 0 && (
-                <TopBarButton
-                  testID="bridges.check-updates"
-                  icon={checking ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />}
-                  label="Check for bridge updates"
-                  onPress={() => void checkForUpdates()}
-                />
-              )}
-              {allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="bridges.select-toggle" />}
-            </View>
-          )
+        actions={
+          selecting
+            ? [selectToggle]
+            : [
+                // Web has no pull-to-refresh on this list, so the check gets a button there.
+                ...(IS_WEB && (visible?.length ?? 0) > 0 ? [checkUpdates] : []),
+                // The + install button lives in the floating FAB below (hidden in select mode).
+                ...(allKeys.length > 0 ? [selectToggle] : []),
+              ]
         }
       />
       {isError ? (
@@ -373,10 +371,6 @@ export default function BridgesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  topActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   // Hugs the top-right corner of the 28-wide RowIcon tile so the dot overlaps the artwork, mirroring
   // how the Settings category row places its update pip over the section glyph.

@@ -32,9 +32,9 @@ import {
   PILL_HEIGHT,
   SelectLead,
   SelectPillBar,
-  SelectToggle,
   useDragSelect,
   useSelectMode,
+  useSelectToggle,
 } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
@@ -187,6 +187,7 @@ export default function DownloadsScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'downloads.select-toggle');
 
   // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
   const listRef = useRef<LegendListRef>(null);
@@ -364,10 +365,7 @@ export default function DownloadsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar
-        title={selecting ? `${ms.count} selected` : 'Downloads'}
-        right={<SelectToggle selecting={selecting} onToggle={toggleSelecting} testID="downloads.select-toggle" />}
-      />
+      <TopBar title={selecting ? `${ms.count} selected` : 'Downloads'} actions={[selectToggle]} />
       <LegendList
         ref={listRef}
         onScroll={(e) => {

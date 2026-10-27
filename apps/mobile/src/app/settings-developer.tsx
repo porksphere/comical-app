@@ -5,7 +5,6 @@ import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useApiBase } from '@/data/api';
@@ -17,14 +16,14 @@ import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
  *  `PROFILING_ENABLED`; the route itself stays registered unconditionally, since a route that exists
  *  but is unreachable costs nothing while a conditional <Stack.Screen> would just be noise. */
 export default function DeveloperSettingsScreen() {
-  const contentPadding = useSettingsScrollPadding({ nativeHeader: NATIVE_HEADER });
+  const contentPadding = useSettingsScrollPadding();
   const [mockEnabled, setMockEnabled] = useMockDataToggle();
   const [apiBase] = useApiBase();
   const profilerOn = useDevProfilerEnabled();
 
   return (
     <ThemedView style={styles.container}>
-      {!NATIVE_HEADER && <TopBar title="Developer" />}
+      <TopBar title="Developer" />
       <ScrollView
         style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[styles.content, contentPadding]}>

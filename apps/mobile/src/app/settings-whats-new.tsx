@@ -24,7 +24,6 @@ import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, SettingsCardInset, Spacing } from '@/constants/theme';
 import { noteLines, type ReleaseNote } from '@/data/release-notes';
 import { type AppUpdateAction, useAppUpdateAction, useAppUpdateCheck } from '@/data/use-app-update';
-import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useTheme } from '@/hooks/use-theme';
@@ -68,13 +67,13 @@ const UPDATE_LABEL: Record<AppUpdateAction['step'], string> = {
 
 export default function WhatsNewScreen() {
   const update = useAppUpdateCheck();
-  const contentPadding = useSettingsScrollPadding({ nativeHeader: NATIVE_HEADER });
+  const contentPadding = useSettingsScrollPadding();
   const pending = update.pending ?? [];
   const updateAction = useAppUpdateAction();
 
   return (
     <ThemedView style={styles.container}>
-      {!NATIVE_HEADER && <TopBar title="What's new" />}
+      <TopBar title="What's new" />
       <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {pending.length > 0 && (
           <SettingsSection title={pending.length > 1 ? 'Available now' : 'Available'}>

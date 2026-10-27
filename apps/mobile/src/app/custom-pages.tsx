@@ -6,7 +6,7 @@ import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
 import { CheckIcon, ClearIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { SelectLead, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
+import { SelectLead, SelectPillBar, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { ReorderableList } from '@/components/settings/reorderable-list';
@@ -47,6 +47,7 @@ export default function CustomPagesScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'custom-pages.select-toggle');
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
   const stagingRows = [
     {
@@ -149,18 +150,8 @@ export default function CustomPagesScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar
-        title={selecting ? `${ms.count} selected` : 'Custom Pages'}
-        right={
-          selecting ? (
-            <SelectToggle selecting onToggle={toggleSelecting} testID="custom-pages.select-toggle" />
-          ) : (
-            // The + add button now lives in the floating FAB below (hidden in select mode); the
-            // top-right holds the select toggle where the + used to be.
-            allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="custom-pages.select-toggle" />
-          )
-        }
-      />
+      {/* The + add button lives in the floating FAB below (hidden in select mode). */}
+      <TopBar title={selecting ? `${ms.count} selected` : 'Custom Pages'} actions={selecting || allKeys.length > 0 ? [selectToggle] : undefined} />
       {pages.length === 0 ? (
         <View style={[styles.stateHost, styles.empty, contentPadding]}>
           <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>

@@ -51,8 +51,12 @@ The TOP bar follows the same split (`apps/mobile/src/hooks/use-native-header.ts`
 on iOS each tab directory is its own native Stack (`components/tab-stack.tsx`; a plain `Slot`
 elsewhere), so the tab screen gets a UINavigationBar INSIDE the UITabBarController — which is
 what lets UIKit carry its toolbar items into the side column together with the tabs. Those screens
-render `Stack.Title` / `Stack.Toolbar` / `Stack.SearchBar` items instead of `TabTitleBar`, and the
-settings categories take the system bar via `settingsScreen()` in the root layout. The system bar
+render `Stack.Title` / `Stack.Toolbar` / `Stack.SearchBar` items instead of `TabTitleBar`. Every
+pushed settings-reachable screen (categories, bridges, registries, downloads, …) is registered
+with `settingsScreen()` (`lib/native-bar.ts`) so it takes the system bar; its `TopBar` then IS
+that bar on iOS — it retitles it and renders the structured `actions` as trailing
+`Stack.Toolbar.Button`s (an SF Symbol, or the Select / Done words from `useSelectToggle`),
+and draws the custom overlay with the same actions as lucide buttons elsewhere. The system bar
 draws its own items, so its `Stack.Toolbar.Button`/`MenuAction` icons are SF Symbols too, and it
 has no testIDs either: `screen-title.*`, `*.search-icon`, `browse.bridge-selector`,
 `library.collection-selector` are Android/web only. Content pads by `useTopChromeHeight()` (the

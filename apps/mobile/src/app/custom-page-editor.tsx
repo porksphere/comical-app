@@ -7,7 +7,7 @@ import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
 import { CheckIcon, ClearIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { SelectLead, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
+import { SelectLead, SelectPillBar, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useOverlay } from '@/components/overlay/overlay';
 import { ReorderableList } from '@/components/settings/reorderable-list';
@@ -61,6 +61,11 @@ export default function CustomPageEditorScreen() {
   const selecting = mode.selecting;
   const allKeys = useMemo(() => sections.map((s) => s.id), [sections]);
   const ms = useMultiSelect(allKeys);
+  const toggleSelecting = () => {
+    if (selecting) ms.clear();
+    mode.toggle();
+  };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'custom-page-editor.select-toggle');
 
   const titleOf = (s: CustomSection) => s.name ?? resolver.listOf(s.bridgeId, s.listId)?.name ?? nameOf(s.bridgeId);
 
@@ -83,10 +88,6 @@ export default function CustomPageEditorScreen() {
       params: sectionId ? { pageId: page.id, sectionId } : { pageId: page.id },
     });
 
-  const toggleSelecting = () => {
-    if (selecting) ms.clear();
-    mode.toggle();
-  };
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
   const stagingRows = [
     {
@@ -161,17 +162,8 @@ export default function CustomPageEditorScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar
-        title={selecting ? `${ms.count} selected` : page.name}
-        right={
-          selecting ? (
-            <SelectToggle selecting onToggle={toggleSelecting} testID="custom-page-editor.select-toggle" />
-          ) : (
-            // + add button now lives in the floating FAB below; the top-right holds the select toggle.
-            allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="custom-page-editor.select-toggle" />
-          )
-        }
-      />
+      {/* The + add button lives in the floating FAB below (hidden in select mode). */}
+      <TopBar title={selecting ? `${ms.count} selected` : page.name} actions={selecting || allKeys.length > 0 ? [selectToggle] : undefined} />
       {sections.length === 0 ? (
         <View style={[styles.stateHost, styles.empty, contentPadding]}>
           <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>

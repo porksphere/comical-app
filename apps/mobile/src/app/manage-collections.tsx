@@ -15,7 +15,6 @@ import { SettingsGutter, Spacing } from '@/constants/theme';
 import type { Collection } from '@/data/types';
 import { useCollections } from '@/hooks/use-collections';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { useRouter } from '@/lib/nav';
 
 /**
  * The collections manager, pushed from the Library tab's selector ("Manage collections…"). Create,
@@ -25,7 +24,6 @@ import { useRouter } from '@/lib/nav';
  * `custom-pages.tsx`.
  */
 export default function ManageCollectionsScreen() {
-  const router = useRouter();
   const contentPadding = useSettingsScrollPadding();
   const { openDialog } = useOverlay();
   const { collections, createCollection, renameCollection, reorderCollections, deleteCollection } = useCollections();
@@ -85,7 +83,7 @@ export default function ManageCollectionsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar title="Manage Collections" onBack={() => router.back()} />
+      <TopBar title="Manage Collections" />
 
       {collections.length === 0 ? (
         <View style={[styles.empty, contentPadding]}>
