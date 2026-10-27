@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated from 'react-native-reanimated';
 
+import { TabRootScrollContext } from '@/components/tab-scroll-marker';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 
@@ -22,8 +23,14 @@ import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@
  * (one-line re-exports under each tab directory; `inTabHref` in lib/nav sends a push there) — so
  * they open under the tab bar like any system app's detail page, rather than over the whole shell.
  * The series copy is the same contained transparent modal the root route is (its rationale is in
- * app/_layout), with no native edge-swipe: the page runs its own back-swipe and collapse. Search
- * and results take the stack's bar as it is — search puts its field in it (`Stack.SearchBar`).
+ * app/_layout), with no native edge-swipe: the page runs its own back-swipe and collapse — and,
+ * like the root route, it is a directory hosting a stack of its own (`tab-series-stack`), because
+ * the page's system bar must belong to a PUSHED screen, never to the modal itself. Search and
+ * results take the stack's bar as it is — search puts its field in it (`Stack.SearchBar`).
+ *
+ * The tab's root screen is the one whose list the system tab bar follows (minimize on scroll,
+ * scroll-to-top): `TabRootScrollContext` is what lets that list register itself — see
+ * `tab-scroll-marker`.
  */
 export default function TabStack() {
   if (!NATIVE_HEADER) return <Slot />;
@@ -57,7 +64,16 @@ export default function TabStack() {
  * (Before the pages moved in here the whole tab shell was the backdrop.)
  */
 function tabScreenLayout({ route, children }: { route: { name: string }; children: ReactNode }) {
-  return route.name === 'series' ? <>{children}</> : <TabBackdrop>{children}</TabBackdrop>;
+  if (route.name === 'series') return <>{children}</>;
+  return (
+    <TabBackdrop>
+      {route.name === 'index' ? (
+        <TabRootScrollContext.Provider value={true}>{children}</TabRootScrollContext.Provider>
+      ) : (
+        children
+      )}
+    </TabBackdrop>
+  );
 }
 
 function TabBackdrop({ children }: { children: ReactNode }) {

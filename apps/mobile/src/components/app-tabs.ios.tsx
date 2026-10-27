@@ -25,9 +25,10 @@ import { setBackdropRecede } from '@/lib/series-backdrop';
  * tab's capsule as the content scrolls down, and comes back when the scroll reaches the top or the
  * capsule is tapped — and ONLY then. That is UIKit's design, not a bug to work around: the previous
  * native shell spent days trying to make it re-expand mid-scroll like the custom bar does, and it
- * can't be done from outside UIKit's private implementation (react-native-screens #3954). UIKit
- * finds the scroll view to watch by walking each tab screen's first-descendant chain, through the
- * tab's stack to its top screen, so every tab's list is the first child of its screen.
+ * can't be done from outside UIKit's private implementation (react-native-screens #3954). The
+ * scroll view it watches is the one each tab's root screen registers through `TabScrollMarker`
+ * (left to its own first-descendant walk, UIKit never found Browse's list behind the feed's
+ * backdrop).
  *
  * Route NAMES (`(home)`, `library`, …) are the trigger names; the TABS table in `app-tabs.tsx` keys
  * everything else by the tab's own name (`browse`, …), so the two are mapped here once.

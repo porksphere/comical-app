@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TrashIcon } from '@/components/icons/ui-icons';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { NativeTabHeader } from '@/components/native-tab-header';
+import { TabScrollMarker } from '@/components/tab-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import {
@@ -194,48 +195,50 @@ export default function HistoryScreen() {
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
-        <AnimatedLegendList
-          ref={listRef}
-          // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
-          style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
-          data={visible}
-          keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
-          recycleItems={false}
-          itemLayoutAnimation={ROW_REORDER_TRANSITION}
-          // WEB ONLY: routes the reanimated scroll bridge through scrollEventThrottle:1 so onScroll
-          // fires mid-drag (see recycler-list.tsx for the full root-cause note). Without it the list
-          // only hears the wheel at gesture start and after it stops, so rows mount after a scroll,
-          // never during one.
-          renderScrollComponent={Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined}
-          contentContainerStyle={{
-            // Fill the viewport even with few rows, so the empty space below them is still part of
-            // the scroller and a drag can be started there (see SeriesGrid's note).
-            flexGrow: 1,
-            // Start flush under the top bar (like a settings list): the first row begins at the bar's
-            // bottom edge and its own top padding is all the separation it needs.
-            paddingTop: listPaddingTop(headerHeight),
-            paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
-            paddingLeft: sidePad,
-            paddingRight: sidePad,
-          }}
-          renderItem={({ item }) => (
-            <HistoryItem
-              item={item}
-              onResume={() => resume(item)}
-              onOpenDetail={() => openDetail(item)}
-              onRemove={() => removeMutation.mutate(item)}
-              bridge={nameOf(item.bridgeId)}
-              direct={directOf(item.bridgeId)}
-              chapters={chaptersOf.get(`${item.bridgeId}:${item.seriesId}`)}
-            />
-          )}
-          showsVerticalScrollIndicator={Platform.OS === 'web'}
-          sharedValues={sharedValues}
-          onScroll={onScroll}
-          // Gesture phases for the tab bar, which commits to shown/hidden on release — this screen
-          // owns its list rather than going through RecyclerList, which reports them itself.
-          {...scrollPhaseHandlers}
-        />
+        <TabScrollMarker>
+          <AnimatedLegendList
+            ref={listRef}
+            // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
+            style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
+            data={visible}
+            keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
+            recycleItems={false}
+            itemLayoutAnimation={ROW_REORDER_TRANSITION}
+            // WEB ONLY: routes the reanimated scroll bridge through scrollEventThrottle:1 so onScroll
+            // fires mid-drag (see recycler-list.tsx for the full root-cause note). Without it the list
+            // only hears the wheel at gesture start and after it stops, so rows mount after a scroll,
+            // never during one.
+            renderScrollComponent={Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined}
+            contentContainerStyle={{
+              // Fill the viewport even with few rows, so the empty space below them is still part of
+              // the scroller and a drag can be started there (see SeriesGrid's note).
+              flexGrow: 1,
+              // Start flush under the top bar (like a settings list): the first row begins at the bar's
+              // bottom edge and its own top padding is all the separation it needs.
+              paddingTop: listPaddingTop(headerHeight),
+              paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+              paddingLeft: sidePad,
+              paddingRight: sidePad,
+            }}
+            renderItem={({ item }) => (
+              <HistoryItem
+                item={item}
+                onResume={() => resume(item)}
+                onOpenDetail={() => openDetail(item)}
+                onRemove={() => removeMutation.mutate(item)}
+                bridge={nameOf(item.bridgeId)}
+                direct={directOf(item.bridgeId)}
+                chapters={chaptersOf.get(`${item.bridgeId}:${item.seriesId}`)}
+              />
+            )}
+            showsVerticalScrollIndicator={Platform.OS === 'web'}
+            sharedValues={sharedValues}
+            onScroll={onScroll}
+            // Gesture phases for the tab bar, which commits to shown/hidden on release — this screen
+            // owns its list rather than going through RecyclerList, which reports them itself.
+            {...scrollPhaseHandlers}
+          />
+        </TabScrollMarker>
       )}
 
       {NATIVE_HEADER ? (

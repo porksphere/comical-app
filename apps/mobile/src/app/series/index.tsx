@@ -3720,7 +3720,11 @@ function SeriesReaderInstance({
   // reader, which has no bar. Only the top instance sets the options (they are the route's, shared
   // by every layer), and the elements mount only while it is top, so a layer that becomes top again
   // re-applies them — Stack.Screen's effect runs on mount, and the toolbar unregisters its item on
-  // unmount. Works the same for the root route (its nested stack's index) and a tab's copy.
+  // unmount. The route these options reach is the `index` of a nested stack — the root route's
+  // (app/series/_layout) or a tab copy's (components/tab-series-stack) — never the contained
+  // transparent modal around it: react-native-screens remounts a modal's content when its
+  // `headerShown` flips, and this page flips it on every details ⇄ reader switch and for the
+  // search layer below.
   const nativeBarUp = NATIVE_HEADER && detailsActive;
   const nativeBar =
     NATIVE_HEADER && isTop ? (

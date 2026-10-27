@@ -31,9 +31,11 @@ That is the whole reason it exists — a custom bar can only imitate that adapta
 `minimizeBehavior="onScrollDown"`: on iOS 26 the bar collapses to the selected item while the
 content scrolls down and re-expands only at the very top or on a tap. That is UIKit's design
 (react-native-screens #3954), not a list bug — the earlier native shell chased mid-scroll
-re-expansion for days and reverted, so don't. react-native-screens finds the scroll view as the
-screen's first descendant (or the nested stack's top screen); a tab whose list it misses gets a
-`ScrollViewMarker` from `react-native-screens/experimental`. Liquid Glass bars tint from the
+re-expansion for days and reverted, so don't. The scroll view the bar follows is registered by
+`TabScrollMarker` (`react-native-screens/experimental`'s `ScrollViewMarker`, keyed with the list
+it wraps) around each tab ROOT screen's list, under `TabRootScrollContext` from the tab's stack —
+never a pushed page's: the registration is a hand-off to UIKit nothing takes back, and UIKit's own
+first-descendant walk missed Browse's list behind the feed backdrop. Liquid Glass bars tint from the
 WINDOW's interface style, not from the content, so `ThemeSchemeProvider` mirrors the theme
 preference into `Appearance.setColorScheme` on iOS — without that a dark theme sits over a light
 window and the bar glares white. It is
@@ -107,7 +109,12 @@ and the app-root overlays render behind it, so it runs a stack of its own and `F
 `data/filter-sheet.ts` (a one-slot module store, like `search-intent.ts`), since a root-stack modal
 cannot reach the screen's state by context. Search and results share the tab's one UINavigationBar with the screen under
 them, so their push animates the bar natively; the series page is a `containedTransparentModal`
-with its own zoom entrance, so its bar does not.
+with its own zoom entrance, so its bar does not. That modal — the root route and each tab's copy
+alike — hosts a nested Stack and the page's `Stack.Screen`/`Stack.Toolbar` address its `index`
+screen, never the modal: on iOS react-native-screens re-wraps a non-push screen's content whenever
+`headerShown` flips (`ScreenStackItem`'s `isHeaderInModal`) and remounts it, state and all. The
+series page flips it twice per visit (details ⇄ reader, the search layer), and when the flip hit
+the modal itself the search layer vanished on open and every open mounted the page twice.
 
 `apps/mobile/src/components/app-tabs.tsx` is the Android + web shell (`expo-router/ui`'s headless
 `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the icon rail at the regular size class, the

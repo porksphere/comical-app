@@ -17,10 +17,11 @@ type SeriesSubPath = '/series-downloads' | '/downloads';
  * series page (or one of its sub-pages) it prefixes the target into the nested stack — a real
  * native push with the edge-swipe back — and everywhere else it returns the path untouched.
  *
- * Only the ROOT series route has the nested stack. Its copies inside the iOS tab stacks
- * (`app/(tabs)/<tab>/series`) can't push a card over themselves either, so from one of those the
- * sub-page goes to the root route, over the tab shell — hence the segments, not the pathname,
- * which strips the `(tabs)` group and reads the same for both.
+ * Only the ROOT series route's nested stack has the sub-page routes. Its copies inside the iOS tab
+ * stacks (`app/(tabs)/<tab>/series`) host a nested stack too (`components/tab-series-stack`), but
+ * only for the page's system bar; they can't push a card over themselves either, so from one of
+ * those the sub-page goes to the root route, over the tab shell — hence the segments, not the
+ * pathname, which strips the `(tabs)` group and reads the same for both.
  *  */
 export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/series${SeriesSubPath}` {
   const segments: readonly string[] = useSegments();
@@ -146,8 +147,8 @@ export function useDrillRelatedSeries(): ((params: Record<string, string>) => vo
       if (!claimNavigation(navTargetKey({ pathname: '/series', params }))) return;
       // Only when actually ON a sub-page — from the combined page itself the nested stack is at
       // its root and the stack router rejects POP_TO_TOP (a noisy dev warning). By the top route's
-      // NAME, not the index: inside an iOS tab stack the nearest navigator is the tab's, where the
-      // series page itself sits above the tab screen, and popping to top there would close it.
+      // NAME, not the index, so a navigator with no sub-pages at all (a tab copy's nested stack)
+      // reads the same.
       const state = navigation.getState();
       const top = state?.routes[state.index]?.name;
       if (top === 'downloads' || top === 'series-downloads') navigation.dispatch({ type: 'POP_TO_TOP' });
