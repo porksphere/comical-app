@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { StyleSheet } from 'react-native';
 import Animated, { Extrapolation, interpolate, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
+import { HoldActionTarget } from '@/components/hold-action-target';
 import type { TabFilter } from '@/components/tab-filter';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -23,18 +24,24 @@ const FADE_END = 56;
  * The search bar is the integrated-button placement: a magnifier among the trailing items that
  * expands into the field on tap (iOS 26; an inline field under the title before that). Cancel
  * clears the query, which is what closing the custom field does too.
+ *
+ * With `holdTestID` the title is also the screen's NSFW hold target (`HoldActionTarget`): Browse
+ * keeps the gesture on its heading since its bar button is a system item, and a UIBarButtonItem
+ * has no long-press of its own; holding one only ever opens its menu.
  */
 export function NativeTabHeader({
   title,
   scrollY,
   filter,
   placeholder,
+  holdTestID,
 }: {
   title: string;
   /** The screen's live scroll offset; without one the title simply stays. */
   scrollY?: SharedValue<number>;
   filter?: TabFilter;
   placeholder?: string;
+  holdTestID?: string;
 }) {
   const theme = useTheme();
   const still = useSharedValue(0);
@@ -42,12 +49,21 @@ export function NativeTabHeader({
   const fade = useAnimatedStyle(() => ({
     opacity: interpolate(y.value, [FADE_START, FADE_END], [1, 0], Extrapolation.CLAMP),
   }));
+  const text = (
+    <Animated.Text numberOfLines={1} style={[styles.title, { color: theme.text }, fade]}>
+      {title}
+    </Animated.Text>
+  );
   return (
     <>
       <Stack.Title asChild>
-        <Animated.Text numberOfLines={1} style={[styles.title, { color: theme.text }, fade]}>
-          {title}
-        </Animated.Text>
+        {holdTestID ? (
+          <HoldActionTarget testID={holdTestID} label={title}>
+            {text}
+          </HoldActionTarget>
+        ) : (
+          text
+        )}
       </Stack.Title>
       {filter ? (
         <Stack.SearchBar

@@ -3,6 +3,8 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { useEffect, useMemo, useState } from 'react';
 import { PixelRatio } from 'react-native';
 
+import shapedImage from '../../modules/shaped-image';
+
 /**
  * A menu row's picture as a FILE: the system menu (`NativeSelector`) takes a row's image only as a
  * local file it reads itself, so a bridge's thumbnail — a URL, or the bundled Comical asset — is
@@ -12,19 +14,31 @@ import { PixelRatio } from 'react-native';
  * 1× and a menu then draws the bitmap point for pixel, blurry on a 3× screen. The same patch
  * bakes a `cornerRadius` modifier's radius into the bitmap, the only way a menu row's image
  * gets a rounded corner: the row takes the icon as a plain UIImage, past every modifier.
+ *
+ * The system NAVIGATION BAR (`Stack.Toolbar` items and their menus) reads its images through
+ * React Native's loader instead, at whatever `scale` the source says, and `@expo/ui`'s patch
+ * doesn't reach it, so a tile for the bar is clipped in the file itself by the `shaped-image`
+ * module (`radius`: the row's corner, or `BAR_THUMB_RADIUS` for the circle a bar button shows).
  */
 export const MENU_THUMB_PX = 28;
 /** The tile's corner, in points — the overlay menus' `thumb` radius. */
 export const MENU_THUMB_RADIUS = 6;
+/** Half the side: the circle a bar button's picture is clipped to. */
+export const BAR_THUMB_RADIUS = MENU_THUMB_PX / 2;
 
 const files = new Map<string, Promise<string | null>>();
 
-/** Resolves to the `file://` URI of `source`'s tile, or null when it can't be loaded. */
-export function menuThumbFile(source: string | number): Promise<string | null> {
-  const key = typeof source === 'number' ? `asset:${source}` : source;
+/** Resolves to the `file://` URI of `source`'s tile, clipped to `radius` points where the
+ *  shaping module is linked (the square tile elsewhere), or null when it can't be loaded. */
+export function menuThumbFile(source: string | number, radius?: number): Promise<string | null> {
+  const key = `${typeof source === 'number' ? `asset:${source}` : source}#${radius ?? ''}`;
   let file = files.get(key);
   if (!file) {
-    file = renderTile(source).catch(() => null);
+    file = renderTile(source)
+      .then((uri) =>
+        radius && shapedImage ? shapedImage.clip(uri, radius, PixelRatio.get()).catch(() => uri) : uri,
+      )
+      .catch(() => null);
     files.set(key, file);
   }
   return file;
@@ -60,13 +74,14 @@ async function renderTile(source: string | number): Promise<string> {
 export function useMenuThumbFiles(
   thumbnails?: Record<string, string>,
   sources?: Record<string, number>,
+  radius?: number,
 ): Record<string, string> {
   const wanted = useMemo(() => ({ ...thumbnails, ...sources }), [thumbnails, sources]);
   const [ready, setReady] = useState<Record<string, string>>({});
   useEffect(() => {
     let live = true;
     for (const [key, source] of Object.entries(wanted)) {
-      void menuThumbFile(source).then((uri) => {
+      void menuThumbFile(source, radius).then((uri) => {
         if (!live || !uri) return;
         setReady((prev) => (prev[key] === uri ? prev : { ...prev, [key]: uri }));
       });
@@ -74,6 +89,6 @@ export function useMenuThumbFiles(
     return () => {
       live = false;
     };
-  }, [wanted]);
+  }, [wanted, radius]);
   return ready;
 }

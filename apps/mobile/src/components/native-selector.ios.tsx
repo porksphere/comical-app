@@ -16,9 +16,10 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
 
-import type { NativeSelectorProps, SystemSymbol } from '@/components/native-selector';
+import type { NativeSelectorProps } from '@/components/native-selector';
 import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { initialSymbol } from '@/lib/initial-symbol';
 import { MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/menu-thumb-files';
 
 /**
@@ -105,13 +106,6 @@ export function NativeSelector({
 /** The overlay `Selector`'s `bar` type (20pt semibold) and its caret. */
 const BAR_TYPE = { size: 20, weight: 'semibold' } as const;
 const CARET_TYPE = { size: 12, weight: 'bold' } as const;
-
-/** The filled-square symbol for a label's initial — SF has one per letter and digit. */
-function initialSymbol(label: string): SystemSymbol {
-  const initial = label.trim().charAt(0).toLowerCase();
-  const name = /^[a-z0-9]$/.test(initial) ? `${initial}.square.fill` : 'questionmark.square.fill';
-  return name as SystemSymbol;
-}
 
 const styles = StyleSheet.create({
   host: {

@@ -1,7 +1,6 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
-import { Stack } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -21,13 +20,13 @@ import { SearchIcon } from '@/components/icons/ui-icons';
 import { SearchPill } from '@/components/search-pill';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
-import { BarThumbSize, BridgeThumbSize, Selector } from '@/components/selector';
+import { BridgeThumbSize, Selector } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { HoldActionTarget } from '@/components/hold-action-target';
-import { NativeBarTitle, useNativeBarTitleRoom } from '@/components/native-bar-title';
-import { NativeSelector } from '@/components/native-selector';
+import { BrowseNativeToolbar } from '@/components/browse-native-toolbar';
+import { NativeTabHeader } from '@/components/native-tab-header';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import {
   bridgePageOptions,
@@ -586,9 +585,6 @@ export default function BrowseScreen() {
 
   // Shared with the series-detail bar so both stay the same height.
   const barHeight = useTopBarHeight();
-  // The native bar's title row: the tile, then the two selectors sharing what is left beside the
-  // search capsule — the bridge's name the longer of the two, so it gets the larger share.
-  const selectorRoom = useNativeBarTitleRoom(1) - BarThumbSize - 2 * Spacing.three;
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
   const thumbSize = BridgeThumbSize;
@@ -753,50 +749,30 @@ export default function BrowseScreen() {
       </Animated.View>
     </BarSurface>
   );
-  // On iOS: the custom bar's cluster — thumbnail (the NSFW hold target), bridge ▾, page ▾ — stands
-  // in the bar's title slot at the title's size, the selectors opening system menus; only the
-  // search is a bar button, so it alone is a glass capsule.
+  // On iOS the bar holds only system items: the bridge's circle as the leading menu button
+  // (Bridge and Page submenus), the search trailing. The inline title names the view,
+  // "<bridge> <page>", fading out over the first scroll as History's and Activity's do, and is
+  // the NSFW hold target: a bar button's hold is its menu, so the gesture moves to the one
+  // thing in the bar that is still ours.
   const nativeHeader = (
     <>
-      <NativeBarTitle>
-        {currentBridge ? (
-          <HoldActionTarget testID="browse.nsfw-hold" size={BarThumbSize}>
-            <BridgeThumb
-              uri={currentBridge.thumbnail}
-              source={isComical ? COMICAL_ICON : undefined}
-              label={currentBridge.name}
-              size={BarThumbSize}
-              fill
-            />
-          </HoldActionTarget>
-        ) : null}
-        {!railNav && (
-          <NativeSelector
-            testID="browse.bridge-selector"
-            title="Bridge"
-            value={currentBridge?.id ?? ''}
-            options={visibleBridges.map((b) => b.id)}
-            onChange={selectBridge}
-            thumbnails={bridgeThumbnails}
-            sources={COMICAL_SOURCES}
-            labels={bridgeLabels}
-            tiles
-            maxWidth={Math.floor(selectorRoom * 0.55)}
-          />
-        )}
-        <NativeSelector
-          testID="browse.page-selector"
-          title="Page"
-          value={pageKey(page)}
-          options={pageKeys}
-          onChange={selectPage}
-          labels={pageLabels}
-          maxWidth={railNav ? selectorRoom : Math.floor(selectorRoom * 0.45)}
-        />
-      </NativeBarTitle>
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={openSearch} />
-      </Stack.Toolbar>
+      <NativeTabHeader
+        title={[currentBridge?.name, pageLabels[pageKey(page)]].filter(Boolean).join(' ')}
+        scrollY={scrollY}
+        holdTestID="browse.nsfw-hold"
+      />
+      <BrowseNativeToolbar
+        bridges={visibleBridges}
+        thumbnails={bridgeThumbnails}
+        sources={COMICAL_SOURCES}
+        bridgeId={currentBridge?.id}
+        onSelectBridge={selectBridge}
+        withBridges={!railNav}
+        pages={pageOptions}
+        page={pageKey(page)}
+        onSelectPage={selectPage}
+        onSearch={openSearch}
+      />
     </>
   );
 

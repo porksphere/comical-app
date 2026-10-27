@@ -66,10 +66,16 @@ relayout. Android and web keep the custom `TopBar`/`TabTitleBar` overlay.
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
 names the screen and the search: History/Activity/Settings use an inline title that fades out
 over the first scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's
-`scrollY`; large titles looked foreign beside the custom clusters); Library's and
-Browse's heading is the custom bar's own cluster — thumbnail, collection/bridge ▾, page ▾ — standing
-in the TITLE slot (`components/native-bar-title.tsx`, `Stack.Title asChild`) at the bar's title
-size. Those selectors are SYSTEM menus (`components/native-selector.ios.tsx`: a SwiftUI `Menu`
+`scrollY`; large titles looked foreign beside the custom clusters). Browse uses that same
+fading title, "<bridge> <page>", and it is also Browse's NSFW hold target
+(`NativeTabHeader holdTestID`): its bar holds only SYSTEM items — the current bridge's
+thumbnail as a circle in the leading glass capsule, a `Stack.Toolbar.Menu` with Bridge and Page
+submenus of checkmarked rows (`components/browse-native-toolbar.tsx`), and the search trailing —
+so UIKit lays the bar out itself and morphs that capsule into a pushed screen's back button; a
+`UIBarButtonItem` has no long-press of its own (holding one opens its menu), which is why the
+hold is on the title. Library's heading is still the custom bar's own cluster — thumbnail,
+collection ▾, page ▾ — standing in the TITLE slot (`components/native-bar-title.tsx`,
+`Stack.Title asChild`) at the bar's title size. Its selectors are SYSTEM menus (`components/native-selector.ios.tsx`: a SwiftUI `Menu`
 from `@expo/ui/swift-ui` in a `Host`, holding an inline `Picker` for the checkmarked rows plus
 `Button`s for actions like "Manage collections…"), not the overlay menus Android/web open. A
 menu row takes its image only as a local FILE it reads itself, past every modifier, so
@@ -77,9 +83,14 @@ menu row takes its image only as a local FILE it reads itself, past every modifi
 a 28pt PNG at the screen's scale once per session, and `patches/@expo%2Fui@…` (bun
 `patchedDependencies`) makes `@expo/ui`'s image loader decode it at that scale and bake a
 `cornerRadius` modifier into the bitmap — stock it decodes 1× (blurry on a 3× screen) and a
-menu never rounds; a row without art shows its initial as an SF `x.square.fill`,
-and the All view an `asterisk` — the other place SF Symbols stand in for lucide. The RN tile
-beside the host stays RN, since it is the NSFW hold target. The title slot is the
+menu never rounds; a row without art shows its initial as an SF `x.square.fill`
+(`lib/initial-symbol.ts`; `x.circle.fill` for the bar button), and the All view an `asterisk` —
+the other place SF Symbols stand in for lucide. The navigation bar's own items and menus read
+their images through React Native's loader instead, which the `@expo/ui` patch never touches, so
+for them the SHAPE is in the file: the local Expo module `apps/mobile/modules/shaped-image`
+(Swift, iOS only, `null` elsewhere) clips a rendered tile to a corner or a circle and
+`menuThumbFile(source, radius)` keeps one file per shape. Library's RN tile
+beside the host stays RN, since it is the NSFW hold target there. The title slot is the
 one place the bar never wraps in a Liquid Glass capsule — every left/right item is a
 `UIBarButtonItem` and gets one, and `hidesSharedBackground` on a custom-view item did not take it
 off in practice — so the cluster reads plain and only the real buttons beside it (search) are
