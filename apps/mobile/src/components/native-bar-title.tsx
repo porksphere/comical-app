@@ -26,6 +26,18 @@ export function NativeBarTitle({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * What is left of the row for its selectors' text once the bar's margins and its `items`
+ * trailing capsules are placed — what a selector may grow to before truncating. The capsule's
+ * width and the margin are UIKit's own (iOS 26), measured rather than exposed.
+ */
+export function useNativeBarTitleRoom(items: number): number {
+  return useContentWidth() - 2 * BAR_MARGIN - items * BAR_ITEM_WIDTH;
+}
+
+const BAR_MARGIN = 16;
+const BAR_ITEM_WIDTH = 52;
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',

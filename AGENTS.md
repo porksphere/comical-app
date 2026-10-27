@@ -65,7 +65,14 @@ over the first scroll (`components/native-tab-header.tsx`, `Stack.Title asChild`
 `scrollY`; large titles looked foreign beside the custom clusters); Library's and
 Browse's heading is the custom bar's own cluster — thumbnail, collection/bridge ▾, page ▾ — standing
 in the TITLE slot (`components/native-bar-title.tsx`, `Stack.Title asChild`) at the bar's title
-size (`Selector size="bar"`), opening the same overlay menus as on Android/web. The title slot is the
+size. Those selectors are SYSTEM menus (`components/native-selector.ios.tsx`: a SwiftUI `Menu`
+from `@expo/ui/swift-ui` in a `Host`, holding an inline `Picker` for the checkmarked rows plus
+`Button`s for actions like "Manage collections…"), not the overlay menus Android/web open. A
+menu row takes its image only as a local FILE it reads itself and draws point-for-pixel, so
+`lib/menu-thumb-files.ts` renders each bridge thumbnail (or the bundled Comical asset) down to
+a 28px PNG once per session; a row without art shows its initial as an SF `x.square.fill`,
+and the All view an `asterisk` — the other place SF Symbols stand in for lucide. The RN tile
+beside the host stays RN, since it is the NSFW hold target. The title slot is the
 one place the bar never wraps in a Liquid Glass capsule — every left/right item is a
 `UIBarButtonItem` and gets one, and `hidesSharedBackground` on a custom-view item did not take it
 off in practice — so the cluster reads plain and only the real buttons beside it (search) are
@@ -78,8 +85,10 @@ on iOS 26, a BlurView below) that hugs the text — the caller renders it (`STIC
 it knows which part is the text, and Library's count joins its label in the capsule — and a
 hand-off fades it in place instead of pushing it, since nothing can slide out under a bar with no
 edge.
-Secondary controls leave the bar: Library's kind/filter/sort are a `Stack.Toolbar
-placement="bottom"` (`components/library/library-native-toolbar.tsx`). The native toolbar
+Secondary controls leave the title: Library's kind/filter/sort share one trailing `⋯`
+`Stack.Toolbar.Menu` (`components/library/library-native-toolbar.tsx`) — NOT a
+`placement="bottom"` toolbar, which is the navigation controller's toolbar and lays out UNDER
+the floating tab bar. The native toolbar
 only reads `Stack.Toolbar.*` elements that are its DIRECT children — a component wrapping one is
 invisible to it — so shared menus are builder FUNCTIONS returning the element (`libraryFilterMenu`,
 `librarySortMenu`, `collectedSortMenu`), one toolbar component per kind. `useNativeHeaderHeight()`

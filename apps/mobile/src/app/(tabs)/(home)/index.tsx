@@ -26,7 +26,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { HoldActionTarget } from '@/components/hold-action-target';
-import { NativeBarTitle } from '@/components/native-bar-title';
+import { NativeBarTitle, useNativeBarTitleRoom } from '@/components/native-bar-title';
+import { NativeSelector } from '@/components/native-selector';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import {
   bridgePageOptions,
@@ -585,6 +586,9 @@ export default function BrowseScreen() {
 
   // Shared with the series-detail bar so both stay the same height.
   const barHeight = useTopBarHeight();
+  // The native bar's title row: the tile, then the two selectors sharing what is left beside the
+  // search capsule — the bridge's name the longer of the two, so it gets the larger share.
+  const selectorRoom = useNativeBarTitleRoom(1) - BarThumbSize - 2 * Spacing.one;
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
   const thumbSize = BridgeThumbSize;
@@ -750,8 +754,8 @@ export default function BrowseScreen() {
     </BarSurface>
   );
   // On iOS: the custom bar's cluster — thumbnail (the NSFW hold target), bridge ▾, page ▾ — stands
-  // in the bar's title slot at the title's size, the same selectors opening the same menus; only
-  // the search is a bar button, so it alone is a glass capsule.
+  // in the bar's title slot at the title's size, the selectors opening system menus; only the
+  // search is a bar button, so it alone is a glass capsule.
   const nativeHeader = (
     <>
       <NativeBarTitle>
@@ -767,26 +771,27 @@ export default function BrowseScreen() {
           </HoldActionTarget>
         ) : null}
         {!railNav && (
-          <Selector
+          <NativeSelector
             testID="browse.bridge-selector"
             title="Bridge"
             value={currentBridge?.id ?? ''}
             options={visibleBridges.map((b) => b.id)}
             onChange={selectBridge}
-            size="bar"
             thumbnails={bridgeThumbnails}
             sources={COMICAL_SOURCES}
             labels={bridgeLabels}
+            tiles
+            maxWidth={Math.floor(selectorRoom * 0.55)}
           />
         )}
-        <Selector
+        <NativeSelector
           testID="browse.page-selector"
           title="Page"
           value={pageKey(page)}
           options={pageKeys}
           onChange={selectPage}
-          size="bar"
           labels={pageLabels}
+          maxWidth={railNav ? selectorRoom : Math.floor(selectorRoom * 0.45)}
         />
       </NativeBarTitle>
       <Stack.Toolbar placement="right">

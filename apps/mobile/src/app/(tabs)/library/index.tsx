@@ -14,7 +14,8 @@ import { type TabFilter, TabFilterField, TabFilterTrigger, useTabFilter } from '
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { HoldActionTarget } from '@/components/hold-action-target';
-import { NativeBarTitle } from '@/components/native-bar-title';
+import { NativeBarTitle, useNativeBarTitleRoom } from '@/components/native-bar-title';
+import { NativeSelector } from '@/components/native-selector';
 import { BarThumbRadius, BarThumbSize, BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -25,6 +26,7 @@ import {
   type ItemKind,
   itemKindOptions,
   type KindsPresent,
+  libraryViews,
   setSelectedCollection,
   setSelectedItemKind,
   useSelectedCollectionId,
@@ -40,6 +42,7 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
+import { useRouter } from '@/lib/nav';
 
 export default function LibraryScreen() {
   const theme = useTheme();
@@ -202,6 +205,13 @@ function LibraryNativeHeader({
 }) {
   const kinds = itemKindOptions(kindsPresent, selectedKind);
   const titleType = useSubtitleSelectorStyle('bar');
+  const router = useRouter();
+  // The system menu keys its rows by string, so All rides under a key no collection id takes.
+  const views = libraryViews(collections);
+  const viewLabels: Record<string, string> = {};
+  for (const v of views) viewLabels[v.id ?? ALL_VIEW_KEY] = v.name;
+  // Beside the search and arrange capsules, after the tile.
+  const selectorRoom = useNativeBarTitleRoom(2) - BarThumbSize - Spacing.one;
   return (
     <>
       <NativeBarTitle>
@@ -214,7 +224,18 @@ function LibraryNativeHeader({
             {viewName}
           </ThemedText>
         ) : (
-          <LibraryCollectionSelector value={collection} collections={collections} onChange={setSelectedCollection} size="bar" />
+          <NativeSelector
+            testID="library.collection-selector"
+            title="Library"
+            value={collection ?? ALL_VIEW_KEY}
+            options={views.map((v) => v.id ?? ALL_VIEW_KEY)}
+            onChange={(v) => setSelectedCollection(v === ALL_VIEW_KEY ? null : v)}
+            labels={viewLabels}
+            tiles
+            glyphs={ALL_VIEW_GLYPH}
+            actions={[{ label: 'Manage collections…', systemImage: 'folder', onPress: () => router.push('/manage-collections') }]}
+            maxWidth={selectorRoom}
+          />
         )}
       </NativeBarTitle>
       <Stack.SearchBar
@@ -227,6 +248,10 @@ function LibraryNativeHeader({
     </>
   );
 }
+
+const ALL_VIEW_KEY = 'all';
+/** The All view's mark in the system menu — the asterisk `CollectionThumb` draws. */
+const ALL_VIEW_GLYPH = { [ALL_VIEW_KEY]: 'asterisk' } as const;
 
 const styles = StyleSheet.create({
   railTitle: {
