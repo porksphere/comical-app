@@ -51,7 +51,7 @@ import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
 import { focusMarks, focusSkip } from '@/lib/focus-nav';
 import { isTypingTarget } from '@/lib/key-hold';
 import { isKey } from '@/lib/keybindings';
-import { useOpenSearchLayer } from '@/lib/series-nav';
+import { useOpenSeriesSearch } from '@/lib/series-nav';
 import { measureZoomRect } from '@/lib/series-zoom';
 import { useRouter } from '@/lib/nav';
 import { formatScore, formatVotes } from '@/lib/rating';
@@ -702,11 +702,11 @@ export function SeriesBody({
   // `push('/search')` overlays the Search screen on top of this pushed Series
   // screen, so its back arrow returns here. Search consumes the stashed intent on
   // mount (see search.tsx) and applies it against the intent's bridge. Inside the
-  // series page the same intent opens as an in-screen LAYER instead — sliding in
-  // over this page with the shared chevron statically stuck (see useOpenSearchLayer).
-  const openSearchLayer = useOpenSearchLayer();
+  // series page the same intent opens over this page instead — a card in the page's
+  // own stack on iOS, an in-screen LAYER elsewhere (see useOpenSeriesSearch).
+  const openSeriesSearch = useOpenSeriesSearch();
   const openSearch = () => {
-    if (openSearchLayer) openSearchLayer();
+    if (openSeriesSearch) openSeriesSearch();
     else router.push('/search');
   };
   const onTagPress = (group: TagGroup, index: number) => {

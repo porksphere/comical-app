@@ -1,11 +1,14 @@
+import type { Href, Stack } from 'expo-router';
 import { useNavigation, useSegments } from 'expo-router';
-import { createContext, useCallback, useContext, useMemo } from 'react';
+import type { ComponentProps } from 'react';
+import { createContext, useCallback, useContext } from 'react';
 
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
+import { useRouter } from '@/lib/nav';
 import { claimNavigation, navTargetKey } from '@/lib/nav-guard';
 
-/** The sub-pages a series page (or its reader) can push. (Tag/author/type SEARCH is not one of
- *  them anymore — on the series page it opens as an in-screen layer, see
- *  useOpenSearchLayer.) */
+/** The sub-pages a series page (or its reader) can push. (The tag/author/type SEARCH is routed
+ *  separately — see useOpenSeriesSearch.) */
 type SeriesSubPath = '/series-downloads' | '/downloads';
 
 /**
@@ -81,8 +84,22 @@ function handlerStack<F>() {
 }
 
 const drillSeriesHandlers = handlerStack<(params: Record<string, string>) => void>();
+/**
+ * A drill asked for while no page holds the handlers: the nested search card (iOS) covers the
+ * series page, which gives them up while blurred — so a result tapped there pops the card first
+ * and the page takes the drill back as it re-registers on focus. Timed, so a stale one can't fire
+ * on a page opened later.
+ */
+let pendingDrill: { params: Record<string, string>; at: number } | null = null;
+const PENDING_DRILL_MS = 1500;
 export function registerDrillSeries(fn: (params: Record<string, string>) => void): () => void {
-  return drillSeriesHandlers.register(fn);
+  const unregister = drillSeriesHandlers.register(fn);
+  if (pendingDrill) {
+    const { params, at } = pendingDrill;
+    pendingDrill = null;
+    if (Date.now() - at <= PENDING_DRILL_MS) fn(params);
+  }
+  return unregister;
 }
 
 /**
@@ -105,28 +122,67 @@ export function drillSeriesFromOverlay(params: Record<string, string>): boolean 
 }
 
 /** Same hand-off for the SEARCH layer (tag/author/type intents — see SearchLayer in
- *  app/series/index.tsx). */
+ *  app/series/index.tsx). Android and web only; iOS pushes a card instead, see below. */
 const openSearchLayerHandlers = handlerStack<() => void>();
 export function registerOpenSearchLayer(fn: () => void): () => void {
   return openSearchLayerHandlers.register(fn);
 }
 
 /**
- * Tag/author/type search, for the series details: null outside the series page's nested stack (callers
- * fall back to pushing /search), otherwise a function that opens the search as an in-screen
- * LAYER over the series — sliding in with the statically-stuck shared chevron, the parent live
- * beneath, and its result cards drilling further layers. The caller stashes the search intent
- * first (setSearchIntent), exactly like the route path.
+ * The options of the `search` card inside a series page's nested stack (the root route's and
+ * each tab copy's), iOS: the only sub-page there that shows the system bar, since the search's
+ * field IS that bar. Both stacks hide the bar by default for the combined page, whose bar is its
+ * own `Stack.Screen`'s business; this is the same transparent, chevron-only bar every pushed page
+ * gets from the root and tab stacks.
  */
-export function useOpenSearchLayer(): (() => void) | null {
+export const NESTED_SEARCH_BAR: ComponentProps<typeof Stack.Screen>['options'] = {
+  headerShown: true,
+  headerTransparent: true,
+  headerShadowVisible: false,
+  headerBackButtonDisplayMode: 'minimal',
+  scrollEdgeEffects: { top: 'soft' },
+};
+
+/**
+ * Tag/author/type search, for the series details: null outside the series page's nested stack
+ * (callers fall back to pushing /search), otherwise a function that opens the search over the
+ * series. The caller stashes the search intent first (setSearchIntent), exactly like the route
+ * path.
+ *
+ * On iOS it is a real push INTO the page's nested stack — the `search` twin under `app/series/`
+ * or the focused tab's `series/` copy (by the segments, which strip the `(tabs)` group), so the
+ * tab bar stays up and the search gets the system bar with its field, filters sheet and sort
+ * menu like the one pushed from Browse. Over the series page, as one of its sub-pages, because
+ * the page's own route is a contained transparent modal nothing can be pushed over (see
+ * InSeriesPageStack). Elsewhere the search is an in-screen LAYER over the series — sliding in
+ * with the statically-stuck shared chevron, the parent live beneath, and its result cards
+ * drilling further layers.
+ */
+export function useOpenSeriesSearch(): (() => void) | null {
   const inStack = useContext(InSeriesPageStack);
-  return useMemo(() => {
-    if (!inStack) return null;
-    return () => {
-      if (!claimNavigation(navTargetKey('/series#search'))) return;
-      openSearchLayerHandlers.current()?.();
-    };
-  }, [inStack]);
+  const segments: readonly string[] = useSegments();
+  const router = useRouter();
+  const nestedSearch = NATIVE_HEADER ? nestedSearchHref(segments) : null;
+  // A useCallback rather than a useMemo returning one, as in useDrillRelatedSeries: the React
+  // Compiler can't prove `router` stable and gives up on a memo closing over it.
+  const open = useCallback(() => {
+    if (nestedSearch) {
+      router.push(nestedSearch);
+      return;
+    }
+    if (!claimNavigation(navTargetKey('/series#search'))) return;
+    openSearchLayerHandlers.current()?.();
+  }, [nestedSearch, router]);
+  return inStack ? open : null;
+}
+
+/** The nested `search` route of the series page the segments describe, if they describe one. */
+function nestedSearchHref(segments: readonly string[]): Href | null {
+  if (segments[0] === 'series') return '/series/search' as Href;
+  if (segments[0] === '(tabs)' && segments[1] && segments[2] === 'series') {
+    return `/(tabs)/${segments[1]}/series/search` as unknown as Href;
+  }
+  return null;
 }
 
 /**
@@ -134,8 +190,9 @@ export function useOpenSearchLayer(): (() => void) | null {
  * their normal `router.push`), otherwise a function that hands the tapped series to the combined
  * page's layer stack. From the nested search/downloads sub-pages it first pops the nested stack
  * back to the combined page (the layers live on that screen), so the result slides in over the
- * series context you came from. Shares the nav-guard claim so a double tap can't fire twice.
- *
+ * series context you came from — and since that page only holds the handlers while focused,
+ * the drill waits for it (see registerDrillSeries). Shares the nav-guard claim so a double tap
+ * can't fire twice.
  */
 export function useDrillRelatedSeries(): ((params: Record<string, string>) => void) | null {
   const inStack = useContext(InSeriesPageStack);
@@ -151,8 +208,12 @@ export function useDrillRelatedSeries(): ((params: Record<string, string>) => vo
       // reads the same.
       const state = navigation.getState();
       const top = state?.routes[state.index]?.name;
-      if (top === 'downloads' || top === 'series-downloads') navigation.dispatch({ type: 'POP_TO_TOP' });
-      drillSeriesHandlers.current()?.(params);
+      if (top === 'downloads' || top === 'series-downloads' || top === 'search') {
+        navigation.dispatch({ type: 'POP_TO_TOP' });
+      }
+      const handler = drillSeriesHandlers.current();
+      if (handler) handler(params);
+      else pendingDrill = { params, at: Date.now() };
     },
     [navigation],
   );

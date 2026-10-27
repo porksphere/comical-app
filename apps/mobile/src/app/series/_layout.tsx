@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 
-import { InSeriesPageStack } from '@/lib/series-nav';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
+import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
 
 // The series page is a CONTAINED TRANSPARENT MODAL (see the root layout), and
 // react-native-screens cannot push a plain root-stack card on top of a transparent modal — it
@@ -9,8 +10,10 @@ import { InSeriesPageStack } from '@/lib/series-nav';
 // beneath the modal), and the download sub-pages have twin routes INSIDE this stack — real
 // native pushes, with the slide-from-right animation and the native left-edge swipe back.
 // `useSeriesSubPath` (lib/series-nav.ts) is what routes those pushes here instead of to the root
-// routes. (Tag/author/type SEARCH is not a route anymore: it opens as an in-screen LAYER on the
-// index screen — see SearchLayer in index.tsx / useOpenSearchLayer.)
+// routes. The tag/author/type SEARCH is one of them on iOS — `search`, pushed by
+// useOpenSeriesSearch, the one sub-page that shows the system bar (its field lives there);
+// Android and web open the same search as an in-screen LAYER on the index screen instead (see
+// SearchLayer in index.tsx), the layer being how the custom chevron stays put across the slide.
 //
 // A series opened FROM a series (related rails, nested search results) is NOT a route at all:
 // it renders as a sibling LAYER inside the index screen, which keeps the parent series live
@@ -33,6 +36,7 @@ export default function SeriesReaderLayout() {
         />
         <Stack.Screen name="series-downloads" />
         <Stack.Screen name="downloads" />
+        <Stack.Screen name="search" options={NATIVE_HEADER ? NESTED_SEARCH_BAR : undefined} />
       </Stack>
     </InSeriesPageStack.Provider>
   );
