@@ -211,7 +211,7 @@ function LibraryNativeHeader({
   const viewLabels: Record<string, string> = {};
   for (const v of views) viewLabels[v.id ?? ALL_VIEW_KEY] = v.name;
   // Beside the search and arrange capsules, after the tile.
-  const selectorRoom = useNativeBarTitleRoom(2) - BarThumbSize - Spacing.one;
+  const selectorRoom = useNativeBarTitleRoom(2) - BarThumbSize - Spacing.three;
   return (
     <>
       <NativeBarTitle>

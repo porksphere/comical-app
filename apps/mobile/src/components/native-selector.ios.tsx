@@ -2,6 +2,7 @@ import { Button, Host, HStack, Image, Label, Menu, Picker, Text } from '@expo/ui
 import {
   accessibilityLabel,
   buttonStyle,
+  cornerRadius,
   font,
   foregroundStyle,
   frame,
@@ -16,8 +17,9 @@ import {
 import { StyleSheet } from 'react-native';
 
 import type { NativeSelectorProps, SystemSymbol } from '@/components/native-selector';
+import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
-import { useMenuThumbFiles } from '@/lib/menu-thumb-files';
+import { MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/menu-thumb-files';
 
 /**
  * The bar's selector as the system's: a SwiftUI `Menu` whose trigger is the custom bar's
@@ -53,7 +55,7 @@ export function NativeSelector({
     <Host matchContents colorScheme={scheme} style={styles.host} testID={testID}>
       <Menu
         label={
-          <HStack spacing={3} alignment="center">
+          <HStack spacing={Spacing.one} alignment="center">
             <Text
               modifiers={[
                 font(BAR_TYPE),
@@ -72,7 +74,16 @@ export function NativeSelector({
           {options.map((option) => {
             const label = labels?.[option] ?? option;
             const file = files[option];
-            if (file) return <Label key={option} title={label} icon={<Image uiImage={file} />} modifiers={[tag(option)]} />;
+            if (file) {
+              return (
+                <Label
+                  key={option}
+                  title={label}
+                  icon={<Image uiImage={file} modifiers={[cornerRadius(MENU_THUMB_RADIUS)]} />}
+                  modifiers={[tag(option)]}
+                />
+              );
+            }
             if (tiles) {
               return <Label key={option} title={label} systemImage={glyphs?.[option] ?? initialSymbol(label)} modifiers={[tag(option)]} />;
             }

@@ -3,6 +3,7 @@ import {
   accessibilityLabel,
   buttonStyle,
   contentShape,
+  cornerRadius,
   font,
   foregroundStyle,
   frame,
@@ -21,7 +22,7 @@ import { StyleSheet } from 'react-native';
 import type { SettingsSelectRowProps } from '@/components/settings/select-row-shared';
 import { SettingsCardInset, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
-import { useMenuThumbFiles } from '@/lib/menu-thumb-files';
+import { MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/menu-thumb-files';
 import { testId } from '@/lib/test-id';
 
 /**
@@ -82,7 +83,16 @@ export function SettingsSelectRow<T extends string>({
         <Picker label={heading ?? label} selection={value} onSelectionChange={(next) => onChange(next as T)} modifiers={[pickerStyle('inline')]}>
           {options.map((option) => {
             const file = files[option.value];
-            if (file) return <Label key={option.value} title={option.label} icon={<Image uiImage={file} />} modifiers={[tag(option.value)]} />;
+            if (file) {
+              return (
+                <Label
+                  key={option.value}
+                  title={option.label}
+                  icon={<Image uiImage={file} modifiers={[cornerRadius(MENU_THUMB_RADIUS)]} />}
+                  modifiers={[tag(option.value)]}
+                />
+              );
+            }
             return (
               <Text key={option.value} modifiers={[tag(option.value)]}>
                 {option.label}

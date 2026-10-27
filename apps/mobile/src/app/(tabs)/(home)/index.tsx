@@ -588,7 +588,7 @@ export default function BrowseScreen() {
   const barHeight = useTopBarHeight();
   // The native bar's title row: the tile, then the two selectors sharing what is left beside the
   // search capsule — the bridge's name the longer of the two, so it gets the larger share.
-  const selectorRoom = useNativeBarTitleRoom(1) - BarThumbSize - 2 * Spacing.one;
+  const selectorRoom = useNativeBarTitleRoom(1) - BarThumbSize - 2 * Spacing.three;
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
   const thumbSize = BridgeThumbSize;

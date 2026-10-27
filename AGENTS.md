@@ -72,9 +72,12 @@ in the TITLE slot (`components/native-bar-title.tsx`, `Stack.Title asChild`) at 
 size. Those selectors are SYSTEM menus (`components/native-selector.ios.tsx`: a SwiftUI `Menu`
 from `@expo/ui/swift-ui` in a `Host`, holding an inline `Picker` for the checkmarked rows plus
 `Button`s for actions like "Manage collections…"), not the overlay menus Android/web open. A
-menu row takes its image only as a local FILE it reads itself and draws point-for-pixel, so
+menu row takes its image only as a local FILE it reads itself, past every modifier, so
 `lib/menu-thumb-files.ts` renders each bridge thumbnail (or the bundled Comical asset) down to
-a 28px PNG once per session; a row without art shows its initial as an SF `x.square.fill`,
+a 28pt PNG at the screen's scale once per session, and `patches/@expo%2Fui@…` (bun
+`patchedDependencies`) makes `@expo/ui`'s image loader decode it at that scale and bake a
+`cornerRadius` modifier into the bitmap — stock it decodes 1× (blurry on a 3× screen) and a
+menu never rounds; a row without art shows its initial as an SF `x.square.fill`,
 and the All view an `asterisk` — the other place SF Symbols stand in for lucide. The RN tile
 beside the host stays RN, since it is the NSFW hold target. The title slot is the
 one place the bar never wraps in a Liquid Glass capsule — every left/right item is a

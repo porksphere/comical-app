@@ -43,7 +43,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    gap: Spacing.one,
+    // The custom bar's `selectorRow` gap: the tile, bridge ▾ and page ▾ read as three things, not
+    // one run of text.
+    gap: Spacing.three,
     // The width above is a request; the bar hands the title view what is left between its items
     // and the row shrinks to it, the labels inside truncating rather than the row overflowing.
     flexShrink: 1,
