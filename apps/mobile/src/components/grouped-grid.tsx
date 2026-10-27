@@ -3,10 +3,8 @@ import { useCallback, useMemo, useState, type ReactElement, type RefObject } fro
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
-import { GlassPill } from '@/components/glass-pill';
 import { RecyclerList } from '@/components/recycler-list';
 import {
-  STICKY_PILL,
   StickySectionHeader,
   useInlineHeadingStyle,
   type InlineHeadingPin,
@@ -25,33 +23,14 @@ function SectionHeader({
   count,
   hidden,
   pin,
-  pill,
 }: {
   label: string;
   count?: number;
   hidden?: boolean;
   /** Absent on the PINNED copy, which is the thing standing in and so is never the one hidden. */
   pin?: InlineHeadingPin;
-  /** The pinned copy's treatment (see `STICKY_PILL`): label and count together in one glass
-   *  capsule hugging them, rather than the inline row's label-left, count-right spread — a capsule
-   *  around each would be two badges floating over the covers. */
-  pill?: boolean;
 }) {
   const hide = useInlineHeadingStyle(hidden ?? false, pin);
-  if (pill) {
-    return (
-      <View style={styles.header}>
-        <GlassPill style={styles.headerPill}>
-          <ThemedText type="smallBold" numberOfLines={1} style={styles.headerPillLabel}>
-            {label}
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {count}
-          </ThemedText>
-        </GlassPill>
-      </View>
-    );
-  }
   return (
     <Animated.View style={[styles.header, hide]}>
       <ThemedText type="smallBold" numberOfLines={1} style={styles.headerLabel}>
@@ -85,6 +64,7 @@ export function GroupedGrid<T>({
   sidePad,
   stickyHeaderTop,
   stickyPinned,
+  onSectionChange,
   sharedValues,
   onScroll,
   renderRow,
@@ -108,6 +88,9 @@ export function GroupedGrid<T>({
   /** Written by the sticky: 1 while a heading is pinned. The screen drops its top bar's own rule
    *  off this, on the same frame — see StickySectionHeader's `pinnedValue`. */
   stickyPinned?: SharedValue<number>;
+  /** The section whose heading is pinned, by label — null above the first. The iOS bar shows it
+   *  as its title, since nothing pins under the native bar (see StickySectionHeader). */
+  onSectionChange?: (label: string | null) => void;
   /** Feeds the tab bar's UI-thread slide — and the sticky's arithmetic. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -142,7 +125,13 @@ export function GroupedGrid<T>({
   // The heading the pinned copy is currently standing in for — that row renders its space but not
   // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
-  const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
+  const onActiveChange = useCallback(
+    (key: string | null) => {
+      setPinnedKey(key);
+      onSectionChange?.(key === null ? null : (sections.find((s) => s.key === key)?.label ?? null));
+    },
+    [onSectionChange, sections],
+  );
   // What each heading row needs to time its own swap with the band's — see `useInlineHeadingStyle`.
   // No `bandPadding`: the row centres its own text in `RowHeight`, so the band adds none either.
   const pin: InlineHeadingPin = useMemo(
@@ -193,9 +182,8 @@ export function GroupedGrid<T>({
           scrollOffset={sharedValues.scrollOffset}
           onActiveChange={onActiveChange}
           {...(stickyPinned && { pinnedValue: stickyPinned })}
-          // The SAME component the list renders inline — see StickySectionHeader — in the capsule
-          // where the pinned copy is a capsule.
-          renderHeader={(s) => <SectionHeader label={s.label} count={s.count} pill={STICKY_PILL} />}
+          // The SAME component the list renders inline — see StickySectionHeader.
+          renderHeader={(s) => <SectionHeader label={s.label} count={s.count} />}
         />
       )}
     </View>
@@ -215,15 +203,5 @@ const styles = StyleSheet.create({
   },
   headerLabel: {
     flex: 1,
-  },
-  // The capsule is pulled back by its own padding so the label stays where the inline one is; it
-  // hugs label + count, which is why the row's `space-between` has nothing to spread.
-  headerPill: {
-    marginHorizontal: -Spacing.two,
-    gap: Spacing.two,
-    height: RowHeight,
-  },
-  headerPillLabel: {
-    flexShrink: 1,
   },
 });

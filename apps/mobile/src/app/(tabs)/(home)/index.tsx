@@ -653,6 +653,8 @@ export default function BrowseScreen() {
     () => ({ borderBottomColor: stickyPinned.value ? 'transparent' : theme.barHairline }),
     [theme.barHairline],
   );
+  // The pinned section's label, which the iOS bar shows as its title — see NativeTabHeader.
+  const [section, setSection] = useState<string | null>(null);
 
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
@@ -759,6 +761,7 @@ export default function BrowseScreen() {
       <NativeTabHeader
         title={[currentBridge?.name, pageLabels[pageKey(page)]].filter(Boolean).join(' ')}
         scrollY={scrollY}
+        section={section}
         holdTestID="browse.nsfw-hold"
       />
       <BrowseNativeToolbar
@@ -912,6 +915,7 @@ export default function BrowseScreen() {
           stickyHeaderTop={headerHeight}
           stickyBarOffset={barOffset}
           stickyPinned={stickyPinned}
+          {...(NATIVE_HEADER ? { onSectionChange: setSection } : {})}
           ambient={feedTint}
           sharedValues={sharedValues}
           onScroll={onListScroll}

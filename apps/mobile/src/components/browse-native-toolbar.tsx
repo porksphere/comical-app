@@ -8,11 +8,14 @@ import { BAR_THUMB_RADIUS, MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/me
 
 /**
  * Browse's controls in the iOS navigation bar: ONE leading button, the current bridge's icon as
- * a circle in its glass capsule, opening a system menu with Bridge and Page as submenus of
- * checkmarked rows; the search is the trailing button. No custom view stands in the bar, so
- * every item is a standard UIBarButtonItem: UIKit lays the bar out itself (an image item joins
- * the vertical bar of a folded or landscape display) and morphs the leading capsule into the
- * back button of whatever Browse pushes.
+ * a bare circle — no glass capsule behind it (`hidesSharedBackground`), the way a round account
+ * picture is itself the button in Apple's own bars — opening a system menu with Bridge and Page
+ * as submenus of checkmarked rows; the search is the trailing button. No custom view stands in
+ * the bar, so every item is a standard UIBarButtonItem: UIKit lays the bar out itself (an image
+ * item joins the vertical bar of a folded or landscape display) and would morph the leading item
+ * into the back button of a screen Browse pushed natively. The series page is not one: it is a
+ * transparent modal animating itself out of the card (tab-stack.tsx), so its bar replaces this
+ * one outright.
  *
  * The bar draws an item's and a row's image as the plain UIImage it is given, so the shape is in
  * the file: `menu-thumb-files.ts` renders the thumbnail once per shape (a circle for the button,
@@ -56,7 +59,8 @@ export function BrowseNativeToolbar({
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Menu
           icon={circle ? fileIcon(circle) : initialSymbol(current?.name ?? '', 'circle')}
-          iconRenderingMode="original"
+          iconRenderingMode={circle ? 'original' : 'template'}
+          hidesSharedBackground
           accessibilityLabel={current ? `${current.name}, bridge and page` : 'Bridge and page'}>
           {withBridges ? (
             <Stack.Toolbar.Menu title="Bridge" icon="puzzlepiece.extension">
@@ -65,7 +69,7 @@ export function BrowseNativeToolbar({
                   key={b.id}
                   isOn={b.id === bridgeId}
                   icon={tiles[b.id] ? fileIcon(tiles[b.id]) : initialSymbol(b.name)}
-                  iconRenderingMode="original"
+                  iconRenderingMode={tiles[b.id] ? 'original' : 'template'}
                   onPress={() => onSelectBridge(b.id)}>
                   {b.name}
                 </Stack.Toolbar.MenuAction>

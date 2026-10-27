@@ -16,11 +16,6 @@ import { testId } from '@/lib/test-id';
 export const BridgeThumbSize = 28;
 /** That thumbnail's corner in a top bar. */
 export const BridgeThumbRadius = 8;
-/** The thumbnail beside a `bar` selector in the iOS navigation bar's title slot: the capsule's
- *  inner height, so the cluster stands as tall as the glass buttons beside it. */
-export const BarThumbSize = 34;
-/** Its corner — the top-bar thumb's ratio (8 on 28) at this size. */
-export const BarThumbRadius = 10;
 
 /** Matches the rail's own thumbnail (`SidebarThumbSize` in app-sidebar), because on the
  *  popover those are two views of one list. The sheet's rows are 10pt taller, so they keep the full
@@ -46,17 +41,15 @@ type SelectorProps = {
    * back to the value itself when absent.
    */
   labels?: Record<string, string>;
-  /** Visual size of the trigger text. `bar` is the iOS navigation bar's title type, for a
-   *  selector standing in the bar's title slot (see `NativeBarTitle`). */
-  size?: 'title' | 'subtitle' | 'small' | 'bar';
+  /** Visual size of the trigger text. */
+  size?: 'title' | 'subtitle' | 'small';
   /** Automation selector for the trigger; each option derives `${testID}.option.<value>` (see src/lib/test-id.ts). */
   testID: string;
 };
 
-/** The `subtitle` (or `bar`) trigger's type, for a bar title that sits beside a `Selector`. */
-export function useSubtitleSelectorStyle(size: 'subtitle' | 'bar' = 'subtitle') {
+/** The `subtitle` trigger's type, for a bar title that sits beside a `Selector`. */
+export function useSubtitleSelectorStyle() {
   const compact = useIsCompact();
-  if (size === 'bar') return { label: styles.bar };
   return { label: compact ? styles.subtitleCompact : styles.subtitleWide };
 }
 
@@ -65,8 +58,8 @@ export function useSubtitleSelectorStyle(size: 'subtitle' | 'bar' = 'subtitle') 
 export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['size'] }) {
   const theme = useTheme();
   const compact = useIsCompact();
-  const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : size === 'bar' ? 10 : 8;
-  const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (compact ? 22.4 : 28) : size === 'bar' ? 20 : 14;
+  const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : 8;
+  const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (compact ? 22.4 : 28) : 14;
   return (
     <View style={[styles.caret, { transform: [{ translateY: Math.round(fontSize * 0.09) }] }]}>
       <CaretDownIcon color={theme.textSecondary} size={px} />
@@ -108,12 +101,11 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
         )
       }>
       <ThemedText
-        type={size === 'bar' ? 'default' : size}
+        type={size}
         numberOfLines={1}
         style={[
           styles.triggerLabel,
           size === 'subtitle' ? (compact ? styles.subtitleCompact : styles.subtitleWide) : null,
-          size === 'bar' ? styles.bar : null,
         ]}>
         {labels?.[value] ?? value}
       </ThemedText>
@@ -239,14 +231,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '700',
-  },
-  // A selector in the iOS navigation bar's title slot: the bar title's semibold, a step above its
-  // 17pt — the cluster is the bar's whole leading half beside 34pt glass capsules, and at the
-  // title's size it read as a caption next to them.
-  bar: {
-    fontSize: 20,
-    lineHeight: 25,
-    fontWeight: '600',
   },
   caret: {
     marginLeft: 2,

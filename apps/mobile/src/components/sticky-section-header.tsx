@@ -28,14 +28,9 @@ const SPEED_SMOOTHING = 0.6;
 // for that reason: the sliding push is what a SLOW scroll gets, not the default.
 const SNAP_SPEED = 0.12;
 
-// Under the native bar the pinned heading is text fading in place rather than a band pushed out —
-// see the component doc.
-const FADE = NATIVE_HEADER;
-/** Exported for the heading renderers: in fade mode the PINNED copy sits in a glass capsule
- *  (`GlassPill`) hugging its text, which is what tells it from the inline rows scrolling under it —
- *  there is no band to do that. The callers render the capsule, since only they know which of a
- *  heading's parts is its text. */
-export const STICKY_PILL = FADE;
+// Under the native bar nothing pins at all: the current heading is announced in the bar's title
+// instead — see the component doc.
+const IN_BAR = NATIVE_HEADER;
 
 /**
  * WHICH heading belongs at the pin line, and how far the band has been pushed out — both derived
@@ -138,7 +133,7 @@ export function useInlineHeadingStyle(hidden: boolean, pin?: InlineHeadingPin) {
   return useAnimatedStyle(() => {
     // Short-circuited before `scrollOffset` is read, so a heading that is not standing down has no
     // scroll dependency at all — the common case, and the one every row is in while scrolling.
-    if (!hidden || firstTop === undefined || stickyTop === undefined || !scrollOffset) return { opacity: 1 };
+    if (IN_BAR || !hidden || firstTop === undefined || stickyTop === undefined || !scrollOffset) return { opacity: 1 };
     const line = scrollOffset.value + stickyTop + bandPadding + (barOffset?.value ?? 0);
     return { opacity: isPinned(firstTop, line) ? 0 : 1 };
   }, [hidden, firstTop, stickyTop, bandPadding, scrollOffset, barOffset]);
@@ -172,17 +167,16 @@ export function useInlineHeadingStyle(hidden: boolean, pin?: InlineHeadingPin) {
  * an identical, co-located heading is being swapped for this one, and anything that ramps announces
  * that a second object arrived.
  *
- * ── Under the native bar: the heading alone, fading (`FADE`) ──
+ * ── Under the native bar: nothing pins — the heading goes to the bar's TITLE (`IN_BAR`) ──
  * On iOS the bar is the system's: transparent, the content fading under its soft scroll edge, and
- * no material of its own for a band to meet — a band pinned under it floated. So there the pinned
- * copy is the plain heading, no fill and no rules, where the inline one was, over a short scrim
- * continuing the bar's fade down past it so it stays legible over covers. And a hand-off is a FADE
- * instead of the push: as the next heading rises through the last band the pinned one fades out in
- * place, and on the frame the next reaches the line it IS the pinned one — exactly where its own
- * row is, so that swap is the same co-located one as everywhere else. Scrolling back up runs it in
- * reverse, the heading above fading in as the row below it moves away. Nothing slides: a heading
- * sliding out under a bar with no edge was a heading sliding into nothing. The scrim does not fade
- * with the heading — it arrives once, over the first heading's approach, and holds.
+ * no material of its own for a band to meet. Every surface tried under it failed the same way: a
+ * band pinned under the bar floated, a scrim running up to it read as a second bar, and a glass
+ * capsule hugging the text was a badge drifting over the covers. So there NOTHING pins. The
+ * headings scroll away inline like any other row, and the screen's bar title — faded out by then
+ * (`NativeTabHeader`) — takes the current section's label in its place, the way Photos names the
+ * month in the bar and Music the album. This component still runs the boundary arithmetic and
+ * reports `onActiveChange`, which is how the screen learns the label; it draws nothing, and the
+ * inline row is never hidden, since nothing is standing in for it.
  *
  * The RULE belongs to the heading it underlines, and there are TWO of them — one per heading in a
  * hand-off, traded on a single frame, exactly like the bar's. The pinned heading's rides inside the
@@ -406,16 +400,12 @@ export function StickySectionHeader<S extends StickySection>({
   );
 
   // Visibility + the ride on the bar's slide, so the heading stays glued to the bar's bottom edge.
-  // In FADE mode the visibility is the hand-off itself: `p` runs the pinned heading's opacity down
-  // as the next one rises through the last band (1 at rest, 0 as it arrives) and back up on the
-  // way out. A deferred push (`snapped`) holds `p` at 0, so a fast scroll gets the one-frame swap
-  // there too.
   const bandStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    const { k, p } = pinAt(sections, line, bandHeight, snapped.value);
+    const { k } = pinAt(sections, line, bandHeight, snapped.value);
     const hidden = outrun(k, shown) || !isPinned(sections[0]?.top, line);
     return {
-      opacity: hidden ? 0 : FADE ? 1 + p / bandHeight : 1,
+      opacity: hidden ? 0 : 1,
       transform: [{ translateY: barOffset?.value ?? 0 }],
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
@@ -431,12 +421,10 @@ export function StickySectionHeader<S extends StickySection>({
   // the pin line by translating `p − k·bandHeight`. `shown` is deliberately absent from that — it
   // is what makes the re-base commit move nothing at all rather than merely balance out. See the
   // component doc.
-  //
-  // FADE mode drops `p`: the heading holds its place and fades instead of sliding — see `bandStyle`.
   const stackStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
     const { k, p } = pinAt(sections, line, bandHeight, snapped.value);
-    return { transform: [{ translateY: (FADE ? 0 : p) - k * bandHeight }] };
+    return { transform: [{ translateY: p - k * bandHeight }] };
   }, [sections, pinLine, scrollOffset, barOffset, bandHeight]);
 
   // The pinned heading's rule, hard-switched: on only while a heading is AT REST at the pin line.
@@ -472,7 +460,8 @@ export function StickySectionHeader<S extends StickySection>({
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
 
-  if (!sections[shown]) return null;
+  // Under the native bar the reporting above is the whole job — see the component doc.
+  if (IN_BAR || !sections[shown]) return null;
   // The three headings the ride can land on. `shown` sits in the middle so a crossing in EITHER
   // direction has its heading already rendered; the two neighbours are outside the clip and
   // therefore invisible until one of them arrives. Absent at the ends of the list, which is fine —
@@ -509,7 +498,7 @@ export function StickySectionHeader<S extends StickySection>({
               // for the frame or two before `shown` re-bases; its taps aren't worth the ambiguity
               // of two live copies of the same heading.
               pointerEvents={i === 1 ? 'box-none' : 'none'}
-              style={[styles.slot, { height: bandHeight }, !FADE && { backgroundColor: theme.background }]}>
+              style={[styles.slot, { height: bandHeight, backgroundColor: theme.background }]}>
               {slot ? (
                 <View
                   pointerEvents="box-none"
@@ -521,21 +510,17 @@ export function StickySectionHeader<S extends StickySection>({
           ))}
         </Animated.View>
         {/* Drawn after the stack, so it is never painted under a band's opaque fill. */}
-        {!FADE && (
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.rule, { backgroundColor: theme.barHairline }, ruleStyle]}
-          />
-        )}
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.rule, { backgroundColor: theme.barHairline }, ruleStyle]}
+        />
       </Animated.View>
       {/* The superseding heading's rule — outside the clip, because the heading it belongs to is
           the list's own row, below the clip and rising. See `nextRuleStyle`. */}
-      {!FADE && (
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.nextRule, { top: stickyTop, backgroundColor: theme.barHairline }, nextRuleStyle]}
-        />
-      )}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.nextRule, { top: stickyTop, backgroundColor: theme.barHairline }, nextRuleStyle]}
+      />
     </>
   );
 }

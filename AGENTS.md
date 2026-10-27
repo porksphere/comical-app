@@ -64,50 +64,50 @@ native bar's height on iOS, status bar + custom overlay elsewhere), so a screen 
 relayout. Android and web keep the custom `TopBar`/`TabTitleBar` overlay.
 
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
-names the screen and the search: History/Activity/Settings use an inline title that fades out
-over the first scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's
-`scrollY`; large titles looked foreign beside the custom clusters). Browse uses that same
-fading title, "<bridge> <page>", and it is also Browse's NSFW hold target
-(`NativeTabHeader holdTestID`): its bar holds only SYSTEM items — the current bridge's
-thumbnail as a circle in the leading glass capsule, a `Stack.Toolbar.Menu` with Bridge and Page
-submenus of checkmarked rows (`components/browse-native-toolbar.tsx`), and the search trailing —
-so UIKit lays the bar out itself and morphs that capsule into a pushed screen's back button; a
-`UIBarButtonItem` has no long-press of its own (holding one opens its menu), which is why the
-hold is on the title. Library's heading is still the custom bar's own cluster — thumbnail,
-collection ▾, page ▾ — standing in the TITLE slot (`components/native-bar-title.tsx`,
-`Stack.Title asChild`) at the bar's title size. Its selectors are SYSTEM menus (`components/native-selector.ios.tsx`: a SwiftUI `Menu`
-from `@expo/ui/swift-ui` in a `Host`, holding an inline `Picker` for the checkmarked rows plus
-`Button`s for actions like "Manage collections…"), not the overlay menus Android/web open. A
-menu row takes its image only as a local FILE it reads itself, past every modifier, so
-`lib/menu-thumb-files.ts` renders each bridge thumbnail (or the bundled Comical asset) down to
-a 28pt PNG at the screen's scale once per session, and `patches/@expo%2Fui@…` (bun
-`patchedDependencies`) makes `@expo/ui`'s image loader decode it at that scale and bake a
-`cornerRadius` modifier into the bitmap — stock it decodes 1× (blurry on a 3× screen) and a
-menu never rounds; a row without art shows its initial as an SF `x.square.fill`
-(`lib/initial-symbol.ts`; `x.circle.fill` for the bar button), and the All view an `asterisk` —
-the other place SF Symbols stand in for lucide. The navigation bar's own items and menus read
-their images through React Native's loader instead, which the `@expo/ui` patch never touches, so
-for them the SHAPE is in the file: the local Expo module `apps/mobile/modules/shaped-image`
+names the screen and the search: every tab uses an inline title that fades out over the first
+scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's `scrollY`;
+large titles looked foreign beside the custom clusters). Browse's title is "<bridge> <page>" and
+Library's the view's name, and on both it is also the NSFW hold target (`NativeTabHeader
+holdTestID`), because their bars hold only SYSTEM items and a `UIBarButtonItem` has no
+long-press of its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`
+— Browse the current bridge's thumbnail as a circle with Bridge and Page submenus of
+checkmarked rows (`components/browse-native-toolbar.tsx`), Library the view's mark (the
+collection's initial, All's asterisk) with the views and "Manage collections…"
+(`LibraryCollectionMenu` in `components/library/library-native-toolbar.tsx`) — and the search
+trailing, so UIKit lays the bar out itself (an image item joins the vertical bar of a folded or
+landscape display). The leading image button asks `hidesSharedBackground`: a bare circle, not a
+circle inside a glass capsule, the way a round account picture is itself the button in Apple's
+bars; the real buttons beside it stay glass. A Liquid Glass capsule comes off a plain image item
+this way, but NOT off a custom-view item — a title-slot cluster of RN views was tried and could
+not be made bare, which is why nothing custom stands in the bar any more. A menu row takes its
+image only as a local FILE it reads itself, so `lib/menu-thumb-files.ts` renders each bridge
+thumbnail (or the bundled Comical asset) down to a 28pt PNG at the screen's scale once per
+session; the navigation bar's items and menus read it through React Native's loader as a plain
+image, so the SHAPE is in the file: the local Expo module `apps/mobile/modules/shaped-image`
 (Swift, iOS only, `null` elsewhere) clips a rendered tile to a corner or a circle and
-`menuThumbFile(source, radius)` keeps one file per shape. Library's RN tile
-beside the host stays RN, since it is the NSFW hold target there. The title slot is the
-one place the bar never wraps in a Liquid Glass capsule — every left/right item is a
-`UIBarButtonItem` and gets one, and `hidesSharedBackground` on a custom-view item did not take it
-off in practice — so the cluster reads plain and only the real buttons beside it (search) are
-glass. The native bar has NO sticky-header primitive (no title menu, palette or scope bar in
-react-native-screens 4.30), so the page picker is a selector in the bar, not a strip under it.
-Section headings still pin under it, but as text: `StickySectionHeader` has no band, fill or
-rules on iOS (`FADE`), and nothing runs up to the bar (a scrim there read as a second bar). The
-pinned heading sits in a `GlassPill` (`components/glass-pill.tsx`: `expo-glass-effect`'s GlassView
-on iOS 26, a BlurView below) that hugs the text — the caller renders it (`STICKY_PILL`), since only
-it knows which part is the text, and Library's count joins its label in the capsule — and a
-hand-off fades it in place instead of pushing it, since nothing can slide out under a bar with no
-edge.
-The settings screens' enum rows are the same kind of thing: `SettingsSelectRow` is
-platform-split (`components/settings/select-row.ios.tsx` — the whole row a SwiftUI `Menu`
-trigger in iOS Settings' popup-row shape, `label … value ⌃⌄`, opening an inline `Picker` with
-the bridge thumbnails via the same thumb files; `select-row.tsx` keeps the anchored overlay
-picker for Android/web). A UIKit menu has no second line, so an OPTION's `description` is not
+`menuThumbFile(source, radius)` keeps one file per shape. A row without art shows its initial
+as an SF `x.square.fill` (`lib/initial-symbol.ts`; `x.circle.fill` for a bar button), and the
+All view an `asterisk` — the other place SF Symbols stand in for lucide. The native bar has NO
+sticky-header primitive (no title menu, palette or scope bar in react-native-screens 4.30), so
+the page picker is a menu in the bar, not a strip under it. Nothing pins under the bar at all:
+every surface tried there failed (a band floated, a scrim running up to the bar read as a second
+bar, a glass capsule hugging the heading was a badge drifting over the covers), so on iOS
+`StickySectionHeader` draws nothing (`IN_BAR`) and only reports which section is under the bar
+(`onSectionChange` on the grids and feed), and the screen hands that label to `NativeTabHeader
+section`: it takes the faded title's place in the bar, the way Photos names the month there and
+Music the album, cross-fading as the next heading arrives. The inline headings scroll away like
+any other row. The series page's bar does not morph out of the tab's leading item: it is a
+transparent modal animating itself out of the card (below), so UIKit never runs the bar
+transition there.
+The settings screens' enum rows are SYSTEM menus too: `SettingsSelectRow` is
+platform-split (`components/settings/select-row.ios.tsx` — the whole row a SwiftUI `Menu` from
+`@expo/ui/swift-ui` in a `Host`, in iOS Settings' popup-row shape, `label … value ⌃⌄`, opening an
+inline `Picker` with the bridge thumbnails from the same thumb files; `select-row.tsx` keeps the
+anchored overlay picker for Android/web). `@expo/ui`'s image loader is PATCHED for that
+(`patches/@expo%2Fui@…`, bun `patchedDependencies`) to decode the file at the screen's scale and
+bake a `cornerRadius` modifier into the bitmap — stock it decodes 1× (blurry on a 3× screen) and
+a SwiftUI menu never rounds. It is the one vendored patch in the repo; a missing native
+behaviour otherwise gets a local Expo module, never a patch. A UIKit menu has no second line, so an OPTION's `description` is not
 shown on iOS, and the option test ids (`settings.select.<label>.option.<value>`) are not
 reachable there — only the row's. Multi-select enum fields (`MultiEnumRow` in
 `setting-field.tsx`) stay on the overlay everywhere: a system menu can't hold several checks.

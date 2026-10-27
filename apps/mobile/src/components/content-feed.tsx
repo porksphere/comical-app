@@ -20,7 +20,6 @@ import { RecyclerList } from '@/components/recycler-list';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import {
-  STICKY_PILL,
   StickySectionHeader,
   useInlineHeadingStyle,
   type InlineHeadingPin,
@@ -116,6 +115,7 @@ export function ContentFeed({
   stickyHeaderTop,
   stickyBarOffset,
   stickyPinned,
+  onSectionChange,
   ambient,
   sharedValues,
   onScroll,
@@ -150,6 +150,9 @@ export function ContentFeed({
   /** Written by the sticky: 1 while a heading is pinned. The screen drops its top bar's own rule
    *  off this, on the same frame — see StickySectionHeader's `pinnedValue`. */
   stickyPinned?: SharedValue<number>;
+  /** The section whose heading is pinned, by label — null above the first. The iOS bar shows it
+   *  as its title, since nothing pins under the native bar (see StickySectionHeader). */
+  onSectionChange?: (label: string | null) => void;
   /** Tint the page behind each section — see `FeedBackdrop`. Needs `sharedValues`, which is what
    *  moves it. */
   ambient?: boolean;
@@ -300,7 +303,13 @@ export function ContentFeed({
   // The heading the pinned copy is currently standing in for — that row keeps its space but drops
   // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
-  const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
+  const onActiveChange = useCallback(
+    (key: string | null) => {
+      setPinnedKey(key);
+      onSectionChange?.(key === null ? null : (sections.find((s) => s.key === key)?.label ?? null));
+    },
+    [onSectionChange, sections],
+  );
   // What each heading row needs to time its own swap with the band's — see `useInlineHeadingStyle`.
   const pin: InlineHeadingPin = useMemo(
     () => ({
@@ -493,14 +502,12 @@ export function ContentFeed({
         barOffset={stickyBarOffset}
         onActiveChange={onActiveChange}
         {...(stickyPinned && { pinnedValue: stickyPinned })}
-        // The SAME row the list renders inline, drill chevron and all — see StickySectionHeader —
-        // in the capsule where the pinned copy is a capsule.
+        // The SAME row the list renders inline, drill chevron and all — see StickySectionHeader.
         renderHeader={(s) => {
           const seeAll = s.seeAll;
           return (
             <SectionHead
               title={s.label}
-              pill={STICKY_PILL}
               {...(seeAll ? { onSeeAll: () => router.push({ pathname: '/results', params: seeAllParams(seeAll) }) } : {})}
             />
           );

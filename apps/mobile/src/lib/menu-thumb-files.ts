@@ -6,8 +6,8 @@ import { PixelRatio } from 'react-native';
 import shapedImage from '../../modules/shaped-image';
 
 /**
- * A menu row's picture as a FILE: the system menu (`NativeSelector`) takes a row's image only as a
- * local file it reads itself, so a bridge's thumbnail — a URL, or the bundled Comical asset — is
+ * A menu row's picture as a FILE: a SwiftUI menu (the settings rows, `select-row.ios.tsx`) takes
+ * a row's image only as a local file it reads itself, so a bridge's thumbnail — a URL, or the bundled Comical asset — is
  * rendered down to one once and kept for the session. The file is the size the row shows it at —
  * `MENU_THUMB_PX` points, rendered at the screen's scale: `@expo/ui`'s image loader is patched
  * (`patches/@expo%2Fui@…`) to decode a file at `UIScreen.main.scale`, since stock it decodes at

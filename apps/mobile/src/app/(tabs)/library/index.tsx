@@ -1,22 +1,20 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { Stack } from 'expo-router';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LibraryCollectionSelector, LibraryKindSelector } from '@/components/library-collection-selector';
 import type { LibraryGridChrome } from '@/components/library/library-listing';
-import { LibraryNativeToolbar } from '@/components/library/library-native-toolbar';
+import { LibraryCollectionMenu, LibraryNativeToolbar } from '@/components/library/library-native-toolbar';
 import { LibrarySavedControls, LibrarySavedView } from '@/components/library/library-saved-view';
 import { LibrarySeriesControls, LibrarySeriesView } from '@/components/library/library-series-view';
 import { type TabFilter, TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { HoldActionTarget } from '@/components/hold-action-target';
-import { NativeBarTitle, useNativeBarTitleRoom } from '@/components/native-bar-title';
-import { NativeSelector } from '@/components/native-selector';
-import { BarThumbRadius, BarThumbSize, BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
+import { NativeTabHeader } from '@/components/native-tab-header';
+import { BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
@@ -26,7 +24,6 @@ import {
   type ItemKind,
   itemKindOptions,
   type KindsPresent,
-  libraryViews,
   setSelectedCollection,
   setSelectedItemKind,
   useSelectedCollectionId,
@@ -42,7 +39,6 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
-import { useRouter } from '@/lib/nav';
 
 export default function LibraryScreen() {
   const theme = useTheme();
@@ -83,6 +79,8 @@ export default function LibraryScreen() {
     () => ({ borderBottomColor: stickyPinned.value ? 'transparent' : theme.barHairline }),
     [theme.barHairline],
   );
+  // The pinned section's label, which the iOS bar shows as its title — see NativeTabHeader.
+  const [section, setSection] = useState<string | null>(null);
 
   const chrome: LibraryGridChrome = {
     listRef,
@@ -92,6 +90,7 @@ export default function LibraryScreen() {
     // (content scrolls under it).
     stickyHeaderTop: headerHeight,
     stickyPinned,
+    ...(NATIVE_HEADER ? { onSectionChange: setSection } : {}),
     sharedValues,
     onScroll,
   };
@@ -117,6 +116,8 @@ export default function LibraryScreen() {
           selectedKind={selectedKind}
           railNav={railNav}
           filter={filter}
+          scrollY={sharedValues.scrollOffset}
+          section={section}
         />
       ) : (
         <TabTitleBar
@@ -179,10 +180,12 @@ export default function LibraryScreen() {
 }
 
 /**
- * The iOS navigation bar: the custom bar's thumbnail + collection selector standing in the title
- * slot (plain, as there — the title slot is the one the bar never wraps in a glass capsule), the
- * search and the arranging menu trailing as the capsules. The kind, filter and sort are secondary
- * to what's showing, so they share that one `⋯` menu (LibraryNativeToolbar).
+ * The iOS navigation bar, in Browse's shape: the view's name as the fading inline title (and the
+ * NSFW hold target), the view's mark as ONE bare leading button opening the collection menu
+ * (`LibraryCollectionMenu`), the search as the system search item, and the arranging `⋯`
+ * trailing. The kind, filter and sort are secondary to what's showing, so they share that one
+ * menu (LibraryNativeToolbar). A pinned section's label takes the title's place once it has
+ * faded — see NativeTabHeader.
  */
 function LibraryNativeHeader({
   collection,
@@ -193,6 +196,8 @@ function LibraryNativeHeader({
   selectedKind,
   railNav,
   filter,
+  scrollY,
+  section,
 }: {
   collection: string | null;
   collections: Collection[];
@@ -202,56 +207,26 @@ function LibraryNativeHeader({
   selectedKind: ItemKind;
   railNav: boolean;
   filter: TabFilter;
+  scrollY: SharedValue<number>;
+  section: string | null;
 }) {
   const kinds = itemKindOptions(kindsPresent, selectedKind);
-  const titleType = useSubtitleSelectorStyle('bar');
-  const router = useRouter();
-  // The system menu keys its rows by string, so All rides under a key no collection id takes.
-  const views = libraryViews(collections);
-  const viewLabels: Record<string, string> = {};
-  for (const v of views) viewLabels[v.id ?? ALL_VIEW_KEY] = v.name;
-  // Beside the search and arrange capsules, after the tile.
-  const selectorRoom = useNativeBarTitleRoom(2) - BarThumbSize - Spacing.three;
   return (
     <>
-      <NativeBarTitle>
-        <HoldActionTarget testID="library.nsfw-hold" size={BarThumbSize}>
-          <CollectionThumb view={collection} name={viewName} size={BarThumbSize} style={styles.nativeBarThumb} />
-        </HoldActionTarget>
-        {/* The rail lists the collections when it's showing — same reasoning as the custom bar. */}
-        {railNav ? (
-          <ThemedText numberOfLines={1} style={[styles.railTitle, titleType.label]}>
-            {viewName}
-          </ThemedText>
-        ) : (
-          <NativeSelector
-            testID="library.collection-selector"
-            title="Library"
-            value={collection ?? ALL_VIEW_KEY}
-            options={views.map((v) => v.id ?? ALL_VIEW_KEY)}
-            onChange={(v) => setSelectedCollection(v === ALL_VIEW_KEY ? null : v)}
-            labels={viewLabels}
-            tiles
-            glyphs={ALL_VIEW_GLYPH}
-            actions={[{ label: 'Manage collections…', systemImage: 'folder', onPress: () => router.push('/manage-collections') }]}
-            maxWidth={selectorRoom}
-          />
-        )}
-      </NativeBarTitle>
-      <Stack.SearchBar
+      <NativeTabHeader
+        title={viewName}
+        scrollY={scrollY}
+        section={section}
+        filter={filter}
         placeholder="Filter library…"
-        placement="integratedButton"
-        onChangeText={(e) => filter.setQuery(e.nativeEvent.text)}
-        onCancelButtonPress={filter.close}
+        holdTestID="library.nsfw-hold"
       />
+      {/* The rail lists the collections when it's showing — same reasoning as the custom bar. */}
+      {railNav ? null : <LibraryCollectionMenu collection={collection} collections={collections} />}
       <LibraryNativeToolbar collection={collection} kind={kind} kinds={kinds} />
     </>
   );
 }
-
-const ALL_VIEW_KEY = 'all';
-/** The All view's mark in the system menu — the asterisk `CollectionThumb` draws. */
-const ALL_VIEW_GLYPH = { [ALL_VIEW_KEY]: 'asterisk' } as const;
 
 const styles = StyleSheet.create({
   railTitle: {
@@ -262,9 +237,6 @@ const styles = StyleSheet.create({
   },
   barThumb: {
     borderRadius: BridgeThumbRadius,
-  },
-  nativeBarThumb: {
-    borderRadius: BarThumbRadius,
   },
   container: {
     flex: 1,

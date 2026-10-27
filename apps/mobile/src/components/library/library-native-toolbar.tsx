@@ -6,8 +6,54 @@ import { librarySortMenu } from '@/components/library-sort-button';
 import { useLibrarySavedPresent } from '@/components/library/library-saved-view';
 import { useLibrarySeriesPresent } from '@/components/library/library-series-view';
 import { useCollectedView } from '@/data/collected-view';
-import { ITEM_KIND_LABELS, type ItemKind, type SavedKind, setSelectedItemKind } from '@/data/selected-collection';
+import {
+  ITEM_KIND_LABELS,
+  type ItemKind,
+  libraryViews,
+  type SavedKind,
+  setSelectedCollection,
+  setSelectedItemKind,
+} from '@/data/selected-collection';
+import type { Collection } from '@/data/types';
 import { useLibraryGrouping, useLibrarySort } from '@/hooks/use-library-sort';
+import { initialSymbol } from '@/lib/initial-symbol';
+import { useRouter } from '@/lib/nav';
+
+/**
+ * The Library's leading bar button, as Browse's bridge button: the view's mark — a collection's
+ * initial, or All's asterisk — in an SF circle with no glass behind it (`hidesSharedBackground`),
+ * opening the views as checkmarked rows with "Manage collections…" after them. A collection has
+ * no art of its own, so the mark is the symbol rather than a rendered tile. Absent while the
+ * sidebar rail lists the collections, as the custom bar's selector is.
+ */
+export function LibraryCollectionMenu({ collection, collections }: { collection: string | null; collections: Collection[] }) {
+  const router = useRouter();
+  const views = libraryViews(collections);
+  const current = views.find((v) => v.id === collection) ?? views[0]!;
+  return (
+    <Stack.Toolbar placement="left">
+      <Stack.Toolbar.Menu
+        icon={collection === null ? 'asterisk.circle.fill' : initialSymbol(current.name, 'circle')}
+        hidesSharedBackground
+        accessibilityLabel={`${current.name}, collection`}>
+        <Stack.Toolbar.Menu inline title="Collection">
+          {views.map((v) => (
+            <Stack.Toolbar.MenuAction
+              key={v.testKey}
+              isOn={v.id === collection}
+              icon={v.id === null ? 'asterisk' : initialSymbol(v.name)}
+              onPress={() => setSelectedCollection(v.id)}>
+              {v.name}
+            </Stack.Toolbar.MenuAction>
+          ))}
+        </Stack.Toolbar.Menu>
+        <Stack.Toolbar.MenuAction icon="folder" onPress={() => router.push('/manage-collections')}>
+          Manage collections…
+        </Stack.Toolbar.MenuAction>
+      </Stack.Toolbar.Menu>
+    </Stack.Toolbar>
+  );
+}
 
 /**
  * The Library's arranging controls as ONE trailing menu in the iOS navigation bar — the `⋯`
