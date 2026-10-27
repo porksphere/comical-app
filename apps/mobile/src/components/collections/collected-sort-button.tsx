@@ -80,7 +80,7 @@ export function CollectedSortButton({
   );
 }
 
-/** The same three axes as a system menu for the iOS bottom toolbar — see `libraryFilterMenu`. */
+/** The same three axes as a submenu of the Library's iOS bar menu — see `libraryFilterMenu`. */
 export function collectedSortMenu({
   value,
   onChange,
@@ -90,7 +90,7 @@ export function collectedSortMenu({
 }) {
   const dirLabels = value.sort === 'added' ? DIR_LABELS : POSITIONAL_DIR_LABELS;
   return (
-    <Stack.Toolbar.Menu icon="arrow.up.arrow.down" accessibilityLabel="Sort saved items">
+    <Stack.Toolbar.Menu title="Sort" icon="arrow.up.arrow.down" accessibilityLabel="Sort saved items">
       <Stack.Toolbar.Menu inline title="Sort by">
         {SORT_ORDER.map((sort) => (
           <Stack.Toolbar.MenuAction

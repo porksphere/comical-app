@@ -72,7 +72,7 @@ export function LibrarySortButton({
   );
 }
 
-/** The same two axes as a system menu for the iOS bottom toolbar — see `libraryFilterMenu`. */
+/** The same two axes as a submenu of the Library's iOS bar menu — see `libraryFilterMenu`. */
 export function librarySortMenu({
   value,
   onChange,
@@ -85,7 +85,7 @@ export function librarySortMenu({
   onGroupingChange: (g: LibraryGrouping) => void;
 }) {
   return (
-    <Stack.Toolbar.Menu icon="arrow.up.arrow.down" accessibilityLabel="Sort library">
+    <Stack.Toolbar.Menu title="Sort" icon="arrow.up.arrow.down" accessibilityLabel="Sort library">
       <Stack.Toolbar.Menu inline title="Sort by">
         {SORT_ORDER.map((sort) => (
           <Stack.Toolbar.MenuAction key={sort} isOn={sort === value} onPress={() => onChange(sort)}>

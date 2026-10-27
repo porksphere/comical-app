@@ -147,12 +147,24 @@ export function useLibraryFilterState(present: Present): LibraryFilterState {
   return { show, bridges, removedOnly, sources, nameOf };
 }
 
+/** Whether anything is narrowing the listing — what fills the filter icon, here and on the menu
+ *  button holding it. */
+export function libraryFilterNarrowing({
+  withShow,
+  show,
+  bridges,
+  removedOnly,
+}: Pick<LibraryFilterState, 'show' | 'bridges' | 'removedOnly'> & { withShow: boolean }) {
+  return (withShow && (show.length > 0 || removedOnly)) || bridges.length > 0;
+}
+
 /**
- * The same filter as a system menu item for the iOS bottom toolbar. A function returning the element
- * rather than a component: the toolbar only reads Stack.Toolbar.* elements that are its direct
- * children, so a component wrapping one would be invisible to it. The icon fills while anything is
- * narrowing, as the custom button's does. The system menu closes on every pick, so a multi-select
- * here is one toggle per opening — the price of the bar drawing it.
+ * The same filter as a submenu of the Library's iOS bar menu (library-native-toolbar). A function
+ * returning the element rather than a component: the native menu only reads Stack.Toolbar.*
+ * elements that are its direct children, so a component wrapping one would be invisible to it.
+ * The icon fills while anything is narrowing, as the custom button's does. The system menu closes
+ * on every pick, so a multi-select here is one toggle per opening — the price of the bar drawing
+ * it.
  */
 export function libraryFilterMenu({
   withShow,
@@ -162,9 +174,10 @@ export function libraryFilterMenu({
   sources,
   nameOf,
 }: LibraryFilterState & { withShow: boolean }) {
-  const narrowing = (withShow && (show.length > 0 || removedOnly)) || bridges.length > 0;
+  const narrowing = libraryFilterNarrowing({ withShow, show, bridges, removedOnly });
   return (
     <Stack.Toolbar.Menu
+      title="Filter"
       icon={narrowing ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle'}
       accessibilityLabel={withShow ? 'Filter by reading state or source' : 'Filter by source'}>
       {withShow && (
