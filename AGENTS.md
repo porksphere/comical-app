@@ -99,8 +99,13 @@ in place of the custom one) and hides the tab bar while the reader is expanded t
 applies the series backdrop scale/dim to the screen underneath. Search takes the bar as the
 stack's field (`Stack.SearchBar`, `integratedCentered`, uncontrolled: told the committed query,
 focused after the push settles) with sort as a trailing menu; the route has no title, so the field
-shares the chevron's row instead of sitting under an empty one; its filter shutter stays the custom
-one under the bar. Search and results share the tab's one UINavigationBar with the screen under
+shares the chevron's row instead of sitting under an empty one; its filters are a trailing bar
+button opening a system form sheet (`app/search-filters`, `presentation: 'formSheet'`) that hosts
+the custom filter rows, not the shutter the custom bars keep. The sheet is its own view controller
+and the app-root overlays render behind it, so it runs a stack of its own and `FilterButton`'s
+`onOpenEditor` pushes each editor as a screen; the Search screen hands it its filters through
+`data/filter-sheet.ts` (a one-slot module store, like `search-intent.ts`), since a root-stack modal
+cannot reach the screen's state by context. Search and results share the tab's one UINavigationBar with the screen under
 them, so their push animates the bar natively; the series page is a `containedTransparentModal`
 with its own zoom entrance, so its bar does not.
 

@@ -157,6 +157,13 @@ function RootNavigation() {
   // preference changes.
   const scheme = useActiveColorScheme();
   useWindowThemeColor(Colors[scheme].background);
+  const filterSheet: ComponentProps<typeof Stack.Screen>['options'] = {
+    headerShown: false,
+    presentation: 'formSheet',
+    sheetAllowedDetents: [0.6, 1],
+    sheetGrabberVisible: true,
+    contentStyle: { backgroundColor: Colors[scheme].backgroundPanel },
+  };
   useDesktopShellCommands();
   useNavigationKeys();
   return (
@@ -177,6 +184,10 @@ function RootNavigation() {
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="search" options={pushedScreen} />
+          {/* The search filters as a system form sheet (iOS; the custom bars keep their shutter).
+              A sheet is its own view controller, above the app-root overlay hosts, so it hosts a
+              stack of its own and pushes the editors as screens — see app/search-filters. */}
+          <Stack.Screen name="search-filters" options={filterSheet} />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-collections" options={{ headerShown: false }} />
           <Stack.Screen name="results" options={pushedScreen} />

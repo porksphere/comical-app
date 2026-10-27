@@ -28,6 +28,7 @@ import type { ContentRow } from '@/data/content-rows';
 import { useDedupedPages } from '@/data/grid-pages';
 import { toLibraryCard } from '@/data/library-card';
 import { fetchBrowseScope, libraryQuery, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
+import { closeFilterSheetSession, openFilterSheetSession, updateFilterSheetSession } from '@/data/filter-sheet';
 import { clearSearchIntent, peekSearchIntent, subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
 import { COMICAL_BRIDGE_ID, isComicalBridge, useInheritedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -73,8 +74,10 @@ const SUBMIT_HINT =
  * (see search-intent.ts) is consumed on mount and applied against the intent's bridge.
  *
  * On iOS the top bar is the system's (`nativeBar`): the field is the bar's own search field,
- * centred between the back chevron and a sort menu, and the filter shutter hangs under that bar
- * instead. The field there is UNCONTROLLED — told the committed query when it changes under it,
+ * centred between the back chevron and the filters button + sort menu, and the filters open from
+ * that button as a system form sheet (`/search-filters`, fed through data/filter-sheet.ts) instead
+ * of hanging under the bar as the shutter. The field there is UNCONTROLLED — told the committed
+ * query when it changes under it,
  * asked to focus on the same terms the custom field focuses itself on — where the custom field is
  * driven by `query` directly.
  */
@@ -380,16 +383,19 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // filters keep their relative bridge order, then the untouched ones in bridge order — so the list
   // never shuffles unpredictably, and the filters you've set are the ones most likely to stay
   // visible before the "+N" overflow.
-  const orderedDefs = useMemo(() => {
+  const { orderedDefs, activeFilterCount } = useMemo(() => {
     const edited: typeof filterDefs = [];
     const rest: typeof filterDefs = [];
     for (const d of filterDefs) {
       (filterValueToApi(d, resolvedValues[d.id]) !== null ? edited : rest).push(d);
     }
-    return edited.length ? [...edited, ...rest] : filterDefs;
+    return { orderedDefs: edited.length ? [...edited, ...rest] : filterDefs, activeFilterCount: edited.length };
   }, [filterDefs, resolvedValues]);
 
-  const hasFilterBar = filterDefs.length > 0;
+  const hasFilters = filterDefs.length > 0;
+  // The shutter is the custom bars' home for the filters; under the system bar they live in the
+  // sheet instead, so the shutter's height drops out of every offset below.
+  const hasFilterBar = hasFilters && !nativeBar;
   // The filter bar is exactly the top bar's height, so the two read as one stacked unit. No floor is
   // needed here any more: `TopBarHeight` is itself derived as CONTROL_HEIGHT + BarVerticalPad * 2
   // (see constants/theme.ts), so the bar can never be too short to hold its own 44pt chips without
@@ -400,6 +406,30 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // with its field. Everything below it positions from here: the filter bar's clip window, the
   // grid's top padding, the pull spinner.
   const topBarTotal = nativeBar ? topChrome : insets.top + barHeight;
+
+  // The filters sheet reads this screen's filters through data/filter-sheet.ts (it cannot reach
+  // them any other way — see there). Republished on every change while this screen owns the
+  // slot, so the sheet's rows follow edits made here (an intent applying a tag, a reset); the
+  // sheet shows the bridge's own order, not `orderedDefs`, so its rows never reshuffle under a tap.
+  const [sheetOwner] = useState(() => ({}));
+  const filterSession = useMemo(
+    () => ({
+      defs: filterDefs,
+      values: resolvedValues,
+      onChange: setFilterValue,
+      onReset: () => setFilterValues({}),
+    }),
+    [filterDefs, resolvedValues, setFilterValue, setFilterValues],
+  );
+  useEffect(() => {
+    if (nativeBar) updateFilterSheetSession(sheetOwner, filterSession);
+  }, [nativeBar, sheetOwner, filterSession]);
+  useEffect(() => () => closeFilterSheetSession(sheetOwner), [sheetOwner]);
+  const openFilters = () => {
+    hapticImpactLight();
+    openFilterSheetSession(sheetOwner, filterSession);
+    router.push('/search-filters');
+  };
 
   // A search runs once there's a query, or a committed filter/sort. Until then the page is a blank
   // landing (the desktop entry opens straight here). Both the query key and the fetch derive from
@@ -535,13 +565,12 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   };
   const currentSortKey = sortValue?.key ?? sortOptions[0]?.key;
 
-  // The system bar's items. The sort is a menu in the bar's trailing slot, like the Library's
-  // bottom-toolbar menus; the chevron is the stack's own. The field is centred in the bar on
-  // iOS 26 (older systems fall back to the inline placement) and left in place by a scroll — the
-  // filter shutter is what gives the results room, not a collapsing field — with the system's
-  // search dimming off, since the results under the field are the thing being typed at. The route
-  // has no title: the field IS the bar's middle, on the chevron's row, and a "Search" over it only
-  // said what the field already shows.
+  // The system bar's items. The filters button and the sort menu share the bar's trailing slot,
+  // like the Library's bottom-toolbar menus; the chevron is the stack's own. The field is centred
+  // in the bar on iOS 26 (older systems fall back to the inline placement) and left in place by a
+  // scroll, with the system's search dimming off, since the results under the field are the thing
+  // being typed at. The route has no title: the field IS the bar's middle, on the chevron's row,
+  // and a "Search" over it only said what the field already shows.
   const nativeItems = nativeBar ? (
     <>
       <Stack.Screen options={{ title: '' }} />
@@ -557,20 +586,29 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
         onSearchButtonPress={(e) => submit(e.nativeEvent.text)}
         onCancelButtonPress={goBack}
       />
-      {sortOptions.length > 0 && (
+      {(hasFilters || sortOptions.length > 0) && (
         <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Menu icon="arrow.up.arrow.down" accessibilityLabel="Sort results">
-            <Stack.Toolbar.Menu inline title="Sort by">
-              {sortOptions.map((o) => (
-                <Stack.Toolbar.MenuAction
-                  key={o.key}
-                  isOn={o.key === currentSortKey}
-                  onPress={() => setSortValue({ key: o.key, ascending: true })}>
-                  {o.label}
-                </Stack.Toolbar.MenuAction>
-              ))}
+          {hasFilters && (
+            <Stack.Toolbar.Button
+              icon={activeFilterCount > 0 ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle'}
+              accessibilityLabel={activeFilterCount > 0 ? `Filters, ${activeFilterCount} set` : 'Filters'}
+              onPress={openFilters}
+            />
+          )}
+          {sortOptions.length > 0 && (
+            <Stack.Toolbar.Menu icon="arrow.up.arrow.down" accessibilityLabel="Sort results">
+              <Stack.Toolbar.Menu inline title="Sort by">
+                {sortOptions.map((o) => (
+                  <Stack.Toolbar.MenuAction
+                    key={o.key}
+                    isOn={o.key === currentSortKey}
+                    onPress={() => setSortValue({ key: o.key, ascending: true })}>
+                    {o.label}
+                  </Stack.Toolbar.MenuAction>
+                ))}
+              </Stack.Toolbar.Menu>
             </Stack.Toolbar.Menu>
-          </Stack.Toolbar.Menu>
+          )}
         </Stack.Toolbar>
       )}
     </>

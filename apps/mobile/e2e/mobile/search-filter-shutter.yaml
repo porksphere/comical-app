@@ -1,0 +1,39 @@
+# Android keeps the custom filter shutter under the search bar: a tag-chip search (which runs
+# against the series' own bridge) shows the bridge's filter rows, and a multi-select row opens
+# its overlay editor.
+appId: com.porksphere.comical
+---
+- launchApp
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card[.].*"
+- assertVisible:
+    id: "series-page.details-card"
+- scrollUntilVisible:
+    element:
+      id: "series.tag.*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series.tag.*"
+- extendedWaitUntil:
+    visible:
+      id: "search.field.input"
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: "filter.genre"
+    timeout: 15000
+- assertVisible:
+    id: "filter.sort"
+- tapOn:
+    id: "filter.genre"
+- extendedWaitUntil:
+    visible:
+      id: "filter.genre.option.*"
+    timeout: 10000
+- back
+- back
+- assertVisible:
+    id: "series-page.details-card"
