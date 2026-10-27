@@ -21,7 +21,7 @@ import { SearchIcon } from '@/components/icons/ui-icons';
 import { SearchPill } from '@/components/search-pill';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
-import { BridgeThumbSize, Selector } from '@/components/selector';
+import { BarThumbSize, BridgeThumbSize, Selector } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
@@ -756,12 +756,12 @@ export default function BrowseScreen() {
     <>
       <NativeBarTitle>
         {currentBridge ? (
-          <HoldActionTarget testID="browse.nsfw-hold" size={thumbSize}>
+          <HoldActionTarget testID="browse.nsfw-hold" size={BarThumbSize}>
             <BridgeThumb
               uri={currentBridge.thumbnail}
               source={isComical ? COMICAL_ICON : undefined}
               label={currentBridge.name}
-              size={thumbSize}
+              size={BarThumbSize}
               fill
             />
           </HoldActionTarget>

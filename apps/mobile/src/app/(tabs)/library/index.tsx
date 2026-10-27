@@ -15,7 +15,7 @@ import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import { NativeBarTitle } from '@/components/native-bar-title';
-import { BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
+import { BarThumbRadius, BarThumbSize, BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
@@ -178,8 +178,8 @@ export default function LibraryScreen() {
 /**
  * The iOS navigation bar: the custom bar's thumbnail + collection selector standing in the title
  * slot (plain, as there — the title slot is the one the bar never wraps in a glass capsule), the
- * search trailing as the one capsule. The kind, filter and sort are secondary to what's showing,
- * so they go to the bottom toolbar (LibraryNativeToolbar), where iOS 26 keeps that tier.
+ * search and the arranging menu trailing as the capsules. The kind, filter and sort are secondary
+ * to what's showing, so they share that one `⋯` menu (LibraryNativeToolbar).
  */
 function LibraryNativeHeader({
   collection,
@@ -205,8 +205,8 @@ function LibraryNativeHeader({
   return (
     <>
       <NativeBarTitle>
-        <HoldActionTarget testID="library.nsfw-hold" size={BridgeThumbSize}>
-          <CollectionThumb view={collection} name={viewName} size={BridgeThumbSize} style={styles.barThumb} />
+        <HoldActionTarget testID="library.nsfw-hold" size={BarThumbSize}>
+          <CollectionThumb view={collection} name={viewName} size={BarThumbSize} style={styles.nativeBarThumb} />
         </HoldActionTarget>
         {/* The rail lists the collections when it's showing — same reasoning as the custom bar. */}
         {railNav ? (
@@ -237,6 +237,9 @@ const styles = StyleSheet.create({
   },
   barThumb: {
     borderRadius: BridgeThumbRadius,
+  },
+  nativeBarThumb: {
+    borderRadius: BarThumbRadius,
   },
   container: {
     flex: 1,

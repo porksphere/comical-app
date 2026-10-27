@@ -16,6 +16,11 @@ import { testId } from '@/lib/test-id';
 export const BridgeThumbSize = 28;
 /** That thumbnail's corner in a top bar. */
 export const BridgeThumbRadius = 8;
+/** The thumbnail beside a `bar` selector in the iOS navigation bar's title slot: the capsule's
+ *  inner height, so the cluster stands as tall as the glass buttons beside it. */
+export const BarThumbSize = 34;
+/** Its corner — the top-bar thumb's ratio (8 on 28) at this size. */
+export const BarThumbRadius = 10;
 
 /** Matches the rail's own thumbnail (`SidebarThumbSize` in app-sidebar), because on the
  *  popover those are two views of one list. The sheet's rows are 10pt taller, so they keep the full
@@ -60,8 +65,8 @@ export function useSubtitleSelectorStyle(size: 'subtitle' | 'bar' = 'subtitle') 
 export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['size'] }) {
   const theme = useTheme();
   const compact = useIsCompact();
-  const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : size === 'bar' ? 9 : 8;
-  const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (compact ? 22.4 : 28) : size === 'bar' ? 17 : 14;
+  const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : size === 'bar' ? 10 : 8;
+  const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (compact ? 22.4 : 28) : size === 'bar' ? 20 : 14;
   return (
     <View style={[styles.caret, { transform: [{ translateY: Math.round(fontSize * 0.09) }] }]}>
       <CaretDownIcon color={theme.textSecondary} size={px} />
@@ -235,11 +240,12 @@ const styles = StyleSheet.create({
     lineHeight: 34,
     fontWeight: '700',
   },
-  // The iOS navigation bar's title: 17pt semibold, so a selector in the title slot reads as the
-  // bar's title with a caret, not as a second kind of text.
+  // A selector in the iOS navigation bar's title slot: the bar title's semibold, a step above its
+  // 17pt — the cluster is the bar's whole leading half beside 34pt glass capsules, and at the
+  // title's size it read as a caption next to them.
   bar: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 25,
     fontWeight: '600',
   },
   caret: {
