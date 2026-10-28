@@ -8,14 +8,14 @@ import { BAR_THUMB_RADIUS, MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/me
 
 /**
  * Browse's controls in the iOS navigation bar: ONE leading button, the current bridge's icon as
- * a bare circle — no glass capsule behind it (`hidesSharedBackground`), the way a round account
- * picture is itself the button in Apple's own bars — opening a system menu with Bridge and Page
- * as submenus of checkmarked rows; the search is the trailing button. No custom view stands in
- * the bar, so every item is a standard UIBarButtonItem: UIKit lays the bar out itself (an image
- * item joins the vertical bar of a folded or landscape display) and would morph the leading item
- * into the back button of a screen Browse pushed natively. The series page is not one: it is a
- * transparent modal animating itself out of the card (tab-stack.tsx), so its bar replaces this
- * one outright.
+ * a circle in the bar's glass capsule, opening a system menu of checkmarked rows in two inline
+ * sections — the pages first, the frequent switch, then the bridges — so any pick is open and
+ * tap; the search is the trailing button. They were submenus, which put every page switch a
+ * level down. No custom view stands in the bar, so every item is a standard UIBarButtonItem:
+ * UIKit lays the bar out itself (an image item joins the vertical bar of a folded or landscape
+ * display) and morphs the leading item into the back button of the series page Browse pushes
+ * (tab-stack.tsx). The capsule is kept for that morph: a bare circle (`hidesSharedBackground`)
+ * was tried and the back button grew out of nothing.
  *
  * The bar draws an item's and a row's image as the plain UIImage it is given, so the shape is in
  * the file: `menu-thumb-files.ts` renders the thumbnail once per shape (a circle for the button,
@@ -60,10 +60,19 @@ export function BrowseNativeToolbar({
         <Stack.Toolbar.Menu
           icon={circle ? fileIcon(circle) : initialSymbol(current?.name ?? '', 'circle')}
           iconRenderingMode={circle ? 'original' : 'template'}
-          hidesSharedBackground
           accessibilityLabel={current ? `${current.name}, bridge and page` : 'Bridge and page'}>
+          <Stack.Toolbar.Menu inline title="Page">
+            {pages.map((option) => (
+              <Stack.Toolbar.MenuAction
+                key={option.key}
+                isOn={option.key === page}
+                onPress={() => onSelectPage(option.key)}>
+                {option.label}
+              </Stack.Toolbar.MenuAction>
+            ))}
+          </Stack.Toolbar.Menu>
           {withBridges ? (
-            <Stack.Toolbar.Menu title="Bridge" icon="puzzlepiece.extension">
+            <Stack.Toolbar.Menu inline title="Bridge">
               {bridges.map((b) => (
                 <Stack.Toolbar.MenuAction
                   key={b.id}
@@ -76,16 +85,6 @@ export function BrowseNativeToolbar({
               ))}
             </Stack.Toolbar.Menu>
           ) : null}
-          <Stack.Toolbar.Menu title="Page" icon="rectangle.grid.2x2">
-            {pages.map((option) => (
-              <Stack.Toolbar.MenuAction
-                key={option.key}
-                isOn={option.key === page}
-                onPress={() => onSelectPage(option.key)}>
-                {option.label}
-              </Stack.Toolbar.MenuAction>
-            ))}
-          </Stack.Toolbar.Menu>
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">

@@ -21,8 +21,9 @@ import { useRouter } from '@/lib/nav';
 
 /**
  * The Library's leading bar button, as Browse's bridge button: the view's mark — a collection's
- * initial, or All's asterisk — in an SF circle with no glass behind it (`hidesSharedBackground`),
- * opening WHAT THE TAB SHOWS, the two axes Browse's menu holds as Bridge and Page: the views as
+ * initial, or All's asterisk — in an SF circle in the bar's glass capsule (kept, as Browse's is,
+ * for the morph into the series page's back button), opening WHAT THE TAB SHOWS, the two axes
+ * Browse's menu holds as Page and Bridge: the views as
  * checkmarked rows with "Manage collections…" after them, then the kind (Series / Chapters /
  * Pages) as a second section while the view holds more than one. The kind sat in the trailing
  * `⋯` with the filter and sort first, and could not be found there: it is not an arrangement of
@@ -53,7 +54,6 @@ export function LibraryCollectionMenu({
     <Stack.Toolbar placement="left">
       <Stack.Toolbar.Menu
         icon={collection === null ? 'asterisk.circle.fill' : initialSymbol(current.name, 'circle')}
-        hidesSharedBackground
         accessibilityLabel={`${current.name}, collection`}>
         {railNav ? null : (
           <Stack.Toolbar.Menu inline title="Collection">

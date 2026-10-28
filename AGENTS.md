@@ -69,19 +69,22 @@ scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen
 large titles looked foreign beside the custom clusters). Browse's title is "<bridge> <page>" and
 Library's "<view> <kind>" (the view alone while it holds one kind), and on both it is also the NSFW hold target (`NativeTabHeader
 holdTestID`), because their bars hold only SYSTEM items and a `UIBarButtonItem` has no
-long-press of its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`
-— Browse the current bridge's thumbnail as a circle with Bridge and Page submenus of
-checkmarked rows (`components/browse-native-toolbar.tsx`), Library the view's mark (the
+long-press of its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`,
+flat — inline sections, never submenus, so every pick is open and tap — Browse the current
+bridge's thumbnail as a circle over the pages and then the bridges as checkmarked rows
+(`components/browse-native-toolbar.tsx`), Library the view's mark (the
 collection's initial, All's asterisk) with the views and "Manage collections…" and then the
 kind, Series / Chapters / Pages, as a second section while the view holds more than one
 (`LibraryCollectionMenu` in `components/library/library-native-toolbar.tsx`; Library's title
 is then "<view> <kind>", as Browse's is "<bridge> <page>") — and the search
 trailing, so UIKit lays the bar out itself (an image item joins the vertical bar of a folded or
-landscape display). The leading image button asks `hidesSharedBackground`: a bare circle, not a
-circle inside a glass capsule, the way a round account picture is itself the button in Apple's
-bars; the real buttons beside it stay glass. A Liquid Glass capsule comes off a plain image item
-this way, but NOT off a custom-view item — a title-slot cluster of RN views was tried and could
-not be made bare, which is why nothing custom stands in the bar any more. A menu row takes its
+landscape display). The leading image button keeps its Liquid Glass capsule: a bare circle
+(`hidesSharedBackground`, the way a round account picture is itself the button in Apple's bars)
+was tried and dropped, because the capsule is what morphs into the pushed series page's back
+button, and a bare circle left that button growing out of nothing. (The capsule comes off a
+plain image item that way, but NOT off a custom-view item — a title-slot cluster of RN views
+was tried and could not be made bare, which is why nothing custom stands in the bar any more.)
+A menu row takes its
 image only as a local FILE it reads itself, so `lib/menu-thumb-files.ts` renders each bridge
 thumbnail (or the bundled Comical asset) down to a 28pt PNG at the screen's scale once per
 session; the navigation bar's items and menus read it through React Native's loader as a plain
