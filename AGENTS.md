@@ -121,14 +121,14 @@ pushed screen and its `Stack.Screen` addresses it), so the tab's leading item mo
 back button and the slide and edge-pop are the system's; `useNativePush` in
 `app/series/index.tsx` is what the zoom rig gives up there.
 The settings screens' enum rows are SYSTEM menus too: `SettingsSelectRow` is
-platform-split (`components/settings/select-row.ios.tsx` — the whole row a SwiftUI `Menu` from
-`@expo/ui/swift-ui` in a `Host`, in iOS Settings' popup-row shape, `label … value ⌃⌄`, opening an
-inline `Picker` with the bridge thumbnails from the same thumb files; `select-row.tsx` keeps the
-anchored overlay picker for Android/web). `@expo/ui`'s image loader is PATCHED for that
-(`patches/@expo%2Fui@…`, bun `patchedDependencies`) to decode the file at the screen's scale and
-bake a `cornerRadius` modifier into the bitmap — stock it decodes 1× (blurry on a 3× screen) and
-a SwiftUI menu never rounds. It is the one vendored patch in the repo; a missing native
-behaviour otherwise gets a local Expo module, never a patch. A UIKit menu has no second line, so an OPTION's `description` is not
+platform-split (`components/settings/select-row.ios.tsx` — the row drawn in RN in iOS Settings'
+popup-row shape, `label … value ⌃⌄`, with the local Expo module `apps/mobile/modules/menu-anchor`
+laid over it: an invisible UIButton whose tap opens a UIMenu of checkmarked options with the
+bridge thumbnails from the same thumb files; `select-row-overlay.tsx` is the anchored overlay
+picker for Android/web, and the iOS row's fallback where the module isn't linked). The module
+decodes the pictures itself at the screen's scale — `@expo/ui`'s SwiftUI `Menu` was tried first
+and needed a vendored patch to do that, which is why it went: a missing native behaviour gets a
+local Expo module, never a patch, and the repo carries none. A UIKit menu has no second line, so an OPTION's `description` is not
 shown on iOS, and the option test ids (`settings.select.<label>.option.<value>`) are not
 reachable there — only the row's. Multi-select enum fields (`MultiEnumRow` in
 `setting-field.tsx`) stay on the overlay everywhere: a system menu can't hold several checks.

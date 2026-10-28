@@ -6,19 +6,15 @@ import { PixelRatio } from 'react-native';
 import shapedImage from '../../modules/shaped-image';
 
 /**
- * A menu row's picture as a FILE: a SwiftUI menu (the settings rows, `select-row.ios.tsx`) takes
- * a row's image only as a local file it reads itself, so a bridge's thumbnail — a URL, or the bundled Comical asset — is
- * rendered down to one once and kept for the session. The file is the size the row shows it at —
- * `MENU_THUMB_PX` points, rendered at the screen's scale: `@expo/ui`'s image loader is patched
- * (`patches/@expo%2Fui@…`) to decode a file at `UIScreen.main.scale`, since stock it decodes at
- * 1× and a menu then draws the bitmap point for pixel, blurry on a 3× screen. The same patch
- * bakes a `cornerRadius` modifier's radius into the bitmap, the only way a menu row's image
- * gets a rounded corner: the row takes the icon as a plain UIImage, past every modifier.
- *
- * The system NAVIGATION BAR (`Stack.Toolbar` items and their menus) reads its images through
- * React Native's loader instead, at whatever `scale` the source says, and `@expo/ui`'s patch
- * doesn't reach it, so a tile for the bar is clipped in the file itself by the `shaped-image`
- * module (`radius`: the row's corner, or `BAR_THUMB_RADIUS` for the circle a bar button shows).
+ * A menu row's picture as a FILE: a system menu (the navigation bar's `Stack.Toolbar` menus, the
+ * settings rows' `menu-anchor` menus) takes a row's image only as a local file, so a bridge's
+ * thumbnail — a URL, or the bundled Comical asset — is rendered down to one once and kept for
+ * the session. The file is the size the row shows it at — `MENU_THUMB_PX` points, rendered at
+ * the screen's scale — and the SHAPE is in the file too: a UIMenu draws the bitmap it is handed,
+ * past any modifier, so a tile is clipped by the `shaped-image` module (`radius`: the row's
+ * corner, or `BAR_THUMB_RADIUS` for the circle a bar button shows). The bar reads the file
+ * through React Native's loader at the `scale` the source says; `menu-anchor` decodes it itself
+ * at `UIScreen.main.scale`.
  */
 export const MENU_THUMB_PX = 28;
 /** The tile's corner, in points — the overlay menus' `thumb` radius. */
