@@ -43,7 +43,9 @@ appearance through `headerLargeStyle`, UIKit crossfading between them at the lis
 the other tabs stay bare over the soft scroll-edge effect) — the marker also hands the list to
 that screen's view controller through the local Expo module `apps/mobile/modules/nav-bar-scroll`
 (`setContentScrollView(_:for:)`), without which UIKit never finds the list and the bar never
-changes. Liquid Glass bars tint from the
+changes. Its `NavBarScrollAnchor` is a native view around the list that makes the hand-off
+itself, on the mount and again every time the screen comes back into a window, and writes
+each outcome to the Diagnostics screen (`nav-bar`) — the one way to read a release build. Liquid Glass bars tint from the
 WINDOW's interface style, not from the content, so `ThemeSchemeProvider` mirrors the theme
 preference into `Appearance.setColorScheme` on iOS — without that a dark theme sits over a light
 window and the bar glares white. It is
@@ -98,7 +100,11 @@ thumbnail (or the bundled Comical asset) down to a 28pt PNG at the screen's scal
 session; the navigation bar's items and menus read it through React Native's loader as a plain
 image, so the SHAPE is in the file: the local Expo module `apps/mobile/modules/shaped-image`
 (Swift, iOS only, `null` elsewhere) clips a rendered tile to a corner or a circle and
-`menuThumbFile(source, radius)` keeps one file per shape. A row without art shows its initial
+`menuThumbFile(source, radius)` keeps one file per shape. The bar reads a file off the
+main thread, uncached, and rebuilds its items on every return to the screen, so a file
+picture is blank for the first part of every pop back: `NavBarLeadingImage` (the local
+module `apps/mobile/modules/nav-bar-image`, a zero-size view in the page) keeps the decoded
+image and sets it on the leading item as the items are rebuilt. A row without art shows its initial
 as an SF `x.square.fill` (`lib/initial-symbol.ts`; `x.circle.fill` for a bar button), and the
 All view an `asterisk` — the other place SF Symbols stand in for lucide. The native bar has NO
 sticky-header primitive (no title menu, palette or scope bar in react-native-screens 4.30), so

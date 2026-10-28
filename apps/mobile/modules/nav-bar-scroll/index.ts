@@ -4,15 +4,25 @@
  * scrolled material). UIKit finds that scroll view by itself only down a screen's first
  * subviews, which a feed with a backdrop in front of its list defeats; see `TabScrollMarker`.
  *
+ * `NavBarScrollAnchor` wraps the list: natively, each time it enters a window (the mount, and
+ * every return to the screen), it hands the first scroll view under it to the view controller
+ * owning it. `onFollow` reports each hand-off or failure once, as the outcome changes.
+ *
  * Null where the module isn't linked (Android, web, a build from before it existed): the bar
  * then keeps whichever appearance UIKit settles on by itself.
  */
-import { requireOptionalNativeModule } from 'expo';
+import { requireNativeView, requireOptionalNativeModule } from 'expo';
+import type { ComponentType } from 'react';
+import type { ViewProps } from 'react-native';
 
-type NavBarScroll = {
-  /** Hands the first scroll view under the view with this tag to the view controller owning it,
-   *  as the scroll view its navigation bar reads its top edge from. False when there is none. */
-  follow(viewTag: number): Promise<boolean>;
+export type NavBarScrollReport = { ok: true; [detail: string]: unknown } | { ok: false; reason: string };
+
+export type NavBarScrollAnchorProps = ViewProps & {
+  onFollow?: (event: { nativeEvent: NavBarScrollReport }) => void;
 };
 
-export default requireOptionalNativeModule<NavBarScroll>('NavBarScroll');
+export const NavBarScrollAnchor: ComponentType<NavBarScrollAnchorProps> | null = requireOptionalNativeModule(
+  'NavBarScroll',
+)
+  ? requireNativeView<NavBarScrollAnchorProps>('NavBarScroll')
+  : null;

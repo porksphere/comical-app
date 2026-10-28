@@ -1,8 +1,9 @@
-import { createContext, use, useEffect, useRef, type ReactNode } from 'react';
-import { findNodeHandle, Platform, StyleSheet, View, type ViewInstance } from 'react-native';
+import { createContext, use, type ReactNode } from 'react';
+import { Platform, StyleSheet } from 'react-native';
 import { ScrollViewMarker } from 'react-native-screens/experimental';
 
-import navBarScroll from '../../modules/nav-bar-scroll';
+import { logDiagnostic } from '@/lib/diagnostics';
+import { NavBarScrollAnchor, type NavBarScrollReport } from '../../modules/nav-bar-scroll';
 
 /**
  * Set inside a tab's ROOT screen (the tab's own stack provides it — see `tab-stack`), null under
@@ -27,11 +28,13 @@ export const TabRootScrollContext = createContext<{ scrolledMaterial: boolean } 
  * The marker reaches the TAB screen only; the stack screen holding the navigation bar is never
  * told, and UIKit's own first-subview walk from it misses the same backdrop. For a tab whose
  * bar is bare at the top and a material once scrolled (`scrolledMaterial`), the list is handed
- * to that screen outright through the local `nav-bar-scroll` module, which is what lets UIKit
- * switch the bar between its two appearances. The soft scroll-edge effect is off on those lists:
- * it is itself a fade of the content under the bar, and over the material it was the two
- * stacked. The other tabs keep the edge effect the marker applies by default (`automatic`, soft
- * under a bar), their bar's whole treatment.
+ * to that screen outright by the local `nav-bar-scroll` module's anchor, natively, on the mount
+ * and again on every return to the screen, which is what lets UIKit switch the bar between its
+ * two appearances. Each hand-off is written to the Diagnostics screen as its outcome changes,
+ * the one way to read a release build. The soft scroll-edge effect is off on those lists: it is
+ * itself a fade of the content under the bar, and over the material it was the two stacked. The
+ * other tabs keep the edge effect the marker applies by default (`automatic`, soft under a
+ * bar), their bar's whole treatment.
  *
  * Elsewhere, and on Android/web, it renders the child alone.
  */
@@ -44,37 +47,27 @@ export function TabScrollMarker({
 }) {
   const tabRoot = use(TabRootScrollContext);
   const scrolledMaterial = tabRoot?.scrolledMaterial ?? false;
-  const anchor = useRef<ViewInstance>(null);
-  // Once per attach, like the marker's own registration: the handed-over view stands as long as
-  // the list, and a remount brings a new key. A frame later, in case the native views have not
-  // been mounted when the effect runs; after that nothing scrolls under a bare marker anyway.
-  useEffect(() => {
-    const module = navBarScroll;
-    if (!scrolledMaterial || !module) return;
-    let cancelled = false;
-    const follow = async () => {
-      const tag = anchor.current ? findNodeHandle(anchor.current) : null;
-      if (tag == null) return;
-      const found = await module.follow(tag);
-      if (!found && !cancelled) requestAnimationFrame(() => void follow());
-    };
-    void follow();
-    return () => {
-      cancelled = true;
-    };
-  }, [scrolledMaterial, markerKey]);
   if (Platform.OS !== 'ios' || !tabRoot) return children;
   const marker = (
     <ScrollViewMarker key={markerKey} style={styles.fill} {...(scrolledMaterial ? { scrollEdgeEffects: NO_TOP_EDGE } : {})}>
       {children}
     </ScrollViewMarker>
   );
-  if (!scrolledMaterial) return marker;
+  if (!scrolledMaterial || !NavBarScrollAnchor) return marker;
   return (
-    <View ref={anchor} style={styles.fill}>
+    <NavBarScrollAnchor key={markerKey} style={styles.fill} onFollow={reportFollow}>
       {marker}
-    </View>
+    </NavBarScrollAnchor>
   );
+}
+
+function reportFollow({ nativeEvent }: { nativeEvent: NavBarScrollReport }) {
+  if (nativeEvent.ok) {
+    const { ok: _ok, ...detail } = nativeEvent;
+    logDiagnostic('nav-bar', 'list handed to the bar', { context: JSON.stringify(detail) });
+  } else {
+    logDiagnostic('nav-bar', nativeEvent.reason);
+  }
 }
 
 const NO_TOP_EDGE = { top: 'hidden' } as const;
