@@ -35,7 +35,15 @@ re-expansion for days and reverted, so don't. The scroll view the bar follows is
 `TabScrollMarker` (`react-native-screens/experimental`'s `ScrollViewMarker`, keyed with the list
 it wraps) around each tab ROOT screen's list, under `TabRootScrollContext` from the tab's stack —
 never a pushed page's: the registration is a hand-off to UIKit nothing takes back, and UIKit's own
-first-descendant walk missed Browse's list behind the feed backdrop. Liquid Glass bars tint from the
+first-descendant walk missed Browse's list behind the feed backdrop. The marker reaches the TAB
+screen only, never the stack screen holding the navigation bar, so on Browse and Library — whose
+bar is bare at the top and `systemChromeMaterial` once the list is scrolled (`SCROLLED_MATERIAL`
+in `components/tab-stack.tsx`: the blur in the standard appearance, a transparent scroll-edge
+appearance through `headerLargeStyle`, UIKit crossfading between them at the list's top edge;
+the other tabs stay bare over the soft scroll-edge effect) — the marker also hands the list to
+that screen's view controller through the local Expo module `apps/mobile/modules/nav-bar-scroll`
+(`setContentScrollView(_:for:)`), without which UIKit never finds the list and the bar never
+changes. Liquid Glass bars tint from the
 WINDOW's interface style, not from the content, so `ThemeSchemeProvider` mirrors the theme
 preference into `Appearance.setColorScheme` on iOS — without that a dark theme sits over a light
 window and the bar glares white. It is
@@ -71,7 +79,7 @@ Library's "<view> <kind>" (the view alone while it holds one kind), and on both 
 holdTestID`), because their bars hold only SYSTEM items and a `UIBarButtonItem` has no
 long-press of its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`,
 flat — inline sections, never submenus, so every pick is open and tap — Browse the current
-bridge's thumbnail as a circle over the pages and then the bridges as checkmarked rows
+bridge's thumbnail as a circle over the bridges and then the pages as checkmarked rows
 (`components/browse-native-toolbar.tsx`), Library the view's mark (the
 collection's initial, All's asterisk) with the views and "Manage collections…" and then the
 kind, Series / Chapters / Pages, as a second section while the view holds more than one

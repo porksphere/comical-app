@@ -1,5 +1,5 @@
 import { Slot, Stack } from 'expo-router';
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
 import { TabRootScrollContext } from '@/components/tab-scroll-marker';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
@@ -13,10 +13,14 @@ import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
  * screen, which draws the custom TabTitleBar overlay as before.
  *
  * The bar is transparent so the content scrolls behind it exactly as it did behind the overlay
- * (and pads itself by useTopChromeHeight). No blur material of its own: on iOS 26 the bar's items
- * are already Liquid Glass, and a glass bar under glass buttons read as two layers of frosting.
- * What keeps the bar legible over covers is the scroll-edge effect instead — the system's own
- * soft fade of the content under the bar, which is what Apple's apps show above a feed.
+ * (and pads itself by useTopChromeHeight). Over the covers of Browse and Library it takes the
+ * chrome material once the list is scrolled and none at the top (`SCROLLED_MATERIAL`): the
+ * bar's standard appearance carries the blur and its scroll-edge appearance is transparent,
+ * and UIKit crossfades between the two as the list leaves its top edge — the arrangement the
+ * system reads for every bar, given a scroll view to read it from (`TabScrollMarker`). The
+ * other tabs stay bare: on iOS 26 the bar's items are already Liquid Glass, and a glass bar
+ * under glass buttons read as two layers of frosting over a list of rows. What keeps those bars
+ * legible is the scroll-edge effect — the system's own soft fade of the content under the bar.
  *
  * The stack also carries the tab's own copies of the pages a tab pushes — series, search, results
  * (one-line re-exports under each tab directory; `inTabHref` in lib/nav sends a push there) — so
@@ -39,6 +43,7 @@ import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
  */
 export default function TabStack({ tab }: { tab: string }) {
   if (!NATIVE_HEADER) return <Slot />;
+  const scrolledMaterial = SCROLLED_MATERIAL_TABS.has(tab);
   return (
     <TabRouteContext.Provider value={tab}>
       <Stack
@@ -48,7 +53,8 @@ export default function TabStack({ tab }: { tab: string }) {
           headerBackButtonDisplayMode: 'minimal',
           scrollEdgeEffects: { top: 'soft' },
         }}
-        screenLayout={tabScreenLayout}>
+        screenLayout={scrolledMaterial ? materialTabScreenLayout : bareTabScreenLayout}>
+        {scrolledMaterial ? <Stack.Screen name="index" options={SCROLLED_MATERIAL} /> : null}
         {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
         <Stack.Screen name="series/index" options={{ headerShown: false }} />
         <Stack.Screen name="series/search" options={NESTED_SEARCH_BAR} />
@@ -57,7 +63,31 @@ export default function TabStack({ tab }: { tab: string }) {
   );
 }
 
-function tabScreenLayout({ route, children }: { route: { name: string }; children: ReactNode }) {
+/** The tabs whose root list is covers, over which the bar needs a material once scrolled. */
+const SCROLLED_MATERIAL_TABS = new Set(['(home)', 'library']);
+
+/**
+ * The bar of a covers tab: the blur in the standard appearance, which UIKit shows once the list
+ * has scrolled, and nothing in the scroll-edge appearance, which it shows at the top — the large
+ * title style's background is what react-native-screens reads that appearance's colour from,
+ * large title or not. The soft scroll-edge effect is off: it is a fade of the content under the
+ * bar too, and the two stacked over the covers.
+ */
+const SCROLLED_MATERIAL: ComponentProps<typeof Stack.Screen>['options'] = {
+  headerBlurEffect: 'systemChromeMaterial',
+  headerLargeStyle: { backgroundColor: 'transparent' },
+  scrollEdgeEffects: { top: 'hidden' },
+};
+
+const BARE_ROOT = { scrolledMaterial: false };
+const MATERIAL_ROOT = { scrolledMaterial: true };
+
+function bareTabScreenLayout({ route, children }: { route: { name: string }; children: ReactNode }) {
   if (route.name !== 'index') return <>{children}</>;
-  return <TabRootScrollContext.Provider value={true}>{children}</TabRootScrollContext.Provider>;
+  return <TabRootScrollContext.Provider value={BARE_ROOT}>{children}</TabRootScrollContext.Provider>;
+}
+
+function materialTabScreenLayout({ route, children }: { route: { name: string }; children: ReactNode }) {
+  if (route.name !== 'index') return <>{children}</>;
+  return <TabRootScrollContext.Provider value={MATERIAL_ROOT}>{children}</TabRootScrollContext.Provider>;
 }
