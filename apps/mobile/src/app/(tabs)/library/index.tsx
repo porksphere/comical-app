@@ -21,6 +21,7 @@ import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import {
   ALL_VIEW_NAME,
   effectiveItemKind,
+  ITEM_KIND_LABELS,
   type ItemKind,
   itemKindOptions,
   type KindsPresent,
@@ -180,12 +181,13 @@ export default function LibraryScreen() {
 }
 
 /**
- * The iOS navigation bar, in Browse's shape: the view's name as the fading inline title (and the
- * NSFW hold target), the view's mark as ONE bare leading button opening the collection menu
- * (`LibraryCollectionMenu`), the search as the system search item, and the arranging `⋯`
- * trailing. The kind, filter and sort are secondary to what's showing, so they share that one
- * menu (LibraryNativeToolbar). A pinned section's label takes the title's place once it has
- * faded — see NativeTabHeader.
+ * The iOS navigation bar, in Browse's shape: "<view> <kind>" as the fading inline title (and
+ * the NSFW hold target) — the kind only while the view holds more than one, as Browse's is
+ * "<bridge> <page>" — the view's mark as ONE bare leading button opening the collection and
+ * kind menu (`LibraryCollectionMenu`), the search as the system search item, and the arranging
+ * `⋯` trailing. The filter and sort are secondary to what's showing, so they share that one menu
+ * (LibraryNativeToolbar). A pinned section's label takes the title's place once it has faded —
+ * see NativeTabHeader.
  */
 function LibraryNativeHeader({
   collection,
@@ -214,16 +216,15 @@ function LibraryNativeHeader({
   return (
     <>
       <NativeTabHeader
-        title={viewName}
+        title={kinds.length > 1 ? `${viewName} ${ITEM_KIND_LABELS[kind]}` : viewName}
         scrollY={scrollY}
         section={section}
         filter={filter}
         placeholder="Filter library…"
         holdTestID="library.nsfw-hold"
       />
-      {/* The rail lists the collections when it's showing — same reasoning as the custom bar. */}
-      {railNav ? null : <LibraryCollectionMenu collection={collection} collections={collections} />}
-      <LibraryNativeToolbar collection={collection} kind={kind} kinds={kinds} />
+      <LibraryCollectionMenu collection={collection} collections={collections} kind={kind} kinds={kinds} railNav={railNav} />
+      <LibraryNativeToolbar collection={collection} kind={kind} />
     </>
   );
 }

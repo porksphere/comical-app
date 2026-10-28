@@ -67,13 +67,15 @@ What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The 
 names the screen and the search: every tab uses an inline title that fades out over the first
 scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's `scrollY`;
 large titles looked foreign beside the custom clusters). Browse's title is "<bridge> <page>" and
-Library's the view's name, and on both it is also the NSFW hold target (`NativeTabHeader
+Library's "<view> <kind>" (the view alone while it holds one kind), and on both it is also the NSFW hold target (`NativeTabHeader
 holdTestID`), because their bars hold only SYSTEM items and a `UIBarButtonItem` has no
 long-press of its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`
 — Browse the current bridge's thumbnail as a circle with Bridge and Page submenus of
 checkmarked rows (`components/browse-native-toolbar.tsx`), Library the view's mark (the
-collection's initial, All's asterisk) with the views and "Manage collections…"
-(`LibraryCollectionMenu` in `components/library/library-native-toolbar.tsx`) — and the search
+collection's initial, All's asterisk) with the views and "Manage collections…" and then the
+kind, Series / Chapters / Pages, as a second section while the view holds more than one
+(`LibraryCollectionMenu` in `components/library/library-native-toolbar.tsx`; Library's title
+is then "<view> <kind>", as Browse's is "<bridge> <page>") — and the search
 trailing, so UIKit lays the bar out itself (an image item joins the vertical bar of a folded or
 landscape display). The leading image button asks `hidesSharedBackground`: a bare circle, not a
 circle inside a glass capsule, the way a round account picture is itself the button in Apple's
@@ -113,7 +115,7 @@ behaviour otherwise gets a local Expo module, never a patch. A UIKit menu has no
 shown on iOS, and the option test ids (`settings.select.<label>.option.<value>`) are not
 reachable there — only the row's. Multi-select enum fields (`MultiEnumRow` in
 `setting-field.tsx`) stay on the overlay everywhere: a system menu can't hold several checks.
-Secondary controls leave the title: Library's kind/filter/sort share one trailing `⋯`
+Secondary controls leave the title: Library's filter/sort share one trailing `⋯`
 `Stack.Toolbar.Menu` (`components/library/library-native-toolbar.tsx`) — NOT a
 `placement="bottom"` toolbar, which is the navigation controller's toolbar and lays out UNDER
 the floating tab bar. The native toolbar
