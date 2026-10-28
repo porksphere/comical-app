@@ -96,9 +96,11 @@ bar, a glass capsule hugging the heading was a badge drifting over the covers), 
 (`onSectionChange` on the grids and feed), and the screen hands that label to `NativeTabHeader
 section`: it takes the faded title's place in the bar, the way Photos names the month there and
 Music the album, cross-fading as the next heading arrives. The inline headings scroll away like
-any other row. The series page's bar does not morph out of the tab's leading item: it is a
-transparent modal animating itself out of the card (below), so UIKit never runs the bar
-transition there.
+any other row. A series opened from a tab is a real pushed card of that tab's stack (route
+`series/index` — the tab's `series/` directory has no layout on purpose, so the page IS the
+pushed screen and its `Stack.Screen` addresses it), so the tab's leading item morphs into its
+back button and the slide and edge-pop are the system's; `useNativePush` in
+`app/series/index.tsx` is what the zoom rig gives up there.
 The settings screens' enum rows are SYSTEM menus too: `SettingsSelectRow` is
 platform-split (`components/settings/select-row.ios.tsx` — the whole row a SwiftUI `Menu` from
 `@expo/ui/swift-ui` in a `Host`, in iOS Settings' popup-row shape, `label … value ⌃⌄`, opening an
@@ -143,11 +145,12 @@ and the app-root overlays render behind it, so it runs a stack of its own and `F
 `onOpenEditor` pushes each editor as a screen; the Search screen hands it its filters through
 `data/filter-sheet.ts` (a one-slot module store, like `search-intent.ts`), since a root-stack modal
 cannot reach the screen's state by context. Search and results share the tab's one UINavigationBar with the screen under
-them, so their push animates the bar natively; the series page is a `containedTransparentModal`
-with its own zoom entrance, so its bar does not. That modal — the root route and each tab's copy
-alike — hosts a nested Stack and the page's `Stack.Screen`/`Stack.Toolbar` address its `index`
-screen, never the modal: on iOS react-native-screens re-wraps a non-push screen's content whenever
-`headerShown` flips (`ScreenStackItem`'s `isHeaderInModal`) and remounts it, state and all. The
+them, so their push animates the bar natively, as does an in-tab series page's. The ROOT
+`/series` route (deep links) is still a `containedTransparentModal` with its own zoom entrance,
+so its bar does not; that modal hosts a nested Stack and the page's `Stack.Screen`/`Stack.Toolbar`
+address its `index` screen, never the modal: on iOS react-native-screens re-wraps a non-push
+screen's content whenever `headerShown` flips (`ScreenStackItem`'s `isHeaderInModal`) and remounts
+it, state and all. The
 series page flips it twice per visit (details ⇄ reader, the search layer), and when the flip hit
 the modal itself the search layer vanished on open and every open mounted the page twice.
 
@@ -270,7 +273,9 @@ suppression doesn't fit one of the three cases above, it's a code change, not a 
 
 # Zoom transitions
 
-The series page grows out of the card that opened it and collapses back into it (`apps/mobile/src/lib/series-zoom.ts`).
+The series page grows out of the card that opened it and collapses back into it (`apps/mobile/src/lib/series-zoom.ts`)
+— on Android, web and the root `/series` route. Inside an iOS tab it is a native push instead and
+none of this runs (`useNativePush` in `app/series/index.tsx`).
 The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
 runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
 

@@ -21,10 +21,10 @@ type SeriesSubPath = '/series-downloads' | '/downloads';
  * native push with the edge-swipe back — and everywhere else it returns the path untouched.
  *
  * Only the ROOT series route's nested stack has the sub-page routes. Its copies inside the iOS tab
- * stacks (`app/(tabs)/<tab>/series`) host a nested stack too (`components/tab-series-stack`), but
- * only for the page's system bar; they can't push a card over themselves either, so from one of
- * those the sub-page goes to the root route, over the tab shell — hence the segments, not the
- * pathname, which strips the `(tabs)` group and reads the same for both.
+ * stacks (`app/(tabs)/<tab>/series/index`) are plain pushed cards of the tab's own stack, with the
+ * tag search as their one twin (`series/search`), so from one of those the download sub-pages go
+ * to the root route, over the tab shell — hence the segments, not the pathname, which strips the
+ * `(tabs)` group and reads the same for both.
  *  */
 export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/series${SeriesSubPath}` {
   const segments: readonly string[] = useSegments();
@@ -37,7 +37,9 @@ export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/s
 
 /**
  * Present anywhere inside the /series nested stack (provided by
- * `app/series/_layout.tsx`), null everywhere else. Series cards read this instead of
+ * `app/series/_layout.tsx`), null everywhere else — including a tab's series copy on iOS, which
+ * is a real pushed card, so a related series there pushes another one (see useNativePush in
+ * app/series/index). Series cards read this instead of
  * `usePathname` — cards are render-cost-sensitive, and a context whose value never changes
  * doesn't re-render them on every navigation the way the pathname hook would. `drillSeries` is a
  * ref the combined page's screen fills with its layer-push (see SeriesReaderScreen): a drilled
@@ -110,8 +112,9 @@ export function registerDrillSeries(fn: (params: Record<string, string>) => void
  * won't do (see the note on InSeriesPageStack).
  *
  * The registered handler's presence IS the test, and it's exact: while a series page is mounted,
- * the topmost one is the screen the menu was opened over. Returns false when there is none, so the
- * caller pushes the route instead.
+ * the topmost one is the screen the menu was opened over. Returns false when there is none — no
+ * page, or a pushed card inside a tab, which registers nothing — so the caller pushes the route
+ * instead.
  */
 export function drillSeriesFromOverlay(params: Record<string, string>): boolean {
   const handler = drillSeriesHandlers.current();
@@ -129,11 +132,11 @@ export function registerOpenSearchLayer(fn: () => void): () => void {
 }
 
 /**
- * The options of the `search` card inside a series page's nested stack (the root route's and
- * each tab copy's), iOS: the only sub-page there that shows the system bar, since the search's
- * field IS that bar. Both stacks hide the bar by default for the combined page, whose bar is its
- * own `Stack.Screen`'s business; this is the same transparent, chevron-only bar every pushed page
- * gets from the root and tab stacks.
+ * The options of the series page's tag `search` card, iOS — inside the root route's nested stack,
+ * and `series/search` in each tab's stack: the one sub-page that shows the system bar, since the
+ * search's field IS that bar. Both stacks hide the bar by default for the combined page, whose bar
+ * is its own `Stack.Screen`'s business; this is the same transparent, chevron-only bar every
+ * pushed page gets from the root and tab stacks.
  */
 export const NESTED_SEARCH_BAR: ComponentProps<typeof Stack.Screen>['options'] = {
   headerShown: true,
@@ -144,19 +147,18 @@ export const NESTED_SEARCH_BAR: ComponentProps<typeof Stack.Screen>['options'] =
 };
 
 /**
- * Tag/author/type search, for the series details: null outside the series page's nested stack
- * (callers fall back to pushing /search), otherwise a function that opens the search over the
- * series. The caller stashes the search intent first (setSearchIntent), exactly like the route
- * path.
+ * Tag/author/type search, for the series details: null outside the series page (callers fall
+ * back to pushing /search), otherwise a function that opens the search over the series. The
+ * caller stashes the search intent first (setSearchIntent), exactly like the route path.
  *
- * On iOS it is a real push INTO the page's nested stack — the `search` twin under `app/series/`
- * or the focused tab's `series/` copy (by the segments, which strip the `(tabs)` group), so the
- * tab bar stays up and the search gets the system bar with its field, filters sheet and sort
- * menu like the one pushed from Browse. Over the series page, as one of its sub-pages, because
- * the page's own route is a contained transparent modal nothing can be pushed over (see
- * InSeriesPageStack). Elsewhere the search is an in-screen LAYER over the series — sliding in
- * with the statically-stuck shared chevron, the parent live beneath, and its result cards
- * drilling further layers.
+ * On iOS it is a real push of the page's `search` twin — under `app/series/` for the root
+ * route's nested stack, or `series/search` in the focused tab's stack (by the segments, which
+ * strip the `(tabs)` group) — so the tab bar stays up and the search gets the system bar with its
+ * field, filters sheet and sort menu like the one pushed from Browse; at the root it goes inside
+ * the nested stack because the page's own route is a contained transparent modal nothing can be
+ * pushed over (see InSeriesPageStack). Elsewhere the search is an in-screen LAYER over the
+ * series — sliding in with the statically-stuck shared chevron, the parent live beneath, and
+ * its result cards drilling further layers.
  */
 export function useOpenSeriesSearch(): (() => void) | null {
   const inStack = useContext(InSeriesPageStack);
@@ -173,7 +175,7 @@ export function useOpenSeriesSearch(): (() => void) | null {
     if (!claimNavigation(navTargetKey('/series#search'))) return;
     openSearchLayerHandlers.current()?.();
   }, [nestedSearch, router]);
-  return inStack ? open : null;
+  return inStack || nestedSearch ? open : null;
 }
 
 /** The nested `search` route of the series page the segments describe, if they describe one. */
@@ -204,8 +206,7 @@ export function useDrillRelatedSeries(): ((params: Record<string, string>) => vo
       if (!claimNavigation(navTargetKey({ pathname: '/series', params }))) return;
       // Only when actually ON a sub-page — from the combined page itself the nested stack is at
       // its root and the stack router rejects POP_TO_TOP (a noisy dev warning). By the top route's
-      // NAME, not the index, so a navigator with no sub-pages at all (a tab copy's nested stack)
-      // reads the same.
+      // NAME, not the index, so a navigator with no sub-pages at all reads the same.
       const state = navigation.getState();
       const top = state?.routes[state.index]?.name;
       if (top === 'downloads' || top === 'series-downloads' || top === 'search') {

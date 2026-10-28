@@ -1,11 +1,9 @@
 import { Slot, Stack } from 'expo-router';
 import type { ReactNode } from 'react';
-import { StyleSheet } from 'react-native';
-import Animated from 'react-native-reanimated';
 
 import { TabRootScrollContext } from '@/components/tab-scroll-marker';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
-import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
+import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
 
 /**
  * The layout of every tab directory. On iOS each tab is its own native Stack so the tab screen
@@ -22,11 +20,13 @@ import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@
  * The stack also carries the tab's own copies of the pages a tab pushes — series, search, results
  * (one-line re-exports under each tab directory; `inTabHref` in lib/nav sends a push there) — so
  * they open under the tab bar like any system app's detail page, rather than over the whole shell.
- * The series copy is the same contained transparent modal the root route is (its rationale is in
- * app/_layout), with no native edge-swipe: the page runs its own back-swipe and collapse — and,
- * like the root route, it is a directory hosting a stack of its own (`tab-series-stack`), because
- * the page's system bar must belong to a PUSHED screen, never to the modal itself. Search and
- * results take the stack's bar as it is — search puts its field in it (`Stack.SearchBar`).
+ * All of them are plain pushed cards sharing this one bar, so each push animates it natively: the
+ * tab's leading item morphs into the card's back button. The series page included — unlike the
+ * root `/series` route, which is a transparent modal zooming out of its card (app/_layout), the
+ * tab's copy is `series/index`, a screen of THIS stack: its directory has no layout on purpose,
+ * so the page is the pushed screen itself and its `Stack.Screen` options (bar, edge-pop) land on
+ * it. `useNativePush` in app/series/index is where the page gives up its own transitions for the
+ * system's. Its tag search is the sibling `series/search`, pushed over it with the search bar.
  *
  * The tab's root screen is the one whose list the system tab bar follows (minimize on scroll,
  * scroll-to-top): `TabRootScrollContext` is what lets that list register itself — see
@@ -43,51 +43,14 @@ export default function TabStack() {
         scrollEdgeEffects: { top: 'soft' },
       }}
       screenLayout={tabScreenLayout}>
-      <Stack.Screen
-        name="series"
-        options={{
-          headerShown: false,
-          animation: 'none',
-          presentation: 'containedTransparentModal',
-          gestureEnabled: false,
-          contentStyle: { backgroundColor: 'transparent' },
-        }}
-      />
+      {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
+      <Stack.Screen name="series/index" options={{ headerShown: false }} />
+      <Stack.Screen name="series/search" options={NESTED_SEARCH_BAR} />
     </Stack>
   );
 }
 
-/**
- * Every screen but the series page sits in the backdrop the series page opens over: scaled back
- * and dimmed behind it, restored under its swipe-away. Per screen, inside the stack, so the
- * series page — in this same stack, transparent — is the one thing not receding behind itself.
- * (Before the pages moved in here the whole tab shell was the backdrop.)
- */
 function tabScreenLayout({ route, children }: { route: { name: string }; children: ReactNode }) {
-  if (route.name === 'series') return <>{children}</>;
-  return (
-    <TabBackdrop>
-      {route.name === 'index' ? (
-        <TabRootScrollContext.Provider value={true}>{children}</TabRootScrollContext.Provider>
-      ) : (
-        children
-      )}
-    </TabBackdrop>
-  );
+  if (route.name !== 'index') return <>{children}</>;
+  return <TabRootScrollContext.Provider value={true}>{children}</TabRootScrollContext.Provider>;
 }
-
-function TabBackdrop({ children }: { children: ReactNode }) {
-  const backdropStyle = useSeriesReaderBackdropStyle();
-  const dimStyle = useSeriesReaderBackdropDimStyle();
-  return (
-    <Animated.View style={[styles.backdrop, backdropStyle]}>
-      {children}
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} />
-    </Animated.View>
-  );
-}
-
-const styles = StyleSheet.create({
-  backdrop: { flex: 1 },
-  dim: { backgroundColor: '#000' },
-});

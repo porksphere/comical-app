@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { Stack, useFocusEffect } from 'expo-router';
+import { Stack, useFocusEffect, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -207,6 +207,20 @@ function useViewport(): { width: number; height: number } {
   );
 }
 const IS_IOS = Platform.OS === 'ios';
+/**
+ * iOS, inside a tab: the series page is a real pushed card of the tab's native stack
+ * (components/tab-stack, route `series/index`) and UIKit owns its transitions — the slide in, the
+ * bar morphing out of the tab's leading item, the left-edge pop — so the zoom rig stands down on
+ * the depth-0 instance: no entrance (the page lands open in one frame, as on web), no collapse on
+ * the way out, no back-swipe or swipe-away of its own, nothing dimmed behind it, and leaving is
+ * just the pop. The root `/series` route (deep links, a reader opened from a notification) and
+ * Android/web keep the contained transparent modal with the zoom; so does a layer drilled over
+ * the root page, since a layer is never a route — inside a tab a related series is another push.
+ */
+function useNativePush(): boolean {
+  const segments: readonly string[] = useSegments();
+  return IS_IOS && segments[0] === '(tabs)';
+}
 /** A bottom safe-area inset above this is a system BAR the pages should stay out of when asked to
  *  respect safe areas — Android's three-button navigation, 48dp and drawn over the content with a
  *  scrim — rather than an INDICATOR the content may run under: the iPhone home indicator is 34pt
@@ -1048,11 +1062,14 @@ function SeriesReaderInstance({
   depth,
   onPopLayer,
   isTop,
+  nativePush,
   sequence,
 }: {
   params: SeriesReaderParams;
   depth: number;
   onPopLayer: () => void;
+  /** A pushed card whose transitions are the system's (see useNativePush). Never for a layer. */
+  nativePush: boolean;
   /** Whether this instance is the top of the stack — the one keyboard back acts on (web). */
   isTop: boolean;
   /** Present = this instance reads a cross-series sequence instead of a chapter. */
@@ -1341,9 +1358,10 @@ function SeriesReaderInstance({
   // starts, on the thread the spring is drawing on. So the pane rides `standby` until this flips:
   // the visible page mounts and paints (it is what the entrance reveals), everything else waits
   // out the flight — the same deferral `detailsSettled` gives the reveal, applied to the open.
-  // Starts SETTLED on web: there is no entrance there to defer behind (see `startZoom`), so the
-  // page has nothing to wait out and the pager may mount in the first commit like anything else.
-  const [entranceSettled, setEntranceSettled] = useState(IS_WEB);
+  // Starts SETTLED on web and on a pushed card: there is no entrance there to defer behind (see
+  // `startZoom`), so the page has nothing to wait out and the pager may mount in the first commit
+  // like anything else.
+  const [entranceSettled, setEntranceSettled] = useState(IS_WEB || nativePush);
   const markEntranceSettled = useCallback(() => setEntranceSettled(true), []);
   useEffect(() => {
     const t = setTimeout(() => {
@@ -1911,7 +1929,8 @@ function SeriesReaderInstance({
   );
 
   // Leaving this instance. The modal ROOT pops the route (deep-linked/full-page-loaded entries
-  // on web have no back stack — land on the browse tabs instead of dead-ending). A drilled
+  // on web have no back stack — land on the browse tabs instead of dead-ending); on a pushed card
+  // that pop IS the exit, the system's slide (useNativePush). A drilled
   // LAYER never touches navigation: it collapses on the same `zoom` the back-swipe drags
   // (closeLayer — chevron/hardware back), or is removed outright once a gesture has already
   // collapsed it / flown the page out (leaveNow — the parent series is live beneath).
@@ -2147,6 +2166,9 @@ function SeriesReaderInstance({
             progress.set(Math.min(1, Math.max(0, progressStartSV.value + -cross / span)));
             return;
           }
+          // A pushed card has no swipe-away (useNativePush): the drag is still claimed, so nothing
+          // beneath scrolls on it, but it moves nothing and releases to nothing.
+          if (nativePush) return;
           // The follow: both axes, feeding the collapse instead of a fling. Distance in ANY
           // direction drives it, since unlike the back-swipe this gesture has no single axis to
           // measure along.
@@ -2212,6 +2234,7 @@ function SeriesReaderInstance({
             runOnJS(commitReveal)(open ? 1 : 0);
             return;
           }
+          if (nativePush) return;
           // The release decision — the shared projection (lib/gesture-release), judged along the
           // direction the page actually travelled, since this one can be thrown off either side.
           //
@@ -2286,6 +2309,7 @@ function SeriesReaderInstance({
   }, [
     settings.mode,
     collapseEnabled,
+    nativePush,
     width,
     height,
     zoomRadiusClosing,
@@ -2410,7 +2434,8 @@ function SeriesReaderInstance({
   // Consumed in a state initializer so it's known on the FIRST render — a frame later would start
   // the grow from the wrong geometry. The ENTRANCE keeps this rect; the exit re-aims off it via
   // `heroShift`, because on a last-read list the card has moved by then. Don't freeze the exit to it.
-  const [zoomSource] = useState(() => (IS_WEB ? null : takeZoomOrigin(id)));
+  // A pushed card takes none either: its entrance is the system's slide (useNativePush).
+  const [zoomSource] = useState(() => (IS_WEB || nativePush ? null : takeZoomOrigin(id)));
   /**
    * How far the source card has moved since capture, applied only at the collapsed end (scaled by
    * `1 - q`). Kept out of `hero` so `zoomGeom` and its styles never recompute mid-flight; sprung, so
@@ -2510,7 +2535,8 @@ function SeriesReaderInstance({
     // nothing — which is what read as a laggy fade rather than as an opening. Land on the open state
     // in one frame instead. The COLLAPSE is untouched: that one follows a finger, so it is a
     // response rather than a flourish, and it still needs `zoom` to travel.
-    if (IS_WEB) {
+    // A pushed card likewise: the slide in is the system's (useNativePush).
+    if (IS_WEB || nativePush) {
       zoom.set(1);
       traceJS('open', 'entered', { finished: true, instant: true });
       return;
@@ -2526,7 +2552,7 @@ function SeriesReaderInstance({
         runOnJS(markEntranceSettled)();
       }),
     );
-  }, [zoom, zoomArmed, homeAt, blankSource, markEntranceSettled]);
+  }, [zoom, zoomArmed, homeAt, blankSource, markEntranceSettled, nativePush]);
   const onHeroCoverRect = useCallback((rect: ZoomRect) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
     // as its aspect settles, and moving the destination mid-flight would visibly jump. What the
@@ -2575,6 +2601,11 @@ function SeriesReaderInstance({
   // just blink the screen away.
   const closeLayer = useCallback(() => {
     if (LEFT.has(token)) return;
+    // A pushed card has nothing to shrink into — the pop is the exit (useNativePush).
+    if (nativePush) {
+      leaveOnce();
+      return;
+    }
     zoomClosing.set(true);
     zoomReaderClose.set(!detailsActiveSV.value);
     zoomRadiusClosing.set(true);
@@ -2588,7 +2619,18 @@ function SeriesReaderInstance({
     zoom.set(IS_WEB ? 0 : withSpring(0, ZOOM_OUT_SPRING));
     // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
     // leaveOnce), with the `leaving` backstop above as the safety net.
-  }, [token, edgeCommitting, homeAt, zoom, zoomClosing, zoomReaderClose, zoomRadiusClosing, detailsActiveSV]);
+  }, [
+    token,
+    edgeCommitting,
+    homeAt,
+    zoom,
+    zoomClosing,
+    zoomReaderClose,
+    zoomRadiusClosing,
+    detailsActiveSV,
+    nativePush,
+    leaveOnce,
+  ]);
 
   /**
    * Ask the source card where it is, once per collapse. Hung off `zoom` leaving the top rather than
@@ -2914,9 +2956,10 @@ function SeriesReaderInstance({
     // Tagged with DEPTH. Every instance used to log as plain `series.list`, which is fine until
     // three of them are stacked — and the bugs that most need a trace are exactly the ones where
     // the question is which instance reacted.
-    () => (IS_WEB ? null : makeBackSwipePan(`series.list@${depth}`)),
+    // Nor on a pushed card, whose edge swipe is the navigation controller's (useNativePush).
+    () => (IS_WEB || nativePush ? null : makeBackSwipePan(`series.list@${depth}`)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [makeBackSwipePan, traceOn, depth],
+    [makeBackSwipePan, traceOn, depth, nativePush],
   );
   const detailsScrollGesture = useMemo(
     () => (detailsBackSwipe ? Gesture.Simultaneous(Gesture.Native(), detailsBackSwipe) : undefined),
@@ -3523,15 +3566,16 @@ function SeriesReaderInstance({
   // swipe-away. This used to carry a second term for the swipe-away, which flung the page along
   // its own vector without touching `zoom`; there is no such vector any more.
   // Depth 0 ONLY: a drilled layer sits over its parent series inside this same modal, and the tabs
-  // behind the whole modal must not respond twice to what is, to them, one open page.
+  // behind the whole modal must not respond twice to what is, to them, one open page. Nor a pushed
+  // card: nothing shows behind one, and UIKit has taken the screen beneath away regardless.
   useAnimatedReaction(
     () => {
       return zoom.value;
     },
     (covered) => {
-      if (depth === 0 && !inPane) seriesReaderDim.set(covered);
+      if (depth === 0 && !inPane && !nativePush) seriesReaderDim.set(covered);
     },
-    [depth, inPane],
+    [depth, inPane, nativePush],
   );
   // Belt and braces: nothing may strand the backdrop dimmed if this screen goes away without its
   // exit animation finishing (a deep link replacing the route, a dev reload). The hold's release
@@ -3539,9 +3583,9 @@ function SeriesReaderInstance({
   // one JS-thread write against a value the reaction above writes every frame, and on its own it
   // has no way to notice when it loses that race (see lib/pushback-watchdog).
   useEffect(() => {
-    if (depth > 0 || inPane) return;
+    if (depth > 0 || inPane || nativePush) return;
     return holdSeriesBackdrop();
-  }, [depth, inPane]);
+  }, [depth, inPane, nativePush]);
 
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
@@ -3720,11 +3764,14 @@ function SeriesReaderInstance({
   // reader, which has no bar. Only the top instance sets the options (they are the route's, shared
   // by every layer), and the elements mount only while it is top, so a layer that becomes top again
   // re-applies them — Stack.Screen's effect runs on mount, and the toolbar unregisters its item on
-  // unmount. The route these options reach is the `index` of a nested stack — the root route's
-  // (app/series/_layout) or a tab copy's (components/tab-series-stack) — never the contained
-  // transparent modal around it: react-native-screens remounts a modal's content when its
-  // `headerShown` flips, and this page flips it on every details ⇄ reader switch and for the
-  // search layer below.
+  // unmount. Inside a tab the route is the tab stack's own pushed card (useNativePush), whose back
+  // button is the system's — the one the tab's leading item morphs into — and whose left-edge pop
+  // is on only while the details are up: in the reader it would pop the whole page out from under
+  // a page turn. At the root the route these options reach is the `index` of the nested stack
+  // (app/series/_layout), never the contained transparent modal around it: react-native-screens
+  // remounts a modal's content when its `headerShown` flips, and this page flips it on every
+  // details ⇄ reader switch and for the search layer below; a nested root has no back of its own,
+  // hence the chevron.
   const nativeBarUp = NATIVE_HEADER && detailsActive;
   const nativeBar =
     NATIVE_HEADER && isTop ? (
@@ -3734,12 +3781,13 @@ function SeriesReaderInstance({
             headerShown: detailsActive,
             headerTransparent: true,
             headerShadowVisible: false,
-            headerBackVisible: false,
+            headerBackVisible: nativePush,
+            ...(nativePush ? { gestureEnabled: detailsActive } : {}),
             title: barSolid ? headerBarTitle : '',
             headerBlurEffect: barSolid ? 'systemChromeMaterial' : undefined,
           }}
         />
-        {detailsActive ? (
+        {detailsActive && !nativePush ? (
           <Stack.Toolbar placement="left">
             <Stack.Toolbar.Button
               icon="chevron.left"
@@ -4209,6 +4257,7 @@ export default function SeriesReaderScreen() {
   const router = useRouter();
   const { width } = useViewport();
   const inPane = useSeriesPaneWidth() !== null;
+  const nativePush = useNativePush();
   const [drills, setDrills] = useState<DrillEntry[]>([]);
   // The pane stays mounted under a full-screen series page opened from it (see lib/series-pane).
   useEffect(() => (inPane ? undefined : coverSeriesPane()), [inPane]);
@@ -4295,7 +4344,9 @@ export default function SeriesReaderScreen() {
       return () => setFocused(false);
     }, []),
   );
-  const live = usePaneTabLive() && focused;
+  // A pushed card holds neither: a related series pushes another card there, and the tag search
+  // pushes its route (see useNativePush) — a handler left registered would turn both into layers.
+  const live = usePaneTabLive() && focused && !nativePush;
   useEffect(() => (live ? registerDrillSeries(drill) : undefined), [drill, live]);
   useEffect(() => (live ? registerOpenSearchLayer(openSearch) : undefined), [openSearch, live]);
   // The IN-TREE push parallax, now serving the SEARCH layer alone: how much it covers what's under
@@ -4343,6 +4394,7 @@ export default function SeriesReaderScreen() {
               depth={0}
               onPopLayer={popLayer}
               isTop={drills.length === 0 && !covered}
+              nativePush={nativePush}
               sequence={seqRun}
             />
           ) : (
@@ -4358,6 +4410,7 @@ export default function SeriesReaderScreen() {
             depth={0}
             onPopLayer={popLayer}
             isTop={drills.length === 0 && !covered}
+            nativePush={nativePush}
           />
         )}
       </Animated.View>
@@ -4373,6 +4426,7 @@ export default function SeriesReaderScreen() {
               depth={i + 1}
               onPopLayer={popLayer}
               isTop={i === top && !covered}
+              nativePush={false}
             />
           ) : (
             <SearchLayer onPopLayer={popLayer} coverSV={layerCover} isTop={i === top && !covered} />

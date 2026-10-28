@@ -22,14 +22,11 @@ export function FocusedTabTracker() {
 
 /**
  * The tab's route name (`'(home)'`, `'library'`, …) when a page pushed now belongs in the tab's
- * stack, null when it belongs on the root stack: outside the tabs, or anywhere on top of an
- * in-tab series — the page itself or the tag search pushed inside it. That series is a contained
- * transparent modal, and nothing can be pushed over one in the same stack (see InSeriesPageStack
- * in lib/series-nav), so from there a page goes over the whole tab shell as it always did.
+ * stack, null when it belongs on the root stack: outside the tabs. An in-tab series is a plain
+ * pushed card of that stack (see useNativePush in app/series/index), so a page pushed from on top
+ * of it — a related series, its tag search, a result — stacks there too.
  */
 export function focusedTabRoute(): string | null {
   if (segments[0] !== '(tabs)') return null;
-  const tab = segments[1];
-  if (!tab || segments.includes('series')) return null;
-  return tab;
+  return segments[1] ?? null;
 }

@@ -129,9 +129,9 @@ function takeContentPane(href: unknown): boolean {
  * iOS: a series, search or results page pushed from inside a tab opens INSIDE that tab's native
  * stack — the twin routes under `app/(tabs)/<tab>/` — so the tab bar stays up over it as it does in
  * every system app, instead of on the root stack over the whole tab shell. Here, with the pane
- * hand-off, for the same reason: the push sites are many and context-free. From on top of an
- * in-tab series (and from outside the tabs) the page goes to the root route as before — see
- * `focusedTabRoute`. Android and web keep their single root copies.
+ * hand-off, for the same reason: the push sites are many and context-free. From outside the tabs
+ * the page goes to the root route as before — see `focusedTabRoute`. Android and web keep their
+ * single root copies.
  */
 type PushHref = Parameters<Router['push']>[0];
 const IN_TAB_PATHS = new Set(['/series', '/search', '/results']);
