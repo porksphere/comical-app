@@ -37,13 +37,13 @@ it wraps) around each tab ROOT screen's list, under `TabRootScrollContext` from 
 never a pushed page's: the registration is a hand-off to UIKit nothing takes back, and UIKit's own
 first-descendant walk missed Browse's list behind the feed backdrop. The marker reaches the TAB
 screen only, never the stack screen holding the navigation bar, so on Browse and Library — whose
-screen heads the list with the system large title (`LARGE_TITLE` in `components/tab-stack.tsx`,
-which also keeps the bar's scroll-edge appearance transparent through `headerLargeStyle`) — the
-marker also hands the list to that screen's view controller through the local Expo module
-`apps/mobile/modules/nav-bar-scroll` (`setContentScrollView(_:for:)`), without which UIKit never
-finds the list and the large title never collapses. Every tab's bar is bare, over the soft
-scroll-edge effect: a `systemChromeMaterial` once scrolled was tried on the two covers tabs
-(2026-10-28) and read heavy and stuttered, so it came out. Its `NavBarScrollAnchor` is a native view around the list that makes the hand-off
+bar is bare at the top and `systemChromeMaterial` once the list is scrolled (`SCROLLED_MATERIAL`
+in `components/tab-stack.tsx`: the blur in the standard appearance, a transparent scroll-edge
+appearance through `headerLargeStyle`, UIKit crossfading between them at the list's top edge;
+the other tabs stay bare over the soft scroll-edge effect) — the marker also hands the list to
+that screen's view controller through the local Expo module `apps/mobile/modules/nav-bar-scroll`
+(`setContentScrollView(_:for:)`), without which UIKit never finds the list and the bar never
+changes. Its `NavBarScrollAnchor` is a native view around the list that makes the hand-off
 itself, on the mount and again every time the screen comes back into a window, and writes
 each outcome to the Diagnostics screen (`nav-bar`) — the one way to read a release build. Liquid Glass bars tint from the
 WINDOW's interface style, not from the content, so `ThemeSchemeProvider` mirrors the theme
@@ -75,15 +75,11 @@ relayout. Android and web keep the custom `TopBar`/`TabTitleBar` overlay.
 
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
 names the screen and the search: every tab uses an inline title that fades out over the first
-scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's `scrollY`),
-and Browse and Library the system large title over it (`large`: `Stack.Title large` with the
-string in the screen's `title` option, the inline text arriving as the large title collapses;
-an experiment — the inline-only bars were what the custom clusters sat beside). Browse's title is "<bridge> <page>" and
+scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's `scrollY`;
+large titles looked foreign beside the custom clusters). Browse's title is "<bridge> <page>" and
 Library's "<view> <kind>" (the view alone while it holds one kind), and on both it is also the NSFW hold target (`NativeTabHeader
 holdTestID`), because their bars hold only SYSTEM items and a `UIBarButtonItem` has no
-long-press of its own (holding one opens its menu); while the large title is expanded the hold
-is read from the bar's touches by the local module `apps/mobile/modules/nav-bar-hold`
-(`NavBarHold`, a zero-size view in the page reporting the press's begin and end). Each has ONE leading `Stack.Toolbar.Menu`,
+long-press of its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`,
 flat — inline sections, never submenus, so every pick is open and tap — Browse the current
 bridge's thumbnail as a circle over the bridges and then the pages as checkmarked rows
 (`components/browse-native-toolbar.tsx`), Library the view's mark (the

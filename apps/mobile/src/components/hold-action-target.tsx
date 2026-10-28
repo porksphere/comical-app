@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, type ViewStyle } from 'react-native';
-import Animated, { type useAnimatedStyle } from 'react-native-reanimated';
+import { Pressable, StyleSheet } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { BridgeThumbRadius } from '@/components/selector';
 import { showToast } from '@/components/toast';
@@ -8,32 +8,6 @@ import { runBrowseHoldAction, useBrowseHoldAction, useBrowseHoldSound } from '@/
 import { useRampedHold } from '@/hooks/use-ramped-hold';
 
 const HOLD_HINT = 'Hold to show NSFW content until the app is closed';
-
-/**
- * The hold gesture Settings binds (`useBrowseHoldAction`) as press handlers: the ramp of haptic
- * beats from `useRampedHold`, committing the bound action and a toast at the top. `enabled` is
- * false while the gesture is bound to 'none', when the handlers must not be attached at all (see
- * HoldActionTarget). Shared by the mark that takes the press itself and the native bar hold
- * (`NativeTabHeader`), which gets its phases from UIKit.
- */
-export function useHoldAction(): {
-  enabled: boolean;
-  onPressIn: () => void;
-  onPressOut: () => void;
-  pulseStyle: ReturnType<typeof useAnimatedStyle<ViewStyle>>;
-} {
-  const [holdAction] = useBrowseHoldAction();
-  const [sound] = useBrowseHoldSound();
-  const enabled = holdAction !== 'none';
-  const hold = useRampedHold(
-    () => {
-      const message = runBrowseHoldAction();
-      if (message) showToast(message);
-    },
-    { sound: enabled && sound },
-  );
-  return { enabled, ...hold };
-}
 
 /**
  * A top-bar identity mark — Browse's bridge icon or its title, Library's collection icon — that
@@ -59,11 +33,19 @@ export function HoldActionTarget({
   testID?: string;
   children: ReactNode;
 }) {
-  const hold = useHoldAction();
+  const [holdAction] = useBrowseHoldAction();
+  const [sound] = useBrowseHoldSound();
+  const hold = useRampedHold(
+    () => {
+      const message = runBrowseHoldAction();
+      if (message) showToast(message);
+    },
+    { sound: holdAction !== 'none' && sound },
+  );
   return (
     <Pressable
       testID={testID}
-      {...(hold.enabled && { onPressIn: hold.onPressIn, onPressOut: hold.onPressOut })}
+      {...(holdAction !== 'none' && { onPressIn: hold.onPressIn, onPressOut: hold.onPressOut })}
       accessibilityRole="button"
       accessibilityLabel={label ?? HOLD_HINT}
       accessibilityHint={label ? HOLD_HINT : undefined}

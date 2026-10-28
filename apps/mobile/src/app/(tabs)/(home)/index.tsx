@@ -752,8 +752,8 @@ export default function BrowseScreen() {
     </BarSurface>
   );
   // On iOS the bar holds only system items: the bridge's circle as the leading menu button
-  // (bridges over pages), the search trailing. The system large title names the view,
-  // "<bridge> <page>", collapsing into the bar's inline title over the first scroll, and is
+  // (Bridge and Page submenus), the search trailing. The inline title names the view,
+  // "<bridge> <page>", fading out over the first scroll as History's and Activity's do, and is
   // the NSFW hold target: a bar button's hold is its menu, so the gesture moves to the one
   // thing in the bar that is still ours.
   const nativeHeader = (
@@ -763,7 +763,6 @@ export default function BrowseScreen() {
         scrollY={scrollY}
         section={section}
         holdTestID="browse.nsfw-hold"
-        large
       />
       <BrowseNativeToolbar
         bridges={visibleBridges}

@@ -222,7 +222,6 @@ function LibraryNativeHeader({
         filter={filter}
         placeholder="Filter library…"
         holdTestID="library.nsfw-hold"
-        large
       />
       <LibraryCollectionMenu collection={collection} collections={collections} kind={kind} kinds={kinds} railNav={railNav} />
       <LibraryNativeToolbar collection={collection} kind={kind} />
