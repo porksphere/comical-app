@@ -17,8 +17,9 @@ import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
  * chrome material once the list is scrolled and none at the top (`SCROLLED_MATERIAL`): the
  * bar's standard appearance carries the blur and its scroll-edge appearance is transparent,
  * and UIKit crossfades between the two as the list leaves its top edge — the arrangement the
- * system reads for every bar, given a scroll view to read it from (`TabScrollMarker`). The
- * other tabs stay bare: on iOS 26 the bar's items are already Liquid Glass, and a glass bar
+ * system reads for every bar, given a scroll view to read it from (`TabScrollMarker`). Those
+ * two also carry the system large title (`NativeTabHeader large`), which collapses off the
+ * same scroll view. The other tabs stay bare: on iOS 26 the bar's items are already Liquid Glass, and a glass bar
  * under glass buttons read as two layers of frosting over a list of rows. What keeps those bars
  * legible is the scroll-edge effect — the system's own soft fade of the content under the bar.
  *
