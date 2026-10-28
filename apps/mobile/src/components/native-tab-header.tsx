@@ -35,7 +35,7 @@ const SWAP_MS = 180;
  * With `large` the screen takes the system large title as well, Notes' and Settings' heading:
  * UIKit's own 34pt text under the bar's row while the list is at the top, collapsing into the
  * row over the first scroll (it reads the list the screen handed it — `TabScrollMarker`'s
- * anchor — the hand-off the scrolled material needs anyway). The string comes from the screen's
+ * anchor, which exists for this). The string comes from the screen's
  * `title` option, which the large title shows even beside a custom inline view; the inline view
  * is the SAME fading text, run the other way: hidden under the large title and arriving in the
  * row as the large title collapses, so the heading is never shown twice, and the section label

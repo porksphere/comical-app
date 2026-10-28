@@ -7,10 +7,10 @@ import { NavBarScrollAnchor, type NavBarScrollReport } from '../../modules/nav-b
 
 /**
  * Set inside a tab's ROOT screen (the tab's own stack provides it — see `tab-stack`), null under
- * every page the tab pushes and outside the tabs. `scrolledMaterial` is true for the tabs whose
- * bar takes a material once the list is scrolled (tab-stack's SCROLLED_MATERIAL).
+ * every page the tab pushes and outside the tabs. `largeTitle` is true for the tabs whose screen
+ * heads its list with the system large title (tab-stack's LARGE_TITLE).
  */
-export const TabRootScrollContext = createContext<{ scrolledMaterial: boolean } | null>(null);
+export const TabRootScrollContext = createContext<{ largeTitle: boolean } | null>(null);
 
 /**
  * Marks the scroll view the system tab bar follows (iOS 26 `minimizeBehavior`, status-bar tap
@@ -27,14 +27,12 @@ export const TabRootScrollContext = createContext<{ scrolledMaterial: boolean } 
  *
  * The marker reaches the TAB screen only; the stack screen holding the navigation bar is never
  * told, and UIKit's own first-subview walk from it misses the same backdrop. For a tab whose
- * bar is bare at the top and a material once scrolled (`scrolledMaterial`), the list is handed
- * to that screen outright by the local `nav-bar-scroll` module's anchor, natively, on the mount
- * and again on every return to the screen, which is what lets UIKit switch the bar between its
- * two appearances. Each hand-off is written to the Diagnostics screen as its outcome changes,
- * the one way to read a release build. The soft scroll-edge effect is off on those lists: it is
- * itself a fade of the content under the bar, and over the material it was the two stacked. The
- * other tabs keep the edge effect the marker applies by default (`automatic`, soft under a
- * bar), their bar's whole treatment.
+ * screen heads the list with the system large title (`largeTitle`), the list is handed to that
+ * screen outright by the local `nav-bar-scroll` module's anchor, natively, on the mount and
+ * again on every return to the screen, which is what the large title collapses off. Each
+ * hand-off is written to the Diagnostics screen as its outcome changes, the one way to read a
+ * release build. Every list keeps the edge effect the marker applies by default (`automatic`,
+ * soft under a bar), the bar's whole treatment.
  *
  * Elsewhere, and on Android/web, it renders the child alone.
  */
@@ -46,14 +44,14 @@ export function TabScrollMarker({
   children: NonNullable<ReactNode>;
 }) {
   const tabRoot = use(TabRootScrollContext);
-  const scrolledMaterial = tabRoot?.scrolledMaterial ?? false;
+  const largeTitle = tabRoot?.largeTitle ?? false;
   if (Platform.OS !== 'ios' || !tabRoot) return children;
   const marker = (
-    <ScrollViewMarker key={markerKey} style={styles.fill} {...(scrolledMaterial ? { scrollEdgeEffects: NO_TOP_EDGE } : {})}>
+    <ScrollViewMarker key={markerKey} style={styles.fill}>
       {children}
     </ScrollViewMarker>
   );
-  if (!scrolledMaterial || !NavBarScrollAnchor) return marker;
+  if (!largeTitle || !NavBarScrollAnchor) return marker;
   return (
     <NavBarScrollAnchor key={markerKey} style={styles.fill} onFollow={reportFollow}>
       {marker}
@@ -69,8 +67,6 @@ function reportFollow({ nativeEvent }: { nativeEvent: NavBarScrollReport }) {
     logDiagnostic('nav-bar', nativeEvent.reason);
   }
 }
-
-const NO_TOP_EDGE = { top: 'hidden' } as const;
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
