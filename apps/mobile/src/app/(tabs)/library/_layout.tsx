@@ -1,1 +1,5 @@
-export { default } from '@/components/tab-stack';
+import TabStack from '@/components/tab-stack';
+
+export default function Layout() {
+  return <TabStack tab="library" />;
+}

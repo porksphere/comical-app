@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import { TabRootScrollContext } from '@/components/tab-scroll-marker';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
+import { TabRouteContext } from '@/lib/focused-tab';
 import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
 
 /**
@@ -31,22 +32,28 @@ import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
  * The tab's root screen is the one whose list the system tab bar follows (minimize on scroll,
  * scroll-to-top): `TabRootScrollContext` is what lets that list register itself — see
  * `tab-scroll-marker`.
+ *
+ * `tab` is this directory's route name, which the layout cannot read for itself (the segments
+ * hooks report the FOCUSED tab, and every tab stays mounted); a series card under it builds its
+ * zoom Link's href from it — see `TabRouteContext`.
  */
-export default function TabStack() {
+export default function TabStack({ tab }: { tab: string }) {
   if (!NATIVE_HEADER) return <Slot />;
   return (
-    <Stack
-      screenOptions={{
-        headerTransparent: true,
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-        scrollEdgeEffects: { top: 'soft' },
-      }}
-      screenLayout={tabScreenLayout}>
-      {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
-      <Stack.Screen name="series/index" options={{ headerShown: false }} />
-      <Stack.Screen name="series/search" options={NESTED_SEARCH_BAR} />
-    </Stack>
+    <TabRouteContext.Provider value={tab}>
+      <Stack
+        screenOptions={{
+          headerTransparent: true,
+          headerShadowVisible: false,
+          headerBackButtonDisplayMode: 'minimal',
+          scrollEdgeEffects: { top: 'soft' },
+        }}
+        screenLayout={tabScreenLayout}>
+        {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
+        <Stack.Screen name="series/index" options={{ headerShown: false }} />
+        <Stack.Screen name="series/search" options={NESTED_SEARCH_BAR} />
+      </Stack>
+    </TabRouteContext.Provider>
   );
 }
 

@@ -53,7 +53,7 @@ import { isTypingTarget } from '@/lib/key-hold';
 import { isKey } from '@/lib/keybindings';
 import { useOpenSeriesSearch } from '@/lib/series-nav';
 import { measureZoomRect } from '@/lib/series-zoom';
-import { useRouter } from '@/lib/nav';
+import { LinkAppleZoomTarget, useRouter } from '@/lib/nav';
 import { formatScore, formatVotes } from '@/lib/rating';
 import { tagPaletteFor } from '@/lib/tag-colors';
 import { testId } from '@/lib/test-id';
@@ -545,28 +545,32 @@ export function SeriesBody({
       onPress={startReading}
       accessibilityRole="button"
       accessibilityLabel={primaryLabel}>
-      <SeriesCoverBox aspect={coverAspect} onRect={onHeroCoverRect}>
-        {resolvedCover ? (
-          <Image
-            source={{ uri: resolvedCover }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            // The skeleton already painted this exact cover — fading it in again on the
-            // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
-            // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
-            // differs from the browse thumbnail). Raw comparison: resolution is
-            // deterministic and its cache is warm from the skeleton, so equal raw values
-            // still mean "same cover already painted".
-            transition={initialCover && initialCover === series.cover ? 0 : 200}
-            onLoad={onCoverLoad}
-          />
-        ) : (
-          // Brief window while a server-relative cover resolves (absolute covers seed
-          // synchronously and never hit this).
-          <Skeleton style={StyleSheet.absoluteFill} />
-        )}
-      </SeriesCoverBox>
+      {/* iOS zoom: the box the tapped card's cover grows into and shrinks back to (series-card's
+          zoom link). A layout-neutral wrapper there, the box itself everywhere else. */}
+      <LinkAppleZoomTarget>
+        <SeriesCoverBox aspect={coverAspect} onRect={onHeroCoverRect}>
+          {resolvedCover ? (
+            <Image
+              source={{ uri: resolvedCover }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              // The skeleton already painted this exact cover — fading it in again on the
+              // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
+              // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
+              // differs from the browse thumbnail). Raw comparison: resolution is
+              // deterministic and its cache is warm from the skeleton, so equal raw values
+              // still mean "same cover already painted".
+              transition={initialCover && initialCover === series.cover ? 0 : 200}
+              onLoad={onCoverLoad}
+            />
+          ) : (
+            // Brief window while a server-relative cover resolves (absolute covers seed
+            // synchronously and never hit this).
+            <Skeleton style={StyleSheet.absoluteFill} />
+          )}
+        </SeriesCoverBox>
+      </LinkAppleZoomTarget>
       {chapterCount != null && (
         <View style={styles.coverBadge}>
           <ThemedText style={styles.coverBadgeText}>{chapterCount}</ThemedText>

@@ -16,8 +16,9 @@ import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { useTabRoute } from '@/lib/focused-tab';
 import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
-import { Link, router } from '@/lib/nav';
+import { Link, LinkTrigger, router, tabHref } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
 import { useIsZoomingSeries, useZoomOriginSource, useZoomSourceKey } from '@/lib/series-zoom';
 import { useWarmSeriesDetail } from '@/data/prefetch';
@@ -448,6 +449,16 @@ export function SeriesCard({
   // there, and its own lifted preview would fight an inline ring/popover) in favor of a subtle
   // non-scaling held scrim on the cover — see the ring/peek/scrim below.
   const isWeb = Platform.OS === 'web';
+  // iOS, inside a tab: the card is a `<Link>` whose trigger is an Apple zoom SOURCE, so the series
+  // page — the tab stack's own pushed card there (useNativePush in app/series/index) — grows out of
+  // this cover with the system's zoom transition (iOS 18+; a plain push below) and shrinks back
+  // into it on the pop, instead of sliding. The href names the tab itself: a Link is built at
+  // render, when the focused tab is not necessarily this one (see TabRouteContext). Not on a drill,
+  // which never navigates by href, and not under the root /series page, whose cards push the root
+  // route. This mounts expo-router's Link per card, which native avoided below as a scroll cost —
+  // the price of the zoom, to be weighed against it.
+  const zoomTab = useTabRoute();
+  const zoomLink = Platform.OS === 'ios' && !drillRelated && zoomTab !== null;
 
   // This card's COVER box, in window coordinates, handed to
   // the series page so the page can grow out of it — see lib/series-zoom. The cover, not the whole
@@ -792,6 +803,9 @@ export function SeriesCard({
         });
         // The drill (inside the series page's nested stack) dispatches on the NESTED navigator — no href.
         const open = () => (drillRelated ? drillRelated(buildParams()) : router.push(buildHref()));
+        // A `<Link asChild>` owns the press (web's anchor, iOS's zoom link); the Pressable then
+        // carries no handler of its own, or the Slot would merge the two and navigate twice.
+        const linked = (isWeb && !drillRelated) || zoomLink;
         const pressable = (
           <Pressable
             testID={testId('series-card', entry.id)}
@@ -806,7 +820,7 @@ export function SeriesCard({
             // (createTask/ExpoLink), and native has no anchor semantics to preserve anyway.
             // A DRILL (inside the series page's nested stack) is imperative on web too — it targets the
             // nested navigator, which an anchor href can't express (see useDrillRelatedSeries).
-            onPress={isWeb && !drillRelated ? undefined : open}
+            onPress={linked ? undefined : open}
             // Native long-press opens the shared quick-actions menu; undefined on web (which uses the
             // hover 3-dot instead). A long-press suppresses the tap, so it never also navigates.
             onLongPress={onLongPress}
@@ -835,6 +849,14 @@ export function SeriesCard({
             )}
           </Pressable>
         );
+        if (zoomLink && zoomTab !== null) {
+          return (
+            // eslint-disable-next-line comical/require-test-id -- asChild: clones onto the Pressable, which carries the testID.
+            <Link push href={tabHref(zoomTab, '/series', buildParams())} asChild>
+              <LinkTrigger withAppleZoom>{pressable}</LinkTrigger>
+            </Link>
+          );
+        }
         // Web keeps the real anchor (asChild clones it onto the Pressable); native — and a drill,
         // whose nested-navigator target no anchor href can express — renders the Pressable
         // directly and navigates imperatively on press.

@@ -275,7 +275,12 @@ suppression doesn't fit one of the three cases above, it's a code change, not a 
 
 The series page grows out of the card that opened it and collapses back into it (`apps/mobile/src/lib/series-zoom.ts`)
 — on Android, web and the root `/series` route. Inside an iOS tab it is a native push instead and
-none of this runs (`useNativePush` in `app/series/index.tsx`).
+none of this runs (`useNativePush` in `app/series/index.tsx`); the grow-from-the-card there is
+UIKit's own iOS 18 zoom transition: the card is a `<Link asChild>` with `<LinkTrigger
+withAppleZoom>` (from `@/lib/nav`) and the page's hero cover sits in `<LinkAppleZoomTarget>`.
+The href names the card's tab via `TabRouteContext` (`lib/focused-tab.tsx`), since a Link is
+built at render time when the focused tab may be another. The zoom's interactive dismissal
+follows the screen's `gestureEnabled`, which the page turns off in the reader.
 The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
 runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
 

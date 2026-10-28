@@ -141,6 +141,16 @@ function inTabHref(href: PushHref): PushHref {
   if (!pathname || !IN_TAB_PATHS.has(pathname)) return href;
   const tab = focusedTabRoute();
   if (!tab) return href;
+  return tabHref(tab, pathname, params);
+}
+
+/**
+ * A tab's own copy of a root page: `/series` inside `library` is `/(tabs)/library/series`. For a
+ * `<Link>` rendered under a tab (series-card's zoom link), which names its stack itself — the
+ * imperative push above does this for every call site, but an href is built at render time, when
+ * the focused tab is not necessarily the one the card is in (see `TabRouteContext`).
+ */
+export function tabHref(tab: string, pathname: string, params: PaneParams): PushHref {
   return { pathname: `/(tabs)/${tab}${pathname}`, params } as unknown as PushHref;
 }
 
@@ -217,3 +227,12 @@ export function Link({ onPress, ...rest }: LinkProps) {
   // eslint-disable-next-line comical/require-test-id -- pass-through wrapper: the testID comes from the call site's props.
   return <ExpoLink {...rest} onPress={handlePress} />;
 }
+
+/**
+ * The parts of expo-router's `Link` the iOS zoom transition is built from, for a `<Link asChild>`
+ * from this module: `<LinkTrigger withAppleZoom>` around the pressed element makes it the zoom's
+ * source, and `<LinkAppleZoomTarget>` on the destination screen marks what it grows into. Both are
+ * a plain pass-through off iOS 18. Here because the lint keeps `Link` itself out of reach.
+ */
+export const LinkTrigger = ExpoLink.Trigger;
+export const LinkAppleZoomTarget = ExpoLink.AppleZoomTarget;
