@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type ViewProps } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -82,6 +83,12 @@ function nowMs() {
 /** Height of the pill AND of the chapter-skip buttons — the bar and the arrows
  *  either side of it are one continuous row of the same weight. */
 const BAR_H = 40;
+
+/** iOS 26: the bar's surfaces are Liquid Glass, as the bar buttons the system bar holds above
+ *  the reader are (`ReaderNativeToolbar`); the translucent black stays for every older iOS and
+ *  every other platform. Module-level, the way the availability is: the app does not change
+ *  OS mid-run. */
+const GLASS = Platform.OS === 'ios' && isLiquidGlassAvailable();
 /** The page counter under the bar — "12 / 26" in a small chip that sits just above the home
  *  indicator and, unlike the bar, needn't fully leave: with the chrome hidden it stays at
  *  `COUNTER_FAINT` (a setting) so a glance still says where you are. It is never interactive, so
@@ -411,7 +418,7 @@ export function ChapterNavigator({
         <View style={styles.row}>
           {chaptered && <SkipButton {...left} Icon={SkipBackIcon} />}
           {total > 1 ? (
-            <View style={styles.pill}>
+            <ChromeSurface style={styles.pill}>
               <GestureDetector gesture={pan}>
                 <View testID="reader.navigator.slider" style={styles.track} onLayout={onTrackLayout}>
                   <View style={styles.bar} />
@@ -419,7 +426,7 @@ export function ChapterNavigator({
                   <Animated.View style={[styles.thumb, thumbStyle]} />
                 </View>
               </GestureDetector>
-            </View>
+            </ChromeSurface>
           ) : (
             <View style={styles.spacer} />
           )}
@@ -431,14 +438,14 @@ export function ChapterNavigator({
       <Animated.View
         pointerEvents="none"
         style={[styles.counterWrap, { bottom: chromeBottom + COUNTER_BOTTOM }, counterStyle]}>
-        <View style={styles.counter}>
+        <ChromeSurface style={styles.counter}>
           {/* The one node holding the current page as its own text — e2e reads a page number off
               the bar by this id, so the total stays a separate node. */}
           <ThemedText testID="reader.navigator.page" style={styles.counterText}>
             {scrubPage !== null ? scrubPage + 1 : (pageLabel ?? page + 1)}
           </ThemedText>
           <ThemedText style={[styles.counterText, styles.counterTotal]}>/ {total}</ThemedText>
-        </View>
+        </ChromeSurface>
       </Animated.View>
     </>
   );
@@ -458,17 +465,37 @@ function SkipButton({
   Icon: typeof SkipBackIcon;
 }) {
   return (
-    <Pressable
-      testID={testID}
-      onPress={onPress}
-      disabled={!enabled}
-      hitSlop={8}
-      style={styles.skip}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: !enabled }}
-      accessibilityLabel={label}>
-      <Icon color={enabled ? '#fff' : 'rgba(255,255,255,0.3)'} size={20} />
-    </Pressable>
+    <ChromeSurface interactive style={styles.skip}>
+      <Pressable
+        testID={testID}
+        onPress={onPress}
+        disabled={!enabled}
+        hitSlop={8}
+        style={styles.skipFace}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !enabled }}
+        accessibilityLabel={label}>
+        <Icon color={enabled ? '#fff' : 'rgba(255,255,255,0.3)'} size={20} />
+      </Pressable>
+    </ChromeSurface>
+  );
+}
+
+/** One of the bar's surfaces: glass where there is glass, the tint otherwise. `style` carries
+ *  the shape (size, radius, padding) and never a colour — the surface decides that. Dark whatever
+ *  the app theme is, as the reader is; `interactive` for a button, which the glass then presses. */
+function ChromeSurface({ interactive, style, children, ...rest }: ViewProps & { interactive?: boolean }) {
+  if (!GLASS) {
+    return (
+      <View style={[style, styles.tinted]} {...rest}>
+        {children}
+      </View>
+    );
+  }
+  return (
+    <GlassView glassEffectStyle="regular" colorScheme="dark" isInteractive={!!interactive} style={style} {...rest}>
+      {children}
+    </GlassView>
   );
 }
 
@@ -485,13 +512,19 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
   },
+  tinted: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
   skip: {
     width: BAR_H,
     height: BAR_H,
     borderRadius: BAR_H / 2,
+  },
+  skipFace: {
+    width: BAR_H,
+    height: BAR_H,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   spacer: {
     flex: 1,
@@ -506,7 +539,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.two,
     borderRadius: BAR_H / 2,
-    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   counterWrap: {
     position: 'absolute',
@@ -522,7 +554,6 @@ const styles = StyleSheet.create({
     gap: 3,
     paddingHorizontal: Spacing.two,
     borderRadius: COUNTER_H / 2,
-    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   counterText: {
     color: 'rgba(255,255,255,0.9)',
