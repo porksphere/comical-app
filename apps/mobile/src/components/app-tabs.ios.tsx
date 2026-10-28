@@ -108,12 +108,14 @@ export default function AppTabs() {
         <NativeTabs.Trigger name="activity" disableAutomaticContentInsets unstable_nativeProps={measured}>
           <NativeTabs.Trigger.Label>Activity</NativeTabs.Trigger.Label>
           <NativeTabs.Trigger.Icon sf={{ default: 'bell', selected: 'bell.fill' }} />
-          <NativeTabs.Trigger.Badge hidden={activityBadge === 0}>{String(activityBadge)}</NativeTabs.Trigger.Badge>
+          {/* Not `hidden`: expo-router sends any children as the badge text before it reads
+              `hidden`, so a zero count showed a "0" pip. The badge leaves the tree instead. */}
+          {activityBadge > 0 ? <NativeTabs.Trigger.Badge>{String(activityBadge)}</NativeTabs.Trigger.Badge> : null}
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="settings" disableAutomaticContentInsets unstable_nativeProps={measured}>
           <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
           <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
-          <NativeTabs.Trigger.Badge hidden={settingsBadge === 0}>{String(settingsBadge)}</NativeTabs.Trigger.Badge>
+          {settingsBadge > 0 ? <NativeTabs.Trigger.Badge>{String(settingsBadge)}</NativeTabs.Trigger.Badge> : null}
         </NativeTabs.Trigger>
       </NativeTabs>
     </ContentWidthProvider>
