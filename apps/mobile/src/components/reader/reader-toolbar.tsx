@@ -102,6 +102,21 @@ export function ReaderToolbar({
   );
 }
 
+/** The toolbar's shade alone — the top gradient that keeps a white title legible over a white
+ *  page — for iOS, where the bar is the system's (`ReaderNativeToolbar`, transparent) and this
+ *  backing is the one part of the reader's top chrome still drawn here. Fades with the chrome, as
+ *  the bar slides. */
+export function ReaderBarShade({ visible }: { visible: boolean }) {
+  const insets = useSafeAreaInsets();
+  const barHeight = useTopBarHeight();
+  const style = useAnimatedStyle(() => ({ opacity: withTiming(visible ? 1 : 0, { duration: 200 }) }));
+  return (
+    <Animated.View pointerEvents="none" style={[styles.wrap, { height: insets.top + barHeight }, style]}>
+      <LinearGradient colors={['rgba(0,0,0,0.78)', 'transparent']} style={StyleSheet.absoluteFill} />
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute',

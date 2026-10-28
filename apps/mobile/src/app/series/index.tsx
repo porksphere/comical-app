@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { Stack, useFocusEffect, useSegments } from 'expo-router';
+import { Stack, useFocusEffect, useSegments, useTheme as useNavTheme } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -54,10 +54,11 @@ import { isControlTarget, isTypingTarget } from '@/lib/key-hold';
 import { claimReaderScope, isKey, keyActionOf } from '@/lib/keybindings';
 import { TAB_KEY_ACTIONS } from '@/lib/keymap';
 import { ProgressPill } from '@/components/reader/progress-pill';
-import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
+import { ReaderBarShade, ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
 import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
 import { CollectPageControl, CollectPageShortcut } from '@/components/reader/collect-page-control';
 import { SettingsControl } from '@/components/reader/settings-panel';
+import { ReaderBarTitle, ReaderNativeToolbar } from '@/components/reader/reader-native-toolbar';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesRemovedNotice } from '@/components/series/series-removed';
@@ -1078,6 +1079,9 @@ function SeriesReaderInstance({
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
+  // The navigation theme, for the system bar's own tint (iOS): the details hand it back after the
+  // reader's white.
+  const navTheme = useNavTheme();
   const { width, height } = useViewport();
   const insets = useSafeAreaInsets();
   const mock = useMockActive();
@@ -3758,13 +3762,19 @@ function SeriesReaderInstance({
   // treatment). Above the band overlay so its taps win. Rendered in one of two spots below:
   // inside the edge-swipe slide for the modal root, outside it (fading, statically stuck) for a
   // drilled layer.
-  // iOS: the system bar is the details' top chrome, through the route's options — transparent over
-  // the cover, the glass material and the title arriving where the custom bar went solid, and its
-  // chevron the one back button; the custom chevron below steps aside for it and returns in the
-  // reader, which has no bar. Only the top instance sets the options (they are the route's, shared
-  // by every layer), and the elements mount only while it is top, so a layer that becomes top again
-  // re-applies them — Stack.Screen's effect runs on mount, and the toolbar unregisters its item on
-  // unmount. Inside a tab the route is the tab stack's own pushed card (useNativePush), whose back
+  // iOS: the system bar is the top chrome of BOTH modes, through the route's options — one bar,
+  // so its back button and buttons morph from one face to the other instead of a custom bar
+  // fading in under it. Details: transparent over the cover, the glass material and the title
+  // arriving where the custom bar went solid, the navigation theme's tint. Reader: transparent
+  // over the page, the series over its chapter as a white title view, the save and settings
+  // buttons as glass bar items (ReaderNativeToolbar), and the bar follows the chrome's auto-hide
+  // through `headerShown` — UIKit slides it away and back. Every option is set in both modes:
+  // Stack.Screen merges into the route's options, so a key left out would carry the other mode's
+  // value over. The custom chevron below never shows here. Only the top instance sets the options
+  // (they are the route's, shared by every layer), and the elements mount only while it is top,
+  // so a layer that becomes top again re-applies them — Stack.Screen's effect runs on mount, and
+  // the toolbar unregisters its item on unmount. Inside a tab the route is the tab stack's own
+  // pushed card (useNativePush), whose back
   // button is the system's — the one the tab's leading item morphs into — and whose left-edge pop
   // is on only while the details are up: in the reader it would pop the whole page out from under
   // a page turn. At the root the route these options reach is the `index` of the nested stack
@@ -3772,22 +3782,37 @@ function SeriesReaderInstance({
   // remounts a modal's content when its `headerShown` flips, and this page flips it on every
   // details ⇄ reader switch and for the search layer below; a nested root has no back of its own,
   // hence the chevron.
-  const nativeBarUp = NATIVE_HEADER && detailsActive;
+  // In sequence mode the reader's chrome describes the VISIBLE entry — which series the page in
+  // front of you belongs to is the one thing this bar must answer there.
+  const readerBarTitle = sequence ? (visibleSequenceEntry?.seriesTitle ?? seriesTitle) : seriesTitle;
+  const readerBarSubtitle = sequence ? (visibleSequenceEntry?.chapterName ?? '') : (target?.chapterName ?? '');
+  const nativeBarUp = NATIVE_HEADER;
   const nativeBar =
     NATIVE_HEADER && isTop ? (
       <>
         <Stack.Screen
           options={{
-            headerShown: detailsActive,
+            headerShown: detailsActive || chromeVisible,
             headerTransparent: true,
             headerShadowVisible: false,
             headerBackVisible: nativePush,
             ...(nativePush ? { gestureEnabled: detailsActive } : {}),
-            title: barSolid ? headerBarTitle : '',
-            headerBlurEffect: barSolid ? 'systemChromeMaterial' : undefined,
+            ...(detailsActive
+              ? {
+                  title: barSolid ? headerBarTitle : '',
+                  headerTitle: barSolid ? headerBarTitle : '',
+                  headerBlurEffect: barSolid ? 'systemChromeMaterial' : undefined,
+                  headerTintColor: navTheme.colors.primary,
+                }
+              : {
+                  title: readerBarTitle,
+                  headerTitle: () => <ReaderBarTitle title={readerBarTitle} subtitle={readerBarSubtitle} />,
+                  headerBlurEffect: undefined,
+                  headerTintColor: '#fff',
+                }),
           }}
         />
-        {detailsActive && !nativePush ? (
+        {!nativePush ? (
           <Stack.Toolbar placement="left">
             <Stack.Toolbar.Button
               icon="chevron.left"
@@ -3795,6 +3820,22 @@ function SeriesReaderInstance({
               onPress={backStepsHome ? revealDetails : closeLayer}
             />
           </Stack.Toolbar>
+        ) : null}
+        {!detailsActive ? (
+          <ReaderNativeToolbar
+            bridgeId={pageAction ? pageAction.bridgeId : bridgeId}
+            seriesId={pageAction ? pageAction.seriesId : id}
+            seriesTitle={pageAction ? pageAction.seriesTitle : seriesTitle}
+            chapterId={pageAction?.chapterId}
+            chapterName={pageAction?.chapterName}
+            pageIndex={pageAction?.pageIndex ?? 0}
+            pageCount={pageAction?.pageCount}
+            sourceUrlOf={sourceUrlOf}
+            pagesOnScreen={pagesOnScreen}
+            seriesKey={seriesKey}
+            onHoldChrome={holdChrome}
+            onPress={showChrome}
+          />
         ) : null}
       </>
     ) : null;
@@ -3840,7 +3881,11 @@ function SeriesReaderInstance({
                 <TopBar title={headerBarTitle} left={<View />} />
               </Animated.View>
             ),
-            reader: (
+            reader: NATIVE_HEADER ? (
+              // The bar is the system's (nativeBar); only its shade is still drawn here, so the
+              // crossfade into the details keeps carrying it.
+              <ReaderBarShade visible={chromeVisible} />
+            ) : (
               // The reader's own fully transparent toolbar (with no back of its own — the
               // persistent chevron above serves both modes); its auto-hide rides `visible`.
               <View nativeID={`${chromeId}-bar`} pointerEvents="box-none">
@@ -3857,12 +3902,8 @@ function SeriesReaderInstance({
                   pagesOnScreen={pagesOnScreen}
                 />
                 <ReaderToolbar
-                  // In sequence mode the chrome describes the VISIBLE entry — which series the
-                  // page in front of you belongs to is the one thing this bar must answer there.
-                  title={sequence ? (visibleSequenceEntry?.seriesTitle ?? seriesTitle) : seriesTitle}
-                  subtitle={
-                    sequence ? (visibleSequenceEntry?.chapterName ?? '') : (target?.chapterName ?? '')
-                  }
+                  title={readerBarTitle}
+                  subtitle={readerBarSubtitle}
                   visible={chromeVisible}
                   onBack={goBack}
                   hideBack

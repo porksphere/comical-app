@@ -11,7 +11,7 @@ import { hapticImpactLight } from '@/lib/haptics';
 import { isTypingTarget } from '@/lib/key-hold';
 import { isKey } from '@/lib/keybindings';
 
-type CollectPageProps = {
+export type CollectPageProps = {
   bridgeId?: string;
   seriesId?: string;
   seriesTitle: string;
@@ -30,9 +30,9 @@ type CollectPageProps = {
 
 type OnScreen = { pages: number[]; rtl: boolean };
 
-const MENU_GAP = 6;
+export const MENU_GAP = 6;
 
-function useCollectPage({
+export function useCollectPage({
   bridgeId,
   seriesId,
   seriesTitle,

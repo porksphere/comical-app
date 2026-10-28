@@ -136,9 +136,13 @@ under them as it does in Apple's apps: every tab directory carries a `series.tsx
 segments) — on iOS only; Android and web keep the root routes. A new pushed screen that should
 behave the same gets a stub per tab and its path in `IN_TAB_PATHS`. Only the ROOT `series` route has
 the nested in-series stack (`app/series/_layout.tsx`), so series code asks `useSegments()`, not the
-pathname, to know which copy it is in. The series page takes the system bar in details mode
-(transparent over the hero, `systemChromeMaterial` once the title would collide, a toolbar chevron
-in place of the custom one) and hides the tab bar while the reader is expanded through
+pathname, to know which copy it is in. The series page takes the system bar in BOTH its modes —
+one bar, so the back button and the items morph between them: details transparent over the hero,
+`systemChromeMaterial` once the title would collide, a toolbar chevron in place of the custom one;
+the reader transparent over the page with the series-over-chapter title as a white title view and
+save + settings as glass bar buttons (`components/reader/reader-native-toolbar.tsx`), the bar
+following the chrome's auto-hide through `headerShown`, the custom `ReaderToolbar` reduced to its
+gradient shade — and hides the tab bar while the reader is expanded through
 `lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s; the tab stack's `screenLayout`
 applies the series backdrop scale/dim to the screen underneath. Search takes the bar as the
 stack's field (`Stack.SearchBar`, `integratedCentered`, uncontrolled: told the committed query,

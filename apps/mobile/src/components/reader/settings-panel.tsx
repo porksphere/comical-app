@@ -51,25 +51,34 @@ export function SettingsControl({
   seriesKey: string | null;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const { ref, openAt, isOpen } = useAnchoredOverlay();
-  useEffect(() => {
-    if (!isOpen || !onOpenChange) return;
-    onOpenChange(true);
-    return () => onOpenChange(false);
-  }, [isOpen, onOpenChange]);
-
+  const { ref, open } = useReaderSettingsOverlay(seriesKey, onOpenChange);
   return (
     <Pressable
       testID="reader.settings.open"
       ref={ref}
       hitSlop={12}
-      onPress={() => openAt(() => <SettingsContent seriesKey={seriesKey} />)}
+      onPress={open}
       style={styles.gear}
       accessibilityRole="button"
       accessibilityLabel="Reader settings">
       <SettingsIcon color="#fff" size={20} />
     </Pressable>
   );
+}
+
+/** The settings sheet behind any trigger: anchored to `ref` when the trigger is a view that can
+ *  be measured (the gear above), a plain sheet when it is not (the iOS bar button is UIKit's and
+ *  has no ref to give — `ReaderNativeToolbar`). `onOpenChange` follows the sheet, for the reader
+ *  to hold its chrome up while it is open. */
+export function useReaderSettingsOverlay(seriesKey: string | null, onOpenChange?: (open: boolean) => void) {
+  const { ref, openAt, isOpen } = useAnchoredOverlay();
+  useEffect(() => {
+    if (!isOpen || !onOpenChange) return;
+    onOpenChange(true);
+    return () => onOpenChange(false);
+  }, [isOpen, onOpenChange]);
+  const open = () => openAt(() => <SettingsContent seriesKey={seriesKey} />);
+  return { ref, open };
 }
 
 /** Reader settings content, rendered inside the overlay (sheet or popover).
