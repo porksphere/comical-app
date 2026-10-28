@@ -1,10 +1,11 @@
 import { Stack } from 'expo-router';
-import { PixelRatio, type ImageURISource } from 'react-native';
+import { PixelRatio, StyleSheet, type ImageURISource } from 'react-native';
 
 import type { PageOption } from '@/data/browse-page';
 import type { Bridge } from '@/data/types';
 import { initialSymbol } from '@/lib/initial-symbol';
 import { BAR_THUMB_RADIUS, MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/menu-thumb-files';
+import { NavBarLeadingImage } from '../../modules/nav-bar-image';
 
 /**
  * Browse's controls in the iOS navigation bar: ONE leading button, the current bridge's icon as
@@ -22,6 +23,12 @@ import { BAR_THUMB_RADIUS, MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/me
  * the tile's corner for the rows). Until a file is ready, or for a bridge without art, the
  * initial in an SF circle or square stands in. A file is handed over at the screen's scale so
  * it draws at its point size instead of pixel for point.
+ *
+ * The bar reads that file through React Native's loader, off the main thread and uncached, and
+ * rebuilds its items on every return to Browse, so on its own the circle would be blank for the
+ * first part of every pop back from a series page. `NavBarLeadingImage` (the local
+ * `nav-bar-image` module) keeps the decoded picture and puts it on the leading item the moment
+ * the items are rebuilt; it is a zero-size view in the page, where it can reach the screen.
  *
  * `withBridges` is off while the sidebar rail lists the bridges; the menu then holds only the
  * pages, as the custom bar drops its bridge selector beside the rail.
@@ -90,6 +97,9 @@ export function BrowseNativeToolbar({
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={onSearch} />
       </Stack.Toolbar>
+      {NavBarLeadingImage ? (
+        <NavBarLeadingImage {...(circle ? { uri: circle } : {})} style={styles.pin} pointerEvents="none" />
+      ) : null}
     </>
   );
 }
@@ -99,3 +109,7 @@ export function BrowseNativeToolbar({
 function fileIcon(uri: string): ImageURISource {
   return { uri, scale: PixelRatio.get() };
 }
+
+const styles = StyleSheet.create({
+  pin: { position: 'absolute', width: 0, height: 0 },
+});
