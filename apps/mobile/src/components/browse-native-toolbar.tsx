@@ -9,9 +9,9 @@ import { BAR_THUMB_RADIUS, MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/me
 /**
  * Browse's controls in the iOS navigation bar: ONE leading button, the current bridge's icon as
  * a circle in the bar's glass capsule, opening a system menu of checkmarked rows in two inline
- * sections — the pages first, the frequent switch, then the bridges — so any pick is open and
- * tap; the search is the trailing button. They were submenus, which put every page switch a
- * level down. No custom view stands in the bar, so every item is a standard UIBarButtonItem:
+ * sections — the bridges first, under the bridge icon that opened them, then the pages — so any
+ * pick is open and tap; the search is the trailing button. They were submenus, which put every
+ * page switch a level down. No custom view stands in the bar, so every item is a standard UIBarButtonItem:
  * UIKit lays the bar out itself (an image item joins the vertical bar of a folded or landscape
  * display) and morphs the leading item into the back button of the series page Browse pushes
  * (tab-stack.tsx). The capsule is kept for that morph: a bare circle (`hidesSharedBackground`)
@@ -61,16 +61,6 @@ export function BrowseNativeToolbar({
           icon={circle ? fileIcon(circle) : initialSymbol(current?.name ?? '', 'circle')}
           iconRenderingMode={circle ? 'original' : 'template'}
           accessibilityLabel={current ? `${current.name}, bridge and page` : 'Bridge and page'}>
-          <Stack.Toolbar.Menu inline title="Page">
-            {pages.map((option) => (
-              <Stack.Toolbar.MenuAction
-                key={option.key}
-                isOn={option.key === page}
-                onPress={() => onSelectPage(option.key)}>
-                {option.label}
-              </Stack.Toolbar.MenuAction>
-            ))}
-          </Stack.Toolbar.Menu>
           {withBridges ? (
             <Stack.Toolbar.Menu inline title="Bridge">
               {bridges.map((b) => (
@@ -85,6 +75,16 @@ export function BrowseNativeToolbar({
               ))}
             </Stack.Toolbar.Menu>
           ) : null}
+          <Stack.Toolbar.Menu inline title="Page">
+            {pages.map((option) => (
+              <Stack.Toolbar.MenuAction
+                key={option.key}
+                isOn={option.key === page}
+                onPress={() => onSelectPage(option.key)}>
+                {option.label}
+              </Stack.Toolbar.MenuAction>
+            ))}
+          </Stack.Toolbar.Menu>
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
