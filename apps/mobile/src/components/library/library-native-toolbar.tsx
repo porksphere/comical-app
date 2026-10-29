@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { collectedSortMenu } from '@/components/collections/collected-sort-button';
 import { libraryFilterMenu, libraryFilterNarrowing, useLibraryFilterState } from '@/components/library-filter-button';
 import { librarySortMenu } from '@/components/library-sort-button';
+import { type LeadingMenuSection, NavBarLeadingMenu } from '@/components/nav-bar-leading-menu';
 import { useLibrarySavedPresent } from '@/components/library/library-saved-view';
 import { useLibrarySeriesPresent } from '@/components/library/library-series-view';
 import { useCollectedView } from '@/data/collected-view';
@@ -30,7 +31,8 @@ import { useRouter } from '@/lib/nav';
  * the listing but a different listing, so it belongs with the collection, and the title names
  * both. A collection has no art of its own, so the mark is the symbol rather than a rendered
  * tile. While the sidebar rail lists the collections the view rows stay out, as the custom bar's
- * selector does, and the button remains only for the kind — gone with it when there is one.
+ * selector does, and the button remains only for the kind — gone with it when there is one. The
+ * button and its menu are `NavBarLeadingMenu`, as Browse's are, so a pick changes them in place.
  */
 export function LibraryCollectionMenu({
   collection,
@@ -50,42 +52,45 @@ export function LibraryCollectionMenu({
   const current = views.find((v) => v.id === collection) ?? views[0]!;
   const kindRows = kinds.length > 1;
   if (railNav && !kindRows) return null;
+  const sections: LeadingMenuSection[] = [];
+  if (!railNav) {
+    sections.push({
+      title: 'Collection',
+      rows: [
+        ...views.map((v) => ({
+          id: v.testKey,
+          title: v.name,
+          symbol: v.id === null ? ('asterisk' as const) : initialSymbol(v.name),
+          on: v.id === collection,
+          onPress: () => setSelectedCollection(v.id),
+        })),
+        {
+          id: 'manage',
+          title: 'Manage collections…',
+          symbol: 'folder',
+          onPress: () => router.push('/manage-collections'),
+        },
+      ],
+    });
+  }
+  if (kindRows) {
+    sections.push({
+      title: 'Show',
+      rows: kinds.map((option) => ({
+        id: option,
+        title: ITEM_KIND_LABELS[option],
+        symbol: KIND_SYMBOLS[option],
+        on: option === kind,
+        onPress: () => setSelectedItemKind(option),
+      })),
+    });
+  }
   return (
-    <Stack.Toolbar placement="left">
-      <Stack.Toolbar.Menu
-        icon={collection === null ? 'asterisk.circle.fill' : initialSymbol(current.name, 'circle')}
-        accessibilityLabel={`${current.name}, collection`}>
-        {railNav ? null : (
-          <Stack.Toolbar.Menu inline title="Collection">
-            {views.map((v) => (
-              <Stack.Toolbar.MenuAction
-                key={v.testKey}
-                isOn={v.id === collection}
-                icon={v.id === null ? 'asterisk' : initialSymbol(v.name)}
-                onPress={() => setSelectedCollection(v.id)}>
-                {v.name}
-              </Stack.Toolbar.MenuAction>
-            ))}
-            <Stack.Toolbar.MenuAction icon="folder" onPress={() => router.push('/manage-collections')}>
-              Manage collections…
-            </Stack.Toolbar.MenuAction>
-          </Stack.Toolbar.Menu>
-        )}
-        {kindRows ? (
-          <Stack.Toolbar.Menu inline title="Show">
-            {kinds.map((option) => (
-              <Stack.Toolbar.MenuAction
-                key={option}
-                isOn={option === kind}
-                icon={KIND_SYMBOLS[option]}
-                onPress={() => setSelectedItemKind(option)}>
-                {ITEM_KIND_LABELS[option]}
-              </Stack.Toolbar.MenuAction>
-            ))}
-          </Stack.Toolbar.Menu>
-        ) : null}
-      </Stack.Toolbar.Menu>
-    </Stack.Toolbar>
+    <NavBarLeadingMenu
+      symbol={collection === null ? 'asterisk.circle.fill' : initialSymbol(current.name, 'circle')}
+      label={`${current.name}, collection`}
+      sections={sections}
+    />
   );
 }
 

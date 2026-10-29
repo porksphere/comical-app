@@ -100,13 +100,18 @@ thumbnail (or the bundled Comical asset) down to a 28pt PNG at the screen's scal
 session; the navigation bar's items and menus read it through React Native's loader as a plain
 image, so the SHAPE is in the file: the local Expo module `apps/mobile/modules/shaped-image`
 (Swift, iOS only, `null` elsewhere) clips a rendered tile to a corner or a circle and
-`menuThumbFile(source, radius)` keeps one file per shape. The bar reads a file off the
-main thread, uncached, and rebuilds its items on every return to the screen, so a file
-picture is blank for the first part of every pop back: `NavBarLeadingImage` (the local
-module `apps/mobile/modules/nav-bar-image`, a zero-size view in the page) keeps the decoded
-image and sets it on the leading item as the items are rebuilt — and on the item's MENU rows
-(`menuImages`, by row title), which never get a file picture through the loader at all: it
-lands on the action after the menu was built, and a bar item keeps a copy of its menu. A row without art shows its initial
+`menuThumbFile(source, radius)` keeps one file per shape. Neither tab's leading button
+or menu is in the header config, though: react-native-screens replaces EVERY bar item,
+unanimated, on any change to the config, so a pick that changed the button's picture and the
+rows' checks popped the whole bar. Both render `NavBarLeadingMenu`
+(`components/nav-bar-leading-menu.tsx`), which gives the config a placeholder that never
+changes and hands the live picture, label and menu (inline sections of rows) to the local
+module `apps/mobile/modules/nav-bar-leading`, a zero-size view in the page that sets them on
+that item in place, and again whenever the items are rebuilt, as they are on every return to
+the screen. It decodes the files itself: through React Native's loader the bar reads one off
+the main thread, uncached, so the button was blank for the first part of every pop back, and a
+menu row's never showed, landing after the menu was built (a bar item keeps a copy of its
+menu). Without the module the menu goes back into the config. A row without art shows its initial
 as an SF `x.square.fill` (`lib/initial-symbol.ts`; `x.circle.fill` for a bar button), and the
 All view an `asterisk` — the other place SF Symbols stand in for lucide. The native bar has NO
 sticky-header primitive (no title menu, palette or scope bar in react-native-screens 4.30), so
@@ -116,7 +121,8 @@ bar, a glass capsule hugging the heading was a badge drifting over the covers), 
 `StickySectionHeader` draws nothing (`IN_BAR`) and only reports which section is under the bar
 (`onSectionChange` on the grids and feed), and the screen hands that label to `NativeTabHeader
 section`: it takes the faded title's place in the bar, the way Photos names the month there and
-Music the album, cross-fading as the next heading arrives. The inline headings scroll away like
+Music the album, cross-fading as the next heading arrives. Library's title fades only while its listing is
+grouped: an ungrouped one has no heading to take its place. The inline headings scroll away like
 any other row. A series opened from a tab is a real pushed card of that tab's stack (route
 `series/index` — the tab's `series/` directory has no layout on purpose, so the page IS the
 pushed screen and its `Stack.Screen` addresses it), so the tab's leading item morphs into its
