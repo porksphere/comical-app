@@ -18,6 +18,7 @@ import { BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
+import { useCollectedView } from '@/data/collected-view';
 import {
   ALL_VIEW_NAME,
   effectiveItemKind,
@@ -37,6 +38,7 @@ import { useCollections } from '@/hooks/use-collections';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
+import { useLibraryGrouping } from '@/hooks/use-library-sort';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -82,6 +84,9 @@ export default function LibraryScreen() {
   );
   // The pinned section's label, which the iOS bar shows as its title — see NativeTabHeader.
   const [section, setSection] = useState<string | null>(null);
+  const [seriesGrouping] = useLibraryGrouping();
+  const [savedView] = useCollectedView(collection, kind === 'series' ? 'chapter' : kind);
+  const grouped = (kind === 'series' ? seriesGrouping : savedView.grouping) !== 'none';
 
   const chrome: LibraryGridChrome = {
     listRef,
@@ -118,6 +123,7 @@ export default function LibraryScreen() {
           railNav={railNav}
           filter={filter}
           scrollY={sharedValues.scrollOffset}
+          grouped={grouped}
           section={section}
         />
       ) : (
@@ -187,7 +193,7 @@ export default function LibraryScreen() {
  * kind menu (`LibraryCollectionMenu`), the search as the system search item, and the arranging
  * `⋯` trailing. The filter and sort are secondary to what's showing, so they share that one menu
  * (LibraryNativeToolbar). A pinned section's label takes the title's place once it has faded —
- * see NativeTabHeader.
+ * see NativeTabHeader. An ungrouped listing has no heading to take it, so there the title stays.
  */
 function LibraryNativeHeader({
   collection,
@@ -199,6 +205,7 @@ function LibraryNativeHeader({
   railNav,
   filter,
   scrollY,
+  grouped,
   section,
 }: {
   collection: string | null;
@@ -210,6 +217,7 @@ function LibraryNativeHeader({
   railNav: boolean;
   filter: TabFilter;
   scrollY: SharedValue<number>;
+  grouped: boolean;
   section: string | null;
 }) {
   const kinds = itemKindOptions(kindsPresent, selectedKind);
@@ -217,7 +225,7 @@ function LibraryNativeHeader({
     <>
       <NativeTabHeader
         title={kinds.length > 1 ? `${viewName} ${ITEM_KIND_LABELS[kind]}` : viewName}
-        scrollY={scrollY}
+        {...(grouped ? { scrollY } : {})}
         section={section}
         filter={filter}
         placeholder="Filter library…"
