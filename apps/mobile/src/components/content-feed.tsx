@@ -49,10 +49,9 @@ const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 const SECTION_GAP = 1;
 const HEADING_GAP = Spacing.two;
 const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
-// iOS draws the ambient colour inside the list's own content, behind its rows. A navigation bar
-// finds the scroll view it follows by walking each first subview down from its screen, and a
-// backdrop laid first, behind the list, is where that walk stops: the bar never changes once the
-// list is scrolled.
+// iOS draws the ambient colour inside the list's own content, behind its rows. The screen holding
+// the navigation bar finds the list to put its scroll-edge effect on by walking each first subview
+// down from itself, and a backdrop laid first, behind the list, is where that walk stops.
 const BACKDROP_IN_LIST = Platform.OS === 'ios';
 
 /** A rail's See-all target → `/results` route params (expo-router params are strings). Omits absent

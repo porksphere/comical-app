@@ -13,14 +13,14 @@ import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
  * screen, which draws the custom TabTitleBar overlay as before.
  *
  * The bar is transparent so the content scrolls behind it exactly as it did behind the overlay
- * (and pads itself by useTopChromeHeight). Over the covers of Browse and Library it takes the
- * chrome material once the list is scrolled and none at the top (`SCROLLED_MATERIAL`): the
- * bar's standard appearance carries the blur and its scroll-edge appearance is transparent,
- * and UIKit crossfades between the two as the list leaves its top edge — the arrangement the
- * system reads for every bar, given a scroll view to read it from (`TabScrollMarker`). The
- * other tabs stay bare: on iOS 26 the bar's items are already Liquid Glass, and a glass bar
- * under glass buttons read as two layers of frosting over a list of rows. What keeps those bars
- * legible is the scroll-edge effect — the system's own soft fade of the content under the bar.
+ * (and pads itself by useTopChromeHeight). What keeps it legible is the iOS 26 scroll-edge
+ * effect: the system's own treatment of the content under a bar, shown only once the list has
+ * scrolled under it. Most tabs take the soft one, a fade, since the bar's items are already
+ * Liquid Glass and a glass bar under glass buttons read as two layers of frosting. Over the
+ * covers of Browse and Library it is the hard one (`SCROLLED_MATERIAL`), the near-opaque
+ * backing that stands in for the old bar material. Not a background in the bar's appearance:
+ * on iOS 26 that sits on top of the edge effect, and UIKit never once switched these bars from
+ * their scroll-edge appearance to the standard one.
  *
  * The stack also carries the tab's own copies of the pages a tab pushes — series, search, results
  * (one-line re-exports under each tab directory; `inTabHref` in lib/nav sends a push there) — so
@@ -66,17 +66,9 @@ export default function TabStack({ tab }: { tab: string }) {
 /** The tabs whose root list is covers, over which the bar needs a material once scrolled. */
 const SCROLLED_MATERIAL_TABS = new Set(['(home)', 'library']);
 
-/**
- * The bar of a covers tab: the blur in the standard appearance, which UIKit shows once the list
- * has scrolled, and nothing in the scroll-edge appearance, which it shows at the top — the large
- * title style's background is what react-native-screens reads that appearance's colour from,
- * large title or not. The soft scroll-edge effect is off: it is a fade of the content under the
- * bar too, and the two stacked over the covers.
- */
+/** The bar of a covers tab: the hard scroll-edge effect, which the list's marker sets too. */
 const SCROLLED_MATERIAL: ComponentProps<typeof Stack.Screen>['options'] = {
-  headerBlurEffect: 'systemChromeMaterial',
-  headerLargeStyle: { backgroundColor: 'transparent' },
-  scrollEdgeEffects: { top: 'hidden' },
+  scrollEdgeEffects: { top: 'hard' },
 };
 
 const BARE_ROOT = { scrolledMaterial: false };

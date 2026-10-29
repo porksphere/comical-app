@@ -5,7 +5,7 @@ import { ScrollViewMarker } from 'react-native-screens/experimental';
 /**
  * Set inside a tab's ROOT screen (the tab's own stack provides it — see `tab-stack`), null under
  * every page the tab pushes and outside the tabs. `scrolledMaterial` is true for the tabs whose
- * bar takes a material once the list is scrolled (tab-stack's SCROLLED_MATERIAL).
+ * bar takes the hard scroll-edge effect once the list is scrolled (tab-stack's SCROLLED_MATERIAL).
  */
 export const TabRootScrollContext = createContext<{ scrolledMaterial: boolean } | null>(null);
 
@@ -22,14 +22,12 @@ export const TabRootScrollContext = createContext<{ scrolledMaterial: boolean } 
  * scroll view under an old marker would go unregistered.
  *
  * The marker reaches the TAB screen only; the stack screen holding the navigation bar is never
- * told, and UIKit finds the list for it by that walk, each first subview down from the screen.
- * The walk is what lets the bar of a tab that is bare at the top and a material once scrolled
- * (`scrolledMaterial`) switch between its two appearances, so nothing may be laid in ahead of
- * the list on those screens: Browse draws its colour backdrop inside the list's content on iOS
- * for that reason (see `ContentFeed`). The soft scroll-edge effect is off on those lists: it is
- * itself a fade of the content under the bar, and over the material it was the two stacked. The
- * other tabs keep the edge effect the marker applies by default (`automatic`, soft under a
- * bar), their bar's whole treatment.
+ * told, and finds the list for itself by that walk, each first subview down from the screen,
+ * which is how it puts its own scroll-edge effect on the list. Nothing may be laid in ahead of
+ * the list there: Browse draws its colour backdrop inside the list's content on iOS for that
+ * reason (see `ContentFeed`). The marker sets the same edge effect, since the last one set on
+ * the scroll view wins: the hard one under the bar of a covers tab (`scrolledMaterial`), and
+ * elsewhere its default (`automatic`, soft under a bar).
  *
  * Elsewhere, and on Android/web, it renders the child alone.
  */
@@ -46,13 +44,13 @@ export function TabScrollMarker({
     <ScrollViewMarker
       key={markerKey}
       style={styles.fill}
-      {...(tabRoot.scrolledMaterial ? { scrollEdgeEffects: NO_TOP_EDGE } : {})}>
+      {...(tabRoot.scrolledMaterial ? { scrollEdgeEffects: HARD_TOP_EDGE } : {})}>
       {children}
     </ScrollViewMarker>
   );
 }
 
-const NO_TOP_EDGE = { top: 'hidden' } as const;
+const HARD_TOP_EDGE = { top: 'hard' } as const;
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
