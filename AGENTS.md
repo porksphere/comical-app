@@ -34,18 +34,16 @@ content scrolls down and re-expands only at the very top or on a tap. That is UI
 re-expansion for days and reverted, so don't. The scroll view the bar follows is registered by
 `TabScrollMarker` (`react-native-screens/experimental`'s `ScrollViewMarker`, keyed with the list
 it wraps) around each tab ROOT screen's list, under `TabRootScrollContext` from the tab's stack —
-never a pushed page's: the registration is a hand-off to UIKit nothing takes back, and UIKit's own
-first-descendant walk missed Browse's list behind the feed backdrop. The marker reaches the TAB
-screen only, never the stack screen holding the navigation bar, so on Browse and Library — whose
+never a pushed page's: the registration is a hand-off to UIKit nothing takes back. The marker
+reaches the TAB screen only, never the stack screen holding the navigation bar, so on Browse and Library — whose
 bar is bare at the top and `systemChromeMaterial` once the list is scrolled (`SCROLLED_MATERIAL`
 in `components/tab-stack.tsx`: the blur in the standard appearance, a transparent scroll-edge
 appearance through `headerLargeStyle`, UIKit crossfading between them at the list's top edge;
-the other tabs stay bare over the soft scroll-edge effect) — the marker also hands the list to
-that screen's view controller through the local Expo module `apps/mobile/modules/nav-bar-scroll`
-(`setContentScrollView(_:for:)`), without which UIKit never finds the list and the bar never
-changes. Its `NavBarScrollAnchor` is a native view around the list that makes the hand-off
-itself, on the mount and again every time the screen comes back into a window, and writes
-each outcome to the Diagnostics screen (`nav-bar`) — the one way to read a release build. Liquid Glass bars tint from the
+the other tabs stay bare over the soft scroll-edge effect) — the bar finds its list by UIKit's
+own walk, each first subview down from that screen, so nothing may be laid in ahead of the
+list there. On iOS Browse's colour backdrop is drawn inside the list's content, behind its rows,
+for that reason (`BACKDROP_IN_LIST` in `components/content-feed.tsx`): laid first, behind the
+list, it was where the walk stopped, and the bar never changed. Liquid Glass bars tint from the
 WINDOW's interface style, not from the content, so `ThemeSchemeProvider` mirrors the theme
 preference into `Appearance.setColorScheme` on iOS — without that a dark theme sits over a light
 window and the bar glares white. It is

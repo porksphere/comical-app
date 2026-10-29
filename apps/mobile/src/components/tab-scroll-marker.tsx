@@ -2,9 +2,6 @@ import { createContext, use, type ReactNode } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { ScrollViewMarker } from 'react-native-screens/experimental';
 
-import { logDiagnostic } from '@/lib/diagnostics';
-import { NavBarScrollAnchor, type NavBarScrollReport } from '../../modules/nav-bar-scroll';
-
 /**
  * Set inside a tab's ROOT screen (the tab's own stack provides it — see `tab-stack`), null under
  * every page the tab pushes and outside the tabs. `scrolledMaterial` is true for the tabs whose
@@ -16,8 +13,7 @@ export const TabRootScrollContext = createContext<{ scrolledMaterial: boolean } 
  * Marks the scroll view the system tab bar follows (iOS 26 `minimizeBehavior`, status-bar tap
  * scroll-to-top): react-native-screens' `ScrollViewMarker`, whose ONE child must itself be the
  * scroll view (a LegendList's root is its Animated.ScrollView). The marker tells the tab screen
- * which scroll view to hand UIKit; without it UIKit walks the screen's first-descendant chain, and
- * a feed whose first child is a backdrop (Browse) is never found.
+ * which scroll view to hand UIKit, rather than leaving it to UIKit's own first-descendant walk.
  *
  * Only under a tab's root screen: the registration is a strong hand-off to UIKit that nothing
  * takes back, so a pushed page's list registered and then popped would leave the tab following a
@@ -26,12 +22,11 @@ export const TabRootScrollContext = createContext<{ scrolledMaterial: boolean } 
  * scroll view under an old marker would go unregistered.
  *
  * The marker reaches the TAB screen only; the stack screen holding the navigation bar is never
- * told, and UIKit's own first-subview walk from it misses the same backdrop. For a tab whose
- * bar is bare at the top and a material once scrolled (`scrolledMaterial`), the list is handed
- * to that screen outright by the local `nav-bar-scroll` module's anchor, natively, on the mount
- * and again on every return to the screen, which is what lets UIKit switch the bar between its
- * two appearances. Each hand-off is written to the Diagnostics screen as its outcome changes,
- * the one way to read a release build. The soft scroll-edge effect is off on those lists: it is
+ * told, and UIKit finds the list for it by that walk, each first subview down from the screen.
+ * The walk is what lets the bar of a tab that is bare at the top and a material once scrolled
+ * (`scrolledMaterial`) switch between its two appearances, so nothing may be laid in ahead of
+ * the list on those screens: Browse draws its colour backdrop inside the list's content on iOS
+ * for that reason (see `ContentFeed`). The soft scroll-edge effect is off on those lists: it is
  * itself a fade of the content under the bar, and over the material it was the two stacked. The
  * other tabs keep the edge effect the marker applies by default (`automatic`, soft under a
  * bar), their bar's whole treatment.
@@ -46,28 +41,15 @@ export function TabScrollMarker({
   children: NonNullable<ReactNode>;
 }) {
   const tabRoot = use(TabRootScrollContext);
-  const scrolledMaterial = tabRoot?.scrolledMaterial ?? false;
   if (Platform.OS !== 'ios' || !tabRoot) return children;
-  const marker = (
-    <ScrollViewMarker key={markerKey} style={styles.fill} {...(scrolledMaterial ? { scrollEdgeEffects: NO_TOP_EDGE } : {})}>
+  return (
+    <ScrollViewMarker
+      key={markerKey}
+      style={styles.fill}
+      {...(tabRoot.scrolledMaterial ? { scrollEdgeEffects: NO_TOP_EDGE } : {})}>
       {children}
     </ScrollViewMarker>
   );
-  if (!scrolledMaterial || !NavBarScrollAnchor) return marker;
-  return (
-    <NavBarScrollAnchor key={markerKey} style={styles.fill} onFollow={reportFollow}>
-      {marker}
-    </NavBarScrollAnchor>
-  );
-}
-
-function reportFollow({ nativeEvent }: { nativeEvent: NavBarScrollReport }) {
-  if (nativeEvent.ok) {
-    const { ok: _ok, ...detail } = nativeEvent;
-    logDiagnostic('nav-bar', 'list handed to the bar', { context: JSON.stringify(detail) });
-  } else {
-    logDiagnostic('nav-bar', nativeEvent.reason);
-  }
 }
 
 const NO_TOP_EDGE = { top: 'hidden' } as const;

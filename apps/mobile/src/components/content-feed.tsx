@@ -1,6 +1,6 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
-import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Platform, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
@@ -49,6 +49,11 @@ const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 const SECTION_GAP = 1;
 const HEADING_GAP = Spacing.two;
 const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
+// iOS draws the ambient colour inside the list's own content, behind its rows. A navigation bar
+// finds the scroll view it follows by walking each first subview down from its screen, and a
+// backdrop laid first, behind the list, is where that walk stops: the bar never changes once the
+// list is scrolled.
+const BACKDROP_IN_LIST = Platform.OS === 'ios';
 
 /** A rail's See-all target → `/results` route params (expo-router params are strings). Omits absent
  *  fields; `direct` becomes '1' only when true; `listId` (home rail), `query` (search rail), or
@@ -337,9 +342,8 @@ export function ContentFeed({
     </View>
   ) : null;
 
-  return (
-    <View style={styles.fill}>
-    {ambient && sharedValues && (
+  const backdrop =
+    ambient && sharedValues ? (
       <FeedBackdrop
         bands={bands}
         width={width}
@@ -349,10 +353,18 @@ export function ContentFeed({
           stickyHeaderTop === undefined ? paddingTop : stickyHeaderTop + sectionHeadHeight(compact) + HEADING_GAP * 2
         }
         barOffset={stickyBarOffset}
-        // The list's own shift and dim, so the colour is pulled and faded with the rows over it.
-        style={wrapperStyle}
+        // In the list: from the content's origin, which is outside the header's padding, and the
+        // list's own shift and dim already apply. Behind it: that shift and dim, so the colour is
+        // pulled and faded with the rows over it.
+        {...(BACKDROP_IN_LIST
+          ? { inList: true, style: { top: -paddingTop, left: -centerPad } }
+          : { style: wrapperStyle })}
       />
-    )}
+    ) : null;
+
+  return (
+    <View style={styles.fill}>
+    {!BACKDROP_IN_LIST && backdrop}
     <RecyclerList
       data={rows}
       scopeKey={scopeKey}
@@ -369,7 +381,16 @@ export function ContentFeed({
       // Rails eagerly load their cover images the moment they mount, so keep a tighter mount window
       // than the default 250 — fewer off-screen rails alive at once = fewer simultaneous image loads.
       drawDistance={120}
-      header={header}
+      header={
+        BACKDROP_IN_LIST && backdrop ? (
+          <>
+            {backdrop}
+            {header}
+          </>
+        ) : (
+          header
+        )
+      }
       footer={footer}
       paddingTop={paddingTop}
       // Below the pinned heading too, which covers the track just as the bar does.
