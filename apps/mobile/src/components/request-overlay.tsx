@@ -3,8 +3,9 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { Fonts, RootTabBarInset, Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import { expireRecentFailures, useRequestMonitor, useRequestOverlayEnabled, type FailureKind } from '@/data/request-monitor';
+import { useTabBarClearance } from '@/lib/tab-bar-clearance';
 
 // A request this old is waiting on something: the source, or our own rate-limiter queue.
 const SLOW_MS = 5_000;
@@ -23,6 +24,7 @@ export function RequestOverlay() {
 function Panel() {
   const { inFlight, recent } = useRequestMonitor();
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const [now, setNow] = useState(() => Date.now());
   const live = inFlight.length > 0 || recent.length > 0;
 
@@ -42,7 +44,7 @@ function Panel() {
     <View
       pointerEvents="none"
       testID="request-overlay"
-      style={[styles.host, { bottom: RootTabBarInset + insets.bottom + Spacing.three, right: Math.max(insets.right, Spacing.three) }]}>
+      style={[styles.host, { bottom: tabBarClearance + Spacing.three, right: Math.max(insets.right, Spacing.three) }]}>
       <View style={styles.panel}>
         <ThemedText style={[styles.line, styles.head]}>
           {inFlight.length} in flight{slow > 0 ? ` · ${slow} waiting` : ''}

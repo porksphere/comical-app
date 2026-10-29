@@ -5,6 +5,7 @@ import { TabRootScrollContext } from '@/components/tab-scroll-marker';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { TabRouteContext } from '@/lib/focused-tab';
 import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
+import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
 
 /**
  * The layout of every tab directory. On iOS each tab is its own native Stack so the tab screen
@@ -40,13 +41,15 @@ import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
  *
  * `tab` is this directory's route name, which the layout cannot read for itself (the segments
  * hooks report the FOCUSED tab, and every tab stays mounted); a series card under it builds its
- * zoom Link's href from it — see `TabRouteContext`.
+ * zoom Link's href from it — see `TabRouteContext`. The tab also reports its bottom inset, the
+ * one place that knows where UIKit put the tab bar, for the root overlays (`tab-bar-clearance`).
  */
 export default function TabStack({ tab }: { tab: string }) {
   if (!NATIVE_HEADER) return <Slot />;
   const scrolledMaterial = SCROLLED_MATERIAL_TABS.has(tab);
   return (
     <TabRouteContext.Provider value={tab}>
+      <TabBarClearanceReporter />
       <Stack
         screenOptions={{
           headerTransparent: true,

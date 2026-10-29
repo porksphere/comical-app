@@ -19,12 +19,12 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ANDROID_BLUR } from '@/components/context-menu-material';
 import { ThemedText } from '@/components/themed-text';
-import { RootTabBarInset, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/lib/tab-bar-clearance';
 
 const OPEN_SPRING = { damping: 18, stiffness: 320, mass: 0.7 } as const;
 const DISMISS_MS = 140;
@@ -97,7 +97,7 @@ export function ToastHost() {
 function HostToast({ req }: { req: ToastRequest }) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
-  const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const progress = useSharedValue(0);
   const error = req.tone === 'error';
 
@@ -132,7 +132,7 @@ function HostToast({ req }: { req: ToastRequest }) {
     // box-none: the toast never blocks the screen — only the pill itself is touchable.
     <View
       pointerEvents="box-none"
-      style={[styles.host, { paddingBottom: RootTabBarInset + insets.bottom + Spacing.four }]}>
+      style={[styles.host, { paddingBottom: tabBarClearance + Spacing.four }]}>
       <Animated.View style={[styles.pillShadow, pillStyle]}>
         <BlurView
           tint={scheme}

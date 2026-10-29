@@ -50,7 +50,7 @@ import { CheckIcon, DownloadsIcon, LogInIcon, PlayIcon, PlusIcon, RetryIcon, Sta
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
-import { RootTabBarInset, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import type { TagGroup } from '@/data/mock';
 import { seriesDetailQuery, seriesListQuery } from '@/data/queries';
@@ -84,6 +84,7 @@ import {
   useSeriesCardMenu,
   type SeriesCardMenuRequest,
 } from '@/lib/series-card-menu';
+import { useTabBarClearance } from '@/lib/tab-bar-clearance';
 import { getTabBarHideOffset, getTabBarProgress } from '@/lib/tab-bar-slide';
 import { getTopBarHidden } from '@/lib/top-bar-visibility';
 import { windowModalLayer } from '@/lib/window-controls';
@@ -406,7 +407,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // stores rather than constants. The band also bounds the panel + menu below, so the RESTING cover is
   // always inside it (a popup that reached into the top bar would clip its own cover).
   const chromeTop = Math.max(0, insets.top + useTopBarHeight() - getTopBarHidden());
-  const tabBarH = RootTabBarInset + insets.bottom;
+  const tabBarH = useTabBarClearance();
   const hasTabBar = !useIsLargeScreen() && TAB_ROUTES.has(pathname);
   const tabBarShown = hasTabBar ? Math.max(0, tabBarH - getTabBarHideOffset() * getTabBarProgress()) : 0;
   const chromeBottom = winH - tabBarShown;

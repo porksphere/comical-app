@@ -210,12 +210,9 @@ export const Spacing = {
 // `insets.bottom`. Android and web draw their own absolute overlay bar (app-tabs.tsx) that the
 // screen's insets know nothing about, so this is roughly its height there. iOS has the system bar
 // (app-tabs.ios.tsx): each tab's safe area already includes it — and is zero where UIKit has moved
-// the bar to the side — so a screen inside a tab reserves nothing beyond its insets.
+// the bar to the side — so a screen inside a tab reserves nothing beyond its insets. A ROOT
+// overlay's insets know nothing of the iOS bar: it reads `useTabBarClearance` instead.
 export const BottomTabInset = Platform.OS === 'ios' ? 0 : 48;
-// The same clearance for a ROOT overlay (toast, request pill, the card context menu), whose
-// `insets.bottom` comes from the root provider and never includes the iOS tab bar. UIKit's bar is
-// 49pt on an iPhone; where the bar is beside the content instead this is a little extra air.
-export const RootTabBarInset = Platform.OS === 'ios' ? 49 : BottomTabInset;
 /**
  * Breathing room between a top bar and the first content beneath it — added ON TOP of the bar's own
  * height (which only gets content *clear* of the bar, flush against it).
