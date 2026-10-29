@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { useNavigation } from 'expo-router';
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type ViewProps } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -89,6 +90,28 @@ const BAR_H = 40;
  *  every other platform. Module-level, the way the availability is: the app does not change
  *  OS mid-run. */
 const GLASS = Platform.OS === 'ios' && isLiquidGlassAvailable();
+
+/** Whether the screen's push has settled, which is when the bar's surfaces may mount their glass
+ *  (ChapterNavigator's `glass`). A glass view sets its effect once, on its first layout, and UIKit
+ *  drops it for good when that layout lands while a push is still animating the screen in: the iOS
+ *  reader page mounts with its chrome up in the middle of its zoom. Asked by the screen, not the
+ *  navigator, which remounts with every chapter. The timeout covers a host that never emits
+ *  `transitionEnd`. */
+export function usePushSettled(): boolean {
+  const navigation = useNavigation();
+  const [settled, setSettled] = useState(!GLASS);
+  useEffect(() => {
+    if (!GLASS) return;
+    const settle = () => setSettled(true);
+    const unsubscribe = (navigation.addListener as (type: string, cb: () => void) => () => void)('transitionEnd', settle);
+    const fallback = setTimeout(settle, 800);
+    return () => {
+      unsubscribe();
+      clearTimeout(fallback);
+    };
+  }, [navigation]);
+  return settled;
+}
 /** The page counter under the bar — "12 / 26" in a small chip that sits just above the home
  *  indicator and, unlike the bar, needn't fully leave: with the chrome hidden it stays at
  *  `COUNTER_FAINT` (a setting) so a glance still says where you are. It is never interactive, so
@@ -175,6 +198,8 @@ type Props = {
    *  page nothing has prefetched, since the warm-ahead follows the READ position
    *  and that deliberately stops updating while a finger is down. */
   onScrubPage?: (page: number) => void;
+  /** Whether the surfaces may be glass yet — see `usePushSettled`. */
+  glass?: boolean;
 };
 
 export function ChapterNavigator({
@@ -196,6 +221,7 @@ export function ChapterNavigator({
   onSeek,
   onScrubbingChange,
   onScrubPage,
+  glass = true,
 }: Props) {
   const insets = useSafeAreaInsets();
   const chromeBottom = bottomChromeInset(insets.bottom);
@@ -416,9 +442,9 @@ export function ChapterNavigator({
         pointerEvents={visible ? 'box-none' : 'none'}
         style={[styles.wrap, { bottom: chromeBottom + BAR_BOTTOM }, style]}>
         <View style={[styles.row, { paddingLeft: Spacing.three + insets.left, paddingRight: Spacing.three + insets.right }]}>
-          {chaptered && <SkipButton {...left} Icon={SkipBackIcon} />}
+          {chaptered && <SkipButton {...left} glass={glass} Icon={SkipBackIcon} />}
           {total > 1 ? (
-            <ChromeSurface style={styles.pill}>
+            <ChromeSurface glass={glass} style={styles.pill}>
               <GestureDetector gesture={pan}>
                 <View testID="reader.navigator.slider" style={styles.track} onLayout={onTrackLayout}>
                   <View style={styles.bar} />
@@ -430,7 +456,7 @@ export function ChapterNavigator({
           ) : (
             <View style={styles.spacer} />
           )}
-          {chaptered && <SkipButton {...right} Icon={SkipForwardIcon} />}
+          {chaptered && <SkipButton {...right} glass={glass} Icon={SkipForwardIcon} />}
         </View>
       </Animated.View>
       {/* The counter, under the bar and on its own fade — see COUNTER_H. Reads the scrub's own
@@ -438,7 +464,7 @@ export function ChapterNavigator({
       <Animated.View
         pointerEvents="none"
         style={[styles.counterWrap, { bottom: chromeBottom + COUNTER_BOTTOM }, counterStyle]}>
-        <ChromeSurface style={styles.counter}>
+        <ChromeSurface glass={glass} style={styles.counter}>
           {/* The one node holding the current page as its own text — e2e reads a page number off
               the bar by this id, so the total stays a separate node. */}
           <ThemedText testID="reader.navigator.page" style={styles.counterText}>
@@ -456,16 +482,18 @@ function SkipButton({
   label,
   onPress,
   enabled,
+  glass,
   Icon,
 }: {
   testID: string;
   label: string;
   onPress: () => void;
   enabled: boolean;
+  glass: boolean;
   Icon: typeof SkipBackIcon;
 }) {
   return (
-    <ChromeSurface interactive style={styles.skip}>
+    <ChromeSurface interactive glass={glass} style={styles.skip}>
       <Pressable
         testID={testID}
         onPress={onPress}
@@ -483,8 +511,16 @@ function SkipButton({
 
 /** One of the bar's surfaces: glass where there is glass, the tint otherwise. `style` carries
  *  the shape (size, radius, padding) and never a colour — the surface decides that. Dark whatever
- *  the app theme is, as the reader is; `interactive` for a button, which the glass then presses. */
-function ChromeSurface({ interactive, style, children, ...rest }: ViewProps & { interactive?: boolean }) {
+ *  the app theme is, as the reader is; `interactive` for a button, which the glass then presses.
+ *  Until `glass` (see `usePushSettled`) the surface is bare, and then a new view, so the effect
+ *  is set by a first layout that comes after the push. */
+function ChromeSurface({
+  interactive,
+  glass,
+  style,
+  children,
+  ...rest
+}: ViewProps & { interactive?: boolean; glass: boolean }) {
   if (!GLASS) {
     return (
       <View style={[style, styles.tinted]} {...rest}>
@@ -493,7 +529,13 @@ function ChromeSurface({ interactive, style, children, ...rest }: ViewProps & { 
     );
   }
   return (
-    <GlassView glassEffectStyle="regular" colorScheme="dark" isInteractive={!!interactive} style={style} {...rest}>
+    <GlassView
+      key={glass ? 'glass' : 'bare'}
+      glassEffectStyle={glass ? 'regular' : 'none'}
+      colorScheme="dark"
+      isInteractive={!!interactive}
+      style={style}
+      {...rest}>
       {children}
     </GlassView>
   );

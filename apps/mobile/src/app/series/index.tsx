@@ -35,7 +35,7 @@ import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { ChevronUpIcon } from '@/components/icons/ui-icons';
-import { BOTTOM_CHROME_HEIGHT, ChapterNavigator, bottomChromeInset } from '@/components/reader/chapter-navigator';
+import { BOTTOM_CHROME_HEIGHT, ChapterNavigator, bottomChromeInset, usePushSettled } from '@/components/reader/chapter-navigator';
 import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
@@ -1395,6 +1395,7 @@ function SeriesReaderInstance({
   // like anything else.
   const [entranceSettled, setEntranceSettled] = useState(IS_WEB || nativePush);
   const markEntranceSettled = useCallback(() => setEntranceSettled(true), []);
+  const pushSettled = usePushSettled();
   useEffect(() => {
     const t = setTimeout(() => {
       // Traced because this is the largest React commit anywhere near a reveal and it lands 300ms
@@ -3856,7 +3857,8 @@ function SeriesReaderInstance({
   // these options (expo-router merges its items in over the page's own), so neither toolbar
   // renders its items while the bar is down. Every option is set in both modes:
   // Stack.Screen merges into the route's options, so a key left out would carry the other mode's
-  // value over. The custom chevron below never shows here. Only the top instance sets the options
+  // value over. The custom chevron below is not rendered here: its fade is an animated opacity,
+  // which no static style can hold at zero. Only the top instance sets the options
   // (they are the route's, shared by every layer), and the elements mount only while it is top,
   // so a layer that becomes top again re-applies them — Stack.Screen's effect runs on mount, and
   // the toolbar unregisters its item on unmount. Inside a tab the route is the tab stack's own
@@ -3877,7 +3879,6 @@ function SeriesReaderInstance({
   // centre that over them. Outside a sequence the line is the chapter, which nothing else in the
   // reader names; the series is the page the back button returns to.
   const nativeReaderTitle = sequence ? readerBarTitle : readerBarSubtitle || readerBarTitle;
-  const nativeBarUp = NATIVE_HEADER;
   const barUp = detailsActive || chromeVisible;
   const nativeBar =
     NATIVE_HEADER && isTop ? (
@@ -3936,32 +3937,29 @@ function SeriesReaderInstance({
     <TopBarSwitch
           mode={detailsActive ? 'details' : 'reader'}
           persistent={
-            <Animated.View
-              nativeID={`${chromeId}-back`}
-              pointerEvents={!nativeBarUp && (detailsActive || chromeVisible) ? 'box-none' : 'none'}
-              style={[
-                styles.headerBackWrap,
-                { top: insets.top, height: topBarHeight },
-                backPersistStyle,
-                nativeBarUp ? styles.nativeBarHidden : null,
-              ]}>
-              <Pressable
-                testID="series-page.header-back"
-                // A drilled layer's chevron slides it back out to the parent series; the modal
-                // root's pops the route.
-                onPress={backStepsHome ? revealDetails : closeLayer}
-                hitSlop={12}
-                accessibilityRole="button"
-                accessibilityLabel="Go back"
-                style={styles.headerBackBtn}>
-                <Animated.View style={backWhiteIconStyle}>
-                  <ChevronLeftIcon color="#fff" />
-                </Animated.View>
-                <Animated.View style={[StyleSheet.absoluteFill, styles.headerBackBtn, backThemeIconStyle]}>
-                  <ChevronLeftIcon color={theme.text} />
-                </Animated.View>
-              </Pressable>
-            </Animated.View>
+            NATIVE_HEADER ? null : (
+              <Animated.View
+                nativeID={`${chromeId}-back`}
+                pointerEvents={detailsActive || chromeVisible ? 'box-none' : 'none'}
+                style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, backPersistStyle]}>
+                <Pressable
+                  testID="series-page.header-back"
+                  // A drilled layer's chevron slides it back out to the parent series; the modal
+                  // root's pops the route.
+                  onPress={backStepsHome ? revealDetails : closeLayer}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Go back"
+                  style={styles.headerBackBtn}>
+                  <Animated.View style={backWhiteIconStyle}>
+                    <ChevronLeftIcon color="#fff" />
+                  </Animated.View>
+                  <Animated.View style={[StyleSheet.absoluteFill, styles.headerBackBtn, backThemeIconStyle]}>
+                    <ChevronLeftIcon color={theme.text} />
+                  </Animated.View>
+                </Pressable>
+              </Animated.View>
+            )
           }
           bars={{
             // Under the native bar (iOS) the details have no custom bar at all.
@@ -4243,15 +4241,23 @@ function SeriesReaderInstance({
               entering={!entranceSettled}
               inLibrary={inLibrary}
               keyboard={isTop && !detailsActive}
+              glass={pushSettled}
             />
           )}
             {/* The Details pill — the guaranteed collapse path in both modes (webtoon's expanded
                 reader owns vertical drags, and no longer reveals by dragging at all). Not on a
                 desktop: its details are the pane's, or the chevron's (`backStepsHome`), and the
-                full-screen card the pill reveals is the phone's layout. */}
+                full-screen card the pill reveals is the phone's layout. Nor on iOS's reader page
+                pushed from the details, whose back button goes to them. */}
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
               <DetailsHint
-                visible={chromeVisible && !detailsActive && !isDesktop && !desktopShell()}
+                visible={
+                  chromeVisible &&
+                  !detailsActive &&
+                  !isDesktop &&
+                  !desktopShell() &&
+                  !(split === 'reader' && params.from === 'details')
+                }
                 onPress={() => setRevealed(1)}
               />
             </View>
@@ -5061,6 +5067,8 @@ const ReaderPane = forwardRef<
     /** Whether the arrow keys turn this reader's pages (web) — only the top layer's, and not while
      *  the details cover it. */
     keyboard: boolean;
+    /** The bottom bar's `glass`. */
+    glass: boolean;
   }
 >(function ReaderPane(
   {
@@ -5096,6 +5104,7 @@ const ReaderPane = forwardRef<
     entering = false,
     inLibrary,
     keyboard,
+    glass,
   },
   ref,
 ) {
@@ -5845,6 +5854,7 @@ const ReaderPane = forwardRef<
           onSeek={seekTo}
           onScrubbingChange={handleScrubbing}
           onScrubPage={warmSoon}
+          glass={glass}
         />
       )}
       </Animated.View>
@@ -5992,7 +6002,6 @@ const styles = StyleSheet.create({
     zIndex: 4,
     justifyContent: 'center',
   },
-  nativeBarHidden: { opacity: 0 },
   headerBackBtn: {
     justifyContent: 'center',
   },
