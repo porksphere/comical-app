@@ -104,7 +104,9 @@ image, so the SHAPE is in the file: the local Expo module `apps/mobile/modules/s
 main thread, uncached, and rebuilds its items on every return to the screen, so a file
 picture is blank for the first part of every pop back: `NavBarLeadingImage` (the local
 module `apps/mobile/modules/nav-bar-image`, a zero-size view in the page) keeps the decoded
-image and sets it on the leading item as the items are rebuilt. A row without art shows its initial
+image and sets it on the leading item as the items are rebuilt — and on the item's MENU rows
+(`menuImages`, by row title), which never get a file picture through the loader at all: it
+lands on the action after the menu was built, and a bar item keeps a copy of its menu. A row without art shows its initial
 as an SF `x.square.fill` (`lib/initial-symbol.ts`; `x.circle.fill` for a bar button), and the
 All view an `asterisk` — the other place SF Symbols stand in for lucide. The native bar has NO
 sticky-header primitive (no title menu, palette or scope bar in react-native-screens 4.30), so
@@ -128,7 +130,13 @@ bridge thumbnails from the same thumb files; `select-row-overlay.tsx` is the anc
 picker for Android/web, and the iOS row's fallback where the module isn't linked). The module
 decodes the pictures itself at the screen's scale — `@expo/ui`'s SwiftUI `Menu` was tried first
 and needed a vendored patch to do that, which is why it went: a missing native behaviour gets a
-local Expo module, never a patch, and the repo carries none. A UIKit menu has no second line, so an OPTION's `description` is not
+local Expo module, never a patch, and the repo carries none. On iOS 26 the tap that closes any
+of these UIKit menus is hit-tested through to the view beneath, and React Native's touch handler
+(a gesture recognizer, which UIKit does not suppress) would press it: the local module
+`apps/mobile/modules/menu-touch-gate` (an app-delegate subscriber, no JS) puts a window-level
+recognizer in at launch that has that handler ignore touches while a menu's container is on the
+window — the same gate expo-modules-core ships but installs only from its SwiftUI host view,
+which these menus never mount. A UIKit menu has no second line, so an OPTION's `description` is not
 shown on iOS, and the option test ids (`settings.select.<label>.option.<value>`) are not
 reachable there — only the row's. Multi-select enum fields (`MultiEnumRow` in
 `setting-field.tsx`) stay on the overlay everywhere: a system menu can't hold several checks.
