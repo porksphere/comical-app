@@ -1,10 +1,8 @@
 import { Stack } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type CollectPageProps, MENU_GAP, useCollectPage } from '@/components/reader/collect-page-control';
 import { useReaderSettingsOverlay } from '@/components/reader/settings-panel';
-import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 
@@ -13,7 +11,10 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
  * back button stays where it was and only the bar's face changes: the save-this-page bookmark and
  * the settings gear as two glass bar buttons where the custom toolbar's trailing slot put them
  * (`ReaderToolbar`, which Android and web keep). The bar itself follows the chrome's auto-hide
- * through the route's `headerShown`, so it slides away and back the way UIKit's does.
+ * through the route's `headerShown`, so it slides away and back the way UIKit's does. A mounted
+ * `Stack.Toolbar` holds `headerShown` on over the route's own options, so while `barShown` is
+ * false this renders no toolbar at all, and stays mounted for the settings sheet and the spread
+ * menu it owns.
  *
  * A bar button has a press and nothing else, so the custom button's long-press (the collections
  * picker outright) is not here: a saved page's tap opens the picker, as it does there, and an
@@ -26,12 +27,14 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
  */
 export function ReaderNativeToolbar({
   seriesKey,
+  barShown,
   onHoldChrome,
   onPress,
   ...page
 }: CollectPageProps & {
   /** `bridgeId:seriesId` — what the settings sheet stores the per-series spread shift against. */
   seriesKey: string | null;
+  barShown: boolean;
   /** Keeps the chrome up while the settings sheet is open. */
   onHoldChrome: (hold: boolean) => void;
   /** Called on either press so the chrome's auto-hide countdown restarts. */
@@ -41,6 +44,7 @@ export function ReaderNativeToolbar({
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
   const { open: openSettings } = useReaderSettingsOverlay(seriesKey, onHoldChrome);
+  if (!barShown) return null;
   return (
     <Stack.Toolbar placement="right">
       <Stack.Toolbar.Button
@@ -72,37 +76,3 @@ export function ReaderNativeToolbar({
     </Stack.Toolbar>
   );
 }
-
-/**
- * The reader's title in the bar: the series over its chapter, as the custom toolbar stacks them.
- * White, never the theme's: the reader stays dark whatever the app theme is, and the bar is
- * transparent over the page. Handed to the route as its `headerTitle` — a title view, which the
- * bar carries the way it carries any title.
- */
-export function ReaderBarTitle({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <View style={styles.titles}>
-      <ThemedText type="smallBold" numberOfLines={1} style={styles.title}>
-        {title}
-      </ThemedText>
-      {!!subtitle && (
-        <ThemedText type="small" numberOfLines={1} style={styles.subtitle}>
-          {subtitle}
-        </ThemedText>
-      )}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  titles: {
-    alignItems: 'center',
-  },
-  title: {
-    color: '#fff',
-  },
-  subtitle: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 12,
-  },
-});

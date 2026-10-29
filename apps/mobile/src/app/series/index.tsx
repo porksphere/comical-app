@@ -58,7 +58,7 @@ import { ReaderBarShade, ReaderToolbar, TRAILING_SLOT_W } from '@/components/rea
 import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
 import { CollectPageControl, CollectPageShortcut } from '@/components/reader/collect-page-control';
 import { SettingsControl } from '@/components/reader/settings-panel';
-import { ReaderBarTitle, ReaderNativeToolbar } from '@/components/reader/reader-native-toolbar';
+import { ReaderNativeToolbar } from '@/components/reader/reader-native-toolbar';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesRemovedNotice } from '@/components/series/series-removed';
@@ -3850,9 +3850,11 @@ function SeriesReaderInstance({
   // so its back button and buttons morph from one face to the other instead of a custom bar
   // fading in under it. Details: transparent over the cover, the glass material and the title
   // arriving where the custom bar went solid, the navigation theme's tint. Reader: transparent
-  // over the page, the series over its chapter as a white title view, the save and settings
-  // buttons as glass bar items (ReaderNativeToolbar), and the bar follows the chrome's auto-hide
-  // through `headerShown` — UIKit slides it away and back. Every option is set in both modes:
+  // over the page, a white title, the save and settings buttons as glass bar items
+  // (ReaderNativeToolbar), and the bar follows the chrome's auto-hide through `headerShown` —
+  // UIKit slides it away and back. A mounted Stack.Toolbar sets `headerShown: true` on top of
+  // these options (expo-router merges its items in over the page's own), so neither toolbar
+  // renders its items while the bar is down. Every option is set in both modes:
   // Stack.Screen merges into the route's options, so a key left out would carry the other mode's
   // value over. The custom chevron below never shows here. Only the top instance sets the options
   // (they are the route's, shared by every layer), and the elements mount only while it is top,
@@ -3870,13 +3872,19 @@ function SeriesReaderInstance({
   // front of you belongs to is the one thing this bar must answer there.
   const readerBarTitle = sequence ? (visibleSequenceEntry?.seriesTitle ?? seriesTitle) : seriesTitle;
   const readerBarSubtitle = sequence ? (visibleSequenceEntry?.chapterName ?? '') : (target?.chapterName ?? '');
+  // iOS gives it one line, a plain title UIKit lays out and truncates between the back button and
+  // the bar buttons: a title view is sized by React at the bar's full width, and UIKit can only
+  // centre that over them. Outside a sequence the line is the chapter, which nothing else in the
+  // reader names; the series is the page the back button returns to.
+  const nativeReaderTitle = sequence ? readerBarTitle : readerBarSubtitle || readerBarTitle;
   const nativeBarUp = NATIVE_HEADER;
+  const barUp = detailsActive || chromeVisible;
   const nativeBar =
     NATIVE_HEADER && isTop ? (
       <>
         <Stack.Screen
           options={{
-            headerShown: detailsActive || chromeVisible,
+            headerShown: barUp,
             headerTransparent: true,
             headerShadowVisible: false,
             headerBackVisible: nativePush,
@@ -3889,14 +3897,14 @@ function SeriesReaderInstance({
                   headerTintColor: navTheme.colors.primary,
                 }
               : {
-                  title: readerBarTitle,
-                  headerTitle: () => <ReaderBarTitle title={readerBarTitle} subtitle={readerBarSubtitle} />,
+                  title: nativeReaderTitle,
+                  headerTitle: nativeReaderTitle,
                   headerBlurEffect: undefined,
                   headerTintColor: '#fff',
                 }),
           }}
         />
-        {!nativePush ? (
+        {!nativePush && barUp ? (
           <Stack.Toolbar placement="left">
             <Stack.Toolbar.Button
               icon="chevron.left"
@@ -3917,6 +3925,7 @@ function SeriesReaderInstance({
             sourceUrlOf={sourceUrlOf}
             pagesOnScreen={pagesOnScreen}
             seriesKey={seriesKey}
+            barShown={chromeVisible}
             onHoldChrome={holdChrome}
             onPress={showChrome}
           />
