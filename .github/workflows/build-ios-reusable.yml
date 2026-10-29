@@ -107,6 +107,18 @@ on:
         type: string
         default: ''
         required: false
+      runner:
+        # The macOS image the build runs on, which is what picks the Xcode and so the iOS SDK the
+        # app is compiled against. Only build-ios.yml's PR lane moves off the default: `xcode-27`
+        # (a public-preview image, Xcode 27.1 by default) links the iOS 27 SDK, without which
+        # every iOS 27 behaviour the app asks for compiles away — the tab bar's preferred sidebar
+        # placement, the reader's horizontal-bars opt-out, the vertical bar of a folded display.
+        # Nightly and release stay on the stable image until that one leaves preview. Its builds
+        # start with a cold ccache: only main writes the cache, and it compiles with another clang.
+        description: The runs-on label of the macOS image to build on.
+        type: string
+        default: macos-26
+        required: false
       channel:
         # Bakes EXPO_PUBLIC_COMICAL_BUILD_CHANNEL into the JS bundle — read by src/lib/sentry.ts
         # as the `buildChannel` tag on every Sentry event, so a crash report is attributable to
@@ -134,9 +146,9 @@ on:
 
 jobs:
   build:
-    # macOS 26 provides Xcode 26 / the iOS 26 SDK, required to compile the
-    # Liquid Glass (expo-glass-effect) native code.
-    runs-on: macos-26
+    # At least macOS 26: Xcode 26 / the iOS 26 SDK is required to compile the Liquid Glass
+    # (expo-glass-effect) native code. See the `runner` input.
+    runs-on: ${{ inputs.runner }}
     outputs:
       version: ${{ steps.meta.outputs.version }}
     # SENTRY_AUTH_TOKEN: read by the Sentry Expo config plugin's Xcode
