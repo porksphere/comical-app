@@ -320,7 +320,9 @@ UIKit's own iOS 18 zoom transition: the card is a `<Link asChild>` with `<LinkTr
 withAppleZoom>` (from `@/lib/nav`) and the page's hero cover sits in `<LinkAppleZoomTarget>`.
 The href names the card's tab via `TabRouteContext` (`lib/focused-tab.tsx`), since a Link is
 built at render time when the focused tab may be another. The zoom's interactive dismissal
-follows the screen's `gestureEnabled`, which the page turns off in the reader.
+follows the screen's `gestureEnabled`, which the page turns off in the reader, except the paged
+split reader opened from the details: there UIKit's swipe down is the swipe-away, and the swipe
+up it never starts is the reader's own pan (`swipeAway`), ending in the same pop.
 The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
 runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
 

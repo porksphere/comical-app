@@ -268,6 +268,10 @@ const READER_BACKDROP = '#000000';
 const COLLAPSE_ACTIVATE_PX = 20;
 const REVEAL_COMMIT_FRACTION = 0.25;
 const DISMISS_COMMIT_FRACTION = 0.5;
+// The split reader's swipe UP (see `liftY`). Less than a dismissal asks, so it doesn't feel heavier
+// than the system's swipe down beside it.
+const LIFT_COMMIT_FRACTION = 0.25;
+const LIFT_CORNER_RADIUS = 40;
 // The reveal pull: how far past the details list's top the rubber-band must be pulled, at
 // release, to expand the reader. Roughly usePullToRefresh's trigger feel.
 const PULL_COMMIT_PX = 80;
@@ -2194,6 +2198,12 @@ function SeriesReaderInstance({
   // Never under a mouse: a drag there is a PAN of the page, and a pan that set off the reveal or the
   // dismiss took the reader away mid-read. The desktop has the Details button and Back for those.
   const collapseEnabled = !detailsActive && !readerZoomed && !scrubbing && !(IS_WEB && isDesktopPointer());
+  // The split reader's swipe away, paged. UIKit's zoom dismissal takes the swipe DOWN (the screen's
+  // `gestureEnabled`) and carries the page and the bar back into the strip. It never starts on a
+  // swipe up, so that half is this pan's: the page lifts and shrinks under the finger, and a
+  // committed release runs the same native pop the back button does.
+  const swipeAway = split === 'reader' && params.from === 'details' && settings.mode === 'paged';
+  const liftY = useSharedValue(0);
   // Each GESTURE is one thing, decided at activation and locked: a drag that sets off toward the
   // details is a reveal (progress only, and paged only); anything else is a dismiss — a free 2D
   // follow in BOTH directions, released on the |cross| decision below, driving the
@@ -2248,9 +2258,15 @@ function SeriesReaderInstance({
             progress.set(Math.min(1, Math.max(0, progressStartSV.value + -cross / span)));
             return;
           }
-          // A pushed card has no swipe-away (useNativePush): the drag is still claimed, so nothing
-          // beneath scrolls on it, but it moves nothing and releases to nothing.
-          if (nativePush) return;
+          // A pushed card's only swipe-away is `swipeAway`'s. Otherwise the drag is still claimed, so
+          // nothing beneath scrolls on it, but it moves nothing and releases to nothing.
+          if (nativePush) {
+            if (swipeAway) {
+              const reach = ZOOM_DRAG_FOLLOW_REACH * height * ZOOM_DRAG_TRAVEL;
+              liftY.set(zoomDragFollow(Math.max(0, -e.translationY), reach, ZOOM_DRAG_FOLLOW_GRIP));
+            }
+            return;
+          }
           // The follow: both axes, feeding the collapse instead of a fling. Distance in ANY
           // direction drives it, since unlike the back-swipe this gesture has no single axis to
           // measure along.
@@ -2316,7 +2332,18 @@ function SeriesReaderInstance({
             runOnJS(commitReveal)(open ? 1 : 0);
             return;
           }
-          if (nativePush) return;
+          if (nativePush) {
+            if (!swipeAway) return;
+            if (releaseCommitted(-e.translationY, -e.velocityY, height * LIFT_COMMIT_FRACTION)) {
+              runOnJS(leaveReaderForDetails)();
+              // Back to full size while the pop runs, so the page is where the strip expects it
+              // when the zoom lands there.
+              liftY.set(withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) }));
+            } else {
+              liftY.set(withSpring(0, SPRING_BACK));
+            }
+            return;
+          }
           // The release decision — the shared projection (lib/gesture-release), judged along the
           // direction the page actually travelled, since this one can be thrown off either side.
           //
@@ -2359,6 +2386,7 @@ function SeriesReaderInstance({
         // Always fires once the gesture resolves (release OR cancel) — the next gesture decides
         // its own mode fresh.
         .onFinalize((_e, success) => {
+          if (swipeAway && !success) liftY.set(withSpring(0, SPRING_BACK));
           // A cancelled dismiss drag never reaches onEnd — don't leave the page part-collapsed.
           // Same `success` test as the back-swipe's, for the same reason.
           if (gestureMode.value === 2 && !success) {
@@ -2381,7 +2409,10 @@ function SeriesReaderInstance({
       // The DISTANCE stays this surface's own: nothing here is racing a scroller for the claim, so
       // it can afford to ask for more travel before it takes the gesture.
       const cross = Math.round(COLLAPSE_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
-      if (settings.mode === 'paged') {
+      if (swipeAway) {
+        // Up only, and out of the way the moment a drag heads down: that one is UIKit's.
+        pan.activeOffsetY(-COLLAPSE_ACTIVATE_PX).failOffsetY(cross).failOffsetX([-cross, cross]);
+      } else if (settings.mode === 'paged') {
         pan.activeOffsetY([-COLLAPSE_ACTIVATE_PX, COLLAPSE_ACTIVATE_PX]).failOffsetX([-cross, cross]);
       } else {
         pan.activeOffsetX([-COLLAPSE_ACTIVATE_PX, COLLAPSE_ACTIVATE_PX]).failOffsetY([-cross, cross]);
@@ -2393,6 +2424,9 @@ function SeriesReaderInstance({
     collapseEnabled,
     nativePush,
     split,
+    swipeAway,
+    liftY,
+    leaveReaderForDetails,
     width,
     height,
     zoomRadiusClosing,
@@ -3579,10 +3613,18 @@ function SeriesReaderInstance({
   // hidden height so the strip window shows the page's vertical CENTER (not its top edge),
   // sliding back to natural position as it expands. A dismissal does not move it either — the
   // collapse moves the whole page, and the reader's dark surface stays put and fades.
-  const readerCardStyle = useAnimatedStyle(
-    () => ({ transform: [{ translateY: (-(height - bandH) / 2) * progress.value }] }),
-    [height, bandH],
-  );
+  // The split reader's swipe up rides it too (`liftY`), as UIKit's swipe down does the whole screen:
+  // up with the finger, smaller, with rounding corners.
+  const readerCardStyle = useAnimatedStyle(() => {
+    const lift = liftY.value;
+    return {
+      transform: [
+        { translateY: (-(height - bandH) / 2) * progress.value - lift },
+        { scale: 1 - lift / (height * ZOOM_DRAG_TRAVEL) },
+      ],
+    };
+  }, [height, bandH]);
+  const readerClipStyle = useAnimatedStyle(() => ({ borderRadius: Math.min(LIFT_CORNER_RADIUS, liftY.value) }));
   // The details page's motion, three coupled pieces:
   //  - headerLayerStyle: the whole details layer (background sheet + content) slides DOWN and off
   //    the screen as the reader expands — the details scroll down out of visibility.
@@ -3889,7 +3931,7 @@ function SeriesReaderInstance({
             headerTransparent: true,
             headerShadowVisible: false,
             headerBackVisible: nativePush,
-            ...(nativePush ? { gestureEnabled: detailsActive } : {}),
+            ...(nativePush ? { gestureEnabled: detailsActive || (swipeAway && !readerZoomed && !scrubbing) } : {}),
             ...(detailsActive
               ? {
                   title: barSolid ? headerBarTitle : '',
@@ -4151,7 +4193,7 @@ function SeriesReaderInstance({
           // Under the details its chrome still shows through the seam; the keys stay on the details.
           {...(detailsActive ? focusSkip : null)}
           style={[styles.readerFrame, { top: 0, width, height }, readerCardStyle]}>
-          <View style={styles.readerClip}>
+          <Animated.View style={[styles.readerClip, readerClipStyle]}>
           {error ? (
             <>
               {pagesGone && !missingBridge ? (
@@ -4261,7 +4303,7 @@ function SeriesReaderInstance({
                 onPress={() => setRevealed(1)}
               />
             </View>
-          </View>
+          </Animated.View>
         </Animated.View>
       </GestureDetector>
 
