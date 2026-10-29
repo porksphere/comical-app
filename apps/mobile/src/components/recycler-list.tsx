@@ -5,6 +5,7 @@ import { Platform, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent
 import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
+import { useSideInsets } from '@/hooks/use-content-width';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 import { stableScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
@@ -137,6 +138,9 @@ export function RecyclerList<T>({
   // `scopeKey`, which already names what this list is showing, so the key outlives the list itself:
   // `listKey` right above deliberately remounts the whole LegendList on a 0 -> N data fill.
   const zoomSurface = useZoomSurfaceKey(scopeKey);
+  // The list runs under the safe area's sides and its content stays inside them, so the colour behind
+  // a landscape iPhone's sensor housing is the screen's and no card sits under it.
+  const insets = useSideInsets();
 
   // The marker is keyed WITH the list: it registers the scroll view once per attach, so a list
   // remounting under a standing marker would leave UIKit following the old one.
@@ -192,8 +196,8 @@ export function RecyclerList<T>({
             flexGrow: 1,
             paddingTop,
             paddingBottom,
-            paddingLeft: sidePad,
-            paddingRight: sidePad,
+            paddingLeft: sidePad + insets.left,
+            paddingRight: sidePad + insets.right,
           }}
           onEndReachedThreshold={onEndReachedThreshold}
           onEndReached={onEndReached}

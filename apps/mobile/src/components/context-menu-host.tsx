@@ -310,11 +310,13 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
   const fixed = req.anchor === 'fixed';
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const headerH = req.title !== undefined ? MENU_TITLE_HEIGHT : 0;
-  const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
+  const minLeft = insets.left + EDGE_PAD;
+  const maxRight = winW - insets.right - EDGE_PAD;
+  const menuW = Math.min(MENU_WIDTH, maxRight - minLeft);
   const menuH = MENU_PAD_V * 2 + headerH + MENU_ROW_HEIGHT * specs.length;
   const left = fixed
-    ? clamp(req.x, EDGE_PAD, winW - menuW - EDGE_PAD)
-    : clamp(req.x - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
+    ? clamp(req.x, minLeft, maxRight - menuW)
+    : clamp(req.x - menuW / 2, minLeft, maxRight - menuW);
   const below = fixed || req.y + GAP + menuH <= winH - insets.bottom - EDGE_PAD;
   const top = fixed
     ? clamp(req.y, insets.top + EDGE_PAD, winH - insets.bottom - EDGE_PAD - menuH)

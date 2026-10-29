@@ -73,7 +73,7 @@ function rebind(action: KeyAction, chord: KeyChord, overrides: KeyOverrides): vo
 }
 
 export default function KeyboardShortcutsScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const overrides = useKeyOverrides();
   const panSpeed = useKeyPanSpeed();
   const zoomSpeed = useKeyZoomSpeed();

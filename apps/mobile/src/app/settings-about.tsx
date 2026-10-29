@@ -63,7 +63,7 @@ function osLabel(): string {
 }
 
 export default function AboutScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   // Confirmation for the clipboard path, which is otherwise completely silent — no share sheet
   // appears, so without this the row looks broken. Clears itself, so it can't sit there claiming a
   // copy from several minutes ago.

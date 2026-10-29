@@ -21,7 +21,7 @@ function formatEntry(e: DiagnosticEntry): string {
 }
 
 export default function DiagnosticsScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const theme = useTheme();
   const router = useRouter();
   const [entries, setEntries] = useState<DiagnosticEntry[]>(getDiagnostics());

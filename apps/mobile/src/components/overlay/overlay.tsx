@@ -1214,6 +1214,7 @@ function OverlayPopover({
   children: ReactNode;
 }) {
   const { width: vw, height: vh } = useWindowDimensions();
+  const sides = useSafeAreaInsets();
   const controls = useWindowControlsStrip();
   const theme = useTheme();
   const [card, setCard] = useState<{ width: number; height: number } | null>(null);
@@ -1281,7 +1282,9 @@ function OverlayPopover({
     }
   }, [card, progress]);
 
-  const width = Math.min(POPOVER_WIDTH, vw * POPOVER_MAX_VIEWPORT_FRACTION, vw - POPOVER_PAD * 2);
+  const minLeft = sides.left + POPOVER_PAD;
+  const maxRight = vw - sides.right - POPOVER_PAD;
+  const width = Math.min(POPOVER_WIDTH, vw * POPOVER_MAX_VIEWPORT_FRACTION, maxRight - minLeft);
   const spaceBelow = vh - (anchor.y + anchor.height) - POPOVER_GAP - POPOVER_PAD;
   const spaceAbove = anchor.y - POPOVER_GAP - POPOVER_PAD;
   const h = card?.height ?? 0;
@@ -1291,8 +1294,8 @@ function OverlayPopover({
     ? anchor.y + anchor.height + POPOVER_GAP
     : Math.max(POPOVER_PAD, anchor.y - POPOVER_GAP - Math.min(h, maxHeight));
   // A panel whose top starts in the caption strip ends short of the buttons, which draw over anything.
-  const right = top < controls.height ? vw - controls.inset - POPOVER_PAD : vw - POPOVER_PAD;
-  const left = Math.max(POPOVER_PAD, Math.min(anchor.x, right - width));
+  const right = top < controls.height ? Math.min(maxRight, vw - controls.inset - POPOVER_PAD) : maxRight;
+  const left = Math.max(minLeft, Math.min(anchor.x, right - width));
   const rectHeight = Math.min(h, maxHeight);
 
   useEffect(() => {

@@ -21,7 +21,7 @@ import { scrollbarInset } from '@/lib/scrollbar-inset';
 const isNative = Platform.OS !== 'web';
 
 export default function NotificationsSettingsScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const queryClient = useQueryClient();
   const mock = useMockActive();
   const { autoCheck, backgroundCheck, wifiOnly, notifications, appBadge, caughtUpOnly } = useNotifyPrefs();

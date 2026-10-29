@@ -37,7 +37,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
-import { useContentWidth } from '@/hooks/use-content-width';
+import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -238,8 +238,10 @@ export default function ActivityScreen() {
   // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
   // explicit paddingLeft/Right is the reliable lever. Only the centring inset (web); the row owns its
-  // own horizontal gutter so the swipe-to-clear reaches the edge (see history-row / history).
-  const sidePad = topLevelCenterInset(width);
+  // own horizontal gutter so the swipe-to-clear reaches the edge (see history-row / history), but
+  // inside the safe area's sides.
+  const sides = useSideInsets();
+  const sidePad = topLevelCenterInset(width - sides.left - sides.right);
 
   // See history.tsx's `openDetail` — the same control, opening the same combined page on its
   // details side.
@@ -328,8 +330,8 @@ export default function ActivityScreen() {
                 // the bar's bottom edge and its own top padding is all the separation it needs.
                 paddingTop: listPaddingTop(headerHeight),
                 paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
-                paddingLeft: sidePad,
-                paddingRight: sidePad,
+                paddingLeft: sidePad + sides.left,
+                paddingRight: sidePad + sides.right,
               }}
               renderItem={({ item }) => (
                 <ActivityItem

@@ -68,7 +68,7 @@ export default function SettingsScreen() {
   // Settings keeps its bottom bar: this screen IS navigation, so sliding the nav away under the
   // finger only takes away the thing you came here to tap. See `usePinnedTabBar`.
   usePinnedTabBar();
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxTopLevelWidth);
   // The offset the native bar's title fades on. The bar is pinned here and the gesture phases stay
   // unreported (the phase broadcast is global — a blurred screen's bar would still be listening),
   // so this is the one thing the scroll drives.

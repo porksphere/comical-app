@@ -8,6 +8,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { useSideInsets } from '@/hooks/use-content-width';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
 import { focusSkip } from '@/lib/focus-nav';
@@ -294,6 +295,8 @@ export function StickySectionHeader<S extends StickySection>({
   renderHeader: (section: S) => ReactElement;
 }) {
   const theme = useTheme();
+  // The band runs the list's full width; its heading sits where the list's content does.
+  const insets = useSideInsets();
   const bandHeight = contentHeight + bandPadding * 2;
   // Where a heading has to reach to pin: the band's own top padding below the bar's edge, which is
   // exactly where the pinned copy draws its heading. See the doc.
@@ -502,7 +505,12 @@ export function StickySectionHeader<S extends StickySection>({
               {slot ? (
                 <View
                   pointerEvents="box-none"
-                  style={{ height: contentHeight, marginTop: bandPadding, paddingHorizontal: sidePad }}>
+                  style={{
+                    height: contentHeight,
+                    marginTop: bandPadding,
+                    paddingLeft: sidePad + insets.left,
+                    paddingRight: sidePad + insets.right,
+                  }}>
                   {renderHeader(slot)}
                 </View>
               ) : null}

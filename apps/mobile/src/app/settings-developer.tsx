@@ -16,7 +16,7 @@ import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
  *  `PROFILING_ENABLED`; the route itself stays registered unconditionally, since a route that exists
  *  but is unreachable costs nothing while a conditional <Stack.Screen> would just be noise. */
 export default function DeveloperSettingsScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const [mockEnabled, setMockEnabled] = useMockDataToggle();
   const [apiBase] = useApiBase();
   const profilerOn = useDevProfilerEnabled();

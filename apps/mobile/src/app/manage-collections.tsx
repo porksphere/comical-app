@@ -11,7 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { showToast } from '@/components/toast';
-import { SettingsGutter, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import type { Collection } from '@/data/types';
 import { useCollections } from '@/hooks/use-collections';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
@@ -96,7 +96,7 @@ export default function ManageCollectionsScreen() {
         <ReorderableList data={collections} keyOf={(l) => l.id} renderRow={renderRow} onReorder={reorderCollections} />
       )}
 
-      <AddFab onPress={openCreate} testID="manage-collections.add" label="New collection" right={SettingsGutter} bottom={Spacing.five} />
+      <AddFab onPress={openCreate} testID="manage-collections.add" label="New collection" right={contentPadding.paddingRight} bottom={Spacing.five} />
     </ThemedView>
   );
 }

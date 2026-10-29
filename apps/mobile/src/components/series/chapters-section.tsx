@@ -49,6 +49,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
+import { useSideInsets } from '@/hooks/use-content-width';
 import { useHovered } from '@/hooks/use-hovered';
 import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
 import { sizeClassFor } from '@/hooks/use-responsive';
@@ -149,10 +150,17 @@ const seriesSidePad = (width: number) => Math.max(0, (width - MaxTopLevelWidth) 
 /** Columns in the direct-series page grid. */
 const pageGridCols = (width: number) => (width >= 900 ? 5 : width >= 600 ? 3 : 2);
 
+/** The page's width inside the safe area's sides: what the rows and the grid lay out in, while
+ *  the list and the related rails run under the sides. */
+function useSeriesContentWidth() {
+  const sides = useSideInsets();
+  return useSeriesPageWidth() - sides.left - sides.right;
+}
+
 /** Page-grid placeholder shown while the deferred page fetch is in flight — one
  *  row of tiles at the grid's column count, matching the thumbnail aspect. */
 function PageGridSkeleton() {
-  const cols = pageGridCols(useSeriesPageWidth());
+  const cols = pageGridCols(useSeriesContentWidth());
   return (
     <View style={styles.section}>
       <ThemedText type="subtitle" style={styles.headTitle}>
@@ -514,7 +522,8 @@ export function ChapterScrollList({
 } & PullListWiring) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const width = useSeriesPageWidth();
+  const sides = useSideInsets();
+  const width = useSeriesContentWidth();
   const largeSidePad = seriesSidePad(width);
   const [tab, setTab] = useState<Tab>('all');
   const [asc, setAsc] = useState(false);
@@ -786,10 +795,9 @@ export function ChapterScrollList({
         paddingTop: topInset + BarContentGap,
         paddingBottom: insets.bottom + Spacing.five,
         // Large screens cap + centre the whole list at MaxTopLevelWidth (via largeSidePad); small
-        // screens just inset by Spacing.four.
-        ...(isLarge
-          ? { paddingLeft: largeSidePad, paddingRight: largeSidePad }
-          : { paddingHorizontal: Spacing.four }),
+        // screens just inset by Spacing.four. Either way inside the safe area's sides.
+        paddingLeft: (isLarge ? largeSidePad : Spacing.four) + sides.left,
+        paddingRight: (isLarge ? largeSidePad : Spacing.four) + sides.right,
       }}
       renderItem={({ item }) => renderListItem(item)}
     />
@@ -1219,7 +1227,8 @@ export function PageThumbList({
   onOpenPage: (pageIndex: number) => void;
 } & PullListWiring) {
   const theme = useTheme();
-  const screenW = useSeriesPageWidth();
+  const sides = useSideInsets();
+  const screenW = useSeriesContentWidth();
   const insets = useSafeAreaInsets();
   const rtl = useReadsRightToLeft();
   const [expanded, setExpanded] = useState(false);
@@ -1301,8 +1310,8 @@ export function PageThumbList({
       contentContainerStyle={{
         paddingTop: BarContentGap + topInset,
         paddingBottom: insets.bottom + Spacing.five,
-        paddingLeft: sidePad,
-        paddingRight: sidePad,
+        paddingLeft: sidePad + sides.left,
+        paddingRight: sidePad + sides.right,
       }}
       ListHeaderComponent={
         <View style={styles.pageHeader}>

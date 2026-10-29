@@ -31,7 +31,7 @@ const DEFAULT_LAYOUT: CustomLayout = LAYOUT_OPTIONS.includes('carousel') ? 'caro
  */
 export default function CustomSectionEditorScreen() {
   const { pageId, sectionId } = useLocalSearchParams<{ pageId?: string; sectionId?: string }>();
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const ds = useDataSource();
   const mock = useMockActive();
   const hideNsfw = useHideNsfw();

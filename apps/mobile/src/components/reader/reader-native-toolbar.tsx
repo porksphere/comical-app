@@ -57,7 +57,7 @@ export function ReaderNativeToolbar({
           const shown = spread();
           if (shown) {
             spreadMenu(shown, 'save', {
-              under: { right: Spacing.three, top: insets.top + barHeight + MENU_GAP },
+              under: { right: Spacing.three + insets.right, top: insets.top + barHeight + MENU_GAP },
               keyboard: false,
             });
           } else {

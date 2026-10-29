@@ -97,7 +97,7 @@ import {
  *                                     has been committed.
  */
 export default function GestureTraceScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const theme = useTheme();
   const enabled = useGestureTraceEnabled();
   const lines = useGestureTrace();

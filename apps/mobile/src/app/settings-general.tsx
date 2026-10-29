@@ -83,7 +83,7 @@ const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
 ];
 
 export default function GeneralSettingsScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const [nsfwMode, setNsfwMode] = useNsfwMode();
   const [holdAction, setHoldAction] = useBrowseHoldAction();
   const [holdSound, setHoldSound] = useBrowseHoldSound();

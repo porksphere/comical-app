@@ -203,7 +203,7 @@ export default function FavoritesImportScreen() {
                     selected={ms.selected.has(item.seriesId)}
                     done={inLibrary}
                     itemKey={item.seriesId}
-                    edgeOffset={sidePad}
+                    edgeOffset={sidePad.left}
                     {...(inLibrary ? {} : { gesture: dragSelect.gestureFor(index) })}
                   />
                   <ImportCover url={item.thumbnailUrl} />
@@ -227,7 +227,7 @@ export default function FavoritesImportScreen() {
       <TopBar title={importMutation.isPending ? 'Importing…' : ms.count > 0 ? `${ms.count} selected` : 'Import favorites'} />
 
       {importError && (
-        <ThemedText type="small" style={[styles.banner, { color: theme.danger, paddingHorizontal: sidePad }]}>
+        <ThemedText type="small" style={[styles.banner, { color: theme.danger, paddingLeft: sidePad.left, paddingRight: sidePad.right }]}>
           {importError}
         </ThemedText>
       )}
@@ -296,8 +296,8 @@ export default function FavoritesImportScreen() {
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop,
-          paddingLeft: listPad,
-          paddingRight: listPad,
+          paddingLeft: listPad.left,
+          paddingRight: listPad.right,
           // Room for the floating pills, so the last rows can scroll clear of them.
           paddingBottom: PILL_HEIGHT + Spacing.six,
         }}
@@ -307,8 +307,8 @@ export default function FavoritesImportScreen() {
       {/* The floating select-mode chrome: staging "…" bottom-left, the lone Import verb bottom-right
           (a solid accent circle, since it's the only verb this screen has). */}
       <SelectPillBar
-        left={sidePad}
-        right={sidePad}
+        left={sidePad.left}
+        right={sidePad.right}
         bottom={Math.max(insets.bottom, Spacing.three)}
         options={stagingRows}
         optionsTestID="favorites-import.select-options"

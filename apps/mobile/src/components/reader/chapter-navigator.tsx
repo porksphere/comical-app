@@ -415,7 +415,7 @@ export function ChapterNavigator({
       <Animated.View
         pointerEvents={visible ? 'box-none' : 'none'}
         style={[styles.wrap, { bottom: chromeBottom + BAR_BOTTOM }, style]}>
-        <View style={styles.row}>
+        <View style={[styles.row, { paddingLeft: Spacing.three + insets.left, paddingRight: Spacing.three + insets.right }]}>
           {chaptered && <SkipButton {...left} Icon={SkipBackIcon} />}
           {total > 1 ? (
             <ChromeSurface style={styles.pill}>
@@ -510,7 +510,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
   },
   tinted: {
     backgroundColor: 'rgba(0,0,0,0.55)',

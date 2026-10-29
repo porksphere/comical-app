@@ -170,7 +170,7 @@ export function ContentFeed({
   /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
   scrollEnabled?: boolean;
 }) {
-  const { numColumns, cardWidth, columnGap, railViewport, width, gutter } = useGridLayout();
+  const { numColumns, cardWidth, columnGap, railViewport, width, gutter, insets } = useGridLayout();
   const wide = useIsLargeScreen();
   // The breakpoint `SectionHead` itself reads — the sticky sizes its band from the head's real
   // height. A DIFFERENT breakpoint from `wide` above.
@@ -345,7 +345,8 @@ export function ContentFeed({
     ambient && sharedValues ? (
       <FeedBackdrop
         bands={bands}
-        width={width}
+        // Under the safe area's sides as well, which the list's content is padded past.
+        width={width + insets.left + insets.right}
         scrollOffset={sharedValues.scrollOffset}
         // Below the pinned heading's band when there is one: it is as opaque as the bar it rides.
         chromeBottom={
@@ -356,7 +357,7 @@ export function ContentFeed({
         // list's own shift and dim already apply. Behind it: that shift and dim, so the colour is
         // pulled and faded with the rows over it.
         {...(BACKDROP_IN_LIST
-          ? { inList: true, style: { top: -paddingTop, left: -centerPad } }
+          ? { inList: true, style: { top: -paddingTop, left: -centerPad - insets.left } }
           : { style: wrapperStyle })}
       />
     ) : null;

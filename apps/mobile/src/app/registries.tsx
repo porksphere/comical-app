@@ -18,7 +18,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar, type TopBarAction } from '@/components/top-bar';
-import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
+import { SettingsCardInset, Spacing } from '@/constants/theme';
 import type { SavedRegistry } from '@/data/api';
 import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
@@ -286,7 +286,7 @@ export default function RegistriesScreen() {
           onPress={() => openDialog(() => <AddRegistryForm />, { accessibilityLabel: 'Add registry' })}
           testID="registries.add"
           label="Add registry"
-          right={SettingsGutter}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
         />
       )}
@@ -294,8 +294,8 @@ export default function RegistriesScreen() {
       {/* The floating select-mode chrome: staging "…" bottom-left, the Remove verb bottom-right. */}
       {selecting && (
         <SelectPillBar
-          left={SettingsGutter}
-          right={SettingsGutter}
+          left={contentPadding.paddingLeft}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="registries.select-options"

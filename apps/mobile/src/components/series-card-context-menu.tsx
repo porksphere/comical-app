@@ -432,10 +432,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   // The PANEL still opens against the left edge — it's near enough the full width of a phone that
   // centring it would move it by a few pixels and buy nothing.
-  const panelW = Math.min(winW - EDGE_PAD * 2, PANEL_MAX_WIDTH);
-  const panelLeft = EDGE_PAD;
+  const minLeft = insets.left + EDGE_PAD;
+  const maxRight = winW - insets.right - EDGE_PAD;
+  const panelW = Math.min(maxRight - minLeft, PANEL_MAX_WIDTH);
+  const panelLeft = minLeft;
 
-  const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
+  const menuW = Math.min(MENU_WIDTH, maxRight - minLeft);
   const menuRowCount = MENU_ROWS - (favoriteStatus === 'unsupported' ? 1 : 0) + DEBUG_EXTRA_MENU_ROWS;
   const rowCount = menuRowCount;
   const menuH = ROW_HEIGHT * menuRowCount + MENU_PAD_V * 2;
@@ -445,7 +447,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // not where the layout finds convenient). Clamped, so a card at either edge still gets a menu fully
   // on screen rather than one hanging off it.
   const cardCenterX = rect.x + rect.width / 2;
-  const menuLeft = clamp(cardCenterX - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
+  const menuLeft = clamp(cardCenterX - menuW / 2, minLeft, maxRight - menuW);
 
   const coverH = COVER_W / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
 

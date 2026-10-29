@@ -21,7 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar, type TopBarAction } from '@/components/top-bar';
-import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
+import { SettingsCardInset, Spacing } from '@/constants/theme';
 import type { BridgeSummary } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyOrder, setBridgeOrder, useBridgeOrder } from '@/data/list-order';
@@ -335,7 +335,7 @@ export default function BridgesScreen() {
           onPress={browseRegistry}
           testID="bridges.add"
           label="Install a bridge"
-          right={SettingsGutter}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
         />
       )}
@@ -343,8 +343,8 @@ export default function BridgesScreen() {
       {/* The floating select-mode chrome: staging "…" bottom-left, the Uninstall verb bottom-right. */}
       {selecting && (
         <SelectPillBar
-          left={SettingsGutter}
-          right={SettingsGutter}
+          left={contentPadding.paddingLeft}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="bridges.select-options"

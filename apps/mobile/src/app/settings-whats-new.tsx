@@ -67,7 +67,7 @@ const UPDATE_LABEL: Record<AppUpdateAction['step'], string> = {
 
 export default function WhatsNewScreen() {
   const update = useAppUpdateCheck();
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const pending = update.pending ?? [];
   const updateAction = useAppUpdateAction();
 

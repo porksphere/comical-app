@@ -14,7 +14,7 @@ import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
+import { SettingsCardInset, Spacing } from '@/constants/theme';
 import { showToast } from '@/components/toast';
 import { addPage, deletePage, renamePage, reorderPages, useCustomPages, type CustomPage } from '@/data/custom-pages';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
@@ -169,7 +169,7 @@ export default function CustomPagesScreen() {
           onPress={openAddPage}
           testID="custom-pages.add"
           label="Add page"
-          right={SettingsGutter}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
         />
       )}
@@ -177,8 +177,8 @@ export default function CustomPagesScreen() {
       {/* The floating select-mode chrome: staging "…" bottom-left, the Delete verb bottom-right. */}
       {selecting && (
         <SelectPillBar
-          left={SettingsGutter}
-          right={SettingsGutter}
+          left={contentPadding.paddingLeft}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="custom-pages.select-options"

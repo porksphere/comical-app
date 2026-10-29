@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
-import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
+import { SettingsCardInset, Spacing } from '@/constants/theme';
 import { NamePromptForm } from '@/app/custom-pages';
 import {
   deleteSection,
@@ -180,7 +180,7 @@ export default function CustomPageEditorScreen() {
           onPress={() => openSection()}
           testID="custom-page-editor.add-section"
           label="Add section"
-          right={SettingsGutter}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
         />
       )}
@@ -188,8 +188,8 @@ export default function CustomPageEditorScreen() {
       {/* Floating select-mode chrome: staging "…" bottom-left, Delete verb bottom-right. */}
       {selecting && (
         <SelectPillBar
-          left={SettingsGutter}
-          right={SettingsGutter}
+          left={contentPadding.paddingLeft}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="custom-page-editor.select-options"

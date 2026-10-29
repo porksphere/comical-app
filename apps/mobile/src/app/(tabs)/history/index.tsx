@@ -34,7 +34,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
-import { useContentWidth } from '@/hooks/use-content-width';
+import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
@@ -130,7 +130,9 @@ export default function HistoryScreen() {
   // explicit paddingLeft/Right is the reliable lever. See library.tsx.
   // Only the centring inset (web) — the row owns its own horizontal gutter, so it spans the full
   // content width and the swipe-to-delete reaches the edge instead of being cut off inside a side inset.
-  const sidePad = topLevelCenterInset(width);
+  // The safe area's sides are the exception: a row inside them keeps clear of the sensor housing.
+  const sides = useSideInsets();
+  const sidePad = topLevelCenterInset(width - sides.left - sides.right);
 
   // The 3-dot opens the SERIES side of that same page — no `reader` param, so it lands on
   // the details with the reader as the strip, which is exactly a browse open. Same zoom off this
@@ -217,8 +219,8 @@ export default function HistoryScreen() {
               // bottom edge and its own top padding is all the separation it needs.
               paddingTop: listPaddingTop(headerHeight),
               paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
-              paddingLeft: sidePad,
-              paddingRight: sidePad,
+              paddingLeft: sidePad + sides.left,
+              paddingRight: sidePad + sides.right,
             }}
             renderItem={({ item }) => (
               <HistoryItem

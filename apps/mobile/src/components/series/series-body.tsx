@@ -40,6 +40,7 @@ import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
 import { type Chapter, type MetaCredit, type SeriesDetail, type TagGroup } from '@/data/types';
 import { useBridgeMap, useMissingBridge } from '@/hooks/use-bridges';
+import { useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useHovered } from '@/hooks/use-hovered';
@@ -389,6 +390,7 @@ export function SeriesBody({
   const theme = useTheme();
   const scheme = useActiveColorScheme();
   const mock = useMockActive();
+  const sides = useSideInsets();
 
   // Trackers are bridge-agnostic (unlike `hasSources`, which the bridge itself reports per
   // series), so whether the Trackers button renders comes from the same `/trackers` query the
@@ -878,7 +880,9 @@ export function SeriesBody({
   );
 
   // Related rails (per-bridge): a bridge may surface any number of labeled
-  // groups (sequels, similar, …). Full-bleed to the capped column.
+  // groups (sequels, similar, …). Full-bleed to the capped column; their cards lay out inside the
+  // safe area's sides, which the strips scroll under.
+  const railWidth = width - sides.left - sides.right;
   const relatedRailsEl = relatedGroups?.length ? (
     <View style={styles.related}>
       {relatedGroups.map(
@@ -887,7 +891,7 @@ export function SeriesBody({
             <Rail
               key={`${group.label}-${i}`}
               section={{ id: `related-${i}`, title: group.label, kind: 'regular', items: group.items }}
-              viewportWidth={width}
+              viewportWidth={railWidth}
               bridge={series.bridge}
               bridgeId={bridgeId}
               direct={direct}
@@ -897,7 +901,7 @@ export function SeriesBody({
     </View>
   ) : needsRelatedFetch && relatedLoading ? (
     <View style={styles.related}>
-      <RailSkeleton viewportWidth={width} />
+      <RailSkeleton viewportWidth={railWidth} />
     </View>
   ) : null;
 
