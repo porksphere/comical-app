@@ -3,6 +3,7 @@ import { NativeTabs } from 'expo-router/native-tabs';
 import { useCallback, useEffect, useState, type ComponentProps } from 'react';
 import { useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 
+import { navModeFor } from '@/constants/size-class';
 import { useActivityBadgeCount } from '@/data/activity/use-activity-badge';
 import { useSettingsBadgeCount } from '@/data/use-settings-badge';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
@@ -19,7 +20,9 @@ import { setBackdropRecede } from '@/lib/series-backdrop';
  * The point is what UIKit does with the bar on its own: the sidebar on iPad, and the side-mounted
  * symbol bar the system draws when a resizable scene is at the regular width class — the layout an
  * adaptable app gets for free and a custom bar can only imitate. `sidebarAdaptable` is what opts the
- * controller into that (iOS 18+ on iPad; iOS 27+ on the wide iPhones).
+ * controller into that (iOS 18+ on iPad; iOS 27+ on the wide iPhones). Where the sidebar can show,
+ * `preferredPlacement` (iOS 27+) asks for it at the widths Android and web give the labelled
+ * sidebar (`navModeFor`), and leaves the choice to UIKit below that.
  *
  * `minimizeBehavior` is the system's own hide-on-scroll (iOS 26): the bar shrinks to the selected
  * tab's capsule as the content scrolls down, and comes back when the scroll reaches the top or the
@@ -88,6 +91,7 @@ export default function AppTabs() {
     <ContentWidthProvider width={contentWidth ?? windowWidth} sidebar={false}>
       <NativeTabs
         sidebarAdaptable
+        preferredPlacement={navModeFor(windowWidth, false) === 'sidebar' ? 'sidebar' : 'automatic'}
         minimizeBehavior="onScrollDown"
         hidden={hidden}
         tintColor={theme.tabIconActive}

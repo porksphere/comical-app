@@ -4032,9 +4032,13 @@ function SeriesReaderInstance({
     // Plain (transparent) root — the route is a contained transparent modal, so a dismissal can
     // fade the layers out over the screen beneath. The details layer supplies the opaque fill.
     <View style={styles.container}>
+      {/* While the reader is up the system bars stay horizontal, the opt-out iOS 27 keeps for
+          full-screen media: in the vertical bar beside the page they would take its width, and the
+          status bar there cannot hide with the chrome. */}
       <StatusBar
         style={settings.mode === 'paged' || detailsActive ? (scheme === 'dark' ? 'light' : 'dark') : 'light'}
         hidden={settings.mode !== 'paged' && !chromeVisible && !detailsActive}
+        verticalBarBehaviorIOS={detailsActive ? 'automatic' : 'disabled'}
       />
 
       {/* THE READER'S BACKDROP, while the reader is what's on screen: full screen, never moving,
