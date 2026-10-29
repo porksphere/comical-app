@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router';
+import { useMemo } from 'react';
 import { PixelRatio, StyleSheet, type ImageURISource } from 'react-native';
 
 import type { PageOption } from '@/data/browse-page';
@@ -28,7 +29,9 @@ import { NavBarLeadingImage } from '../../modules/nav-bar-image';
  * rebuilds its items on every return to Browse, so on its own the circle would be blank for the
  * first part of every pop back from a series page. `NavBarLeadingImage` (the local
  * `nav-bar-image` module) keeps the decoded picture and puts it on the leading item the moment
- * the items are rebuilt; it is a zero-size view in the page, where it can reach the screen.
+ * the items are rebuilt; it is a zero-size view in the page, where it can reach the screen. The
+ * bridge rows' tiles go the same way (`menuImages`): a row's late-loaded picture never shows at
+ * all, as the bar keeps a copy of the menu made before it landed.
  *
  * `withBridges` is off while the sidebar rail lists the bridges; the menu then holds only the
  * pages, as the custom bar drops its bridge selector beside the rail.
@@ -61,6 +64,11 @@ export function BrowseNativeToolbar({
   const tiles = useMenuThumbFiles(thumbnails, sources, MENU_THUMB_RADIUS);
   const current = bridges.find((b) => b.id === bridgeId);
   const circle = bridgeId ? circles[bridgeId] : undefined;
+  const menuImages = useMemo(() => {
+    const out: Record<string, string> = {};
+    if (withBridges) for (const b of bridges) if (tiles[b.id]) out[b.name] = tiles[b.id];
+    return out;
+  }, [bridges, tiles, withBridges]);
   return (
     <>
       <Stack.Toolbar placement="left">
@@ -98,7 +106,12 @@ export function BrowseNativeToolbar({
         <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={onSearch} />
       </Stack.Toolbar>
       {NavBarLeadingImage ? (
-        <NavBarLeadingImage {...(circle ? { uri: circle } : {})} style={styles.pin} pointerEvents="none" />
+        <NavBarLeadingImage
+          {...(circle ? { uri: circle } : {})}
+          menuImages={menuImages}
+          style={styles.pin}
+          pointerEvents="none"
+        />
       ) : null}
     </>
   );

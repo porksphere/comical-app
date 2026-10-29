@@ -8,6 +8,9 @@ public class NavBarImageModule: Module {
       Prop("uri") { (view: NavBarLeadingImageView, uri: String?) in
         view.setImage(uri: uri)
       }
+      Prop("menuImages") { (view: NavBarLeadingImageView, images: [String: String]?) in
+        view.setMenuImages(images ?? [:])
+      }
     }
   }
 }
@@ -21,15 +24,26 @@ public class NavBarImageModule: Module {
 /// leading item the moment the items are rebuilt (it observes the navigation item's leading
 /// items) and whenever the screen comes back on screen. The loader's own copy, landing later, is
 /// the same picture.
+///
+/// The rows of the item's menu get the same treatment (`menuImages`, keyed by row title): the
+/// loader's picture for a row lands on the action after the menu was built, and a menu assigned
+/// to a bar item is a copy, so that late picture never shows. Here the rows are filled from the
+/// cache and the menu reassigned, so the copy carries them.
 final class NavBarLeadingImageView: ExpoView {
   private static var images = [String: UIImage]()
 
   private var image: UIImage?
+  private var menuImages = [String: UIImage]()
   private weak var navigationItem: UINavigationItem?
   private var observation: NSKeyValueObservation?
 
   func setImage(uri: String?) {
     image = uri.flatMap(Self.load)
+    apply()
+  }
+
+  func setMenuImages(_ uris: [String: String]) {
+    menuImages = uris.compactMapValues(Self.load)
     apply()
   }
 
@@ -76,10 +90,34 @@ final class NavBarLeadingImageView: ExpoView {
   }
 
   private func apply() {
-    guard let image, let leading = navigationItem?.leftBarButtonItems?.first, leading.image !== image else {
+    guard let leading = navigationItem?.leftBarButtonItems?.first else {
       return
     }
-    leading.image = image
+    if let image, leading.image !== image {
+      leading.image = image
+    }
+    if !menuImages.isEmpty, let menu = leading.menu {
+      var filled = false
+      let rebuilt = fill(menu, filled: &filled)
+      if filled {
+        leading.menu = rebuilt
+      }
+    }
+  }
+
+  /// The menu with every titled, pictureless action given its picture, inline sections included.
+  private func fill(_ menu: UIMenu, filled: inout Bool) -> UIMenu {
+    let children = menu.children.map { child -> UIMenuElement in
+      if let submenu = child as? UIMenu {
+        return fill(submenu, filled: &filled)
+      }
+      if let action = child as? UIAction, action.image == nil, let image = menuImages[action.title] {
+        action.image = image
+        filled = true
+      }
+      return child
+    }
+    return filled ? menu.replacingChildren(children) : menu
   }
 }
 
