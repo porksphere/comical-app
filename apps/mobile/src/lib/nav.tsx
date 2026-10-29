@@ -141,7 +141,11 @@ function inTabHref(href: PushHref): PushHref {
   if (!pathname || !IN_TAB_PATHS.has(pathname)) return href;
   const tab = focusedTabRoute();
   if (!tab) return href;
-  return tabHref(tab, pathname, params);
+  // A reader-first open is the tab's reader page: in a tab the details and the reader are two pages
+  // (SeriesSplit in app/series/index). A collection's sequence stays one page, which shows each
+  // entry's details in place.
+  const page = pathname === '/series' && params.reader === '1' && !params.seq ? '/series/read' : pathname;
+  return tabHref(tab, page, params);
 }
 
 /**

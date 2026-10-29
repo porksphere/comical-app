@@ -86,13 +86,15 @@ import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
 import { useReaderSettings, setFitOverride, useFitOverride, useSeriesReaderMode, useSpreadShift } from '@/hooks/use-reader-settings';
 import { useWebtoonDetection } from '@/components/reader/use-webtoon-detection';
+import { withoutRouterParams, withZoomSource, ZoomSource } from '@/components/zoom-source';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { sizeClassFor, useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
+import { useTabRoute } from '@/lib/focused-tab';
 import { hideNativeTabBar } from '@/lib/native-tab-bar';
-import { useLocalSearchParams, useRouter } from '@/lib/nav';
+import { LinkAppleZoomTarget, tabHref, useLocalSearchParams, useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
 import { backSwipePan, backSwipeShape, backSwipeStayedHorizontal, resetBackSwipeShape, trackBackSwipeShape, BACK_ACTIVATE_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
@@ -222,6 +224,15 @@ function useNativePush(): boolean {
   const segments: readonly string[] = useSegments();
   return IS_IOS && segments[0] === '(tabs)';
 }
+/**
+ * iOS, inside a tab: the details and the reader are two pages of the tab's stack rather than two
+ * sides of one. `details` is the tab's `series/index`, whose strip still shows the page you are on
+ * and pushes `series/read` to read, the reader growing out of the strip (see ZoomSource); `reader`
+ * is that page, whose Details button goes back to the details that pushed it, or pushes them.
+ * Null everywhere else, and for any instance but a route's own: the one page, revealing one side
+ * from the other.
+ */
+type SeriesSplit = 'details' | 'reader' | null;
 /** A bottom safe-area inset above this is a system BAR the pages should stay out of when asked to
  *  respect safe areas — Android's three-button navigation, 48dp and drawn over the content with a
  *  scrim — rather than an INDICATOR the content may run under: the iPhone home indicator is 34pt
@@ -1039,6 +1050,9 @@ type SeriesReaderParams = {
   /** '1' when the seeded spot was PICKED (a page in a card's preview rail, a tap in a sequence's
    *  details, a new chapter in Activity) rather than resumed — see ReadTarget's `picked`. */
   picked?: string;
+  /** 'details' on a split reader the details page pushed (SeriesSplit): its Details button goes
+   *  back to them. */
+  from?: string;
 };
 
 /**
@@ -1064,6 +1078,7 @@ function SeriesReaderInstance({
   onPopLayer,
   isTop,
   nativePush,
+  split,
   sequence,
 }: {
   params: SeriesReaderParams;
@@ -1071,6 +1086,8 @@ function SeriesReaderInstance({
   onPopLayer: () => void;
   /** A pushed card whose transitions are the system's (see useNativePush). Never for a layer. */
   nativePush: boolean;
+  /** Which page of the split this is, if any (see SeriesSplit). */
+  split: SeriesSplit;
   /** Whether this instance is the top of the stack — the one keyboard back acts on (web). */
   isTop: boolean;
   /** Present = this instance reads a cross-series sequence instead of a chapter. */
@@ -1104,6 +1121,8 @@ function SeriesReaderInstance({
   const [settings] = useReaderSettings(seriesKey);
   // Opened straight into the reader (History / Activity), rather than onto the details.
   const readerFirst = readerParam === '1';
+  // The details page of the split: reading is the reader page's, pushed over this one.
+  const splitDetails = split === 'details';
   const bridge = bridgeParam ? decodeURIComponent(bridgeParam) : undefined;
   const cover = coverParam ? decodeURIComponent(coverParam) : undefined;
   const isDirect = direct === '1';
@@ -1325,7 +1344,8 @@ function SeriesReaderInstance({
   // page you are about to reach, and why they needed sentinels and buttons to do what scrolling
   // should. The native readers are LegendLists that anchor on the item; the web ones hold the page
   // on screen by key themselves.
-  const stitched = !isDirect && !sequence;
+  // Nor the split details' strip, a still of the page you are on that nothing reads through.
+  const stitched = !isDirect && !sequence && !splitDetails;
   // The committed side of the reveal (declared up here — the stitching queries below gate on
   // it). The screen opens ON the details; see the reveal section further down.
   const [detailsActive, setDetailsActive] = useState(!readerFirst);
@@ -1338,9 +1358,17 @@ function SeriesReaderInstance({
   // iOS: the system tab bar stays up over the details, as over any page a tab pushes, and goes
   // with the pages — the reader is full-bleed.
   useEffect(() => {
-    if (!NATIVE_HEADER || detailsActive) return;
+    if (!NATIVE_HEADER || detailsActive || split) return;
     return hideNativeTabBar();
-  }, [detailsActive]);
+  }, [detailsActive, split]);
+  // The split reader is a page of its own, which stays mounted under the details it pushes: the bar
+  // goes only while it is the page on screen.
+  useFocusEffect(
+    useCallback(() => {
+      if (!NATIVE_HEADER || detailsActive || !split) return;
+      return hideNativeTabBar();
+    }, [detailsActive, split]),
+  );
   useWindowThemeColor(detailsActive ? null : READER_BACKDROP, 1);
   // True while a horizontal details gesture (back-swipe or webtoon reveal) is ACTIVE. The pans
   // ride the details scroller's own detector, simultaneous with it — that's the only way they
@@ -1799,6 +1827,22 @@ function SeriesReaderInstance({
     [armSeriesQueries],
   );
 
+  // Geometry: the reader strip's height — the top-of-page band the details content starts below.
+  // The details layer itself is full-screen (the strip is page, not chrome). Declared up here
+  // because it is also the zoom's DESTINATION BOUND (see zoomGeom), and the split's hand-off
+  // below reads the strip's rect.
+  const bandH = insets.top + HEADER_BAND;
+  // Content starts high enough that the series title's center lands on the seam gradient's
+  // center — the strip fades into the details THROUGH the title.
+  const headerTopInset = bandH - SHEET_FADE_H / 2 - TITLE_MID;
+  // The split details' strip as the zoom source of the reader page it pushes (see ZoomSource).
+  const tab = useTabRoute();
+  const [stripZoomId, setStripZoomId] = useState<string | null>(null);
+  const stripZoomHref = useMemo(
+    () => (splitDetails && tab ? tabHref(tab, '/series/read', {}) : null),
+    [splitDetails, tab],
+  );
+
   /**
    * Reading STARTED, in the pane — so hand this series to the full-screen route, over the pane.
    *
@@ -1809,8 +1853,11 @@ function SeriesReaderInstance({
    *
    * The pane is not closed: closing the reader comes back to it as it was, stack and all.
    *
-   * Answers false outside the pane, which is every native build and every narrow viewport, so the
-   * reveal below is untouched there.
+   * The split details page (see SeriesSplit) hands off the same way, to its tab's reader page, which
+   * zooms out of the strip while the strip is on screen.
+   *
+   * Answers false everywhere else, which is every other native page and every narrow viewport, so
+   * the reveal below is untouched there.
    */
   const inPane = useSeriesPaneWidth() !== null;
   const [paneHandoffs, setPaneHandoffs] = useState(0);
@@ -1824,9 +1871,10 @@ function SeriesReaderInstance({
   // `at` is for callers that set a new target in the same handler: `target` here is still the
   // previous render's, so a page tapped in the details would hand off the old start page.
   const leavePaneToRead = useCallback((at: ReadTarget | null = target): boolean => {
-    if (!inPane) return false;
-    const next: Record<string, string> = { reader: '1', start: String(at?.start ?? 0) };
-    for (const [k, v] of Object.entries(params)) if (typeof v === 'string') next[k] = v;
+    if (!inPane && !splitDetails) return false;
+    const next = withoutRouterParams(params);
+    next.reader = '1';
+    next.start = String(at?.start ?? 0);
     if (at?.chapterId) {
       next.chapterId = at.chapterId;
       next.chapterName = at.chapterName ?? '';
@@ -1835,9 +1883,28 @@ function SeriesReaderInstance({
     }
     if (at?.picked) next.picked = '1';
     setPaneHandoffs((n) => n + 1);
-    router.push({ pathname: '/series', params: next });
+    if (!splitDetails) {
+      router.push({ pathname: '/series', params: next });
+      return true;
+    }
+    next.from = 'details';
+    // Scrolled mostly away under the details, the strip is no source to grow out of.
+    const zoomFrom = detailsScrollOffset.get() < headerTopInset / 2 ? stripZoomId : null;
+    router.push({ pathname: '/series', params: withZoomSource(next, zoomFrom) });
     return true;
-  }, [inPane, params, target, isDirect, router]);
+  }, [inPane, splitDetails, params, target, isDirect, router, detailsScrollOffset, headerTopInset, stripZoomId]);
+  const leaveReaderForDetails = useCallback(() => {
+    if (params.from === 'details') {
+      router.back();
+      return;
+    }
+    const next: Record<string, string> = {};
+    for (const k of ['id', 'title', 'bridge', 'bridgeId', 'cover', 'direct'] as const) {
+      const v = params[k];
+      if (typeof v === 'string') next[k] = v;
+    }
+    router.push({ pathname: '/series', params: next });
+  }, [params, router]);
 
   // JS-side half of a commit — deliberately closes over nothing but state setters (no shared
   // values, no timer refs), so the gesture worklets can `runOnJS` it; the worklets animate
@@ -1848,10 +1915,14 @@ function SeriesReaderInstance({
     // that transition specifically, and the question is what the reader side has to show at the
     // instant it becomes visible — see the `reader ready` mark below for the other half.
     traceJS('reveal', 'commit', { toReader: to === 0 });
+    if (to === 1 && split === 'reader') {
+      leaveReaderForDetails();
+      return;
+    }
     if (to === 0 && leavePaneToRead()) return;
     setDetailsActive(to === 1);
     if (to === 0) setChromeVisible(true);
-  }, [leavePaneToRead]);
+  }, [split, leavePaneToRead, leaveReaderForDetails]);
   useEffect(() => {
     if (!detailsActive) scheduleHide();
   }, [detailsActive, scheduleHide]);
@@ -1862,12 +1933,16 @@ function SeriesReaderInstance({
       // this is going, so playing the reveal first would show a page at pane width and then
       // replace it.
       if (to === 0 && leavePaneToRead(at)) return;
+      if (to === 1 && split === 'reader') {
+        leaveReaderForDetails();
+        return;
+      }
       detailsActiveSV.set(to === 1);
       pullEngagedSV.set(false); // the commit animation owns `progress` — stop any live pull-follow
       progress.set(withTiming(to, { duration: 240, easing: Easing.out(Easing.cubic) }));
       commitReveal(to);
     },
-    [progress, detailsActiveSV, pullEngagedSV, commitReveal, leavePaneToRead],
+    [progress, detailsActiveSV, pullEngagedSV, commitReveal, leavePaneToRead, split, leaveReaderForDetails],
   );
 
   // The collapsed reader strip is the top of the details PAGE, so its reveal is the page's own
@@ -1907,7 +1982,8 @@ function SeriesReaderInstance({
           pullEngagedSV.set(true);
           pullStartSV.set(progress.value);
         }
-        if (pullEngagedSV.value) {
+        // The split details page only rubber-bands: the reader is the page its release pushes.
+        if (pullEngagedSV.value && !splitDetails) {
           progress.set(Math.max(0, Math.min(1, pullStartSV.value + off / headerSpan)));
         }
       } else if (pullEngagedSV.value) {
@@ -1917,7 +1993,7 @@ function SeriesReaderInstance({
         }
       }
     },
-    [headerSpan, detailsScrollOffset, detailsActiveSV, pullEngagedSV, pullStartSV, progress, scrollTraceGate],
+    [headerSpan, splitDetails, detailsScrollOffset, detailsActiveSV, pullEngagedSV, pullStartSV, progress, scrollTraceGate],
   );
   const onDetailsScrollEndDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -2129,7 +2205,8 @@ function SeriesReaderInstance({
   const progressStartSV = useSharedValue(0);
   const panBeganSV = useSharedValue(false);
   const collapsePan = useMemo(() => {
-    const revealByDrag = settings.mode === 'paged';
+    // The split reader has no details beneath it to drag up: its Details button pushes them.
+    const revealByDrag = settings.mode === 'paged' && split !== 'reader';
     const dismissSpan = settings.mode === 'paged' ? height : width;
     const span = settings.mode === 'paged' ? headerSpan : width;
     {
@@ -2314,6 +2391,7 @@ function SeriesReaderInstance({
     settings.mode,
     collapseEnabled,
     nativePush,
+    split,
     width,
     height,
     zoomRadiusClosing,
@@ -2345,7 +2423,8 @@ function SeriesReaderInstance({
     // follow + commit either way.
     const span = headerSpan;
     const pan = Gesture.Pan()
-      .enabled(detailsActive)
+      // The split details' strip takes a tap: what it opens is a page, not a side to drag in.
+      .enabled(detailsActive && !splitDetails)
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
         if (!panBeganSV.value) {
@@ -2369,7 +2448,7 @@ function SeriesReaderInstance({
       });
     pan.activeOffsetY([-20, 20]).failOffsetX([-15, 15]);
     return pan;
-  }, [detailsActive, headerSpan, panBeganSV, progressStartSV, progress, detailsActiveSV, commitReveal]);
+  }, [detailsActive, splitDetails, headerSpan, panBeganSV, progressStartSV, progress, detailsActiveSV, commitReveal]);
 
   // Reveal pan — on the details layer, for platforms without the native rubber-band (the iOS
   // path is the reaction above). Both modes now, since the reveal is vertical everywhere: the
@@ -2987,19 +3066,15 @@ function SeriesReaderInstance({
         if (detailsScrollOffset.value <= -PULL_COMMIT_PX) {
           pullEngagedSV.set(false);
           detailsActiveSV.set(false);
-          progress.set(withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+          if (!splitDetails) progress.set(withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) }));
           runOnJS(commitReveal)(0);
         }
       });
-  }, [detailsActive, detailsActiveSV, pullEngagedSV, detailsScrollOffset, progress, commitReveal]);
+  }, [detailsActive, splitDetails, detailsActiveSV, pullEngagedSV, detailsScrollOffset, progress, commitReveal]);
   const detailsGestures = useMemo(
     () => Gesture.Race(returnPan, pullReleaseWatch),
     [returnPan, pullReleaseWatch],
   );
-  // Geometry: the reader strip's height — the top-of-page band the details content starts below.
-  // The details layer itself is full-screen (the strip is page, not chrome). Declared up here
-  // because it is also the zoom's DESTINATION BOUND (see zoomGeom).
-  const bandH = insets.top + HEADER_BAND;
 
   // ── The zoom: MASK + CONTENT TRANSFORM ───────────────────────────────────────────────────────
   // A port of react-native-screen-transitions' `navigation.zoom({ target: 'bound' })' (the
@@ -3456,10 +3531,6 @@ function SeriesReaderInstance({
     sequence ? sequence.uris[seqMountIndex] || sequence.entries[seqMountIndex]?.sourceUrl : cover,
   );
 
-  // Content starts high enough that the series title's center lands on the seam gradient's
-  // center — the strip fades into the details THROUGH the title.
-  const headerTopInset = bandH - SHEET_FADE_H / 2 - TITLE_MID;
-
   // ── The details top bar — the SHARED TopBar, crossfaded with scroll ──────────────────────────
   // DETAILS MODE ONLY: transparent over the strip (just a floating back button, matching TopBar's
   // own button position), crossfading to the standard opaque bar as the content scrolls up to
@@ -3593,6 +3664,12 @@ function SeriesReaderInstance({
 
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
+  // The split details' strip follows what the reader page records: the pane takes its spot once,
+  // at mount, and only a new chapter remounts it.
+  const previewStart = splitDetails ? target?.start : undefined;
+  useEffect(() => {
+    if (typeof previewStart === 'number') paneRef.current?.goTo(previewStart, false);
+  }, [previewStart]);
   // (`visiblePage` / `visibleSequenceEntry` are declared at the top of the component — the detail
   // identity derives from them.)
   // Verify this chapter's collected pages against the page list we already fetched — repairs the
@@ -3630,20 +3707,24 @@ function SeriesReaderInstance({
         return;
       }
       if (v.id !== targetChapterId) {
-        setJumpNonce((n) => n + 1); // explicit jump — remount seeded at the target, even in-window
         const next: ReadTarget = {
           chapterId: v.id,
           chapterName: v.name,
           start: resume?.chapterId === v.id ? (resume.lastPage ?? 0) : 0,
           picked: true,
         };
-        setOverride(next);
+        // The split details hand the chapter to the reader page and keep the strip where the
+        // history says, until reading there moves it.
+        if (!splitDetails) {
+          setJumpNonce((n) => n + 1); // explicit jump — remount seeded at the target, even in-window
+          setOverride(next);
+        }
         setRevealed(0, next);
         return;
       }
       setRevealed(0);
     },
-    [sequence, openFromSequenceDetails, detailSeriesId, detailBridgeId, detailTitle, targetChapterId, resume, setRevealed],
+    [sequence, openFromSequenceDetails, detailSeriesId, detailBridgeId, detailTitle, targetChapterId, resume, splitDetails, setRevealed],
   );
   const openPageFromDetails = useCallback(
     (pageIndex: number) => {
@@ -3663,14 +3744,17 @@ function SeriesReaderInstance({
       // Both paths, because the pane is not guaranteed to be mounted: a window still forming (see
       // the run's hold) has no pager to drive, so the target carries the landing page and the pane
       // seeds from it instead. A pane that IS mounted ignores the seed — `start` is read once, at
-      // mount — and the direct call is what moves it.
-      paneRef.current?.goTo(pageIndex, false);
+      // mount — and the direct call is what moves it. The split details move neither: the reader
+      // is the page they push.
       const from = override ?? derivedTarget;
       const next: ReadTarget = from ? { ...from, start: pageIndex, picked: true } : { start: pageIndex, picked: true };
-      setOverride(next);
+      if (!splitDetails) {
+        paneRef.current?.goTo(pageIndex, false);
+        setOverride(next);
+      }
       setRevealed(0, next);
     },
-    [sequence, openFromSequenceDetails, detailSeriesId, detailBridgeId, detailTitle, setRevealed, override, derivedTarget],
+    [sequence, openFromSequenceDetails, detailSeriesId, detailBridgeId, detailTitle, splitDetails, setRevealed, override, derivedTarget],
   );
   // The Read button/cover: the pane already sits at the same resume point Read would compute.
   const startReadingFromDetails = useCallback(() => setRevealed(0), [setRevealed]);
@@ -3978,6 +4062,7 @@ function SeriesReaderInstance({
           horizontalReveal), uncovering the reader that is already full-screen beneath it. When
           the reader is expanded, the (translated-off) layer must not swallow touches meant for
           the reader beneath it. */}
+      {split !== 'reader' && (
       <GestureDetector gesture={detailsGestures}>
         <Animated.View
           testID="series-page.details-card"
@@ -4036,6 +4121,7 @@ function SeriesReaderInstance({
           </Animated.View>
         </Animated.View>
       </GestureDetector>
+      )}
 
       {/* The reader's dark surface — static: full screen, never moving,
           fading in place while a dismissal carries the page over it. It lives OUTSIDE the
@@ -4120,7 +4206,7 @@ function SeriesReaderInstance({
               // below — no progress writes (a sequence hop is browsing, not a read position, and
               // recording it would clobber the real one).
               chaptered={!isDirect && !sequence}
-              recordProgress={!sequence}
+              recordProgress={!sequence && !splitDetails}
               hasPrevChapter={!sequence && !!prevChapter}
               hasNextChapter={!sequence && !!nextChapter}
               nextChapterName={nextChapter?.name}
@@ -4159,6 +4245,22 @@ function SeriesReaderInstance({
           </View>
         </Animated.View>
       </GestureDetector>
+
+      {/* The split's zoom, both ends at the strip's resting rect: the details' strip is the source,
+          and the reader page lines up the same stretch of its page with it, so the strip is what
+          grows into the reader and what the reader shrinks back into. */}
+      {stripZoomHref ? (
+        <View pointerEvents="none" style={[styles.stripZoom, { width }]}>
+          <ZoomSource href={stripZoomHref} onId={setStripZoomId} style={{ width, height: headerTopInset }} />
+        </View>
+      ) : null}
+      {split === 'reader' ? (
+        <View pointerEvents="none" style={[styles.stripZoom, { top: (height - bandH) / 2, width }]}>
+          <LinkAppleZoomTarget>
+            <View collapsable={false} style={{ width, height: headerTopInset }} />
+          </LinkAppleZoomTarget>
+        </View>
+      ) : null}
 
       {/* The reader strip's touch surface — tap to read full screen, or drag the details page
           away under the finger (DOWN in paged, LEFT in webtoon — see horizontalReveal). It rides
@@ -4294,11 +4396,28 @@ type DrillEntry = { key: number } & ({ kind: 'series'; params: SeriesReaderParam
 const MemoSeriesReaderInstance = memo(SeriesReaderInstance);
 
 export default function SeriesReaderScreen() {
+  return <SeriesRoute split={null} />;
+}
+/** A tab's `series/index`: on iOS, the details page of the split (see SeriesSplit). */
+export function SeriesTabScreen() {
+  return <SeriesRoute split="details" />;
+}
+/** A tab's `series/read`: on iOS, the reader page of the split. */
+export function SeriesReadScreen() {
+  return <SeriesRoute split="reader" />;
+}
+
+function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
   const params = useLocalSearchParams<SeriesReaderParams & ReaderSequenceParams>();
   const router = useRouter();
   const { width } = useViewport();
   const inPane = useSeriesPaneWidth() !== null;
   const nativePush = useNativePush();
+  const split = nativePush ? routeSplit : null;
+  // A link that names the other side (a details route opened reader-first, a reader route opened
+  // onto the details) gets the one page that does both.
+  const readerFirst = params.reader === '1';
+  const baseSplit = (split === 'details' && readerFirst) || (split === 'reader' && !readerFirst) ? null : split;
   const [drills, setDrills] = useState<DrillEntry[]>([]);
   // The pane stays mounted under a full-screen series page opened from it (see lib/series-pane).
   useEffect(() => (inPane ? undefined : coverSeriesPane()), [inPane]);
@@ -4436,6 +4555,7 @@ export default function SeriesReaderScreen() {
               onPopLayer={popLayer}
               isTop={drills.length === 0 && !covered}
               nativePush={nativePush}
+              split={null}
               sequence={seqRun}
             />
           ) : (
@@ -4452,6 +4572,7 @@ export default function SeriesReaderScreen() {
             onPopLayer={popLayer}
             isTop={drills.length === 0 && !covered}
             nativePush={nativePush}
+            split={baseSplit}
           />
         )}
       </Animated.View>
@@ -4468,6 +4589,7 @@ export default function SeriesReaderScreen() {
               onPopLayer={popLayer}
               isTop={i === top && !covered}
               nativePush={false}
+              split={null}
             />
           ) : (
             <SearchLayer onPopLayer={popLayer} coverSV={layerCover} isTop={i === top && !covered} />
@@ -5880,6 +6002,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 3,
+  },
+  stripZoom: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
   centerFill: {
     flex: 1,

@@ -31,7 +31,8 @@ import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
  * tab's copy is `series/index`, a screen of THIS stack: its directory has no layout on purpose,
  * so the page is the pushed screen itself and its `Stack.Screen` options (bar, edge-pop) land on
  * it. `useNativePush` in app/series/index is where the page gives up its own transitions for the
- * system's. Its tag search is the sibling `series/search`, pushed over it with the search bar.
+ * system's. Its tag search is the sibling `series/search`, pushed over it with the search bar, and
+ * its reader the sibling `series/read`, which grows out of the page's strip.
  *
  * The tab's root screen is the one whose list the system tab bar follows (minimize on scroll,
  * scroll-to-top): `TabRootScrollContext` is what lets that list register itself — see
@@ -57,6 +58,7 @@ export default function TabStack({ tab }: { tab: string }) {
         {scrolledMaterial ? <Stack.Screen name="index" options={SCROLLED_MATERIAL} /> : null}
         {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
         <Stack.Screen name="series/index" options={{ headerShown: false }} />
+        <Stack.Screen name="series/read" options={{ headerShown: false }} />
         <Stack.Screen name="series/search" options={NESTED_SEARCH_BAR} />
       </Stack>
     </TabRouteContext.Provider>

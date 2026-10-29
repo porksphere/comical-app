@@ -1,1 +1,1 @@
-export { default } from '@/app/series/index';
+export { SeriesTabScreen as default } from '@/app/series/index';
