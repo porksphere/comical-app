@@ -166,10 +166,11 @@ function RootNavigation() {
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-collections" options={settingsScreen('Manage Collections')} />
           <Stack.Screen name="results" options={pushedScreen} />
-          {/* THE series page — and the only reader there is: details and pages are one screen,
-              either side one gesture from the other. Everything that used to push a standalone
-              /reader (a History row, the card menu's Read, a chapter row, a page thumbnail) opens
-              THIS, on whichever side it means.
+          {/* THE series page — and the only reader there is: the details and the reader are the
+              two pages of its nested stack, `index` and `read` (see SeriesSplit in
+              app/series/index). Everything that used to push a standalone /reader (a History row,
+              the card menu's Read, a chapter row, a page thumbnail) opens THIS, on whichever page
+              it means.
 
               A *contained* transparent modal, so the screen it was opened from stays rendered
               underneath — the reader's own dark backdrop covers it at rest and fades out under a

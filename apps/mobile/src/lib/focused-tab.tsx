@@ -3,7 +3,7 @@ import { createContext, use, useLayoutEffect } from 'react';
 
 /**
  * Which tab the user is in, for the router wrapper (lib/nav) to push a series, search or results
- * page INTO that tab's native stack on iOS — see `inTabHref` there.
+ * page INTO that tab's native stack on iOS — see `destinationHref` there.
  *
  * A module value fed by one tracker in the root layout rather than a hook: the wrapper runs in
  * event handlers, often through the module `router` with no component around it at all. The

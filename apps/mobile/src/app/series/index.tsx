@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { Stack, useFocusEffect, useSegments, useTheme as useNavTheme } from 'expo-router';
+import { Stack, useFocusEffect, useIsFocused, useSegments, useTheme as useNavTheme } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -95,6 +95,7 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useTabRoute } from '@/lib/focused-tab';
 import { hideNativeTabBar } from '@/lib/native-tab-bar';
 import { LinkAppleZoomTarget, tabHref, useLocalSearchParams, useRouter } from '@/lib/nav';
+import { BACK_TARGET, msUntilClaimable } from '@/lib/nav-guard';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
 import { backSwipePan, backSwipeShape, backSwipeStayedHorizontal, resetBackSwipeShape, trackBackSwipeShape, BACK_ACTIVATE_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
@@ -212,7 +213,7 @@ function useViewport(): { width: number; height: number } {
 const IS_IOS = Platform.OS === 'ios';
 /**
  * iOS, inside a tab: the series page is a real pushed card of the tab's native stack
- * (components/tab-stack, route `series/index`) and UIKit owns its transitions — the slide in, the
+ * (components/tab-stack, route `in-tab/series/index`) and UIKit owns its transitions — the slide in, the
  * bar morphing out of the tab's leading item, the left-edge pop — so the zoom rig stands down on
  * the depth-0 instance: no entrance (the page lands open in one frame, as on web), no collapse on
  * the way out, no back-swipe or swipe-away of its own, nothing dimmed behind it, and leaving is
@@ -225,14 +226,65 @@ function useNativePush(): boolean {
   return IS_IOS && segments[0] === '(tabs)';
 }
 /**
- * iOS, inside a tab: the details and the reader are two pages of the tab's stack rather than two
- * sides of one. `details` is the tab's `series/index`, whose strip still shows the page you are on
- * and pushes `series/read` to read, the reader growing out of the strip (see ZoomSource); `reader`
- * is that page, whose Details button goes back to the details that pushed it, or pushes them.
- * Null everywhere else, and for any instance but a route's own: the one page, revealing one side
- * from the other.
+ * The details and the reader are two pages rather than two sides of one. `details` is
+ * `series/index`, whose strip still shows the page you are on and opens `series/read` to read;
+ * `reader` is that page, whose Details button goes back to the details that opened it, or brings
+ * them up in its place.
+ *
+ * On iOS, inside a tab, they are two cards of the tab's native stack: UIKit pushes the reader, and
+ * the zoom grows it out of the strip (see ZoomSource). The root route there (deep links, a
+ * notification) stays the one page. Off iOS `read` is a transparent modal over the details, and
+ * the page draws the move itself: the reader opens as the strip's own reader growing to the full
+ * window, and shrinks back into it on the way out (see SplitHandoff). A drilled layer is split
+ * the same way off iOS; null for a collection's sequence, which shows each entry's details in
+ * place, and for a link that names the other side (see SeriesRoute).
  */
 type SeriesSplit = 'details' | 'reader' | null;
+/**
+ * Off iOS the move between the two pages of the split is drawn by the page that arrives, from
+ * where the page it covers left off. Details hand their strip to the reader page they push: where
+ * the strip's bottom edge sits, and how far a drag had already opened the reader. A reader that
+ * brings its details up in its place asks them to slide up over it. The page that mounts next
+ * takes it once, in a state initializer, like a card's zoom origin (lib/series-zoom).
+ */
+type SplitHandoff =
+  | {
+      kind: 'strip';
+      /** The strip's bottom edge in the window, where the reader page's clip starts. */
+      stripBottom: number;
+      /** The details' `progress` at the hand-off, where the reader page continues from. */
+      progress: number;
+      /** Puts the details beneath back at rest, once the reader page covers them. */
+      covered: () => void;
+    }
+  | { kind: 'reveal' };
+const SPLIT_HANDOFF_MAX_AGE_MS = 1500;
+type PendingSplit = { key: string; handoff: SplitHandoff; at: number };
+let pendingSplit: PendingSplit | null = null;
+// Kept after the take for StrictMode's second initializer run, as series-zoom keeps `taken`.
+let takenSplit: PendingSplit | null = null;
+function handOffSplit(key: string, handoff: SplitHandoff) {
+  const entry = { key, handoff, at: Date.now() };
+  pendingSplit = entry;
+  // A reader page that never mounted to take the strip must not strand the details mid-drag.
+  if (handoff.kind === 'strip') {
+    setTimeout(() => {
+      if (pendingSplit !== entry) return;
+      pendingSplit = null;
+      handoff.covered();
+    }, SPLIT_HANDOFF_MAX_AGE_MS);
+  }
+}
+function takeSplitHandoff(key: string, kind: SplitHandoff['kind']): SplitHandoff | null {
+  const now = Date.now();
+  const fits = (e: PendingSplit | null) =>
+    e && e.key === key && e.handoff.kind === kind && now - e.at <= SPLIT_HANDOFF_MAX_AGE_MS ? e : null;
+  const fresh = fits(pendingSplit);
+  if (!fresh) return fits(takenSplit)?.handoff ?? null;
+  pendingSplit = null;
+  takenSplit = fresh;
+  return fresh.handoff;
+}
 /** A bottom safe-area inset above this is a system BAR the pages should stay out of when asked to
  *  respect safe areas — Android's three-button navigation, 48dp and drawn over the content with a
  *  scrim — rather than an INDICATOR the content may run under: the iPhone home indicator is 34pt
@@ -968,6 +1020,8 @@ const COLLAPSE_STARTED = 0.995;
 const COLLAPSE_ARMED = 0.999;
 /** Instances that have already left. See `leaveOnce` for why this lives out here. */
 const LEFT = new WeakSet<object>();
+/** An instance's pop waiting out the back guard's window — see `routeBackHeld`. */
+const HELD_POPS = new WeakMap<object, ReturnType<typeof setTimeout>>();
 // Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
 const TITLE_MID = 20;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
@@ -1127,6 +1181,16 @@ function SeriesReaderInstance({
   const readerFirst = readerParam === '1';
   // The details page of the split: reading is the reader page's, pushed over this one.
   const splitDetails = split === 'details';
+  // Off iOS the pages of the split draw the move between them (see SplitHandoff): a reader page
+  // pushed over its details grows out of their strip, and details brought up in a reader's place
+  // slide up over it.
+  const splitDrawn = split !== null && !nativePush;
+  const [splitHandoff] = useState(() =>
+    splitDrawn && seriesKey ? takeSplitHandoff(seriesKey, split === 'reader' ? 'strip' : 'reveal') : null,
+  );
+  const stripFrom = splitHandoff?.kind === 'strip' ? splitHandoff : null;
+  const stripReader = stripFrom !== null;
+  const revealIn = splitHandoff?.kind === 'reveal';
   const bridge = bridgeParam ? decodeURIComponent(bridgeParam) : undefined;
   const cover = coverParam ? decodeURIComponent(coverParam) : undefined;
   const isDirect = direct === '1';
@@ -1396,8 +1460,8 @@ function SeriesReaderInstance({
   // out the flight — the same deferral `detailsSettled` gives the reveal, applied to the open.
   // Starts SETTLED on web and on a pushed card: there is no entrance there to defer behind (see
   // `startZoom`), so the page has nothing to wait out and the pager may mount in the first commit
-  // like anything else.
-  const [entranceSettled, setEntranceSettled] = useState(IS_WEB || nativePush);
+  // like anything else. Details sliding up over their reader too: they open on that reader's page.
+  const [entranceSettled, setEntranceSettled] = useState(IS_WEB || nativePush || revealIn);
   const markEntranceSettled = useCallback(() => setEntranceSettled(true), []);
   const pushSettled = usePushSettled();
   useEffect(() => {
@@ -1624,7 +1688,8 @@ function SeriesReaderInstance({
   }, []);
 
   // ── Chrome auto-hide ───────────────────────────────────────────────────────
-  const [chromeVisible, setChromeVisible] = useState(true);
+  // A reader page growing out of the strip fades its chrome in as it opens (see SplitHandoff).
+  const [chromeVisible, setChromeVisible] = useState(!stripReader);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chromeHeldRef = useRef(false);
   // Who is holding it up: a control in use, and the keyboard's focus — kept apart so one letting go
@@ -1801,8 +1866,9 @@ function SeriesReaderInstance({
   // for everything JS-side (gesture enabling, back handling, status bar). The screen opens ON the
   // details (reader collapsed to the strip) — unless `reader: '1'` brought us here, in which case
   // it opens on the READER and the details are one swipe away, which is the same gesture either
-  // entry ends up using.
-  const progress = useSharedValue(readerFirst ? 0 : 1);
+  // entry ends up using. A split page handed the move starts where the other page left it (see
+  // SplitHandoff).
+  const progress = useSharedValue(stripFrom ? stripFrom.progress : readerFirst || revealIn ? 0 : 1);
   // The details page's internal scroll offset (SeriesBody's list writes it on the UI thread via
   // the same `sharedValues` wiring pull-to-refresh uses) — drives the strip occlusion, the top
   // bar's scroll crossfade, and the pull-past-top reveal.
@@ -1858,13 +1924,16 @@ function SeriesReaderInstance({
    *
    * The pane is not closed: closing the reader comes back to it as it was, stack and all.
    *
-   * The split details page (see SeriesSplit) hands off the same way, to its tab's reader page, which
-   * zooms out of the strip while the strip is on screen.
+   * The split details page (see SeriesSplit) hands off the same way, to its reader page: on iOS a
+   * tab's, which zooms out of the strip while the strip is on screen, and elsewhere one that grows
+   * out of the strip itself (see SplitHandoff).
    *
    * Answers false everywhere else, which is every other native page and every narrow viewport, so
    * the reveal below is untouched there.
    */
   const inPane = useSeriesPaneWidth() !== null;
+  // Outside the pane, off iOS, the details hand their strip to the reader page (see SplitHandoff).
+  const handsStripOff = splitDrawn && splitDetails && !inPane;
   const [paneHandoffs, setPaneHandoffs] = useState(0);
   // A swipe that commits to the reader has already animated `progress` there itself, so the pane
   // left behind would be showing a reader when it is uncovered.
@@ -1887,19 +1956,161 @@ function SeriesReaderInstance({
       next.direct = '1';
     }
     if (at?.picked) next.picked = '1';
-    setPaneHandoffs((n) => n + 1);
-    if (!splitDetails) {
-      router.push({ pathname: '/series', params: next });
+    // The reader page goes back to what pushed it: the pane, or the details.
+    next.from = 'details';
+    if (handsStripOff) {
+      // Picked up where the strip is now: its bottom edge, and however far a drag had opened it.
+      const off = Math.min(Math.max(detailsScrollOffset.get(), 0), bandH);
+      if (seriesKey) {
+        handOffSplit(seriesKey, {
+          kind: 'strip',
+          stripBottom: Math.max(0, bandH - SHEET_FADE_H - off),
+          progress: progress.get(),
+          covered: () => {
+            progress.set(1);
+            detailsActiveSV.set(true);
+          },
+        });
+      }
+      router.push({ pathname: '/series/read', params: next });
       return true;
     }
-    next.from = 'details';
+    setPaneHandoffs((n) => n + 1);
+    if (!splitDetails || inPane) {
+      router.push({ pathname: '/series/read', params: next });
+      return true;
+    }
     // Scrolled mostly away under the details, the strip is no source to grow out of.
     const zoomFrom = detailsScrollOffset.get() < headerTopInset / 2 ? stripZoomId : null;
     router.push({ pathname: '/series', params: withZoomSource(next, zoomFrom) });
     return true;
-  }, [inPane, splitDetails, params, target, isDirect, router, detailsScrollOffset, headerTopInset, stripZoomId]);
+  }, [
+    inPane,
+    splitDetails,
+    handsStripOff,
+    params,
+    target,
+    isDirect,
+    router,
+    detailsScrollOffset,
+    bandH,
+    seriesKey,
+    progress,
+    detailsActiveSV,
+    headerTopInset,
+    stripZoomId,
+  ]);
+  // Leaving this instance. The modal ROOT pops the route (deep-linked/full-page-loaded entries
+  // on web have no back stack — land on the browse tabs instead of dead-ending); on a pushed card
+  // that pop IS the exit, the system's slide (useNativePush). A drilled
+  // LAYER never touches navigation: it collapses on the same `zoom` the back-swipe drags
+  // (closeLayer — chevron/hardware back), or is removed outright once a gesture has already
+  // collapsed it / flown the page out (leaveNow — the parent series is live beneath).
+  const goBack = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  }, [router]);
+  /** This instance's key in the module-level latches (LEFT, HELD_POPS) — see `leaveOnce`. */
+  const token = useMemo(() => ({}), []);
+  // The router drops a second back inside its double-tap window (lib/nav-guard), and a dropped
+  // pop at the END of an exit strands the page: gone from view, still on top, LEFT latched
+  // against another try. Leaving the reader page for the details and then the details is two
+  // backs in a row, so it is the common case, not a corner. A press asks first and does nothing
+  // inside the window, like any other back in the app (closeLayer); a gesture has already moved
+  // the page, so its pop waits the window out instead.
+  const routeBackHeld = useCallback(() => depth === 0 && !inPane && msUntilClaimable(BACK_TARGET) > 0, [depth, inPane]);
+  useEffect(() => () => clearTimeout(HELD_POPS.get(token)), [token]);
+  const popRoute = useCallback(() => {
+    const attempt = () => {
+      const wait = inPane ? 0 : msUntilClaimable(BACK_TARGET);
+      if (wait > 0) HELD_POPS.set(token, setTimeout(attempt, wait));
+      else goBack();
+    };
+    attempt();
+  }, [token, inPane, goBack]);
+  const leaveNow = useCallback(() => {
+    // Bracketed in the trace with the unmount below, so a recording measures the TEARDOWN — popping
+    // the route, unmounting the page, un-blanking the source card — as its own span. It is the last
+    // thing that happens on a collapse and the only thing left at that end of it; `frame LONG` lines
+    // falling between these two say what it costs, which is the number any attempt to shrink it
+    // would have to beat.
+    traceJS('leave', 'start', { depth });
+    if (depth > 0) onPopLayer();
+    else popRoute();
+  }, [depth, onPopLayer, popRoute]);
+  useEffect(() => () => traceJS('leave', 'unmounted', { depth }), [depth]);
+  // The other end of the page's life. Teardown measured 9-44ms and turned out not to be worth
+  // attacking; this is the half that hasn't been measured, and it is the larger one — a whole
+  // details tree mounts here while the entrance animation plays.
+  useEffect(() => traceJS('open', 'mount', { depth }), [depth]);
+  // EVERY exit animation ends here rather than calling `leaveNow` directly, because an animation
+  // callback is not a promise that it ran: reanimated reports `finished: false` for a curve that
+  // got interrupted, and an exit that reached its end state without leaving stranded the page —
+  // mounted, invisible or shrunk, and still swallowing touches. So the exits below fire this
+  // whether or not the curve finished, AND arm a wall-clock backstop, and this makes the extra
+  // calls harmless.
+  /**
+   * …and this latch is what makes them harmless. It is a PLAIN JS BOX, and that is the fix for a
+   * real bug rather than a style preference.
+   *
+   * It used to be a shared value, on the reasoning that the pan is built during render so nothing
+   * its worklets reach may touch a React ref. True of the worklets — but `leaveOnce` is not one.
+   * Every caller reaches it through `runOnJS`, so it only ever executes on the JS thread, where a
+   * shared value is the wrong instrument: a `.set()` here is not guaranteed visible to a `.get()`
+   * in the next JS task, because the value's home is the UI thread. So two exits firing off one
+   * frame — the leave reaction and the collapse spring's completion, which by design both mean
+   * "arrived" — each read the latch as false and each ran.
+   *
+   * A device trace caught it exactly:
+   *
+   *     leave start depth=2 / layer pop from=2 left=1
+   *     leave start depth=2 / layer pop from=1 left=0
+   *
+   * One instance leaving, two pops — so dismissing a series drilled from a search layer took the
+   * search layer with it and landed back on the series underneath. Only via the swipe, because the
+   * chevron path has a single caller and never exercises the latch at all.
+   *
+   * Held in a module-level WeakSet keyed on a per-instance token, which is the one shape both lint
+   * rules allow here: `useRef` is out because the pan is built during render, and mutating a
+   * `useMemo` result is out too — so the memo hands out an identity and the mutation happens in the
+   * set. Plain JS, one thread, no cross-runtime visibility to reason about.
+   */
+  const leaveOnce = useCallback(() => {
+    if (LEFT.has(token)) return;
+    LEFT.add(token);
+    leaveNow();
+  }, [token, leaveNow]);
+  // NOTE: nothing here tracks "this page is leaving". It used to — `const [leaving, setLeaving] =
+  // useState(false)`, flipped from inside the commit — and that re-rendered all of
+  // SeriesReaderInstance on the frame the collapse animation started. Profiles measured that render
+  // at 40–114ms, and on iOS the UI thread IS the main thread, so the native commits behind it land
+  // on the one thread the animation needs. A stutter on every single exit, unreachable by any amount
+  // of animation tuning because the animation was never the problem. The two things that flag bought
+  // — dropping touches on a page on its way out, and the wall-clock backstop — both live in
+  // `LeavingMask` now, which reads `edgeCommitting` itself and re-renders nothing but itself.
+  const edgeCommitting = useSharedValue(false);
+  // The reader page going back into the strip it grew out of (see SplitHandoff): its bottom edge
+  // rises onto the details' strip, and the route pops once there is nothing of it left to see.
+  const shrinkToStrip = useCallback(() => {
+    if (LEFT.has(token)) return;
+    setChromeVisible(false);
+    // Freezes the reader's own drags for the way out.
+    detailsActiveSV.set(true);
+    edgeCommitting.set(true);
+    progress.set(
+      withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }, () => {
+        runOnJS(leaveOnce)();
+      }),
+    );
+  }, [token, detailsActiveSV, edgeCommitting, progress, leaveOnce]);
   const leaveReaderForDetails = useCallback(() => {
-    if (params.from === 'details') {
+    if (stripReader) {
+      shrinkToStrip();
+      return;
+    }
+    // Back to the details that pushed it, when they are still there: a reloaded web page has
+    // nothing beneath it.
+    if (params.from === 'details' && router.canGoBack()) {
       router.back();
       return;
     }
@@ -1908,8 +2119,14 @@ function SeriesReaderInstance({
       const v = params[k];
       if (typeof v === 'string') next[k] = v;
     }
-    router.push({ pathname: '/series', params: next });
-  }, [params, router]);
+    if (!splitDrawn) {
+      router.push({ pathname: '/series', params: next });
+      return;
+    }
+    // In its place: the details slide up over this reader (see SplitHandoff).
+    if (seriesKey) handOffSplit(seriesKey, { kind: 'reveal' });
+    router.replace({ pathname: '/series', params: next });
+  }, [stripReader, shrinkToStrip, params, router, splitDrawn, seriesKey]);
 
   // JS-side half of a commit — deliberately closes over nothing but state setters (no shared
   // values, no timer refs), so the gesture worklets can `runOnJS` it; the worklets animate
@@ -1949,6 +2166,26 @@ function SeriesReaderInstance({
     },
     [progress, detailsActiveSV, pullEngagedSV, commitReveal, leavePaneToRead, split, leaveReaderForDetails],
   );
+  // The split's move, drawn by the page that arrives (see SplitHandoff).
+  useEffect(() => {
+    if (stripFrom) {
+      const { covered } = stripFrom;
+      progress.set(
+        withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) }, () => {
+          runOnJS(markEntranceSettled)();
+          runOnJS(covered)();
+        }),
+      );
+      // A frame in, so the chrome fades in with the page rather than landing with its first paint.
+      const frame = requestAnimationFrame(() => setChromeVisible(true));
+      return () => cancelAnimationFrame(frame);
+    }
+    if (revealIn) {
+      progress.set(withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+    }
+    // Mount-only: an instance takes its hand-off once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The collapsed reader strip is the top of the details PAGE, so its reveal is the page's own
   // overscroll — any pull past the top rides the native rubber-band down, with the whole page
@@ -2013,78 +2250,6 @@ function SeriesReaderInstance({
     [detailsActive, detailsActiveSV, setRevealed],
   );
 
-  // Leaving this instance. The modal ROOT pops the route (deep-linked/full-page-loaded entries
-  // on web have no back stack — land on the browse tabs instead of dead-ending); on a pushed card
-  // that pop IS the exit, the system's slide (useNativePush). A drilled
-  // LAYER never touches navigation: it collapses on the same `zoom` the back-swipe drags
-  // (closeLayer — chevron/hardware back), or is removed outright once a gesture has already
-  // collapsed it / flown the page out (leaveNow — the parent series is live beneath).
-  const goBack = useCallback(() => {
-    if (router.canGoBack()) router.back();
-    else router.replace('/');
-  }, [router]);
-  const leaveNow = useCallback(() => {
-    // Bracketed in the trace with the unmount below, so a recording measures the TEARDOWN — popping
-    // the route, unmounting the page, un-blanking the source card — as its own span. It is the last
-    // thing that happens on a collapse and the only thing left at that end of it; `frame LONG` lines
-    // falling between these two say what it costs, which is the number any attempt to shrink it
-    // would have to beat.
-    traceJS('leave', 'start', { depth });
-    if (depth > 0) onPopLayer();
-    else goBack();
-  }, [depth, onPopLayer, goBack]);
-  useEffect(() => () => traceJS('leave', 'unmounted', { depth }), [depth]);
-  // The other end of the page's life. Teardown measured 9-44ms and turned out not to be worth
-  // attacking; this is the half that hasn't been measured, and it is the larger one — a whole
-  // details tree mounts here while the entrance animation plays.
-  useEffect(() => traceJS('open', 'mount', { depth }), [depth]);
-  // EVERY exit animation ends here rather than calling `leaveNow` directly, because an animation
-  // callback is not a promise that it ran: reanimated reports `finished: false` for a curve that
-  // got interrupted, and an exit that reached its end state without leaving stranded the page —
-  // mounted, invisible or shrunk, and still swallowing touches. So the exits below fire this
-  // whether or not the curve finished, AND arm a wall-clock backstop, and this makes the extra
-  // calls harmless.
-  /**
-   * …and this latch is what makes them harmless. It is a PLAIN JS BOX, and that is the fix for a
-   * real bug rather than a style preference.
-   *
-   * It used to be a shared value, on the reasoning that the pan is built during render so nothing
-   * its worklets reach may touch a React ref. True of the worklets — but `leaveOnce` is not one.
-   * Every caller reaches it through `runOnJS`, so it only ever executes on the JS thread, where a
-   * shared value is the wrong instrument: a `.set()` here is not guaranteed visible to a `.get()`
-   * in the next JS task, because the value's home is the UI thread. So two exits firing off one
-   * frame — the leave reaction and the collapse spring's completion, which by design both mean
-   * "arrived" — each read the latch as false and each ran.
-   *
-   * A device trace caught it exactly:
-   *
-   *     leave start depth=2 / layer pop from=2 left=1
-   *     leave start depth=2 / layer pop from=1 left=0
-   *
-   * One instance leaving, two pops — so dismissing a series drilled from a search layer took the
-   * search layer with it and landed back on the series underneath. Only via the swipe, because the
-   * chevron path has a single caller and never exercises the latch at all.
-   *
-   * Held in a module-level WeakSet keyed on a per-instance token, which is the one shape both lint
-   * rules allow here: `useRef` is out because the pan is built during render, and mutating a
-   * `useMemo` result is out too — so the memo hands out an identity and the mutation happens in the
-   * set. Plain JS, one thread, no cross-runtime visibility to reason about.
-   */
-  const token = useMemo(() => ({}), []);
-  const leaveOnce = useCallback(() => {
-    if (LEFT.has(token)) return;
-    LEFT.add(token);
-    leaveNow();
-  }, [token, leaveNow]);
-  // NOTE: nothing here tracks "this page is leaving". It used to — `const [leaving, setLeaving] =
-  // useState(false)`, flipped from inside the commit — and that re-rendered all of
-  // SeriesReaderInstance on the frame the collapse animation started. Profiles measured that render
-  // at 40–114ms, and on iOS the UI thread IS the main thread, so the native commits behind it land
-  // on the one thread the animation needs. A stutter on every single exit, unreachable by any amount
-  // of animation tuning because the animation was never the problem. The two things that flag bought
-  // — dropping touches on a page on its way out, and the wall-clock backstop — both live in
-  // `LeavingMask` now, which reads `edgeCommitting` itself and re-renders nothing but itself.
-
   // ── The zoom's shared values ────────────────────────────────────────────────────────────────
   // Hoisted above the gestures because BOTH of them drive the collapse now: the back-swipe and
   // the expanded reader's dismiss. Their comments live with the machinery that reads them.
@@ -2096,7 +2261,8 @@ function SeriesReaderInstance({
   // connection to the thumbnail is lost.
   // 0 = the thumbnail is sitting on its card and the page is invisible, 1 = the page is up and
   // the thumbnail is gone.
-  const zoom = useSharedValue(0);
+  // A split page handed the move starts up: that move is `progress`'s (see SplitHandoff).
+  const zoom = useSharedValue(splitHandoff ? 1 : 0);
   // The entrance waits for that measurement — the library does the same, holding the pair until
   // both ends have reported. Invisible here: the page is at opacity 0 until the spring starts, so
   // a frame or two of waiting just shows the untouched grid. A deadline caps it, after which the
@@ -2147,7 +2313,6 @@ function SeriesReaderInstance({
   /** See `zoomHoming`. Every path that drives `zoom` sets this first — there is no default that is
    *  right for all of them, and a stale one is a page that converges on the wrong thing. */
   const homeAt = useSharedValue(0);
-  const edgeCommitting = useSharedValue(false);
 
   /**
    * THE leave trigger: the page having actually reached the card. One reaction for every exit —
@@ -2198,11 +2363,11 @@ function SeriesReaderInstance({
   // Never under a mouse: a drag there is a PAN of the page, and a pan that set off the reveal or the
   // dismiss took the reader away mid-read. The desktop has the Details button and Back for those.
   const collapseEnabled = !detailsActive && !readerZoomed && !scrubbing && !(IS_WEB && isDesktopPointer());
-  // The split reader's swipe away, paged. UIKit's zoom dismissal takes the swipe DOWN (the screen's
-  // `gestureEnabled`) and carries the page and the bar back into the strip. It never starts on a
-  // swipe up, so that half is this pan's: the page lifts and shrinks under the finger, and a
-  // committed release runs the same native pop the back button does.
-  const swipeAway = split === 'reader' && params.from === 'details' && settings.mode === 'paged';
+  // The split reader's swipe away, paged, on iOS. UIKit's zoom dismissal takes the swipe DOWN (the
+  // screen's `gestureEnabled`) and carries the page and the bar back into the strip. It never
+  // starts on a swipe up, so that half is this pan's: the page lifts and shrinks under the finger,
+  // and a committed release runs the same native pop the back button does.
+  const swipeAway = nativePush && split === 'reader' && params.from === 'details' && settings.mode === 'paged';
   const liftY = useSharedValue(0);
   // Each GESTURE is one thing, decided at activation and locked: a drag that sets off toward the
   // details is a reveal (progress only, and paged only); anything else is a dismiss — a free 2D
@@ -2216,8 +2381,9 @@ function SeriesReaderInstance({
   const progressStartSV = useSharedValue(0);
   const panBeganSV = useSharedValue(false);
   const collapsePan = useMemo(() => {
-    // The split reader has no details beneath it to drag up: its Details button pushes them.
-    const revealByDrag = settings.mode === 'paged' && split !== 'reader';
+    // A split reader has no details of its own to drag up. One grown out of their strip drags back
+    // into it (see SplitHandoff); any other brings them up with its Details button.
+    const revealByDrag = settings.mode === 'paged' && (split !== 'reader' || stripReader);
     const dismissSpan = settings.mode === 'paged' ? height : width;
     const span = settings.mode === 'paged' ? headerSpan : width;
     {
@@ -2424,6 +2590,7 @@ function SeriesReaderInstance({
     collapseEnabled,
     nativePush,
     split,
+    stripReader,
     swipeAway,
     liftY,
     leaveReaderForDetails,
@@ -2459,7 +2626,7 @@ function SeriesReaderInstance({
     const span = headerSpan;
     const pan = Gesture.Pan()
       // The split details' strip takes a tap: what it opens is a page, not a side to drag in.
-      .enabled(detailsActive && !splitDetails)
+      .enabled(detailsActive && !(splitDetails && nativePush))
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
         if (!panBeganSV.value) {
@@ -2475,7 +2642,10 @@ function SeriesReaderInstance({
         const towardVelocity = e.velocityY;
         const open = releaseCommitted(toward, towardVelocity, span * REVEAL_COMMIT_FRACTION);
         detailsActiveSV.set(!open);
-        progress.set(withTiming(open ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+        // The reader page picks a committed drag up from here (see SplitHandoff).
+        if (!(open && handsStripOff)) {
+          progress.set(withTiming(open ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+        }
         runOnJS(commitReveal)(open ? 0 : 1);
       })
       .onFinalize(() => {
@@ -2483,7 +2653,18 @@ function SeriesReaderInstance({
       });
     pan.activeOffsetY([-20, 20]).failOffsetX([-15, 15]);
     return pan;
-  }, [detailsActive, splitDetails, headerSpan, panBeganSV, progressStartSV, progress, detailsActiveSV, commitReveal]);
+  }, [
+    detailsActive,
+    splitDetails,
+    nativePush,
+    handsStripOff,
+    headerSpan,
+    panBeganSV,
+    progressStartSV,
+    progress,
+    detailsActiveSV,
+    commitReveal,
+  ]);
 
   // Reveal pan — on the details layer, for platforms without the native rubber-band (the iOS
   // path is the reaction above). Both modes now, since the reveal is vertical everywhere: the
@@ -2535,13 +2716,28 @@ function SeriesReaderInstance({
         if (!detailsActiveSV.value) return;
         const close = releaseCommitted(e.translationY, e.velocityY, headerSpan * REVEAL_COMMIT_FRACTION);
         detailsActiveSV.set(!close);
-        progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+        // The reader page picks a committed drag up from here (see SplitHandoff).
+        if (!(close && handsStripOff)) {
+          progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+        }
         runOnJS(commitReveal)(close ? 0 : 1);
       })
       .onFinalize(() => {
         panBeganSV.set(false);
       });
-  }, [detailsActive, headerSpan, panBeganSV, progressStartSV, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal]);
+  }, [
+    detailsActive,
+    handsStripOff,
+    headerSpan,
+    panBeganSV,
+    progressStartSV,
+    progress,
+    touchStartX,
+    touchStartY,
+    detailsScrollOffset,
+    detailsActiveSV,
+    commitReveal,
+  ]);
 
   // ── The ZOOM: how this instance arrives and leaves ───────────────────────────────────────────
   // Where the page came FROM: the cover box of the card that was tapped, in window coordinates
@@ -2552,8 +2748,9 @@ function SeriesReaderInstance({
   // Consumed in a state initializer so it's known on the FIRST render — a frame later would start
   // the grow from the wrong geometry. The ENTRANCE keeps this rect; the exit re-aims off it via
   // `heroShift`, because on a last-read list the card has moved by then. Don't freeze the exit to it.
-  // A pushed card takes none either: its entrance is the system's slide (useNativePush).
-  const [zoomSource] = useState(() => (IS_WEB || nativePush ? null : takeZoomOrigin(id)));
+  // A pushed card takes none either: its entrance is the system's slide (useNativePush). Nor a split
+  // page handed the move, which draws its own (see SplitHandoff).
+  const [zoomSource] = useState(() => (IS_WEB || nativePush || splitHandoff ? null : takeZoomOrigin(id)));
   /**
    * How far the source card has moved since capture, applied only at the collapsed end (scaled by
    * `1 - q`). Kept out of `hero` so `zoomGeom` and its styles never recompute mid-flight; sprung, so
@@ -2653,8 +2850,9 @@ function SeriesReaderInstance({
     // nothing — which is what read as a laggy fade rather than as an opening. Land on the open state
     // in one frame instead. The COLLAPSE is untouched: that one follows a finger, so it is a
     // response rather than a flourish, and it still needs `zoom` to travel.
-    // A pushed card likewise: the slide in is the system's (useNativePush).
-    if (IS_WEB || nativePush) {
+    // A pushed card likewise: the slide in is the system's (useNativePush). And a split page handed
+    // the move (see SplitHandoff).
+    if (IS_WEB || nativePush || splitHandoff) {
       zoom.set(1);
       traceJS('open', 'entered', { finished: true, instant: true });
       return;
@@ -2670,7 +2868,7 @@ function SeriesReaderInstance({
         runOnJS(markEntranceSettled)();
       }),
     );
-  }, [zoom, zoomArmed, homeAt, blankSource, markEntranceSettled, nativePush]);
+  }, [zoom, zoomArmed, homeAt, blankSource, markEntranceSettled, nativePush, splitHandoff]);
   const onHeroCoverRect = useCallback((rect: ZoomRect) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
     // as its aspect settles, and moving the destination mid-flight would visibly jump. What the
@@ -2718,7 +2916,11 @@ function SeriesReaderInstance({
   // route's `animation: 'none'` means this IS the exit animation — without it a tapped back would
   // just blink the screen away.
   const closeLayer = useCallback(() => {
-    if (LEFT.has(token)) return;
+    if (LEFT.has(token) || routeBackHeld()) return;
+    if (stripReader) {
+      shrinkToStrip();
+      return;
+    }
     // A pushed card has nothing to shrink into — the pop is the exit (useNativePush).
     if (nativePush) {
       leaveOnce();
@@ -2748,6 +2950,9 @@ function SeriesReaderInstance({
     detailsActiveSV,
     nativePush,
     leaveOnce,
+    stripReader,
+    shrinkToStrip,
+    routeBackHeld,
   ]);
 
   /**
@@ -2782,16 +2987,17 @@ function SeriesReaderInstance({
   // series, the root back to whatever it was opened over).
   // Layer handlers register after their parent's (mounted later), so BackHandler's LIFO order
   // naturally gives the topmost instance the event. (Android-only API — react-native-web's
-  // BackHandler stub rejects addEventListener.)
+  // BackHandler stub rejects addEventListener.) Details under their reader page (see SeriesSplit)
+  // stay out of it.
   useEffect(() => {
-    if (Platform.OS !== 'android') return;
+    if (Platform.OS !== 'android' || !isTop) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (!detailsActive) setRevealed(1);
       else closeLayer();
       return true;
     });
     return () => sub.remove();
-  }, [detailsActive, setRevealed, closeLayer]);
+  }, [isTop, detailsActive, setRevealed, closeLayer]);
   // Desktop back steps home the same way — Escape, the chevron, and the shell's mouse back button
   // (which arrives as Escape, see lib/desktop-commands). Not when the desktop pane beneath this
   // reader already shows this series: its details are right there, so stepping home would show
@@ -3685,15 +3891,16 @@ function SeriesReaderInstance({
   // its own vector without touching `zoom`; there is no such vector any more.
   // Depth 0 ONLY: a drilled layer sits over its parent series inside this same modal, and the tabs
   // behind the whole modal must not respond twice to what is, to them, one open page. Nor a pushed
-  // card: nothing shows behind one, and UIKit has taken the screen beneath away regardless.
+  // card: nothing shows behind one, and UIKit has taken the screen beneath away regardless. Nor a
+  // reader page over its details, which own the backdrop (see SplitHandoff).
   useAnimatedReaction(
     () => {
       return zoom.value;
     },
     (covered) => {
-      if (depth === 0 && !inPane && !nativePush) seriesReaderDim.set(covered);
+      if (depth === 0 && !inPane && !nativePush && !stripReader) seriesReaderDim.set(covered);
     },
-    [depth, inPane, nativePush],
+    [depth, inPane, nativePush, stripReader],
   );
   // Belt and braces: nothing may strand the backdrop dimmed if this screen goes away without its
   // exit animation finishing (a deep link replacing the route, a dev reload). The hold's release
@@ -3701,9 +3908,9 @@ function SeriesReaderInstance({
   // one JS-thread write against a value the reaction above writes every frame, and on its own it
   // has no way to notice when it loses that race (see lib/pushback-watchdog).
   useEffect(() => {
-    if (depth > 0 || inPane || nativePush) return;
+    if (depth > 0 || inPane || nativePush || stripReader) return;
     return holdSeriesBackdrop();
-  }, [depth, inPane, nativePush]);
+  }, [depth, inPane, nativePush, stripReader]);
 
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
@@ -4081,6 +4288,7 @@ function SeriesReaderInstance({
         verticalBarBehaviorIOS={detailsActive ? 'automatic' : 'disabled'}
       />
 
+      <SplitClip travel={stripFrom ? height - stripFrom.stripBottom : null} progress={progress}>
       {/* THE READER'S BACKDROP, while the reader is what's on screen: full screen, never moving,
           fading IN PLACE as the collapse carries the page over it. Outside the mask on purpose —
           inside it, it travelled and scaled along with everything else, which is a swipe-away
@@ -4315,7 +4523,7 @@ function SeriesReaderInstance({
           <ZoomSource href={stripZoomHref} onId={setStripZoomId} style={{ width, height: headerTopInset }} />
         </View>
       ) : null}
-      {split === 'reader' ? (
+      {split === 'reader' && nativePush ? (
         <View pointerEvents="none" style={[styles.stripZoom, { top: (height - bandH) / 2, width }]}>
           <LinkAppleZoomTarget>
             <View collapsable={false} style={{ width, height: headerTopInset }} />
@@ -4389,7 +4597,49 @@ function SeriesReaderInstance({
 
       </Animated.View>
       </LeavingMask>
+      </SplitClip>
     </View>
+  );
+}
+
+/**
+ * The reader page of the split, cut off at the strip it grows out of and shrinks back into (see
+ * SplitHandoff): the bottom edge travels with `progress`, everything above it stays where it is.
+ * Anything else renders as it is.
+ */
+function SplitClip({
+  travel,
+  progress,
+  children,
+}: {
+  /** From the window's bottom edge up to the strip's. */
+  travel: number | null;
+  progress: SharedValue<number>;
+  children: ReactNode;
+}) {
+  if (travel === null) return children;
+  return (
+    <SplitClipFrame travel={travel} progress={progress}>
+      {children}
+    </SplitClipFrame>
+  );
+}
+
+function SplitClipFrame({
+  travel,
+  progress,
+  children,
+}: {
+  travel: number;
+  progress: SharedValue<number>;
+  children: ReactNode;
+}) {
+  const frameStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -travel * progress.value }] }), [travel]);
+  const pageStyle = useAnimatedStyle(() => ({ transform: [{ translateY: travel * progress.value }] }), [travel]);
+  return (
+    <Animated.View style={[styles.splitClip, frameStyle]}>
+      <Animated.View style={[StyleSheet.absoluteFill, pageStyle]}>{children}</Animated.View>
+    </Animated.View>
   );
 }
 
@@ -4456,14 +4706,15 @@ type DrillEntry = { key: number } & ({ kind: 'series'; params: SeriesReaderParam
 // instance (each a whole series page) re-renders along with it for nothing.
 const MemoSeriesReaderInstance = memo(SeriesReaderInstance);
 
+/** The root `series/index`: the details page of the split (see SeriesSplit), except on iOS. */
 export default function SeriesReaderScreen() {
-  return <SeriesRoute split={null} />;
+  return <SeriesRoute split="details" />;
 }
 /** A tab's `series/index`: on iOS, the details page of the split (see SeriesSplit). */
 export function SeriesTabScreen() {
   return <SeriesRoute split="details" />;
 }
-/** A tab's `series/read`: on iOS, the reader page of the split. */
+/** `series/read`, the root's and a tab's: the reader page of the split. */
 export function SeriesReadScreen() {
   return <SeriesRoute split="reader" />;
 }
@@ -4474,7 +4725,10 @@ function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
   const { width } = useViewport();
   const inPane = useSeriesPaneWidth() !== null;
   const nativePush = useNativePush();
-  const split = nativePush ? routeSplit : null;
+  const split = nativePush || !IS_IOS ? routeSplit : null;
+  // A details page under its reader is still mounted (see app/series/_layout) and must stop
+  // answering keys and back. iOS covers it with a real card, and reads `isTop` for its bar.
+  const routeFocused = useIsFocused() || IS_IOS;
   // A link that names the other side (a details route opened reader-first, a reader route opened
   // onto the details) gets the one page that does both.
   const readerFirst = params.reader === '1';
@@ -4614,7 +4868,7 @@ function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
               params={seqParams}
               depth={0}
               onPopLayer={popLayer}
-              isTop={drills.length === 0 && !covered}
+              isTop={drills.length === 0 && !covered && routeFocused}
               nativePush={nativePush}
               split={null}
               sequence={seqRun}
@@ -4631,7 +4885,7 @@ function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
             params={params}
             depth={0}
             onPopLayer={popLayer}
-            isTop={drills.length === 0 && !covered}
+            isTop={drills.length === 0 && !covered && routeFocused}
             nativePush={nativePush}
             split={baseSplit}
           />
@@ -4648,12 +4902,12 @@ function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
               params={d.params}
               depth={i + 1}
               onPopLayer={popLayer}
-              isTop={i === top && !covered}
+              isTop={i === top && !covered && routeFocused}
               nativePush={false}
-              split={null}
+              split={IS_IOS || d.params.reader === '1' ? null : 'details'}
             />
           ) : (
-            <SearchLayer onPopLayer={popLayer} coverSV={layerCover} isTop={i === top && !covered} />
+            <SearchLayer onPopLayer={popLayer} coverSV={layerCover} isTop={i === top && !covered && routeFocused} />
           )}
         </Animated.View>
       ))}
@@ -5969,6 +6223,14 @@ const styles = StyleSheet.create({
     // Transparent: the route is a contained transparent modal — the details layer is the opaque
     // fill, and a dismissal fades it out over the screen beneath (see dismissFadeStyle).
     backgroundColor: 'transparent',
+  },
+  splitClip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'hidden',
   },
   // The zoom's window (see zoomMaskStyle). Absolutely positioned because its whole box is
   // animated; `overflow: hidden` is what makes it a mask rather than just a rounded outline.

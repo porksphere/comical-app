@@ -24,7 +24,7 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * their scroll-edge appearance to the standard one.
  *
  * The stack also carries the tab's own copies of the pages a tab pushes — series, search, results
- * (one-line re-exports under each tab's `in-tab/`; `inTabHref` in lib/nav sends a push there) —
+ * (one-line re-exports under each tab's `in-tab/`; `destinationHref` in lib/nav sends a push there) —
  * so they open under the tab bar like any system app's detail page, rather than over the whole shell.
  * The `in-tab` segment keeps their URLs apart from the root pages': expo-router resolves a plain
  * `/series` to whichever matching route shares the most groups with the current one, so a copy at

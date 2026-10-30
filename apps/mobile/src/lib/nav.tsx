@@ -51,12 +51,12 @@ function guard(base: Router): Router {
     push: (href, options) => {
       if (!claimNavigation(navTargetKey(href))) return;
       if (takeContentPane(href)) return;
-      base.push(inTabHref(href), options);
+      base.push(destinationHref(href), options);
     },
     navigate: (href, options) => {
       if (!claimNavigation(navTargetKey(href))) return;
       if (takeContentPane(href)) return;
-      base.navigate(inTabHref(href), options);
+      base.navigate(destinationHref(href), options);
     },
     replace: (href, options) => {
       if (claimNavigation(navTargetKey(href))) base.replace(href, options);
@@ -126,25 +126,30 @@ function takeContentPane(href: unknown): boolean {
 }
 
 /**
+ * Where a push actually lands. Here, with the pane hand-off, because the push sites are many and
+ * context-free.
+ *
+ * A reader-first `/series` open is the READER page, `/series/read`: the details and the reader are
+ * two pages (SeriesSplit in app/series/index). A collection's sequence stays one page, which shows
+ * each entry's details in place.
+ *
  * iOS: a series, search or results page pushed from inside a tab opens INSIDE that tab's native
  * stack — the twin routes under `app/(tabs)/<tab>/in-tab/` — so the tab bar stays up over it as it does in
- * every system app, instead of on the root stack over the whole tab shell. Here, with the pane
- * hand-off, for the same reason: the push sites are many and context-free. From outside the tabs
- * the page goes to the root route as before — see `focusedTabRoute`. Android and web keep their
- * single root copies.
+ * every system app, instead of on the root stack over the whole tab shell. From outside the tabs
+ * the page goes to the root route, combined, as before — see `focusedTabRoute`. Android and web
+ * keep their single root copies.
  */
 type PushHref = Parameters<Router['push']>[0];
 const IN_TAB_PATHS = new Set(['/series', '/search', '/results']);
-function inTabHref(href: PushHref): PushHref {
-  if (Platform.OS !== 'ios') return href;
+function destinationHref(href: PushHref): PushHref {
   const { pathname, params } = splitHref(href);
   if (!pathname || !IN_TAB_PATHS.has(pathname)) return href;
+  const page = pathname === '/series' && params.reader === '1' && !params.seq ? '/series/read' : pathname;
+  if (Platform.OS !== 'ios') {
+    return page === pathname ? href : ({ pathname: page, params } as unknown as PushHref);
+  }
   const tab = focusedTabRoute();
   if (!tab) return href;
-  // A reader-first open is the tab's reader page: in a tab the details and the reader are two pages
-  // (SeriesSplit in app/series/index). A collection's sequence stays one page, which shows each
-  // entry's details in place.
-  const page = pathname === '/series' && params.reader === '1' && !params.seq ? '/series/read' : pathname;
   return tabHref(tab, page, params);
 }
 
@@ -224,9 +229,10 @@ export function Link({ onPress, ...rest }: LinkProps) {
     if (Platform.OS !== 'web') return;
     event.preventDefault();
     if (takeContentPane(rest.href)) return;
-    if (rest.replace) expoRouter.replace(rest.href);
-    else if (rest.push) expoRouter.push(rest.href);
-    else expoRouter.navigate(rest.href);
+    const to = destinationHref(rest.href);
+    if (rest.replace) expoRouter.replace(to);
+    else if (rest.push) expoRouter.push(to);
+    else expoRouter.navigate(to);
   };
   // eslint-disable-next-line comical/require-test-id -- pass-through wrapper: the testID comes from the call site's props.
   return <ExpoLink {...rest} onPress={handlePress} />;

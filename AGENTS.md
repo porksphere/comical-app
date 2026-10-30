@@ -330,6 +330,15 @@ up it never starts is the reader's own pan (`swipeAway`), ending in the same pop
 The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
 runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
 
+The details and the reader are two pages on every platform (`SeriesSplit` in
+`app/series/index.tsx`): `series/index` is the details, whose strip shows the page you are on,
+and `series/read` the reader it opens; `lib/nav` sends a reader-first `/series` push straight to
+`/series/read`. Off iOS `read` is a transparent modal with no animation over the details, which
+stay rendered, and the pages draw the move themselves: the reader page continues the strip's own
+open from wherever a drag left it and shrinks back into the strip on the way out, and a reader
+that brings up details it was not opened from has them slide up over it (`SplitHandoff`). The
+root route on iOS (deep links) and a collection's sequence stay one page.
+
 **The page lands on its own hero cover only while that cover is at least half on screen.** A bound
 that has scrolled off is still a bound the page has to fly onto, so aiming at one drags the whole
 page up to meet it: the page appears to scroll itself away under the finger. Scrolled past it the

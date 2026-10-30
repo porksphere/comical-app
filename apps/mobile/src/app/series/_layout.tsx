@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router';
+import { Platform } from 'react-native';
 
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { settingsScreen } from '@/lib/native-bar';
@@ -15,6 +16,12 @@ import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
 // useOpenSeriesSearch, the one sub-page that shows the system bar (its field lives there);
 // Android and web open the same search as an in-screen LAYER on the index screen instead (see
 // SearchLayer in index.tsx), the layer being how the custom chevron stays put across the slide.
+//
+// The READER is a page of its own, `read`, pushed over the details (`index`) — see SeriesSplit in
+// index.tsx. On iOS it is a plain native push. Elsewhere it is a TRANSPARENT modal with no
+// animation: the details stay rendered beneath it (a native stack hides the screen under a plain
+// card, on web with display: none), because the reader grows OUT of the details' strip and shrinks
+// back into it, both drawn by the page itself.
 //
 // A series opened FROM a series (related rails, nested search results) is NOT a route at all:
 // it renders as a sibling LAYER inside the index screen, which keeps the parent series live
@@ -33,8 +40,11 @@ export default function SeriesReaderLayout() {
             // page's own edge back-swipe rig (which dismisses the modal / pops a drilled layer)
             // ever sees them. Disabled here; the sub-pages keep their own native gesture.
             gestureEnabled: false,
+            // Off iOS a reader page REPLACED by its details draws its own reveal (SeriesSplit).
+            ...(Platform.OS === 'ios' ? null : { animation: 'none' as const }),
           }}
         />
+        <Stack.Screen name="read" options={Platform.OS === 'ios' ? undefined : READ_OVER_DETAILS} />
         <Stack.Screen name="series-downloads" options={settingsScreen('Downloads')} />
         <Stack.Screen name="downloads" options={settingsScreen('Downloads')} />
         <Stack.Screen name="search" options={NATIVE_HEADER ? NESTED_SEARCH_BAR : undefined} />
@@ -42,3 +52,9 @@ export default function SeriesReaderLayout() {
     </InSeriesPageStack.Provider>
   );
 }
+
+const READ_OVER_DETAILS = {
+  presentation: 'transparentModal',
+  animation: 'none',
+  contentStyle: { backgroundColor: 'transparent' },
+} as const;
