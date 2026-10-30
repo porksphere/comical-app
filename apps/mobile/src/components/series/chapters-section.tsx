@@ -44,7 +44,7 @@ import {
 } from '@/components/icons/ui-icons';
 import { coverRingColor, coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
-import { HoldMenu, SystemContextMenuTarget } from '@/components/system-context-menu';
+import { HoldMenu, liftTarget } from '@/components/system-context-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
@@ -888,7 +888,7 @@ function ChapterRow({
     // list you still have to get through, so they are the ones drawn at full strength.
     <View style={dimmed || unavailable ? styles.rowDimmed : read && !PLATED_ROWS ? styles.rowRead : undefined}>
       {/* Only the row itself lifts on iOS, not the versions list open under it. */}
-      <SystemContextMenuTarget radius={FLAT_ROWS ? 10 : 8}>
+      {liftTarget(
         <Pressable
           testID={testId('series.chapter', group.key)}
           onPress={() => open(def)}
@@ -941,8 +941,9 @@ function ChapterRow({
               )}
             </View>
           </ThemedView>
-        </Pressable>
-      </SystemContextMenuTarget>
+        </Pressable>,
+        FLAT_ROWS ? 10 : 8,
+      )}
       {multi && (
         <Disclosure open={expanded}>
           <View style={styles.versionList}>

@@ -7,7 +7,7 @@ import { CardOverlays } from '@/components/card-badge';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { Skeleton } from '@/components/skeleton';
-import { SystemContextMenuTarget } from '@/components/system-context-menu';
+import { liftTarget } from '@/components/system-context-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
@@ -746,7 +746,7 @@ export function SeriesCard({
     return (
       <>
         {/* What the iOS system menu lifts: the cover, not the card with its title. */}
-        <SystemContextMenuTarget radius={COVER_CORNER.borderRadius}>
+        {liftTarget(
           <CoverFrame
             aspect={coverAspect}
             coverRef={coverRef}
@@ -754,8 +754,9 @@ export function SeriesCard({
             ring={active || menuOpen}
             onLayout={shrink.onCoverLayout}>
             {coverContents}
-          </CoverFrame>
-        </SystemContextMenuTarget>
+          </CoverFrame>,
+          COVER_CORNER.borderRadius,
+        )}
 
         {/* Trailing group is an Animated.View only when the shrink illusion drives its translateY;
             otherwise a plain View, so lightweight cards carry no Reanimated wrapper here either. */}

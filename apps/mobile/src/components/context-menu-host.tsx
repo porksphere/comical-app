@@ -209,11 +209,14 @@ export type ContextMenuPoint = { x: number; y: number; anchor?: ContextMenuReque
  */
 export function ContextMenuHold({
   enabled = true,
-  onOpen,
+  onOpen: onOpenAt,
+  rows,
   children,
 }: {
   enabled?: boolean;
-  onOpen: (point: ContextMenuPoint) => void;
+  /** Where the hold opened the menu; or `rows`, to open this host's menu with them there. */
+  onOpen?: (point: ContextMenuPoint) => void;
+  rows?: () => ContextMenuRequest['rows'];
   children: (api: {
     onLongPress?: (e: GestureResponderEvent) => void;
     /** react-native-web forwards this to the element; react-native's types don't know it, so the
@@ -223,6 +226,13 @@ export function ContextMenuHold({
 }) {
   const originX = useSharedValue(0);
   const originY = useSharedValue(0);
+  const onOpen = useCallback(
+    (point: ContextMenuPoint) => {
+      if (onOpenAt) onOpenAt(point);
+      else if (rows) openContextMenu({ ...point, rows: rows() });
+    },
+    [onOpenAt, rows],
+  );
   const hold = useMemo(
     () =>
       Gesture.Pan()

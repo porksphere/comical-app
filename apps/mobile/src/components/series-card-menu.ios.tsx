@@ -8,7 +8,7 @@ import { useTheme } from '@/hooks/use-theme';
 /**
  * iOS per-card quick actions: the system context menu (components/system-context-menu.tsx), where
  * Android keeps the custom hold popup (`series-card-menu.tsx`). Holding a card lifts its cover (the
- * `SystemContextMenuTarget` in `CoverFrame`), or a whole History or Activity row, into the Android
+ * `liftTarget` around `CoverFrame`), or a whole History or Activity row, into the Android
  * popup's panel (`SeriesCardPreview`), and UIKit draws the menu. Tapping the preview does what
  * tapping the card does.
  *

@@ -2,7 +2,7 @@ import { observable, ObservableHint, type OpaqueObject } from '@legendapp/state'
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { StyleSheet, useWindowDimensions, View, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
 
-import { ContextMenuHold, openContextMenu, type LiveMenuRows } from '@/components/context-menu-host';
+import { ContextMenuHold, type LiveMenuRows } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import {
   setSystemMenu,
@@ -107,43 +107,35 @@ export function SystemContextMenu({
   );
 }
 
-/** What lifts when the `SystemContextMenu` around it is held, rather than all of it. */
-export function SystemContextMenuTarget({ radius, children }: { radius?: number; children: ReactNode }) {
-  if (!NativeTarget) return <>{children}</>;
-  return <NativeTarget radius={radius}>{children}</NativeTarget>;
+/**
+ * `node` as what lifts when the `SystemContextMenu` around it is held, rather than all of it, with
+ * `radius` corners. A function rather than a component, so where there is no system menu it adds
+ * nothing to the tree.
+ */
+export function liftTarget(node: ReactNode, radius?: number): ReactNode {
+  return NativeTarget ? <NativeTarget radius={radius}>{node}</NativeTarget> : node;
 }
 
-type HoldChildren = Parameters<typeof ContextMenuHold>[0]['children'];
+type HoldMenuProps = {
+  enabled?: boolean;
+  rows: () => Rows;
+  children: Parameters<typeof ContextMenuHold>[0]['children'];
+};
+
+function SystemHoldMenu({ enabled = true, rows, children }: HoldMenuProps) {
+  return (
+    <SystemContextMenu enabled={enabled} rows={rows}>
+      {children({})}
+    </SystemContextMenu>
+  );
+}
 
 /**
  * A hold menu from one rows builder: the system's on iOS, the custom `ContextMenuHold` one
- * everywhere else. The system menu needs nothing from the held Pressable, so there the render prop
- * hands it no long-press handlers.
+ * everywhere else, which it is rather than wraps. The system menu needs nothing from the held
+ * Pressable, so there the render prop hands it no long-press handlers.
  */
-export function HoldMenu({
-  enabled = true,
-  rows,
-  previewRadius,
-  children,
-}: {
-  enabled?: boolean;
-  rows: () => Rows;
-  previewRadius?: number;
-  children: HoldChildren;
-}) {
-  if (SYSTEM_MENU) {
-    return (
-      <SystemContextMenu enabled={enabled} rows={rows} previewRadius={previewRadius}>
-        {children({})}
-      </SystemContextMenu>
-    );
-  }
-  return (
-    <ContextMenuHold enabled={enabled} onOpen={(at) => openContextMenu({ ...at, rows: rows() })}>
-      {children}
-    </ContextMenuHold>
-  );
-}
+export const HoldMenu: (props: HoldMenuProps) => ReactNode = SYSTEM_MENU ? SystemHoldMenu : ContextMenuHold;
 
 /**
  * Root-mounted (see app/_layout.tsx): publishes the open system menu's rows, if any, and draws its
