@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { GlassContainer, GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { useNavigation } from 'expo-router';
-import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type ViewProps } from 'react-native';
+import {
+  DynamicColorIOS,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type ColorValue,
+  type LayoutChangeEvent,
+  type ViewProps,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -97,6 +106,20 @@ const BAR_H = 40;
  *  does the system bar's own items) and only what sits on them fades; off glass the whole bar
  *  still fades as one. */
 const GLASS = Platform.OS === 'ios' && isLiquidGlassAvailable();
+
+/** What sits on the surfaces. Glass takes the window's appearance, as the system bar's glass above
+ *  the reader does, and Liquid Glass may turn it again over a dark or bright page beneath, so these
+ *  are resolved against the glass's own appearance when drawn, never picked from the theme. The
+ *  tint off glass is dark whatever the theme. */
+const ink = (light: string, dark: string): ColorValue => (GLASS ? DynamicColorIOS({ light, dark }) : dark);
+const INK = {
+  icon: ink('#000', '#fff'),
+  iconOff: ink('rgba(0,0,0,0.25)', 'rgba(255,255,255,0.3)'),
+  text: ink('rgba(0,0,0,0.85)', 'rgba(255,255,255,0.9)'),
+  textFaint: ink('rgba(0,0,0,0.5)', 'rgba(255,255,255,0.6)'),
+  track: ink('rgba(0,0,0,0.18)', 'rgba(255,255,255,0.25)'),
+  fill: ink('#000', '#fff'),
+};
 /** The chrome's show/hide, glass and fades alike. */
 const FADE_MS = 200;
 
@@ -459,7 +482,7 @@ export function ChapterNavigator({
               <View testID="reader.navigator.slider" style={styles.track} onLayout={onTrackLayout}>
                 <View style={styles.bar} />
                 <Animated.View style={[styles.fill, rtl ? styles.fillEnd : styles.fillStart, fillStyle]} />
-                <Animated.View style={[styles.thumb, thumbStyle]} />
+                <Animated.View style={[styles.thumb, GLASS && styles.thumbLift, thumbStyle]} />
               </View>
             </GestureDetector>
           </Animated.View>
@@ -537,7 +560,8 @@ function SkipButton({
         accessibilityState={{ disabled: !enabled }}
         accessibilityLabel={label}>
         <Animated.View style={fade}>
-          <Icon color={enabled ? '#fff' : 'rgba(255,255,255,0.3)'} size={20} />
+          {/* lucide types `color` as a string; react-native-svg takes any ColorValue. */}
+          <Icon color={(enabled ? INK.icon : INK.iconOff) as string} size={20} />
         </Animated.View>
       </Pressable>
     </ChromeSurface>
@@ -545,8 +569,8 @@ function SkipButton({
 }
 
 /** One of the bar's surfaces: glass where there is glass, the tint otherwise. `style` carries
- *  the shape (size, radius, padding) and never a colour — the surface decides that. Dark whatever
- *  the app theme is, as the reader is; `interactive` for a button, which the glass then presses.
+ *  the shape (size, radius, padding) and never a colour — the surface decides that (see INK);
+ *  `interactive` for a button, which the glass then presses.
  *  Until `glass` (see `usePushSettled`) the surface is bare, and then a new view, so the effect
  *  is set by a first layout that comes after the push. `shown` brings the glass in and out (see
  *  GLASS); off glass it changes nothing, the bar's wrap fading instead. */
@@ -569,7 +593,6 @@ function ChromeSurface({
     <GlassView
       key={glass ? 'glass' : 'bare'}
       glassEffectStyle={{ style: glass && shown ? 'regular' : 'none', animate: true, animationDuration: FADE_MS / 1000 }}
-      colorScheme="dark"
       isInteractive={!!interactive}
       style={style}
       {...rest}>
@@ -641,13 +664,13 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   counterText: {
-    color: 'rgba(255,255,255,0.9)',
+    color: INK.text,
     fontSize: 11,
     lineHeight: 14,
     fontVariant: ['tabular-nums'],
   },
   counterTotal: {
-    color: 'rgba(255,255,255,0.6)',
+    color: INK.textFaint,
   },
   // Full-height so the whole pill is grabbable, not just the 4px line in it.
   track: {
@@ -661,14 +684,14 @@ const styles = StyleSheet.create({
     top: (BAR_H - TRACK_H) / 2,
     height: TRACK_H,
     borderRadius: TRACK_H / 2,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: INK.track,
   },
   fill: {
     position: 'absolute',
     top: (BAR_H - TRACK_H) / 2,
     height: TRACK_H,
     borderRadius: TRACK_H / 2,
-    backgroundColor: '#fff',
+    backgroundColor: INK.fill,
   },
   fillStart: {
     left: R,
@@ -684,5 +707,9 @@ const styles = StyleSheet.create({
     height: THUMB,
     borderRadius: THUMB / 2,
     backgroundColor: '#fff',
+  },
+  // A white thumb on light glass, as UISlider's, needs its shadow to stand out.
+  thumbLift: {
+    boxShadow: '0px 0.5px 4px rgba(0, 0, 0, 0.3)',
   },
 });
