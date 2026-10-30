@@ -665,6 +665,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         // BLOCKS this scroll rather than disabling it, and fails — handing the touch over — for a
         // drag past the edge the page already shows, so a zoomed page is still swiped between.
         scrollEnabled={!pinching}
+        // iOS: a drag that starts mostly vertical never moves the pages sideways. Vertical belongs
+        // to the page's way out (the system's swipe-down dismissal, the lift, the collapse), and
+        // the sideways drift a diagonal one carried used to shake the page as it left.
+        directionalLockEnabled
         showsHorizontalScrollIndicator={false}
         initialScrollIndex={initialIndex}
         // THE POINT OF THE WHOLE SWAP: anchor a data change on the ITEM, so a chapter joining at

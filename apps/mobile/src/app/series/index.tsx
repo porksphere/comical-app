@@ -1885,6 +1885,10 @@ function SeriesReaderInstance({
   // and where `progress` stood when the pull engaged (the pull maps relative to it).
   const pullEngagedSV = useSharedValue(false);
   const pullStartSV = useSharedValue(1);
+  // This page is on its way out under a system pop — UIKit's zoom dismissal claims the same
+  // pull-down at the top that the pull above reads, and a release then must not push the reader
+  // onto a page that is leaving. Mirrored from the stack's transition events (see `ClosingNavigation`).
+  const closingSV = useSharedValue(false);
 
   // Arms the deferred series queries (`seriesWanted`, sequence mode) the moment the reveal STARTS
   // moving — not when it commits — so the card the swipe uncovers is already fetching, for the
@@ -2214,7 +2218,7 @@ function SeriesReaderInstance({
     (off, prevOff) => {
       traceThrottled(scrollTraceGate, 60, 'details.scroll', 'offset', { y: off, active: detailsActiveSV.value });
       if (!IS_IOS) return;
-      if (!detailsActiveSV.value) {
+      if (!detailsActiveSV.value || closingSV.value) {
         // A commit's animation owns `progress` now; the leftover bounce must not re-engage.
         pullEngagedSV.set(false);
         return;
@@ -2235,7 +2239,7 @@ function SeriesReaderInstance({
         }
       }
     },
-    [headerSpan, splitDetails, detailsScrollOffset, detailsActiveSV, pullEngagedSV, pullStartSV, progress, scrollTraceGate],
+    [headerSpan, splitDetails, detailsScrollOffset, detailsActiveSV, pullEngagedSV, pullStartSV, closingSV, progress, scrollTraceGate],
   );
   const onDetailsScrollEndDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -2244,10 +2248,10 @@ function SeriesReaderInstance({
       // The UI-thread release watcher (pullReleaseWatch below) usually lands this commit first;
       // the shared-value mirror is already false then — don't restart its animation. This JS
       // path remains the full fallback when those touches weren't observed.
-      if (!detailsActiveSV.get()) return;
+      if (!detailsActiveSV.get() || closingSV.get()) return;
       if (e.nativeEvent.contentOffset.y <= -PULL_COMMIT_PX) setRevealed(0);
     },
-    [detailsActive, detailsActiveSV, setRevealed],
+    [detailsActive, detailsActiveSV, closingSV, setRevealed],
   );
 
   // ── The zoom's shared values ────────────────────────────────────────────────────────────────
@@ -3303,7 +3307,7 @@ function SeriesReaderInstance({
       .enabled(detailsActive && IS_IOS)
       .manualActivation(true)
       .onTouchesUp(() => {
-        if (!detailsActiveSV.value || !pullEngagedSV.value) return;
+        if (!detailsActiveSV.value || !pullEngagedSV.value || closingSV.value) return;
         if (detailsScrollOffset.value <= -PULL_COMMIT_PX) {
           pullEngagedSV.set(false);
           detailsActiveSV.set(false);
@@ -3311,7 +3315,7 @@ function SeriesReaderInstance({
           runOnJS(commitReveal)(0);
         }
       });
-  }, [detailsActive, splitDetails, detailsActiveSV, pullEngagedSV, detailsScrollOffset, progress, commitReveal]);
+  }, [detailsActive, splitDetails, detailsActiveSV, pullEngagedSV, closingSV, detailsScrollOffset, progress, commitReveal]);
   const detailsGestures = useMemo(
     () => Gesture.Race(returnPan, pullReleaseWatch),
     [returnPan, pullReleaseWatch],
@@ -3858,8 +3862,12 @@ function SeriesReaderInstance({
     // rubber-band is moving the content (and headerSheetBgStyle the seam) down 1:1 already, the
     // pull-driven progress must not ALSO move the layer — only the commit animation (progress
     // moving past the finger-tracked value while the bounce returns to 0) takes it off screen.
-    return { transform: [{ translateY: (1 - progress.value) * travel + Math.min(off, 0) }] };
-  }, [height, bandH]);
+    // The split details have no pull-driven progress to cancel: there it held the page still
+    // against its own bounce, a frame behind it, which shook the page under the system's
+    // swipe-down dismissal. They rubber-band like any native page.
+    const cancel = splitDetails ? 0 : Math.min(off, 0);
+    return { transform: [{ translateY: (1 - progress.value) * travel + cancel }] };
+  }, [height, bandH, splitDetails]);
   const headerSheetBgStyle = useAnimatedStyle(
     () => ({ transform: [{ translateY: -Math.min(detailsScrollOffset.value, bandH) }] }),
     [bandH],
@@ -3925,17 +3933,23 @@ function SeriesReaderInstance({
   // instead of after it has landed on the old one.
   const navigation = useNavigation<ClosingNavigation>();
   useEffect(() => {
-    if (split !== 'reader') return;
-    const show = () => paneRef.current?.showProgress();
-    const offStart = navigation.addListener('transitionStart', (e) => {
-      if (e.data.closing) show();
-    });
-    const offRemove = navigation.addListener('beforeRemove', show);
-    return () => {
-      offStart();
-      offRemove();
+    const show = () => {
+      if (split === 'reader') paneRef.current?.showProgress();
     };
-  }, [navigation, split]);
+    // A cancelled swipe brings the page back through the same events, closing: false.
+    const offs = [
+      navigation.addListener('transitionStart', (e) => {
+        closingSV.set(e.data.closing);
+        if (e.data.closing) show();
+      }),
+      navigation.addListener('transitionEnd', (e) => {
+        if (!e.data.closing) closingSV.set(false);
+      }),
+      navigation.addListener('gestureCancel', () => closingSV.set(false)),
+      navigation.addListener('beforeRemove', show),
+    ];
+    return () => offs.forEach((off) => off());
+  }, [navigation, split, closingSV]);
   // (`visiblePage` / `visibleSequenceEntry` are declared at the top of the component — the detail
   // identity derives from them.)
   // Verify this chapter's collected pages against the page list we already fetched — repairs the
@@ -5301,10 +5315,10 @@ function SeriesDetailsHost({
   );
 }
 
-/** The two events a closing reader page listens for — see `showProgress`. */
+/** The stack events a series page follows its own way out by — see `closingSV` and `showProgress`. */
 type ClosingNavigation = {
-  addListener(type: 'transitionStart', cb: (e: { data: { closing: boolean } }) => void): () => void;
-  addListener(type: 'beforeRemove', cb: () => void): () => void;
+  addListener(type: 'transitionStart' | 'transitionEnd', cb: (e: { data: { closing: boolean } }) => void): () => void;
+  addListener(type: 'gestureCancel' | 'beforeRemove', cb: () => void): () => void;
 };
 
 type ReaderPaneHandle = {
