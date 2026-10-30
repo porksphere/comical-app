@@ -1150,6 +1150,7 @@ function chapterMenuRows(
       label: 'Delete download',
       Icon: TrashIcon,
       loading: false,
+      destructive: true,
       testID: testId('series.chapter-menu', 'delete'),
       onPress: () => void deleteDownload(),
     });

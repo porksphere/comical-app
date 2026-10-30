@@ -125,6 +125,7 @@ export function SeriesCardMenuRows({
       label: 'Reset read progress',
       Icon: RetryIcon,
       loading: false,
+      destructive: true,
       testID: 'series.card-menu.reset-progress',
       onPress: resetProgress,
     },

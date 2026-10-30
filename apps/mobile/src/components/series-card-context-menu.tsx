@@ -1125,6 +1125,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       {
         label: 'Remove from Library',
         loading: membershipsLoading,
+        destructive: true,
         onPress: () => act(removeSeries),
         testID: 'series.card-menu.collections.remove',
       },
@@ -1206,6 +1207,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       label: 'Reset read progress',
       Icon: RetryIcon,
       loading: false,
+      destructive: true,
       testID: 'series.card-menu.reset-progress',
       onPress: () => act(resetProgress),
     },
