@@ -1,20 +1,19 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { Stack, useFocusEffect, useIsFocused, useNavigation, useSegments, useTheme as useNavTheme } from 'expo-router';
+import { Stack, useFocusEffect, useIsFocused, useNavigation, useTheme as useNavTheme } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { forwardRef, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
   Platform,
   Pressable,
   StyleSheet,
-  useWindowDimensions,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { Gesture, GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   makeMutable,
   Easing,
@@ -27,82 +26,67 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
-  type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { LinearGradient } from 'expo-linear-gradient';
-
-import { ChevronUpIcon } from '@/components/icons/ui-icons';
-import { BOTTOM_CHROME_HEIGHT, ChapterNavigator, bottomChromeInset, usePushSettled } from '@/components/reader/chapter-navigator';
-import { KeepScreenAwake } from '@/components/reader/keep-awake';
-import { otherFit, type Size } from '@/components/reader/page-geometry';
-import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
-import { buildSpreads, knownPageSize, readsDouble, spreadHalves, spreadRangeLabel } from '@/components/reader/spreads';
-import {
-  createZoomHold,
-  isDesktopPointer,
-  keepZoomLevel,
-  keyZoomSpeed,
-  resetZoom,
-  stepZoom,
-  zoomHoldDirection,
-} from '@/components/reader/desktop-zoom';
+import { usePushSettled } from '@/components/reader/chapter-navigator';
+import { isDesktopPointer, keepZoomLevel } from '@/components/reader/desktop-zoom';
 import { focusSkip } from '@/lib/focus-nav';
-import { isControlTarget, isTypingTarget } from '@/lib/key-hold';
+import { isTypingTarget } from '@/lib/key-hold';
 import { claimReaderScope, isKey, keyActionOf } from '@/lib/keybindings';
 import { TAB_KEY_ACTIONS } from '@/lib/keymap';
-import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderBarShade, ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
 import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
 import { CollectPageControl, CollectPageShortcut } from '@/components/reader/collect-page-control';
 import { SettingsControl } from '@/components/reader/settings-panel';
 import { ReaderNativeToolbar } from '@/components/reader/reader-native-toolbar';
-import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
 import { RetryBlock } from '@/components/retry-block';
-import { SeriesRemovedNotice } from '@/components/series/series-removed';
 import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
-import { peekResolvedAssetSource, seriesGoneReason } from '@/data/api';
+import { seriesGoneReason } from '@/data/api';
 import { warmPageImages } from '@/data/warm-pages';
 import {
   chapterPagesQuery,
   directPagesQuery,
   historyQuery,
   inLibraryQuery,
-  queryKeys,
   seriesDetailQuery,
   seriesListQuery,
 } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import { DIRECT_CHAPTER_ID, type Chapter, type HistoryEntry } from '@/data/types';
+import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useMissingBridge } from '@/hooks/use-bridges';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
-import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
-import { useReaderSettings, setFitOverride, useFitOverride, useSeriesReaderMode, useSpreadShift } from '@/hooks/use-reader-settings';
-import { useWebtoonDetection } from '@/components/reader/use-webtoon-detection';
+import { useReaderSequence, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
+import { useReaderSettings, useFitOverride } from '@/hooks/use-reader-settings';
 import { withoutRouterParams, withZoomSource, ZoomSource } from '@/components/zoom-source';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
-import { sizeClassFor, useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
+import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
-import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
 import { useTabRoute } from '@/lib/focused-tab';
 import { hideNativeTabBar } from '@/lib/native-tab-bar';
 import { LinkAppleZoomTarget, tabHref, useLocalSearchParams, useRouter } from '@/lib/nav';
 import { BACK_TARGET, msUntilClaimable } from '@/lib/nav-guard';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
-
-import { backSwipePan, backSwipeShape, backSwipeStayedHorizontal, resetBackSwipeShape, trackBackSwipeShape, BACK_ACTIVATE_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
+import {
+  backSwipePan,
+  backSwipeShape,
+  backSwipeStayedHorizontal,
+  resetBackSwipeShape,
+  trackBackSwipeShape,
+  BACK_ACTIVATE_DOMINANCE,
+  BackSwipeGestureContext,
+} from '@/lib/back-swipe';
 import { desktopShell } from '@/lib/desktop-shell';
 import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } from '@/lib/gesture-trace';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
-import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
+import { IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
 import { coverSeriesPane, setSeriesPaneTop, useSeriesPaneCovered, useSeriesPaneShowsTop } from '@/lib/series-pane';
 import { usePaneTab, usePaneTabLive } from '@/lib/pane-tab';
@@ -115,11 +99,70 @@ import {
   resolveZoomTarget,
   takeZoomOrigin,
   zoomSourceHolds,
-  type ZoomOrigin,
   type ZoomRect,
 } from '@/lib/series-zoom';
-import SearchScreen from '../search';
-import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body';
+import { truncateTopBarTitle } from '@/components/series/series-body';
+import { DetailsHint } from '@/components/series/details-hint';
+import { SeriesDetailsHost } from '@/components/series/details-host';
+import { LeavingMask } from '@/components/series/leaving-mask';
+import {
+  COLLAPSE_ACTIVATE_PX,
+  DISMISS_COMMIT_FRACTION,
+  LIFT_COMMIT_FRACTION,
+  LIFT_CORNER_RADIUS,
+  NO_ORIGIN_SCALE,
+  PULL_COMMIT_PX,
+  REVEAL_COMMIT_FRACTION,
+  SPRING_BACK,
+  ZOOM_BACKDROP_FADE_CLOSE,
+  ZOOM_BACKDROP_FADE_OPEN,
+  ZOOM_BACK_SWIPE_FOLLOW_GRIP,
+  ZOOM_BACK_SWIPE_FOLLOW_REACH,
+  ZOOM_BOUND_MIN_VISIBLE,
+  ZOOM_BOUND_WAIT_MS,
+  ZOOM_CONTENT_FADE_CLOSE,
+  ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE,
+  ZOOM_CONTENT_FADE_CLOSE_OFFCOVER,
+  ZOOM_CONTENT_FADE_CLOSE_READER,
+  ZOOM_CONTENT_FADE_OPEN,
+  ZOOM_DISMISS_DIR_MIN,
+  ZOOM_DRAG_FOLLOW_GRIP,
+  ZOOM_DRAG_FOLLOW_REACH,
+  ZOOM_DRAG_TRAVEL,
+  ZOOM_IN_SPRING,
+  ZOOM_OUT_SPRING,
+  ZOOM_OUT_SPRING_READER,
+  ZOOM_RADIUS_CURVE_SWAP_AT,
+  ZOOM_RADIUS_ROUNDED_BY_CLOSE,
+  ZOOM_RADIUS_ROUNDED_BY_OPEN,
+  ZOOM_THUMB_BIAS_RESTORE_MS,
+  ZOOM_THUMB_FADE_CLOSE,
+  ZOOM_THUMB_FADE_CLOSE_OFFCOVER,
+  ZOOM_THUMB_FADE_CLOSE_READER,
+  ZOOM_THUMB_FADE_OPEN,
+  ZOOM_THUMB_PAINT_WAIT_MS,
+  computeZoomGeom,
+  pickZoomGeom,
+  zoomBoundShift,
+  zoomCrossAxisDrag,
+  zoomDetach,
+  zoomDragFollow,
+  zoomHoming,
+  zoomMaskBox,
+  zoomThrowSpeed,
+} from '@/components/series/page-motion';
+import { ReaderPane, type ReaderPaneHandle, WARM_BEHIND } from '@/components/series/reader-pane';
+import {
+  NO_SEGMENTS,
+  type ReadTarget,
+  type ReaderSequenceRun,
+  type Segment,
+  type SeriesReaderParams,
+} from '@/components/series/reader-types';
+import { SearchLayer } from '@/components/series/search-layer';
+import { SplitClip } from '@/components/series/split-clip';
+import { type SeriesSplit, handOffSplit, takeSplitHandoff } from '@/components/series/split-handoff';
+import { useNativePush, useViewport } from '@/components/series/viewport';
 
 // THE series page: one screen holding BOTH the series details and the reader, either side one
 // gesture from the other. Everything that opens a series or opens reading opens this — a browse
@@ -160,23 +203,22 @@ import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body
 // are up the reader is in STANDBY — only the single visible strip page is requested.
 
 const CHROME_HIDE_MS = 3000;
+
 /** What Tab can land on in the reader's toolbar. */
 const FOCUSABLE = 'button, a[href], input, [tabindex]:not([tabindex="-1"])';
-/** The reader's own keys, in lib/keymap. Up/Down and a sideways pan are the readers' themselves. */
-const READER_KEYS = ['zoom-step-in', 'zoom-step-out', 'zoom-reset', 'left', 'right'] as const;
-/** The ones that move through what is being read. Only while it is read: not under the details,
- *  and not over a focused control, whose own Space presses it. */
-const STEP_KEYS = ['page-next', 'page-prev', 'chapter-next', 'chapter-prev'] as const;
+
 // CI-speed override: Maestro steps can outlast the auto-hide, and hidden chrome drops out of the
 // accessibility tree.
 const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
+
 /** A mouse this close to the top of the reader brings the toolbar up, the way a video player's
  *  controls come up under the pointer. A little deeper than the toolbar itself, so the reveal starts
  *  on the way into it. */
 const CHROME_HOVER_EDGE = 80;
+
 /** How long a toolbar brought up by hovering outlasts the pointer leaving it. */
 const CHROME_HOVER_HIDE_MS = 500;
-const WARM_BEHIND = 2;
+
 /**
  * The longest a NEW stitched window will wait for the previous chapter's page list before being
  * created without it (see the `run` machinery).
@@ -189,810 +231,27 @@ const WARM_BEHIND = 2;
  * then goes on without it, rather than holding the reader on a request that may never land.
  */
 const PREV_WINDOW_GRACE_MS = 600;
-const IS_WEB = Platform.OS === 'web';
-/** See the SearchLayer's `Stack.Screen`. */
-const SEARCH_LAYER_BAR = { headerShown: false } as const;
 
-/**
- * The box this page is laid out in — the window, unless it is being rendered in the right-hand pane
- * (see `components/series-pane`), where it is the pane's width and the window's height.
- *
- * Every width in here is a layout question ("how wide is the hero", "how far does a layer slide in
- * from"), and in a pane the honest answer is the pane's. Reading the window instead put the details
- * card's two-column threshold, the action column and the push parallax on a number nothing in this
- * subtree is that wide.
- */
-function useViewport(): { width: number; height: number } {
-  const win = useWindowDimensions();
-  const pane = useSeriesPaneWidth();
-  return useMemo(
-    () => (pane === null ? { width: win.width, height: win.height } : { width: pane, height: win.height }),
-    [pane, win.width, win.height],
-  );
-}
+const IS_WEB = Platform.OS === 'web';
+
 const IS_IOS = Platform.OS === 'ios';
-/**
- * iOS, inside a tab: the series page is a real pushed card of the tab's native stack
- * (components/tab-stack, route `in-tab/series/index`) and UIKit owns its transitions — the slide in, the
- * bar morphing out of the tab's leading item, the left-edge pop — so the zoom rig stands down on
- * the depth-0 instance: no entrance (the page lands open in one frame, as on web), no collapse on
- * the way out, no back-swipe or swipe-away of its own, nothing dimmed behind it, and leaving is
- * just the pop. The root `/series` route (deep links, a reader opened from a notification) and
- * Android/web keep the contained transparent modal with the zoom; so does a layer drilled over
- * the root page, since a layer is never a route — inside a tab a related series is another push.
- */
-function useNativePush(): boolean {
-  const segments: readonly string[] = useSegments();
-  return IS_IOS && segments[0] === '(tabs)';
-}
-/**
- * The details and the reader are two pages rather than two sides of one. `details` is
- * `series/index`, whose strip still shows the page you are on and opens `series/read` to read;
- * `reader` is that page, whose Details button goes back to the details that opened it, or brings
- * them up in its place.
- *
- * On iOS, inside a tab, they are two cards of the tab's native stack: UIKit pushes the reader, and
- * the zoom grows it out of the strip (see ZoomSource). The root route there (deep links, a
- * notification) stays the one page. Off iOS `read` is a transparent modal over the details, and
- * the page draws the move itself: the reader opens as the strip's own reader growing to the full
- * window, and shrinks back into it on the way out (see SplitHandoff). A drilled layer is split
- * the same way off iOS; null for a collection's sequence, which shows each entry's details in
- * place, and for a link that names the other side (see SeriesRoute).
- */
-type SeriesSplit = 'details' | 'reader' | null;
-/**
- * Off iOS the move between the two pages of the split is drawn by the page that arrives, from
- * where the page it covers left off. Details hand their strip to the reader page they push: where
- * the strip's bottom edge sits, and how far a drag had already opened the reader. A reader that
- * brings its details up in its place asks them to slide up over it. The page that mounts next
- * takes it once, in a state initializer, like a card's zoom origin (lib/series-zoom).
- */
-type SplitHandoff =
-  | {
-      kind: 'strip';
-      /** The strip's bottom edge in the window, where the reader page's clip starts. */
-      stripBottom: number;
-      /** The details' `progress` at the hand-off, where the reader page continues from. */
-      progress: number;
-      /** Puts the details beneath back at rest, once the reader page covers them. */
-      covered: () => void;
-    }
-  | { kind: 'reveal' };
-const SPLIT_HANDOFF_MAX_AGE_MS = 1500;
-type PendingSplit = { key: string; handoff: SplitHandoff; at: number };
-let pendingSplit: PendingSplit | null = null;
-// Kept after the take for StrictMode's second initializer run, as series-zoom keeps `taken`.
-let takenSplit: PendingSplit | null = null;
-function handOffSplit(key: string, handoff: SplitHandoff) {
-  const entry = { key, handoff, at: Date.now() };
-  pendingSplit = entry;
-  // A reader page that never mounted to take the strip must not strand the details mid-drag.
-  if (handoff.kind === 'strip') {
-    setTimeout(() => {
-      if (pendingSplit !== entry) return;
-      pendingSplit = null;
-      handoff.covered();
-    }, SPLIT_HANDOFF_MAX_AGE_MS);
-  }
-}
-function takeSplitHandoff(key: string, kind: SplitHandoff['kind']): SplitHandoff | null {
-  const now = Date.now();
-  const fits = (e: PendingSplit | null) =>
-    e && e.key === key && e.handoff.kind === kind && now - e.at <= SPLIT_HANDOFF_MAX_AGE_MS ? e : null;
-  const fresh = fits(pendingSplit);
-  if (!fresh) return fits(takenSplit)?.handoff ?? null;
-  pendingSplit = null;
-  takenSplit = fresh;
-  return fresh.handoff;
-}
-/** A bottom safe-area inset above this is a system BAR the pages should stay out of when asked to
- *  respect safe areas — Android's three-button navigation, 48dp and drawn over the content with a
- *  scrim — rather than an INDICATOR the content may run under: the iPhone home indicator is 34pt
- *  and Android gesture navigation under 30dp, both transparent strips over the page that hide
- *  nothing worth insetting for. Only the top ever hides pixels outright — the cutout — and that
- *  is always respected under the setting. */
-const SYSTEM_BAR_MIN_INSET = 40;
+
 // The reader surface's tone. Pure black, like every other page — it mirrored the reference's
 // `#reader-view { background: #0f0f0f }` until the app's own background stopped doing the same
 // (see `Colors.dark.background`), and a reader a shade lighter than the app it opens out of read
 // as a mismatch rather than as its own surface.
 const READER_BACKDROP = '#000000';
-// How far a release must be PROJECTED (see lib/gesture-release — every commit decision on this
-// screen and in the search layer now asks the same question) before it counts as committed.
-//
-// Two values, because there are two kinds of decision here and they deserve different bars:
-//
-//   REVEAL — which of the two sides of this ONE screen you end up on. Both outcomes are cheap and
-//     instantly reversible, so the bar stays low: a quarter of the travel. Combined with a real
-//     momentum term that means a release still moving toward the other side takes you there, which
-//     is what a two-state toggle should do and what the old flick cutoff kept refusing to do — a
-//     quick flick under 900px/s used to be ignored entirely.
-//
-//   DISMISS — throwing the screen away. Half the travel, matching a pushed card, and NOT a matter
-//     of taste: once velocity counts for its real worth instead of being a cliff, a quarter is a
-//     hair-trigger that a barely-moving release would clear. A reveal can afford to be wrong; a
-//     dismissal cannot. With lib/gesture-release's 0.3s horizon this makes the dismissal rule
-//     `translation + velocity * 0.3 > width / 2` — which is, term for term, what react-native-screens
-//     runs for a native iOS stack pop (RNSScreenStack.mm, handleSwipe).
-/** How far the expanded reader's own dismiss drag travels before it takes the gesture. Larger than
- *  the back-swipe's, and allowed to be: this one isn't racing a scroll view for the claim on its
- *  axis, so it can ask for a deliberate drag rather than a decisive one. */
-const COLLAPSE_ACTIVATE_PX = 20;
-const REVEAL_COMMIT_FRACTION = 0.25;
-const DISMISS_COMMIT_FRACTION = 0.5;
-// The split reader's swipe UP (see `liftY`). Less than a dismissal asks, so it doesn't feel heavier
-// than the system's swipe down beside it.
-const LIFT_COMMIT_FRACTION = 0.25;
-const LIFT_CORNER_RADIUS = 40;
-// The reveal pull: how far past the details list's top the rubber-band must be pulled, at
-// release, to expand the reader. Roughly usePullToRefresh's trigger feel.
-const PULL_COMMIT_PX = 80;
-// How far from the LEFT edge a touch may start and still count as the back-swipe (the native
-// stack pop gesture, recreated — a transparent modal doesn't get the real one).
-const SPRING_BACK = { duration: 300, dampingRatio: 1 } as const;
+
 // The visible height of the collapsed reader strip (below the safe area) — a faded-out
 // background-image band forming the TOP OF THE DETAILS PAGE (it scrolls away under the content
 // like any page header, it is not fixed chrome).
 const HEADER_BAND = 200;
+
 // The strip-to-details seam gradient's height. It's tall on purpose: the transition is CENTERED
 // ON THE SERIES TITLE — the title (the page's first element) renders mid-gradient over the fading
 // strip, X-hero style, so the content top inset is derived from this (see headerTopInset).
 const SHEET_FADE_H = 120;
-// The SEARCH layer's slide is UIKit's card push/pop, reproduced — see lib/ios-card-pop.ts for the
-// numbers and, more importantly, the two mistakes they exist to stop being made again.
-// ── The ZOOM entrance (see lib/series-zoom) ──────────────────────────────────────────────────
-// A port of react-native-screen-transitions' `navigation.zoom({ target: 'bound' })` — the
-// transition React Navigation's "building custom screen transitions" post demonstrates. See
-// zoomMaskStyle / zoomPageStyle for the mechanism; these are its tuning constants, kept at the
-// library's own values so the motion matches rather than merely resembles.
-//
-// Springs, from the library's `Specs.Zoom`. Very stiff and very heavily damped — the travel is
-// carried by the mask and the scale, not by bounce.
-// `Specs.DefaultSpec` — heavily overdamped (damping ratio ~4.6), so the open unfolds rather than
-// springs. This is the spec the post configures for the opening direction.
-const ZOOM_IN_SPRING = {
-  stiffness: 1000,
-  damping: 500,
-  mass: 3,
-  overshootClamping: false,
-  // Reanimated's default is 2 — two UNITS PER SECOND, sized for springs on pixel values where
-  // velocities run in the hundreds. These drive a 0..1 progress whose entire travel is one unit,
-  // so the default lets the tail get cut off early. The library carries 0.02 on both specs,
-  // behind a @ts-expect-error for the Reanimated v3 types, which is how it fell out of the port.
-  restSpeedThreshold: 0.02,
-} as const;
-// `Specs.FlingSpec` — and this is the one that was wrong. The post configures the CLOSE direction
-// with FlingSpec, a deliberately loose spring; I had ported `Specs.Zoom.close` instead, which is
-// a different, much stiffer pair (1100/98/3, damping ratio 0.85, ω 19). Its envelope decays with
-// a ~60ms time constant, so a drag released at 70% of the way open finished the remaining travel
-// in about a tenth of a second — which is exactly "completes instantly". FlingSpec's ω is 13 on a
-// third of the mass, giving a ~85ms constant and roughly triple the visible travel time, with a
-// touch of overshoot (the mask clamps at 0, so an undershoot past the card can't show).
-const ZOOM_OUT_SPRING = {
-  damping: 23.5,
-  stiffness: 170,
-  mass: 1,
-  overshootClamping: false,
-  restSpeedThreshold: 0.02,
-} as const;
-/**
- * The READER's dismiss gets a looser one: ω 11.0 rad/s against 13.0, ζ held at 0.91, which is a
- * typical collapse of ~620ms against ~500ms.
- *
- * Why only this gesture. The series back-swipe is a BACK — it retraces a path the user already
- * knows, so it wants to feel prompt, and slowing it reads as the screen being reluctant to leave.
- * The reader's dismiss is throwing a page away, and that wants to carry.
- *
- * SOFTER MEANS LESS STIFFNESS, NOT LESS DAMPING, and the difference is not academic here. The
- * caller clamps the overshoot and the page leaves at `zoom` 0, so an under-damped spring FINISHES
- * EARLY — it reaches zero on its way through rather than easing into it. Dropping ζ from 0.90 to
- * 0.85 made the collapse 4% quicker, i.e. the opposite of the intent. Lowering stiffness with the
- * ratio held is what actually lengthens it, and it changes the ending too: at 0.91 the spring
- * rests onto the card instead of being cut off crossing it.
- */
-const ZOOM_OUT_SPRING_READER = {
-  damping: 20,
-  stiffness: 120,
-  mass: 1,
-  overshootClamping: false,
-  restSpeedThreshold: 0.02,
-} as const;
-// The cross-fade. The ARRIVING PAGE fades in (`ZOOM_FOCUSED_ELEMENT_*`) while a COPY OF THE TAPPED
-// THUMBNAIL, flying the same path, fades out (`ZOOM_UNFOCUSED_ELEMENT_*` — there it is the real
-// source element on the screen underneath, transformed to track; from inside a modal we can't touch
-// that view, so we fly a copy). Close holds the outgoing page longer and brings the thumbnail back
-// earlier, so the picture is already there before the page dissolves off it.
-//
-// The copy's OPEN is far later than the library's [0.08, 0.32]. `zoom` is a spring, so it clears a
-// third of its travel in the first few frames: the copy handed off before the page's own cover had
-// decoded, which is the flash. It now holds past the halfway mark, by which point the real cover
-// underneath it is the same already-cached image.
-//
-// The PAGE's open is NOT delayed with it. The copy only covers the destination's cover box, while
-// the mask grows to the whole screen — hold the page's opacity back and the rest of that window is
-// transparent onto whatever the modal was opened over.
-const ZOOM_CONTENT_FADE_OPEN = [0, 0.28];
-const ZOOM_CONTENT_FADE_CLOSE = [0.13, 0.7];
-/**
- * The page's fade for `cover-offscreen`, where it is the OTHER half of a real cross-fade rather
- * than the thing being uncovered.
- *
- * On `cover` the copy is opaque from 0.7 — before the page starts leaving — so the page's curve is
- * unconstrained: whatever it does, the cover underneath is already carrying the frame. Here nothing
- * is underneath, so the page has to hold the frame until the cover has arrived. Opaque through the
- * first half and gone by 0.08 lets the copy take a long, visible fade (see
- * ZOOM_THUMB_FADE_CLOSE_OFFCOVER) without opening the hole that timing would otherwise cost.
- */
-const ZOOM_CONTENT_FADE_CLOSE_OFFCOVER = [0.08, 0.45];
-/**
- * The page's fade for `no-source`, where nothing takes over from it. `cover` hands the frame to the
- * flying copy at 0.7 and `cover-offscreen` cross-fades with it, so both can be gone well before the
- * collapse ends. Here the copy is not drawn at all — it exists to be a shared element with the card,
- * and the card is what has gone — so the page is the only thing carrying the motion and has to stay
- * until the end of it. Opaque until the last third, then out.
- */
-const ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE = [0, 0.35];
-const ZOOM_THUMB_FADE_OPEN = [0.5, 0.85];
-const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
-// The same fade for a copy that is NOT landing on the real cover — the `cover-offscreen`
-// destination, where the details have scrolled past their own cover. On `cover` this cross-fade is
-// undetectable: the copy is drawn over an identical picture, so it can be as quick as it likes. Here
-// it appears over whatever chapter rows are on screen, and at [0.7, 1] — full strength a quarter of
-// the way through a fling — that read as the cover popping in rather than arriving.
-//
-// It has to CROSS the content's fade, not follow it. The copy draws over the page and neither the
-// mask nor the page carries a background, so what is not covered by one of them is a hole straight
-// through to the grid — composite coverage is `copy + (1 - copy) * content`, and both ends of that
-// have to be paid for by somebody.
-//
-// At [0.13, 0.32] nobody was. The content is down to 0.33 by q = 0.32 and the copy had not started,
-// so the middle of every off-screen dismissal was a window two thirds transparent, which is what it
-// looked like: a gap, not a cross-fade. `cover` never had this because ITS copy is opaque from 0.7,
-// before the content begins to leave — it just cannot be copied here, where an opaque
-// window-filling cover that early would replace the page rather than dissolve into it.
-//
-// The band also has to be WIDE, and that is not the same requirement. `q` does not move at a
-// constant rate: the drag cannot take it below about 0.47 at all (the follow asymptotes first), so
-// this whole cross-fade plays out inside the release spring — which is at its fastest exactly where
-// `q` is high. A band of [0.5, 0.72] is 0.22 of the collapse and 50ms of it, three frames, which
-// reads as the cover simply appearing. [0.15, 0.75] is 172ms of a ~355ms collapse.
-//
-// Spanning that much range would normally cost coverage, since it means fading in against a page
-// that is also fading. It doesn't, because `cover-offscreen` has its own content curve
-// (ZOOM_CONTENT_FADE_CLOSE_OFFCOVER) that holds the page opaque through the first half. Worst
-// coverage 0.90 at q = 0.30, against 0.33 before.
-//
-// The upper bound is what keeps a screen-sized cover off the screen, and that is newer than it
-// looks: the copy is sized to the WINDOW now (see `zoomThumbStyle`), so it is a full 393pt wide at
-// q = 1. Raising 0.75 much further starts showing that.
-const ZOOM_THUMB_FADE_CLOSE_OFFCOVER = [0.15, 0.75];
-/**
- * The READER's dismiss has its own pair, and both start BELOW anything a drag can reach.
- *
- * The copy here is the series cover arriving over a page of the chapter — a different picture, so
- * unlike the back-swipe's `cover` this cross-fade is always visible. On [0.7, 1] it was visible
- * while the finger was still down: a held drag bottoms out around q = 0.75 in practice (the follow
- * asymptotes at `1 - ZOOM_DRAG_FOLLOW_REACH` = 0.47, and a full-screen pull gets nowhere near
- * that), so the cover was fully in with the page still pinned under the thumb, and the drag read
- * as dragging the cover around rather than the page. The fade is part of the LANDING, not the
- * drag, so it is kept entirely inside the release spring: 0.45 is under the floor the follow can
- * ever reach, so a drag, however long, holds the page itself.
- *
- * Sized in milliseconds against ZOOM_OUT_SPRING_READER, as `q` is far from linear in time: from a
- * release at 0.75 the spring crosses [0.45, 0.15] in ~130ms of a ~570ms collapse, then spends the
- * remaining ~380ms settling the last quarter onto the card — a band any narrower is a blink, and
- * one reaching lower is a cover that keeps arriving after the window has already stopped moving.
- *
- * The page's own fade moves down with it, for the coverage reason ZOOM_THUMB_FADE_CLOSE_OFFCOVER
- * spells out: it holds opaque until the copy is half in, so the window never opens onto the grid.
- * Worst coverage 0.93 at q = 0.2.
- */
-const ZOOM_THUMB_FADE_CLOSE_READER = [0.15, 0.45];
-const ZOOM_CONTENT_FADE_CLOSE_READER = [0.05, 0.3];
-// The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
-// carried away, it is the surface being uncovered, so matching the page's curve held it opaque
-// through the first third of the collapse and kept the grid hidden long after the page had
-// visibly left. Starts going immediately and is gone by the halfway point.
-const ZOOM_BACKDROP_FADE_CLOSE = [0.45, 0.98];
-// …and its own OPEN, for the mirrored reason: opening, it is the surface being COVERED, so it
-// arrives WITH the window rather than ahead of it. It shared the content's range ([0, 0.28]) for
-// a while, and on a reader-first zoom from a grid tile that was the whole "flash": the spring
-// passes 0.28 in its first ~100ms, so the full screen behind the still-tile-sized window went
-// opaque black four frames after the tap and the remaining half-second of zoom played against
-// black — a recording of it shows perfect sequencing and zero dropped frames, and it still read
-// as a hard cut. A full-flight ramp dims the grid in step with the window's growth instead,
-// reaching black as the window reaches the edges. (Details-first opens never render this
-// backdrop, which is why the browse zoom always looked right.)
-const ZOOM_BACKDROP_FADE_OPEN = [0, 1];
-// `computeContentTransformGeometry`'s aspect rule: below this difference the source and the
-// destination bound are close enough to shape that the scale COVERS (max), above it the scale
-// CONTAINS (min) and the mask does the cropping instead.
-const ZOOM_ASPECT_EPSILON = 0.1;
-// No source card (deep link, web, a card recycled away before we could measure it): there is no
-// rect to align to, so the page does a small centred zoom instead. Still not a slide.
-const NO_ORIGIN_SCALE = 0.92;
-// How long the entrance will wait for the destination page to report its hero cover's rect before
-// giving up and using the computed fallback target. Invisible while it waits — the page is still
-// at opacity 0, so all that shows is the untouched grid.
-const ZOOM_BOUND_WAIT_MS = 220;
-// How long the source card stays visible waiting for the flying copy to paint — see `blankSource`.
-// A cache-warm decode is a frame or two; this only has to catch a cover that never draws at all,
-// before a collapse could show the card and its copy at once.
-const ZOOM_THUMB_PAINT_WAIT_MS = 400;
-// The DRAG. A dismissal drag doesn't slide the page off — it runs the COLLAPSE under the finger:
-// the same mask, transform and cross-fade the chevron plays, just with its progress on the end of
-// a thumb, finishing from wherever it was let go.
-//
-// Along the drag's axis the page sits at the follow's own resisted distance (`zoomDragFollow`) —
-// there is no second band on top of it. There was: the library's zoom/drag.ts rubber band, ported
-// verbatim, ran AFTER the follow, and two resistances compounded put the page at ~115pt for a
-// 400pt swipe and barely further for anything longer — the "it stops" the back-swipe was known
-// for. Across the axis the loose band below is kept, since nothing else limits that direction.
-// What is NOT ported either is that file's separate shrink (`resolveZoomDragScale`) and release
-// curve (`resolveZoomDismissContentScale`): those exist because there the transition progress
-// stays pinned at 1 for the whole drag, so the shrink has to be a second, parallel scale that a
-// Bézier then hands back to the collapse. Driving the progress directly makes both unnecessary —
-// and here actively wrong, since our collapsed content scale is ~0.91, above that file's 0.5 drag
-// floor, so the two would fight over which way to scale.
-const ZOOM_CROSS_AXIS_DRAG_TRANSLATION_SCALE = 0.35;
-const ZOOM_CROSS_AXIS_DRAG_RESISTANCE = 0.05;
-/**
- * How far the finger would have to travel, as a fraction of screen width, to drive the collapse all
- * the way home. Deliberately MORE than a screen: the drag must never be able to finish the collapse,
- * because whatever it finishes is animation the release no longer has to play.
- *
- * At 0.9 it could and routinely did. Traces of ordinary swipes end around 300–340px on a ~380px
- * screen, which lands `zoom` at 0.06–0.1 — the page is already sitting on the card when the finger
- * lifts, and the release is left animating the last few percent. Capping the throw (see
- * MIN_COLLAPSE_SECONDS) made that remainder take its ~220ms instead of 60ms, which is how it should
- * behave — but stretching a few percent of travel over 220ms is a crawl, and a crawl reads as a
- * stutter just as readily as a cut does. The release needs distance, not just time.
- *
- * 1.25 is chosen against the commit rule rather than by feel. A drag can only commit past
- * DISMISS_COMMIT_FRACTION (half the width), so the two ends of the committed range are:
- *
- *     just committed (0.5W)  → zoom 0.60 left to play
- *     a long swipe   (320px) → zoom 0.32 left to play
- *
- * so every release, however far it was dragged, still has a third of the collapse to show. The cost
- * is that the page shrinks less under the finger — it tracks the drag rather than arriving with it,
- * the way a photo does when you flick it back into a grid. If that reads as too little follow, this
- * is the number to lower, and it trades directly against the length of the release.
- */
-const ZOOM_DRAG_TRAVEL = 1.25;
-// The collapse carries on at the speed the finger was moving — but only up to a point, and this cap
-// is not cosmetic.
-//
-// `zoom` is a 0..1 progress over `span * ZOOM_DRAG_TRAVEL` points, so a release converts to
-// progress-per-second by dividing by ~350 on a phone. A hard flick at 3000px/s is therefore ~8.5
-// units/sec, which crosses the entire collapse in about a tenth of a second — and ZOOM_OUT_SPRING
-// is underdamped (ζ ≈ 0.9), so a velocity that large drives `zoom` straight THROUGH 0 into negative
-// within a frame or two. Every style reads `Math.max(0, zoom.value)`, so the animation is visually
-// finished before it has played: it reads as the page vanishing, not collapsing.
-//
-// This was always latent, but the old release rule only committed a flick above 900px/s, so it was
-// rare. Once the projected release (lib/gesture-release) started committing any decent throw, it
-// became the common case. 3.5 ≈ the rate of a brisk swipe across the full span, so an ordinary
-// release still continues at its own speed and only genuine flicks are reined in.
-const ZOOM_THROW_MAX = 3.5;
-/**
- * The floor under a released collapse: however hard it was thrown, it may not cross what REMAINS in
- * less than this. Which is the part the flat cap above missed.
- *
- * A rate cap alone says nothing about duration, because duration is distance over rate and the
- * distance here is whatever the drag left behind — usually very little, since a swipe across most of
- * the screen has already spent most of the collapse. A device trace made that concrete: released at
- * `zoom=0.2` with `vx=1327`, the handed speed clamps to 3.5 units/sec, and 0.2 ÷ 3.5 is 57ms. The
- * recording says 64ms. Four frames, which is not an animation; the same gesture released gently
- * (`vx=176`) took 272ms and looked right.
- *
- * That is why this only ever happened on a fast release, and why it was fine before the projected
- * release landed — the collapse used to spring from rest and always took its ~300ms. Handing the
- * throw over was right; letting it consume the whole animation was not.
- */
-const MIN_COLLAPSE_SECONDS = 0.22;
-/**
- * `remaining` is how much of the collapse is left at release (i.e. `zoom`), which is what turns the
- * cap from a rate into a duration.
- */
-function zoomThrowSpeed(pxPerSecond: number, span: number, remaining: number): number {
-  'worklet';
-  const handed = Math.abs(pxPerSecond) / Math.max(1, span * ZOOM_DRAG_TRAVEL);
-  const floorSpeed = Math.max(0, remaining) / MIN_COLLAPSE_SECONDS;
-  return Math.min(ZOOM_THROW_MAX, handed, floorSpeed);
-}
-// Back-swipe activation lives in lib/back-swipe.ts — shared with the SEARCH layer below, because
-// the one thing that must never differ between two surfaces both pretending to have a back-swipe
-// is what counts as one.
 
-/**
- * How far the DESTINATION BOUND has travelled since it was measured, because the details SCROLLED
- * under it.
- *
- * The bound is the hero cover's rect, latched once on its first layout (see `onHeroCoverRect`) —
- * window coordinates taken while the list is at the top, which is where every entrance starts. A
- * collapse does not have to start there. Scroll the details down and the cover goes up with the
- * content, while the latched rect stays where it was: the page then converged on a box that no
- * longer holds the picture, and the flying copy — laid out on that same box — faded in over
- * whatever chapter rows had scrolled into its place. The transition came out of a fixed spot near
- * the top of the screen instead of out of the cover.
- *
- * So the bound follows the scroll. Read on the UI thread rather than snapshotted into state at
- * collapse time, for the same reason the rest of this transition is: a JS round trip lands a frame
- * or two late, and a destination that moves after the collapse has started is a visible jump.
- * Continuous either way — the offset is already settled before anything is dragged, and while the
- * page sits open the shift shows nowhere (at `zoom` 1 the mask is the screen, the transform is
- * identity and the copy is transparent).
- *
- * The bound is allowed to go PARTLY off screen, and must be: clamping it to the edge would just
- * move the fixed spot up. It is not allowed to go all the way — a bound with nothing left on screen
- * is not a shared element any more, and a collapse that finds one switches to `cover-offscreen`
- * rather than flying onto a box nobody can see. That threshold is where this function stops being
- * the answer, not a case it handles.
- *
- * ONLY the `cover` destination shifts, and only it can: the others are defined relative to the
- * screen, not to a box on the page. Which one is in play already bounds this — a collapse aims at
- * `cover` only while the cover is at least half on screen (see `ZOOM_BOUND_MIN_VISIBLE`), so the
- * shift is a few hundred points at most before it starts. `maxShift` survives as the backstop for
- * the one thing that bound doesn't cover: a fling still decelerating UNDER a collapse, which keeps
- * feeding offsets after the choice was latched. Past about a screen height the copy would spend the
- * visible part of the collapse outside the screen and cross the edge at a speed nothing can read —
- * a picture that never arrives at all.
- *
- * A NEGATIVE offset (the iOS rubber-band, pulling the content down) is tracked as-is: the cover
- * really has moved down, and the bound belongs on it.
- */
-function zoomBoundShift(geom: { kind: ZoomDestKind; maxShift: number } | null, offset: number): number {
-  'worklet';
-  if (!geom || geom.kind !== 'cover') return 0;
-  return Math.min(offset, geom.maxShift);
-}
-
-/** How much of the details' hero cover has to be left on screen for it to still be the thing a
- *  collapse lands on. Half — see `ZoomDest`, and `zoomBoundOnScreen` for when it is decided. */
-const ZOOM_BOUND_MIN_VISIBLE = 0.5;
-
-/**
- * Which DESTINATION a collapse is aimed at. The page keeps a geometry alive for both of the ones
- * currently reachable, so the choice can be made on the UI thread at the instant a collapse starts
- * (see `zoomBoundOnScreen`) — deriving the loser lazily would mean deriving it mid-flight.
- *
- *  · `cover` — the details' hero cover, where it actually is. The real shared element: the flying
- *    copy lands on the same picture the page is already showing, which is why its cross-fade there
- *    is invisible. This is the one that follows the details' scroll (`zoomBoundShift`).
- *  · `cover-offscreen` — the cover's SHAPE, centred on the page, once the details have scrolled
- *    past it. Nothing is being shared any more, so the destination stops chasing a box that has
- *    left the screen; keeping the cover's SIZE is what keeps the collapse identical in every other
- *    respect, because the size is the whole of what `s` is derived from. The copy therefore still
- *    shrinks out of a cover-sized picture rather than ballooning to a full-width one.
- *  · `page` — the page as a whole: full width at the source thumbnail's aspect, centred. For the
- *    expanded reader (the details are slid away, so their cover rect corresponds to nothing on
- *    screen, and the copy IS the page's own image) and for an instance with no measured bound.
- *  · `no-source` — the SOURCE CARD has gone while this page was open (the surface says so; see
- *    `zoomSourceHolds`). Every other destination answers "what does the copy fly out of"; this one
- *    answers the question none of them can, which is where it flies TO when the answer is nowhere.
- *    There is no card left, so the collapse converges on the SCREEN's centre at the card's own size
- *    and the page fades out over it — see `zoomGeomNoSource`, which substitutes the HERO rather
- *    than the destination, because the hero is the half that went stale.
- */
-type ZoomDest = { kind: 'cover' | 'cover-offscreen'; bound: ZoomRect } | { kind: 'page' } | { kind: 'no-source' };
-type ZoomDestKind = ZoomDest['kind'];
-
-/**
- * The zoom's geometry for one choice of destination. `computeContentTransformGeometry` verbatim —
- * scale about the SCREEN centre, then translate so the destination's anchor meets the source's.
- * `scaleMode: 'uniform'` with its aspect rule: near-equal aspects take max(sx, sy) (cover),
- * genuinely different ones take min(sx, sy) (contain) and let the mask do the cropping. Ours differ
- * (a 2:3 cover into a wide band), so it contains — which is exactly why the mask is not optional.
- */
-function computeZoomGeom(hero: ZoomOrigin, dest: ZoomDest, width: number, height: number) {
-  // `target: 'bound'` — align the two rects centre to centre — over whichever rect the destination
-  // resolves to. `page` has none to align to, so it falls back to `getZoomContentTarget`'s computed
-  // target: a virtual destination that keeps ONE edge attached to the source, so a wide source
-  // fills the destination's width and follows its top edge while a narrow one fills the height
-  // and follows the leading edge. Anchors follow `getZoomContentAnchor` accordingly.
-  const sourceAspect = hero.width / hero.height;
-  const screenAspect = width / height;
-  const fitToWidth = sourceAspect >= screenAspect;
-  const fitW = fitToWidth ? width : sourceAspect * height;
-  const fitH = fitToWidth ? (hero.height / hero.width) * width : height;
-  // Everything but `cover` is CENTRED on the page. `getZoomContentTarget` pins its computed target
-  // to an edge instead — top for a wide source, leading for a narrow one — which suits a gallery,
-  // where the destination really does start at the top of its screen. Here neither of these has any
-  // counterpart in the layout at all: they stand in for the page, so anything but centred reads as
-  // the copy sitting off to one side of the thing it is supposed to be standing in for. That
-  // applies to `cover-offscreen` exactly as it does to `page` — the cover it is shaped like is not
-  // on screen, so there is no position it could honour, only a size.
-  const sized = dest.kind === 'page' || dest.kind === 'no-source';
-  const endW = sized ? fitW : dest.bound.width;
-  const endH = sized ? fitH : dest.bound.height;
-  const end: ZoomRect =
-    dest.kind === 'cover'
-      ? dest.bound
-      : { x: (width - endW) / 2, y: (height - endH) / 2, width: endW, height: endH };
-
-  const sx = hero.width / end.width;
-  const sy = hero.height / end.height;
-  const aspectDifference = Math.abs(sourceAspect - end.width / end.height);
-  const s = aspectDifference < ZOOM_ASPECT_EPSILON ? Math.max(sx, sy) : Math.min(sx, sy);
-
-  // getAnchorPoint, for the three anchors this transition can pick.
-  // Centre-to-centre either way now — the measured bound always used it, and the computed one
-  // is centred by construction above.
-  const anchorOf = (b: ZoomRect) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
-  const startAnchor = anchorOf(hero);
-  const endAnchor = anchorOf(end);
-  const screenCenterX = width / 2;
-  const screenCenterY = height / 2;
-  // Where to lay the FLYING COPY out. Not `end` — `end` only lands on the card when the two
-  // rects share an aspect, because the page carries a single uniform scale and a scalar cannot
-  // reshape a rectangle. The copy's job is to be indistinguishable from the card at q = 0 (the
-  // last frames of a collapse, where it is the only thing still opaque), so it is sized to
-  // become the source rect exactly: `hero.size / s`, centred on `end`. When the aspects agree
-  // this IS `end` — s is then hero.width/end.width and the two expressions coincide — so the
-  // common case is untouched and the mismatched one stops being a mismatch.
-  //
-  // The trade lands on the other end: with genuinely different aspects the copy no longer
-  // matches the details hero at q = 1. That end is free — the copy is fully transparent by 0.32
-  // opening and doesn't start showing until 0.7 closing (see the fade ranges).
-  const thumbW = hero.width / s;
-  const thumbH = hero.height / s;
-  return {
-    s,
-    end,
-    thumb: {
-      x: endAnchor.x - thumbW / 2,
-      y: endAnchor.y - thumbH / 2,
-      width: thumbW,
-      height: thumbH,
-    },
-    tx: startAnchor.x - (screenCenterX + (endAnchor.x - screenCenterX) * s),
-    ty: startAnchor.y - (screenCenterY + (endAnchor.y - screenCenterY) * s),
-    // Read by `zoomBoundShift` (only `cover` is in the details' scrolling coordinates, so only it
-    // has a scroll to follow) and by the copy's close fade, which is invisible on `cover` and a
-    // picture appearing from nowhere on `cover-offscreen`. See ZOOM_THUMB_FADE_CLOSE_OFFCOVER.
-    kind: dest.kind,
-    maxShift: height,
-  };
-}
-
-type ZoomGeom = ReturnType<typeof computeZoomGeom>;
-
-/**
- * Which of a page's live geometries a frame belongs to. Read by every animated style that has to
- * know, so the three of them can't answer it differently — and so the latch (`zoomBoundOnScreen`)
- * has one reader rather than one per style.
- *
- * `cover` and `cover-offscreen` exist together or not at all, so the `page` fallback covers exactly
- * the cases where neither does: the expanded reader, a deep link, web. `no-source` needs only a
- * hero, so it exists wherever any of them do.
- */
-function pickZoomGeom(
-  sourceAlive: boolean,
-  onCover: boolean,
-  noSource: ZoomGeom | null,
-  cover: ZoomGeom | null,
-  offCover: ZoomGeom | null,
-  page: ZoomGeom | null,
-): ZoomGeom | null {
-  'worklet';
-  // A dead source outranks the cover question entirely: the other three all END on the card, and
-  // there is no card. Latched at rest like `onCover`, for the same reason — see `zoomSourceAlive`.
-  if (!sourceAlive) return noSource ?? page;
-  return (onCover ? cover : offCover) ?? page;
-}
-
-/**
- * WHOSE COORDINATES the collapse is in right now: the swipe's, or the source card's.
- *
- * A dismissal drag runs the collapse under the finger, and the collapse's whole job is to converge
- * on the card — so the page used to start sliding toward the card the moment you began dragging.
- * Drag horizontally on a page opened from a card near the bottom and it sank as it went, chasing a
- * destination rather than following the thumb. The position was the SOURCE's throughout; only its
- * size was the gesture's.
- *
- * So the two are separated. While the finger is down the page is centred on the screen and offset
- * purely by the drag — it shrinks where you are holding it. The convergence is the RELEASE's, and it
- * arrives over the rest of the collapse.
- *
- * DERIVED FROM `q`, NOT ANIMATED. This is the important part, and the reason an earlier attempt at
- * "follow the swipe" had to be reverted: that one gave the follow its own spring alongside the
- * collapse's, and two springs racing means the page is wherever the loser left it when the winner
- * finishes — which is when the page leaves and the source card un-blanks. Here the homing is a pure
- * function of the collapse's own progress, so it reaches exactly 1 on the frame `q` reaches 0. The
- * page is on the card when it lands because it cannot be anywhere else.
- *
- * `homeAt` carries the state in one number:
- *   < 0   a finger owns the page (or is springing it back) — position is the swipe's.
- *   = 0   nothing was dragged: the entrance, the chevron, hardware back. The classic collapse.
- *   > 0   the `q` a committed drag was released at; the ramp runs from there to 0.
- */
-function zoomHoming(homeAt: number, q: number): number {
-  'worklet';
-  if (homeAt < 0) return 0;
-  if (homeAt === 0) return 1;
-  return Math.min(1, Math.max(0, (homeAt - q) / homeAt));
-}
-
-/**
- * The mask's box on its way to the card — read by all three of the zoom's animated styles so they
- * cannot disagree about where the window is. The page compensates for this origin, and the flying
- * copy measures its entry against it.
- *
- * Deliberately knows nothing about the drag or the homing. Everything inside the window is placed
- * RELATIVE to this box, so the pair can be moved anywhere as one (see `zoomDetach`) without any of
- * those relationships changing — which is the property that keeps the cover framed.
- */
-function zoomMaskBox(
-  hero: ZoomOrigin,
-  shiftX: number,
-  shiftY: number,
-  q: number,
-  width: number,
-  height: number,
-): { left: number; top: number; width: number; height: number } {
-  'worklet';
-  return {
-    left: (hero.x + shiftX) * (1 - q),
-    top: (hero.y + shiftY) * (1 - q),
-    width: hero.width + (width - hero.width) * q,
-    height: hero.height + (height - hero.height) * q,
-  };
-}
-
-/**
- * How far to carry the whole assembly off its converging path, so that a page under a finger sits
- * where the swipe put it rather than where the card is.
- *
- * Applied to the MASK ALONE, and that is the entire trick. The page is the mask's child and
- * compensates for the mask's own origin, so moving the mask moves everything inside it by the same
- * amount: the window, the page, the flying copy and the cover all travel together and nothing about
- * their relative geometry changes. The first attempt at this instead scaled the page's TARGET by
- * `home`, which does move the page — and moves it out from under its own window, so the cover
- * drifted toward an edge as the two shrank at different anchors and got clipped.
- *
- * The offset is whatever puts the window back in the middle of the screen, so at `home` 0 the
- * assembly shrinks about the screen centre wherever the card happens to live. At q = 1 it is zero
- * on its own — a full-screen window is already centred — so a page at rest cannot tell the two
- * coordinate systems apart and nothing jumps when a drag takes it over.
- */
-function zoomDetach(start: number, size: number, home: number, span: number): number {
-  'worklet';
-  return (span / 2 - start - size / 2) * (1 - home);
-}
-
-/**
- * The follow's two knobs, and they are independent on purpose.
- *
- * `REACH` is where it asymptotes, as a fraction of the drag's own travel — how far the page can
- * ever get, and (since the resisted distance is what drives `zoom`) how small the window can ever
- * get. `GRIP` is its rate at the FIRST pixel — how much of your thumb it takes before it has
- * travelled anywhere at all.
- *
- * One parameter could not express what this needs. Tie the rate at 0 to the asymptote (grip = 1,
- * which every earlier shape did) and the whole change from free to stuck has to happen inside the
- * first `reach` points, because that is the only length in the formula. Lowering the asymptote to
- * bring the spring on sooner only compresses it further. Splitting them lets the spring be in
- * effect immediately AND take the whole drag to arrive: at 0.6/1.9 the rate goes 0.60 → 0.35 → 0.18
- * across the first 350pt, where 1.0/1.6 went 1.00 → 0.38 → 0.15 over the same distance and did
- * three quarters of that in the first third of it. Worst stiffening over any 20pt: 0.05, against
- * 0.16.
- *
- * The shrink is not clamped anywhere: `zoom` is `1 - held/travel`, so the SAME resistance that
- * slows the page down slows the window down, and the two cannot disagree about when to stop. That
- * also makes "a drag can never finish the collapse" arithmetic rather than a guard — `held` is
- * asymptotic to `REACH · travel`, so `zoom > 1 - REACH` for any drag, however long. 0.53 is the
- * reach the old explicit floor implied on a grid card, kept to the point so the follow feels
- * exactly as it did; only what limits the shrink has changed.
- */
-const ZOOM_DRAG_FOLLOW_REACH = 0.53;
-const ZOOM_DRAG_FOLLOW_GRIP = 0.6;
-/**
- * The series BACK-SWIPE's own pair — longer and livelier than the reader's. The reader measures a
- * dismiss over the screen's height and has a whole page of chapter art under the drag; the
- * back-swipe measures over the width, and a swipe here is a page being put back, which the hand
- * expects to go WITH it. At 0.53/0.6 — and with the second band that used to run on top (see the
- * note above ZOOM_CROSS_AXIS_DRAG_TRANSLATION_SCALE) — a 400pt swipe moved the page 116pt and a
- * 600pt one 133pt: it ran out of road at about a third of the screen and read as stuck. At
- * 0.6/0.8, riding the follow alone, those are 154pt and 183pt, a first pixel that moves
- * 0.8 of the thumb instead of 0.6, and a tail that is still giving at the far edge. The floor is
- * `zoom` 0.4, so a drag still can never finish the collapse, and the furthest an actual swipe
- * carries it (~0.63 at 600pt) keeps the page's own fade on the `cover` path above 0.87.
- */
-const ZOOM_BACK_SWIPE_FOLLOW_REACH = 0.6;
-const ZOOM_BACK_SWIPE_FOLLOW_GRIP = 0.8;
-/**
- * The `zoom` by which the window's corners are FULLY rounded on the way out — reached in the first
- * TWELFTH of the collapse, not carried linearly across all of it.
- *
- * Corner radius is the earliest signal that a page has become a card, and it arrives before any
- * other: at the top of a dismissal the window is still nearly full-screen, so size and position
- * have barely moved and the rounding is the only thing saying what is about to happen. Spread
- * linearly over `1 - q` it never got the chance — since the spring took over the shrink a drag only
- * carries `zoom` to about 0.87, which on the old curve is 13% of the corner, i.e. square.
- *
- * The threshold is set against FINGER TRAVEL, not against `q`, because `q` means different
- * distances on the two surfaces this serves: the reader's paged dismiss measures over the height,
- * so the same swipe moves it half as far as the series back-swipe does. At 0.92 the corner is full
- * after 78pt of a back-swipe and 168pt of a paged dismiss; at 0.84 it took 188 and 407, which on
- * the reader is most of a swipe.
- *
- * ONE curve, not one per direction, and that is forced rather than chosen. `settle` (a cancelled
- * swipe) clears `zoomClosing` on the frame the finger lifts, so a curve that keyed off it would
- * jump the radius from ~9.5pt to ~1.5pt in that single frame — the pop would land on exactly the
- * gesture that is supposed to look like nothing happened. Opening just inherits it: the window
- * The two directions have their OWN thresholds, which is what lets the close be this aggressive.
- * Opening, the corner is not a signal of anything — you already touched the card — so squaring off
- * has to stay a tail rather than an event, and a slice as thin as the close's would be one.
- *
- * The split is only safe because `zoomRadiusClosing` is not `zoomClosing`: it flips back when the
- * page has actually reached the top, not on the frame a cancelled swipe releases. Both curves run
- * to 0 at `q` = 1, so the flip lands where they have all but converged — 0.16pt apart at the
- * threshold the reaction uses. Keying this off `zoomClosing`, which `settle` clears immediately,
- * would swap them mid-springback instead: 12pt to 3.8pt in one frame for a swipe released at 0.95,
- * on the one gesture meant to look like nothing happened.
- */
-const ZOOM_RADIUS_ROUNDED_BY_CLOSE = 0.97;
-const ZOOM_RADIUS_ROUNDED_BY_OPEN = 0.84;
-/** Where the two curves swap. Late enough that they have converged to 0.16pt of each other, and
- *  reachable because a settled spring writes its target exactly. */
-const ZOOM_RADIUS_CURVE_SWAP_AT = 0.9995;
-/** How far the reader's dismiss must travel before it HAS a direction to be judged against. Small
- *  enough that it is latched almost immediately, large enough that the first frames of a drag —
- *  which are noise, and on web arrive with translation 0 — cannot set it. */
-const ZOOM_DISMISS_DIR_MIN = 6;
-/** How long the flying copy takes to come back after a reversed drag commits. It is a real fade,
- *  not a reset, because a release mid-reversal has the copy at zero opacity and the page still has
- *  to land on the card with a picture on it. */
-const ZOOM_THUMB_BIAS_RESTORE_MS = 160;
-
-/**
- * The follow: a spring, not a leash. Resistance is there from the first pixel and grows from there,
- * so the page is asymptotic to `reach` with no point where it stops behaving one way and starts
- * behaving another.
- *
- * Three shapes were wrong before this one, each at a different part of the drag:
- *
- *  · Free to the shrink floor, then rubber-banded. C¹ at the knee and still read as binary —
- *    continuity of SPEED is not continuity of FEEL. All the curvature sat in the ~20pt after it.
- *  · One exponential over the whole drag. Gradual, then FLATLINED: `1 - e^-t` is within a percent
- *    of its limit by three time constants, so past ~450pt the page simply stopped, and a page that
- *    stops dead is a wall wherever you put it.
- *  · `A·t/(A + t)` — iOS's scroll-boundary band, which fixed the tail (its rate decays as 1/t², so
- *    there is always something left to give) but still left the drag feeling like it all happened
- *    at once, because a rate starting at exactly 1 has the whole of its range to fall through.
- *
- * Same band, with the initial rate freed from the asymptote: `reach·d / (reach/grip + d)`, whose
- * rate is `grip · (S/(S + d))²` for `S = reach/grip`. `grip` sets where that starts and `S` how
- * long it takes to get anywhere, and neither moves the other.
- *
- * `reach` is anchored to the floor's own travel (see the callers), so the page runs out of room in
- * the same stretch the size does. `grip < 1` also guarantees it can never outrun the finger, since
- * `S > reach` makes `held(d) < d` everywhere.
- */
-function zoomDragFollow(distance: number, reach: number, grip: number): number {
-  'worklet';
-  if (reach <= 0 || grip <= 0) return distance;
-  const d = Math.abs(distance);
-  const held = (reach * d) / (reach / grip + d);
-  return distance < 0 ? -held : held;
-}
-
-/** `resolveZoomCrossAxisDragTranslation` — the off-axis, which follows loosely and never leads. */
-function zoomCrossAxisDrag(translation: number, dimension: number): number {
-  'worklet';
-  const direction = translation < 0 ? -1 : 1;
-  const baseDistance = Math.max(1, dimension);
-  const normalized = Math.abs(translation) / baseDistance;
-  const resisted =
-    (baseDistance * (1 - Math.exp(-ZOOM_CROSS_AXIS_DRAG_RESISTANCE * normalized))) /
-    ZOOM_CROSS_AXIS_DRAG_RESISTANCE;
-  return direction * Math.min(baseDistance, resisted * ZOOM_CROSS_AXIS_DRAG_TRANSLATION_SCALE);
-}
-
-// Wall-clock backstop for a collapse whose animation callback never arrives (see closeLayer).
-// Generous: the close spring is stiff but a spring has no fixed duration to key off.
-const ZOOM_OUT_BACKSTOP_MS = 900;
 /**
  * How close to the card counts as arrived, for the leave reaction. ZERO — the collapse must be at
  * REST, not merely near.
@@ -1017,101 +276,21 @@ const LEAVE_AT_ZOOM = 0;
 /** The two ends of "a collapse is under way". Not symmetric: `ARMED` sits nearer the top so a drag
  *  released short has to actually return home before it may probe again. */
 const COLLAPSE_STARTED = 0.995;
+
 const COLLAPSE_ARMED = 0.999;
+
 /** Instances that have already left. See `leaveOnce` for why this lives out here. */
 const LEFT = new WeakSet<object>();
+
 /** An instance's pop waiting out the back guard's window — see `routeBackHeld`. */
 const HELD_POPS = new WeakMap<object, ReturnType<typeof setTimeout>>();
+
 // Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
 const TITLE_MID = 20;
+
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
 // travel — weighted toward the START of a reveal and, symmetrically, the END of a hide.
 const FADE_WINDOW = 0.4;
-
-/**
- * How still the read position has to be before the pages around it are warmed.
- *
- * Every page the reader passes reports itself — a scrub ticks about every 45ms, and a swipe through
- * a gallery reports each page as it goes by — and warming at every one of those meant a sweep from
- * page 1 to 47 enqueued a warm window per page: forty-odd windows for a journey through pages
- * nobody was going to look at. On a direct series, whose page URLs are lazy resolve-routes answered
- * one at a time by the bridge, that is minutes of round-trips bought on speculation.
- *
- * The ordering problem this used to cause is fixed properly in the resolve queue (data/api.ts): a
- * warm is `background` now and can no longer be served ahead of a page that has mounted. This is
- * the other half — not asking in the first place. Only where the reader COMES TO REST is warmed,
- * which is the only place a guess about what to read next is worth anything. Short enough that a
- * scrub that pauses to look still warms where it paused; long enough that crossing a gallery warms
- * once, at the far end.
- */
-const WARM_IDLE_MS = 220;
-
-/** How long the initial-position POSTER (see `parked` in ReaderPane) waits for the list's first
- *  position report before standing down on its own. Generous — the report normally lands within
- *  a few frames; this only exists so a wedged list can't keep a static image over a live pager. */
-const POSTER_BACKSTOP_MS = 1200;
-
-/** What the reader pane is pointed at: a chapter (chaptered series) or the series itself (direct).
- *  `start: 'last'` = land on the final page (arriving from the NEXT chapter's "previous").
- *  `picked`: chosen from the details card (a page thumbnail, a chapter row), which is a read in
- *  itself — see ReaderPane's `picked`. */
-type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'last'; picked?: boolean };
-
-/**
- * A cross-series READER SEQUENCE — what the pager runs over when the reader was opened from a
- * collection rather than a chapter (see use-reader-sequence.ts). ONE instance serves the whole
- * album, and the pager never remounts: the sequence is its page list VERBATIM, so a series cross
- * is literally a page turn — the exact discipline that makes a stitched chapter crossing
- * seamless, applied one level up. What a cross changes is only what a stitched crossing's relabel
- * changes: the chrome and the details layer RE-POINT to the visible entry's series (query keys
- * and the details host's key — see `detailBridgeId`/`detailSeriesId` in the instance), while
- * everything mounted keeps its state. No chapter target, no stitching, no adjacency, no progress
- * recording — the sequence is the run.
- */
-type ReaderSequenceRun = {
-  /** Resolved page URIs, one per entry ('' = still resolving → the page's own skeleton). */
-  uris: string[];
-  entries: ReaderSequenceEntry[];
-  /** The entry the album OPENED on — seeds the pager once; position then lives in the pager. */
-  index: number;
-};
-
-/** One chapter's worth of pages inside the native pager's stitched flat list — what makes a
- *  boundary swipe an ordinary page turn instead of a bounce-and-remount. */
-type Segment = { id: string; name?: string; pages: string[] };
-
-/** "No window (yet)", as ONE array rather than a fresh `[]` per render: the run merge feeds an
- *  adjust-state-on-render `setRun`, which compares by identity — a new empty array every render is
- *  an infinite one. */
-const NO_SEGMENTS: Segment[] = [];
-
-/** Same params a series card forwards to `/series` (see series-card.tsx buildHref) — including
- *  the percent-encoded bridge name / cover, decoded the same way series.tsx does. */
-type SeriesReaderParams = {
-  id?: string;
-  title?: string;
-  bridge?: string;
-  bridgeId?: string;
-  cover?: string;
-  /** '1' for a direct (chapterless) series — its pages ARE the series. */
-  direct?: string;
-  /** '1' opens straight into the READER rather than the details — how History and Activity enter,
-   *  since a row there is a "carry on reading" action. A swipe up brings the details in, exactly
-   *  as it does after expanding from a browse open. */
-  reader?: string;
-  /** Reader-first entries seed the read position directly instead of resolving it from history:
-   *  the row already knows where it left off, and this is what lets the pages request go out on
-   *  the first commit (see the fetch ordering below). */
-  chapterId?: string;
-  chapterName?: string;
-  start?: string;
-  /** '1' when the seeded spot was PICKED (a page in a card's preview rail, a tap in a sequence's
-   *  details, a new chapter in Activity) rather than resumed — see ReadTarget's `picked`. */
-  picked?: string;
-  /** 'details' on a split reader the details page pushed (SeriesSplit): its Details button goes
-   *  back to them. */
-  from?: string;
-};
 
 /**
  * One series instance. The SCREEN (`SeriesReaderScreen` below) renders a base instance for the
@@ -4633,96 +3812,6 @@ function SeriesReaderInstance({
 }
 
 /**
- * The reader page of the split, cut off at the strip it grows out of and shrinks back into (see
- * SplitHandoff): the bottom edge travels with `progress`, everything above it stays where it is.
- * Anything else renders as it is.
- */
-function SplitClip({
-  travel,
-  progress,
-  children,
-}: {
-  /** From the window's bottom edge up to the strip's. */
-  travel: number | null;
-  progress: SharedValue<number>;
-  children: ReactNode;
-}) {
-  if (travel === null) return children;
-  return (
-    <SplitClipFrame travel={travel} progress={progress}>
-      {children}
-    </SplitClipFrame>
-  );
-}
-
-function SplitClipFrame({
-  travel,
-  progress,
-  children,
-}: {
-  travel: number;
-  progress: SharedValue<number>;
-  children: ReactNode;
-}) {
-  const frameStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -travel * progress.value }] }), [travel]);
-  const pageStyle = useAnimatedStyle(() => ({ transform: [{ translateY: travel * progress.value }] }), [travel]);
-  return (
-    <Animated.View style={[styles.splitClip, frameStyle]}>
-      <Animated.View style={[StyleSheet.absoluteFill, pageStyle]}>{children}</Animated.View>
-    </Animated.View>
-  );
-}
-
-/**
- * The zoom mask, plus the one thing that has to know an exit started: it stops taking touches, so a
- * page on its way out can't be tapped, and a half-faded one can't eat a tap meant for the grid
- * behind it.
- *
- * Its OWN component purely so that knowledge costs its own render and not the whole page's. The
- * flag used to be state in SeriesReaderInstance, flipped from inside the commit — which re-rendered
- * everything on the frame the collapse started. Here the reaction runs on the
- * UI thread, the setState lands in a component whose subtree is `children` — stable elements the
- * parent already built — so React re-renders this wrapper and reconciles nothing beneath it.
- */
-function LeavingMask({
-  committing,
-  leave,
-  style,
-  children,
-}: {
-  committing: SharedValue<boolean>;
-  /** The instance's `leaveOnce`, for the backstop below. */
-  leave: () => void;
-  /** Whatever `Animated.View` takes — this forwards the zoom's animated mask style untouched. */
-  style: ComponentProps<typeof Animated.View>['style'];
-  children: ReactNode;
-}) {
-  const [leaving, setLeaving] = useState(false);
-  // `edgeCommitting` is the one-way "this instance is exiting" latch every exit sets — the chevron,
-  // hardware back, the reader's dismiss fling and the details back-swipe alike — so watching it here
-  // covers all four without any of them having to call anything.
-  useAnimatedReaction(
-    () => committing.value,
-    (exiting, was) => {
-      if (exiting && !was) runOnJS(setLeaving)(true);
-    },
-  );
-  // The wall-clock backstop: a collapse that never arrives still leaves. Lives here rather than in
-  // the instance because arming it there meant either a re-render (the stutter) or a ref the pan's
-  // worklets could reach, which this file rules out for good reasons elsewhere.
-  useEffect(() => {
-    if (!leaving) return;
-    const t = setTimeout(leave, ZOOM_OUT_BACKSTOP_MS);
-    return () => clearTimeout(t);
-  }, [leaving, leave]);
-  return (
-    <Animated.View style={style} pointerEvents={leaving ? 'none' : 'auto'}>
-      {children}
-    </Animated.View>
-  );
-}
-
-/**
  * The route component: the base series instance for the route's params, plus one LAYER per
  * drilled series (see SeriesReaderInstance's header for why layers, not navigation). The drill
  * itself arrives through the nested layout's context ref — series cards anywhere inside the
@@ -4740,10 +3829,12 @@ const MemoSeriesReaderInstance = memo(SeriesReaderInstance);
 export default function SeriesReaderScreen() {
   return <SeriesRoute split="details" />;
 }
+
 /** A tab's `series/index`: on iOS, the details page of the split (see SeriesSplit). */
 export function SeriesTabScreen() {
   return <SeriesRoute split="details" />;
 }
+
 /** `series/read`, the root's and a tab's: the reader page of the split. */
 export function SeriesReadScreen() {
   return <SeriesRoute split="reader" />;
@@ -4945,1322 +4036,11 @@ function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
   );
 }
 
-/**
- * The tag/author/type search as a LAYER over the series instances — the same mechanics as a
- * drilled series (slide-in riding edgeX, the edge back-swipe rig, Android hardware back), with
- * the search screen embedded (its back button becomes a spacer) and the shared chevron rendered
- * statically stuck above the slide, fading on edgeX — in the exact spot the series bars beneath
- * keep theirs, so the chevron never moves through the navigation. The search's result cards
- * drill further series layers on top (useDrillRelatedSeries works unchanged inside).
- */
-function SearchLayer({
-  onPopLayer,
-  coverSV,
-  isTop,
-}: {
-  onPopLayer: () => void;
-  /** See SeriesReaderInstance's — the parallax this layer drives on the series beneath it. */
-  coverSV?: SharedValue<number>;
-  isTop?: boolean;
-}) {
-  const { width } = useViewport();
-  const theme = useTheme();
-  // In the desktop pane a tag's search simply replaces the page, the way the pane's own navigation
-  // does: a push sliding in from the edge is a phone's idiom, and there it is a sideways ride
-  // across most of the window for every chip clicked.
-  const inPane = useSeriesPaneWidth() !== null;
-  const edgeX = useSharedValue(inPane ? 0 : width);
-  const edgeCommitting = useSharedValue(false);
-  // Set the moment the back-swipe activates: the results list stops scrolling for as long as this
-  // layer is being dragged out. See the note in the pan's onStart.
-  const [swipeLocked, setSwipeLocked] = useState(false);
-  useEffect(() => {
-    if (!inPane) edgeX.set(withSpring(0, IOS_CARD_SPRING));
-    // Mount-only entrance — edgeX is stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  // No swipe-away here (the search has no reader to fling), so coverage is purely the slide.
-  useAnimatedReaction(
-    () => 1 - Math.min(1, Math.max(0, edgeX.value / width)),
-    (cover) => {
-      if (isTop && coverSV) coverSV.set(cover);
-    },
-    [width, isTop, coverSV],
-  );
-  // Both exits (the chevron/hardware back below, and a committed swipe) run through here, so the
-  // button and the gesture leave on the same curve — as they do on a native stack, where the pop
-  // animation doesn't know which one asked for it.
-  //
-  // `edgeCommitting` is the guard, and it is the right one for two jobs at once: it already means
-  // "this layer is leaving" and is one-way for the layer's whole life, so checking it here makes a
-  // second exit a no-op — the chevron tapped during a committed swipe, say — so exactly one spring
-  // exists, hence exactly one pop.
-  // `onPopLayer` slices this layer off the stack; a second call would take another layer with it.
-  //
-  // And the pop fires REGARDLESS of `finished`. A cancelled animation reports finished:false, and
-  // a callback that leaves only on true would strand the layer off-screen — mounted, invisible,
-  // still in `drills`. That exact shape is what made the series page's release end instantly, in
-  // the other direction.
-  const slideOut = useCallback(
-    (velocity: number) => {
-      'worklet';
-      trace('search.slideOut', 'commit', { v: velocity, edgeX: edgeX.value, already: edgeCommitting.value });
-      if (edgeCommitting.value) return;
-      edgeCommitting.set(true);
-      edgeX.set(
-        withSpring(width, { ...IOS_CARD_SPRING, velocity }, (finished) => {
-          trace('search.slideOut', 'done', { finished: !!finished, edgeX: edgeX.value });
-          runOnJS(onPopLayer)();
-        }),
-      );
-    },
-    [edgeX, edgeCommitting, width, onPopLayer],
-  );
-  const closeLayer = useCallback(() => {
-    if (!inPane) return runOnUI(slideOut)(0);
-    if (edgeCommitting.get()) return;
-    edgeCommitting.set(true);
-    onPopLayer();
-  }, [slideOut, inPane, edgeCommitting, onPopLayer]);
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      closeLayer();
-      return true;
-    });
-    return () => sub.remove();
-  }, [closeLayer]);
-  // Escape, as on the series layers (see SeriesReaderInstance) — top layer only.
-  useEffect(() => {
-    if (!IS_WEB || !isTop || typeof window === 'undefined') return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      const target = e.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
-      e.preventDefault();
-      closeLayer();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isTop, closeLayer]);
-  // The back-swipe. Activation is the shared one (lib/back-swipe) — literally the same code the
-  // series instance runs, which is the point: two surfaces that both claim to have a back-swipe
-  // must agree on what one is. Everything after it is this layer's own, because here a back-swipe
-  // slides a card out rather than collapsing a gallery.
-  //
-  // One copy per platform, exactly as on the instance: the native one rides the results scroller
-  // composed with a Native handler (`Gesture.Simultaneous`, one detector — see there for why the
-  // cross-detector relation isn't trusted), the web one sits at screen level. `ranHere` and the
-  // one-way `edgeCommitting` come across from there too — the first so a drag that never activated
-  // can't settle or unlock anything, the second so nothing can undo a commit and drag the layer
-  // back on screen after it has already been sliced off the stack.
-  const makeBackSwipePan = useCallback((tag: string) => {
-    const updateGate = traceGate();
-    const ranHere = makeMutable(false);
-    // Where the finger was at ACTIVATION — see the instance's copy for why. RNGH measures
-    // translation from touch-down, so without this the card jumps by however far the rule spent
-    // deciding, and a late activation leaves the release nothing to animate. Y is tracked only to
-    // judge the release: nothing here follows the finger vertically.
-    const originX = makeMutable(0);
-    const originY = makeMutable(0);
-    // The cancel carries the release velocity too — let go while still moving right and the
-    // screen eases out of that motion before coming back, rather than reversing on the spot.
-    const settle = (velocity: number) => {
-      'worklet';
-      edgeX.set(withSpring(0, { ...IOS_CARD_SPRING, velocity }));
-    };
-    // See the instance's copy — the opening stretch decides whether this is a back-swipe.
-    const qualified = backSwipeShape();
-    return backSwipePan(tag)
-      .onStart((e) => {
-        'worklet';
-        trace(tag, 'START', { tx: e.translationX, ty: e.translationY });
-        ranHere.set(true);
-        originX.set(e.translationX);
-        originY.set(e.translationY);
-        resetBackSwipeShape(qualified);
-        // Activation means this gesture owns the screen — the results list must STOP SCROLLING
-        // under it. Without this the page kept scrolling vertically while sliding out sideways,
-        // which is the single thing that gave the layer away as not-a-real-push: a card being
-        // popped is inert, it doesn't keep responding to a finger that has moved on to dismissing
-        // it. The series page's own back-swipe has always done this (`swipeLocked`).
-        runOnJS(setSwipeLocked)(true);
-      })
-      .onUpdate((e) => {
-        'worklet';
-        const tx = e.translationX - originX.value;
-        traceThrottled(updateGate, 60, tag, 'update', { tx, edgeX: edgeX.value });
-        trackBackSwipeShape(qualified, tx, e.translationY - originY.value);
-        edgeX.set(Math.max(0, tx));
-      })
-      .onEnd((e) => {
-        'worklet';
-        // Where the swipe was HEADED, not where it stopped — see lib/gesture-release.
-        // A card pop IS a dismissal, so it takes the same bar — half the travel, which is also
-        // what react-navigation uses for this exact transition.
-        const tx = e.translationX - originX.value;
-        const ty = e.translationY - originY.value;
-        trace(tag, 'END', { tx, ty, vx: e.velocityX, vy: e.velocityY, shape: qualified.value, edgeX: edgeX.value, committing: edgeCommitting.value, ran: ranHere.value });
-        // Same two questions as the instance's release — a card pop is a back-swipe too, and a
-        // drag that opened off-axis is not one however far across it got.
-        if (
-          backSwipeStayedHorizontal(tx, ty, e.velocityX, e.velocityY, qualified) &&
-          releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)
-        )
-          slideOut(e.velocityX);
-        else settle(e.velocityX);
-      })
-      .onFinalize((_e, success) => {
-        'worklet';
-        trace(tag, 'FINALIZE', { ok: !!success, ran: ranHere.value, committing: edgeCommitting.value, edgeX: edgeX.value });
-        // Only the copy that was DRIVING settles, and only a drag that never reached onEnd —
-        // see the instance's copy for why this asks `success` rather than the commit latch.
-        if (ranHere.value && !success) settle(0);
-        // …and only that copy may unlock the list, for the same reason.
-        if (ranHere.value) runOnJS(setSwipeLocked)(false);
-        ranHere.set(false);
-      });
-  }, [width, edgeX, edgeCommitting, slideOut]);
-  // See the series instance's copy for why the trace flag is a rebuild dep.
-  const traceOn = useGestureTraceEnabled();
-  // Web only, exactly as on the series instance — this layer had the same two-copy arrangement, an
-  // ancestor detector and a descendant one both reaching for the same touch with the same criteria
-  // and cancelling each other at the activation frame. The results list carries the native copy.
-  // Not under a mouse: RNGH hears its drags too, and a desktop has the back button for this.
-  const edgePan = useMemo(
-    () => makeBackSwipePan('search.edge').enabled(IS_WEB && !isDesktopPointer()),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [makeBackSwipePan, traceOn],
-  );
-  const scrollGesture = useMemo(
-    () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan('search.list'))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [makeBackSwipePan, traceOn],
-  );
-  const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
-  // `isTop` matters for more than looks: it is how the embedded search knows to ignore an intent
-  // meant for a layer above it (see the subscription in search.tsx).
-  const embedded = useMemo(
-    () => ({ onBack: closeLayer, scrollGesture, isTop: !!isTop, scrollEnabled: !swipeLocked }),
-    [closeLayer, scrollGesture, isTop, swipeLocked],
-  );
-  return (
-    <View style={styles.container}>
-      {/* iOS: the search draws its own bar, so the route's system bar (the series' below) goes
-          while this layer is top; the series re-applies its own when it is top again. */}
-      {NATIVE_HEADER && isTop ? <Stack.Screen options={SEARCH_LAYER_BAR} /> : null}
-      <GestureDetector gesture={edgePan}>
-        <Animated.View style={[styles.searchSlide, { backgroundColor: theme.background }, slideStyle]}>
-          <SearchScreen embedded={embedded} />
-        </Animated.View>
-      </GestureDetector>
-    </View>
-  );
-}
-
-/** The details card's content: series.tsx's SeriesBody, fed exactly the way SeriesScreen feeds it
- *  (same detail query + placeholder seeding, same cover-aspect measurement, same layout inputs) —
- *  minus the TopBar/pull-to-refresh, plus the three intent overrides that route back into the
- *  in-place reader. */
-function SeriesDetailsHost({
-  bridgeId,
-  id,
-  title,
-  bridge,
-  cover,
-  defer,
-  isDirect,
-  width,
-  topInset,
-  sharedValues,
-  onScrollEndDrag,
-  onStartReading,
-  onOpenChapter,
-  onOpenPage,
-  scrollGesture,
-  scrollEnabled,
-  onHeroCoverRect,
-  coverAspectSeed,
-  saveKeyEnabled,
-}: {
-  bridgeId?: string;
-  id?: string;
-  title?: string;
-  bridge?: string;
-  cover?: string;
-  /** True while the instance's series queries are deferred (sequence mode, details not yet
-   *  revealed) — the detail fetch waits with them. */
-  defer?: boolean;
-  isDirect: boolean;
-  width: number;
-  /** Overrides the default content top inset (safe area + breathing room) — the screen passes
-   *  the full strip height, so the content starts below the reader band. */
-  topInset?: number;
-  sharedValues: Parameters<typeof SeriesBody>[0]['sharedValues'];
-  /** Release of a details-list drag — the screen's iOS reveal pull commits on it. */
-  onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
-  onStartReading: () => void;
-  onOpenChapter: (version: Chapter) => void;
-  onOpenPage: (pageIndex: number) => void;
-  /** The tapped card's aspect, so the hero starts the right shape — see the note on `coverAspect`. */
-  coverAspectSeed?: number;
-  /** Reports the details page's hero cover rect — the zoom's destination bound (see zoomGeom). */
-  onHeroCoverRect?: (rect: ZoomRect) => void;
-  /** The instance's `detailsScrollGesture` — mounted on SeriesBody's scroller (see makeBackSwipePan). */
-  scrollGesture?: ComposedGesture;
-  /** False while a horizontal details gesture is active, so the list can't scroll under it. */
-  scrollEnabled?: boolean;
-  saveKeyEnabled?: boolean;
-}) {
-  const ds = useDataSource();
-  const mock = useMockActive();
-  const insets = useSafeAreaInsets();
-  const {
-    data: series = null,
-    error: queryError,
-    isPlaceholderData,
-    isFetching,
-    refetch,
-  } = useQuery({
-    ...seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
-      direct: isDirect,
-      bridgeName: bridge ?? 'Library',
-      title,
-      cover,
-    }),
-    // Deferred until the instance's reveal latch flips (sequence mode) — this host mounts with
-    // the details layer, which exists from the first frame, but must not fetch on its behalf.
-    enabled: !!id && !defer,
-  });
-
-  // The hero cover's measured aspect. SEEDED from the card this page grew out of rather than from
-  // the flat 2:3 placeholder, because this box is the zoom's DESTINATION BOUND and that bound is
-  // latched on its first layout — a bridge whose covers aren't 2:3 therefore had a source rect at
-  // the real shape aligning to a destination still sitting at the placeholder's, and a single
-  // uniform scale cannot map one rectangle onto a differently-proportioned one. The card already
-  // knows the answer (its own cover has loaded; that is how you could see it to tap it), so start
-  // where it is. `onCoverLoad` still corrects it if the detail cover genuinely differs.
-  const [coverAspect, setCoverAspect] = useState(() => coverAspectSeed ?? DEFAULT_THUMB_ASPECT);
-  const onCoverLoad = (e: ImageLoadEventData) => {
-    const src = e.source;
-    if (!src?.width || !src.height) return;
-    const ratio = src.width / src.height;
-    const next = !Number.isFinite(ratio) || ratio <= 0 ? DEFAULT_THUMB_ASPECT : Math.min(2.5, Math.max(0.5, ratio));
-    setCoverAspect((prev) => (Math.abs(next - prev) > 0.02 ? next : prev));
-  };
-
-  const isLarge = sizeClassFor(width) === 'regular';
-  const actionsWidth = Math.round(Math.min(width * 0.4, 220));
-
-  const goneReason = seriesGoneReason(queryError);
-  if (queryError && goneReason !== undefined) {
-    return (
-      <View style={styles.centerFill}>
-        <SeriesRemovedNotice
-          bridgeName={bridge ?? ''}
-          title={title ?? series?.title ?? ''}
-          reason={goneReason}
-          confirmed
-          saved={false}
-          checking={isFetching}
-          onCheckAgain={() => void refetch()}
-        />
-      </View>
-    );
-  }
-  if (queryError) {
-    return (
-      <View style={styles.centerFill}>
-        <RetryBlock message={(queryError as Error).message || 'Failed to load series'} onRetry={refetch} />
-      </View>
-    );
-  }
-  if (!series) {
-    // No forwarded cover (deep link) and the fetch hasn't resolved — brief, so keep it plain.
-    return (
-      <View style={styles.centerFill}>
-        <ThemedText themeColor="textSecondary">Loading…</ThemedText>
-      </View>
-    );
-  }
-  return (
-    <SeriesBody
-      series={series}
-      bridgeId={bridgeId}
-      isLarge={isLarge}
-      // position:sticky is a web full-page affordance — inside the card's own scroller it wouldn't
-      // resolve against the viewport anyway.
-      sticky={false}
-      actionsWidth={actionsWidth}
-      direct={isDirect}
-      width={width}
-      initialCover={cover}
-      loading={isPlaceholderData}
-      detailStarted={isFetching || !isPlaceholderData}
-      coverAspect={coverAspect}
-      onCoverLoad={onCoverLoad}
-      // The screen's own layout clears the notch (the strip band), so only breathing room is
-      // added when no explicit inset comes through.
-      topInset={topInset ?? insets.top + Spacing.five}
-      onStartReading={onStartReading}
-      onOpenChapter={onOpenChapter}
-      onOpenPage={onOpenPage}
-      sharedValues={sharedValues}
-      onScrollEndDrag={onScrollEndDrag}
-      scrollGesture={scrollGesture}
-      scrollEnabled={scrollEnabled}
-      onHeroCoverRect={onHeroCoverRect}
-      saveKeyEnabled={saveKeyEnabled}
-    />
-  );
-}
-
 /** The stack events a series page follows its own way out by — see `closingSV` and `showProgress`. */
 type ClosingNavigation = {
   addListener(type: 'transitionStart' | 'transitionEnd', cb: (e: { data: { closing: boolean } }) => void): () => void;
   addListener(type: 'gestureCancel' | 'beforeRemove', cb: () => void): () => void;
 };
-
-type ReaderPaneHandle = {
-  goTo: (index: number, animated?: boolean) => void;
-  /** Puts where the pane stands into the cached history now, ahead of any write. */
-  showProgress: () => void;
-  /** The pages of `chapterId` on screen with `page`, in reading order. */
-  pagesOnScreen: (chapterId: string, page: number) => { pages: number[]; rtl: boolean };
-};
-
-/** The reader itself + its bottom chrome, keyed to ONE RUN (the stitched window) or one chapter
- *  (direct/sequence), and mounted only once its pages are in — so the start
- *  position seeds `useState`/`useRef` directly at mount (the pagers read `initialPage` exactly
- *  once). Stitched crossings relabel in place through `onRelabel`; explicit jumps swap the whole
- *  pane; the unmount flush records the outgoing chapter's final position. */
-const ReaderPane = forwardRef<
-  ReaderPaneHandle,
-  {
-    pages: string[];
-    /** The stitched window ([prev?, current, next?]) — empty for direct/sequence reads, which are
-     *  per-chapter. See the screen's run machinery. */
-    segments: Segment[];
-    /** A stitched crossing settled on a page of a NEIGHBOURING segment: the screen relabels which
-     *  chapter is "current" in place (no remount — the pane is keyed by the run). */
-    onRelabel: (chapterId: string, chapterName: string | undefined, page: number) => void;
-    /** The page currently ON SCREEN, with the chapter it actually belongs to. Reported so the
-     *  toolbar (rendered by the parent) can drive its collect-this-page heart — the pane owns the
-     *  page index, the parent owns the chrome. Mid-crossing this is the NEIGHBOURING segment, not
-     *  `chapterId`; see `shownWithChapter`. (Distinct from the pagers' own `onVisiblePageChange`,
-     *  which reports a FLAT window index with no chapter.) */
-    onVisiblePage?: (v: { pageIndex: number; chapterId: string }) => void;
-    /** First page to show — `'last'` lands on the final page (arriving backward from the next chapter). */
-    start: number | 'last';
-    width: number;
-    height: number;
-    bridgeId?: string;
-    seriesId?: string;
-    seriesTitle: string;
-    seriesCover?: string;
-    chapterId?: string;
-    chapterName?: string;
-    /** The target was picked from the details card. That lands while the pane is still in standby
-     *  (the reveal and the jump share a commit, and `standby` lags the reveal), so the landing is
-     *  never seen as a page turned — without this, opening page 10 and leaving recorded nothing. */
-    picked?: boolean;
-    /** False for a direct series — drops the navigator's chapter-skip buttons. */
-    chaptered: boolean;
-    /** False = never write reading progress/history from this pane (sequence mode: a hop through a
-     *  collected sequence is browsing, and recording it would clobber the real read position). */
-    recordProgress?: boolean;
-    hasPrevChapter: boolean;
-    hasNextChapter: boolean;
-    nextChapterName?: string;
-    /** Paging off either end of the chapter (delta −1 lands on the previous chapter's LAST page). */
-    onCrossChapter: (delta: 1 | -1) => void;
-    /** The navigator's skip buttons — always land on the target chapter's first page. */
-    onSkipChapter: (delta: 1 | -1) => void;
-    chromeVisible: boolean;
-    onToggleChrome: () => void;
-    onShowChrome: () => void;
-    /** Chrome-hold: suspend auto-hide while a control is in use. */
-    onHoldChrome: (hold: boolean) => void;
-    onZoomChange: (zoomed: boolean) => void;
-    /** A scrub drag started/ended — the screen also freezes its reveal pan for the duration. */
-    onScrubActive: (active: boolean) => void;
-    /** Rendered between the readers and the bottom chrome — the screen's reveal tint/fade layers
-     *  go here, so they dim the PAGES without washing out the navigator/pill. */
-    overlay?: ReactNode;
-    /** True while the reader is parked as a decorative background (the collapsed strip):
-     *  suspends the warm-ahead prefetch and shrinks the pager's render window to the visible
-     *  page, so only the single page on screen is requested. */
-    standby?: boolean;
-    /** True while the instance's ENTRANCE animation is still playing — the initial-position
-     *  poster holds for its whole duration (see `posterUp`), because the native scroll offset of
-     *  a non-zero `initialScrollIndex` can land frames after the JS side reports parked. */
-    entering?: boolean;
-    /** Library membership (undefined while still resolving) — picks the progress-recording path.
-     *  Queried by the screen, not here: this pane re-renders every page sweep. */
-    inLibrary?: boolean;
-    /** Whether the arrow keys turn this reader's pages (web) — only the top layer's, and not while
-     *  the details cover it. */
-    keyboard: boolean;
-    /** The bottom bar's `glass`. */
-    glass: boolean;
-  }
->(function ReaderPane(
-  {
-    pages,
-    segments,
-    onRelabel,
-    onVisiblePage,
-    start,
-    width,
-    height,
-    bridgeId,
-    seriesId,
-    seriesTitle,
-    seriesCover,
-    chapterId,
-    chapterName,
-    picked = false,
-    chaptered,
-    recordProgress = true,
-    hasPrevChapter,
-    hasNextChapter,
-    nextChapterName,
-    onCrossChapter,
-    onSkipChapter,
-    chromeVisible,
-    onToggleChrome,
-    onShowChrome,
-    onHoldChrome,
-    onZoomChange,
-    onScrubActive,
-    overlay,
-    standby,
-    entering = false,
-    inLibrary,
-    keyboard,
-    glass,
-  },
-  ref,
-) {
-  const ds = useDataSource();
-  const mock = useMockActive();
-  const queryClient = useQueryClient();
-  const seriesKey = bridgeId && seriesId ? `${bridgeId}:${seriesId}` : null;
-  const [settings] = useReaderSettings(seriesKey);
-  // The fit the pages are drawn to: the setting, or the axis a `switch-fit` double-tap has put in
-  // its place for the moment (see `fitOverride$`). Cleared with this pane, so leaving the reader
-  // — a chapter crossing the run doesn't cover, or the series page — returns to the setting.
-  const fitOverride = useFitOverride();
-  const pageFit = fitOverride ?? settings.pageFit;
-  useEffect(() => () => setFitOverride(null), []);
-  // The reader draws edge to edge on both platforms — the window runs under the status bar and
-  // any cutout, and under the navigation bar on Android — so a page fitted to the height runs
-  // under the notch. `respectSafeArea` insets the PAGES (never the chrome, which places itself)
-  // by the top inset, and by the bottom one only where that is a real bar — see
-  // SYSTEM_BAR_MIN_INSET. Web has no insets and is unchanged.
-  const insets = useSafeAreaInsets();
-  const insetTop = settings.respectSafeArea ? insets.top : 0;
-  const insetBottom = settings.respectSafeArea && insets.bottom > SYSTEM_BAR_MIN_INSET ? insets.bottom : 0;
-  const pageHeight = height - insetTop - insetBottom;
-  const double = settings.mode === 'paged' && readsDouble(settings.pageLayout, { width, height: pageHeight });
-  const shift = useSpreadShift(seriesKey);
-  // A series whose pages turn out to be strips switches itself to vertical (see the hook); nothing
-  // to decide once the series has a mode of its own, by detection or by hand.
-  const seriesMode = useSeriesReaderMode(seriesKey);
-  const detectPageSize = useWebtoonDetection(seriesKey, settings.mode === 'paged' && !seriesMode);
-  // The double-tap under its switch-fit mode: fit the axis this page does NOT currently fill
-  // (see `otherFit`), for every page until the next double-tap, which clears it. Never written to
-  // the setting: from `auto` there is no single axis to write, and a double-tap is a moment's
-  // choice, not a preference.
-  const switchFit = useCallback(
-    (image: Size | null) => setFitOverride(fitOverride ? null : otherFit(settings.pageFit, image, { width, height: pageHeight })),
-    [fitOverride, settings.pageFit, width, pageHeight],
-  );
-
-  const startIndex = Math.max(0, Math.min(pages.length - 1, start === 'last' ? pages.length - 1 : start));
-  const [currentPage, setCurrentPage] = useState(startIndex);
-  const currentRef = useRef(startIndex);
-  // Pairing is fixed for a pager's lifetime (see PagedReader's `double`), so a layout change —
-  // the setting, the shift, or a rotation under `auto` — remounts it on the page being read. The
-  // mode is in it so the reader a switch brings up opens on that page too.
-  const pagerLayout = `${settings.mode}:${double}:${shift}`;
-  const [pagerMount, setPagerMount] = useState({ layout: pagerLayout, page: startIndex });
-  if (pagerMount.layout !== pagerLayout) setPagerMount({ layout: pagerLayout, page: currentPage });
-  // Whether the mounted list has REPORTED a position yet. A recording answered how much this
-  // signal is worth: it lands within ~10ms of mount — it is the list's JS-side position map
-  // speaking, NOT the native scroll view. For a non-zero `initialScrollIndex` the NATIVE
-  // contentOffset applies asynchronously, and until it does the viewport sits over index 0's
-  // empty slot (cells are laid out at `index × width`; nothing is rendered down there) — frames
-  // that are invisible to JS and to the frame trace alike, which is why every earlier recording
-  // of the blank looked perfectly clean. So the POSTER below outlives this report: it stands in
-  // for the target page through the whole ENTRANCE (`entering`), which comfortably covers the
-  // native offset landing, and only then defers to the report. Index 0 needs no offset — the
-  // exact reason "the first tile opens smoothly" was the isolating observation.
-  const [parked, setParked] = useState(false);
-  const setCurrent = useCallback((i: number) => {
-    currentRef.current = i;
-    setCurrentPage(i);
-    setParked(true);
-  }, []);
-  useEffect(() => {
-    if (parked) traceJS('pager', 'parked', { at: currentRef.current });
-  }, [parked]);
-  // The backstop: nothing may strand a static image over a live pager — not a list that never
-  // reports, and not an entrance whose settle signal is lost.
-  const [posterExpired, setPosterExpired] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setPosterExpired(true), POSTER_BACKSTOP_MS);
-    return () => clearTimeout(t);
-  }, []);
-
-  const pagedRef = useRef<PagedReaderHandle>(null);
-  const webtoonRef = useRef<WebtoonReaderHandle>(null);
-  const items: ReaderPageItem[] = useMemo(
-    () => pages.map((uri, i) => ({ uri, key: `${chapterId ?? DIRECT_CHAPTER_ID}:${i}`, pageNumber: i + 1 })),
-    [pages, chapterId],
-  );
-
-  // ── Stitched flat list (chaptered) ─────────────────────────────────────────
-  // Declared early (a noop until the record section below fills it) so the flat handlers can
-  // flush the outgoing chapter's progress at a crossing.
-  const recordRef = useRef<(flush?: boolean) => void>(() => {});
-  const stitched = segments.length > 0;
-  const flatItems: ReaderPageItem[] = useMemo(
-    () => segments.flatMap((s) => s.pages.map((uri, i) => ({ uri, key: `${s.id}:${i}`, pageNumber: i + 1 }))),
-    [segments],
-  );
-  // Flat index of the current chapter's page 0 (how many stitched pages precede it).
-  const prefixLen = useMemo(() => {
-    const currentId = chapterId ?? DIRECT_CHAPTER_ID;
-    let acc = 0;
-    for (const s of segments) {
-      if (s.id === currentId) break;
-      acc += s.pages.length;
-    }
-    return acc;
-  }, [segments, chapterId]);
-  // The start page's place in the list the pager was given.
-  const startAt = useMemo(() => {
-    const list = stitched ? flatItems : items;
-    const base = stitched ? prefixLen : 0;
-    return { list, base, at: Math.max(0, Math.min(list.length - 1, base + startIndex)) };
-  }, [stitched, flatItems, items, prefixLen, startIndex]);
-  // Sizes that land, under the poster, for the start page and the one after it: the two whose
-  // shapes can re-pair the spread it opens on. The pager re-pairs on them the moment they arrive
-  // (sizes BEHIND its anchor it holds back — see useSpreadLayout — so those two are the whole
-  // story), and the poster's pairing is computed from the same cache at mount and nothing after, so
-  // a first page found wide on load had the pager draw it full width under a poster still showing
-  // it in the cover's half-width slot. Fed through here, the poster re-pairs on the same commit.
-  const [landedSizes, setLandedSizes] = useState<ReadonlyMap<string, Size>>(() => new Map());
-  const onPageSize = useCallback(
-    (key: string, size: Size) => {
-      detectPageSize(key, size);
-      if (posterExpired || !double) return;
-      const { list, at } = startAt;
-      if (list[at]?.key !== key && list[at + 1]?.key !== key) return;
-      setLandedSizes((prev) => (prev.get(key) ? prev : new Map(prev).set(key, size)));
-    },
-    [detectPageSize, posterExpired, double, startAt],
-  );
-  // What the reader opens on: the start page, or the spread holding it, paired from the same size
-  // cache the pager seeds its own pairing from at mount, so the poster draws what the list will.
-  const startSpread = useMemo(() => {
-    const { list, base, at } = startAt;
-    if (!list.length) return null;
-    if (!double) return { halves: [list[at]!], first: startIndex, last: startIndex };
-    const { spreads, spreadOf } = buildSpreads(list, (p) => landedSizes.get(p.key) ?? knownPageSize(p.uri), shift);
-    const spread = spreads[spreadOf[at]!]!;
-    return {
-      halves: spreadHalves(spread),
-      first: spread.first - base,
-      last: spread.first - base + spread.pages.length - 1,
-    };
-  }, [startAt, startIndex, double, shift, landedSizes]);
-  // The poster's whole life, in one place: down the moment the user actually pages away from the
-  // start (a swipe mid-entrance must not freeze under a static image), else up until BOTH the
-  // entrance has finished and the list has reported — or the backstop calls time. A spread can
-  // report either of its pages (see `reportedPage`), so "the start" is the whole spread.
-  //
-  // Never on web. What it papers over is the native offset transient, and the web pager has none:
-  // its track is positioned synchronously. It only ever showed there as a defect — the web pager
-  // reports no page at mount, so `parked` never flips and the poster outlived the backstop, drawn
-  // as a contain picture over a page the pager had meanwhile re-paired (a wide first page, found
-  // wide only on load) and rested at fit-height: two pictures of the page, one over the other.
-  const posterUp =
-    !IS_WEB &&
-    !!startSpread &&
-    currentPage >= startSpread.first &&
-    currentPage <= startSpread.last &&
-    !posterExpired &&
-    (entering || !parked);
-  // Where the chapter being scrubbed STARTS, latched for the duration of the drag — the reader's
-  // half of the navigator's latched frame. A drag is resolved against the window it began in, and
-  // `prefixLen` is not that: it moves when a neighbouring chapter joins at the head, and again on
-  // every relabel. A ref rather than state because reading it must not wait for a render, and
-  // nothing renders off it. Declared HERE, above every callback that reads it — the React Compiler
-  // will not accept a ref being modified when its binding is used before this point.
-  const scrubPrefixRef = useRef<number | null>(null);
-  // The write in its own `[]` callback: the shape `setCurrent` uses, and the one the compiler
-  // accepts a ref being modified in.
-  const setScrubFrame = useCallback((prefix: number | null) => {
-    scrubPrefixRef.current = prefix;
-  }, []);
-
-  // Which stitched segment a flat pager index falls in, and the page within it.
-  const locateFlat = useCallback(
-    (flat: number) => {
-      let acc = 0;
-      for (const s of segments) {
-        if (flat < acc + s.pages.length) return { segment: s, page: flat - acc };
-        acc += s.pages.length;
-      }
-      return null;
-    },
-    [segments],
-  );
-  // The page merely *scrolling past* (viewability), carried with its own segment so the counter
-  // reads against the right chapter mid-crossing — display only, nothing writes off it.
-  const [visibleSeg, setVisibleSeg] = useState<{ id: string; page: number; total: number } | null>(null);
-  // The settled page. Same chapter: plain bookkeeping. A NEIGHBOURING segment: flush the old
-  // chapter's progress, then relabel in place — the swipe that carried the user across stays
-  // seamless (no remount; the pane is keyed by the run).
-  const handleFlatPageChange = useCallback(
-    (flat: number) => {
-      const loc = locateFlat(flat);
-      if (!loc) return;
-      if (loc.segment.id === (chapterId ?? DIRECT_CHAPTER_ID)) {
-        setCurrent(loc.page);
-        return;
-      }
-      // NOT WHILE A SCRUB IS IN PROGRESS. A relabel changes which chapter is current, and with it
-      // `prefixLen`, `pages` and the run's window — the frame the drag is being resolved in. Landing
-      // one mid-drag doesn't just move the target: the shifted frame moves the pager, which crosses
-      // another boundary, which relabels again. A recording of the bug shows ten of them and the
-      // window growing from four segments to thirteen while a single finger was down.
-      //
-      // Nothing is lost by waiting. The track spans only the current chapter (see `scrubTotal`), so
-      // a scrub has no business crossing a boundary at all, and the release commits explicitly
-      // through `seekTo`; anything genuinely across one is reported again by the settle after it.
-      if (scrubPrefixRef.current !== null) return;
-      recordRef.current(true); // the outgoing chapter's final settled position
-      setCurrent(loc.page);
-      onRelabel(loc.segment.id, loc.segment.name, loc.page);
-    },
-    [locateFlat, chapterId, setCurrent, onRelabel],
-  );
-  const handleFlatVisiblePage = useCallback(
-    (flat: number) => {
-      const loc = locateFlat(flat);
-      if (!loc) return;
-      setVisibleSeg({ id: loc.segment.id, page: loc.page, total: loc.segment.pages.length });
-      if (loc.segment.id === (chapterId ?? DIRECT_CHAPTER_ID)) setCurrent(loc.page);
-    },
-    [locateFlat, chapterId, setCurrent],
-  );
-  // What the bottom chrome shows: the committed page, or — while a swipe carries a neighbouring
-  // segment's page across the screen — that page against ITS chapter's length.
-  const shown = useMemo(() => {
-    const v = stitched && visibleSeg && segments.some((s) => s.id === visibleSeg.id) ? visibleSeg : null;
-    return { page: v?.page ?? currentPage, total: v?.total ?? pages.length };
-  }, [stitched, visibleSeg, segments, currentPage, pages]);
-
-  // The same resolution as `shown`, but carrying the CHAPTER the visible page belongs to — what a
-  // per-page action (the toolbar's collect heart) has to key off. Taking `chapterId` unconditionally
-  // is the trap: mid-crossing in stitched paged mode the page on screen belongs to a neighbouring
-  // segment, so a page collected there would be filed under the wrong chapter and reopen on the
-  // wrong page later.
-  const shownWithChapter = useMemo(() => {
-    const v = stitched && visibleSeg && segments.some((s) => s.id === visibleSeg.id) ? visibleSeg : null;
-    return {
-      pageIndex: v?.page ?? currentPage,
-      chapterId: v?.id ?? chapterId ?? DIRECT_CHAPTER_ID,
-    };
-  }, [stitched, visibleSeg, segments, currentPage, chapterId]);
-
-  useEffect(() => {
-    onVisiblePage?.(shownWithChapter);
-  }, [onVisiblePage, shownWithChapter]);
-
-  // The spread around the visible page, held against its chapter rather than as flat indices, which
-  // move whenever a chapter joins the window's head. Shown only while it still holds the page `shown`
-  // names — a jump names its page before the pager has paired around it.
-  const [shownSpread, setShownSpread] = useState<{ id: string; first: number; last: number } | null>(null);
-  const handleVisibleSpread = useCallback(
-    (first: number, last: number) => {
-      const loc = stitched ? locateFlat(first) : { segment: { id: chapterId ?? DIRECT_CHAPTER_ID }, page: first };
-      if (loc) setShownSpread({ id: loc.segment.id, first: loc.page, last: loc.page + last - first });
-    },
-    [stitched, chapterId, locateFlat],
-  );
-  const shownRange = useMemo(() => {
-    const s = settings.mode === 'paged' ? shownSpread : null;
-    const { pageIndex, chapterId: id } = shownWithChapter;
-    if (!s || s.id !== id || s.last === s.first || pageIndex < s.first || pageIndex > s.last) return undefined;
-    return spreadRangeLabel(s.first, s.last, settings.direction === 'rtl');
-  }, [settings.mode, settings.direction, shownSpread, shownWithChapter]);
-
-  // Move to a FLAT index — an index into the window, whichever reader is mounted. Both take the
-  // same coordinate now that both are stitched.
-  const goFlat = useCallback(
-    (flat: number, animated: boolean) => {
-      if (settings.mode === 'paged') pagedRef.current?.goToPage(flat, animated);
-      else webtoonRef.current?.goToPage(flat, animated);
-    },
-    [settings.mode],
-  );
-  // Chapter-local page index in; the stitched readers take the flat one.
-  const goTo = useCallback(
-    (index: number, animated = true) => {
-      const clamped = Math.max(0, Math.min(pages.length - 1, index));
-      setCurrent(clamped);
-      goFlat(stitched ? prefixLen + clamped : clamped, animated);
-    },
-    [pages, setCurrent, stitched, prefixLen, goFlat],
-  );
-  // The details card's page-thumbnail taps jump the mounted pane directly (see openPageFromDetails).
-  const pagesOnScreen = useCallback(
-    (segmentId: string, page: number) => {
-      let base = 0;
-      if (stitched) for (const s of segments) {
-        if (s.id === segmentId) break;
-        base += s.pages.length;
-      }
-      const spread = settings.mode === 'paged' ? pagedRef.current?.spreadOf(base + page) : undefined;
-      const pages = [];
-      for (let i = spread ? spread.first - base : page; i <= (spread ? spread.last - base : page); i++) pages.push(i);
-      return { pages, rtl: settings.direction === 'rtl' };
-    },
-    [stitched, segments, settings.mode, settings.direction],
-  );
-  // Where a scrub release lands: name the landing page immediately (viewability is suppressed
-  // during the drag), so the chrome is correct in the same commit.
-  const seekTo = useCallback(
-    (index: number) => {
-      // Resolved in the frame the DRAG began in, not whatever the window has become since — see
-      // `scrubPrefixRef`. `handleScrubbing(false)` runs after this (the gesture emits the seek
-      // first), so the latch is still held here.
-      const base = scrubPrefixRef.current ?? prefixLen;
-      const clamped = Math.max(0, Math.min(pages.length - 1, index));
-      // Where the release actually lands, in the reader's own coordinates — the other half of the
-      // navigator's `scrub release` line. `local` past `of` means the track was calibrated to a
-      // different chapter than the one being committed to; `base` against the grab's `offset` says
-      // whether the frame held for the length of the drag.
-      traceJS('seek', 'commit', { local: index, of: pages.length, base, flat: stitched ? base + clamped : clamped });
-      setCurrent(clamped);
-      goFlat(stitched ? base + clamped : clamped, true);
-      if (stitched) handleFlatVisiblePage(base + clamped);
-    },
-    [stitched, prefixLen, pages.length, setCurrent, goFlat, handleFlatVisiblePage],
-  );
-  // The chapter-local pages sharing the screen with `page`. A turn steps off the spread's ends:
-  // stepping off the page last reported would land on the other half of the same spread whenever
-  // the report hasn't caught up with a quick run of taps.
-  const spreadAround = useCallback(
-    (page: number) => {
-      const base = stitched ? prefixLen : 0;
-      const spread = settings.mode === 'paged' ? pagedRef.current?.spreadOf(base + page) : undefined;
-      return spread ? { first: spread.first - base, last: spread.last - base } : { first: page, last: page };
-    },
-    [settings.mode, stitched, prefixLen],
-  );
-  // Boundary page-turns: prefer stepping within the stitched flat list (the same seamless relabel
-  // path a swipe crossing takes); the explicit-jump fallback only covers a cold window (adjacent
-  // pages not loaded yet) and the unstitched direct/sequence reads.
-  const turnPrev = useCallback(() => {
-    const { first } = spreadAround(currentRef.current);
-    if (first > 0) {
-      goTo(first - 1, false);
-      return;
-    }
-    if (stitched && prefixLen > 0) {
-      handleFlatPageChange(prefixLen - 1);
-      goFlat(prefixLen - 1, false);
-      return;
-    }
-    if (chaptered && hasPrevChapter) onCrossChapter(-1);
-  }, [spreadAround, goTo, stitched, prefixLen, handleFlatPageChange, goFlat, chaptered, hasPrevChapter, onCrossChapter]);
-  const turnNext = useCallback(() => {
-    const { last } = spreadAround(currentRef.current);
-    if (last < pages.length - 1) {
-      // Named by the page the landing spread will report, so the counter doesn't step through its
-      // first page on the way.
-      goTo(spreadAround(last + 1).last, false);
-      return;
-    }
-    const nextFlat = prefixLen + pages.length;
-    if (stitched && nextFlat < flatItems.length) {
-      handleFlatPageChange(nextFlat);
-      goFlat(nextFlat, false);
-      return;
-    }
-    if (chaptered && hasNextChapter) onCrossChapter(1);
-  }, [
-    spreadAround,
-    goTo,
-    stitched,
-    prefixLen,
-    pages,
-    flatItems.length,
-    handleFlatPageChange,
-    goFlat,
-    chaptered,
-    hasNextChapter,
-    onCrossChapter,
-  ]);
-  const atLastPage = useCallback(() => currentRef.current >= pages.length - 1, [pages]);
-  // Is the chapter on either side already IN the window? That is what decides whether a boundary is
-  // something to scroll across or something to ask for.
-  const prevStitched = stitched && prefixLen > 0;
-  const nextStitched = stitched && prefixLen + pages.length < flatItems.length;
-
-  // ── Scrubber (UI-thread throughout; offset 0 — nothing stitched) ───────────
-  const scrubFlat = useSharedValue(-1);
-  const [scrubbing, setScrubbing] = useState(false);
-  const handleScrubbing = useCallback(
-    (active: boolean) => {
-      // Latched here rather than in an effect because THIS is the moment: the navigator reports the
-      // hold exactly once per drag, at touch-down, which is the last instant `prefixLen` still
-      // describes the chapter the drag is aimed at. An effect would latch a commit later, by which
-      // point the window may already have moved — and moving is precisely what it does.
-      setScrubFrame(active ? prefixLen : null);
-      setScrubbing(active);
-      onScrubActive(active);
-    },
-    [onScrubActive, prefixLen, setScrubFrame],
-  );
-  const scrubTo = useCallback(
-    (position: number) => {
-      const clamped = Math.max(0, Math.min(pages.length - 1, position));
-      // The frame the drag began in — see `scrubPrefixRef`.
-      const base = scrubPrefixRef.current ?? prefixLen;
-      if (settings.mode === 'paged') pagedRef.current?.scrubTo(stitched ? base + clamped : clamped);
-      else goFlat(stitched ? base + Math.round(clamped) : Math.round(clamped), false);
-    },
-    [pages, settings.mode, stitched, prefixLen, goFlat],
-  );
-
-  // ── Warm-ahead ──
-  // Over the whole STITCHED window, not just this chapter. The pages either side of a boundary
-  // belong to two different chapters, so a chapter-local warm window stops dead at page 1 — and
-  // the page immediately behind page 1, the previous chapter's last, is precisely the one a
-  // backward swipe lands on. Warming the flat strip is what makes that turn arrive on an image
-  // instead of on a placeholder, the same as any other page turn.
-  const warmAround = useCallback(
-    (index: number) => {
-      const at = stitched ? prefixLen + index : index;
-      const from = Math.max(0, at - WARM_BEHIND);
-      // "Preload ahead" counts screens, and a spread is two pages.
-      const to = at + 1 + settings.prefetchAhead * (double ? 2 : 1);
-      warmPageImages(stitched ? flatItems.slice(from, to).map((item) => item.uri) : pages.slice(from, to));
-    },
-    [pages, stitched, flatItems, prefixLen, settings.prefetchAhead, double],
-  );
-  // Warm where the reader COMES TO REST — see WARM_IDLE_MS. Both callers go through this: the page
-  // the reader has settled on, and the scrubber's live position as it is dragged.
-  const warmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const warmSoon = useCallback(
-    (index: number) => {
-      if (warmTimer.current) clearTimeout(warmTimer.current);
-      warmTimer.current = setTimeout(() => warmAround(index), WARM_IDLE_MS);
-    },
-    [warmAround],
-  );
-  useEffect(
-    () => () => {
-      if (warmTimer.current) clearTimeout(warmTimer.current);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    // Standby (the collapsed strip) loads nothing beyond the visible page; the flip back to
-    // active re-runs this and warms the neighbourhood.
-    if (!standby && pages.length) warmSoon(currentPage);
-  }, [standby, pages, currentPage, warmSoon]);
-
-  // ── Progress recording: every chaptered read records chapter progress. Outside the library the
-  // reading log is written FIRST: its row is the series' history entry and resume point, and only
-  // this call carries the title and cover to create it. A direct series records under the
-  // DIRECT_CHAPTER_ID sentinel. Unknown membership writes both — the host ignores a log
-  // write for a library series, and waiting on the answer dropped reads whenever the check failed. ──
-  //
-  // A read is a page TURNED, not a pane mounted. This pane sits behind the details page as a
-  // decorative strip from the moment a series opens, so recording on mount wrote a resume point —
-  // and a "started" state — for every series merely looked at. Armed by the first page change
-  // while the reader is actually open, and never disarmed: a stitched crossing relabels in place,
-  // so a read that carried into the next chapter stays a read there. A one-page chapter has nothing
-  // to turn, so opening it full screen is its read.
-  const engagedRef = useRef(false);
-  const seenPageRef = useRef(currentPage);
-  useEffect(() => {
-    if (picked || (!standby && (currentPage !== seenPageRef.current || pages.length === 1))) engagedRef.current = true;
-    seenPageRef.current = currentPage;
-  }, [currentPage, standby, pages.length, picked]);
-  //
-  // A page turn changes ONE history row, so the cached history list is patched in place rather than
-  // refetched: on-device every library-store call waits in one queue, and a full history read is a
-  // scan of every series plus a progress read per read series. Invalidating it (and the activity
-  // feed) after every settle queued hundreds of reads per page turn, behind which the next progress
-  // write sat for 10s+. The full refresh still happens where the shape of things changes — a chapter
-  // finished (feed items leave it), a chapter left (`flush`) — and when the row isn't cached yet, so
-  // the host decides whether this bridge's reads belong in history at all.
-  const progressEntry = useCallback(() => {
-    if (!recordProgress || !engagedRef.current) return null;
-    if (!bridgeId || !seriesId || !pages.length) return null;
-    return {
-      bridgeId,
-      seriesId,
-      title: seriesTitle,
-      ...(seriesCover ? { thumbnailUrl: seriesCover } : {}),
-      chapterId: chapterId ?? DIRECT_CHAPTER_ID,
-      ...(chapterName ? { chapterName } : {}),
-      lastPage: currentRef.current,
-      pageCount: pages.length,
-    };
-  }, [recordProgress, bridgeId, seriesId, pages, chapterId, chapterName, seriesTitle, seriesCover]);
-  // Patched ahead of the write as well as after it: the series page's strip reads this row, and on a
-  // closing reader it has to move before the zoom lands, not once the queue gets round to the write.
-  // The patch after the write stays, so a refetch that raced the write can't leave the row behind.
-  const showRow = useCallback(
-    (row: HistoryEntry) => {
-      const key = queryKeys.history(mock);
-      const same = (h: HistoryEntry) => h.bridgeId === row.bridgeId && h.seriesId === row.seriesId;
-      const known = queryClient.getQueryData<HistoryEntry[]>(key)?.some(same) ?? false;
-      if (known) queryClient.setQueryData<HistoryEntry[]>(key, (cur) => (cur ? [row, ...cur.filter((h) => !same(h))] : cur));
-      return known;
-    },
-    [mock, queryClient],
-  );
-  const showProgress = useCallback(() => {
-    const entry = progressEntry();
-    if (entry) showRow({ ...entry, lastReadAt: Date.now() });
-  }, [progressEntry, showRow]);
-  const record = useCallback((flush = false) => {
-    const entry = progressEntry();
-    if (!entry) return;
-    const { bridgeId, seriesId, lastPage, pageCount } = entry;
-    const reachedEnd = lastPage >= pageCount - 1;
-    const row: HistoryEntry = { ...entry, lastReadAt: Date.now() };
-    showRow(row);
-    const invalidateHistory = () => {
-      const key = queryKeys.history(mock);
-      const known = showRow(row);
-      if (!known || flush || reachedEnd) {
-        void queryClient.invalidateQueries({ queryKey: key });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
-      }
-      void queryClient.invalidateQueries({ queryKey: queryKeys.chapterProgress(mock, bridgeId, seriesId) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.librarySeries(mock, bridgeId, seriesId) });
-    };
-    const recordChapter = (id: string) =>
-      ds.recordChapterProgress(bridgeId, seriesId, id, {
-        lastPage,
-        pageCount,
-        ...(chapterName ? { chapterName } : {}),
-      });
-    // A direct series' page goes through chapter progress too, under the sentinel: the log write is
-    // ignored once the series is collected, and progress is the only thing that moves its resume point.
-    const progressId = entry.chapterId;
-    if (inLibrary) {
-      void recordChapter(progressId).then(invalidateHistory).catch(() => {});
-      return;
-    }
-    void ds
-      .recordReadingHistory(entry)
-      .catch(() => {})
-      .then(() => recordChapter(progressId))
-      .then(invalidateHistory)
-      .catch(() => {});
-  }, [progressEntry, showRow, inLibrary, chapterName, ds, mock, queryClient]);
-  // recordRef itself is declared up with the stitched mappings (the flat crossing flushes through
-  // it); this keeps it pointing at the latest closure.
-  useEffect(() => {
-    recordRef.current = record;
-  }, [record]);
-  // Debounced on page settle + flushed on teardown (leaving the screen AND chapter swaps — the pane
-  // is keyed by chapter).
-  useEffect(() => {
-    const t = setTimeout(() => recordRef.current(), 1500);
-    return () => clearTimeout(t);
-  }, [currentPage]);
-  useEffect(() => () => recordRef.current(true), []);
-  useImperativeHandle(ref, () => ({ goTo, pagesOnScreen, showProgress }), [goTo, pagesOnScreen, showProgress]);
-
-  // ── Web keyboard nav ─────────────────────────────────────────────────────────
-  // Boxed: the screen hands this down as a fresh arrow every render, and re-subscribing the keys
-  // would drop a Q/E zoom being held.
-  const skipChapterRef = useRef(onSkipChapter);
-  useEffect(() => {
-    skipChapterRef.current = onSkipChapter;
-  });
-  useEffect(() => {
-    if (!IS_WEB || !keyboard || typeof window === 'undefined') return;
-    const zoomHold = createZoomHold();
-    const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return;
-      // Modifiers are exact (lib/keymap), so Alt+Left stays the desktop shell's Back and Ctrl/⌘
-      // +/-/0 the browser's own zoom; bare, they're the page's (see desktop-zoom).
-      const zoomDir = zoomHoldDirection(e);
-      if (zoomDir) {
-        e.preventDefault();
-        zoomHold.press(e.key, zoomDir, e.repeat);
-        return;
-      }
-      const step = keyActionOf(e, STEP_KEYS);
-      if (step) {
-        if (standby || isControlTarget(e.target)) return;
-        e.preventDefault();
-        if (e.repeat) return;
-        if (step === 'page-next') return turnNext();
-        if (step === 'page-prev') return turnPrev();
-        const forward = (step === 'chapter-next') !== (settings.mode === 'paged' && settings.direction === 'rtl');
-        if (chaptered && (forward ? hasNextChapter : hasPrevChapter)) skipChapterRef.current(forward ? 1 : -1);
-        return;
-      }
-      const action = keyActionOf(e, READER_KEYS);
-      if (!action) return;
-      e.preventDefault();
-      if (action === 'zoom-reset') return resetZoom();
-      if (action === 'zoom-step-in' || action === 'zoom-step-out') {
-        return stepZoom(action === 'zoom-step-in' ? 1 : -1, { speed: keyZoomSpeed() });
-      }
-      if (e.repeat) return;
-      const forward = (action === 'right') !== (settings.direction === 'rtl');
-      (forward ? turnNext : turnPrev)();
-    };
-    const onKeyUp = (e: KeyboardEvent) => zoomHold.release(e.key);
-    const onBlur = () => zoomHold.clear();
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', onBlur);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('blur', onBlur);
-      zoomHold.dispose();
-    };
-  }, [keyboard, standby, turnNext, turnPrev, settings.mode, settings.direction, chaptered, hasNextChapter, hasPrevChapter]);
-
-  return (
-    <>
-      {settings.keepAwake && !standby && <KeepScreenAwake />}
-      {/* The page subtree. */}
-      <Animated.View testID="series-page.page-wrap" style={styles.pageWrap}>
-      {/* The pages' own frame, inset from the screen's when safe areas are respected (see
-          `pageHeight`); the poster sits in this same frame so the two draw alike. */}
-      <View style={{ width, height: pageHeight, marginTop: insetTop }}>
-      {settings.mode === 'paged' ? (
-        <PagedReader
-          key={pagerMount.layout}
-          ref={pagedRef}
-          // Stitched: the whole window as ONE flat pager, so a boundary swipe is an ordinary page
-          // turn (position reports come back flat and get located/relabeled above).
-          pages={stitched ? flatItems : items}
-          width={width}
-          height={pageHeight}
-          rtl={settings.direction === 'rtl'}
-          pageFit={pageFit}
-          doubleTap={settings.doubleTap}
-          onSwitchFit={switchFit}
-          initialPage={stitched ? prefixLen + pagerMount.page : pagerMount.page}
-          double={double}
-          shift={shift}
-          onPageSize={onPageSize}
-          onPageChange={stitched ? handleFlatPageChange : setCurrent}
-          // Keep the counter live during fast flicks — against the segment the page belongs to
-          // when stitched (a crossing must count against the chapter being entered).
-          onVisiblePageChange={stitched ? handleFlatVisiblePage : setCurrent}
-          onVisibleSpreadChange={handleVisibleSpread}
-          scrubTarget={scrubFlat}
-          scrubbing={scrubbing}
-          standby={standby}
-          onPrev={turnPrev}
-          onNext={turnNext}
-          onToggleChrome={onToggleChrome}
-          onZoomChange={onZoomChange}
-        />
-      ) : (
-        <WebtoonReader
-          ref={webtoonRef}
-          // The same stitched window the pager gets: scrolling off either end of a chapter simply
-          // continues into the next one, with the page you are heading for already under the
-          // scroll rather than arriving after a jump.
-          pages={stitched ? flatItems : items}
-          width={width}
-          height={pageHeight}
-          pageFit={settings.pageFit}
-          // Webtoon has no axis to switch, so its double-tap is the magnification or nothing.
-          doubleTapZoom={settings.doubleTap === 'magnify'}
-          initialPage={stitched ? prefixLen + pagerMount.page : pagerMount.page}
-          onPageChange={stitched ? handleFlatPageChange : setCurrent}
-          // The live half, the same one the pager has always had: the chrome counts along with the
-          // page going past instead of waiting for the scroll to come to rest.
-          onVisiblePageChange={stitched ? handleFlatVisiblePage : setCurrent}
-          onToggleChrome={onToggleChrome}
-          onZoomChange={onZoomChange}
-          standby={standby}
-          // Every one of these is a FALLBACK for a window that came up short, and each stands down
-          // where the window already reaches the chapter in question — a sentinel to tap, an
-          // auto-advance and a backward pull are all ways of asking for a chapter you cannot simply
-          // scroll to, and scrolling to it is strictly better.
-          nextChapterName={chaptered && !nextStitched ? nextChapterName : undefined}
-          onGoBack={chaptered && hasPrevChapter && !prevStitched ? () => onCrossChapter(-1) : undefined}
-          onAdvance={chaptered && hasNextChapter && !nextStitched ? () => onCrossChapter(1) : undefined}
-          onEndReached={
-            chaptered && hasNextChapter && !nextStitched
-              ? () => {
-                  if (atLastPage()) onCrossChapter(1);
-                }
-              : undefined
-          }
-        />
-      )}
-      {/* THE INITIAL-POSITION POSTER — the target page, full frame, over the list for the whole
-          entrance (see `posterUp` above). It renders the very URI the pager will show at that
-          index, from cache, so its appearance and its removal are both invisible; what it papers
-          over is the NATIVE offset transient of a non-zero initialScrollIndex, which an entrance
-          animation would otherwise expose as a blank. */}
-      {posterUp &&
-        (() => {
-          // The pages' RESOLVED sources, not their raw paths: a server-relative path (a lazy resolve
-          // route, say) loaded as-is resolves against the app's own origin and 404s. Not resolved
-          // yet means the page under it has nothing to show either, so there's nothing to paper over.
-          const uris = startSpread!.halves.map((p) => (p ? peekResolvedAssetSource(p.uri) : null));
-          if (startSpread!.halves.some((p, k) => p && !uris[k])) return null;
-          const pair = uris.length > 1;
-          // Left to right across the screen, like the pager draws a spread.
-          const shown = pair && settings.direction === 'rtl' ? [...uris].reverse() : uris;
-          return (
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, pair && styles.posterSpread]}>
-              {shown.map((uri, k) =>
-                !uri ? (
-                  <View key={k} style={styles.posterHalf} />
-                ) : (
-                  <Image
-                    key={k}
-                    source={{ uri: uri! }}
-                    style={pair ? styles.posterHalf : StyleSheet.absoluteFill}
-                    // Contain, whichever axis the fit is: a page under the poster stands at 1× (see
-                    // ZoomablePage's `standby`), and at 1× both fits draw the contain picture — a
-                    // fit-width page shorter than the screen sits centred, exactly where contain puts
-                    // it. `cover` here (the old fit-width mapping) crops the page to the frame and then
-                    // hands over to the letterboxed one: the page visibly shifts as the poster leaves.
-                    // The one page this doesn't match is a strip taller than the screen under fit-width,
-                    // which is drawn from its top rather than whole.
-                    contentFit="contain"
-                    // A spread's halves meet at the spine, as in the pager.
-                    contentPosition={pair ? (k === 0 ? 'right' : 'left') : undefined}
-                    cachePolicy="memory-disk"
-                  />
-                ),
-              )}
-            </View>
-          );
-        })()}
-      </View>
-      </Animated.View>
-
-      {/* Tint/fade layers over the pages, under the chrome below. */}
-      {overlay}
-
-      {/* Bottom chrome — sits still while the page travels. */}
-      <Animated.View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-      {IS_WEB ? (
-        <ProgressPill
-          current={shown.page}
-          label={shownRange}
-          total={shown.total}
-          visible={chromeVisible}
-          countWhenHidden={settings.pageCountWhenHidden}
-          onJump={(i) => {
-            goTo(i);
-            onShowChrome();
-          }}
-          onEditingChange={onHoldChrome}
-        />
-      ) : (
-        <ChapterNavigator
-          // `shown`, not the committed page: mid-crossing the counter reads the entering
-          // chapter's page/length, turning over WITH the swipe.
-          page={shown.page}
-          pageLabel={shownRange}
-          total={shown.total}
-          rtl={settings.mode === 'paged' && settings.direction === 'rtl'}
-          visible={chromeVisible}
-          countWhenHidden={settings.pageCountWhenHidden}
-          chaptered={chaptered}
-          hasPrevChapter={hasPrevChapter}
-          hasNextChapter={hasNextChapter}
-          onPrevChapter={() => onSkipChapter(-1)}
-          onNextChapter={() => onSkipChapter(1)}
-          onScrub={scrubTo}
-          scrubTarget={settings.mode === 'paged' ? scrubFlat : undefined}
-          offset={stitched ? prefixLen : 0}
-          // The chapter being READ — the same one `offset` and `onSeek` speak. `total` above is
-          // whatever the pill is counting, which mid-crossing is the neighbour. See `scrubTotal`.
-          scrubTotal={pages.length}
-          onSeek={seekTo}
-          onScrubbingChange={handleScrubbing}
-          onScrubPage={warmSoon}
-          glass={glass}
-        />
-      )}
-      </Animated.View>
-    </>
-  );
-});
-
-/** The chrome's "Details" pill — the guaranteed, non-gesture way into the details card. Sits above
- *  the bottom chrome and fades with it. Needed because the cross-axis swipe can't always win:
- *  the web pager owns its whole touch surface, and an overflowing fit-width page's content-pan
- *  (rightly) takes vertical drags in paged mode. */
-function DetailsHint({
-  visible,
-  onPress,
-}: {
-  visible: boolean;
-  onPress: () => void;
-}) {
-  const insets = useSafeAreaInsets();
-  const style = useAnimatedStyle(() => ({
-    opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
-  }));
-  return (
-    <Animated.View
-      pointerEvents={visible ? 'box-none' : 'none'}
-      // A gap above the bottom chrome's top edge: the navigator's on native, the progress pill's
-      // on web (which has no page counter under it and so sits lower). On a direct series the
-      // scrubber pill spans the whole width, straight under this, so the gap is what separates
-      // the two backgrounds.
-      style={[
-        styles.detailsHintWrap,
-        {
-          bottom: IS_WEB
-            ? insets.bottom + Spacing.two + 48
-            : bottomChromeInset(insets.bottom) + BOTTOM_CHROME_HEIGHT + Spacing.two,
-        },
-        style,
-      ]}>
-      <Pressable
-        testID="series-page.details"
-        onPress={onPress}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel="Show series details"
-        style={styles.detailsHintPill}>
-        {/* The chevron points where the READER goes — up and away, in both modes now. Webtoon
-            pointed RIGHT back when its reveal was horizontal; the reveal is vertical everywhere
-            since the drag-reveal was removed there, so the arrow was the last thing still
-            describing the old motion. */}
-        <ChevronUpIcon color="#fff" size={16} />
-        <ThemedText type="small" style={styles.detailsHintLabel}>
-          Details
-        </ThemedText>
-      </Pressable>
-    </Animated.View>
-  );
-}
 
 const styles = StyleSheet.create({
   // Sequence resolving on a cold deep link — the reader's black, so the instance that replaces it
@@ -6276,14 +4056,6 @@ const styles = StyleSheet.create({
     // Transparent: the route is a contained transparent modal — the details layer is the opaque
     // fill, and a dismissal fades it out over the screen beneath (see dismissFadeStyle).
     backgroundColor: 'transparent',
-  },
-  splitClip: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    overflow: 'hidden',
   },
   // The zoom's window (see zoomMaskStyle). Absolutely positioned because its whole box is
   // animated; `overflow: hidden` is what makes it a mask rather than just a rounded outline.
@@ -6309,12 +4081,6 @@ const styles = StyleSheet.create({
     // decoded yet reads as the same grey plate rather than a hole onto the page underneath.
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
-  // The SEARCH layer's slide-in ride — the one layer that still arrives as a push (see SearchLayer).
-  searchSlide: {
-    flex: 1,
-    // The pushed-card shadow, and the opaque fill it needs — see lib/ios-card-pop.
-    ...IOS_CARD_SHADOW,
-  },
   // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
   // static full-screen layer BEHIND the frame (readerSurface), so it keeps covering the screen
   // while the strip-centering translate moves the frame, and a dismissal can dissolve it in
@@ -6333,16 +4099,6 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     backgroundColor: READER_BACKDROP,
-  },
-  pageWrap: {
-    flex: 1,
-  },
-  posterSpread: {
-    flexDirection: 'row',
-  },
-  posterHalf: {
-    flex: 1,
-    height: '100%',
   },
   // The top-bar crossfade layers (see headerBarStyle/headerBackStyle): above the band overlay
   // (zIndex 3) so whichever is visible takes the taps.
@@ -6422,27 +4178,5 @@ const styles = StyleSheet.create({
   },
   detailsContent: {
     flex: 1,
-  },
-  // The two halves of the exiting card's shadow (see the render). Both hang off the OPAQUE
-  // fill's right edge — `left: '100%'` inside headerSheetBg, which clips nothing (the seam
-  // gradient already hangs above it the same way).
-  detailsHintWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 2,
-  },
-  detailsHintPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: 999,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  detailsHintLabel: {
-    color: '#fff',
   },
 });
