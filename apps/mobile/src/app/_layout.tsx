@@ -43,6 +43,7 @@ import { CollectionPickerHost } from '@/components/collection-picker';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { RequestOverlay } from '@/components/request-overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
+import { SystemContextMenuHost } from '@/components/system-context-menu';
 import { ToastHost } from '@/components/toast';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
 import { installDesktopChapterCheck } from '@/data/activity/desktop-check';
@@ -226,6 +227,9 @@ function RootNavigation() {
         {/* Root host for the GENERIC hold menu — the card popup's menu system without its preview
             panel (chapter rows use it). Only renders while open, via openContextMenu. */}
         <ContextMenuHost />
+        {/* Publishes the rows of an open iOS system context menu (SystemContextMenu); renders
+            nothing, and only while one is up. */}
+        <SystemContextMenuHost />
         {/* Root host for the reader's which-page-of-the-spread picker (openSpreadPick). */}
         <SpreadPickHost />
         {/* Root host for the "Add to collection…" picker. Mounted AFTER the card menu host so it STACKS

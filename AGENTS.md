@@ -146,6 +146,16 @@ which these menus never mount. A UIKit menu has no second line, so an OPTION's `
 shown on iOS, and the option test ids (`settings.select.<label>.option.<value>`) are not
 reachable there — only the row's. Multi-select enum fields (`MultiEnumRow` in
 `setting-field.tsx`) stay on the overlay everywhere: a system menu can't hold several checks.
+Long-press menus are the system's context menu on iOS, through the local module
+`apps/mobile/modules/system-context-menu` (`components/system-context-menu.tsx`): a
+`UIContextMenuInteraction` on the held content, which lifts (or the `SystemContextMenuTarget`
+inside it does), and a UIMenu built from the same `MenuRowSpec`s the custom hold menu draws on
+Android and web. The rows are asked for when the hold begins and published by the root
+`SystemContextMenuHost` while that menu is up, so their queries run once per open, never once per
+row of a list: a SwiftUI context menu mounted per card was removed once for exactly that scroll
+cost. A row's `symbol` is its SF Symbol there, the third place SF Symbols stand in for lucide.
+UIKit has no bold row, so a leading `primary` row gets a section of its own and trailing
+`destructive` rows (red there, and red in the custom menu to match) close the menu in another.
 Secondary controls leave the title: Library's filter/sort share one trailing `⋯`
 `Stack.Toolbar.Menu` (`components/library/library-native-toolbar.tsx`) — NOT a
 `placement="bottom"` toolbar, which is the navigation controller's toolbar and lays out UNDER

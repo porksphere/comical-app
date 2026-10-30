@@ -79,6 +79,8 @@ export type MenuRowSpec = {
   Icon: (props: IconProps) => React.ReactElement;
   /** Fill the glyph rather than tint it — how an "on" toggle reads (see above). */
   iconFilled?: boolean;
+  /** The SF Symbol the iOS system menu draws for `Icon` (components/system-context-menu.tsx). */
+  symbol?: string;
   loading: boolean;
   /** Unavailable (e.g. favorites need a login that isn't set) — greyed + inert, like loading but final. */
   disabled?: boolean;
