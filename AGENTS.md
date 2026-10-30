@@ -162,8 +162,10 @@ except on Android);
 menu's rows carry no test ids, so Maestro reaches these menus on Android only.
 On Android a chapter row holds nothing, since a long press in an Android list selects: its
 actions sit behind the row's ⋮ (`components/overflow-menu.android.tsx`), Material's dropdown
-hosted from Jetpack Compose by `@expo/ui`, mounted only while it is open and text only, as
-Google's own overflow menus are. Each item carries its row's test id as a Compose test tag.
+hosted from Jetpack Compose by `@expo/ui` and mounted only while it is open. Each item draws the
+Material Symbol paired with its row's SF Symbol in `components/icons/material-symbols.ts`, so a
+row names its glyph once; a symbol missing there draws nothing on Android and warns in
+development. Each item carries its row's test id as a Compose test tag.
 Series cards there keep the custom hold menu for now.
 Series cards and the History and Activity rows wear it through `series-card-menu.ios.tsx`: a
 card's cover, or a whole row, grows into `SeriesCardPreview` (the Android panel without what it

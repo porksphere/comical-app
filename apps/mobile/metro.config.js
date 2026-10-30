@@ -55,6 +55,10 @@ config.resolver.nodeModulesPaths = [
 // (@comical/host-server/router, @comical/registry/fetcher) without pulling the node:fs barrels.
 config.resolver.unstable_enablePackageExports = true;
 
+// Android's Compose menus draw Material Symbols from vector drawables
+// (src/components/icons/material-symbols.ts), which Metro has to serve as assets.
+config.resolver.assetExts = [...config.resolver.assetExts, 'xml'];
+
 // Resolve the @comical/* specifiers to the submodule packages (they aren't installed as npm deps —
 // only their transitive leaf deps live in the submodule's node_modules, above). The embedded
 // transport imports only the Node-free entry points; web never imports them (startup.web.ts no-op).

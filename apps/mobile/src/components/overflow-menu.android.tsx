@@ -1,9 +1,10 @@
-import { DropdownMenu, DropdownMenuItem, Host, Text, useMaterialColors } from '@expo/ui/jetpack-compose';
+import { DropdownMenu, DropdownMenuItem, Host, Icon, Text, useMaterialColors } from '@expo/ui/jetpack-compose';
 import { fillMaxSize, testID as testTag } from '@expo/ui/jetpack-compose/modifiers';
 import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { MenuRowSpec } from '@/components/context-menu-material';
+import { materialSymbol } from '@/components/icons/material-symbols';
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import type { OverflowMenuProps } from '@/components/overflow-menu';
 import { Spacing } from '@/constants/theme';
@@ -18,7 +19,8 @@ export const OVERFLOW_MENU = true;
 /**
  * Android: a ⋮ button whose Material menu, hosted from Jetpack Compose, hangs from it. The rows are
  * built and the Compose host mounted only when the button is pressed, so a scrolling list carries
- * nothing but the button. Text only, like the overflow menus in Google's own apps.
+ * nothing but the button. Each row draws the Material Symbol paired with its SF Symbol
+ * (icons/material-symbols.ts).
  */
 export function OverflowMenu({ rows, testID, label, disabled }: OverflowMenuProps) {
   const theme = useTheme();
@@ -61,21 +63,29 @@ function MaterialMenu({ rows, expanded, onClose }: { rows: MenuRowSpec[]; expand
     <Host colorScheme={scheme} style={StyleSheet.absoluteFill}>
       <DropdownMenu expanded={expanded} onDismissRequest={onClose} modifiers={[fillMaxSize()]}>
         <DropdownMenu.Items>
-          {rows.map((row) => (
-            <DropdownMenuItem
-              key={row.testID}
-              enabled={!row.disabled && !row.loading}
-              elementColors={row.destructive ? { textColor: error } : undefined}
-              modifiers={[testTag(row.testID)]}
-              onClick={() => {
-                onClose();
-                row.onPress();
-              }}>
-              <DropdownMenuItem.Text>
-                <Text>{row.label}</Text>
-              </DropdownMenuItem.Text>
-            </DropdownMenuItem>
-          ))}
+          {rows.map((row) => {
+            const icon = materialSymbol(row.symbol);
+            return (
+              <DropdownMenuItem
+                key={row.testID}
+                enabled={!row.disabled && !row.loading}
+                elementColors={row.destructive ? { textColor: error, leadingIconColor: error } : undefined}
+                modifiers={[testTag(row.testID)]}
+                onClick={() => {
+                  onClose();
+                  row.onPress();
+                }}>
+                {icon && (
+                  <DropdownMenuItem.LeadingIcon>
+                    <Icon source={icon} size={24} />
+                  </DropdownMenuItem.LeadingIcon>
+                )}
+                <DropdownMenuItem.Text>
+                  <Text>{row.label}</Text>
+                </DropdownMenuItem.Text>
+              </DropdownMenuItem>
+            );
+          })}
         </DropdownMenu.Items>
       </DropdownMenu>
     </Host>
