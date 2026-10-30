@@ -21,8 +21,8 @@ type SeriesSubPath = '/series-downloads' | '/downloads';
  * native push with the edge-swipe back — and everywhere else it returns the path untouched.
  *
  * Only the ROOT series route's nested stack has the sub-page routes. Its copies inside the iOS tab
- * stacks (`app/(tabs)/<tab>/series/index`) are plain pushed cards of the tab's own stack, with the
- * tag search as their one twin (`series/search`), so from one of those the download sub-pages go
+ * stacks (`app/(tabs)/<tab>/in-tab/series/index`) are plain pushed cards of the tab's own stack, with the
+ * tag search as their one twin (`in-tab/series/search`), so from one of those the download sub-pages go
  * to the root route, over the tab shell — hence the segments, not the pathname, which strips the
  * `(tabs)` group and reads the same for both.
  *  */
@@ -133,7 +133,7 @@ export function registerOpenSearchLayer(fn: () => void): () => void {
 
 /**
  * The options of the series page's tag `search` card, iOS — inside the root route's nested stack,
- * and `series/search` in each tab's stack: the one sub-page that shows the system bar, since the
+ * and `in-tab/series/search` in each tab's stack: the one sub-page that shows the system bar, since the
  * search's field IS that bar. Both stacks hide the bar by default for the combined page, whose bar
  * is its own `Stack.Screen`'s business; this is the same transparent, chevron-only bar every
  * pushed page gets from the root and tab stacks.
@@ -152,7 +152,7 @@ export const NESTED_SEARCH_BAR: ComponentProps<typeof Stack.Screen>['options'] =
  * caller stashes the search intent first (setSearchIntent), exactly like the route path.
  *
  * On iOS it is a real push of the page's `search` twin — under `app/series/` for the root
- * route's nested stack, or `series/search` in the focused tab's stack (by the segments, which
+ * route's nested stack, or `in-tab/series/search` in the focused tab's stack (by the segments, which
  * strip the `(tabs)` group) — so the tab bar stays up and the search gets the system bar with its
  * field, filters sheet and sort menu like the one pushed from Browse; at the root it goes inside
  * the nested stack because the page's own route is a contained transparent modal nothing can be
@@ -181,8 +181,8 @@ export function useOpenSeriesSearch(): (() => void) | null {
 /** The nested `search` route of the series page the segments describe, if they describe one. */
 function nestedSearchHref(segments: readonly string[]): Href | null {
   if (segments[0] === 'series') return '/series/search' as Href;
-  if (segments[0] === '(tabs)' && segments[1] && segments[2] === 'series') {
-    return `/(tabs)/${segments[1]}/series/search` as unknown as Href;
+  if (segments[0] === '(tabs)' && segments[1] && segments[2] === 'in-tab' && segments[3] === 'series') {
+    return `/(tabs)/${segments[1]}/in-tab/series/search` as unknown as Href;
   }
   return null;
 }

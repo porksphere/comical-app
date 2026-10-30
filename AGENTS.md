@@ -124,8 +124,8 @@ section`: it takes the faded title's place in the bar, the way Photos names the 
 Music the album, cross-fading as the next heading arrives. Library's title fades only while its listing is
 grouped: an ungrouped one has no heading to take its place. The inline headings scroll away like
 any other row. A series opened from a tab is a real pushed card of that tab's stack (route
-`series/index` — the tab's `series/` directory has no layout on purpose, so the page IS the
-pushed screen and its `Stack.Screen` addresses it), so the tab's leading item morphs into its
+`in-tab/series/index` — the tab's `in-tab/series/` directory has no layout on purpose, so the
+page IS the pushed screen and its `Stack.Screen` addresses it), so the tab's leading item morphs into its
 back button and the slide and edge-pop are the system's; `useNativePush` in
 `app/series/index.tsx` is what the zoom rig gives up there.
 The settings screens' enum rows are SYSTEM menus too: `SettingsSelectRow` is
@@ -158,11 +158,11 @@ bar as it goes, but the content pads once, by the expanded height.
 
 Pushed screens stay INSIDE the tab on iOS. A series page, a search and its results open in the
 focused tab's native stack, not the root stack, so the system tab bar (or its side column) stays up
-under them as it does in Apple's apps: every tab directory carries a `series.tsx` / `search.tsx` /
-`results.tsx` that re-exports the root screen, and `lib/nav` rewrites a push to `/series`,
+under them as it does in Apple's apps: every tab directory carries an `in-tab/` copy of
+`series/`, `search` and `results` that re-exports the root screens, and `lib/nav` rewrites a push to `/series`,
 `/search` or `/results` to the focused tab's copy (`lib/focused-tab.tsx` tracks the tab from the
 segments) — on iOS only; Android and web keep the root routes. A new pushed screen that should
-behave the same gets a stub per tab and its path in `IN_TAB_PATHS`. Only the ROOT `series` route has
+behave the same gets a stub in each tab's `in-tab/` and its path in `IN_TAB_PATHS`. Only the ROOT `series` route has
 the nested in-series stack (`app/series/_layout.tsx`), so series code asks `useSegments()`, not the
 pathname, to know which copy it is in. The series page takes the system bar in BOTH its modes —
 one bar, so the back button and the items morph between them: details transparent over the hero,
@@ -185,7 +185,11 @@ and the app-root overlays render behind it, so it runs a stack of its own and `F
 `onOpenEditor` pushes each editor as a screen; the Search screen hands it its filters through
 `data/filter-sheet.ts` (a one-slot module store, like `search-intent.ts`), since a root-stack modal
 cannot reach the screen's state by context. Search and results share the tab's one UINavigationBar with the screen under
-them, so their push animates the bar natively, as does an in-tab series page's. The ROOT
+them, so their push animates the bar natively, as does an in-tab series page's. The tab copies
+live under each tab's `in-tab/` on purpose: expo-router resolves a plain `/series` to whichever
+matching route shares the most groups with the current one, so a copy at `<tab>/series` captures
+every push made from that tab on every platform, and off iOS the tab is a `Slot` the page would
+replace. Only `tabHref` (lib/nav) names them. The ROOT
 `/series` route (deep links) is still a `containedTransparentModal` with its own zoom entrance,
 so its bar does not; that modal hosts a nested Stack and the page's `Stack.Screen`/`Stack.Toolbar`
 address its `index` screen, never the modal: on iOS react-native-screens re-wraps a non-push

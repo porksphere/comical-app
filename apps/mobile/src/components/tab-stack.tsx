@@ -24,16 +24,20 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * their scroll-edge appearance to the standard one.
  *
  * The stack also carries the tab's own copies of the pages a tab pushes — series, search, results
- * (one-line re-exports under each tab directory; `inTabHref` in lib/nav sends a push there) — so
- * they open under the tab bar like any system app's detail page, rather than over the whole shell.
+ * (one-line re-exports under each tab's `in-tab/`; `inTabHref` in lib/nav sends a push there) —
+ * so they open under the tab bar like any system app's detail page, rather than over the whole shell.
+ * The `in-tab` segment keeps their URLs apart from the root pages': expo-router resolves a plain
+ * `/series` to whichever matching route shares the most groups with the current one, so a copy at
+ * `<tab>/series` would capture every push made from that tab, on web and Android too, where the
+ * tab is a Slot and the page would replace it.
  * All of them are plain pushed cards sharing this one bar, so each push animates it natively: the
  * tab's leading item morphs into the card's back button. The series page included — unlike the
  * root `/series` route, which is a transparent modal zooming out of its card (app/_layout), the
- * tab's copy is `series/index`, a screen of THIS stack: its directory has no layout on purpose,
+ * tab's copy is `in-tab/series/index`, a screen of THIS stack: its directory has no layout on purpose,
  * so the page is the pushed screen itself and its `Stack.Screen` options (bar, edge-pop) land on
  * it. `useNativePush` in app/series/index is where the page gives up its own transitions for the
- * system's. Its tag search is the sibling `series/search`, pushed over it with the search bar, and
- * its reader the sibling `series/read`, which grows out of the page's strip.
+ * system's. Its tag search is the sibling `in-tab/series/search`, pushed over it with the search
+ * bar, and its reader the sibling `in-tab/series/read`, which grows out of the page's strip.
  *
  * The tab's root screen is the one whose list the system tab bar follows (minimize on scroll,
  * scroll-to-top): `TabRootScrollContext` is what lets that list register itself — see
@@ -60,9 +64,9 @@ export default function TabStack({ tab }: { tab: string }) {
         screenLayout={scrolledMaterial ? materialTabScreenLayout : bareTabScreenLayout}>
         {scrolledMaterial ? <Stack.Screen name="index" options={SCROLLED_MATERIAL} /> : null}
         {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
-        <Stack.Screen name="series/index" options={{ headerShown: false }} />
-        <Stack.Screen name="series/read" options={{ headerShown: false }} />
-        <Stack.Screen name="series/search" options={NESTED_SEARCH_BAR} />
+        <Stack.Screen name="in-tab/series/index" options={{ headerShown: false }} />
+        <Stack.Screen name="in-tab/series/read" options={{ headerShown: false }} />
+        <Stack.Screen name="in-tab/series/search" options={NESTED_SEARCH_BAR} />
       </Stack>
     </TabRouteContext.Provider>
   );

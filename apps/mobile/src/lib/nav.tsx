@@ -127,7 +127,7 @@ function takeContentPane(href: unknown): boolean {
 
 /**
  * iOS: a series, search or results page pushed from inside a tab opens INSIDE that tab's native
- * stack — the twin routes under `app/(tabs)/<tab>/` — so the tab bar stays up over it as it does in
+ * stack — the twin routes under `app/(tabs)/<tab>/in-tab/` — so the tab bar stays up over it as it does in
  * every system app, instead of on the root stack over the whole tab shell. Here, with the pane
  * hand-off, for the same reason: the push sites are many and context-free. From outside the tabs
  * the page goes to the root route as before — see `focusedTabRoute`. Android and web keep their
@@ -149,13 +149,13 @@ function inTabHref(href: PushHref): PushHref {
 }
 
 /**
- * A tab's own copy of a root page: `/series` inside `library` is `/(tabs)/library/series`. For a
+ * A tab's own copy of a root page: `/series` inside `library` is `/(tabs)/library/in-tab/series`. For a
  * `<Link>` rendered under a tab (series-card's zoom link), which names its stack itself — the
  * imperative push above does this for every call site, but an href is built at render time, when
  * the focused tab is not necessarily the one the card is in (see `TabRouteContext`).
  */
 export function tabHref(tab: string, pathname: string, params: PaneParams): PushHref {
-  return { pathname: `/(tabs)/${tab}${pathname}`, params } as unknown as PushHref;
+  return { pathname: `/(tabs)/${tab}/in-tab${pathname}`, params } as unknown as PushHref;
 }
 
 /** Both shapes expo-router accepts, reduced to the pathname and params the pane needs to render. */

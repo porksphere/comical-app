@@ -8,7 +8,7 @@ import { createContext, use, useLayoutEffect } from 'react';
  * A module value fed by one tracker in the root layout rather than a hook: the wrapper runs in
  * event handlers, often through the module `router` with no component around it at all. The
  * segments are what expo-router's `useSegments` reports for the focused route —
- * `['(tabs)', 'library', 'search']`, or `['series', 'downloads']` for a root route.
+ * `['(tabs)', 'library', 'in-tab', 'search']`, or `['series', 'downloads']` for a root route.
  */
 let segments: readonly string[] = [];
 
