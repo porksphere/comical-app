@@ -129,28 +129,24 @@ function takeContentPane(href: unknown): boolean {
  * Where a push actually lands. Here, with the pane hand-off, because the push sites are many and
  * context-free.
  *
- * A reader-first `/series` open is the READER page, `/series/read`: the details and the reader are
- * two pages (SeriesSplit in app/series/index). A collection's sequence stays one page, which shows
- * each entry's details in place.
+ * A reader-first `/series` open, a collection's sequence among them, is the READER page,
+ * `/series/read`: the details and the reader are two pages (SeriesSplit in app/series/index).
  *
  * iOS: a series, search or results page pushed from inside a tab opens INSIDE that tab's native
  * stack — the twin routes under `app/(tabs)/<tab>/in-tab/` — so the tab bar stays up over it as it does in
  * every system app, instead of on the root stack over the whole tab shell. From outside the tabs
- * the page goes to the root route, combined, as before — see `focusedTabRoute`. Android and web
- * keep their single root copies.
+ * the page goes to the root route — see `focusedTabRoute`. Android and web keep their single root
+ * copies.
  */
 type PushHref = Parameters<Router['push']>[0];
 const IN_TAB_PATHS = new Set(['/series', '/search', '/results']);
 function destinationHref(href: PushHref): PushHref {
   const { pathname, params } = splitHref(href);
   if (!pathname || !IN_TAB_PATHS.has(pathname)) return href;
-  const page = pathname === '/series' && params.reader === '1' && !params.seq ? '/series/read' : pathname;
-  if (Platform.OS !== 'ios') {
-    return page === pathname ? href : ({ pathname: page, params } as unknown as PushHref);
-  }
-  const tab = focusedTabRoute();
-  if (!tab) return href;
-  return tabHref(tab, page, params);
+  const page = pathname === '/series' && (params.reader === '1' || params.seq === '1') ? '/series/read' : pathname;
+  const tab = Platform.OS === 'ios' ? focusedTabRoute() : null;
+  if (tab) return tabHref(tab, page, params);
+  return page === pathname ? href : ({ pathname: page, params } as unknown as PushHref);
 }
 
 /**

@@ -362,8 +362,8 @@ function SeriesReaderInstance({
   const splitDetails = split === 'details';
   // Off iOS the pages of the split draw the move between them (see SplitHandoff): a reader page
   // pushed over its details grows out of their strip, and details brought up in a reader's place
-  // slide up over it.
-  const splitDrawn = split !== null && !nativePush;
+  // slide up over it. On iOS each is a native push over the other (see useNativePush).
+  const splitDrawn = !IS_IOS;
   const [splitHandoff] = useState(() =>
     splitDrawn && seriesKey ? takeSplitHandoff(seriesKey, split === 'reader' ? 'strip' : 'reveal') : null,
   );
@@ -1093,7 +1093,7 @@ function SeriesReaderInstance({
   const tab = useTabRoute();
   const [stripZoomId, setStripZoomId] = useState<string | null>(null);
   const stripZoomHref = useMemo(
-    () => (splitDetails && tab ? tabHref(tab, '/series/read', {}) : null),
+    () => (splitDetails && IS_IOS ? (tab ? tabHref(tab, '/series/read', {}) : '/series/read') : null),
     [splitDetails, tab],
   );
 
@@ -1286,9 +1286,23 @@ function SeriesReaderInstance({
       }),
     );
   }, [token, detailsActiveSV, edgeCommitting, progress, leaveOnce]);
+  const drillSeries = useDrillRelatedSeries();
   const leaveReaderForDetails = useCallback(() => {
     if (stripReader) {
       shrinkToStrip();
+      return;
+    }
+    // A sequence's Details are the VISIBLE entry's, opened over the album, which waits underneath
+    // where it was: a drilled layer on the root route, a pushed card in a tab.
+    if (sequence) {
+      const entry: Record<string, string> = {
+        id: detailSeriesId ?? '',
+        bridgeId: detailBridgeId ?? '',
+        title: detailTitle ?? '',
+        ...(detailIsDirect && { direct: '1' }),
+      };
+      if (drillSeries) drillSeries(entry);
+      else router.push({ pathname: '/series', params: entry });
       return;
     }
     // Back to the details that pushed it, when they are still there: a reloaded web page has
@@ -1309,7 +1323,20 @@ function SeriesReaderInstance({
     // In its place: the details slide up over this reader (see SplitHandoff).
     if (seriesKey) handOffSplit(seriesKey, { kind: 'reveal' });
     router.replace({ pathname: '/series', params: next });
-  }, [stripReader, shrinkToStrip, params, router, splitDrawn, seriesKey]);
+  }, [
+    stripReader,
+    shrinkToStrip,
+    sequence,
+    detailSeriesId,
+    detailBridgeId,
+    detailTitle,
+    detailIsDirect,
+    drillSeries,
+    params,
+    router,
+    splitDrawn,
+    seriesKey,
+  ]);
 
   // JS-side half of a commit — deliberately closes over nothing but state setters (no shared
   // values, no timer refs), so the gesture worklets can `runOnJS` it; the worklets animate
@@ -1809,7 +1836,7 @@ function SeriesReaderInstance({
     const span = headerSpan;
     const pan = Gesture.Pan()
       // The split details' strip takes a tap: what it opens is a page, not a side to drag in.
-      .enabled(detailsActive && !(splitDetails && nativePush))
+      .enabled(detailsActive && !(splitDetails && !splitDrawn))
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
         if (!panBeganSV.value) {
@@ -1839,7 +1866,7 @@ function SeriesReaderInstance({
   }, [
     detailsActive,
     splitDetails,
-    nativePush,
+    splitDrawn,
     handsStripOff,
     headerSpan,
     panBeganSV,
@@ -2167,7 +2194,8 @@ function SeriesReaderInstance({
 
   // Android hardware back steps back HOME (the details) before leaving: reader expanded → back
   // collapses it; details up → the instance slides out (a drilled layer back to its parent
-  // series, the root back to whatever it was opened over).
+  // series, the root back to whatever it was opened over). An album has no home but the
+  // collection it came from: its Details open over it, so stepping there would never leave.
   // Layer handlers register after their parent's (mounted later), so BackHandler's LIFO order
   // naturally gives the topmost instance the event. (Android-only API — react-native-web's
   // BackHandler stub rejects addEventListener.) Details under their reader page (see SeriesSplit)
@@ -2175,19 +2203,19 @@ function SeriesReaderInstance({
   useEffect(() => {
     if (Platform.OS !== 'android' || !isTop) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (!detailsActive) setRevealed(1);
+      if (!detailsActive && !sequence) setRevealed(1);
       else closeLayer();
       return true;
     });
     return () => sub.remove();
-  }, [isTop, detailsActive, setRevealed, closeLayer]);
+  }, [isTop, detailsActive, sequence, setRevealed, closeLayer]);
   // Desktop back steps home the same way — Escape, the chevron, and the shell's mouse back button
   // (which arrives as Escape, see lib/desktop-commands). Not when the desktop pane beneath this
   // reader already shows this series: its details are right there, so stepping home would show
   // them twice, one over the other. A phone-width browser keeps the one-step exit.
   const isDesktop = useIsDesktop();
   const paneShowsThis = useSeriesPaneShowsTop(`${bridgeId ?? ''}:${id ?? ''}`) && !inPane && depth === 0;
-  const backStepsHome = !detailsActive && (isDesktop || !!desktopShell()) && !paneShowsThis;
+  const backStepsHome = !detailsActive && !sequence && (isDesktop || !!desktopShell()) && !paneShowsThis;
   const revealDetails = useCallback(() => setRevealed(1), [setRevealed]);
   // Escape is the chevron. Only the TOP layer answers: every layer beneath is a whole series page
   // with its own reader, and when each one listened, the reader's fallback popped the route — the
@@ -3142,7 +3170,6 @@ function SeriesReaderInstance({
   // It opens as a drilled LAYER (the same slide a related-series card gets), reader-first at the
   // tapped spot, with the album intact underneath; the route push is the fallback for the odd
   // host without a layer stack.
-  const drillSeries = useDrillRelatedSeries();
   const openFromSequenceDetails = useCallback(
     (params: Record<string, string>) => {
       if (drillSeries) drillSeries(params);
@@ -3347,7 +3374,8 @@ function SeriesReaderInstance({
             headerTransparent: true,
             headerShadowVisible: false,
             headerBackVisible: nativePush,
-            ...(nativePush ? { gestureEnabled: detailsActive || (swipeAway && !readerZoomed && !scrubbing) } : {}),
+            // Not a pushed card, nothing for UIKit to pop: the edge is the page's own back-swipe.
+            gestureEnabled: nativePush && (detailsActive || (swipeAway && !readerZoomed && !scrubbing)),
             ...(detailsActive
               ? {
                   title: barSolid ? headerBarTitle : '',
@@ -3825,7 +3853,7 @@ type DrillEntry = { key: number } & ({ kind: 'series'; params: SeriesReaderParam
 // instance (each a whole series page) re-renders along with it for nothing.
 const MemoSeriesReaderInstance = memo(SeriesReaderInstance);
 
-/** The root `series/index`: the details page of the split (see SeriesSplit), except on iOS. */
+/** The root `series/index`: the details page of the split (see SeriesSplit). */
 export default function SeriesReaderScreen() {
   return <SeriesRoute split="details" />;
 }
@@ -3846,14 +3874,9 @@ function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
   const { width } = useViewport();
   const inPane = useSeriesPaneWidth() !== null;
   const nativePush = useNativePush();
-  const split = nativePush || !IS_IOS ? routeSplit : null;
   // A details page under its reader is still mounted (see app/series/_layout) and must stop
   // answering keys and back. iOS covers it with a real card, and reads `isTop` for its bar.
   const routeFocused = useIsFocused() || IS_IOS;
-  // A link that names the other side (a details route opened reader-first, a reader route opened
-  // onto the details) gets the one page that does both.
-  const readerFirst = params.reader === '1';
-  const baseSplit = (split === 'details' && readerFirst) || (split === 'reader' && !readerFirst) ? null : split;
   const [drills, setDrills] = useState<DrillEntry[]>([]);
   // The pane stays mounted under a full-screen series page opened from it (see lib/series-pane).
   useEffect(() => (inPane ? undefined : coverSeriesPane()), [inPane]);
@@ -3862,10 +3885,12 @@ function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
   // ── Sequence mode (`seq=1`): the reader pages over a COLLECTION's saved pages ──
   // The screen's share is deliberately small: resolve the album (use-reader-sequence) and mount
   // ONE instance for its whole life — never re-keyed, so the pager inside it never remounts and a
-  // series cross stays what it physically is: a page turn. Which series the chrome and details
-  // describe is the INSTANCE's business — it re-points them to the visible entry, the way a
-  // stitched crossing relabels (see ReaderSequenceRun).
+  // series cross stays what it physically is: a page turn. Which series the chrome describes, and
+  // whose details its Details button opens, is the INSTANCE's business — it re-points them to the
+  // visible entry, the way a stitched crossing relabels (see ReaderSequenceRun).
   const seq = useReaderSequence(params);
+  // A reading link that reached the details route (a deep link) still gets the reader page.
+  const split: SeriesSplit = seq || params.reader === '1' ? 'reader' : routeSplit;
   const seqEntries = seq?.entries;
   const seqUris = seq?.uris;
   const seqStartId = params.seqStart;
@@ -3991,7 +4016,7 @@ function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
               onPopLayer={popLayer}
               isTop={drills.length === 0 && !covered && routeFocused}
               nativePush={nativePush}
-              split={null}
+              split="reader"
               sequence={seqRun}
             />
           ) : (
@@ -4008,7 +4033,7 @@ function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
             onPopLayer={popLayer}
             isTop={drills.length === 0 && !covered && routeFocused}
             nativePush={nativePush}
-            split={baseSplit}
+            split={split}
           />
         )}
       </Animated.View>
@@ -4025,7 +4050,7 @@ function SeriesRoute({ split: routeSplit }: { split: SeriesSplit }) {
               onPopLayer={popLayer}
               isTop={i === top && !covered && routeFocused}
               nativePush={false}
-              split={IS_IOS || d.params.reader === '1' ? null : 'details'}
+              split="details"
             />
           ) : (
             <SearchLayer onPopLayer={popLayer} coverSV={layerCover} isTop={i === top && !covered && routeFocused} />

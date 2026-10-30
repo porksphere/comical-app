@@ -4,17 +4,16 @@
  * The details and the reader are two pages rather than two sides of one. `details` is
  * `series/index`, whose strip still shows the page you are on and opens `series/read` to read;
  * `reader` is that page, whose Details button goes back to the details that opened it, or brings
- * them up in its place.
+ * them up in its place. A collection's sequence is a reader page, whose Details open the visible
+ * entry's own details over it.
  *
- * On iOS, inside a tab, they are two cards of the tab's native stack: UIKit pushes the reader, and
- * the zoom grows it out of the strip (see ZoomSource). The root route there (deep links, a
- * notification) stays the one page. Off iOS `read` is a transparent modal over the details, and
- * the page draws the move itself: the reader opens as the strip's own reader growing to the full
- * window, and shrinks back into it on the way out (see SplitHandoff). A drilled layer is split
- * the same way off iOS; null for a collection's sequence, which shows each entry's details in
- * place, and for a link that names the other side (see SeriesRoute).
+ * On iOS they are two cards of a native stack, the tab's or the root route's nested one: UIKit
+ * pushes the reader, and the zoom grows it out of the strip (see ZoomSource). Off iOS `read` is a
+ * transparent modal over the details, and the page draws the move itself: the reader opens as the
+ * strip's own reader growing to the full window, and shrinks back into it on the way out (see
+ * SplitHandoff).
  */
-export type SeriesSplit = 'details' | 'reader' | null;
+export type SeriesSplit = 'details' | 'reader';
 
 /**
  * Off iOS the move between the two pages of the split is drawn by the page that arrives, from

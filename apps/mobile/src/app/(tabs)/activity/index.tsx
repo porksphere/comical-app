@@ -243,8 +243,8 @@ export default function ActivityScreen() {
   const sides = useSideInsets();
   const sidePad = topLevelCenterInset(width - sides.left - sides.right);
 
-  // See history.tsx's `openDetail` — the same control, opening the same combined page on its
-  // details side.
+  // See history.tsx's `openDetail` — the same control, opening the same series on its details
+  // page.
   const openDetail = (g: SeriesActivity) => {
     router.push({
       pathname: '/series',

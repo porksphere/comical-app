@@ -308,8 +308,8 @@ function AltTitles({ titles }: { titles: string[] }) {
  *
  *  This is the whole body of the series page, and it lives in components/ rather than app/ because
  *  the screen that renders it is a route and this is not. It used to sit alongside a second,
- *  standalone `/series` screen and be exported for the combined page to embed; that screen is gone
- *  and the combined page is the series page now, so the `topInset` / `onStartReading` /
+ *  standalone `/series` screen and be exported for another page to embed; that screen is gone
+ *  and this is the series details page now, so the `topInset` / `onStartReading` /
  *  `onOpenChapter` / `onOpenPage` props are simply how the page drives its own body rather than
  *  overrides of some other screen's defaults. */
 export function SeriesBody({

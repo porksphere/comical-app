@@ -4,7 +4,7 @@ import { sharedPushback } from '@/lib/pushback-signal';
 import { armSettleCheck, cancelSettleCheck, notePushback } from '@/lib/pushback-watchdog';
 
 /**
- * The DIM over whatever the combined page opens on top of.
+ * The DIM over whatever the series page opens on top of.
  *
  * A contained transparent modal (that's what lets the reader's swipe-away dissolve and reveal
  * what's underneath) gets no say in how the screen beneath it is treated — a modal's animation on

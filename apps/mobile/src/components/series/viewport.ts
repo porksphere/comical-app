@@ -1,5 +1,5 @@
-import { useSegments } from 'expo-router';
-import { useMemo } from 'react';
+import { useNavigation, useRoute, useSegments } from 'expo-router';
+import { useMemo, useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 
@@ -24,16 +24,22 @@ export function useViewport(): { width: number; height: number } {
 }
 
 /**
- * iOS, inside a tab: the series page is a real pushed card of the tab's native stack
- * (components/tab-stack, route `in-tab/series/index`) and UIKit owns its transitions — the slide in, the
- * bar morphing out of the tab's leading item, the left-edge pop — so the zoom rig stands down on
- * the depth-0 instance: no entrance (the page lands open in one frame, as on web), no collapse on
- * the way out, no back-swipe or swipe-away of its own, nothing dimmed behind it, and leaving is
- * just the pop. The root `/series` route (deep links, a reader opened from a notification) and
- * Android/web keep the contained transparent modal with the zoom; so does a layer drilled over
- * the root page, since a layer is never a route — inside a tab a related series is another push.
+ * iOS: the series page is a real pushed card of a native stack and UIKit owns its transitions — the
+ * slide or zoom in, the bar morphing out of the item it was pushed from, the left-edge pop — so
+ * the zoom rig stands down on the depth-0 instance: no entrance (the page lands open in one
+ * frame, as on web), no collapse on the way out, no back-swipe or swipe-away of its own, nothing
+ * dimmed behind it, and leaving is just the pop. Inside a tab every series page is one
+ * (components/tab-stack, route `in-tab/series/index`). At the root `/series` route (deep links, a
+ * page opened from a root screen) the FIRST page is the contained transparent modal with the zoom,
+ * and a page pushed over it in the route's nested stack, the reader over its details or the
+ * details over a reader opened cold, is a pushed card again. Android/web keep the zoom
+ * everywhere, and so does a layer drilled over the root page, since a layer is never a route.
  */
 export function useNativePush(): boolean {
   const segments: readonly string[] = useSegments();
-  return IS_IOS && segments[0] === '(tabs)';
+  const navigation = useNavigation();
+  const { key } = useRoute();
+  // Once: nothing is ever put beneath a page, so whether one is there is fixed for its life.
+  const [pushed] = useState(() => navigation.getState()?.routes[0]?.key !== key);
+  return IS_IOS && (segments[0] === '(tabs)' || pushed);
 }

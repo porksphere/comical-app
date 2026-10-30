@@ -8,7 +8,7 @@ import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
 // The series page is a CONTAINED TRANSPARENT MODAL (see the root layout), and
 // react-native-screens cannot push a plain root-stack card on top of a transparent modal — it
 // presents as a bottom sheet instead of a page. So the modal hosts its OWN native stack: the
-// combined page is `index` (transparent content — its dismissal fade must reveal the screen
+// details page is `index` (transparent content — its dismissal fade must reveal the screen
 // beneath the modal), and the download sub-pages have twin routes INSIDE this stack — real
 // native pushes, with the slide-from-right animation and the native left-edge swipe back.
 // `useSeriesSubPath` (lib/series-nav.ts) is what routes those pushes here instead of to the root
@@ -18,13 +18,15 @@ import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
 // SearchLayer in index.tsx), the layer being how the custom chevron stays put across the slide.
 //
 // The READER is a page of its own, `read`, pushed over the details (`index`) — see SeriesSplit in
-// index.tsx. On iOS it is a plain native push. Elsewhere it is a TRANSPARENT modal with no
-// animation: the details stay rendered beneath it (a native stack hides the screen under a plain
+// index.tsx. On iOS it is a plain native push, and either page may be the stack's first: a link
+// that opens reading lands on `read`, whose Details push `index` over it. Only that first page
+// is the modal's, with its zoom from the card (see useNativePush). Elsewhere it is a TRANSPARENT
+// modal with no animation: the details stay rendered beneath it (a native stack hides the screen under a plain
 // card, on web with display: none), because the reader grows OUT of the details' strip and shrinks
 // back into it, both drawn by the page itself.
 //
 // A series opened FROM a series (related rails, nested search results) is NOT a route at all:
-// it renders as a sibling LAYER inside the index screen, which keeps the parent series live
+// it renders as a sibling LAYER inside the screen it was opened from, which keeps the parent series live
 // beneath it for its dismissal gestures — see SeriesReaderScreen in index.tsx; cards reach its
 // layer-push through registerDrillSeries via useDrillRelatedSeries, gated by this context.
 export default function SeriesReaderLayout() {

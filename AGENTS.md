@@ -195,8 +195,8 @@ matching route shares the most groups with the current one, so a copy at `<tab>/
 every push made from that tab on every platform, and off iOS the tab is a `Slot` the page would
 replace. Only `tabHref` (lib/nav) names them. The ROOT
 `/series` route (deep links) is still a `containedTransparentModal` with its own zoom entrance,
-so its bar does not; that modal hosts a nested Stack and the page's `Stack.Screen`/`Stack.Toolbar`
-address its `index` screen, never the modal: on iOS react-native-screens re-wraps a non-push
+so its first page's bar does not (a page pushed over it in its nested stack is a card again); that modal hosts a nested Stack and the page's `Stack.Screen`/`Stack.Toolbar`
+address the nested screen they render in, never the modal: on iOS react-native-screens re-wraps a non-push
 screen's content whenever `headerShown` flips (`ScreenStackItem`'s `isHeaderInModal`) and remounts
 it, state and all. The
 series page flips it twice per visit (details ⇄ reader, the search layer), and when the flip hit
@@ -340,8 +340,11 @@ and `series/read` the reader it opens; `lib/nav` sends a reader-first `/series` 
 `/series/read`. Off iOS `read` is a transparent modal with no animation over the details, which
 stay rendered, and the pages draw the move themselves: the reader page continues the strip's own
 open from wherever a drag left it and shrinks back into the strip on the way out, and a reader
-that brings up details it was not opened from has them slide up over it (`SplitHandoff`). The
-root route on iOS (deep links) and a collection's sequence stay one page.
+that brings up details it was not opened from has them slide up over it (`SplitHandoff`). On
+iOS the root route (deep links, opens from outside the tabs) pushes them over each other in its
+nested stack as a tab does, the reader zooming out of the strip; only its FIRST page is the
+modal with the zoom from the card. A collection's sequence is a reader page too, whose Details
+open the visible entry's details over the album.
 
 **The page lands on its own hero cover only while that cover is at least half on screen.** A bound
 that has scrolled off is still a bound the page has to fly onto, so aiming at one drags the whole

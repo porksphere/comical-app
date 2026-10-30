@@ -42,7 +42,7 @@ export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/s
  * app/series/index). Series cards read this instead of
  * `usePathname` — cards are render-cost-sensitive, and a context whose value never changes
  * doesn't re-render them on every navigation the way the pathname hook would. `drillSeries` is a
- * ref the combined page's screen fills with its layer-push (see SeriesReaderScreen): a drilled
+ * ref the series page's screen fills with its layer-push (see SeriesRoute): a drilled
  * series renders as a plain sibling LAYER inside that one screen, because navigation can't do
  * this on iOS — a second contained transparent modal loses the middle screen's view (UIKit
  * re-roots the OverCurrentContext presentation at the react root), and a covered nested card is
@@ -117,6 +117,8 @@ export function registerDrillSeries(fn: (params: Record<string, string>) => void
  * instead.
  */
 export function drillSeriesFromOverlay(params: Record<string, string>): boolean {
+  // Reading is the reader PAGE, pushed over the series (see SeriesSplit), never a layer.
+  if (params.reader === '1') return false;
   const handler = drillSeriesHandlers.current();
   if (!handler) return false;
   // Shares the nav-guard claim with the in-tree drill, so a double commit can't fire twice.
@@ -134,8 +136,8 @@ export function registerOpenSearchLayer(fn: () => void): () => void {
 /**
  * The options of the series page's tag `search` card, iOS — inside the root route's nested stack,
  * and `in-tab/series/search` in each tab's stack: the one sub-page that shows the system bar, since the
- * search's field IS that bar. Both stacks hide the bar by default for the combined page, whose bar
- * is its own `Stack.Screen`'s business; this is the same transparent, chevron-only bar every
+ * search's field IS that bar. Both stacks hide the bar by default for the series pages, whose bar
+ * is their own `Stack.Screen`'s business; this is the same transparent, chevron-only bar every
  * pushed page gets from the root and tab stacks.
  */
 export const NESTED_SEARCH_BAR: ComponentProps<typeof Stack.Screen>['options'] = {
@@ -189,9 +191,9 @@ function nestedSearchHref(segments: readonly string[]): Href | null {
 
 /**
  * The drill itself, for series cards: null outside the series page's nested stack (callers fall back to
- * their normal `router.push`), otherwise a function that hands the tapped series to the combined
+ * their normal `router.push`), otherwise a function that hands the tapped series to the series
  * page's layer stack. From the nested search/downloads sub-pages it first pops the nested stack
- * back to the combined page (the layers live on that screen), so the result slides in over the
+ * back to the series page (the layers live on that screen), so the result slides in over the
  * series context you came from — and since that page only holds the handlers while focused,
  * the drill waits for it (see registerDrillSeries). Shares the nav-guard claim so a double tap
  * can't fire twice.
@@ -204,8 +206,8 @@ export function useDrillRelatedSeries(): ((params: Record<string, string>) => vo
   const drill = useCallback(
     (params: Record<string, string>) => {
       if (!claimNavigation(navTargetKey({ pathname: '/series', params }))) return;
-      // Only when actually ON a sub-page — from the combined page itself the nested stack is at
-      // its root and the stack router rejects POP_TO_TOP (a noisy dev warning). By the top route's
+      // Only when actually ON a sub-page — from a series page at the stack's root the stack
+      // router rejects POP_TO_TOP (a noisy dev warning). By the top route's
       // NAME, not the index, so a navigator with no sub-pages at all reads the same.
       const state = navigation.getState();
       const top = state?.routes[state.index]?.name;
