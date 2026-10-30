@@ -156,9 +156,15 @@ row of a list: a SwiftUI context menu mounted per card was removed once for exac
 cost. A row's `symbol` is its SF Symbol there, the third place SF Symbols stand in for lucide.
 UIKit has no bold row, so a leading `primary` row gets a section of its own and trailing
 `destructive` rows (red there, and red in the custom menu to match) close the menu in another.
-`HoldMenu` takes one rows builder and wears whichever menu the platform has (chapter rows use it);
+`HoldMenu` takes one rows builder and wears whichever menu the platform has (chapter rows use it,
+except on Android);
 `SystemContextMenuTarget` marks what lifts when that is less than the whole held view. The system
 menu's rows carry no test ids, so Maestro reaches these menus on Android only.
+On Android a chapter row holds nothing, since a long press in an Android list selects: its
+actions sit behind the row's ⋮ (`components/overflow-menu.android.tsx`), Material's dropdown
+hosted from Jetpack Compose by `@expo/ui`, mounted only while it is open and text only, as
+Google's own overflow menus are. Each item carries its row's test id as a Compose test tag.
+Series cards there keep the custom hold menu for now.
 Series cards and the History and Activity rows wear it through `series-card-menu.ios.tsx`: a
 card's cover, or a whole row, grows into `SeriesCardPreview` (the Android panel without what it
 lets you tap, since UIKit's preview takes no touches), tapping that does what tapping the item

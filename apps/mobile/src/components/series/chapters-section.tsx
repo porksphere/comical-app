@@ -42,6 +42,7 @@ import {
   PlusIcon,
   TrashIcon,
 } from '@/components/icons/ui-icons';
+import { OVERFLOW_MENU, OverflowMenu } from '@/components/overflow-menu';
 import { coverRingColor, coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { HoldMenu, liftTarget } from '@/components/system-context-menu';
@@ -110,6 +111,12 @@ const FLAT_ROWS = CHAPTER_ROWS === 'flat';
 // A filled row keeps its greyed title for read state, since a dimmed plate reads as disabled rather
 // than as read; the unfilled forms dim as a whole instead.
 const PLATED_ROWS = CHAPTER_ROWS === 'bubble' || CHAPTER_ROWS === 'plate';
+
+function NoHold({ children }: Parameters<typeof HoldMenu>[0]) {
+  return children({});
+}
+// Where a chapter's actions sit behind its ⋮, holding the row opens nothing.
+const RowHold = OVERFLOW_MENU ? NoHold : HoldMenu;
 const BORDERED_ROWS = CHAPTER_ROWS === 'bubble' || CHAPTER_ROWS === 'outline';
 // A long tab collapses to a configurable number of chapters from the start and the
 // end, with an expand button between them for the hidden middle.
@@ -861,7 +868,8 @@ function ChapterRow({
   group: ChapterGroup;
   preferredGroup?: string;
   onOpen: (v: Chapter) => void;
-  /** Long-press / right-click: the per-chapter menu's rows (read state, collections, downloads). */
+  /** The per-chapter menu's rows (read state, collections, downloads): behind the row's ⋮ on
+   *  Android, held or right-clicked elsewhere. */
   menu?: (group: ChapterGroup) => MenuRowSpec[];
   /** Download indicator for this logical chapter (best state across versions), if any. */
   dlState?: { state: DownloadState; fraction: number } | null;
@@ -882,7 +890,7 @@ function ChapterRow({
   const open = (v: Chapter) => (unavailable ? showToast(unavailable) : onOpen(v));
 
   return (
-    <HoldMenu enabled={!!menu && !dimmed} rows={() => menu?.(group) ?? []}>
+    <RowHold enabled={!!menu && !dimmed} rows={() => menu?.(group) ?? []}>
       {({ onLongPress, onContextMenu }) => (
     // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
     // list you still have to get through, so they are the ones drawn at full strength.
@@ -940,6 +948,14 @@ function ChapterRow({
                 </Pressable>
               )}
             </View>
+            {menu && (
+              <OverflowMenu
+                rows={() => menu(group)}
+                testID={testId('series.chapter', group.key, 'more')}
+                label="More options"
+                disabled={dimmed}
+              />
+            )}
           </ThemedView>
         </Pressable>,
         FLAT_ROWS ? 10 : 8,
@@ -956,7 +972,7 @@ function ChapterRow({
       {FLAT_ROWS && <View style={[styles.rowDivider, { backgroundColor: theme.hairline }]} />}
     </View>
       )}
-    </HoldMenu>
+    </RowHold>
   );
 }
 
