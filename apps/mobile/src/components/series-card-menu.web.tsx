@@ -28,6 +28,8 @@ export type SeriesCardMenuProps = {
   measureRef?: RefObject<ViewInstance | null>;
   /** Ignored on web (no lifted preview to give a starting radius) — matches the native contract. */
   startRadius?: number;
+  /** Ignored on web (no lifted preview to tap) — matches the native contract. */
+  onOpen?: () => void;
   /** `hidden` is always false on web (no lifted preview, so nothing to hide) — matches the native
    *  contract. `menuOpen` is true while THIS card's menu is open. */
   children: (api: {

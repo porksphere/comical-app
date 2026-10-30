@@ -1,17 +1,36 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 
-import type { MenuRowSpec } from '@/components/context-menu-material';
+import type { MenuRowSpec, SubmenuSpec } from '@/components/context-menu-material';
 import { CheckIcon, DownloadsIcon, LogInIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
 import { seriesDetailQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { SeriesEntry } from '@/data/types';
+import { useCollections } from '@/hooks/use-collections';
 import { useFavorite } from '@/hooks/use-favorite';
+import { useItemCollections } from '@/hooks/use-item-collections';
 import { useResetReadProgress } from '@/hooks/use-reset-read-progress';
 import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 import { useSeriesSave } from '@/hooks/use-series-save';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useRouter } from '@/lib/nav';
+
+type CardMenuRowsProps = {
+  bridgeId: string;
+  bridge?: string;
+  entry: SeriesEntry;
+  direct?: boolean;
+  children: (rows: MenuRowSpec[]) => ReactElement;
+};
+
+/** What a saved series is filed with, the same snapshot every card-menu write sends. */
+function seriesSnapshot(entry: SeriesEntry) {
+  return {
+    seriesTitle: entry.title,
+    ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
+    ...(entry.cover && entry.coverAspect !== undefined ? { thumbnailAspect: entry.coverAspect } : {}),
+  };
+}
 
 /**
  * The web card menu's rows: the native popup's (series-card-context-menu.tsx), in its order and
@@ -20,21 +39,17 @@ import { useRouter } from '@/lib/nav';
  *
  * Two departures, both because there is no preview here: Save never expands in place (a saved
  * series opens the collection picker, which is what that submenu stands in for), and nothing hands
- * off a zoom, since web has no zoom entrance.
+ * off a zoom, since web has no zoom entrance. The iOS system menu takes the submenu back
+ * (`SeriesCardSystemMenuRows`), since a system submenu is native there.
  */
 export function SeriesCardMenuRows({
   bridgeId,
   bridge,
   entry,
   direct,
+  saveSubmenu,
   children,
-}: {
-  bridgeId: string;
-  bridge?: string;
-  entry: SeriesEntry;
-  direct?: boolean;
-  children: (rows: MenuRowSpec[]) => ReactElement;
-}) {
+}: CardMenuRowsProps & { saveSubmenu?: () => SubmenuSpec }) {
   const router = useRouter();
   const ds = useDataSource();
   const mock = useMockActive();
@@ -51,17 +66,7 @@ export function SeriesCardMenuRows({
     ...(entry.cover ? { cover: entry.cover } : {}),
   });
   const { favorited, toggle: toggleFavorite, status: favoriteStatus, loginSettings } = useFavorite(bridgeId, entry.id);
-  const save = useSeriesSave(
-    bridgeId,
-    entry.id,
-    () => ({
-      seriesTitle: entry.title,
-      ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
-      ...(entry.cover && entry.coverAspect !== undefined ? { thumbnailAspect: entry.coverAspect } : {}),
-    }),
-    entry.title,
-    !!direct,
-  );
+  const save = useSeriesSave(bridgeId, entry.id, () => seriesSnapshot(entry), entry.title, !!direct);
   const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
   const download = useSeriesDownloadAction(
     bridgeId,
@@ -76,6 +81,7 @@ export function SeriesCardMenuRows({
     {
       label: reading.label,
       Icon: PlayIcon,
+      symbol: 'play',
       primary: true,
       loading: false,
       testID: 'series.card-menu.read',
@@ -84,9 +90,11 @@ export function SeriesCardMenuRows({
     {
       label: save.menuLabel,
       Icon: save.saved ? CheckIcon : PlusIcon,
+      symbol: save.saved ? 'checkmark.circle' : 'plus',
       loading: save.saved === null,
       active: !!save.saved,
       testID: 'series.card-menu.save',
+      ...(save.saved && saveSubmenu && { submenu: saveSubmenu }),
       onPress: () => void save.onPress(),
     },
     ...(favoriteStatus === 'login' && loginSettings
@@ -94,6 +102,7 @@ export function SeriesCardMenuRows({
           {
             label: 'Log in to favorite',
             Icon: LogInIcon,
+            symbol: 'person.crop.circle',
             loading: false,
             testID: 'series.card-menu.favorite',
             onPress: () => router.push({ pathname: '/bridge-settings', params: loginSettings }),
@@ -105,6 +114,7 @@ export function SeriesCardMenuRows({
               label: favorited ? 'Unfavorite' : 'Favorite',
               Icon: StarIcon,
               iconFilled: !!favorited,
+              symbol: favorited ? 'star.fill' : 'star',
               loading: favoriteStatus !== 'ready',
               active: !!favorited,
               testID: 'series.card-menu.favorite',
@@ -115,6 +125,7 @@ export function SeriesCardMenuRows({
     {
       label: download.label,
       Icon: DownloadsIcon,
+      symbol: 'arrow.down.circle',
       loading: download.loading,
       active: download.active,
       disabled: download.disabled,
@@ -124,6 +135,7 @@ export function SeriesCardMenuRows({
     {
       label: 'Reset read progress',
       Icon: RetryIcon,
+      symbol: 'arrow.counterclockwise',
       loading: false,
       destructive: true,
       testID: 'series.card-menu.reset-progress',
@@ -131,4 +143,45 @@ export function SeriesCardMenuRows({
     },
   ];
   return children(rows);
+}
+
+/**
+ * The iOS system menu's rows (series-card-menu.ios.tsx): the web rows, with Save on a saved series
+ * opening the native popup's collections submenu in place. Its checkmarks follow the memberships as
+ * they toggle, and the menu stays up through them.
+ */
+export function SeriesCardSystemMenuRows(props: CardMenuRowsProps) {
+  const { bridgeId, entry, direct } = props;
+  const { collections } = useCollections();
+  const { collectionIds, loading, setCollections, remove } = useItemCollections({
+    kind: 'series',
+    bridgeId,
+    seriesId: entry.id,
+    snapshot: () => seriesSnapshot(entry),
+    direct: !!direct,
+  });
+  const saveSubmenu = (): SubmenuSpec => ({
+    label: 'Save to collection',
+    testID: 'series.card-menu.collections.submenu',
+    rows: [
+      ...collections.map((c) => ({
+        label: c.name,
+        active: collectionIds.includes(c.id),
+        loading,
+        onPress: () =>
+          setCollections(
+            collectionIds.includes(c.id) ? collectionIds.filter((x: string) => x !== c.id) : [...collectionIds, c.id],
+          ),
+        testID: `series.card-menu.collections.${c.id}`,
+      })),
+      {
+        label: 'Remove from Library',
+        loading,
+        destructive: true,
+        onPress: () => void remove(),
+        testID: 'series.card-menu.collections.remove',
+      },
+    ],
+  });
+  return <SeriesCardMenuRows {...props} saveSubmenu={saveSubmenu} />;
 }

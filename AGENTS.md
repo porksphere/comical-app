@@ -159,6 +159,9 @@ UIKit has no bold row, so a leading `primary` row gets a section of its own and 
 `HoldMenu` takes one rows builder and wears whichever menu the platform has (chapter rows use it);
 `SystemContextMenuTarget` marks what lifts when that is less than the whole held view. The system
 menu's rows carry no test ids, so Maestro reaches these menus on Android only.
+Series cards and the History and Activity rows wear it through `series-card-menu.ios.tsx`: a
+card's cover lifts and a row lifts whole, tapping the lifted preview does what tapping the item
+does (`onOpen`), and Save on a saved series is the collections submenu, checks kept in place.
 Secondary controls leave the title: Library's filter/sort share one trailing `⋯`
 `Stack.Toolbar.Menu` (`components/library/library-native-toolbar.tsx`) — NOT a
 `placement="bottom"` toolbar, which is the navigation controller's toolbar and lays out UNDER

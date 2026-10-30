@@ -151,12 +151,16 @@ function Publish({ token, rows }: { token: number; rows: MenuRowSpec[] }) {
 
 function menuNodes(rows: MenuRowSpec[], byId: Map<string, () => void>): SystemMenuNode[] {
   const nodes = rows.map((row, i) => rowNode(row, String(i), byId));
-  const lead = rows[0]?.primary ? 1 : 0;
-  let tail = rows.length;
-  while (tail > lead && rows[tail - 1]?.destructive) tail--;
+  return sectioned(nodes, rows[0]?.primary ? 1 : 0, '');
+}
+
+/** `lead` rows, then the rest, then the trailing destructive rows, each an inline section. */
+function sectioned(nodes: SystemMenuNode[], lead: number, prefix: string): SystemMenuNode[] {
+  let tail = nodes.length;
+  while (tail > lead && nodes[tail - 1]?.destructive) tail--;
   const sections = [nodes.slice(0, lead), nodes.slice(lead, tail), nodes.slice(tail)].filter((s) => s.length > 0);
   if (sections.length < 2) return nodes;
-  return sections.map((children, i) => ({ id: `section.${i}`, title: '', inline: true, children }));
+  return sections.map((children, i) => ({ id: `${prefix}section.${i}`, title: '', inline: true, children }));
 }
 
 function rowNode(row: MenuRowSpec, id: string, byId: Map<string, () => void>): SystemMenuNode {
@@ -166,19 +170,23 @@ function rowNode(row: MenuRowSpec, id: string, byId: Map<string, () => void>): S
       id: `menu.${id}`,
       title: row.label,
       symbol: row.symbol,
-      children: spec.rows.map((sub, j) => {
-        const subId = `${id}.${j}`;
-        byId.set(subId, sub.onPress);
-        return {
-          id: subId,
-          title: sub.label,
-          on: !!sub.active,
-          destructive: sub.destructive,
-          disabled: sub.loading,
-          // A membership toggle is one of several picks; anything else ends the menu.
-          keepsOpen: sub.active !== undefined,
-        };
-      }),
+      children: sectioned(
+        spec.rows.map((sub, j) => {
+          const subId = `${id}.${j}`;
+          byId.set(subId, sub.onPress);
+          return {
+            id: subId,
+            title: sub.label,
+            on: !!sub.active,
+            destructive: sub.destructive,
+            disabled: sub.loading,
+            // A membership toggle is one of several picks; anything else ends the menu.
+            keepsOpen: sub.active !== undefined,
+          };
+        }),
+        0,
+        `${id}.`,
+      ),
     };
   }
   byId.set(id, row.onPress);

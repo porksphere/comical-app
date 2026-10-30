@@ -366,7 +366,8 @@ function HistoryItem({
             coverAspect={2 / 3}
             startRadius={6} // matches HistoryRow's thumbnail corner
             zoomSource={zoomSource}
-            measureRef={thumbRef}>
+            measureRef={thumbRef}
+            onOpen={onResume}>
             {({ hidden }) => renderRow(hidden)}
           </SeriesCardMenu>
         )}

@@ -7,6 +7,7 @@ import { CardOverlays } from '@/components/card-badge';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { Skeleton } from '@/components/skeleton';
+import { SystemContextMenuTarget } from '@/components/system-context-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
@@ -744,14 +745,17 @@ export function SeriesCard({
 
     return (
       <>
-        <CoverFrame
-          aspect={coverAspect}
-          coverRef={coverRef}
-          hidden={coverHidden}
-          ring={active || menuOpen}
-          onLayout={shrink.onCoverLayout}>
-          {coverContents}
-        </CoverFrame>
+        {/* What the iOS system menu lifts: the cover, not the card with its title. */}
+        <SystemContextMenuTarget radius={COVER_CORNER.borderRadius}>
+          <CoverFrame
+            aspect={coverAspect}
+            coverRef={coverRef}
+            hidden={coverHidden}
+            ring={active || menuOpen}
+            onLayout={shrink.onCoverLayout}>
+            {coverContents}
+          </CoverFrame>
+        </SystemContextMenuTarget>
 
         {/* Trailing group is an Animated.View only when the shrink illusion drives its translateY;
             otherwise a plain View, so lightweight cards carry no Reanimated wrapper here either. */}
@@ -764,6 +768,39 @@ export function SeriesCard({
     );
   };
 
+  // Built LAZILY (only when actually navigating) — NOT per render. This object plus its
+  // encodeURIComponent/.replace string churn was allocated for every card on every render, so a
+  // scroll that recycles many cards produced steady garbage → GC pauses (a top cost in the
+  // release profile). Native builds it in onPress (once, on tap); web still needs it at render
+  // for the <Link> anchor, so it's built there.
+  //
+  // `push` forces a new stack entry every time: expo-router's default `navigate` unwinds to an
+  // existing `/series` route already on the stack instead of pushing another — so tapping a
+  // related/recommended series from within a series-detail screen replaced the current screen
+  // instead of drilling in. Also correct from Browse/Library/History (no `/series` on the stack
+  // yet there, so equivalent to a plain push).
+  const buildParams = () => ({
+    id: entry.id,
+    title: entry.title,
+    // Percent-encoded (parens included — see encodeSeriesParam), and decoded back on the
+    // series page with a single `decodeURIComponent`.
+    ...(bridge ? { bridge: encodeSeriesParam(bridge) } : {}),
+    // Forward the cover the browse grid already has so the series page can paint its hero
+    // instantly from expo-image's cache, rather than shimmering until the detail resolves.
+    ...(entry.cover ? { cover: encodeSeriesParam(entry.cover) } : {}),
+    ...(bridgeId ? { bridgeId } : {}),
+    ...(direct ? { direct: '1' } : {}),
+  });
+  const buildHref = () => ({
+    pathname: '/series' as const,
+    params: buildParams(),
+  });
+  // The drill (inside the series page's nested stack) dispatches on the NESTED navigator — no href.
+  const open = () => (drillRelated ? drillRelated(buildParams()) : router.push(buildHref()));
+  // The lifted preview of iOS's system menu, tapped: where the zoom link goes, without its zoom.
+  const openFromPreview = () =>
+    zoomLink && zoomTab !== null ? router.push(tabHref(zoomTab, '/series', buildParams())) : open();
+
   return (
     <SeriesCardMenu
       enabled={menuEnabled}
@@ -772,37 +809,9 @@ export function SeriesCard({
       entry={entry}
       direct={direct}
       coverAspect={coverAspect}
-      zoomSource={zoomSource}>
+      zoomSource={zoomSource}
+      onOpen={openFromPreview}>
       {({ onLongPress, hidden, menuOpen }) => {
-        // Built LAZILY (only when actually navigating) — NOT per render. This object plus its
-        // encodeURIComponent/.replace string churn was allocated for every card on every render, so a
-        // scroll that recycles many cards produced steady garbage → GC pauses (a top cost in the
-        // release profile). Native builds it in onPress (once, on tap); web still needs it at render
-        // for the <Link> anchor, so it's built there.
-        //
-        // `push` forces a new stack entry every time: expo-router's default `navigate` unwinds to an
-        // existing `/series` route already on the stack instead of pushing another — so tapping a
-        // related/recommended series from within a series-detail screen replaced the current screen
-        // instead of drilling in. Also correct from Browse/Library/History (no `/series` on the stack
-        // yet there, so equivalent to a plain push).
-        const buildParams = () => ({
-          id: entry.id,
-          title: entry.title,
-          // Percent-encoded (parens included — see encodeSeriesParam), and decoded back on the
-          // series page with a single `decodeURIComponent`.
-          ...(bridge ? { bridge: encodeSeriesParam(bridge) } : {}),
-          // Forward the cover the browse grid already has so the series page can paint its hero
-          // instantly from expo-image's cache, rather than shimmering until the detail resolves.
-          ...(entry.cover ? { cover: encodeSeriesParam(entry.cover) } : {}),
-          ...(bridgeId ? { bridgeId } : {}),
-          ...(direct ? { direct: '1' } : {}),
-        });
-        const buildHref = () => ({
-          pathname: '/series' as const,
-          params: buildParams(),
-        });
-        // The drill (inside the series page's nested stack) dispatches on the NESTED navigator — no href.
-        const open = () => (drillRelated ? drillRelated(buildParams()) : router.push(buildHref()));
         // A `<Link asChild>` owns the press (web's anchor, iOS's zoom link); the Pressable then
         // carries no handler of its own, or the Slot would merge the two and navigate twice.
         const linked = (isWeb && !drillRelated) || zoomLink;

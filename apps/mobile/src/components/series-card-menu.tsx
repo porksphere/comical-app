@@ -17,10 +17,11 @@ import {
 } from '@/lib/series-card-menu';
 
 /**
- * Native (iOS + Android) per-card quick-actions menu. A long-press anywhere on the card opens the
- * iOS / X-style hold-down menu — a dimmed backdrop, the card lifted as a preview, and a rounded menu
- * springing in (rendered by the root `SeriesCardContextMenuHost`, driven by `openSeriesCardMenu`).
- * Web has its own affordance (a hover 3-dot button), in the `.web.tsx` file.
+ * Android per-card quick-actions menu; iOS has the system's (`series-card-menu.ios.tsx`), typed by
+ * the props here. A long-press anywhere on the card opens the hold-down menu — a dimmed backdrop,
+ * the card lifted as a preview, and a rounded menu springing in (rendered by the root
+ * `SeriesCardContextMenuHost`, driven by `openSeriesCardMenu`). Web has its own affordance (a hover
+ * 3-dot button), in the `.web.tsx` file.
  *
  * The long-press is detected with `react-native-gesture-handler` (not a `Pressable`'s `onLongPress`):
  * inside a scrolling list on iOS the Pressable's `onLongPress` doesn't fire reliably — the touch is
@@ -28,8 +29,7 @@ import {
  * `LongPress` gesture recognizes the hold at the native layer and coexists with the card's tap
  * (navigation) and the list's scroll: a quick tap still navigates; moving the finger cancels it.
  *
- * There is NO per-card native context-menu host (the old SwiftUI `.ios.tsx` was the iOS scroll-jank
- * cause). Scrolling cards cost nothing; the menu is built on demand, once, on press.
+ * Scrolling cards cost nothing; the menu is built on demand, once, on press.
  */
 export type SeriesCardMenuProps = {
   /** When false (no `bridgeId` — e.g. mock mode), the card renders with no menu. */
@@ -52,6 +52,8 @@ export type SeriesCardMenuProps = {
   /** This card's zoom-source key — forwarded so a navigating row's zoom blanks this card alone
    *  (see `SeriesCardMenuRequest.zoomSource`). Omitted on web, which has no zoom entrance. */
   zoomSource?: ZoomSourceKey;
+  /** What tapping the item does. iOS's lifted preview does the same when tapped; unused here. */
+  onOpen?: () => void;
   /** `hidden` is true while THIS card's menu is open — the child should hide just its COVER/thumbnail
    *  (so the lifted preview isn't doubled), NOT the whole item; the rest stays visible under the dim.
    *  `menuOpen` is the same moment under the name web reads it by, where nothing is hidden. */
