@@ -811,8 +811,7 @@ export function SeriesCard({
       direct={direct}
       coverAspect={coverAspect}
       zoomSource={zoomSource}
-      onOpen={openFromPreview}
-      swiftUI={fixedWidth != null ? { width: fixedWidth } : {}}>
+      onOpen={openFromPreview}>
       {({ onLongPress, hidden, menuOpen }) => {
         // A `<Link asChild>` owns the press (web's anchor, iOS's zoom link); the Pressable then
         // carries no handler of its own, or the Slot would merge the two and navigate twice.
