@@ -2,8 +2,10 @@ import type { LiveMenuRows } from '@/components/context-menu-host';
 import { SeriesCardSystemMenuRows } from '@/components/series-card-actions-menu';
 import { SeriesCardPreview } from '@/components/series-card-preview';
 import type { SeriesCardMenuProps } from '@/components/series-card-menu';
+import { SwiftUISeriesCardMenu } from '@/components/series-card-menu-swiftui';
 import { SystemContextMenu } from '@/components/system-context-menu';
 import { useTheme } from '@/hooks/use-theme';
+import { useSwiftUICardMenu } from '@/lib/card-menu-flag';
 
 /**
  * iOS per-card quick actions: the system context menu (components/system-context-menu.tsx), where
@@ -16,18 +18,15 @@ import { useTheme } from '@/hooks/use-theme';
  * begins, from the root host, never per card. The SwiftUI context menu this file once held mounted
  * its rows per card, which is why it was removed. UIKit hides what it lifts, so `hidden` is never
  * set here.
+ *
+ * Settings › Developer can put series cards back on that SwiftUI menu (series-card-menu-swiftui.tsx)
+ * to compare scrolling; with the switch off, a card pays one context read for it.
  */
-export function SeriesCardMenu({
-  enabled,
-  bridgeId,
-  bridge,
-  entry,
-  direct,
-  coverAspect,
-  onOpen,
-  children,
-}: SeriesCardMenuProps) {
+export function SeriesCardMenu(props: SeriesCardMenuProps) {
+  const { enabled, bridgeId, bridge, entry, direct, coverAspect, onOpen, children } = props;
   const theme = useTheme();
+  const swiftUI = useSwiftUICardMenu();
+  if (swiftUI && props.swiftUI) return <SwiftUISeriesCardMenu {...props} />;
   const content = children({ onLongPress: undefined, hidden: false, menuOpen: false });
   if (!bridgeId) return <>{content}</>;
   const rows: LiveMenuRows = (render) => (

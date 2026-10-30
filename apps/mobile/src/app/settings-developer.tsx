@@ -1,4 +1,4 @@
-import { ScrollView, StyleSheet } from 'react-native';
+import { Platform, ScrollView, StyleSheet } from 'react-native';
 
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
@@ -9,6 +9,7 @@ import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useApiBase } from '@/data/api';
 import { useMockDataToggle } from '@/data/source';
+import { swiftUICardMenu$, useSwiftUICardMenuSetting } from '@/lib/card-menu-flag';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 
 /** Dev-build-only: lets local development iterate against mock data without a running backend, and
@@ -20,6 +21,7 @@ export default function DeveloperSettingsScreen() {
   const [mockEnabled, setMockEnabled] = useMockDataToggle();
   const [apiBase] = useApiBase();
   const profilerOn = useDevProfilerEnabled();
+  const swiftUICardMenu = useSwiftUICardMenuSetting();
 
   return (
     <ThemedView style={styles.container}>
@@ -38,6 +40,13 @@ export default function DeveloperSettingsScreen() {
             description="Shows a floating on-device Hermes profiler that captures a JS sampling profile and uploads it to the dev server."
             right={<ThemedSwitch value={profilerOn} onValueChange={(v) => devProfiler$.enabled.set(v)} />}
           />
+          {Platform.OS === 'ios' && (
+            <SettingsRow
+              label="SwiftUI card menus"
+              description="Series cards in Browse and Library hold @expo/ui's SwiftUI context menu instead of the system one, to compare scrolling. History and Activity keep the system menu."
+              right={<ThemedSwitch value={swiftUICardMenu} onValueChange={(v) => swiftUICardMenu$.enabled.set(v)} />}
+            />
+          )}
           <SettingsRow label="Server" description={apiBase} descriptionSelectable />
         </SettingsSection>
       </ScrollView>

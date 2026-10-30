@@ -54,6 +54,11 @@ export type SeriesCardMenuProps = {
   zoomSource?: ZoomSourceKey;
   /** What tapping the item does. iOS's lifted preview does the same when tapped; unused here. */
   onOpen?: () => void;
+  /** Developer A/B, iOS only: offers this card to the SwiftUI menu (series-card-menu-swiftui.tsx)
+   *  while Settings › Developer turns it on, with the card's own `width` where it sets one. Only
+   *  series cards pass it, since they give a hold to their Pressable's `onLongPress`, which keeps
+   *  its release from also tapping them. */
+  swiftUI?: { width?: number };
   /** `hidden` is true while THIS card's menu is open — the child should hide just its COVER/thumbnail
    *  (so the lifted preview isn't doubled), NOT the whole item; the rest stays visible under the dim.
    *  `menuOpen` is the same moment under the name web reads it by, where nothing is hidden. */
