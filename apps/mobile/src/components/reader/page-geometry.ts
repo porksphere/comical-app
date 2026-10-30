@@ -164,3 +164,28 @@ export function pageGeometry(image: Size | null, viewport: Size, fill: FillRule,
     ? { content, restScale, restEdge: rtl ? 'right' : 'left' }
     : { content, restScale: 1, restEdge: 'center' };
 }
+
+/** Where a paged reader's page comes to rest under `pageFit`. Every page is drawn in the contain
+ *  box, a box the viewport's size that never changes — which is what keeps a page from shifting as
+ *  its picture arrives — at the fit's rest (see `fillRule`), except a STRIP under fit-width, which
+ *  gets a box its own height (see `stripGeometry`). A spread (`double`, two pages side by side)
+ *  never lies as a strip, and under `auto` it rests whole: the "spreads fill the height" rule is
+ *  about ONE picture that is a spread, not two pages shown as one. In `standby` every page rests at
+ *  1×. Before the picture's shape is known every page is contain.
+ *
+ *  It stays below everything it calls: a worklet captures the functions it calls where it is
+ *  declared, so one declared above `pageGeometry` calls `undefined`. */
+export function pageRest(
+  image: Size | null,
+  viewport: Size,
+  pageFit: PageFit,
+  double: boolean,
+  rtl: boolean,
+  standby: boolean,
+): PageGeometry & { strip: boolean } {
+  'worklet';
+  const rule = standby ? 'none' : fillRule(pageFit);
+  const fill = double && rule === 'wide' ? 'none' : rule;
+  const strip = !double && pageFit === 'fit-width' && isStrip(image, viewport);
+  return { ...(strip && image ? stripGeometry(image, viewport) : pageGeometry(image, viewport, fill, rtl)), strip };
+}

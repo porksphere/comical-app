@@ -56,16 +56,17 @@ const RETRY_DELAYS_MS = [1000, 2000, 4000];
 const PAGE_FADE_MS = 110;
 
 /**
- * Pages painted lately, oldest first — what makes a page WARM (see `warm` in ReaderPage). Raw page
- * paths, capped: a page that fell out has long since left the memory cache it stands for anyway.
+ * Pages painted lately, oldest first, with their pictures' sizes — what makes a page WARM (see
+ * `warm` in ReaderPage). Raw page paths, capped: a page that fell out has long since left the
+ * memory cache it stands for anyway.
  */
-const painted = new Set<string>();
+const painted = new Map<string, Size | null>();
 const PAINTED_CAP = 48;
-function markPainted(uri: string) {
+function markPainted(uri: string, size: Size | null) {
   painted.delete(uri);
-  painted.add(uri);
+  painted.set(uri, size);
   if (painted.size <= PAINTED_CAP) return;
-  const oldest = painted.values().next().value;
+  const oldest = painted.keys().next().value;
   if (oldest !== undefined) painted.delete(oldest);
 }
 /** How long a warm page holds its placeholder back before deciding the picture isn't coming. */
@@ -203,7 +204,12 @@ export function ReaderPage({
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
-  const [aspect, setAspect] = useState(DEFAULT_ASPECT);
+  // A warm page's shape is known already, so its width row mounts at its real height: under the
+  // portrait guess a landscape picture is cropped to fill the box, twice its size, until it loads.
+  const [aspect, setAspect] = useState(() => {
+    const size = painted.get(uri);
+    return size ? size.width / size.height : DEFAULT_ASPECT;
+  });
   // The picture's REAL pixel size, not just its shape — what `page-slicing` needs to decide
   // whether this page can be drawn at all. Null until the image reports it.
   const [dims, setDims] = useState<Size | null>(null);
@@ -593,10 +599,10 @@ export function ReaderPage({
           autoplay={false}
           onLoad={(e: LoadEvent) => {
             traceJS('page', 'loaded', { p: page });
-            markPainted(uri);
             setLoaded(true);
             const w = e.source?.width;
             const h = e.source?.height;
+            markPainted(uri, w && h ? { width: w, height: h } : null);
             if (w && h) {
               setAspect(w / h);
               setDims({ width: w, height: h });

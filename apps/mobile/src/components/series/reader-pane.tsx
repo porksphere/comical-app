@@ -1,5 +1,4 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Image } from 'expo-image';
 import {
   forwardRef,
   useCallback,
@@ -18,12 +17,13 @@ import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { buildSpreads, knownPageSize, readsDouble, spreadHalves, spreadRangeLabel } from '@/components/reader/spreads';
+import { webtoonFit } from '@/components/reader/settings-panel';
+import { StartPoster, type PosterLayout } from '@/components/reader/start-poster';
 import { createZoomHold, keyZoomSpeed, resetZoom, stepZoom, zoomHoldDirection } from '@/components/reader/desktop-zoom';
 import { isControlTarget, isTypingTarget } from '@/lib/key-hold';
 import { keyActionOf } from '@/lib/keybindings';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
-import { peekResolvedAssetSource } from '@/data/api';
 import { warmPageImages } from '@/data/warm-pages';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -76,10 +76,18 @@ const SYSTEM_BAR_MIN_INSET = 40;
  */
 const WARM_IDLE_MS = 220;
 
-/** How long the initial-position POSTER (see `parked` in ReaderPane) waits for the list's first
- *  position report before standing down on its own. Generous — the report normally lands within
- *  a few frames; this only exists so a wedged list can't keep a static image over a live pager. */
-const POSTER_BACKSTOP_MS = 1200;
+/** How long the initial-position POSTER (see `posterUp` in ReaderPane) may stand before it stands
+ *  down on its own. It normally leaves a moment after the list has drawn the start under it; this
+ *  only exists so a wedged list, or a page that never loads, can't keep a picture over a live
+ *  reader. */
+const POSTER_BACKSTOP_MS = 3000;
+
+/** How long the poster stays once the list has drawn the start under it: past the fade a page that
+ *  loads in comes in on (`STANDBY_FADE_MS` the longest), so it leaves over a finished picture. */
+const POSTER_SETTLE_MS = 200;
+
+/** How many rows of a continuous webtoon the poster draws from the start — the screenful under it. */
+const POSTER_COLUMN_ROWS = 3;
 
 export type ReaderPaneHandle = {
   goTo: (index: number, animated?: boolean) => void;
@@ -266,12 +274,26 @@ export const ReaderPane = forwardRef<
     if (parked) traceJS('pager', 'parked', { at: currentRef.current });
   }, [parked]);
   // The backstop: nothing may strand a static image over a live pager — not a list that never
-  // reports, and not an entrance whose settle signal is lost.
+  // reports, and not an entrance whose settle signal is lost. A finger on the list takes it down
+  // at once too: the poster is a picture of the list at rest, and must never sit still over one
+  // being dragged or pinched.
   const [posterExpired, setPosterExpired] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setPosterExpired(true), POSTER_BACKSTOP_MS);
     return () => clearTimeout(t);
   }, []);
+  const dropPoster = useCallback(() => setPosterExpired(true), []);
+  const handleZoom = useCallback(
+    (zoomed: boolean) => {
+      if (zoomed) dropPoster();
+      onZoomChange(zoomed);
+    },
+    [dropPoster, onZoomChange],
+  );
+  // The list's own word that it is showing its cells (see PagedReader's `onReady`): a page it has
+  // loaded before then is still nothing on screen.
+  const [listReady, setListReady] = useState(false);
+  const onListReady = useCallback(() => setListReady(true), []);
 
   const pagedRef = useRef<PagedReaderHandle>(null);
   const webtoonRef = useRef<WebtoonReaderHandle>(null);
@@ -312,15 +334,23 @@ export const ReaderPane = forwardRef<
   // a first page found wide on load had the pager draw it full width under a poster still showing
   // it in the cover's half-width slot. Fed through here, the poster re-pairs on the same commit.
   const [landedSizes, setLandedSizes] = useState<ReadonlyMap<string, Size>>(() => new Map());
+  // Every picture the list has loaded around the start (a spread's other half may sit before it):
+  // what says the start is drawn, and what the poster lays itself out from. Kept apart from the
+  // pairing sizes above, which must not learn of a page behind the anchor.
+  const [drawnSizes, setDrawnSizes] = useState<ReadonlyMap<string, Size>>(() => new Map());
+  const [handedOver, setHandedOver] = useState(false);
   const onPageSize = useCallback(
     (key: string, size: Size) => {
       detectPageSize(key, size);
-      if (posterExpired || !double) return;
+      if (posterExpired || handedOver) return;
       const { list, at } = startAt;
-      if (list[at]?.key !== key && list[at + 1]?.key !== key) return;
-      setLandedSizes((prev) => (prev.get(key) ? prev : new Map(prev).set(key, size)));
+      if (!list.slice(Math.max(0, at - 1), at + POSTER_COLUMN_ROWS).some((p) => p.key === key)) return;
+      setDrawnSizes((prev) => (prev.get(key) ? prev : new Map(prev).set(key, size)));
+      if (double && (list[at]?.key === key || list[at + 1]?.key === key)) {
+        setLandedSizes((prev) => (prev.get(key) ? prev : new Map(prev).set(key, size)));
+      }
     },
-    [detectPageSize, posterExpired, double, startAt],
+    [detectPageSize, posterExpired, handedOver, double, startAt],
   );
   // What the reader opens on: the start page, or the spread holding it, paired from the same size
   // cache the pager seeds its own pairing from at mount, so the poster draws what the list will.
@@ -336,10 +366,47 @@ export const ReaderPane = forwardRef<
       last: spread.first - base + spread.pages.length - 1,
     };
   }, [startAt, startIndex, double, shift, landedSizes]);
+  // How the list under the poster lays out where it opens, and the pages it shows there.
+  const posterLayout: PosterLayout =
+    settings.mode === 'paged' ? 'page' : webtoonFit(settings.pageFit) === 'fit-page' ? 'contain' : 'column';
+  const posterPages = useMemo(
+    () =>
+      !startSpread
+        ? []
+        : posterLayout === 'column'
+          ? startAt.list.slice(startAt.at, startAt.at + POSTER_COLUMN_ROWS)
+          : startSpread.halves,
+    [startSpread, posterLayout, startAt],
+  );
+  const posterSize = useCallback((p: ReaderPageItem) => drawnSizes.get(p.key) ?? knownPageSize(p.uri), [drawnSizes]);
+  // Whether the list has loaded every picture the poster covers on screen. A column's rows count
+  // until they fill the screen; one not loaded yet has no height to fill it with.
+  const startDrawn = useMemo(() => {
+    if (!posterPages.length) return false;
+    if (posterLayout !== 'column') return posterPages.every((p) => !p || drawnSizes.has(p.key));
+    let y = 0;
+    for (const p of posterPages) {
+      const size = p && drawnSizes.get(p.key);
+      if (!size) return false;
+      y += (width * size.height) / size.width;
+      if (y >= pageHeight) return true;
+    }
+    return true;
+  }, [posterPages, posterLayout, drawnSizes, width, pageHeight]);
+  // The hand-over: once the list is showing its cells and has the start loaded, the poster stays
+  // for the fade those pictures come in on, then leaves over a list drawing the same thing.
+  useEffect(() => {
+    if (!listReady || !startDrawn || handedOver) return;
+    const t = setTimeout(() => setHandedOver(true), POSTER_SETTLE_MS);
+    return () => clearTimeout(t);
+  }, [listReady, startDrawn, handedOver]);
   // The poster's whole life, in one place: down the moment the user actually pages away from the
-  // start (a swipe mid-entrance must not freeze under a static image), else up until BOTH the
-  // entrance has finished and the list has reported — or the backstop calls time. A spread can
-  // report either of its pages (see `reportedPage`), so "the start" is the whole spread.
+  // start or puts a finger on the list (a swipe mid-entrance must not freeze under a static image),
+  // else up until the entrance has finished, the list has reported, and the list is DRAWING the
+  // start — or the backstop calls time. The position report comes ~10ms after mount, long before
+  // the list shows its cells or their pictures are in, and a poster that left on it uncovered a
+  // blank list in the middle of the open's zoom. A spread can report either of its pages (see
+  // `reportedPage`), so "the start" is the whole spread.
   //
   // Never on web. What it papers over is the native offset transient, and the web pager has none:
   // its track is positioned synchronously. It only ever showed there as a defect — the web pager
@@ -352,7 +419,7 @@ export const ReaderPane = forwardRef<
     currentPage >= startSpread.first &&
     currentPage <= startSpread.last &&
     !posterExpired &&
-    (entering || !parked);
+    (entering || !parked || !handedOver);
   // Where the chapter being scrubbed STARTS, latched for the duration of the drag — the reader's
   // half of the navigator's latched frame. A drag is resolved against the window it began in, and
   // `prefixLen` is not that: it moves when a neighbouring chapter joins at the head, and again on
@@ -827,6 +894,8 @@ export const ReaderPane = forwardRef<
           double={double}
           shift={shift}
           onPageSize={onPageSize}
+          onReady={onListReady}
+          onDragBegin={dropPoster}
           onPageChange={stitched ? handleFlatPageChange : setCurrent}
           // Keep the counter live during fast flicks — against the segment the page belongs to
           // when stitched (a crossing must count against the chapter being entered).
@@ -838,7 +907,7 @@ export const ReaderPane = forwardRef<
           onPrev={turnPrev}
           onNext={turnNext}
           onToggleChrome={onToggleChrome}
-          onZoomChange={onZoomChange}
+          onZoomChange={handleZoom}
         />
       ) : (
         <WebtoonReader
@@ -858,7 +927,10 @@ export const ReaderPane = forwardRef<
           // page going past instead of waiting for the scroll to come to rest.
           onVisiblePageChange={stitched ? handleFlatVisiblePage : setCurrent}
           onToggleChrome={onToggleChrome}
-          onZoomChange={onZoomChange}
+          onZoomChange={handleZoom}
+          onPageSize={onPageSize}
+          onReady={onListReady}
+          onDragBegin={dropPoster}
           standby={standby}
           // Every one of these is a FALLBACK for a window that came up short, and each stands down
           // where the window already reaches the chapter in question — a sentinel to tap, an
@@ -876,48 +948,23 @@ export const ReaderPane = forwardRef<
           }
         />
       )}
-      {/* THE INITIAL-POSITION POSTER — the target page, full frame, over the list for the whole
-          entrance (see `posterUp` above). It renders the very URI the pager will show at that
-          index, from cache, so its appearance and its removal are both invisible; what it papers
-          over is the NATIVE offset transient of a non-zero initialScrollIndex, which an entrance
-          animation would otherwise expose as a blank. */}
-      {posterUp &&
-        (() => {
-          // The pages' RESOLVED sources, not their raw paths: a server-relative path (a lazy resolve
-          // route, say) loaded as-is resolves against the app's own origin and 404s. Not resolved
-          // yet means the page under it has nothing to show either, so there's nothing to paper over.
-          const uris = startSpread!.halves.map((p) => (p ? peekResolvedAssetSource(p.uri) : null));
-          if (startSpread!.halves.some((p, k) => p && !uris[k])) return null;
-          const pair = uris.length > 1;
-          // Left to right across the screen, like the pager draws a spread.
-          const shown = pair && settings.direction === 'rtl' ? [...uris].reverse() : uris;
-          return (
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, pair && styles.posterSpread]}>
-              {shown.map((uri, k) =>
-                !uri ? (
-                  <View key={k} style={styles.posterHalf} />
-                ) : (
-                  <Image
-                    key={k}
-                    source={{ uri: uri! }}
-                    style={pair ? styles.posterHalf : StyleSheet.absoluteFill}
-                    // Contain, whichever axis the fit is: a page under the poster stands at 1× (see
-                    // ZoomablePage's `standby`), and at 1× both fits draw the contain picture — a
-                    // fit-width page shorter than the screen sits centred, exactly where contain puts
-                    // it. `cover` here (the old fit-width mapping) crops the page to the frame and then
-                    // hands over to the letterboxed one: the page visibly shifts as the poster leaves.
-                    // The one page this doesn't match is a strip taller than the screen under fit-width,
-                    // which is drawn from its top rather than whole.
-                    contentFit="contain"
-                    // A spread's halves meet at the spine, as in the pager.
-                    contentPosition={pair ? (k === 0 ? 'right' : 'left') : undefined}
-                    cachePolicy="memory-disk"
-                  />
-                ),
-              )}
-            </View>
-          );
-        })()}
+      {/* THE INITIAL-POSITION POSTER — where the reader opens, over the list until the list is
+          drawing it (see `posterUp` above), laid out exactly as the list lays it out, so its
+          appearance and its removal are both invisible. What it papers over is everything before
+          that: a list that draws nothing until its initial scroll has landed, and pages still
+          loading under an open that zooms into them. */}
+      {posterUp && (
+        <StartPoster
+          layout={posterLayout}
+          pages={posterPages}
+          sizeOf={posterSize}
+          width={width}
+          height={pageHeight}
+          pageFit={settings.mode === 'paged' ? pageFit : settings.pageFit}
+          rtl={settings.direction === 'rtl'}
+          standby={!!standby}
+        />
+      )}
       </View>
       </Animated.View>
 
@@ -974,12 +1021,5 @@ export const ReaderPane = forwardRef<
 const styles = StyleSheet.create({
   pageWrap: {
     flex: 1,
-  },
-  posterSpread: {
-    flexDirection: 'row',
-  },
-  posterHalf: {
-    flex: 1,
-    height: '100%',
   },
 });

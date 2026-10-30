@@ -126,6 +126,12 @@ type Props = {
   /** Every page's real picture size as it loads, by key — for whoever reads shapes besides the
    *  pairing (see `use-webtoon-detection`). */
   onPageSize?: (key: string, size: Size) => void;
+  /** Once, the first time the list SHOWS its cells. Until then LegendList draws them transparent
+   *  (they wait on their own layout and the initial scroll), so a page loaded before this is still
+   *  nothing on screen. */
+  onReady?: () => void;
+  /** As each drag of the list by a finger begins. */
+  onDragBegin?: () => void;
 };
 
 /**
@@ -203,6 +209,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     double = false,
     shift = false,
     onPageSize: onPageSizeProp,
+    onReady,
+    onDragBegin,
   },
   ref,
 ) {
@@ -671,6 +679,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         directionalLockEnabled
         showsHorizontalScrollIndicator={false}
         initialScrollIndex={initialIndex}
+        onLoad={onReady}
+        onScrollBeginDrag={onDragBegin}
         // THE POINT OF THE WHOLE SWAP: anchor a data change on the ITEM, so a chapter joining at
         // the head leaves the page under your thumb exactly where it is. `size: false` for the
         // same reason the browse grid sets it — every cell is a known fixed width, so there are no

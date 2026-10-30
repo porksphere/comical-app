@@ -21,6 +21,7 @@ import {
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
+import type { Size } from '@/components/reader/page-geometry';
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
@@ -90,6 +91,12 @@ type Props = {
    *  appearing — the paged reader also uses it to shrink its render window, which a webtoon list
    *  doesn't need (its rows are already virtualized by proximity). */
   standby?: boolean;
+  /** Every page's real picture size as it loads, by key — as the pager reports them. */
+  onPageSize?: (key: string, size: Size) => void;
+  /** Once, the first time the list shows its rows — see the pager's. */
+  onReady?: () => void;
+  /** As each drag of the list by a finger begins. */
+  onDragBegin?: () => void;
 };
 
 // Height/width ratio assumed for a page before it has rendered (matches ReaderPage's own
@@ -118,6 +125,16 @@ const VIEWABILITY_PAGED = { itemVisiblePercentThreshold: 60 };
  *  the stitched window are, entry for entry. */
 function itemsAreEqual(a: ReaderPageItem, b: ReaderPageItem): boolean {
   return a.key === b.key && a.uri === b.uri;
+}
+
+/** One `(key, width, height)` for the life of the list, for rows to report their pictures through:
+ *  a mounted cell keeps the `renderItem` closure it first rendered with (see `extraData`). */
+function useSizeReport(onPageSize: Props['onPageSize']) {
+  const live = useRef(onPageSize);
+  useLayoutEffect(() => {
+    live.current = onPageSize;
+  });
+  return useCallback((key: string, width: number, height: number) => live.current?.(key, { width, height }), []);
 }
 
 // How close (px) to the bottom of the continuous list the scroll must get before
@@ -274,10 +291,14 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
     onGoBack,
     standby,
     doubleTapZoom,
+    onPageSize,
+    onReady,
+    onDragBegin,
   },
   ref,
 ) {
   const listRef = useRef<LegendListRef>(null);
+  const reportSize = useSizeReport(onPageSize);
   // Where this reader OPENS, resolved once. `initialPage` is a flat index into the stitched window,
   // so it moves whenever the window does — every relabel shifts it by the length of a chapter — and
   // a list that re-read it would answer by scrolling there. Read once, like the pager does.
@@ -481,6 +502,8 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
               // as the rows between here and there measure — which is precisely what the anchoring
               // below is for, and what the old jump-twice-and-hope dance was standing in for.
               initialScrollIndex={initialIndex}
+              onLoad={onReady}
+              onScrollBeginDrag={onDragBegin}
               // A page's height isn't known until its image is; this is the guess until then, and
               // LegendList replaces it per row with the real thing as each one lands.
               estimatedItemSize={width * ESTIMATED_ASPECT}
@@ -515,6 +538,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
                   page={item.pageNumber}
                   width={width}
                   fadeMs={standby ? STANDBY_FADE_MS : undefined}
+                  onLoadDims={(w, h) => reportSize(item.key, w, h)}
                   testID={testId('reader.page.tap', index + 1)}
                 />
               )}
@@ -540,6 +564,7 @@ function WebtoonRow({
   page,
   width,
   fadeMs,
+  onLoadDims,
   testID,
 }: {
   uri: string;
@@ -547,12 +572,13 @@ function WebtoonRow({
   page: number;
   width: number;
   fadeMs?: number;
+  onLoadDims: (width: number, height: number) => void;
   testID: string;
 }) {
   const [failed, setFailed] = useState(false);
   return (
     <View>
-      <ReaderPage uri={uri} page={page} fit="width" width={width} fadeMs={fadeMs} onFailedChange={setFailed} />
+      <ReaderPage uri={uri} page={page} fit="width" width={width} fadeMs={fadeMs} onLoadDims={onLoadDims} onFailedChange={setFailed} />
       {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}
     </View>
   );
@@ -587,10 +613,14 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
     onGoBack,
     standby,
     doubleTapZoom,
+    onPageSize,
+    onReady,
+    onDragBegin,
   },
   ref,
 ) {
   const listRef = useRef<LegendListRef>(null);
+  const reportSize = useSizeReport(onPageSize);
   // Read once — see the continuous variant.
   const [initialIndex] = useState(() => Math.max(0, Math.min(pages.length - 1, initialPage)));
   // Same seed-then-refine as the continuous variant — and the same reason. See useBackPull.
@@ -700,6 +730,8 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
       scrollEnabled={!zoomed}
       showsVerticalScrollIndicator={false}
       initialScrollIndex={initialIndex}
+      onLoad={onReady}
+      onScrollBeginDrag={onDragBegin}
       // Every row is exactly one viewport tall — known, not measured, which is what keeps paging
       // snapping on page boundaries and `contentOffset / height` an exact index below.
       getFixedItemSize={() => height}
@@ -732,6 +764,7 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
           onZoomChange={handleZoom}
           doubleTapZoom={doubleTapZoom}
           fadeMs={standby ? STANDBY_FADE_MS : undefined}
+          onLoadDims={(w, h) => reportSize(item.key, w, h)}
           testID={testId('reader.page.tap', index + 1)}
           externals={rowExternals}
         />
@@ -756,6 +789,7 @@ function WebtoonPagedRow({
   onZoomChange,
   doubleTapZoom,
   fadeMs,
+  onLoadDims,
   testID,
   externals,
 }: {
@@ -769,6 +803,7 @@ function WebtoonPagedRow({
   onZoomChange: (zoomed: boolean) => void;
   doubleTapZoom: boolean;
   fadeMs?: number;
+  onLoadDims: (width: number, height: number) => void;
   testID: string;
   /** The gestures the LIST has mounted (its scroll, and the back-pull) — this row lives inside
    *  them, so its own must declare they can run alongside or lose the arbitration. */
@@ -793,7 +828,7 @@ function WebtoonPagedRow({
       <View style={{ width, height, overflow: 'hidden' }}>
         <Animated.View style={[{ width, height }, animatedStyle]}>
           {/* One row is exactly one viewport, so its box is final before the picture arrives. */}
-          <ReaderPage uri={uri} page={page} fit="contain" width={width} height={height} boxIsFinal fadeMs={fadeMs} onFailedChange={setFailed} />
+          <ReaderPage uri={uri} page={page} fit="contain" width={width} height={height} boxIsFinal fadeMs={fadeMs} onLoadDims={onLoadDims} onFailedChange={setFailed} />
         </Animated.View>
         {/* Inert marker for the reader.page.tap.* testID (asserted by Maestro). */}
         {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}
