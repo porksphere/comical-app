@@ -1,5 +1,5 @@
 # Verifies the expanded reader's swipe-away dismissal in WEBTOON (vertical) mode, where the
-# cross axis is HORIZONTAL (see `collapsePan` in app/series/index.tsx). Webtoon never reveals the
+# cross axis is HORIZONTAL (see `collapsePan` in components/series/reader-page.tsx). Webtoon never reveals the
 # details by dragging — the Details button is the only way back — so EVERY drag here is a
 # dismissal, and it collapses the whole series page into the card it came from.
 #

@@ -39,7 +39,7 @@ export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/s
  * Present anywhere inside the /series nested stack (provided by
  * `app/series/_layout.tsx`), null everywhere else — including a tab's series copy on iOS, which
  * is a real pushed card, so a related series there pushes another one (see useNativePush in
- * app/series/index). Series cards read this instead of
+ * components/series/viewport). Series cards read this instead of
  * `usePathname` — cards are render-cost-sensitive, and a context whose value never changes
  * doesn't re-render them on every navigation the way the pathname hook would. `drillSeries` is a
  * ref the series page's screen fills with its layer-push (see SeriesRoute): a drilled
@@ -126,7 +126,7 @@ export function drillSeriesFromOverlay(params: Record<string, string>): boolean 
   return true;
 }
 
-/** Same hand-off for the SEARCH layer (tag/author/type intents — see SearchLayer in
+/** Same hand-off for the SEARCH layer (tag/author/type intents — see SeriesRoute in
  *  app/series/index.tsx). Android and web only; iOS pushes a card instead, see below. */
 const openSearchLayerHandlers = handlerStack<() => void>();
 export function registerOpenSearchLayer(fn: () => void): () => void {

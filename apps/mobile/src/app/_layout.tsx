@@ -168,7 +168,7 @@ function RootNavigation() {
           <Stack.Screen name="results" options={pushedScreen} />
           {/* THE series page — and the only reader there is: the details and the reader are the
               two pages of its nested stack, `index` and `read` (see SeriesSplit in
-              app/series/index). Everything that used to push a standalone /reader (a History row,
+              components/series/split-handoff). Everything that used to push a standalone /reader (a History row,
               the card menu's Read, a chapter row, a page thumbnail) opens THIS, on whichever page
               it means.
 

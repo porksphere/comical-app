@@ -1,5 +1,5 @@
-# THE SERIES PAGE (app/series/index.tsx) — series details and an in-place reader in one screen,
-# either side one gesture from the other. A card tap opens the DETAILS, with the reader as a faded
+# THE SERIES PAGES (components/series/details-page.tsx, reader-page.tsx) — the details, and the
+# reader as a page over them, either side one gesture from the other. A card tap opens the DETAILS, with the reader as a faded
 # strip forming the top of the page; the strip expands to full screen and the Details pill collapses
 # it back. The details render the shared SeriesBody, so its selectors are that component's own
 # (series.action.read, series.chapter.*).
@@ -14,10 +14,10 @@
 #
 # Selectors (confirmed against source):
 #   - series cards:      series-card.<seriesId>        (components/series-card.tsx)
-#   - reader strip band: series-page.header-band       (app/series/index.tsx — the strip's touch
+#   - reader strip band: series-page.header-band       (components/series/details-page.tsx — the strip's touch
 #                        surface; UNMOUNTED while the reader is expanded, so its absence proves
 #                        the mode)
-#   - Details pill:      series-page.details           (app/series/index.tsx)
+#   - Details pill:      series-page.details           (components/series/reader-page.tsx)
 #   - details content:   series.action.read            (SeriesBody's Read button)
 #   - other names:       series.alt-titles             (SeriesBody's "OTHER NAMES (n)" toggle — no
 #                        accessibilityLabel, so the testID is the id on web too) and

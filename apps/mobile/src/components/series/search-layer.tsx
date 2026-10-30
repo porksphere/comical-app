@@ -49,7 +49,7 @@ export function SearchLayer({
   isTop,
 }: {
   onPopLayer: () => void;
-  /** See SeriesReaderInstance's — the parallax this layer drives on the series beneath it. */
+  /** See SeriesRoute's `layerCover` — the parallax this layer drives on the series beneath it. */
   coverSV?: SharedValue<number>;
   isTop?: boolean;
 }) {
@@ -120,7 +120,7 @@ export function SearchLayer({
     });
     return () => sub.remove();
   }, [closeLayer]);
-  // Escape, as on the series layers (see SeriesReaderInstance) — top layer only.
+  // Escape, as on the series layers (see SeriesDetailsPage) — top layer only.
   useEffect(() => {
     if (!IS_WEB || !isTop || typeof window === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {

@@ -479,7 +479,7 @@ const BACKDROP_PUSHBACK = 'overlay-backdrop';
  * Module-level and keyed on a per-instance token rather than held in refs, which is not a style
  * choice — the drag pans are built during render and reach `close`, and `react-hooks/refs`
  * (correctly) can't prove a gesture callback only ever runs after commit. This is the one shape the
- * rule allows, and it is what `app/series/index.tsx`'s `LEFT` latch settled on for exactly the same
+ * rule allows, and it is what the series pages' `LEFT` latch settled on for exactly the same
  * reason. Plain JS on one thread, so unlike a shared value a write here is visible to the next read.
  */
 type SheetExit = { closing: boolean; backstop: ReturnType<typeof setTimeout> | null };
@@ -855,7 +855,7 @@ function OverlaySheet({
    * `finished: false` for any curve that got interrupted, so a touch landing on the sheet while it
    * slid away, or a resize remounting it mid-exit, silently stranded the item. An animation
    * callback is not a promise that it ran (the series page reached the same conclusion the hard
-   * way — see `leaveOnce` in app/series/index.tsx). Ignoring `finished` is safe precisely because
+   * way — see `leaveOnce` in components/series/details-page.tsx). Ignoring `finished` is safe precisely because
    * this latch means there is no way back: nothing un-closes a sheet, the pans below stand down
    * once it is set, and `onClosed` is idempotent.
    */

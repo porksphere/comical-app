@@ -450,7 +450,7 @@ export function SeriesCard({
   // non-scaling held scrim on the cover — see the ring/peek/scrim below.
   const isWeb = Platform.OS === 'web';
   // iOS, inside a tab: the card is a `<Link>` whose trigger is an Apple zoom SOURCE, so the series
-  // page — the tab stack's own pushed card there (useNativePush in app/series/index) — grows out of
+  // page — the tab stack's own pushed card there (useNativePush in components/series/viewport) — grows out of
   // this cover with the system's zoom transition (iOS 18+; a plain push below) and shrinks back
   // into it on the pop, instead of sliding. The href names the tab itself: a Link is built at
   // render, when the focused tab is not necessarily this one (see TabRouteContext). Not on a drill,

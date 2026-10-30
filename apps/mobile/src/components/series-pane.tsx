@@ -21,7 +21,7 @@
  */
 import { StyleSheet, View } from 'react-native';
 
-import SeriesReaderScreen from '@/app/series/index';
+import SeriesDetailsScreen from '@/app/series/index';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useTheme } from '@/hooks/use-theme';
 import { PaneNavContext, PaneParamsContext, type PaneNav } from '@/lib/pane';
@@ -62,7 +62,7 @@ export function SeriesPane({ left, width, top }: { left: number; width: number; 
             <InSeriesPageStack.Provider value={true}>
               <PaneNavContext.Provider value={PANE_NAV}>
                 <PaneParamsContext.Provider value={params}>
-                  <SeriesReaderScreen />
+                  <SeriesDetailsScreen />
                 </PaneParamsContext.Provider>
               </PaneNavContext.Provider>
             </InSeriesPageStack.Provider>

@@ -23,7 +23,7 @@ export function FocusedTabTracker() {
 /**
  * The tab's route name (`'(home)'`, `'library'`, …) when a page pushed now belongs in the tab's
  * stack, null when it belongs on the root stack: outside the tabs. An in-tab series is a plain
- * pushed card of that stack (see useNativePush in app/series/index), so a page pushed from on top
+ * pushed card of that stack (see useNativePush in components/series/viewport), so a page pushed from on top
  * of it — a related series, its tag search, a result — stacks there too.
  */
 export function focusedTabRoute(): string | null {

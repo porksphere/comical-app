@@ -35,7 +35,7 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * root `/series` route, which is a transparent modal zooming out of its card (app/_layout), the
  * tab's copy is `in-tab/series/index`, a screen of THIS stack: its directory has no layout on purpose,
  * so the page is the pushed screen itself and its `Stack.Screen` options (bar, edge-pop) land on
- * it. `useNativePush` in app/series/index is where the page gives up its own transitions for the
+ * it. `useNativePush` (components/series/viewport) is where the page gives up its own transitions for the
  * system's. Its tag search is the sibling `in-tab/series/search`, pushed over it with the search
  * bar, and its reader the sibling `in-tab/series/read`, which grows out of the page's strip.
  *

@@ -127,7 +127,7 @@ any other row. A series opened from a tab is a real pushed card of that tab's st
 `in-tab/series/index` — the tab's `in-tab/series/` directory has no layout on purpose, so the
 page IS the pushed screen and its `Stack.Screen` addresses it), so the tab's leading item morphs into its
 back button and the slide and edge-pop are the system's; `useNativePush` in
-`app/series/index.tsx` is what the zoom rig gives up there.
+`components/series/viewport.ts` is what the zoom rig gives up there.
 The settings screens' enum rows are SYSTEM menus too: `SettingsSelectRow` is
 platform-split (`components/settings/select-row.ios.tsx` — the row drawn in RN in iOS Settings'
 popup-row shape, `label … value ⌃⌄`, with the local Expo module `apps/mobile/modules/menu-anchor`
@@ -323,7 +323,7 @@ suppression doesn't fit one of the three cases above, it's a code change, not a 
 
 The series page grows out of the card that opened it and collapses back into it (`apps/mobile/src/lib/series-zoom.ts`)
 — on Android, web and the root `/series` route. Inside an iOS tab it is a native push instead and
-none of this runs (`useNativePush` in `app/series/index.tsx`); the grow-from-the-card there is
+none of this runs (`useNativePush` in `components/series/viewport.ts`); the grow-from-the-card there is
 UIKit's own iOS 18 zoom transition: the card is a `<Link asChild>` with `<LinkTrigger
 withAppleZoom>` (from `@/lib/nav`) and the page's hero cover sits in `<LinkAppleZoomTarget>`.
 The href names the card's tab via `TabRouteContext` (`lib/focused-tab.tsx`), since a Link is
@@ -334,8 +334,9 @@ up it never starts is the reader's own pan (`swipeAway`), ending in the same pop
 The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
 runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
 
-The details and the reader are two pages on every platform (`SeriesSplit` in
-`app/series/index.tsx`): `series/index` is the details, whose strip shows the page you are on,
+The details and the reader are two pages on every platform (`SeriesDetailsPage` and
+`SeriesReaderPage` in `components/series/`, hosted by `SeriesRoute` in `app/series/index.tsx`):
+`series/index` is the details, whose strip shows the page you are on,
 and `series/read` the reader it opens; `lib/nav` sends a reader-first `/series` push straight to
 `/series/read`. Off iOS `read` is a transparent modal with no animation over the details, which
 stay rendered, and the pages draw the move themselves: the reader page continues the strip's own
@@ -350,7 +351,7 @@ open the visible entry's details over the album.
 that has scrolled off is still a bound the page has to fly onto, so aiming at one drags the whole
 page up to meet it: the page appears to scroll itself away under the finger. Scrolled past it the
 collapse switches to `cover-offscreen` instead — the cover's SIZE, centred on the page, with no
-scroll to follow (`ZoomDest` in `apps/mobile/src/app/series/index.tsx`). Only the position was ever
+scroll to follow (`ZoomDest` in `apps/mobile/src/components/series/page-motion.ts`). Only the position was ever
 wrong: the size is what the collapse's scale is derived from, so keeping it keeps the same shrink,
 and dropping to the screen-relative `page` target instead (which is what this did first) balloons
 the flying copy to full screen width. Which destination is in play is LATCHED while the page is at

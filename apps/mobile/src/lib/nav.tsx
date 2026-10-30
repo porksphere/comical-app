@@ -130,7 +130,7 @@ function takeContentPane(href: unknown): boolean {
  * context-free.
  *
  * A reader-first `/series` open, a collection's sequence among them, is the READER page,
- * `/series/read`: the details and the reader are two pages (SeriesSplit in app/series/index).
+ * `/series/read`: the details and the reader are two pages (SeriesSplit in components/series/split-handoff).
  *
  * iOS: a series, search or results page pushed from inside a tab opens INSIDE that tab's native
  * stack — the twin routes under `app/(tabs)/<tab>/in-tab/` — so the tab bar stays up over it as it does in

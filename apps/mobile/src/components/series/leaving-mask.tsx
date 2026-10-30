@@ -8,7 +8,7 @@ import { ZOOM_OUT_BACKSTOP_MS } from '@/components/series/page-motion';
  * behind it.
  *
  * Its OWN component purely so that knowledge costs its own render and not the whole page's. The
- * flag used to be state in SeriesReaderInstance, flipped from inside the commit — which re-rendered
+ * flag used to be state in the series page, flipped from inside the commit — which re-rendered
  * everything on the frame the collapse started. Here the reaction runs on the
  * UI thread, the setState lands in a component whose subtree is `children` — stable elements the
  * parent already built — so React re-renders this wrapper and reconciles nothing beneath it.

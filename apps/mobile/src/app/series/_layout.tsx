@@ -27,7 +27,7 @@ import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
 //
 // A series opened FROM a series (related rails, nested search results) is NOT a route at all:
 // it renders as a sibling LAYER inside the screen it was opened from, which keeps the parent series live
-// beneath it for its dismissal gestures — see SeriesReaderScreen in index.tsx; cards reach its
+// beneath it for its dismissal gestures — see SeriesRoute in index.tsx; cards reach its
 // layer-push through registerDrillSeries via useDrillRelatedSeries, gated by this context.
 export default function SeriesReaderLayout() {
   return (
