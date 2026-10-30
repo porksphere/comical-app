@@ -727,3 +727,30 @@ export function zoomCrossAxisDrag(translation: number, dimension: number): numbe
 // Wall-clock backstop for a collapse whose animation callback never arrives (see closeLayer).
 // Generous: the close spring is stiff but a spring has no fixed duration to key off.
 export const ZOOM_OUT_BACKSTOP_MS = 900;
+
+/**
+ * How close to the card counts as arrived, for the leave reaction. ZERO — the collapse must be at
+ * REST, not merely near.
+ *
+ * This was 0.02, chosen as "small enough to be invisible", which measures the wrong thing. The gap
+ * isn't what you can see of the mask, it's what the app is DOING while the mask is still moving:
+ * leaving unmounts the whole series page, pops the route, and un-blanks the source card, and all of
+ * that lands on the main thread — the same one the animation draws on. At 0.02 that teardown
+ * overlapped the final frames of the motion, so every collapse hitched just as it reached the card,
+ * fast swipe or slow, which is precisely where it was reported.
+ *
+ * At rest the page is already sitting exactly on the card with its content cross-faded to the
+ * thumbnail copy — visually indistinguishable from the card underneath. So the teardown still costs
+ * the same, and now costs it against a still frame, where a stall has nothing to stutter.
+ *
+ * Zero is reachable, not a hope: the collapse springs with `overshootClamping`, and Reanimated
+ * writes the target exactly when a spring completes. A collapse that gets CANCELLED before arriving
+ * never trips this — which is the case the wall-clock backstop is for.
+ */
+export const LEAVE_AT_ZOOM = 0;
+
+/** The two ends of "a collapse is under way". Not symmetric: `ARMED` sits nearer the top so a drag
+ *  released short has to actually return home before it may probe again. */
+export const COLLAPSE_STARTED = 0.995;
+
+export const COLLAPSE_ARMED = 0.999;

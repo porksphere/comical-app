@@ -1,5 +1,3 @@
-
-
 /**
  * The details and the reader are two pages rather than two sides of one. `details` is
  * `series/index`, whose strip still shows the page you are on and opens `series/read` to read;
@@ -14,6 +12,32 @@
  * SplitHandoff).
  */
 export type SeriesSplit = 'details' | 'reader';
+
+// The reader surface's tone. Pure black, like every other page — it mirrored the reference's
+// `#reader-view { background: #0f0f0f }` until the app's own background stopped doing the same
+// (see `Colors.dark.background`), and a reader a shade lighter than the app it opens out of read
+// as a mismatch rather than as its own surface.
+export const READER_BACKDROP = '#000000';
+
+// The visible height of the collapsed reader strip (below the safe area) — a faded-out
+// background-image band forming the TOP OF THE DETAILS PAGE (it scrolls away under the content
+// like any page header, it is not fixed chrome). The reader page grows out of it and shrinks back
+// into it.
+export const HEADER_BAND = 200;
+
+// The strip-to-details seam gradient's height. It's tall on purpose: the transition is CENTERED
+// ON THE SERIES TITLE — the title (the page's first element) renders mid-gradient over the fading
+// strip, X-hero style, so the content top inset is derived from this (see headerTopInset), and so
+// is the strip's zoom rect (see `stripZoomH`).
+export const SHEET_FADE_H = 120;
+
+// Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
+export const TITLE_MID = 20;
+
+// The details-content fade, and the reader's matching tint on its way into the strip, complete
+// within this fraction of the travel — weighted toward the START of a reveal and, symmetrically,
+// the END of a hide.
+export const FADE_WINDOW = 0.4;
 
 /**
  * Off iOS the move between the two pages of the split is drawn by the page that arrives, from
