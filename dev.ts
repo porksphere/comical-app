@@ -67,6 +67,10 @@ if (!process.env.EXPO_PUBLIC_COMICAL_SERVER) {
   // Requests hit host-server's routes at the root, e.g. GET /bridges, not /api/bridges.
   process.env.EXPO_PUBLIC_COMICAL_SERVER = `http://${HOST}:${COMICAL_SERVER_PORT}`;
 }
+// This one Metro also serves dev-client builds (emulators, phones): the manifest it hands them
+// names the bundle by this hostname, so advertise the phone-reachable IP, not the first adapter
+// Expo would pick on its own (a Hyper-V/WSL vEthernet here, which nothing else can route to).
+process.env.REACT_NATIVE_PACKAGER_HOSTNAME ??= HOST;
 console.log(`==> API backend: ${process.env.EXPO_PUBLIC_COMICAL_SERVER}`);
 console.log(`    (start it with: bun run dev from the workspace root, which runs comical's host-server)`);
 

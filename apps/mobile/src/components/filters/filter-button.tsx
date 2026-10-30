@@ -1,5 +1,5 @@
-import { memo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { memo, useRef, useState, type ComponentProps } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View, type TextInputInstance } from 'react-native';
 
 import { NO_OUTLINE, rowInput, singleLineInput } from '@/components/input-style';
 import { useAnchoredOverlay, useKeyboardAvoidingInput } from '@/components/overlay/overlay';
@@ -56,15 +56,20 @@ function ShrinkToFitLabel({ children, color }: { children: string; color?: strin
  * fresh closure per filter) so `React.memo` below actually holds: with a stable
  * `onChange` reference from the caller, only the one row whose own `value`
  * changed re-renders, not every filter in the bar.
+ *
+ * `onOpenEditor` takes the editor out of the overlay: a host that cannot show one (the system
+ * filters sheet on iOS, which sits above the app-root overlays) presents the editor itself.
  */
 export const FilterButton = memo(function FilterButton({
   def,
   value,
   onChange,
+  onOpenEditor,
 }: {
   def: FilterDef;
   value: FilterValue;
   onChange: (id: string, v: FilterValue) => void;
+  onOpenEditor?: (def: FilterDef) => void;
 }) {
   switch (def.type) {
     case 'toggle':
@@ -74,7 +79,11 @@ export const FilterButton = memo(function FilterButton({
     case 'number':
       return <NumberFilterRow def={def} value={value as number} onChange={onChange} />;
     default:
-      return <OverlayFilterRow def={def} value={value} onChange={onChange} />;
+      return onOpenEditor ? (
+        <SummaryFilterRow def={def} value={value} onPress={() => onOpenEditor(def)} />
+      ) : (
+        <OverlayFilterRow def={def} value={value} onChange={onChange} />
+      );
   }
 });
 
@@ -90,17 +99,35 @@ function OverlayFilterRow({
   onChange: (id: string, v: FilterValue) => void;
 }) {
   const { ref, openAt } = useAnchoredOverlay();
+  return (
+    <SummaryFilterRow
+      ref={ref}
+      def={def}
+      value={value}
+      onPress={() =>
+        openAt(() => <FilterEditor def={def} value={value} onChange={(v) => onChange(def.id, v)} />)
+      }
+    />
+  );
+}
+
+/** The row for a filter edited elsewhere: label, the chips summarising its value, a chevron. */
+function SummaryFilterRow({
+  ref,
+  def,
+  value,
+  onPress,
+}: {
+  ref?: ComponentProps<typeof Pressable>['ref'];
+  def: FilterDef;
+  value: FilterValue;
+  onPress: () => void;
+}) {
   const { hovered, handlers } = useHover();
   const theme = useTheme();
   const chips = summarize(def, value);
   return (
-    <Pressable
-      testID={testId('filter', def.id)}
-      ref={ref}
-      {...handlers}
-      onPress={() =>
-        openAt(() => <FilterEditor def={def} value={value} onChange={(v) => onChange(def.id, v)} />)
-      }>
+    <Pressable testID={testId('filter', def.id)} ref={ref} {...handlers} onPress={onPress}>
       <ThemedView
         type="backgroundElement"
         style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
@@ -162,7 +189,7 @@ function StringFilterRow({
 }) {
   const theme = useTheme();
   const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [text, setText] = useState(value ?? '');
   const [focused, setFocused] = useState(false);
   // A tapped Author/Artist reaches this row as a meta intent AFTER it has mounted empty (the intent
@@ -222,7 +249,7 @@ function NumberFilterRow({
   const theme = useTheme();
   const { hovered, handlers } = useHover();
   const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   // Snapshot at press-*start* (mousedown), before this same click's own focus
   // shift has happened — by press time (click), a blur triggered by this very
   // click has already fired, so checking "is it focused" there can never tell

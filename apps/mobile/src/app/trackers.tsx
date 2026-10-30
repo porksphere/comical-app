@@ -13,7 +13,7 @@ import { UpdateDot } from '@/components/tab-badge';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { TopBar, TopBarButton } from '@/components/top-bar';
+import { TopBar, type TopBarAction } from '@/components/top-bar';
 import { Spacing } from '@/constants/theme';
 import type { TrackerSummary } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
@@ -142,27 +142,34 @@ export default function TrackersScreen() {
     );
   };
 
+  const checkUpdates: TopBarAction = {
+    label: 'Check for tracker updates',
+    testID: 'trackers.check-updates',
+    onPress: () => void checkForUpdates(),
+    icon: checking ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />,
+  };
+  const install: TopBarAction | null = browseRegistry
+    ? {
+        label: 'Install a tracker',
+        testID: 'trackers.install',
+        onPress: browseRegistry,
+        icon: <PlusIcon color={theme.text} size={22} />,
+        native: { symbol: 'plus' },
+      }
+    : null;
+
   return (
     <ThemedView style={styles.container}>
       <TopBar
         title="Trackers"
-        right={
-          trackers !== null && (
-            <View style={styles.topActions}>
-              {/* Web has no pull-to-refresh on this list, so the check gets a button there. */}
-              {IS_WEB && Array.isArray(ordered) && ordered.length > 0 && (
-                <TopBarButton
-                  testID="trackers.check-updates"
-                  icon={checking ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />}
-                  label="Check for tracker updates"
-                  onPress={() => void checkForUpdates()}
-                />
-              )}
-              {browseRegistry && (
-                <TopBarButton testID="trackers.install" icon={<PlusIcon color={theme.text} size={22} />} label="Install a tracker" onPress={browseRegistry} />
-              )}
-            </View>
-          )
+        actions={
+          trackers === null
+            ? undefined
+            : [
+                // Web has no pull-to-refresh on this list, so the check gets a button there.
+                ...(IS_WEB && Array.isArray(ordered) && ordered.length > 0 ? [checkUpdates] : []),
+                ...(install ? [install] : []),
+              ]
         }
       />
       {isError ? (
@@ -196,10 +203,6 @@ export default function TrackersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  topActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   stateHost: {
     flex: 1,

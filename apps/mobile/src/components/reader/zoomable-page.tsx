@@ -3,17 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
-import {
-  edgeOffset,
-  farEdge,
-  fillRule,
-  isStrip,
-  pageGeometry,
-  panLimits,
-  stripGeometry,
-  type RestEdge,
-  type Size,
-} from '@/components/reader/page-geometry';
+import { edgeOffset, farEdge, pageRest, panLimits, type RestEdge, type Size } from '@/components/reader/page-geometry';
 import { ReaderPage } from '@/components/reader/reader-page';
 import { spreadHalves, spreadImage, type SpreadPad } from '@/components/reader/spreads';
 import { useZoomable } from '@/components/reader/use-zoomable';
@@ -144,19 +134,6 @@ export function ZoomablePage({
   );
   const image = useMemo(() => imageOf(sizes), [imageOf, sizes]);
 
-  // Which pages rest above 1× under the fit (see `fillRule`). Every page is drawn in the contain
-  // box, under either axis — a box the viewport's size that never changes, which is what keeps a
-  // page from shifting as its picture arrives — except a STRIP under fit-width, a page taller than
-  // the viewport at its width, which gets a box that tall (see `stripGeometry`) and is panned
-  // down it. Before the picture's shape is known every page is contain.
-  //
-  // A spread is two pages side by side: it never lies as a strip, and under `auto` it rests whole —
-  // the "spreads fill the height" rule is about ONE picture that is a spread, not two pages that
-  // happen to be shown as one.
-  const rule = standby ? 'none' : fillRule(pageFit);
-  const fill = double && rule === 'wide' ? 'none' : rule;
-  const strip = !double && pageFit === 'fit-width' && isStrip(image, { width, height });
-
   // The edge this page rests at, latched while active (see `restAtFarEdge`). React's own form of
   // the previous-prop pattern, so a discarded render re-runs the comparison.
   const [farEdgeLatched, setFarEdgeLatched] = useState(restAtFarEdge);
@@ -167,9 +144,10 @@ export function ZoomablePage({
   );
 
   const geometry = useMemo(
-    () => (strip && image ? stripGeometry(image, { width, height }) : pageGeometry(image, { width, height }, fill, rtl)),
-    [strip, fill, image, width, height, rtl],
+    () => pageRest(image, viewport, pageFit, double, rtl, standby),
+    [image, viewport, pageFit, double, rtl, standby],
   );
+  const strip = geometry.strip;
 
   // Navigation for a single tap, by the tap's x within the page — the same three
   // zones the `TapZones` markers cover (~30% / ~40% / ~30%).
@@ -221,10 +199,7 @@ export function ZoomablePage({
     // (see useZoomable's `settle`), so the page is drawn at rest from its first frame rather
     // than growing into it — a strip from its top. A spread has no shape until both have loaded.
     if (img) {
-      const g =
-        !double && pageFit === 'fit-width' && isStrip(img, viewport)
-          ? stripGeometry(img, viewport)
-          : pageGeometry(img, viewport, fill, rtl);
+      const g = pageRest(img, viewport, pageFit, double, rtl, standby);
       const off = edgeOffset(edgeFor(g.restEdge), panLimits(g.restScale, g.content, viewport));
       settle(g.restScale, off.x, off.y);
     }

@@ -90,6 +90,7 @@ async function notifyNewChapters(count: number): Promise<void> {
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('new-chapters', {
         name: 'New chapters',
+        // eslint-disable-next-line import/namespace -- the enum is exported; the plugin can't read the compiled enum IIFE
         importance: Notifications.AndroidImportance.DEFAULT,
       });
     }

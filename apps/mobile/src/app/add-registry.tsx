@@ -6,11 +6,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, useTopBarInset } from '@/components/top-bar';
+import { TopBar } from '@/components/top-bar';
 import { BarContentGap, MaxContentWidth, Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useHydrated } from '@/hooks/use-responsive';
+import { useTopChromeHeight } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
 import { desktopShell } from '@/lib/desktop-shell';
 import {useLocalSearchParams, useRouter} from '@/lib/nav';
@@ -42,7 +43,7 @@ export default function AddRegistryScreen() {
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const topBarInset = useTopBarInset();
+  const topBarInset = useTopChromeHeight();
   const queryClient = useQueryClient();
   // Gated on hydration: the static render has no shell, so the desktop would mismatch it.
   const handoff = !useHydrated() ? Platform.OS === 'web' : handsOff();

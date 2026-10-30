@@ -25,6 +25,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { HoldActionTarget } from '@/components/hold-action-target';
+import { BrowseNativeToolbar } from '@/components/browse-native-toolbar';
+import { NativeTabHeader } from '@/components/native-tab-header';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import {
   bridgePageOptions,
@@ -60,6 +62,7 @@ import { friendlyError } from '@/lib/friendly-error';
 import { useHasSidebar } from '@/hooks/use-content-width';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
+import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -610,7 +613,7 @@ export default function BrowseScreen() {
   // the safe-area inset), overlaid on the scrolling list. Unlike the old
   // expand-at-top/collapse-on-scroll animation, the bar itself never changes size —
   // instead it slides as a whole (see `headerStyle` below), X/Twitter-style.
-  const headerHeight = insets.top + barHeight;
+  const headerHeight = useTopChromeHeight();
   // The bridge/page bar slides up 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
   // helper — the same one the Search filter bar uses, so their motion can't drift. The slide
   // distance is `barHeight`, NOT `headerHeight`: the bar stops once its content band is gone,
@@ -620,7 +623,8 @@ export default function BrowseScreen() {
   // status bar. On a device/viewport with no top inset (web), the same distance hides the bar
   // entirely, so there's no orphaned strip. It's fed the list's UI-thread scroll offset via
   // `sharedValues` + the plain `onListScroll` (both wired on the list below); a `gridScope` change
-  // snaps the bar back to visible and scrolls the list to the top.
+  // snaps the bar back to visible and scrolls the list to the top. The system bar on iOS does not
+  // slide (a distance of 0 pins it), so there the hook only keeps the list's scroll bookkeeping.
   const {
     scrollY,
     maxScrollY,
@@ -629,7 +633,7 @@ export default function BrowseScreen() {
     contentStyle: headerContentStyle,
     sharedValues,
     onScroll: onListScroll,
-  } = useSlidingBar(barHeight, { resetKey: gridScope, listRef });
+  } = useSlidingBar(NATIVE_HEADER ? 0 : barHeight, { resetKey: gridScope, listRef });
   // The tab bar slides off the SAME shared values the top bar does — one offset, one content-end
   // measurement, both read on the UI thread, so the two bars can't disagree about a gesture or about
   // where the elastic bottom bounce starts. This used to be a `runOnJS(reportOffset)` per frame: a
@@ -649,6 +653,8 @@ export default function BrowseScreen() {
     () => ({ borderBottomColor: stickyPinned.value ? 'transparent' : theme.barHairline }),
     [theme.barHairline],
   );
+  // The pinned section's label, which the iOS bar shows as its title — see NativeTabHeader.
+  const [section, setSection] = useState<string | null>(null);
 
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
@@ -744,6 +750,33 @@ export default function BrowseScreen() {
         )}
       </Animated.View>
     </BarSurface>
+  );
+  // On iOS the bar holds only system items: the bridge's circle as the leading menu button
+  // (the bridges, then the pages), the search trailing. The inline title names the view,
+  // "<bridge> <page>", fading out over the first scroll as History's and Activity's do, and is
+  // the NSFW hold target: a bar button's hold is its menu, so the gesture moves to the one
+  // thing in the bar that is still ours.
+  const nativeHeader = (
+    <>
+      <NativeTabHeader
+        title={[currentBridge?.name, pageLabels[pageKey(page)]].filter(Boolean).join(' ')}
+        scrollY={scrollY}
+        section={section}
+        holdTestID="browse.nsfw-hold"
+      />
+      <BrowseNativeToolbar
+        bridges={visibleBridges}
+        thumbnails={bridgeThumbnails}
+        sources={COMICAL_SOURCES}
+        bridgeId={currentBridge?.id}
+        onSelectBridge={selectBridge}
+        withBridges={!railNav}
+        pages={pageOptions}
+        page={pageKey(page)}
+        onSelectPage={selectPage}
+        onSearch={openSearch}
+      />
+    </>
   );
 
   // Header for the flat results/favorites/page grid (SeriesGrid only): just a results error, if any.
@@ -877,10 +910,12 @@ export default function BrowseScreen() {
           // Flush to the bar's bottom edge — the pinned heading carries a blurred material, and
           // two blurred surfaces with a strip of unblurred content between them reads as a gap in
           // the chrome, not as breathing room. It RIDES the bar's slide, so it stays met to that
-          // edge whether the bar is expanded or docked under the status bar.
+          // edge whether the bar is expanded or docked under the status bar. (Under the native bar
+          // it is the heading alone, fading at the same edge — StickySectionHeader's own split.)
           stickyHeaderTop={headerHeight}
           stickyBarOffset={barOffset}
           stickyPinned={stickyPinned}
+          {...(NATIVE_HEADER ? { onSectionChange: setSection } : {})}
           ambient={feedTint}
           sharedValues={sharedValues}
           onScroll={onListScroll}
@@ -914,7 +949,7 @@ export default function BrowseScreen() {
           wrapperStyle={[pull.listStyle, listDimStyle]}
         />
       )}
-      {topBar}
+      {NATIVE_HEADER ? nativeHeader : topBar}
       <PullIndicator {...pull.indicator} top={headerHeight} />
     </ThemedView>
   );

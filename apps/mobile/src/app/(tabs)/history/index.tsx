@@ -3,12 +3,14 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
+import { NativeTabHeader } from '@/components/native-tab-header';
+import { TabScrollMarker } from '@/components/tab-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import {
@@ -32,10 +34,11 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
-import { useContentWidth } from '@/hooks/use-content-width';
+import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
-import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
+import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
+import { useIsDesktop } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
@@ -62,7 +65,7 @@ export default function HistoryScreen() {
   const zoomSurface = useZoomSurfaceKey('history');
   // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it (hence the
   // AnimatedLegendList below), `onScroll` only keeps the bottom-bounce measurement in sync.
-  const { sharedValues, onScroll } = useHideTabBarOnScroll();
+  const { scrollY, sharedValues, onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
   const ready = useDeferredMount();
 
@@ -121,14 +124,15 @@ export default function HistoryScreen() {
   // by the time the page closes — see useZoomSurfaceList.
   useZoomSurfaceList(zoomSurface, visible, historySeriesId, listRef);
 
-  const barHeight = useTopBarHeight();
-  const headerHeight = insets.top + barHeight;
+  const headerHeight = useTopChromeHeight();
   // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
   // explicit paddingLeft/Right is the reliable lever. See library.tsx.
   // Only the centring inset (web) — the row owns its own horizontal gutter, so it spans the full
   // content width and the swipe-to-delete reaches the edge instead of being cut off inside a side inset.
-  const sidePad = topLevelCenterInset(width);
+  // The safe area's sides are the exception: a row inside them keeps clear of the sensor housing.
+  const sides = useSideInsets();
+  const sidePad = topLevelCenterInset(width - sides.left - sides.right);
 
   // The 3-dot opens the SERIES side of that same page — no `reader` param, so it lands on
   // the details with the reader as the strip, which is exactly a browse open. Same zoom off this
@@ -193,59 +197,65 @@ export default function HistoryScreen() {
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
-        <AnimatedLegendList
-          ref={listRef}
-          // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
-          style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
-          data={visible}
-          keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
-          recycleItems={false}
-          itemLayoutAnimation={ROW_REORDER_TRANSITION}
-          // WEB ONLY: routes the reanimated scroll bridge through scrollEventThrottle:1 so onScroll
-          // fires mid-drag (see recycler-list.tsx for the full root-cause note). Without it the list
-          // only hears the wheel at gesture start and after it stops, so rows mount after a scroll,
-          // never during one.
-          renderScrollComponent={Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined}
-          contentContainerStyle={{
-            // Fill the viewport even with few rows, so the empty space below them is still part of
-            // the scroller and a drag can be started there (see SeriesGrid's note).
-            flexGrow: 1,
-            // Start flush under the top bar (like a settings list): the first row begins at the bar's
-            // bottom edge and its own top padding is all the separation it needs.
-            paddingTop: listPaddingTop(headerHeight),
-            paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
-            paddingLeft: sidePad,
-            paddingRight: sidePad,
-          }}
-          renderItem={({ item }) => (
-            <HistoryItem
-              item={item}
-              onResume={() => resume(item)}
-              onOpenDetail={() => openDetail(item)}
-              onRemove={() => removeMutation.mutate(item)}
-              bridge={nameOf(item.bridgeId)}
-              direct={directOf(item.bridgeId)}
-              chapters={chaptersOf.get(`${item.bridgeId}:${item.seriesId}`)}
-            />
-          )}
-          showsVerticalScrollIndicator={Platform.OS === 'web'}
-          sharedValues={sharedValues}
-          onScroll={onScroll}
-          // Gesture phases for the tab bar, which commits to shown/hidden on release — this screen
-          // owns its list rather than going through RecyclerList, which reports them itself.
-          {...scrollPhaseHandlers}
-        />
+        <TabScrollMarker>
+          <AnimatedLegendList
+            ref={listRef}
+            // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
+            style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
+            data={visible}
+            keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
+            recycleItems={false}
+            itemLayoutAnimation={ROW_REORDER_TRANSITION}
+            // WEB ONLY: routes the reanimated scroll bridge through scrollEventThrottle:1 so onScroll
+            // fires mid-drag (see recycler-list.tsx for the full root-cause note). Without it the list
+            // only hears the wheel at gesture start and after it stops, so rows mount after a scroll,
+            // never during one.
+            renderScrollComponent={Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined}
+            contentContainerStyle={{
+              // Fill the viewport even with few rows, so the empty space below them is still part of
+              // the scroller and a drag can be started there (see SeriesGrid's note).
+              flexGrow: 1,
+              // Start flush under the top bar (like a settings list): the first row begins at the bar's
+              // bottom edge and its own top padding is all the separation it needs.
+              paddingTop: listPaddingTop(headerHeight),
+              paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+              paddingLeft: sidePad + sides.left,
+              paddingRight: sidePad + sides.right,
+            }}
+            renderItem={({ item }) => (
+              <HistoryItem
+                item={item}
+                onResume={() => resume(item)}
+                onOpenDetail={() => openDetail(item)}
+                onRemove={() => removeMutation.mutate(item)}
+                bridge={nameOf(item.bridgeId)}
+                direct={directOf(item.bridgeId)}
+                chapters={chaptersOf.get(`${item.bridgeId}:${item.seriesId}`)}
+              />
+            )}
+            showsVerticalScrollIndicator={Platform.OS === 'web'}
+            sharedValues={sharedValues}
+            onScroll={onScroll}
+            // Gesture phases for the tab bar, which commits to shown/hidden on release — this screen
+            // owns its list rather than going through RecyclerList, which reports them itself.
+            {...scrollPhaseHandlers}
+          />
+        </TabScrollMarker>
       )}
 
-      <TabTitleBar
-        title="History"
-        titleSlot={
-          filter.open ? (
-            <TabFilterField filter={filter} testID="history.search" placeholder="Filter history…" />
-          ) : undefined
-        }
-        right={<TabFilterTrigger filter={filter} testID="history.search" placeholder="Filter history…" />}
-      />
+      {NATIVE_HEADER ? (
+        <NativeTabHeader title="History" scrollY={scrollY} filter={filter} placeholder="Filter history…" />
+      ) : (
+        <TabTitleBar
+          title="History"
+          titleSlot={
+            filter.open ? (
+              <TabFilterField filter={filter} testID="history.search" placeholder="Filter history…" />
+            ) : undefined
+          }
+          right={<TabFilterTrigger filter={filter} testID="history.search" placeholder="Filter history…" />}
+        />
+      )}
     </ThemedView>
     </ZoomSurfaceContext.Provider>
   );
@@ -288,7 +298,7 @@ function HistoryItem({
   const standing = chapters ? `${chapters.read} of ${chapters.known} chapters` : undefined;
   const sub = historySub(item, { withTime: !standing && !desktop, long: desktop });
   const detail = standing ? (desktop ? standing : [standing, relTime(item.lastReadAt)].join('  ·  ')) : undefined;
-  const thumbRef = useRef<View>(null);
+  const thumbRef = useRef<ViewInstance>(null);
   // The row's thumbnail is the zoom transition's source rect,
   // captured on press-IN because measuring answers asynchronously — measuring at press
   // would put a native round trip in front of the navigation. And while its copy is in the air the
@@ -356,7 +366,8 @@ function HistoryItem({
             coverAspect={2 / 3}
             startRadius={6} // matches HistoryRow's thumbnail corner
             zoomSource={zoomSource}
-            measureRef={thumbRef}>
+            measureRef={thumbRef}
+            onOpen={onResume}>
             {({ hidden }) => renderRow(hidden)}
           </SeriesCardMenu>
         )}

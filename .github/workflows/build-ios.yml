@@ -88,6 +88,8 @@ jobs:
       profiling: true
       # By ref, not event: a dispatch on a PR branch is a PR build too, and publish-pr publishes it.
       channel: ${{ github.ref == 'refs/heads/main' && 'ios-nightly' || 'ios-pr' }}
+      # A PR builds against the newest iOS SDK, so a branch can be tried on it before main moves.
+      runner: ${{ github.ref == 'refs/heads/main' && 'macos-26' || 'xcode-27' }}
     secrets: inherit
 
   # main's build, as the single-version `ios-nightly` source. By ref, like the channel above: a

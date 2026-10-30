@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useRef } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type ScrollViewInstance } from 'react-native';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
 import {
   AboutIcon,
@@ -21,11 +22,14 @@ import {
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
 import { UpdatePip } from '@/components/tab-badge';
 import { SettingsSection, settingsRowFrame } from '@/components/settings/settings-row';
+import { NativeTabHeader } from '@/components/native-tab-header';
+import { TabScrollMarker } from '@/components/tab-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
@@ -59,12 +63,19 @@ const HAS_SHORTCUTS = Platform.OS === 'web';
 export default function SettingsScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   useScrollToTopOnReselect('settings', scrollRef);
   // Settings keeps its bottom bar: this screen IS navigation, so sliding the nav away under the
   // finger only takes away the thing you came here to tap. See `usePinnedTabBar`.
   usePinnedTabBar();
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxTopLevelWidth);
+  // The offset the native bar's title fades on. The bar is pinned here and the gesture phases stay
+  // unreported (the phase broadcast is global — a blurred screen's bar would still be listening),
+  // so this is the one thing the scroll drives.
+  const scrollY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
 
   const counts = useCategoryCounts();
   // Same sources as the Settings tab pip — badge the exact rows that produced it so opening Settings
@@ -78,130 +89,131 @@ export default function SettingsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView
-        ref={scrollRef}
-        // No scroll reporting and no gesture phases: the bar is pinned here, and the phase
-        // broadcast is global — a blurred screen's bar would still be listening to this one's
-        // scrolling.
-        style={scrollbarInset(contentPadding.paddingTop)}
-        contentContainerStyle={[
-          styles.content,
-          contentPadding,
-          // flexGrow: fill the viewport even when the list is short, so the space below it is still
-          // draggable (see SeriesGrid's note).
-          styles.fill,
-        ]}>
-        <View style={styles.list}>
-          <SettingsSection>
-            <CategoryRow
-              testID="settings.category.general"
-              icon={<GeneralSettingsIcon color={theme.text} size={18} />}
-              title="General"
-              onPress={() => router.push('/settings-general')}
-            />
-            <CategoryRow
-              testID="settings.category.notifications"
-              icon={<NotificationsIcon color={theme.text} size={18} />}
-              title="Notifications"
-              onPress={() => router.push('/settings-notifications')}
-            />
-            <CategoryRow
-              testID="settings.category.sync"
-              icon={<SyncIcon color={theme.text} size={18} />}
-              title="Sync"
-              onPress={() => router.push('/settings-sync')}
-            />
-            {HAS_SHORTCUTS && (
+      <TabScrollMarker>
+        <Animated.ScrollView
+          ref={scrollRef}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          style={scrollbarInset(contentPadding.paddingTop)}
+          contentContainerStyle={[
+            styles.content,
+            contentPadding,
+            // flexGrow: fill the viewport even when the list is short, so the space below it is still
+            // draggable (see SeriesGrid's note).
+            styles.fill,
+          ]}>
+          <View style={styles.list}>
+            <SettingsSection>
               <CategoryRow
-                testID="settings.category.shortcuts"
-                icon={<KeyboardIcon color={theme.text} size={18} />}
-                title="Keyboard"
-                onPress={() => router.push('/settings-shortcuts')}
+                testID="settings.category.general"
+                icon={<GeneralSettingsIcon color={theme.text} size={18} />}
+                title="General"
+                onPress={() => router.push('/settings-general')}
               />
-            )}
-          </SettingsSection>
-          <SettingsSection>
-            <CategoryRow
-              testID="settings.category.bridges"
-              icon={<BridgesIcon color={theme.text} size={18} />}
-              title="Bridges"
-              value={counts.bridges}
-              updates={updates.bridges}
-              onPress={() => router.push('/bridges')}
-            />
-            <CategoryRow
-              testID="settings.category.trackers"
-              icon={<TrackersIcon color={theme.text} size={18} />}
-              title="Trackers"
-              value={counts.trackers}
-              updates={updates.trackers}
-              onPress={() => router.push('/trackers')}
-            />
-            <CategoryRow
-              testID="settings.category.registries"
-              icon={<RegistriesIcon color={theme.text} size={18} />}
-              title="Registries"
-              value={counts.registries}
-              onPress={() => router.push('/registries')}
-            />
-            <CategoryRow
-              testID="settings.category.custom-pages"
-              icon={<CustomPagesIcon color={theme.text} size={18} />}
-              title="Custom Pages"
-              value={customPageCount ? String(customPageCount) : undefined}
-              onPress={() => router.push('/custom-pages')}
-            />
-          </SettingsSection>
-          <SettingsSection>
-            <CategoryRow
-              testID="settings.category.downloads"
-              icon={<DownloadsIcon color={theme.text} size={18} />}
-              title="Downloads"
-              value={counts.downloads}
-              progress={counts.downloadsProgress}
-              onPress={() => router.push('/downloads')}
-            />
-            <CategoryRow
-              testID="settings.category.storage"
-              icon={<StorageIcon color={theme.text} size={18} />}
-              title="Storage"
-              onPress={() => router.push('/storage')}
-            />
-          </SettingsSection>
-          <SettingsSection>
-            <CategoryRow
-              testID="settings.category.diagnostics"
-              icon={<DiagnosticsIcon color={theme.text} size={18} />}
-              title="Diagnostics"
-              onPress={() => router.push('/diagnostics')}
-            />
-            <CategoryRow
-              testID="settings.category.about"
-              icon={<AboutIcon color={theme.text} size={18} />}
-              title="About"
-              // The version doubles as the row's value, so the answer to "which build am I on?" is on
-              // the landing screen itself — the screen behind it is for the rest of the readout.
-              value={APP_VERSION}
-              // A newer build of this channel exists. Only ever 0 or 1 (there's one app, not a list of
-              // them), which still goes through the counted pip rather than a bare UpdateDot: this is a
-              // CATEGORY row like Bridges/Trackers, and keeping the same pill means the tab badge's
-              // total is exactly the sum of the pips visible on this screen.
-              updates={appUpdate.status === 'update-available' ? 1 : 0}
-              onPress={() => router.push('/settings-about')}
-            />
-            {PROFILING_ENABLED && (
               <CategoryRow
-                testID="settings.category.developer"
-                icon={<DeveloperIcon color={theme.text} size={18} />}
-                title="Developer"
-                onPress={() => router.push('/settings-developer')}
+                testID="settings.category.notifications"
+                icon={<NotificationsIcon color={theme.text} size={18} />}
+                title="Notifications"
+                onPress={() => router.push('/settings-notifications')}
               />
-            )}
-          </SettingsSection>
-        </View>
-      </ScrollView>
+              <CategoryRow
+                testID="settings.category.sync"
+                icon={<SyncIcon color={theme.text} size={18} />}
+                title="Sync"
+                onPress={() => router.push('/settings-sync')}
+              />
+              {HAS_SHORTCUTS && (
+                <CategoryRow
+                  testID="settings.category.shortcuts"
+                  icon={<KeyboardIcon color={theme.text} size={18} />}
+                  title="Keyboard"
+                  onPress={() => router.push('/settings-shortcuts')}
+                />
+              )}
+            </SettingsSection>
+            <SettingsSection>
+              <CategoryRow
+                testID="settings.category.bridges"
+                icon={<BridgesIcon color={theme.text} size={18} />}
+                title="Bridges"
+                value={counts.bridges}
+                updates={updates.bridges}
+                onPress={() => router.push('/bridges')}
+              />
+              <CategoryRow
+                testID="settings.category.trackers"
+                icon={<TrackersIcon color={theme.text} size={18} />}
+                title="Trackers"
+                value={counts.trackers}
+                updates={updates.trackers}
+                onPress={() => router.push('/trackers')}
+              />
+              <CategoryRow
+                testID="settings.category.registries"
+                icon={<RegistriesIcon color={theme.text} size={18} />}
+                title="Registries"
+                value={counts.registries}
+                onPress={() => router.push('/registries')}
+              />
+              <CategoryRow
+                testID="settings.category.custom-pages"
+                icon={<CustomPagesIcon color={theme.text} size={18} />}
+                title="Custom Pages"
+                value={customPageCount ? String(customPageCount) : undefined}
+                onPress={() => router.push('/custom-pages')}
+              />
+            </SettingsSection>
+            <SettingsSection>
+              <CategoryRow
+                testID="settings.category.downloads"
+                icon={<DownloadsIcon color={theme.text} size={18} />}
+                title="Downloads"
+                value={counts.downloads}
+                progress={counts.downloadsProgress}
+                onPress={() => router.push('/downloads')}
+              />
+              <CategoryRow
+                testID="settings.category.storage"
+                icon={<StorageIcon color={theme.text} size={18} />}
+                title="Storage"
+                onPress={() => router.push('/storage')}
+              />
+            </SettingsSection>
+            <SettingsSection>
+              <CategoryRow
+                testID="settings.category.diagnostics"
+                icon={<DiagnosticsIcon color={theme.text} size={18} />}
+                title="Diagnostics"
+                onPress={() => router.push('/diagnostics')}
+              />
+              <CategoryRow
+                testID="settings.category.about"
+                icon={<AboutIcon color={theme.text} size={18} />}
+                title="About"
+                // The version doubles as the row's value, so the answer to "which build am I on?" is on
+                // the landing screen itself — the screen behind it is for the rest of the readout.
+                value={APP_VERSION}
+                // A newer build of this channel exists. Only ever 0 or 1 (there's one app, not a list of
+                // them), which still goes through the counted pip rather than a bare UpdateDot: this is a
+                // CATEGORY row like Bridges/Trackers, and keeping the same pill means the tab badge's
+                // total is exactly the sum of the pips visible on this screen.
+                updates={appUpdate.status === 'update-available' ? 1 : 0}
+                onPress={() => router.push('/settings-about')}
+              />
+              {PROFILING_ENABLED && (
+                <CategoryRow
+                  testID="settings.category.developer"
+                  icon={<DeveloperIcon color={theme.text} size={18} />}
+                  title="Developer"
+                  onPress={() => router.push('/settings-developer')}
+                />
+              )}
+            </SettingsSection>
+          </View>
+        </Animated.ScrollView>
+      </TabScrollMarker>
 
-      <TabTitleBar title="Settings" />
+      {NATIVE_HEADER ? <NativeTabHeader title="Settings" scrollY={scrollY} /> : <TabTitleBar title="Settings" />}
     </ThemedView>
   );
 }

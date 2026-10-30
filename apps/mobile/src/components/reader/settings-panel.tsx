@@ -21,6 +21,7 @@ import {
   type ReaderDirection,
   type ReaderSettings,
 } from '@/hooks/use-reader-settings';
+import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
@@ -50,25 +51,34 @@ export function SettingsControl({
   seriesKey: string | null;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const { ref, openAt, isOpen } = useAnchoredOverlay();
-  useEffect(() => {
-    if (!isOpen || !onOpenChange) return;
-    onOpenChange(true);
-    return () => onOpenChange(false);
-  }, [isOpen, onOpenChange]);
-
+  const { ref, open } = useReaderSettingsOverlay(seriesKey, onOpenChange);
   return (
     <Pressable
       testID="reader.settings.open"
       ref={ref}
       hitSlop={12}
-      onPress={() => openAt(() => <SettingsContent seriesKey={seriesKey} />)}
+      onPress={open}
       style={styles.gear}
       accessibilityRole="button"
       accessibilityLabel="Reader settings">
       <SettingsIcon color="#fff" size={20} />
     </Pressable>
   );
+}
+
+/** The settings sheet behind any trigger: anchored to `ref` when the trigger is a view that can
+ *  be measured (the gear above), a plain sheet when it is not (the iOS bar button is UIKit's and
+ *  has no ref to give — `ReaderNativeToolbar`). `onOpenChange` follows the sheet, for the reader
+ *  to hold its chrome up while it is open. */
+export function useReaderSettingsOverlay(seriesKey: string | null, onOpenChange?: (open: boolean) => void) {
+  const { ref, openAt, isOpen } = useAnchoredOverlay();
+  useEffect(() => {
+    if (!isOpen || !onOpenChange) return;
+    onOpenChange(true);
+    return () => onOpenChange(false);
+  }, [isOpen, onOpenChange]);
+  const open = () => openAt(() => <SettingsContent seriesKey={seriesKey} />);
+  return { ref, open };
 }
 
 /** Reader settings content, rendered inside the overlay (sheet or popover).
@@ -87,6 +97,8 @@ function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
   const pairing = paged && readsDouble(settings.pageLayout, window);
   const theme = useTheme();
   const hint = [styles.hint, { color: theme.textSecondary }];
+  // A desktop window has no orientation to speak of; it is nearly always wider than tall.
+  const desktop = useIsDesktop();
   return (
     <View style={styles.content}>
       <OverlayHeading>Reader settings</OverlayHeading>
@@ -133,7 +145,9 @@ function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
         disabled={!paged}
       />
       {paged && settings.pageLayout === 'auto' && (
-        <ThemedText style={hint}>Two pages side by side in landscape</ThemedText>
+        <ThemedText style={hint}>
+          {desktop ? 'Two pages side by side when the window is wider than tall' : 'Two pages side by side in landscape'}
+        </ThemedText>
       )}
       <ToggleRow
         label="Shift spreads by a page"

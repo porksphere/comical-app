@@ -9,6 +9,7 @@ import {
 import { useMemo, type ComponentProps } from 'react';
 
 import { openBridgeSearchPane } from '@/lib/bridge-search-pane';
+import { focusedTabRoute } from '@/lib/focused-tab';
 import { usePaneNav, usePaneParams, type PaneParams } from '@/lib/pane';
 import { openResultsPane } from '@/lib/results-pane';
 import { openSeriesPane } from '@/lib/series-pane';
@@ -50,12 +51,12 @@ function guard(base: Router): Router {
     push: (href, options) => {
       if (!claimNavigation(navTargetKey(href))) return;
       if (takeContentPane(href)) return;
-      base.push(href, options);
+      base.push(destinationHref(href), options);
     },
     navigate: (href, options) => {
       if (!claimNavigation(navTargetKey(href))) return;
       if (takeContentPane(href)) return;
-      base.navigate(href, options);
+      base.navigate(destinationHref(href), options);
     },
     replace: (href, options) => {
       if (claimNavigation(navTargetKey(href))) base.replace(href, options);
@@ -124,6 +125,40 @@ function takeContentPane(href: unknown): boolean {
   return false;
 }
 
+/**
+ * Where a push actually lands. Here, with the pane hand-off, because the push sites are many and
+ * context-free.
+ *
+ * A reader-first `/series` open, a collection's sequence among them, is the READER page,
+ * `/series/read`: the details and the reader are two pages (SeriesSplit in components/series/split-handoff).
+ *
+ * iOS: a series, search or results page pushed from inside a tab opens INSIDE that tab's native
+ * stack — the twin routes under `app/(tabs)/<tab>/in-tab/` — so the tab bar stays up over it as it does in
+ * every system app, instead of on the root stack over the whole tab shell. From outside the tabs
+ * the page goes to the root route — see `focusedTabRoute`. Android and web keep their single root
+ * copies.
+ */
+type PushHref = Parameters<Router['push']>[0];
+const IN_TAB_PATHS = new Set(['/series', '/search', '/results']);
+function destinationHref(href: PushHref): PushHref {
+  const { pathname, params } = splitHref(href);
+  if (!pathname || !IN_TAB_PATHS.has(pathname)) return href;
+  const page = pathname === '/series' && (params.reader === '1' || params.seq === '1') ? '/series/read' : pathname;
+  const tab = Platform.OS === 'ios' ? focusedTabRoute() : null;
+  if (tab) return tabHref(tab, page, params);
+  return page === pathname ? href : ({ pathname: page, params } as unknown as PushHref);
+}
+
+/**
+ * A tab's own copy of a root page: `/series` inside `library` is `/(tabs)/library/in-tab/series`. For a
+ * `<Link>` rendered under a tab (series-card's zoom link), which names its stack itself — the
+ * imperative push above does this for every call site, but an href is built at render time, when
+ * the focused tab is not necessarily the one the card is in (see `TabRouteContext`).
+ */
+export function tabHref(tab: string, pathname: string, params: PaneParams): PushHref {
+  return { pathname: `/(tabs)/${tab}/in-tab${pathname}`, params } as unknown as PushHref;
+}
+
 /** Both shapes expo-router accepts, reduced to the pathname and params the pane needs to render. */
 function splitHref(href: unknown): { pathname: string | null; params: PaneParams } {
   if (typeof href === 'string') {
@@ -190,10 +225,20 @@ export function Link({ onPress, ...rest }: LinkProps) {
     if (Platform.OS !== 'web') return;
     event.preventDefault();
     if (takeContentPane(rest.href)) return;
-    if (rest.replace) expoRouter.replace(rest.href);
-    else if (rest.push) expoRouter.push(rest.href);
-    else expoRouter.navigate(rest.href);
+    const to = destinationHref(rest.href);
+    if (rest.replace) expoRouter.replace(to);
+    else if (rest.push) expoRouter.push(to);
+    else expoRouter.navigate(to);
   };
   // eslint-disable-next-line comical/require-test-id -- pass-through wrapper: the testID comes from the call site's props.
   return <ExpoLink {...rest} onPress={handlePress} />;
 }
+
+/**
+ * The parts of expo-router's `Link` the iOS zoom transition is built from, for a `<Link asChild>`
+ * from this module: `<LinkTrigger withAppleZoom>` around the pressed element makes it the zoom's
+ * source, and `<LinkAppleZoomTarget>` on the destination screen marks what it grows into. Both are
+ * a plain pass-through off iOS 18. Here because the lint keeps `Link` itself out of reach.
+ */
+export const LinkTrigger = ExpoLink.Trigger;
+export const LinkAppleZoomTarget = ExpoLink.AppleZoomTarget;

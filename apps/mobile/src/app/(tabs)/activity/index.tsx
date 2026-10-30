@@ -3,7 +3,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -24,6 +24,8 @@ import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
+import { NativeTabHeader } from '@/components/native-tab-header';
+import { TabScrollMarker } from '@/components/tab-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -35,11 +37,12 @@ import { useDataSource, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
-import { useContentWidth } from '@/hooks/use-content-width';
+import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
-import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
+import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
+import { useIsDesktop } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
@@ -231,16 +234,17 @@ export default function ActivityScreen() {
   // by the time the page closes — see useZoomSurfaceList.
   useZoomSurfaceList(zoomSurface, rows, activitySeriesId, listRef);
 
-  const barHeight = useTopBarHeight();
-  const headerHeight = insets.top + barHeight;
+  const headerHeight = useTopChromeHeight();
   // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
   // explicit paddingLeft/Right is the reliable lever. Only the centring inset (web); the row owns its
-  // own horizontal gutter so the swipe-to-clear reaches the edge (see history-row / history).
-  const sidePad = topLevelCenterInset(width);
+  // own horizontal gutter so the swipe-to-clear reaches the edge (see history-row / history), but
+  // inside the safe area's sides.
+  const sides = useSideInsets();
+  const sidePad = topLevelCenterInset(width - sides.left - sides.right);
 
-  // See history.tsx's `openDetail` — the same control, opening the same combined page on its
-  // details side.
+  // See history.tsx's `openDetail` — the same control, opening the same series on its details
+  // page.
   const openDetail = (g: SeriesActivity) => {
     router.push({
       pathname: '/series',
@@ -302,71 +306,77 @@ export default function ActivityScreen() {
         </View>
       ) : (
         <Animated.View style={[styles.list, pull.listStyle]}>
-          <AnimatedLegendList
-            ref={listRef}
-            // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
-            style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
-            data={rows}
-            keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
-            recycleItems={false}
-            itemLayoutAnimation={ROW_REORDER_TRANSITION}
-            // Don't retro-correct offsets from measurements — a visible jitter while flinging otherwise.
-            maintainVisibleContentPosition={{ data: false, size: false }}
-            // Live UI-thread scroll offset the pull-to-refresh reads (top-of-list check + iOS bounce).
-            sharedValues={{ scrollOffset: scrollY }}
-            // WEB ONLY: routes the reanimated scroll bridge through scrollEventThrottle:1 so onScroll
-            // fires mid-drag (see recycler-list.tsx for the full root-cause note).
-            renderScrollComponent={Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined}
-            contentContainerStyle={{
-              // Fill the viewport even with few rows, so the empty space below them is still part of
-              // the scroller and a drag (pull-to-refresh) can be started there.
-              flexGrow: 1,
-              // Start flush under the top bar (like History / a settings list): the first row begins at
-              // the bar's bottom edge and its own top padding is all the separation it needs.
-              paddingTop: listPaddingTop(headerHeight),
-              paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
-              paddingLeft: sidePad,
-              paddingRight: sidePad,
-            }}
-            renderItem={({ item }) => (
-              <ActivityItem
-                item={item}
-                onRead={() => read(item)}
-                onOpenDetail={() => openDetail(item)}
-                onMarkRead={() => markReadMutation.mutate(item)}
-                onRemove={() => removeMutation.mutate(item)}
-                bridge={nameOf(item.bridgeId)}
-                direct={directOf(item.bridgeId)}
-              />
-            )}
-            showsVerticalScrollIndicator={Platform.OS === 'web'}
-            // Suppress Android's edge glow so it doesn't fight the custom pull; iOS keeps its bounce
-            // (that's what sources the pull there) and fires the refresh via onScrollEndDrag.
-            overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
-            onScroll={onScroll}
-            // Gesture phases for the tab bar (it commits to shown/hidden on release). Composed by
-            // hand rather than spreading `scrollPhaseHandlers`: pull-to-refresh already owns
-            // `onScrollEndDrag`, and that's the release signal.
-            onScrollBeginDrag={notifyScrollBeginDrag}
-            onMomentumScrollEnd={notifyScrollRest}
-            onScrollEndDrag={() => {
-              notifyScrollEndDrag();
-              pull.onScrollEndDrag?.();
-            }}
-          />
+          <TabScrollMarker>
+            <AnimatedLegendList
+              ref={listRef}
+              // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
+              style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
+              data={rows}
+              keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
+              recycleItems={false}
+              itemLayoutAnimation={ROW_REORDER_TRANSITION}
+              // Don't retro-correct offsets from measurements — a visible jitter while flinging otherwise.
+              maintainVisibleContentPosition={{ data: false, size: false }}
+              // Live UI-thread scroll offset the pull-to-refresh reads (top-of-list check + iOS bounce).
+              sharedValues={{ scrollOffset: scrollY }}
+              // WEB ONLY: routes the reanimated scroll bridge through scrollEventThrottle:1 so onScroll
+              // fires mid-drag (see recycler-list.tsx for the full root-cause note).
+              renderScrollComponent={Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined}
+              contentContainerStyle={{
+                // Fill the viewport even with few rows, so the empty space below them is still part of
+                // the scroller and a drag (pull-to-refresh) can be started there.
+                flexGrow: 1,
+                // Start flush under the top bar (like History / a settings list): the first row begins at
+                // the bar's bottom edge and its own top padding is all the separation it needs.
+                paddingTop: listPaddingTop(headerHeight),
+                paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+                paddingLeft: sidePad + sides.left,
+                paddingRight: sidePad + sides.right,
+              }}
+              renderItem={({ item }) => (
+                <ActivityItem
+                  item={item}
+                  onRead={() => read(item)}
+                  onOpenDetail={() => openDetail(item)}
+                  onMarkRead={() => markReadMutation.mutate(item)}
+                  onRemove={() => removeMutation.mutate(item)}
+                  bridge={nameOf(item.bridgeId)}
+                  direct={directOf(item.bridgeId)}
+                />
+              )}
+              showsVerticalScrollIndicator={Platform.OS === 'web'}
+              // Suppress Android's edge glow so it doesn't fight the custom pull; iOS keeps its bounce
+              // (that's what sources the pull there) and fires the refresh via onScrollEndDrag.
+              overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
+              onScroll={onScroll}
+              // Gesture phases for the tab bar (it commits to shown/hidden on release). Composed by
+              // hand rather than spreading `scrollPhaseHandlers`: pull-to-refresh already owns
+              // `onScrollEndDrag`, and that's the release signal.
+              onScrollBeginDrag={notifyScrollBeginDrag}
+              onMomentumScrollEnd={notifyScrollRest}
+              onScrollEndDrag={() => {
+                notifyScrollEndDrag();
+                pull.onScrollEndDrag?.();
+              }}
+            />
+          </TabScrollMarker>
         </Animated.View>
       )}
 
       <PullIndicator {...pull.indicator} top={headerHeight} />
-      <TabTitleBar
-        title="Activity"
-        titleSlot={
-          filter.open ? (
-            <TabFilterField filter={filter} testID="activity.search" placeholder="Filter activity…" />
-          ) : undefined
-        }
-        right={<TabFilterTrigger filter={filter} testID="activity.search" placeholder="Filter activity…" />}
-      />
+      {NATIVE_HEADER ? (
+        <NativeTabHeader title="Activity" scrollY={scrollY} filter={filter} placeholder="Filter activity…" />
+      ) : (
+        <TabTitleBar
+          title="Activity"
+          titleSlot={
+            filter.open ? (
+              <TabFilterField filter={filter} testID="activity.search" placeholder="Filter activity…" />
+            ) : undefined
+          }
+          right={<TabFilterTrigger filter={filter} testID="activity.search" placeholder="Filter activity…" />}
+        />
+      )}
     </ThemedView>
     </ZoomSurfaceContext.Provider>
   );
@@ -396,7 +406,7 @@ function ActivityItem({
   bridge: string;
   direct: boolean;
 }) {
-  const thumbRef = useRef<View>(null);
+  const thumbRef = useRef<ViewInstance>(null);
   // On desktop the time is the row's own column (`when`), so the secondary line drops it.
   const desktop = useIsDesktop();
   // The row's thumbnail is the zoom transition's source rect,
@@ -475,7 +485,8 @@ function ActivityItem({
             coverAspect={2 / 3}
             startRadius={6} // matches HistoryRow's thumbnail corner
             zoomSource={zoomSource}
-            measureRef={thumbRef}>
+            measureRef={thumbRef}
+            onOpen={onRead}>
             {({ hidden }) => renderRow(hidden)}
           </SeriesCardMenu>
         )}

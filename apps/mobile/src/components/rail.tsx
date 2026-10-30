@@ -5,6 +5,7 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
 import { BackSwipeBoundary } from '@/components/back-swipe-boundary';
+import { useSideInsets } from '@/hooks/use-content-width';
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import {
   coverStyles,
@@ -19,7 +20,7 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { DEFAULT_THUMB_ASPECT, rowCoverAspect, rowCoverAspects } from '@/lib/aspect-ratio';
 import { GRID_ROW_GAP, gridGeometry } from '@/hooks/use-grid-layout';
 import { useHovered } from '@/hooks/use-hovered';
-import { useIsCompact, useIsDesktop, useIsLargeScreen } from '@/hooks/use-responsive';
+import { sizeClassFor, useIsCompact, useIsDesktop, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
 import { ZoomSurfaceContext, useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
@@ -55,9 +56,9 @@ function wideGridItems<T>(kind: RailSection['kind'], items: readonly T[], column
 const STRIP_PAD = TopLevelGutter;
 
 /** Reference: carousel gap is 1rem desktop / 0.5rem mobile (`@media max-width:
- *  560px`). 768px matches this file's other mobile/desktop split. */
+ *  560px`); here it follows the size class, like this file's other compact/regular split. */
 function stripGapFor(viewport: number): number {
-  return viewport < 768 ? Spacing.two : Spacing.three;
+  return sizeClassFor(viewport) === 'compact' ? Spacing.two : Spacing.three;
 }
 
 /**
@@ -80,7 +81,7 @@ function peekWidth(viewport: number, fullCards: number, gap: number): number {
 }
 
 function cardWidthFor(kind: RailSection['kind'], viewport: number): number {
-  if (viewport >= 768) {
+  if (sizeClassFor(viewport) === 'regular') {
     return kind === 'hero' ? 210 : kind === 'ranked' ? 160 : 150;
   }
   const gap = stripGapFor(viewport);
@@ -258,6 +259,10 @@ export function Rail({
   // fixed height): titles clamp to 3 lines so a card can't exceed this, and a rail whose cards all
   // have short titles just reserves a little unused bottom space, consistently.
   const stripMinHeight = estimatedCardHeight(cardWidth, hasSub) + STRIP_PAD_V * 2;
+  // The strip scrolls under the safe area's sides, past the padding its host's content keeps clear
+  // of them, and its cards rest inside them: a shelf runs to the glass, a heading does not.
+  // `viewportWidth` is still the column inside them, so the cards it sizes fit there.
+  const insets = useSideInsets();
 
   // Desktop web only: a horizontal ScrollView (LegendList or FlatList alike) can't be dragged with a
   // mouse — touch swipe and shift+wheel work, but click-and-drag does nothing. Add grab-and-pull
@@ -410,7 +415,10 @@ export function Rail({
           // turns off the scroll view's clipsToBounds so the system preview can draw above it. Kept
           // iOS-only: on web/Android the horizontal scroller must keep clipping (web relies on it to
           // not overflow the page; Android's menu is a dropdown with no lift to clear anyway).
-          style={[{ minHeight: stripMinHeight }, Platform.OS === 'ios' && { overflow: 'visible' }]}
+          style={[
+            { minHeight: stripMinHeight, marginLeft: -insets.left, marginRight: -insets.right },
+            Platform.OS === 'ios' && { overflow: 'visible' },
+          ]}
           data={section.items}
           keyExtractor={(it) => it.id}
           // Recycle-safe now (SeriesCard resets its per-item state on entry change), so reuse card
@@ -438,7 +446,7 @@ export function Rail({
           // visible "expand out to correct spacing"). Rails remount on a bridge switch (keyed by
           // section.id), so they hit this every time; seeding the width positions them correctly on
           // frame one. Width is the viewport the strip spans; height reuses the reserved strip height.
-          estimatedListSize={{ width: viewportWidth, height: stripMinHeight }}
+          estimatedListSize={{ width: viewportWidth + insets.left + insets.right, height: stripMinHeight }}
           showsHorizontalScrollIndicator={false}
           // Settle on whole-card boundaries after a swipe: a long fling keeps its momentum and comes to
           // rest on the nearest card near where it naturally stops (not a hard snap-back). `normal`
@@ -468,7 +476,10 @@ export function Rail({
           // the cards (halfGap + halfGap = stripGap between neighbours) AND leaves the highlight ring
           // room inside the clipped box on every side. The outer inset then only needs the remaining
           // STRIP_PAD − stripHalfGap so the first card still lines up under the section heading.
-          contentContainerStyle={{ paddingLeft: STRIP_PAD - stripHalfGap, paddingRight: STRIP_PAD - stripHalfGap }}
+          contentContainerStyle={{
+            paddingLeft: STRIP_PAD - stripHalfGap + insets.left,
+            paddingRight: STRIP_PAD - stripHalfGap + insets.right,
+          }}
           // Persist the settled card index once the fling/snap comes to rest (see railRestIndex), so a
           // recycle/remount on a rail-heavy home restores it. Offset is a multiple of itemSize here.
           onMomentumScrollEnd={(e) =>
@@ -610,7 +621,15 @@ export function SectionHeadContent({
   );
 }
 
-export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeAll?: () => void; testID?: string }) {
+export function SectionHead({
+  title,
+  onSeeAll,
+  testID,
+}: {
+  title: string;
+  onSeeAll?: () => void;
+  testID?: string;
+}) {
   const theme = useTheme();
   const compact = useIsCompact();
   const { hovered, onHoverIn, onHoverOut } = useHovered();

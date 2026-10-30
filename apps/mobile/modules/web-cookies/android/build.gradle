@@ -12,7 +12,7 @@ useExpoPublishing()
 
 android {
   namespace "expo.modules.webcookies"
-  compileSdk 36
+  compileSdk safeExtGet("compileSdkVersion", 37)
 
   defaultConfig {
     minSdk 26

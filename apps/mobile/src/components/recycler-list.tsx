@@ -2,13 +2,15 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ComponentProps, ReactElement, RefObject } from 'react';
 import { Platform, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
+import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
+import { useSideInsets } from '@/hooks/use-content-width';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 import { stableScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { ZoomSurfaceContext, useZoomSurfaceKey } from '@/lib/series-zoom';
+import { TabScrollMarker } from '@/components/tab-scroll-marker';
 
 /**
  * THE one virtualized-list primitive. Every scrolling list of cards/rows in the app — the uniform
@@ -136,92 +138,99 @@ export function RecyclerList<T>({
   // `scopeKey`, which already names what this list is showing, so the key outlives the list itself:
   // `listKey` right above deliberately remounts the whole LegendList on a 0 -> N data fill.
   const zoomSurface = useZoomSurfaceKey(scopeKey);
+  // The list runs under the safe area's sides and its content stays inside them, so the colour behind
+  // a landscape iPhone's sensor housing is the screen's and no card sits under it.
+  const insets = useSideInsets();
 
+  // The marker is keyed WITH the list: it registers the scroll view once per attach, so a list
+  // remounting under a standing marker would leave UIKit following the old one.
   const list = (
-      <AnimatedLegendList
-        ref={listRef}
-        // AnimatedLegendList types this as a ref to ITS OWN AnimatedScrollView alias, which isn't
-        // structurally the same declaration as `Animated.ScrollView` even though it is the same
-        // component. One cast, at the one boundary, rather than leaking the alias upward through
-        // four components' prop types.
-        refScrollView={scrollRef as unknown as ComponentProps<typeof AnimatedLegendList>['refScrollView']}
-        key={listKey}
-        style={[styles.list, stableScrollbarGutter, scrollbarInset(scrollbarInsetTop)]}
-        data={data}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        extraData={extraData}
-        getItemType={getItemType}
-        getFixedItemSize={getFixedItemSize}
-        estimatedItemSize={estimatedItemSize}
-        numColumns={numColumns}
-        columnWrapperStyle={columnWrapperStyle}
-        // Recycle card/row instances rather than remounting per reuse (renderers must be recycle-safe).
-        recycleItems={recycleItems}
-        itemLayoutAnimation={itemLayoutAnimation}
-        drawDistance={drawDistance}
-        // Don't retro-correct offsets from size measurements — a visible bounce/jitter while flinging
-        // otherwise. Fixed/known sizes make this safe.
-        maintainVisibleContentPosition={{ data: false, size: false }}
-        sharedValues={sharedValues}
-        // WEB ONLY. Root-causes the "loading only resumes once you lift your finger" symptom: with no
-        // `renderScrollComponent`, `@legendapp/list/reanimated`'s scroll bridge renders
-        // `Animated.ScrollView` at the `scrollEventThrottle` LegendList hardcodes (0), and
-        // react-native-web at throttle 0 fires `onScroll` only at gesture start and ~100ms after idle,
-        // never during an active drag/momentum — so the visible range (and onEndReached) only advanced
-        // once you let go. Passing ANY renderScrollComponent routes through the bridge's other branch,
-        // which forces scrollEventThrottle: 1. On NATIVE we don't pass it: forcing throttle 1 there
-        // just saturates the JS thread every frame during a fling, and the UI-thread `sharedValues`
-        // offset works regardless.
-        scrollEnabled={scrollEnabled}
-        renderScrollComponent={
-          Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
-        }
-        // Plain (JS-thread) onScroll alongside `sharedValues` — callers use it to keep a sliding bar's
-        // `maxScrollY` in sync, and to drive the tab-bar auto-hide.
-        onScroll={onScroll}
-        ListHeaderComponent={header}
-        ListFooterComponent={footer}
-        contentContainerStyle={{
-          // Fill the viewport even when the items don't, so the WHOLE screen is draggable (and the
-          // overscroll/pull-to-refresh can start anywhere), not just on the rows.
-          flexGrow: 1,
-          paddingTop,
-          paddingBottom,
-          paddingLeft: sidePad,
-          paddingRight: sidePad,
-        }}
-        onEndReachedThreshold={onEndReachedThreshold}
-        onEndReached={onEndReached}
-        // WEB ONLY. LegendList arbitrates the two edges through one shared gate, and the START edge
-        // claims it at scroll 0 under the default 0.5 threshold even with no `onStartReached` wired.
-        // The gate is only re-armed by a drag-begin or the list's own scroll-end hook — neither
-        // exists once the custom `renderScrollComponent` above is in play (wheel scrolling has no
-        // drag phase, and the hook is only passed to LegendList's own ScrollView). A first page
-        // shorter than ~2.4 viewports then latches "end reached" without ever dispatching it, and
-        // the grid never loads page 2. A zero start threshold means the start edge can't claim the
-        // gate, so the end edge dispatches on its own. Native keeps the drag re-arm path untouched.
-        onStartReachedThreshold={Platform.OS === 'web' ? 0 : undefined}
-        // Show the browser's native scrollbar on web; hidden on native, where it isn't idiomatic.
-        showsVerticalScrollIndicator={Platform.OS === 'web'}
-        // No native RefreshControl anywhere — pull-to-refresh is the custom overlay spinner. Android's
-        // edge-stretch glow is suppressed so it doesn't fight the custom pull; iOS keeps its bounce
-        // (that's what sources the pull there), and a release past the threshold fires via onScrollEndDrag.
-        overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
-        // Gesture phases for the auto-hiding chrome: both bars commit to shown-or-hidden when the
-        // scroll is RELEASED, not while it moves (see `lib/scroll-release`). Reported here, on the
-        // one list primitive, so every list built on it feeds them without wiring anything — a
-        // caller's own handler still runs after.
-        onScrollBeginDrag={notifyScrollBeginDrag}
-        onScrollEndDrag={(e) => {
-          notifyScrollEndDrag();
-          onScrollEndDrag?.(e);
-        }}
-        onMomentumScrollEnd={(e) => {
-          notifyScrollRest();
-          onMomentumScrollEnd?.(e);
-        }}
-      />
+    <TabScrollMarker markerKey={listKey}>
+        <AnimatedLegendList
+          ref={listRef}
+          // AnimatedLegendList types this as a ref to ITS OWN AnimatedScrollView alias, which isn't
+          // structurally the same declaration as `Animated.ScrollView` even though it is the same
+          // component. One cast, at the one boundary, rather than leaking the alias upward through
+          // four components' prop types.
+          refScrollView={scrollRef as unknown as ComponentProps<typeof AnimatedLegendList>['refScrollView']}
+          key={listKey}
+          style={[styles.list, stableScrollbarGutter, scrollbarInset(scrollbarInsetTop)]}
+          data={data}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          extraData={extraData}
+          getItemType={getItemType}
+          getFixedItemSize={getFixedItemSize}
+          estimatedItemSize={estimatedItemSize}
+          numColumns={numColumns}
+          columnWrapperStyle={columnWrapperStyle}
+          // Recycle card/row instances rather than remounting per reuse (renderers must be recycle-safe).
+          recycleItems={recycleItems}
+          itemLayoutAnimation={itemLayoutAnimation}
+          drawDistance={drawDistance}
+          // Don't retro-correct offsets from size measurements — a visible bounce/jitter while flinging
+          // otherwise. Fixed/known sizes make this safe.
+          maintainVisibleContentPosition={{ data: false, size: false }}
+          sharedValues={sharedValues}
+          // WEB ONLY. Root-causes the "loading only resumes once you lift your finger" symptom: with no
+          // `renderScrollComponent`, `@legendapp/list/reanimated`'s scroll bridge renders
+          // `Animated.ScrollView` at the `scrollEventThrottle` LegendList hardcodes (0), and
+          // react-native-web at throttle 0 fires `onScroll` only at gesture start and ~100ms after idle,
+          // never during an active drag/momentum — so the visible range (and onEndReached) only advanced
+          // once you let go. Passing ANY renderScrollComponent routes through the bridge's other branch,
+          // which forces scrollEventThrottle: 1. On NATIVE we don't pass it: forcing throttle 1 there
+          // just saturates the JS thread every frame during a fling, and the UI-thread `sharedValues`
+          // offset works regardless.
+          scrollEnabled={scrollEnabled}
+          renderScrollComponent={
+            Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
+          }
+          // Plain (JS-thread) onScroll alongside `sharedValues` — callers use it to keep a sliding bar's
+          // `maxScrollY` in sync, and to drive the tab-bar auto-hide.
+          onScroll={onScroll}
+          ListHeaderComponent={header}
+          ListFooterComponent={footer}
+          contentContainerStyle={{
+            // Fill the viewport even when the items don't, so the WHOLE screen is draggable (and the
+            // overscroll/pull-to-refresh can start anywhere), not just on the rows.
+            flexGrow: 1,
+            paddingTop,
+            paddingBottom,
+            paddingLeft: sidePad + insets.left,
+            paddingRight: sidePad + insets.right,
+          }}
+          onEndReachedThreshold={onEndReachedThreshold}
+          onEndReached={onEndReached}
+          // WEB ONLY. LegendList arbitrates the two edges through one shared gate, and the START edge
+          // claims it at scroll 0 under the default 0.5 threshold even with no `onStartReached` wired.
+          // The gate is only re-armed by a drag-begin or the list's own scroll-end hook — neither
+          // exists once the custom `renderScrollComponent` above is in play (wheel scrolling has no
+          // drag phase, and the hook is only passed to LegendList's own ScrollView). A first page
+          // shorter than ~2.4 viewports then latches "end reached" without ever dispatching it, and
+          // the grid never loads page 2. A zero start threshold means the start edge can't claim the
+          // gate, so the end edge dispatches on its own. Native keeps the drag re-arm path untouched.
+          onStartReachedThreshold={Platform.OS === 'web' ? 0 : undefined}
+          // Show the browser's native scrollbar on web; hidden on native, where it isn't idiomatic.
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+          // No native RefreshControl anywhere — pull-to-refresh is the custom overlay spinner. Android's
+          // edge-stretch glow is suppressed so it doesn't fight the custom pull; iOS keeps its bounce
+          // (that's what sources the pull there), and a release past the threshold fires via onScrollEndDrag.
+          overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
+          // Gesture phases for the auto-hiding chrome: both bars commit to shown-or-hidden when the
+          // scroll is RELEASED, not while it moves (see `lib/scroll-release`). Reported here, on the
+          // one list primitive, so every list built on it feeds them without wiring anything — a
+          // caller's own handler still runs after.
+          onScrollBeginDrag={notifyScrollBeginDrag}
+          onScrollEndDrag={(e) => {
+            notifyScrollEndDrag();
+            onScrollEndDrag?.(e);
+          }}
+          onMomentumScrollEnd={(e) => {
+            notifyScrollRest();
+            onMomentumScrollEnd?.(e);
+          }}
+        />
+    </TabScrollMarker>
   );
 
   return (

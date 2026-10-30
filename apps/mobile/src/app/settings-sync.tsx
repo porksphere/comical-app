@@ -56,7 +56,7 @@ function syncDescription(sync: SyncStatus): string {
 }
 
 export default function SyncSettingsScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   // Gated on hydration: the static web render has no shell, so the rows would otherwise appear
   // only after it and mismatch.
   const desktop = useHydrated() && !!desktopShell();

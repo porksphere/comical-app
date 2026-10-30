@@ -6,7 +6,7 @@ import {
   StyleSheet,
   View,
   type GestureResponderEvent,
-  type View as ViewType,
+  type ViewInstance,
 } from 'react-native';
 
 import { CollectedItemMenu } from '@/components/collections/collected-item-menu';
@@ -98,7 +98,7 @@ export function CollectedItemTile({
   const isWeb = Platform.OS === 'web';
   const zoomKey = useZoomSurfaceKey(`collected:${item.id}`);
   const flying = useIsZoomingSeries(item.seriesId, zoomKey);
-  const boxRef = useRef<ViewType>(null);
+  const boxRef = useRef<ViewInstance>(null);
   // Radius matches the frame's — the flying copy is drawn with the same corners. The hook also
   // registers this tile as re-measurable for the collapse (see series-zoom).
   const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomKey, boxRef, 10, !isWeb && showImage);

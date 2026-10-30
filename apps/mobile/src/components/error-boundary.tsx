@@ -34,8 +34,14 @@ export class ErrorBoundary extends Component<Props, State> {
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>Something went wrong</Text>
-          <Text style={styles.message}>{error.message}</Text>
-          {error.stack ? <Text style={styles.stack}>{error.stack}</Text> : null}
+          <Text style={styles.message} selectable>
+            {error.message}
+          </Text>
+          {error.stack ? (
+            <Text style={styles.stack} selectable>
+              {error.stack}
+            </Text>
+          ) : null}
         </ScrollView>
         <Pressable testID="error-boundary.try-again" style={styles.button} onPress={() => this.setState({ error: null })}>
           <Text style={styles.buttonLabel}>Try again</Text>

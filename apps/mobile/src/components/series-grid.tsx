@@ -1,7 +1,7 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useMemo, useRef, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import type { ComposedGesture } from 'react-native-gesture-handler';
+import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { GroupedGrid } from '@/components/grouped-grid';
@@ -66,6 +66,7 @@ export function SeriesGrid({
   groupOf,
   stickyHeaderTop,
   stickyPinned,
+  onSectionChange,
   sharedValues,
   onScroll,
   onEndReached,
@@ -114,6 +115,8 @@ export function SeriesGrid({
   /** Grouped mode: written by the sticky while a heading is pinned, so the screen can drop its
    *  bar's own rule on the same frame. */
   stickyPinned?: SharedValue<number>;
+  /** Grouped mode: the pinned section's label — see `GroupedGrid`. */
+  onSectionChange?: (label: string | null) => void;
   /** Feeds a `useSlidingBar`'s UI-thread scroll offset. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -184,6 +187,7 @@ export function SeriesGrid({
         sidePad={sidePad}
         stickyHeaderTop={stickyHeaderTop}
         stickyPinned={stickyPinned}
+        onSectionChange={onSectionChange}
         sharedValues={sharedValues}
         onScroll={onScroll}
         renderRow={(rowItems) => {

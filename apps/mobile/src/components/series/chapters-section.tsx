@@ -1,6 +1,6 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
-import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
+import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
@@ -30,7 +30,6 @@ import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
 import { SavedBadge } from '@/components/card-badge';
 import { openCollectionPicker } from '@/components/collection-picker';
-import { ContextMenuHold, openContextMenu, type ContextMenuPoint } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
 import {
@@ -45,13 +44,15 @@ import {
 } from '@/components/icons/ui-icons';
 import { coverRingColor, coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
+import { HoldMenu, liftTarget } from '@/components/system-context-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
+import { useSideInsets } from '@/hooks/use-content-width';
 import { useHovered } from '@/hooks/use-hovered';
 import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
-import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
+import { sizeClassFor } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
 import {
@@ -149,10 +150,17 @@ const seriesSidePad = (width: number) => Math.max(0, (width - MaxTopLevelWidth) 
 /** Columns in the direct-series page grid. */
 const pageGridCols = (width: number) => (width >= 900 ? 5 : width >= 600 ? 3 : 2);
 
+/** The page's width inside the safe area's sides: what the rows and the grid lay out in, while
+ *  the list and the related rails run under the sides. */
+function useSeriesContentWidth() {
+  const sides = useSideInsets();
+  return useSeriesPageWidth() - sides.left - sides.right;
+}
+
 /** Page-grid placeholder shown while the deferred page fetch is in flight — one
  *  row of tiles at the grid's column count, matching the thumbnail aspect. */
 function PageGridSkeleton() {
-  const cols = pageGridCols(useSeriesPageWidth());
+  const cols = pageGridCols(useSeriesContentWidth());
   return (
     <View style={styles.section}>
       <ThemedText type="subtitle" style={styles.headTitle}>
@@ -514,7 +522,8 @@ export function ChapterScrollList({
 } & PullListWiring) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const width = useSeriesPageWidth();
+  const sides = useSideInsets();
+  const width = useSeriesContentWidth();
   const largeSidePad = seriesSidePad(width);
   const [tab, setTab] = useState<Tab>('all');
   const [asc, setAsc] = useState(false);
@@ -526,7 +535,7 @@ export function ChapterScrollList({
   // (the strip overflowed ~34pt past the right edge). There, the strip fills the row and its tabs
   // share the width equally; large screens (chapters live in a roomy right column) keep the
   // content-sized tabs.
-  const fillTabs = width < LARGE_SCREEN_BREAKPOINT;
+  const fillTabs = sizeClassFor(width) === 'compact';
 
   // Per-chapter download state for the trailing indicators. Same query key the series Download
   // button subscribes to, so it's already fetched on this page AND live-patched page-by-page by the
@@ -553,7 +562,7 @@ export function ChapterScrollList({
   // series, and the menu is built fresh on every open, so it reads a set that is already warm.
   const rosterQuery = collectionItemsQuery(ds, mock, { type: 'chapter', series: `${bridgeId}:${seed}` });
   useQuery({ ...rosterQuery, enabled: !!bridgeId && !!seed });
-  // Read from the cache at open time, not from render: the list keeps a row's first `onMenu`
+  // Read from the cache at open time, not from render: the list keeps a row's first `menu`
   // closure, so a captured roster would still say "unsaved" after the row's own save.
   const collectedChapterIds = () =>
     new Set(
@@ -619,31 +628,27 @@ export function ChapterScrollList({
     return out;
   }, [loading, hasChapters, groups, collapsible, hiddenCount]);
 
-  // Long-press (or, on web, right-click) a row → the per-chapter menu, in the series card popup's
-  // menu system (frosted point-anchored menu, peek-and-commit) on every platform.
+  // Long-press (or, on web, right-click) a row → the per-chapter menu: the system's on iOS, the
+  // series card popup's menu system (frosted point-anchored menu, peek-and-commit) elsewhere. No
+  // title line — the held row is right there naming the chapter.
   const manifest = useMemo(() => wholeChapters(dl?.chapters ?? []), [dl]);
-  const openChapterMenu = (g: ChapterGroup, at: ContextMenuPoint) => {
-    if (!bridgeId) return;
+  const chapterMenu = (g: ChapterGroup): MenuRowSpec[] => {
+    if (!bridgeId) return [];
     // Built per open, so the "Mark as read/unread" label reflects current state.
     const readArgs = { ds, bridgeId, seriesId: seed, chapters, group: g, onChanged: invalidateReadState };
-    openContextMenu({
-      // No title line — the pressed row is right there naming the chapter; rows only, like the
-      // series popup's own menu.
-      ...at,
-      rows: chapterMenuRows({
-        ds,
-        mock,
-        bridgeId,
-        seriesId: seed,
-        title,
-        chapters,
-        manifest,
-        group: g,
-        preferredGroup,
-        collected: collectedChapterIds(),
-        read: readArgs,
-        canDownload: missingBridgeName === undefined && !removed,
-      }),
+    return chapterMenuRows({
+      ds,
+      mock,
+      bridgeId,
+      seriesId: seed,
+      title,
+      chapters,
+      manifest,
+      group: g,
+      preferredGroup,
+      collected: collectedChapterIds(),
+      read: readArgs,
+      canDownload: missingBridgeName === undefined && !removed,
     });
   };
 
@@ -655,7 +660,7 @@ export function ChapterScrollList({
         group={g}
         preferredGroup={preferredGroup}
         onOpen={openVersion}
-        onMenu={bridgeId ? openChapterMenu : undefined}
+        menu={bridgeId ? chapterMenu : undefined}
         dlState={dlState}
         {...(readable
           ? {}
@@ -670,7 +675,7 @@ export function ChapterScrollList({
   // Series title — full-width above the two-column hero. series.tsx no longer bundles it into
   // `header`, so every layout below renders it from the `title` prop here.
   const titleEl = (
-    <ThemedText type="subtitle" style={styles.seriesTitle}>
+    <ThemedText type="subtitle" style={styles.seriesTitle} selectable>
       {title}
     </ThemedText>
   );
@@ -786,10 +791,9 @@ export function ChapterScrollList({
         paddingTop: topInset + BarContentGap,
         paddingBottom: insets.bottom + Spacing.five,
         // Large screens cap + centre the whole list at MaxTopLevelWidth (via largeSidePad); small
-        // screens just inset by Spacing.four.
-        ...(isLarge
-          ? { paddingLeft: largeSidePad, paddingRight: largeSidePad }
-          : { paddingHorizontal: Spacing.four }),
+        // screens just inset by Spacing.four. Either way inside the safe area's sides.
+        paddingLeft: (isLarge ? largeSidePad : Spacing.four) + sides.left,
+        paddingRight: (isLarge ? largeSidePad : Spacing.four) + sides.right,
       }}
       renderItem={({ item }) => renderListItem(item)}
     />
@@ -849,7 +853,7 @@ function ChapterRow({
   group,
   preferredGroup,
   onOpen,
-  onMenu,
+  menu,
   dlState,
   dimmed,
   unavailable,
@@ -857,8 +861,8 @@ function ChapterRow({
   group: ChapterGroup;
   preferredGroup?: string;
   onOpen: (v: Chapter) => void;
-  /** Long-press / right-click: the per-chapter menu (read state, collections, downloads). */
-  onMenu?: (group: ChapterGroup, at: ContextMenuPoint) => void;
+  /** Long-press / right-click: the per-chapter menu's rows (read state, collections, downloads). */
+  menu?: (group: ChapterGroup) => MenuRowSpec[];
   /** Download indicator for this logical chapter (best state across versions), if any. */
   dlState?: { state: DownloadState; fraction: number } | null;
   /** Rendering offline and not downloaded — unreadable, so the row dims and its press disables. */
@@ -878,66 +882,68 @@ function ChapterRow({
   const open = (v: Chapter) => (unavailable ? showToast(unavailable) : onOpen(v));
 
   return (
-    <ContextMenuHold
-      enabled={!!onMenu && !dimmed}
-      onOpen={(pt) => onMenu?.(group, pt)}>
+    <HoldMenu enabled={!!menu && !dimmed} rows={() => menu?.(group) ?? []}>
       {({ onLongPress, onContextMenu }) => (
     // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
     // list you still have to get through, so they are the ones drawn at full strength.
     <View style={dimmed || unavailable ? styles.rowDimmed : read && !PLATED_ROWS ? styles.rowRead : undefined}>
-      <Pressable
-        testID={testId('series.chapter', group.key)}
-        onPress={() => open(def)}
-        onLongPress={onLongPress}
-        {...({ onContextMenu } as ViewProps)}
-        disabled={dimmed}
-        onHoverIn={rowHover.onHoverIn}
-        onHoverOut={rowHover.onHoverOut}
-        style={({ pressed }) => pressed && styles.rowPressed}>
-        <ThemedView
-          type={PLATED_ROWS ? 'backgroundElement' : 'background'}
-          style={[
-            styles.row,
-            FLAT_ROWS ? styles.rowFlat : BORDERED_ROWS ? { borderColor: theme.hairline } : styles.rowUnbordered,
-            // Brighten (not dim) on hover — same treatment as the chapter tab strip.
-            rowHover.hovered && { backgroundColor: theme.backgroundSelected },
-          ]}>
-          <ThemedText
-            type="small"
-            numberOfLines={1}
-            style={[styles.rowName, read && PLATED_ROWS && { color: theme.textSecondary }]}>
-            {group.name}
-          </ThemedText>
-          {dlState && (
-            <View style={styles.rowDownload} testID={testId('series.chapter', group.key, 'download-state')}>
-              <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
-            </View>
-          )}
-          <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
-            {relativeTime(def.date)}
-          </ThemedText>
-          {/* The slot is reserved on every row, chevron or not, so the dates stay in one column. */}
-          <View style={styles.versionsSlot}>
-            {multi && (
-              <Pressable
-                testID={testId('series.chapter', group.key, 'versions')}
-                onPress={() => setExpanded((v) => !v)}
-                onHoverIn={versionsHover.onHoverIn}
-                onHoverOut={versionsHover.onHoverOut}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel={`${group.versions.length} versions`}
-                accessibilityState={{ expanded }}
-                style={[
-                  styles.versionsBtn,
-                  versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
-                ]}>
-                <TurningChevron open={expanded} color={theme.textSecondary} />
-              </Pressable>
+      {/* Only the row itself lifts on iOS, not the versions list open under it. */}
+      {liftTarget(
+        <Pressable
+          testID={testId('series.chapter', group.key)}
+          onPress={() => open(def)}
+          onLongPress={onLongPress}
+          {...({ onContextMenu } as ViewProps)}
+          disabled={dimmed}
+          onHoverIn={rowHover.onHoverIn}
+          onHoverOut={rowHover.onHoverOut}
+          style={({ pressed }) => pressed && styles.rowPressed}>
+          <ThemedView
+            type={PLATED_ROWS ? 'backgroundElement' : 'background'}
+            style={[
+              styles.row,
+              FLAT_ROWS ? styles.rowFlat : BORDERED_ROWS ? { borderColor: theme.hairline } : styles.rowUnbordered,
+              // Brighten (not dim) on hover — same treatment as the chapter tab strip.
+              rowHover.hovered && { backgroundColor: theme.backgroundSelected },
+            ]}>
+            <ThemedText
+              type="small"
+              numberOfLines={1}
+              style={[styles.rowName, read && PLATED_ROWS && { color: theme.textSecondary }]}>
+              {group.name}
+            </ThemedText>
+            {dlState && (
+              <View style={styles.rowDownload} testID={testId('series.chapter', group.key, 'download-state')}>
+                <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
+              </View>
             )}
-          </View>
-        </ThemedView>
-      </Pressable>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
+              {relativeTime(def.date)}
+            </ThemedText>
+            {/* The slot is reserved on every row, chevron or not, so the dates stay in one column. */}
+            <View style={styles.versionsSlot}>
+              {multi && (
+                <Pressable
+                  testID={testId('series.chapter', group.key, 'versions')}
+                  onPress={() => setExpanded((v) => !v)}
+                  onHoverIn={versionsHover.onHoverIn}
+                  onHoverOut={versionsHover.onHoverOut}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${group.versions.length} versions`}
+                  accessibilityState={{ expanded }}
+                  style={[
+                    styles.versionsBtn,
+                    versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
+                  ]}>
+                  <TurningChevron open={expanded} color={theme.textSecondary} />
+                </Pressable>
+              )}
+            </View>
+          </ThemedView>
+        </Pressable>,
+        FLAT_ROWS ? 10 : 8,
+      )}
       {multi && (
         <Disclosure open={expanded}>
           <View style={styles.versionList}>
@@ -950,7 +956,7 @@ function ChapterRow({
       {FLAT_ROWS && <View style={[styles.rowDivider, { backgroundColor: theme.hairline }]} />}
     </View>
       )}
-    </ContextMenuHold>
+    </HoldMenu>
   );
 }
 
@@ -1077,8 +1083,7 @@ function chapterMenuActions(args: {
  * The long-press chapter menu: quick per-chapter read + download actions without leaving the list.
  * "Mark read up to here" and "Download from here" are the two one-gesture range answers (everything
  * below this chapter in reading order / this chapter through the end, skipping what's already
- * done); a fully-downloaded chapter offers Delete too. Counts ride in the labels; per the shared
- * menu's rule, nothing is coloured.
+ * done); a fully-downloaded chapter offers Delete too, in red. Counts ride in the labels.
  */
 function chapterMenuRows(
   args: Parameters<typeof chapterMenuActions>[0] & {
@@ -1094,6 +1099,7 @@ function chapterMenuRows(
     {
       label: read ? 'Mark as unread' : 'Mark as read',
       Icon: read ? EyeOffIcon : CheckIcon,
+      symbol: read ? 'eye.slash' : 'checkmark.circle',
       loading: false,
       testID: testId('series.chapter-menu', 'read'),
       onPress: () => void setRead(!read),
@@ -1101,6 +1107,7 @@ function chapterMenuRows(
     {
       label: pending > 1 ? `Mark read up to here (${pending})` : 'Mark read up to here',
       Icon: CheckAllIcon,
+      symbol: 'checklist',
       loading: false,
       // Nothing left below this chapter to mark — the row above already covers this one alone.
       disabled: pending <= 1,
@@ -1112,6 +1119,7 @@ function chapterMenuRows(
     {
       label: collected ? 'Collections…' : 'Save chapter',
       Icon: collected ? CheckIcon : PlusIcon,
+      symbol: collected ? 'folder' : 'plus',
       active: collected,
       loading: false,
       testID: testId('series.chapter-menu', 'collect'),
@@ -1123,6 +1131,7 @@ function chapterMenuRows(
     {
       label: entry?.settled ? 'Already saved' : 'Download chapter',
       Icon: DownloadsIcon,
+      symbol: 'arrow.down.circle',
       loading: false,
       disabled: !args.canDownload || !entry || entry.settled,
       testID: testId('series.chapter-menu', 'this'),
@@ -1131,6 +1140,7 @@ function chapterMenuRows(
     {
       label: span.length > 0 && args.canDownload ? `Download from here (${span.length})` : 'Download from here',
       Icon: ArrowDownIcon,
+      symbol: 'arrow.down.to.line',
       loading: false,
       disabled: !args.canDownload || span.length === 0,
       testID: testId('series.chapter-menu', 'from-here'),
@@ -1141,7 +1151,9 @@ function chapterMenuRows(
     rows.push({
       label: 'Delete download',
       Icon: TrashIcon,
+      symbol: 'trash',
       loading: false,
+      destructive: true,
       testID: testId('series.chapter-menu', 'delete'),
       onPress: () => void deleteDownload(),
     });
@@ -1219,7 +1231,8 @@ export function PageThumbList({
   onOpenPage: (pageIndex: number) => void;
 } & PullListWiring) {
   const theme = useTheme();
-  const screenW = useSeriesPageWidth();
+  const sides = useSideInsets();
+  const screenW = useSeriesContentWidth();
   const insets = useSafeAreaInsets();
   const rtl = useReadsRightToLeft();
   const [expanded, setExpanded] = useState(false);
@@ -1301,8 +1314,8 @@ export function PageThumbList({
       contentContainerStyle={{
         paddingTop: BarContentGap + topInset,
         paddingBottom: insets.bottom + Spacing.five,
-        paddingLeft: sidePad,
-        paddingRight: sidePad,
+        paddingLeft: sidePad + sides.left,
+        paddingRight: sidePad + sides.right,
       }}
       ListHeaderComponent={
         <View style={styles.pageHeader}>

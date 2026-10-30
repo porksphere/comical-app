@@ -1,5 +1,5 @@
 import { type RefObject, useCallback, useMemo, useRef, useState } from 'react';
-import { View, type GestureResponderEvent } from 'react-native';
+import { View, type GestureResponderEvent, type ViewInstance } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
@@ -17,10 +17,11 @@ import {
 } from '@/lib/series-card-menu';
 
 /**
- * Native (iOS + Android) per-card quick-actions menu. A long-press anywhere on the card opens the
- * iOS / X-style hold-down menu — a dimmed backdrop, the card lifted as a preview, and a rounded menu
- * springing in (rendered by the root `SeriesCardContextMenuHost`, driven by `openSeriesCardMenu`).
- * Web has its own affordance (a hover 3-dot button), in the `.web.tsx` file.
+ * Android per-card quick-actions menu; iOS has the system's (`series-card-menu.ios.tsx`), typed by
+ * the props here. A long-press anywhere on the card opens the hold-down menu — a dimmed backdrop,
+ * the card lifted as a preview, and a rounded menu springing in (rendered by the root
+ * `SeriesCardContextMenuHost`, driven by `openSeriesCardMenu`). Web has its own affordance (a hover
+ * 3-dot button), in the `.web.tsx` file.
  *
  * The long-press is detected with `react-native-gesture-handler` (not a `Pressable`'s `onLongPress`):
  * inside a scrolling list on iOS the Pressable's `onLongPress` doesn't fire reliably — the touch is
@@ -28,8 +29,7 @@ import {
  * `LongPress` gesture recognizes the hold at the native layer and coexists with the card's tap
  * (navigation) and the list's scroll: a quick tap still navigates; moving the finger cancels it.
  *
- * There is NO per-card native context-menu host (the old SwiftUI `.ios.tsx` was the iOS scroll-jank
- * cause). Scrolling cards cost nothing; the menu is built on demand, once, on press.
+ * Scrolling cards cost nothing; the menu is built on demand, once, on press.
  */
 export type SeriesCardMenuProps = {
   /** When false (no `bridgeId` — e.g. mock mode), the card renders with no menu. */
@@ -48,10 +48,17 @@ export type SeriesCardMenuProps = {
   /** Measure THIS element for the lifted-preview rect instead of the wrapped content. For a row whose
    *  tappable area is wide but whose "card" is a small thumbnail (History), point it at the thumbnail so
    *  the preview lifts from there — otherwise the wide row rect makes the flying cover start huge. */
-  measureRef?: RefObject<View | null>;
+  measureRef?: RefObject<ViewInstance | null>;
   /** This card's zoom-source key — forwarded so a navigating row's zoom blanks this card alone
    *  (see `SeriesCardMenuRequest.zoomSource`). Omitted on web, which has no zoom entrance. */
   zoomSource?: ZoomSourceKey;
+  /** What tapping the item does. iOS's lifted preview does the same when tapped; unused here. */
+  onOpen?: () => void;
+  /** Developer A/B, iOS only: offers this card to the SwiftUI menu (series-card-menu-swiftui.tsx)
+   *  while Settings › Developer turns it on, with the card's own `width` where it sets one. Only
+   *  series cards pass it, since they give a hold to their Pressable's `onLongPress`, which keeps
+   *  its release from also tapping them. */
+  swiftUI?: { width?: number };
   /** `hidden` is true while THIS card's menu is open — the child should hide just its COVER/thumbnail
    *  (so the lifted preview isn't doubled), NOT the whole item; the rest stays visible under the dim.
    *  `menuOpen` is the same moment under the name web reads it by, where nothing is hidden. */
@@ -63,7 +70,7 @@ export type SeriesCardMenuProps = {
 };
 
 export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, coverAspect, startRadius, measureRef, zoomSource, children }: SeriesCardMenuProps) {
-  const anchorRef = useRef<View>(null);
+  const anchorRef = useRef<ViewInstance>(null);
   // Where the hold began — the arming distance is measured from here (see `holdArmed`). Shared values,
   // because the gesture's worklets are the only thing that reads or writes them.
   const holdOriginX = useSharedValue(0);

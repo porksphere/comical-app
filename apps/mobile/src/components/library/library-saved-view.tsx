@@ -13,7 +13,7 @@ import {
   type LibraryViewProps,
 } from '@/components/library/library-listing';
 import type { ApiCollectionItem, ApiSavedItem } from '@/data/api';
-import { collectedListing, useCollectedView } from '@/data/collected-view';
+import { collectedListing, type CollectedViewPrefs, useCollectedView } from '@/data/collected-view';
 import { useWarmChapterPages } from '@/data/prefetch';
 import { collectionItemsQuery } from '@/data/queries';
 import { ITEM_KIND_LABELS, type SavedKind } from '@/data/selected-collection';
@@ -137,18 +137,23 @@ export function LibrarySavedView({ collection, kind, term, ready, chrome }: Libr
   );
 }
 
-export function LibrarySavedControls({ collection, kind }: { collection: string | null; kind: SavedKind }) {
+/** The view's listing unsearched, so the filter's sources on offer are the shelf's and don't shift as you type. */
+export function useLibrarySavedPresent(collection: string | null, kind: SavedKind, view: CollectedViewPrefs) {
   const ds = useDataSource();
   const mock = useMockActive();
-  const [view, setView] = useCollectedView(collection, kind);
-  // Unsearched, so the sources on offer are the shelf's and don't shift as you type.
   const { data: present } = useQuery({
     ...collectionItemsQuery(ds, mock, collectedListing(collection, kind, view, '')),
     select: selectSaved,
   });
+  return present ?? undefined;
+}
+
+export function LibrarySavedControls({ collection, kind }: { collection: string | null; kind: SavedKind }) {
+  const [view, setView] = useCollectedView(collection, kind);
+  const present = useLibrarySavedPresent(collection, kind, view);
   return (
     <>
-      <LibraryFilterButton present={present ?? undefined} />
+      <LibraryFilterButton present={present} />
       <CollectedSortButton value={view} onChange={setView} />
     </>
   );

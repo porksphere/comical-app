@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type TextInput } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type TextInputInstance, type ViewInstance } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
@@ -88,7 +88,7 @@ export function useOverlay(): OverlayApi {
  */
 export function useAnchoredOverlay() {
   const { open, closeTop, topId } = useOverlay();
-  const ref = useRef<View>(null);
+  const ref = useRef<ViewInstance>(null);
   // The id of the overlay THIS trigger opened. State, not a ref: `isOpen` is derived from it during
   // render, and a ref read during render isn't tracked by React (nor allowed — react-hooks/refs), so
   // the toggle could paint stale. As state, the write that records the id is itself what re-renders,
@@ -154,7 +154,7 @@ export function useKeyboardAvoidingInput() {
   const ctx = useContext(SheetKeyboardContext);
   return useMemo(
     () => ({
-      onFocus: (node: Pick<TextInput, 'measureInWindow'> | null) => {
+      onFocus: (node: Pick<TextInputInstance, 'measureInWindow'> | null) => {
         node?.measureInWindow((_x, y, _w, h) => ctx?.reportFocus(y + h));
       },
       onBlur: () => ctx?.reportBlur(),
@@ -479,7 +479,7 @@ const BACKDROP_PUSHBACK = 'overlay-backdrop';
  * Module-level and keyed on a per-instance token rather than held in refs, which is not a style
  * choice — the drag pans are built during render and reach `close`, and `react-hooks/refs`
  * (correctly) can't prove a gesture callback only ever runs after commit. This is the one shape the
- * rule allows, and it is what `app/series/index.tsx`'s `LEFT` latch settled on for exactly the same
+ * rule allows, and it is what the series pages' `LEFT` latch settled on for exactly the same
  * reason. Plain JS on one thread, so unlike a shared value a write here is visible to the next read.
  */
 type SheetExit = { closing: boolean; backstop: ReturnType<typeof setTimeout> | null };
@@ -726,7 +726,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
 }
 
 /** Keyboard-opened, the layer takes the focus in with it; see `focusLayer`. */
-function useFocusLayer(ref: RefObject<View | null>): void {
+function useFocusLayer(ref: RefObject<ViewInstance | null>): void {
   useEffect(() => {
     if (Platform.OS === 'web') focusLayer(ref.current as unknown as HTMLElement | null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on open
@@ -780,7 +780,7 @@ function OverlaySheet({
   // but kept for the focus signal.
   const isFocused = useSharedValue(false);
   const sheetHeightSV = useSharedValue(0);
-  const sheetRef = useRef<View>(null);
+  const sheetRef = useRef<ViewInstance>(null);
   useFocusLayer(sheetRef);
   const keyboard = useAnimatedKeyboard();
   const keyboardShift = useDerivedValue(() => {
@@ -855,7 +855,7 @@ function OverlaySheet({
    * `finished: false` for any curve that got interrupted, so a touch landing on the sheet while it
    * slid away, or a resize remounting it mid-exit, silently stranded the item. An animation
    * callback is not a promise that it ran (the series page reached the same conclusion the hard
-   * way — see `leaveOnce` in app/series/index.tsx). Ignoring `finished` is safe precisely because
+   * way — see `leaveOnce` in components/series/details-page.tsx). Ignoring `finished` is safe precisely because
    * this latch means there is no way back: nothing un-closes a sheet, the pans below stand down
    * once it is set, and `onClosed` is idempotent.
    */
@@ -1077,7 +1077,7 @@ function OverlayDialog({
   const { width, height } = useWindowDimensions();
   const theme = useTheme();
   const progress = useSharedValue(0);
-  const dialogRef = useRef<View>(null);
+  const dialogRef = useRef<ViewInstance>(null);
   const isTopRef = useRef(isTop);
   const closingRef = useRef(false);
   const backstopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1214,10 +1214,11 @@ function OverlayPopover({
   children: ReactNode;
 }) {
   const { width: vw, height: vh } = useWindowDimensions();
+  const sides = useSafeAreaInsets();
   const controls = useWindowControlsStrip();
   const theme = useTheme();
   const [card, setCard] = useState<{ width: number; height: number } | null>(null);
-  const cardRef = useRef<View>(null);
+  const cardRef = useRef<ViewInstance>(null);
   useFocusLayer(cardRef);
   const progress = useSharedValue(0);
   const entered = useRef(false);
@@ -1281,7 +1282,9 @@ function OverlayPopover({
     }
   }, [card, progress]);
 
-  const width = Math.min(POPOVER_WIDTH, vw * POPOVER_MAX_VIEWPORT_FRACTION, vw - POPOVER_PAD * 2);
+  const minLeft = sides.left + POPOVER_PAD;
+  const maxRight = vw - sides.right - POPOVER_PAD;
+  const width = Math.min(POPOVER_WIDTH, vw * POPOVER_MAX_VIEWPORT_FRACTION, maxRight - minLeft);
   const spaceBelow = vh - (anchor.y + anchor.height) - POPOVER_GAP - POPOVER_PAD;
   const spaceAbove = anchor.y - POPOVER_GAP - POPOVER_PAD;
   const h = card?.height ?? 0;
@@ -1291,8 +1294,8 @@ function OverlayPopover({
     ? anchor.y + anchor.height + POPOVER_GAP
     : Math.max(POPOVER_PAD, anchor.y - POPOVER_GAP - Math.min(h, maxHeight));
   // A panel whose top starts in the caption strip ends short of the buttons, which draw over anything.
-  const right = top < controls.height ? vw - controls.inset - POPOVER_PAD : vw - POPOVER_PAD;
-  const left = Math.max(POPOVER_PAD, Math.min(anchor.x, right - width));
+  const right = top < controls.height ? Math.min(maxRight, vw - controls.inset - POPOVER_PAD) : maxRight;
+  const left = Math.max(minLeft, Math.min(anchor.x, right - width));
   const rectHeight = Math.min(h, maxHeight);
 
   useEffect(() => {

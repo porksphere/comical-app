@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
 import { CheckIcon, ClearIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { SelectLead, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
+import { SelectLead, SelectPillBar, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { ReorderableList } from '@/components/settings/reorderable-list';
@@ -17,8 +17,8 @@ import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { TopBar, TopBarButton } from '@/components/top-bar';
-import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
+import { TopBar, type TopBarAction } from '@/components/top-bar';
+import { SettingsCardInset, Spacing } from '@/constants/theme';
 import type { SavedRegistry } from '@/data/api';
 import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
@@ -97,6 +97,7 @@ export default function RegistriesScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'registries.select-toggle');
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
   const stagingRows = [
     {
@@ -229,30 +230,29 @@ export default function RegistriesScreen() {
     </Holdable>
   );
 
+  // Web has no pull-to-refresh on this list, so the check gets a button there.
+  const refresh: TopBarAction = {
+    label: 'Refresh registries',
+    testID: 'registries.refresh',
+    onPress: () => void refreshLabels(),
+    icon: refreshing ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />,
+  };
+
   return (
     <ThemedView style={styles.container}>
       <TopBar
         title={selecting ? `${ms.count} selected` : 'Registries'}
-        right={
+        actions={
           // `null` = this server has no registry support at all, so there's nothing to add to.
-          registries !== null &&
-          (selecting ? (
-            <SelectToggle selecting onToggle={toggleSelecting} testID="registries.select-toggle" />
-          ) : (
-            // The + add button now lives in the floating FAB below (hidden in select mode); the
-            // top-right holds the select toggle where the + used to be.
-            <View style={styles.topActions}>
-              {IS_WEB && (ordered?.length ?? 0) > 0 && (
-                <TopBarButton
-                  testID="registries.refresh"
-                  icon={refreshing ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />}
-                  label="Refresh registries"
-                  onPress={() => void refreshLabels()}
-                />
-              )}
-              {allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="registries.select-toggle" />}
-            </View>
-          ))
+          registries === null
+            ? undefined
+            : selecting
+              ? [selectToggle]
+              : [
+                  ...(IS_WEB && (ordered?.length ?? 0) > 0 ? [refresh] : []),
+                  // The + add button lives in the floating FAB below (hidden in select mode).
+                  ...(allKeys.length > 0 ? [selectToggle] : []),
+                ]
         }
       />
       {error ? (
@@ -286,7 +286,7 @@ export default function RegistriesScreen() {
           onPress={() => openDialog(() => <AddRegistryForm />, { accessibilityLabel: 'Add registry' })}
           testID="registries.add"
           label="Add registry"
-          right={SettingsGutter}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
         />
       )}
@@ -294,8 +294,8 @@ export default function RegistriesScreen() {
       {/* The floating select-mode chrome: staging "…" bottom-left, the Remove verb bottom-right. */}
       {selecting && (
         <SelectPillBar
-          left={SettingsGutter}
-          right={SettingsGutter}
+          left={contentPadding.paddingLeft}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="registries.select-options"
@@ -363,7 +363,7 @@ function AddRegistryForm() {
   const { closeTop } = useOverlay();
   const keyboardAvoiding = useKeyboardAvoidingInput();
   const isLargeScreen = useIsLargeScreen();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [url, setUrl] = useState('');
   const [requireSignature, setRequireSignature] = useState(false);
 
@@ -429,10 +429,6 @@ function AddRegistryForm() {
 }
 
 const styles = StyleSheet.create({
-  topActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   container: {
     flex: 1,
   },

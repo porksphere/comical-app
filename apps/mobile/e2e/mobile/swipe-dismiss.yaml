@@ -1,5 +1,5 @@
 # Verifies the expanded reader's swipe-away dismissal — the gallery collapse that takes the whole
-# series page back into the card it was opened from (see `collapsePan` in app/series/index.tsx).
+# series page back into the card it was opened from (see `collapsePan` in components/series/reader-page.tsx).
 #
 # Default settings = paged (horizontal) mode, so the reader's cross axis is VERTICAL, and the two
 # vertical directions do DIFFERENT things there:

@@ -13,7 +13,9 @@ useExpoPublishing()
 
 android {
   namespace "expo.modules.comicalruntime"
-  compileSdk 36 // required by quickjs-kt-android 1.x (matches comical/packages/host-android)
+  // The app's, as Expo's own modules take it: each Expo SDK raises it, and a module left lower fails
+  // the release build's AAR metadata check. quickjs-kt-android 1.x needs 36 or later.
+  compileSdk safeExtGet("compileSdkVersion", 37)
 
   defaultConfig {
     minSdk 26 // QuickJS-kt needs a recent NDK runtime

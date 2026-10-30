@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import type { GestureResponderEvent, View } from 'react-native';
+import type { GestureResponderEvent, ViewInstance } from 'react-native';
 
 import { CardMenuTrigger } from '@/components/card-menu-trigger';
 import { SeriesCardMenuRows } from '@/components/series-card-actions-menu';
@@ -25,9 +25,11 @@ export type SeriesCardMenuProps = {
   /** Ignored on web (no lifted preview to match the shape of) — matches the native contract. */
   coverAspect?: number;
   /** Ignored on web (no lifted preview); matches the native variant's contract — see it. */
-  measureRef?: RefObject<View | null>;
+  measureRef?: RefObject<ViewInstance | null>;
   /** Ignored on web (no lifted preview to give a starting radius) — matches the native contract. */
   startRadius?: number;
+  /** Ignored on web (no lifted preview to tap) — matches the native contract. */
+  onOpen?: () => void;
   /** `hidden` is always false on web (no lifted preview, so nothing to hide) — matches the native
    *  contract. `menuOpen` is true while THIS card's menu is open. */
   children: (api: {

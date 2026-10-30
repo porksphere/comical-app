@@ -1,12 +1,13 @@
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type View as ViewType, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { CardOverlays } from '@/components/card-badge';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { Skeleton } from '@/components/skeleton';
+import { liftTarget } from '@/components/system-context-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
@@ -16,8 +17,9 @@ import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { useTabRoute } from '@/lib/focused-tab';
 import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
-import { Link, router } from '@/lib/nav';
+import { Link, LinkTrigger, router, tabHref } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
 import { useIsZoomingSeries, useZoomOriginSource, useZoomSourceKey } from '@/lib/series-zoom';
 import { useWarmSeriesDetail } from '@/data/prefetch';
@@ -141,7 +143,7 @@ export function CoverFrame({
 }: {
   aspect: number;
   /** The box itself, which is what a zoom's source rect is measured off — see `useZoomOriginSource`. */
-  coverRef?: RefObject<ViewType | null>;
+  coverRef?: RefObject<ViewInstance | null>;
   /** Blanks just the cover while a COPY of it is on screen — a long-press menu's lifted preview, a
    *  zoom in flight — since leaving the original visible would double it. Layout is preserved. */
   hidden?: boolean;
@@ -448,6 +450,16 @@ export function SeriesCard({
   // there, and its own lifted preview would fight an inline ring/popover) in favor of a subtle
   // non-scaling held scrim on the cover — see the ring/peek/scrim below.
   const isWeb = Platform.OS === 'web';
+  // iOS, inside a tab: the card is a `<Link>` whose trigger is an Apple zoom SOURCE, so the series
+  // page — the tab stack's own pushed card there (useNativePush in components/series/viewport) — grows out of
+  // this cover with the system's zoom transition (iOS 18+; a plain push below) and shrinks back
+  // into it on the pop, instead of sliding. The href names the tab itself: a Link is built at
+  // render, when the focused tab is not necessarily this one (see TabRouteContext). Not on a drill,
+  // which never navigates by href, and not under the root /series page, whose cards push the root
+  // route. This mounts expo-router's Link per card, which native avoided below as a scroll cost —
+  // the price of the zoom, to be weighed against it.
+  const zoomTab = useTabRoute();
+  const zoomLink = Platform.OS === 'ios' && !drillRelated && zoomTab !== null;
 
   // This card's COVER box, in window coordinates, handed to
   // the series page so the page can grow out of it — see lib/series-zoom. The cover, not the whole
@@ -470,7 +482,7 @@ export function SeriesCard({
   // instances — see useZoomSourceKey for what that broke. The id is compared alongside it.
   const zoomSource = useZoomSourceKey();
   const zoomFlying = useIsZoomingSeries(entry.id, zoomSource);
-  const coverRef = useRef<ViewType>(null);
+  const coverRef = useRef<ViewInstance>(null);
   // Radius 10 = CARD_COVER_RADIUS, matching `coverBoxClip` / `coverClip` below. The hook also
   // registers this cover as re-measurable, so a collapse asks where it is NOW — see series-zoom.
   const captureZoomOrigin = useZoomOriginSource(entry.id, zoomSource, coverRef, 10, !isWeb);
@@ -589,7 +601,7 @@ export function SeriesCard({
   // Full-title peek. Web only — on native the full title is shown by the long-press context menu
   // instead (see SeriesCardMenu's `title`).
   const showPeek = active && truncated && isWeb;
-  const titleRef = useRef<ViewType>(null);
+  const titleRef = useRef<ViewInstance>(null);
 
   // Matched the user's persistent tag/genre exclusions: a redacted, non-tappable
   // placeholder that keeps the slot (grid counts/columns stay stable) but never
@@ -733,14 +745,18 @@ export function SeriesCard({
 
     return (
       <>
-        <CoverFrame
-          aspect={coverAspect}
-          coverRef={coverRef}
-          hidden={coverHidden}
-          ring={active || menuOpen}
-          onLayout={shrink.onCoverLayout}>
-          {coverContents}
-        </CoverFrame>
+        {/* What the iOS system menu lifts: the cover, not the card with its title. */}
+        {liftTarget(
+          <CoverFrame
+            aspect={coverAspect}
+            coverRef={coverRef}
+            hidden={coverHidden}
+            ring={active || menuOpen}
+            onLayout={shrink.onCoverLayout}>
+            {coverContents}
+          </CoverFrame>,
+          COVER_CORNER.borderRadius,
+        )}
 
         {/* Trailing group is an Animated.View only when the shrink illusion drives its translateY;
             otherwise a plain View, so lightweight cards carry no Reanimated wrapper here either. */}
@@ -753,6 +769,39 @@ export function SeriesCard({
     );
   };
 
+  // Built LAZILY (only when actually navigating) — NOT per render. This object plus its
+  // encodeURIComponent/.replace string churn was allocated for every card on every render, so a
+  // scroll that recycles many cards produced steady garbage → GC pauses (a top cost in the
+  // release profile). Native builds it in onPress (once, on tap); web still needs it at render
+  // for the <Link> anchor, so it's built there.
+  //
+  // `push` forces a new stack entry every time: expo-router's default `navigate` unwinds to an
+  // existing `/series` route already on the stack instead of pushing another — so tapping a
+  // related/recommended series from within a series-detail screen replaced the current screen
+  // instead of drilling in. Also correct from Browse/Library/History (no `/series` on the stack
+  // yet there, so equivalent to a plain push).
+  const buildParams = () => ({
+    id: entry.id,
+    title: entry.title,
+    // Percent-encoded (parens included — see encodeSeriesParam), and decoded back on the
+    // series page with a single `decodeURIComponent`.
+    ...(bridge ? { bridge: encodeSeriesParam(bridge) } : {}),
+    // Forward the cover the browse grid already has so the series page can paint its hero
+    // instantly from expo-image's cache, rather than shimmering until the detail resolves.
+    ...(entry.cover ? { cover: encodeSeriesParam(entry.cover) } : {}),
+    ...(bridgeId ? { bridgeId } : {}),
+    ...(direct ? { direct: '1' } : {}),
+  });
+  const buildHref = () => ({
+    pathname: '/series' as const,
+    params: buildParams(),
+  });
+  // The drill (inside the series page's nested stack) dispatches on the NESTED navigator — no href.
+  const open = () => (drillRelated ? drillRelated(buildParams()) : router.push(buildHref()));
+  // The lifted preview of iOS's system menu, tapped: where the zoom link goes, without its zoom.
+  const openFromPreview = () =>
+    zoomLink && zoomTab !== null ? router.push(tabHref(zoomTab, '/series', buildParams())) : open();
+
   return (
     <SeriesCardMenu
       enabled={menuEnabled}
@@ -761,37 +810,13 @@ export function SeriesCard({
       entry={entry}
       direct={direct}
       coverAspect={coverAspect}
-      zoomSource={zoomSource}>
+      zoomSource={zoomSource}
+      onOpen={openFromPreview}
+      swiftUI={fixedWidth != null ? { width: fixedWidth } : {}}>
       {({ onLongPress, hidden, menuOpen }) => {
-        // Built LAZILY (only when actually navigating) — NOT per render. This object plus its
-        // encodeURIComponent/.replace string churn was allocated for every card on every render, so a
-        // scroll that recycles many cards produced steady garbage → GC pauses (a top cost in the
-        // release profile). Native builds it in onPress (once, on tap); web still needs it at render
-        // for the <Link> anchor, so it's built there.
-        //
-        // `push` forces a new stack entry every time: expo-router's default `navigate` unwinds to an
-        // existing `/series` route already on the stack instead of pushing another — so tapping a
-        // related/recommended series from within a series-detail screen replaced the current screen
-        // instead of drilling in. Also correct from Browse/Library/History (no `/series` on the stack
-        // yet there, so equivalent to a plain push).
-        const buildParams = () => ({
-          id: entry.id,
-          title: entry.title,
-          // Percent-encoded (parens included — see encodeSeriesParam), and decoded back on the
-          // series page with a single `decodeURIComponent`.
-          ...(bridge ? { bridge: encodeSeriesParam(bridge) } : {}),
-          // Forward the cover the browse grid already has so the series page can paint its hero
-          // instantly from expo-image's cache, rather than shimmering until the detail resolves.
-          ...(entry.cover ? { cover: encodeSeriesParam(entry.cover) } : {}),
-          ...(bridgeId ? { bridgeId } : {}),
-          ...(direct ? { direct: '1' } : {}),
-        });
-        const buildHref = () => ({
-          pathname: '/series' as const,
-          params: buildParams(),
-        });
-        // The drill (inside the series page's nested stack) dispatches on the NESTED navigator — no href.
-        const open = () => (drillRelated ? drillRelated(buildParams()) : router.push(buildHref()));
+        // A `<Link asChild>` owns the press (web's anchor, iOS's zoom link); the Pressable then
+        // carries no handler of its own, or the Slot would merge the two and navigate twice.
+        const linked = (isWeb && !drillRelated) || zoomLink;
         const pressable = (
           <Pressable
             testID={testId('series-card', entry.id)}
@@ -806,7 +831,7 @@ export function SeriesCard({
             // (createTask/ExpoLink), and native has no anchor semantics to preserve anyway.
             // A DRILL (inside the series page's nested stack) is imperative on web too — it targets the
             // nested navigator, which an anchor href can't express (see useDrillRelatedSeries).
-            onPress={isWeb && !drillRelated ? undefined : open}
+            onPress={linked ? undefined : open}
             // Native long-press opens the shared quick-actions menu; undefined on web (which uses the
             // hover 3-dot instead). A long-press suppresses the tap, so it never also navigates.
             onLongPress={onLongPress}
@@ -835,6 +860,14 @@ export function SeriesCard({
             )}
           </Pressable>
         );
+        if (zoomLink && zoomTab !== null) {
+          return (
+            // eslint-disable-next-line comical/require-test-id -- asChild: clones onto the Pressable, which carries the testID.
+            <Link push href={tabHref(zoomTab, '/series', buildParams())} asChild>
+              <LinkTrigger withAppleZoom>{pressable}</LinkTrigger>
+            </Link>
+          );
+        }
         // Web keeps the real anchor (asChild clones it onto the Pressable); native — and a drill,
         // whose nested-navigator target no anchor href can express — renders the Pressable
         // directly and navigates imperatively on press.
@@ -895,7 +928,7 @@ export function CardCaption({ title, sub }: { title: string; sub?: string }) {
  * The full-title popover, floated over the clamped title it expands (`anchor`). Its content box
  * matches the clamped title's width so the first lines wrap identically.
  */
-function TitlePeek({ title, anchor }: { title: string; anchor: RefObject<ViewType | null> }) {
+function TitlePeek({ title, anchor }: { title: string; anchor: RefObject<ViewInstance | null> }) {
   const theme = useTheme();
   // Match the card title's responsive size so the popover wraps identically.
   const compact = useIsCompact();

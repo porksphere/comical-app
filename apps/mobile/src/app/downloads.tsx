@@ -32,9 +32,9 @@ import {
   PILL_HEIGHT,
   SelectLead,
   SelectPillBar,
-  SelectToggle,
   useDragSelect,
   useSelectMode,
+  useSelectToggle,
 } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
@@ -187,6 +187,7 @@ export default function DownloadsScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'downloads.select-toggle');
 
   // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
   const listRef = useRef<LegendListRef>(null);
@@ -320,7 +321,7 @@ export default function DownloadsScreen() {
                     progress={mode.progress}
                     selected={ms.selected.has(item.key)}
                     itemKey={item.key}
-                    edgeOffset={sidePad}
+                    edgeOffset={sidePad.left}
                     // Always mounted (built disabled off select mode) so entering select mode flips
                     // `enabled` rather than mounting a GestureDetector per visible row at once.
                     gesture={dragSelect.gestureFor(index)}
@@ -364,10 +365,7 @@ export default function DownloadsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar
-        title={selecting ? `${ms.count} selected` : 'Downloads'}
-        right={<SelectToggle selecting={selecting} onToggle={toggleSelecting} testID="downloads.select-toggle" />}
-      />
+      <TopBar title={selecting ? `${ms.count} selected` : 'Downloads'} actions={[selectToggle]} />
       <LegendList
         ref={listRef}
         onScroll={(e) => {
@@ -405,8 +403,8 @@ export default function DownloadsScreen() {
           paddingTop,
           // Room for the floating pills while selecting, so the last rows can scroll clear of them.
           paddingBottom: paddingBottom + (selecting ? PILL_HEIGHT + Spacing.six : 0),
-          paddingLeft: listPad,
-          paddingRight: listPad,
+          paddingLeft: listPad.left,
+          paddingRight: listPad.right,
         }}
         showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
@@ -415,8 +413,8 @@ export default function DownloadsScreen() {
           valid verbs in ONE pill bottom-right. */}
       {selecting && (
         <SelectPillBar
-          left={sidePad}
-          right={sidePad}
+          left={sidePad.left}
+          right={sidePad.right}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="downloads.select-options"

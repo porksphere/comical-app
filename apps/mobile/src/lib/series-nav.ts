@@ -1,11 +1,14 @@
-import { useNavigation, usePathname } from 'expo-router';
-import { createContext, useCallback, useContext, useMemo } from 'react';
+import type { Href, Stack } from 'expo-router';
+import { useNavigation, useSegments } from 'expo-router';
+import type { ComponentProps } from 'react';
+import { createContext, useCallback, useContext } from 'react';
 
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
+import { useRouter } from '@/lib/nav';
 import { claimNavigation, navTargetKey } from '@/lib/nav-guard';
 
-/** The sub-pages a series page (or its reader) can push. (Tag/author/type SEARCH is not one of
- *  them anymore — on the series page it opens as an in-screen layer, see
- *  useOpenSearchLayer.) */
+/** The sub-pages a series page (or its reader) can push. (The tag/author/type SEARCH is routed
+ *  separately — see useOpenSeriesSearch.) */
 type SeriesSubPath = '/series-downloads' | '/downloads';
 
 /**
@@ -16,10 +19,16 @@ type SeriesSubPath = '/series-downloads' | '/downloads';
  * `app/series/_layout.tsx`). This hook keeps the push SITES context-free: on the
  * series page (or one of its sub-pages) it prefixes the target into the nested stack — a real
  * native push with the edge-swipe back — and everywhere else it returns the path untouched.
+ *
+ * Only the ROOT series route's nested stack has the sub-page routes. Its copies inside the iOS tab
+ * stacks (`app/(tabs)/<tab>/in-tab/series/index`) are plain pushed cards of the tab's own stack, with the
+ * tag search as their one twin (`in-tab/series/search`), so from one of those the download sub-pages go
+ * to the root route, over the tab shell — hence the segments, not the pathname, which strips the
+ * `(tabs)` group and reads the same for both.
  *  */
 export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/series${SeriesSubPath}` {
-  const pathname = usePathname();
-  const inSeriesPage = pathname === '/series' || pathname.startsWith('/series/');
+  const segments: readonly string[] = useSegments();
+  const inSeriesPage = segments[0] === 'series';
   return useCallback(
     (path: SeriesSubPath) => (inSeriesPage ? (`/series${path}` as const) : path),
     [inSeriesPage],
@@ -28,10 +37,12 @@ export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/s
 
 /**
  * Present anywhere inside the /series nested stack (provided by
- * `app/series/_layout.tsx`), null everywhere else. Series cards read this instead of
+ * `app/series/_layout.tsx`), null everywhere else — including a tab's series copy on iOS, which
+ * is a real pushed card, so a related series there pushes another one (see useNativePush in
+ * components/series/viewport). Series cards read this instead of
  * `usePathname` — cards are render-cost-sensitive, and a context whose value never changes
  * doesn't re-render them on every navigation the way the pathname hook would. `drillSeries` is a
- * ref the combined page's screen fills with its layer-push (see SeriesReaderScreen): a drilled
+ * ref the series page's screen fills with its layer-push (see SeriesRoute): a drilled
  * series renders as a plain sibling LAYER inside that one screen, because navigation can't do
  * this on iOS — a second contained transparent modal loses the middle screen's view (UIKit
  * re-roots the OverCurrentContext presentation at the react root), and a covered nested card is
@@ -75,8 +86,22 @@ function handlerStack<F>() {
 }
 
 const drillSeriesHandlers = handlerStack<(params: Record<string, string>) => void>();
+/**
+ * A drill asked for while no page holds the handlers: the nested search card (iOS) covers the
+ * series page, which gives them up while blurred — so a result tapped there pops the card first
+ * and the page takes the drill back as it re-registers on focus. Timed, so a stale one can't fire
+ * on a page opened later.
+ */
+let pendingDrill: { params: Record<string, string>; at: number } | null = null;
+const PENDING_DRILL_MS = 1500;
 export function registerDrillSeries(fn: (params: Record<string, string>) => void): () => void {
-  return drillSeriesHandlers.register(fn);
+  const unregister = drillSeriesHandlers.register(fn);
+  if (pendingDrill) {
+    const { params, at } = pendingDrill;
+    pendingDrill = null;
+    if (Date.now() - at <= PENDING_DRILL_MS) fn(params);
+  }
+  return unregister;
 }
 
 /**
@@ -87,10 +112,13 @@ export function registerDrillSeries(fn: (params: Record<string, string>) => void
  * won't do (see the note on InSeriesPageStack).
  *
  * The registered handler's presence IS the test, and it's exact: while a series page is mounted,
- * the topmost one is the screen the menu was opened over. Returns false when there is none, so the
- * caller pushes the route instead.
+ * the topmost one is the screen the menu was opened over. Returns false when there is none — no
+ * page, or a pushed card inside a tab, which registers nothing — so the caller pushes the route
+ * instead.
  */
 export function drillSeriesFromOverlay(params: Record<string, string>): boolean {
+  // Reading is the reader PAGE, pushed over the series (see SeriesSplit), never a layer.
+  if (params.reader === '1') return false;
   const handler = drillSeriesHandlers.current();
   if (!handler) return false;
   // Shares the nav-guard claim with the in-tree drill, so a double commit can't fire twice.
@@ -98,38 +126,77 @@ export function drillSeriesFromOverlay(params: Record<string, string>): boolean 
   return true;
 }
 
-/** Same hand-off for the SEARCH layer (tag/author/type intents — see SearchLayer in
- *  app/series/index.tsx). */
+/** Same hand-off for the SEARCH layer (tag/author/type intents — see SeriesRoute in
+ *  app/series/index.tsx). Android and web only; iOS pushes a card instead, see below. */
 const openSearchLayerHandlers = handlerStack<() => void>();
 export function registerOpenSearchLayer(fn: () => void): () => void {
   return openSearchLayerHandlers.register(fn);
 }
 
 /**
- * Tag/author/type search, for the series details: null outside the series page's nested stack (callers
- * fall back to pushing /search), otherwise a function that opens the search as an in-screen
- * LAYER over the series — sliding in with the statically-stuck shared chevron, the parent live
- * beneath, and its result cards drilling further layers. The caller stashes the search intent
- * first (setSearchIntent), exactly like the route path.
+ * The options of the series page's tag `search` card, iOS — inside the root route's nested stack,
+ * and `in-tab/series/search` in each tab's stack: the one sub-page that shows the system bar, since the
+ * search's field IS that bar. Both stacks hide the bar by default for the series pages, whose bar
+ * is their own `Stack.Screen`'s business; this is the same transparent, chevron-only bar every
+ * pushed page gets from the root and tab stacks.
  */
-export function useOpenSearchLayer(): (() => void) | null {
+export const NESTED_SEARCH_BAR: ComponentProps<typeof Stack.Screen>['options'] = {
+  headerShown: true,
+  headerTransparent: true,
+  headerShadowVisible: false,
+  headerBackButtonDisplayMode: 'minimal',
+  scrollEdgeEffects: { top: 'soft' },
+};
+
+/**
+ * Tag/author/type search, for the series details: null outside the series page (callers fall
+ * back to pushing /search), otherwise a function that opens the search over the series. The
+ * caller stashes the search intent first (setSearchIntent), exactly like the route path.
+ *
+ * On iOS it is a real push of the page's `search` twin — under `app/series/` for the root
+ * route's nested stack, or `in-tab/series/search` in the focused tab's stack (by the segments, which
+ * strip the `(tabs)` group) — so the tab bar stays up and the search gets the system bar with its
+ * field, filters sheet and sort menu like the one pushed from Browse; at the root it goes inside
+ * the nested stack because the page's own route is a contained transparent modal nothing can be
+ * pushed over (see InSeriesPageStack). Elsewhere the search is an in-screen LAYER over the
+ * series — sliding in with the statically-stuck shared chevron, the parent live beneath, and
+ * its result cards drilling further layers.
+ */
+export function useOpenSeriesSearch(): (() => void) | null {
   const inStack = useContext(InSeriesPageStack);
-  return useMemo(() => {
-    if (!inStack) return null;
-    return () => {
-      if (!claimNavigation(navTargetKey('/series#search'))) return;
-      openSearchLayerHandlers.current()?.();
-    };
-  }, [inStack]);
+  const segments: readonly string[] = useSegments();
+  const router = useRouter();
+  const nestedSearch = NATIVE_HEADER ? nestedSearchHref(segments) : null;
+  // A useCallback rather than a useMemo returning one, as in useDrillRelatedSeries: the React
+  // Compiler can't prove `router` stable and gives up on a memo closing over it.
+  const open = useCallback(() => {
+    if (nestedSearch) {
+      router.push(nestedSearch);
+      return;
+    }
+    if (!claimNavigation(navTargetKey('/series#search'))) return;
+    openSearchLayerHandlers.current()?.();
+  }, [nestedSearch, router]);
+  return inStack || nestedSearch ? open : null;
+}
+
+/** The nested `search` route of the series page the segments describe, if they describe one. */
+function nestedSearchHref(segments: readonly string[]): Href | null {
+  if (segments[0] === 'series') return '/series/search' as Href;
+  if (segments[0] === '(tabs)' && segments[1] && segments[2] === 'in-tab' && segments[3] === 'series') {
+    return `/(tabs)/${segments[1]}/in-tab/series/search` as unknown as Href;
+  }
+  return null;
 }
 
 /**
  * The drill itself, for series cards: null outside the series page's nested stack (callers fall back to
- * their normal `router.push`), otherwise a function that hands the tapped series to the combined
+ * their normal `router.push`), otherwise a function that hands the tapped series to the series
  * page's layer stack. From the nested search/downloads sub-pages it first pops the nested stack
- * back to the combined page (the layers live on that screen), so the result slides in over the
- * series context you came from. Shares the nav-guard claim so a double tap can't fire twice.
- *
+ * back to the series page (the layers live on that screen), so the result slides in over the
+ * series context you came from — and since that page only holds the handlers while focused,
+ * the drill waits for it (see registerDrillSeries). Shares the nav-guard claim so a double tap
+ * can't fire twice.
  */
 export function useDrillRelatedSeries(): ((params: Record<string, string>) => void) | null {
   const inStack = useContext(InSeriesPageStack);
@@ -139,11 +206,17 @@ export function useDrillRelatedSeries(): ((params: Record<string, string>) => vo
   const drill = useCallback(
     (params: Record<string, string>) => {
       if (!claimNavigation(navTargetKey({ pathname: '/series', params }))) return;
-      // Only when actually ON a sub-page — from the combined page itself the nested stack is at
-      // its root and the stack router rejects POP_TO_TOP (a noisy dev warning).
+      // Only when actually ON a sub-page — from a series page at the stack's root the stack
+      // router rejects POP_TO_TOP (a noisy dev warning). By the top route's
+      // NAME, not the index, so a navigator with no sub-pages at all reads the same.
       const state = navigation.getState();
-      if (state && state.index > 0) navigation.dispatch({ type: 'POP_TO_TOP' });
-      drillSeriesHandlers.current()?.(params);
+      const top = state?.routes[state.index]?.name;
+      if (top === 'downloads' || top === 'series-downloads' || top === 'search') {
+        navigation.dispatch({ type: 'POP_TO_TOP' });
+      }
+      const handler = drillSeriesHandlers.current();
+      if (handler) handler(params);
+      else pendingDrill = { params, at: Date.now() };
     },
     [navigation],
   );

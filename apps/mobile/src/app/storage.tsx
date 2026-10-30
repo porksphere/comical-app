@@ -68,7 +68,7 @@ function cacheEntryLabel(name: string): string {
 }
 
 export default function StorageScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const router = useRouter();
   const queryClient = useQueryClient();
   const cacheMax = useCachePrefs().maxBytes;

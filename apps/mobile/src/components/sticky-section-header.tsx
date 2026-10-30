@@ -8,6 +8,8 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { useSideInsets } from '@/hooks/use-content-width';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
 import { focusSkip } from '@/lib/focus-nav';
 
@@ -26,6 +28,10 @@ const SPEED_SMOOTHING = 0.6;
 // of a half-drawn band rather than as motion, and it only gets worse from there. Deliberately low
 // for that reason: the sliding push is what a SLOW scroll gets, not the default.
 const SNAP_SPEED = 0.12;
+
+// Under the native bar nothing pins at all: the current heading is announced in the bar's title
+// instead — see the component doc.
+const IN_BAR = NATIVE_HEADER;
 
 /**
  * WHICH heading belongs at the pin line, and how far the band has been pushed out — both derived
@@ -128,7 +134,7 @@ export function useInlineHeadingStyle(hidden: boolean, pin?: InlineHeadingPin) {
   return useAnimatedStyle(() => {
     // Short-circuited before `scrollOffset` is read, so a heading that is not standing down has no
     // scroll dependency at all — the common case, and the one every row is in while scrolling.
-    if (!hidden || firstTop === undefined || stickyTop === undefined || !scrollOffset) return { opacity: 1 };
+    if (IN_BAR || !hidden || firstTop === undefined || stickyTop === undefined || !scrollOffset) return { opacity: 1 };
     const line = scrollOffset.value + stickyTop + bandPadding + (barOffset?.value ?? 0);
     return { opacity: isPinned(firstTop, line) ? 0 : 1 };
   }, [hidden, firstTop, stickyTop, bandPadding, scrollOffset, barOffset]);
@@ -161,6 +167,17 @@ export function useInlineHeadingStyle(hidden: boolean, pin?: InlineHeadingPin) {
  * together, on the frame the line is crossed. A fade breaks the illusion: the whole trick is that
  * an identical, co-located heading is being swapped for this one, and anything that ramps announces
  * that a second object arrived.
+ *
+ * ── Under the native bar: nothing pins — the heading goes to the bar's TITLE (`IN_BAR`) ──
+ * On iOS the bar is the system's: transparent, the content fading under its soft scroll edge, and
+ * no material of its own for a band to meet. Every surface tried under it failed the same way: a
+ * band pinned under the bar floated, a scrim running up to it read as a second bar, and a glass
+ * capsule hugging the text was a badge drifting over the covers. So there NOTHING pins. The
+ * headings scroll away inline like any other row, and the screen's bar title — faded out by then
+ * (`NativeTabHeader`) — takes the current section's label in its place, the way Photos names the
+ * month in the bar and Music the album. This component still runs the boundary arithmetic and
+ * reports `onActiveChange`, which is how the screen learns the label; it draws nothing, and the
+ * inline row is never hidden, since nothing is standing in for it.
  *
  * The RULE belongs to the heading it underlines, and there are TWO of them — one per heading in a
  * hand-off, traded on a single frame, exactly like the bar's. The pinned heading's rides inside the
@@ -278,6 +295,8 @@ export function StickySectionHeader<S extends StickySection>({
   renderHeader: (section: S) => ReactElement;
 }) {
   const theme = useTheme();
+  // The band runs the list's full width; its heading sits where the list's content does.
+  const insets = useSideInsets();
   const bandHeight = contentHeight + bandPadding * 2;
   // Where a heading has to reach to pin: the band's own top padding below the bar's edge, which is
   // exactly where the pinned copy draws its heading. See the doc.
@@ -387,8 +406,9 @@ export function StickySectionHeader<S extends StickySection>({
   const bandStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
     const { k } = pinAt(sections, line, bandHeight, snapped.value);
+    const hidden = outrun(k, shown) || !isPinned(sections[0]?.top, line);
     return {
-      opacity: outrun(k, shown) || !isPinned(sections[0]?.top, line) ? 0 : 1,
+      opacity: hidden ? 0 : 1,
       transform: [{ translateY: barOffset?.value ?? 0 }],
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
@@ -443,7 +463,8 @@ export function StickySectionHeader<S extends StickySection>({
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
 
-  if (!sections[shown]) return null;
+  // Under the native bar the reporting above is the whole job — see the component doc.
+  if (IN_BAR || !sections[shown]) return null;
   // The three headings the ride can land on. `shown` sits in the middle so a crossing in EITHER
   // direction has its heading already rendered; the two neighbours are outside the clip and
   // therefore invisible until one of them arrives. Absent at the ends of the list, which is fine —
@@ -484,7 +505,12 @@ export function StickySectionHeader<S extends StickySection>({
               {slot ? (
                 <View
                   pointerEvents="box-none"
-                  style={{ height: contentHeight, marginTop: bandPadding, paddingHorizontal: sidePad }}>
+                  style={{
+                    height: contentHeight,
+                    marginTop: bandPadding,
+                    paddingLeft: sidePad + insets.left,
+                    paddingRight: sidePad + insets.right,
+                  }}>
                   {renderHeader(slot)}
                 </View>
               ) : null}

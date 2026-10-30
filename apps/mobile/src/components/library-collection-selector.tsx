@@ -58,7 +58,7 @@ export function LibraryCollectionSelector({
       <ThemedText numberOfLines={1} style={[styles.triggerLabel, type.label]}>
         {currentLabel}
       </ThemedText>
-      <SelectorCaret />
+      <SelectorCaret size="subtitle" />
     </Pressable>
   );
 }

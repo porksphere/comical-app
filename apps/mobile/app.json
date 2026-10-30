@@ -58,9 +58,10 @@
         }
       ],
       "./plugins/with-kotlin-version.js",
+      "./plugins/with-cmake-long-paths.js",
       "./plugins/with-comical-ios-sources.js",
       "./plugins/with-devclient-variant.js",
-      "./plugins/with-ipad-orientations.js",
+      "./plugins/with-ios-orientations.js",
       "expo-sharing",
       "expo-background-task",
       "expo-notifications",
@@ -80,7 +81,11 @@
           "enableBackgroundPlayback": false,
           "enableBackgroundRecording": false
         }
-      ]
+      ],
+      "expo-font",
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

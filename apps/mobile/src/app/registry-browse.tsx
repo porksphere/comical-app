@@ -21,7 +21,7 @@ import { testId } from '@/lib/test-id';
 export default function RegistryBrowseScreen() {
   const { url } = useLocalSearchParams<{ url?: string }>();
   const ds = useDataSource();
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const queryClient = useQueryClient();
   const hideNsfw = useHideNsfw();
 

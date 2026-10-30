@@ -42,9 +42,9 @@ import {
   PILL_HEIGHT,
   SelectLead,
   SelectPillBar,
-  SelectToggle,
   useDragSelect,
   useSelectMode,
+  useSelectToggle,
 } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
@@ -273,6 +273,7 @@ export default function SeriesDownloadsScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'series.dl.select-toggle');
 
   // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
   const listRef = useRef<LegendListRef>(null);
@@ -448,7 +449,7 @@ export default function SeriesDownloadsScreen() {
                   progress={mode.progress}
                   selected={ms.selected.has(item.key)}
                   itemKey={item.key}
-                  edgeOffset={sidePad}
+                  edgeOffset={sidePad.left}
                   // Always mounted (built disabled off select mode) so entering select mode flips
                   // `enabled` rather than mounting a GestureDetector per visible row at once.
                   gesture={dragSelect.gestureFor(index)}
@@ -504,10 +505,7 @@ export default function SeriesDownloadsScreen() {
       {/* The back button always shows (the staging "…" lives in the bottom-left pill now); select
           mode just swaps the title for the live count. The mode toggle is hidden on the forced
           series-download entry — there the back button is the only way out. */}
-      <TopBar
-        title={selecting ? `${ms.count} selected` : title}
-        right={forcedSelect ? undefined : <SelectToggle selecting={selecting} onToggle={toggleSelecting} testID="series.dl.select-toggle" />}
-      />
+      <TopBar title={selecting ? `${ms.count} selected` : title} actions={forcedSelect ? undefined : [selectToggle]} />
 
       <LegendList
         ref={listRef}
@@ -536,8 +534,8 @@ export default function SeriesDownloadsScreen() {
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop,
-          paddingLeft: listPad,
-          paddingRight: listPad,
+          paddingLeft: listPad.left,
+          paddingRight: listPad.right,
           // Room for the floating pills, so the last rows can scroll clear of them.
           paddingBottom: selecting ? PILL_HEIGHT + Spacing.six : Spacing.three,
         }}
@@ -548,8 +546,8 @@ export default function SeriesDownloadsScreen() {
           bottom-right (download tinted blue, cancel/delete danger). */}
       {selecting && (
         <SelectPillBar
-          left={sidePad}
-          right={sidePad}
+          left={sidePad.left}
+          right={sidePad.right}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="series.dl.select-options"

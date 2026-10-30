@@ -1,7 +1,7 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
-import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import type { ComposedGesture } from 'react-native-gesture-handler';
+import { Platform, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { FeedBackdrop, type FeedBand } from '@/components/feed-backdrop';
@@ -49,6 +49,10 @@ const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 const SECTION_GAP = 1;
 const HEADING_GAP = Spacing.two;
 const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
+// iOS draws the ambient colour inside the list's own content, behind its rows. The screen holding
+// the navigation bar finds the list to put its scroll-edge effect on by walking each first subview
+// down from itself, and a backdrop laid first, behind the list, is where that walk stops.
+const BACKDROP_IN_LIST = Platform.OS === 'ios';
 
 /** A rail's See-all target → `/results` route params (expo-router params are strings). Omits absent
  *  fields; `direct` becomes '1' only when true; `listId` (home rail), `query` (search rail), or
@@ -115,6 +119,7 @@ export function ContentFeed({
   stickyHeaderTop,
   stickyBarOffset,
   stickyPinned,
+  onSectionChange,
   ambient,
   sharedValues,
   onScroll,
@@ -149,6 +154,9 @@ export function ContentFeed({
   /** Written by the sticky: 1 while a heading is pinned. The screen drops its top bar's own rule
    *  off this, on the same frame — see StickySectionHeader's `pinnedValue`. */
   stickyPinned?: SharedValue<number>;
+  /** The section whose heading is pinned, by label — null above the first. The iOS bar shows it
+   *  as its title, since nothing pins under the native bar (see StickySectionHeader). */
+  onSectionChange?: (label: string | null) => void;
   /** Tint the page behind each section — see `FeedBackdrop`. Needs `sharedValues`, which is what
    *  moves it. */
   ambient?: boolean;
@@ -162,7 +170,7 @@ export function ContentFeed({
   /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
   scrollEnabled?: boolean;
 }) {
-  const { numColumns, cardWidth, columnGap, railViewport, width, gutter } = useGridLayout();
+  const { numColumns, cardWidth, columnGap, railViewport, width, gutter, insets } = useGridLayout();
   const wide = useIsLargeScreen();
   // The breakpoint `SectionHead` itself reads — the sticky sizes its band from the head's real
   // height. A DIFFERENT breakpoint from `wide` above.
@@ -299,7 +307,13 @@ export function ContentFeed({
   // The heading the pinned copy is currently standing in for — that row keeps its space but drops
   // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
-  const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
+  const onActiveChange = useCallback(
+    (key: string | null) => {
+      setPinnedKey(key);
+      onSectionChange?.(key === null ? null : (sections.find((s) => s.key === key)?.label ?? null));
+    },
+    [onSectionChange, sections],
+  );
   // What each heading row needs to time its own swap with the band's — see `useInlineHeadingStyle`.
   const pin: InlineHeadingPin = useMemo(
     () => ({
@@ -327,22 +341,30 @@ export function ContentFeed({
     </View>
   ) : null;
 
-  return (
-    <View style={styles.fill}>
-    {ambient && sharedValues && (
+  const backdrop =
+    ambient && sharedValues ? (
       <FeedBackdrop
         bands={bands}
-        width={width}
+        // Under the safe area's sides as well, which the list's content is padded past.
+        width={width + insets.left + insets.right}
         scrollOffset={sharedValues.scrollOffset}
         // Below the pinned heading's band when there is one: it is as opaque as the bar it rides.
         chromeBottom={
           stickyHeaderTop === undefined ? paddingTop : stickyHeaderTop + sectionHeadHeight(compact) + HEADING_GAP * 2
         }
         barOffset={stickyBarOffset}
-        // The list's own shift and dim, so the colour is pulled and faded with the rows over it.
-        style={wrapperStyle}
+        // In the list: from the content's origin, which is outside the header's padding, and the
+        // list's own shift and dim already apply. Behind it: that shift and dim, so the colour is
+        // pulled and faded with the rows over it.
+        {...(BACKDROP_IN_LIST
+          ? { inList: true, style: { top: -paddingTop, left: -centerPad - insets.left } }
+          : { style: wrapperStyle })}
       />
-    )}
+    ) : null;
+
+  return (
+    <View style={styles.fill}>
+    {!BACKDROP_IN_LIST && backdrop}
     <RecyclerList
       data={rows}
       scopeKey={scopeKey}
@@ -359,7 +381,16 @@ export function ContentFeed({
       // Rails eagerly load their cover images the moment they mount, so keep a tighter mount window
       // than the default 250 — fewer off-screen rails alive at once = fewer simultaneous image loads.
       drawDistance={120}
-      header={header}
+      header={
+        BACKDROP_IN_LIST && backdrop ? (
+          <>
+            {backdrop}
+            {header}
+          </>
+        ) : (
+          header
+        )
+      }
       footer={footer}
       paddingTop={paddingTop}
       // Below the pinned heading too, which covers the track just as the bar does.

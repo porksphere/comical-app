@@ -22,18 +22,211 @@ cross-platform via react-native-web, so one `*.tsx` file per icon group covers
 every platform with no `.web.tsx` split needed. Don't hand-roll glyphs. See
 `apps/mobile/src/components/icons/ui-icons.tsx` for the pattern.
 
-# Bottom nav: a custom-rendered bar, not the OS-native one
+# Bottom nav: the system bar on iOS, a custom-rendered bar on Android and web
 
-`apps/mobile/src/components/app-tabs.tsx` is a single cross-platform component (`expo-router/ui`'s
-headless `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s) used on iOS,
-Android, and web alike — there's no `NativeTabs`/`unstable-native-tabs` wrapper over the real
-`UITabBarController`/Material 3 `NavigationBar` anymore. That was tried and reverted: iOS 26's
-`tabBarMinimizeBehavior` needed react-native-screens patches to even find the content scroll
-view, and even with that (plus pushing both edges imperatively, confirmed via on-device
-diagnostics) the tab bar still only re-expanded once scrolled all the way back to the top, never
-mid-scroll — a dead end inside UIKit's private implementation, not fixable from app code.
+`apps/mobile/src/components/app-tabs.ios.tsx` is the iOS shell: `NativeTabs`
+(`expo-router/native-tabs`) over the real `UITabBarController`, so UIKit itself moves the
+bar to the side as a symbol-only column on a regular-width resizable scene and to a sidebar on iPad.
+That is the whole reason it exists — a custom bar can only imitate that adaptation. It asks for
+`minimizeBehavior="onScrollDown"`: on iOS 26 the bar collapses to the selected item while the
+content scrolls down and re-expands only at the very top or on a tap. That is UIKit's design
+(react-native-screens #3954), not a list bug — the earlier native shell chased mid-scroll
+re-expansion for days and reverted, so don't. The scroll view the bar follows is registered by
+`TabScrollMarker` (`react-native-screens/experimental`'s `ScrollViewMarker`, keyed with the list
+it wraps) around each tab ROOT screen's list, under `TabRootScrollContext` from the tab's stack —
+never a pushed page's: the registration is a hand-off to UIKit nothing takes back. The marker
+reaches the TAB screen only, never the stack screen holding the navigation bar. That screen
+finds the list for itself, by the walk each first subview down from it, to put its iOS 26
+scroll-edge effect on the list: the system's own treatment of content under the bar, shown only
+once the list has scrolled under it. Most tabs take the soft one; Browse and Library take the
+hard one over their covers (`SCROLLED_MATERIAL` in `components/tab-stack.tsx`), the near-opaque
+backing that stands in for the old bar material. Not a background in the bar's appearance:
+Apple's guidance for iOS 26 is that a custom bar background sits on top of the edge effect, and
+UIKit never once switched these bars from their scroll-edge appearance to the standard one, with
+or without the list handed to it. Nothing may be laid in ahead of the list there, so on iOS
+Browse's colour backdrop is drawn inside the list's content, behind its rows (`BACKDROP_IN_LIST`
+in `components/content-feed.tsx`). Liquid Glass bars tint from the
+WINDOW's interface style, not from the content, so `ThemeSchemeProvider` mirrors the theme
+preference into `Appearance.setColorScheme` on iOS — without that a dark theme sits over a light
+window and the bar glares white. It is
+the one place SF Symbols are used instead of lucide, because the system bar draws its own items. Its
+triggers are named by ROUTE (`(home)`, `library`, …); the custom shell's `TABS` table keys by tab name
+(`browse`, …), and `app-tabs.ios.tsx` maps between the two for scroll-to-top. Per-tab safe-area
+insets already include the system bar, so `BottomTabInset` is 0 on iOS and `useHideTabBarOnScroll`
+leaves `tabBarProgress` at 0 there; a ROOT overlay (toast, request pill, card context menu) pads by
+`RootTabBarInset` instead, since the root provider's insets don't know about the bar. The bar has no
+testIDs, so the Maestro `tab.<name>` taps are Android/web only.
 
-The visible bar is NOT the `TabList`. Its slide is a Reanimated animated style, which a
+The TOP bar follows the same split (`apps/mobile/src/hooks/use-native-header.ts`, `NATIVE_HEADER`):
+on iOS each tab directory is its own native Stack (`components/tab-stack.tsx`; a plain `Slot`
+elsewhere), so the tab screen gets a UINavigationBar INSIDE the UITabBarController — which is
+what lets UIKit carry its toolbar items into the side column together with the tabs. Those screens
+render `Stack.Title` / `Stack.Toolbar` / `Stack.SearchBar` items instead of `TabTitleBar`. Every
+pushed settings-reachable screen (categories, bridges, registries, downloads, …) is registered
+with `settingsScreen()` (`lib/native-bar.ts`) so it takes the system bar; its `TopBar` then IS
+that bar on iOS — it retitles it and renders the structured `actions` as trailing
+`Stack.Toolbar.Button`s (an SF Symbol, or the Select / Done words from `useSelectToggle`),
+and draws the custom overlay with the same actions as lucide buttons elsewhere. The system bar
+draws its own items, so its `Stack.Toolbar.Button`/`MenuAction` icons are SF Symbols too, and it
+has no testIDs either: `screen-title.*`, `*.search-icon`, `browse.bridge-selector`,
+`library.collection-selector` are Android/web only. Content pads by `useTopChromeHeight()` (the
+native bar's height on iOS, status bar + custom overlay elsewhere), so a screen swaps bars without
+relayout. Android and web keep the custom `TopBar`/`TabTitleBar` overlay.
+
+What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
+names the screen and the search: every tab uses an inline title that fades out over the first
+scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's `scrollY`;
+large titles looked foreign beside the custom clusters). Browse's title is "<bridge> <page>" and
+Library's "<view> <kind>" (the view alone while it holds one kind), and on both it is also the NSFW hold target (`NativeTabHeader
+holdTestID`), because their bars hold only SYSTEM items and a `UIBarButtonItem` has no
+long-press of its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`,
+flat — inline sections, never submenus, so every pick is open and tap — Browse the current
+bridge's thumbnail as a circle over the bridges and then the pages as checkmarked rows
+(`components/browse-native-toolbar.tsx`), Library the view's mark (the
+collection's initial, All's asterisk) with the views and "Manage collections…" and then the
+kind, Series / Chapters / Pages, as a second section while the view holds more than one
+(`LibraryCollectionMenu` in `components/library/library-native-toolbar.tsx`; Library's title
+is then "<view> <kind>", as Browse's is "<bridge> <page>") — and the search
+trailing, so UIKit lays the bar out itself (an image item joins the vertical bar of a folded or
+landscape display). The leading image button keeps its Liquid Glass capsule: a bare circle
+(`hidesSharedBackground`, the way a round account picture is itself the button in Apple's bars)
+was tried and dropped, because the capsule is what morphs into the pushed series page's back
+button, and a bare circle left that button growing out of nothing. (The capsule comes off a
+plain image item that way, but NOT off a custom-view item — a title-slot cluster of RN views
+was tried and could not be made bare, which is why nothing custom stands in the bar any more.)
+A menu row takes its
+image only as a local FILE it reads itself, so `lib/menu-thumb-files.ts` renders each bridge
+thumbnail (or the bundled Comical asset) down to a 28pt PNG at the screen's scale once per
+session; the navigation bar's items and menus read it through React Native's loader as a plain
+image, so the SHAPE is in the file: the local Expo module `apps/mobile/modules/shaped-image`
+(Swift, iOS only, `null` elsewhere) clips a rendered tile to a corner or a circle and
+`menuThumbFile(source, radius)` keeps one file per shape. Neither tab's leading button
+or menu is in the header config, though: react-native-screens replaces EVERY bar item,
+unanimated, on any change to the config, so a pick that changed the button's picture and the
+rows' checks popped the whole bar. Both render `NavBarLeadingMenu`
+(`components/nav-bar-leading-menu.tsx`), which gives the config a placeholder that never
+changes and hands the live picture, label and menu (inline sections of rows) to the local
+module `apps/mobile/modules/nav-bar-leading`, a zero-size view in the page that sets them on
+that item in place, and again whenever the items are rebuilt, as they are on every return to
+the screen. It decodes the files itself: through React Native's loader the bar reads one off
+the main thread, uncached, so the button was blank for the first part of every pop back, and a
+menu row's never showed, landing after the menu was built (a bar item keeps a copy of its
+menu). Without the module the menu goes back into the config. A row without art shows its initial
+as an SF `x.square.fill` (`lib/initial-symbol.ts`; `x.circle.fill` for a bar button), and the
+All view an `asterisk` — the other place SF Symbols stand in for lucide. The native bar has NO
+sticky-header primitive (no title menu, palette or scope bar in react-native-screens 4.30), so
+the page picker is a menu in the bar, not a strip under it. Nothing pins under the bar at all:
+every surface tried there failed (a band floated, a scrim running up to the bar read as a second
+bar, a glass capsule hugging the heading was a badge drifting over the covers), so on iOS
+`StickySectionHeader` draws nothing (`IN_BAR`) and only reports which section is under the bar
+(`onSectionChange` on the grids and feed), and the screen hands that label to `NativeTabHeader
+section`: it takes the faded title's place in the bar, the way Photos names the month there and
+Music the album, cross-fading as the next heading arrives. Library's title fades only while its listing is
+grouped: an ungrouped one has no heading to take its place. The inline headings scroll away like
+any other row. A series opened from a tab is a real pushed card of that tab's stack (route
+`in-tab/series/index` — the tab's `in-tab/series/` directory has no layout on purpose, so the
+page IS the pushed screen and its `Stack.Screen` addresses it), so the tab's leading item morphs into its
+back button and the slide and edge-pop are the system's; `useNativePush` in
+`components/series/viewport.ts` is what the zoom rig gives up there.
+The settings screens' enum rows are SYSTEM menus too: `SettingsSelectRow` is
+platform-split (`components/settings/select-row.ios.tsx` — the row drawn in RN in iOS Settings'
+popup-row shape, `label … value ⌃⌄`, with the local Expo module `apps/mobile/modules/menu-anchor`
+laid over it: an invisible UIButton whose tap opens a UIMenu of checkmarked options with the
+bridge thumbnails from the same thumb files; `select-row-overlay.tsx` is the anchored overlay
+picker for Android/web, and the iOS row's fallback where the module isn't linked). The module
+decodes the pictures itself at the screen's scale — `@expo/ui`'s SwiftUI `Menu` was tried first
+and needed a vendored patch to do that, which is why it went: a missing native behaviour gets a
+local Expo module, never a patch, and the repo carries none. On iOS 26 the tap that closes any
+of these UIKit menus is hit-tested through to the view beneath, and React Native's touch handler
+(a gesture recognizer, which UIKit does not suppress) would press it: the local module
+`apps/mobile/modules/menu-touch-gate` (an app-delegate subscriber, no JS) puts a window-level
+recognizer in at launch that has that handler ignore touches while a menu's container is on the
+window — the same gate expo-modules-core ships but installs only from its SwiftUI host view,
+which these menus never mount. A UIKit menu has no second line, so an OPTION's `description` is not
+shown on iOS, and the option test ids (`settings.select.<label>.option.<value>`) are not
+reachable there — only the row's. Multi-select enum fields (`MultiEnumRow` in
+`setting-field.tsx`) stay on the overlay everywhere: a system menu can't hold several checks.
+Long-press menus are the system's context menu on iOS, through the local module
+`apps/mobile/modules/system-context-menu` (`components/system-context-menu.tsx`): a
+`UIContextMenuInteraction` on the held content, which lifts (or the `SystemContextMenuTarget`
+inside it does), and a UIMenu built from the same `MenuRowSpec`s the custom hold menu draws on
+Android and web. The rows are asked for when the hold begins and published by the root
+`SystemContextMenuHost` while that menu is up, so their queries run once per open, never once per
+row of a list: a SwiftUI context menu mounted per card was removed once for exactly that scroll
+cost. A row's `symbol` is its SF Symbol there, the third place SF Symbols stand in for lucide.
+UIKit has no bold row, so a leading `primary` row gets a section of its own and trailing
+`destructive` rows (red there, and red in the custom menu to match) close the menu in another.
+`HoldMenu` takes one rows builder and wears whichever menu the platform has (chapter rows use it);
+`SystemContextMenuTarget` marks what lifts when that is less than the whole held view. The system
+menu's rows carry no test ids, so Maestro reaches these menus on Android only.
+Series cards and the History and Activity rows wear it through `series-card-menu.ios.tsx`: a
+card's cover, or a whole row, grows into `SeriesCardPreview` (the Android panel without what it
+lets you tap, since UIKit's preview takes no touches), tapping that does what tapping the item
+does (`onOpen`), and Save on a saved series is the collections submenu, checks kept in place.
+The preview is drawn by the root host into one native view kept out of the window
+(`SystemContextMenuPreviewSlotView`), the way expo-router hands UIKit a link's preview, so a grid
+mounts no preview per card.
+Secondary controls leave the title: Library's filter/sort share one trailing `⋯`
+`Stack.Toolbar.Menu` (`components/library/library-native-toolbar.tsx`) — NOT a
+`placement="bottom"` toolbar, which is the navigation controller's toolbar and lays out UNDER
+the floating tab bar. The native toolbar
+only reads `Stack.Toolbar.*` elements that are its DIRECT children — a component wrapping one is
+invisible to it — so shared menus are builder FUNCTIONS returning the element (`libraryFilterMenu`,
+`librarySortMenu`, `collectedSortMenu`), one toolbar component per kind. `useNativeHeaderHeight()`
+reports the RESTING height — a large title collapses on scroll and the stack reports the shrinking
+bar as it goes, but the content pads once, by the expanded height.
+
+Pushed screens stay INSIDE the tab on iOS. A series page, a search and its results open in the
+focused tab's native stack, not the root stack, so the system tab bar (or its side column) stays up
+under them as it does in Apple's apps: every tab directory carries an `in-tab/` copy of
+`series/`, `search` and `results` that re-exports the root screens, and `lib/nav` rewrites a push to `/series`,
+`/search` or `/results` to the focused tab's copy (`lib/focused-tab.tsx` tracks the tab from the
+segments) — on iOS only; Android and web keep the root routes. A new pushed screen that should
+behave the same gets a stub in each tab's `in-tab/` and its path in `IN_TAB_PATHS`. Only the ROOT `series` route has
+the nested in-series stack (`app/series/_layout.tsx`), so series code asks `useSegments()`, not the
+pathname, to know which copy it is in. The series page takes the system bar in BOTH its modes —
+one bar, so the back button and the items morph between them: details transparent over the hero,
+`systemChromeMaterial` once the title would collide, a toolbar chevron in place of the custom one;
+the reader transparent over the page with a one-line white title UIKit lays out between the
+items (the chapter; a sequence's visible series — a title VIEW is sized by React at the bar's full
+width, so UIKit can only centre it over the buttons) and save + settings as glass bar buttons
+(`components/reader/reader-native-toolbar.tsx`), the bar following the chrome's auto-hide through
+`headerShown` — with every `Stack.Toolbar` unrendered while it is down, since a mounted one sets
+`headerShown: true` over the page's own options — the custom `ReaderToolbar` reduced to its
+gradient shade — and hides the tab bar while the reader is expanded through
+`lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s. The reader's bottom bar
+(`components/reader/chapter-navigator.tsx`) is real Liquid Glass (`expo-glass-effect`) in one
+`GlassContainer`, and nothing holding a `GlassView` may fade: UIKit renders an effect wrongly
+under any ancestor alpha below 1, and a glass faded out and back can stay gone, so the glass
+comes and goes through `glassEffectStyle` and only what sits on it fades; the tab stack's `screenLayout`
+applies the series backdrop scale/dim to the screen underneath. Search takes the bar as the
+stack's field (`Stack.SearchBar`, `integratedCentered`, uncontrolled: told the committed query,
+focused after the push settles) with sort as a trailing menu; the route has no title, so the field
+shares the chevron's row instead of sitting under an empty one; its filters are a trailing bar
+button opening a system form sheet (`app/search-filters`, `presentation: 'formSheet'`) that hosts
+the custom filter rows, not the shutter the custom bars keep. The sheet is its own view controller
+and the app-root overlays render behind it, so it runs a stack of its own and `FilterButton`'s
+`onOpenEditor` pushes each editor as a screen; the Search screen hands it its filters through
+`data/filter-sheet.ts` (a one-slot module store, like `search-intent.ts`), since a root-stack modal
+cannot reach the screen's state by context. Search and results share the tab's one UINavigationBar with the screen under
+them, so their push animates the bar natively, as does an in-tab series page's. The tab copies
+live under each tab's `in-tab/` on purpose: expo-router resolves a plain `/series` to whichever
+matching route shares the most groups with the current one, so a copy at `<tab>/series` captures
+every push made from that tab on every platform, and off iOS the tab is a `Slot` the page would
+replace. Only `tabHref` (lib/nav) names them. The ROOT
+`/series` route (deep links) is still a `containedTransparentModal` with its own zoom entrance,
+so its first page's bar does not (a page pushed over it in its nested stack is a card again); that modal hosts a nested Stack and the page's `Stack.Screen`/`Stack.Toolbar`
+address the nested screen they render in, never the modal: on iOS react-native-screens re-wraps a non-push
+screen's content whenever `headerShown` flips (`ScreenStackItem`'s `isHeaderInModal`) and remounts
+it, state and all. The
+series page flips it twice per visit (details ⇄ reader, the search layer), and when the flip hit
+the modal itself the search layer vanished on open and every open mounted the page twice.
+
+`apps/mobile/src/components/app-tabs.tsx` is the Android + web shell (`expo-router/ui`'s headless
+`Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the icon rail at the regular size class, the
+sliding bottom bar on phones, and the web-only panes.
+
+The visible bar there is NOT the `TabList`. Its slide is a Reanimated animated style, which a
 `TabList` can't carry (it renders a plain `View`, and `asChild` routes through a Slot that
 flattens and object-spreads the style). So routes are registered by a `display: 'none'`
 `TabList` — Expo's documented custom-tab-bar structure — and the bar is our own
@@ -148,15 +341,37 @@ suppression doesn't fit one of the three cases above, it's a code change, not a 
 
 # Zoom transitions
 
-The series page grows out of the card that opened it and collapses back into it (`apps/mobile/src/lib/series-zoom.ts`).
+The series page grows out of the card that opened it and collapses back into it (`apps/mobile/src/lib/series-zoom.ts`)
+— on Android, web and the root `/series` route. Inside an iOS tab it is a native push instead and
+none of this runs (`useNativePush` in `components/series/viewport.ts`); the grow-from-the-card there is
+UIKit's own iOS 18 zoom transition: the card is a `<Link asChild>` with `<LinkTrigger
+withAppleZoom>` (from `@/lib/nav`) and the page's hero cover sits in `<LinkAppleZoomTarget>`.
+The href names the card's tab via `TabRouteContext` (`lib/focused-tab.tsx`), since a Link is
+built at render time when the focused tab may be another. The zoom's interactive dismissal
+follows the screen's `gestureEnabled`, which the page turns off in the reader, except the paged
+split reader opened from the details: there UIKit's swipe down is the swipe-away, and the swipe
+up it never starts is the reader's own pan (`swipeAway`), ending in the same pop.
 The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
 runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
+
+The details and the reader are two pages on every platform (`SeriesDetailsPage` and
+`SeriesReaderPage` in `components/series/`, hosted by `SeriesRoute` in `app/series/index.tsx`):
+`series/index` is the details, whose strip shows the page you are on,
+and `series/read` the reader it opens; `lib/nav` sends a reader-first `/series` push straight to
+`/series/read`. Off iOS `read` is a transparent modal with no animation over the details, which
+stay rendered, and the pages draw the move themselves: the reader page continues the strip's own
+open from wherever a drag left it and shrinks back into the strip on the way out, and a reader
+that brings up details it was not opened from has them slide up over it (`SplitHandoff`). On
+iOS the root route (deep links, opens from outside the tabs) pushes them over each other in its
+nested stack as a tab does, the reader zooming out of the strip; only its FIRST page is the
+modal with the zoom from the card. A collection's sequence is a reader page too, whose Details
+open the visible entry's details over the album.
 
 **The page lands on its own hero cover only while that cover is at least half on screen.** A bound
 that has scrolled off is still a bound the page has to fly onto, so aiming at one drags the whole
 page up to meet it: the page appears to scroll itself away under the finger. Scrolled past it the
 collapse switches to `cover-offscreen` instead — the cover's SIZE, centred on the page, with no
-scroll to follow (`ZoomDest` in `apps/mobile/src/app/series/index.tsx`). Only the position was ever
+scroll to follow (`ZoomDest` in `apps/mobile/src/components/series/page-motion.ts`). Only the position was ever
 wrong: the size is what the collapse's scale is derived from, so keeping it keeps the same shrink,
 and dropping to the screen-relative `page` target instead (which is what this did first) balloons
 the flying copy to full screen width. Which destination is in play is LATCHED while the page is at

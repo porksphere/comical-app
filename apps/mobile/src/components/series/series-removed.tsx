@@ -7,7 +7,7 @@ import { setSearchIntent } from '@/data/search-intent';
 import { COMICAL_BRIDGE_ID } from '@/data/selected-bridge';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
-import { useOpenSearchLayer } from '@/lib/series-nav';
+import { useOpenSeriesSearch } from '@/lib/series-nav';
 
 /** The reason a bridge gives when it has nothing more specific — not worth repeating under the heading. */
 const GENERIC_REASON = 'removed from the source';
@@ -52,10 +52,10 @@ export function SeriesRemovedNotice({
   plate?: boolean;
 }) {
   const router = useRouter();
-  const openSearchLayer = useOpenSearchLayer();
+  const openSeriesSearch = useOpenSeriesSearch();
   const findElsewhere = () => {
     setSearchIntent({ bridgeId: COMICAL_BRIDGE_ID, kind: 'query', query: title });
-    if (openSearchLayer) openSearchLayer();
+    if (openSeriesSearch) openSeriesSearch();
     else router.push('/search');
   };
 

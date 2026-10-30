@@ -15,7 +15,7 @@ export function RetryBlock({ message, onRetry, error }: { message: string; onRet
   const signInTo = loginRequiredOf(error)?.bridgeId;
   return (
     <View style={styles.block}>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.message}>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.message} selectable>
         {message}
       </ThemedText>
       <View style={styles.actions}>

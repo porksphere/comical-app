@@ -4,7 +4,8 @@
  *
  *  - `useSelectMode()` — the mode flag plus the ONE shared progress value that animates every row's
  *    check circle in sync (and survives view recycling).
- *  - `SelectToggle` — the top-bar-right circled-check that enters/exits the mode (accent while on).
+ *  - `useSelectToggle` — the top bar's mode toggle: the custom bar's circled check (accent while
+ *    on), the system bar's Select / Done.
  *  - `SelectLead` — the animated leading slot rows render: the check circle rides in from the
  *    physical screen edge, fading up, pushing the row's content right.
  *  - `SelectPillBar` — the floating select-mode chrome: a bottom-left "…" staging button (opens the
@@ -16,8 +17,8 @@
  */
 import { BlurView } from 'expo-blur';
 import type { ReactElement } from 'react';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { Gesture, GestureDetector, type PanGesture } from 'react-native-gesture-handler';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type ViewInstance } from 'react-native';
+import { Gesture, GestureDetector, type LegacyPanGesture as PanGesture } from 'react-native-gesture-handler';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useEffect, useRef, useState } from 'react';
 
@@ -26,6 +27,7 @@ import { ANDROID_BLUR, type MenuRowSpec } from '@/components/context-menu-materi
 import type { IconProps } from '@/components/icons/ui-icons';
 import { SelectModeIcon, SelectOptionsIcon } from '@/components/icons/ui-icons';
 import { SelectCircle } from '@/components/multi-select/selectable-row';
+import type { TopBarAction } from '@/components/top-bar';
 import { Spacing } from '@/constants/theme';
 import { hapticSelection } from '@/lib/haptics';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -77,7 +79,7 @@ export function useSelectMode(initial = false): {
 function SelectOptionsButton({ rows, testID }: { rows: MenuRowSpec[]; testID: string }) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
-  const anchorRef = useRef<View>(null);
+  const anchorRef = useRef<ViewInstance>(null);
   return (
     <View ref={anchorRef} collapsable={false} style={styles.pillShadow}>
       <BlurView
@@ -104,19 +106,17 @@ function SelectOptionsButton({ rows, testID }: { rows: MenuRowSpec[]; testID: st
   );
 }
 
-/** The top-bar-right mode toggle: a circled check, accent while the mode is on. */
-export function SelectToggle({ selecting, onToggle, testID }: { selecting: boolean; onToggle: () => void; testID: string }) {
+/** The top bar's mode toggle, for its `actions`: a circled check, accent while the mode is on;
+ *  in the system bar the word iOS uses, Select, and Done once on. */
+export function useSelectToggle(selecting: boolean, onToggle: () => void, testID: string): TopBarAction {
   const theme = useTheme();
-  return (
-    <Pressable
-      testID={testID}
-      onPress={onToggle}
-      hitSlop={10}
-      accessibilityRole="button"
-      accessibilityLabel={selecting ? 'Exit selection' : 'Select items'}>
-      <SelectModeIcon color={selecting ? theme.accent : theme.text} size={24} />
-    </Pressable>
-  );
+  return {
+    label: selecting ? 'Exit selection' : 'Select items',
+    testID,
+    onPress: onToggle,
+    icon: <SelectModeIcon color={selecting ? theme.accent : theme.text} size={24} />,
+    native: selecting ? { text: 'Done', variant: 'done' } : { text: 'Select' },
+  };
 }
 
 /** The animated leading slot rows render in select mode: the check circle SLIDES IN FROM THE

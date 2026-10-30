@@ -126,6 +126,12 @@ type Props = {
   /** Every page's real picture size as it loads, by key — for whoever reads shapes besides the
    *  pairing (see `use-webtoon-detection`). */
   onPageSize?: (key: string, size: Size) => void;
+  /** Once, the first time the list SHOWS its cells. Until then LegendList draws them transparent
+   *  (they wait on their own layout and the initial scroll), so a page loaded before this is still
+   *  nothing on screen. */
+  onReady?: () => void;
+  /** As each drag of the list by a finger begins. */
+  onDragBegin?: () => void;
 };
 
 /**
@@ -203,6 +209,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     double = false,
     shift = false,
     onPageSize: onPageSizeProp,
+    onReady,
+    onDragBegin,
   },
   ref,
 ) {
@@ -287,7 +295,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     ref,
     () => ({
       goToPage(logical: number, animated = true) {
-        void listRef.current?.scrollToIndex({ index: toPhysical(spreadAt(logical)), animated });
+        const index = toPhysical(spreadAt(logical));
+        // Viewability only names the new page a beat after the jump, and until it does a standby
+        // strip draws every cell but the old one blank — the empty frame a zoom back to the strip
+        // landed on.
+        const key = animated ? undefined : data[index]?.key;
+        if (key) setActiveKey(key);
+        void listRef.current?.scrollToIndex({ index, animated });
       },
       // The JS-side fallback for the same move (the webtoon reader's scrubber path
       // and web). The native paged scrubber doesn't come through here at all — it
@@ -659,8 +673,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         // BLOCKS this scroll rather than disabling it, and fails — handing the touch over — for a
         // drag past the edge the page already shows, so a zoomed page is still swiped between.
         scrollEnabled={!pinching}
+        // iOS: a drag that starts mostly vertical never moves the pages sideways. Vertical belongs
+        // to the page's way out (the system's swipe-down dismissal, the lift, the collapse), and
+        // the sideways drift a diagonal one carried used to shake the page as it left.
+        directionalLockEnabled
         showsHorizontalScrollIndicator={false}
         initialScrollIndex={initialIndex}
+        onLoad={onReady}
+        onScrollBeginDrag={onDragBegin}
         // THE POINT OF THE WHOLE SWAP: anchor a data change on the ITEM, so a chapter joining at
         // the head leaves the page under your thumb exactly where it is. `size: false` for the
         // same reason the browse grid sets it — every cell is a known fixed width, so there are no

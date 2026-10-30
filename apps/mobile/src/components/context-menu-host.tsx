@@ -209,11 +209,14 @@ export type ContextMenuPoint = { x: number; y: number; anchor?: ContextMenuReque
  */
 export function ContextMenuHold({
   enabled = true,
-  onOpen,
+  onOpen: onOpenAt,
+  rows,
   children,
 }: {
   enabled?: boolean;
-  onOpen: (point: ContextMenuPoint) => void;
+  /** Where the hold opened the menu; or `rows`, to open this host's menu with them there. */
+  onOpen?: (point: ContextMenuPoint) => void;
+  rows?: () => ContextMenuRequest['rows'];
   children: (api: {
     onLongPress?: (e: GestureResponderEvent) => void;
     /** react-native-web forwards this to the element; react-native's types don't know it, so the
@@ -223,6 +226,13 @@ export function ContextMenuHold({
 }) {
   const originX = useSharedValue(0);
   const originY = useSharedValue(0);
+  const onOpen = useCallback(
+    (point: ContextMenuPoint) => {
+      if (onOpenAt) onOpenAt(point);
+      else if (rows) openContextMenu({ ...point, rows: rows() });
+    },
+    [onOpenAt, rows],
+  );
   const hold = useMemo(
     () =>
       Gesture.Pan()
@@ -310,11 +320,13 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
   const fixed = req.anchor === 'fixed';
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const headerH = req.title !== undefined ? MENU_TITLE_HEIGHT : 0;
-  const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
+  const minLeft = insets.left + EDGE_PAD;
+  const maxRight = winW - insets.right - EDGE_PAD;
+  const menuW = Math.min(MENU_WIDTH, maxRight - minLeft);
   const menuH = MENU_PAD_V * 2 + headerH + MENU_ROW_HEIGHT * specs.length;
   const left = fixed
-    ? clamp(req.x, EDGE_PAD, winW - menuW - EDGE_PAD)
-    : clamp(req.x - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
+    ? clamp(req.x, minLeft, maxRight - menuW)
+    : clamp(req.x - menuW / 2, minLeft, maxRight - menuW);
   const below = fixed || req.y + GAP + menuH <= winH - insets.bottom - EDGE_PAD;
   const top = fixed
     ? clamp(req.y, insets.top + EDGE_PAD, winH - insets.bottom - EDGE_PAD - menuH)

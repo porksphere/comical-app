@@ -13,8 +13,8 @@
 import { Platform } from 'react-native';
 
 import { Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
-import { useContentWidth } from '@/hooks/use-content-width';
-import { LARGE_SCREEN_BREAKPOINT, useHydrated } from '@/hooks/use-responsive';
+import { type SideInsets, useContentWidth, useSideInsets } from '@/hooks/use-content-width';
+import { sizeClassFor, useHydrated } from '@/hooks/use-responsive';
 import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
 
 // The reference's mobile grid uses a tighter inter-card gap than its row gap; Spacing.two (8px) is
@@ -48,8 +48,12 @@ export type GridLayout = {
   columnGap: number;
   hydrated: boolean;
   /** The CONTENT width this geometry was derived from — the window minus the sidebar, inside the
-   *  tabs; the window itself everywhere else. Not `useWindowDimensions().width`. */
+   *  tabs; the window itself everywhere else; minus the safe area's sides either way. Not
+   *  `useWindowDimensions().width`. */
   width: number;
+  /** The safe area's sides, which `RecyclerList` pads by on top of `sidePad` — for a background that
+   *  runs under them, `width` and all. */
+  insets: SideInsets;
   /** What the scroller's scrollbar takes out of `width` (`useScrollbarGutter`) — for a caller that
    *  hands `railViewport` on to a rail's geometry. */
   gutter: number;
@@ -68,7 +72,7 @@ export function gridGeometry(
   hydrated: boolean,
   gutter: number,
 ): Pick<GridLayout, 'numColumns' | 'sidePad' | 'cardWidth' | 'columnGap'> {
-  const large = hydrated && width >= LARGE_SCREEN_BREAKPOINT;
+  const large = hydrated && sizeClassFor(width) === 'regular';
   const numColumns = large ? Math.min(6, Math.max(3, Math.floor(width / 200))) : 3;
   const columnGap = large && Platform.OS === 'web' ? GRID_COLUMN_GAP_DESKTOP : GRID_COLUMN_GAP;
   // Center content within MaxTopLevelWidth (web only — see topLevelCenterInset) plus the edge gutter;
@@ -85,9 +89,11 @@ export function useGridLayout(): GridLayout {
   // The content column, NOT the window: the sidebar is reserved by a paddingLeft on the tab slot, and
   // dividing the window's width into columns inside that padding lays out a grid wider than the space
   // it was given — the rail's width of the last column ends up past the right edge.
-  const width = useContentWidth();
+  // And not under the safe area's sides, which the list pads past (see `RecyclerList`).
+  const insets = useSideInsets();
+  const width = useContentWidth() - insets.left - insets.right;
   const hydrated = useHydrated();
   const gutter = useScrollbarGutter();
   const railViewport = hydrated ? width : 390;
-  return { ...gridGeometry(width, hydrated, gutter), railViewport, hydrated, width, gutter };
+  return { ...gridGeometry(width, hydrated, gutter), railViewport, hydrated, width, gutter, insets };
 }

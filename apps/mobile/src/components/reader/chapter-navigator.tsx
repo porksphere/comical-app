@@ -1,5 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { GlassContainer, GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { useNavigation } from 'expo-router';
+import {
+  DynamicColorIOS,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type ColorValue,
+  type LayoutChangeEvent,
+  type ViewProps,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -82,10 +93,62 @@ function nowMs() {
 /** Height of the pill AND of the chapter-skip buttons — the bar and the arrows
  *  either side of it are one continuous row of the same weight. */
 const BAR_H = 40;
+
+/** iOS 26: the bar's surfaces are Liquid Glass, as the bar buttons the system bar holds above
+ *  the reader are (`ReaderNativeToolbar`); the translucent black stays for every older iOS and
+ *  every other platform. Module-level, the way the availability is: the app does not change
+ *  OS mid-run.
+ *
+ *  Nothing that holds a glass view may fade. UIKit renders a visual effect wrongly, or not at all,
+ *  under an alpha below 1 anywhere above it, and a glass faded out and back in can stay gone, so
+ *  the chrome toggle used to leave the surfaces flat, missing, or unlike one another. On glass the
+ *  surfaces come and go as an effect (`ChromeSurface`'s `shown`, which UIKit animates the way it
+ *  does the system bar's own items) and only what sits on them fades; off glass the whole bar
+ *  still fades as one. */
+const GLASS = Platform.OS === 'ios' && isLiquidGlassAvailable();
+
+/** What sits on the surfaces. Glass takes the window's appearance, as the system bar's glass above
+ *  the reader does, and Liquid Glass may turn it again over a dark or bright page beneath, so these
+ *  are resolved against the glass's own appearance when drawn, never picked from the theme. The
+ *  tint off glass is dark whatever the theme. */
+const ink = (light: string, dark: string): ColorValue => (GLASS ? DynamicColorIOS({ light, dark }) : dark);
+const INK = {
+  icon: ink('#000', '#fff'),
+  iconOff: ink('rgba(0,0,0,0.25)', 'rgba(255,255,255,0.3)'),
+  text: ink('rgba(0,0,0,0.85)', 'rgba(255,255,255,0.9)'),
+  textFaint: ink('rgba(0,0,0,0.5)', 'rgba(255,255,255,0.6)'),
+  track: ink('rgba(0,0,0,0.18)', 'rgba(255,255,255,0.25)'),
+  fill: ink('#000', '#fff'),
+};
+/** The chrome's show/hide, glass and fades alike. */
+const FADE_MS = 200;
+
+/** Whether the screen's push has settled, which is when the bar's surfaces may mount their glass
+ *  (ChapterNavigator's `glass`). A glass view sets its effect once, on its first layout, and UIKit
+ *  drops it for good when that layout lands while a push is still animating the screen in: the iOS
+ *  reader page mounts with its chrome up in the middle of its zoom. Asked by the screen, not the
+ *  navigator, which remounts with every chapter. The timeout covers a host that never emits
+ *  `transitionEnd`. */
+export function usePushSettled(): boolean {
+  const navigation = useNavigation();
+  const [settled, setSettled] = useState(!GLASS);
+  useEffect(() => {
+    if (!GLASS) return;
+    const settle = () => setSettled(true);
+    const unsubscribe = (navigation.addListener as (type: string, cb: () => void) => () => void)('transitionEnd', settle);
+    const fallback = setTimeout(settle, 800);
+    return () => {
+      unsubscribe();
+      clearTimeout(fallback);
+    };
+  }, [navigation]);
+  return settled;
+}
 /** The page counter under the bar — "12 / 26" in a small chip that sits just above the home
  *  indicator and, unlike the bar, needn't fully leave: with the chrome hidden it stays at
- *  `COUNTER_FAINT` (a setting) so a glance still says where you are. It is never interactive, so
- *  it has no business being under a finger. */
+ *  `COUNTER_FAINT` (a setting) so a glance still says where you are — the whole chip off glass,
+ *  only its text on glass (see GLASS). It is never interactive, so it has no business being under
+ *  a finger. */
 const COUNTER_H = 20;
 const COUNTER_BOTTOM = Spacing.one;
 const COUNTER_FAINT = 0.6;
@@ -168,6 +231,8 @@ type Props = {
    *  page nothing has prefetched, since the warm-ahead follows the READ position
    *  and that deliberately stops updating while a finger is down. */
   onScrubPage?: (page: number) => void;
+  /** Whether the surfaces may be glass yet — see `usePushSettled`. */
+  glass?: boolean;
 };
 
 export function ChapterNavigator({
@@ -189,14 +254,16 @@ export function ChapterNavigator({
   onSeek,
   onScrubbingChange,
   onScrubPage,
+  glass = true,
 }: Props) {
   const insets = useSafeAreaInsets();
   const chromeBottom = bottomChromeInset(insets.bottom);
-  const style = useAnimatedStyle(() => ({
-    opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
+  // Each fade goes on the wrap off glass, and on what sits on the glass on it — see GLASS.
+  const fade = useAnimatedStyle(() => ({
+    opacity: withTiming(visible ? 1 : 0, { duration: FADE_MS }),
   }));
-  const counterStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(visible ? 1 : countWhenHidden ? COUNTER_FAINT : 0, { duration: 200 }),
+  const counterFade = useAnimatedStyle(() => ({
+    opacity: withTiming(visible ? 1 : countWhenHidden ? COUNTER_FAINT : 0, { duration: FADE_MS }),
   }));
 
   // The TRACK's domain — see `scrubTotal`. Never `total`, unless they are the same chapter.
@@ -403,42 +470,60 @@ export function ChapterNavigator({
   // of a given series, but keeping the return here means it can't reorder them.)
   if (!chaptered && total <= 1) return null;
 
+  const onGlass = GLASS ? fade : undefined;
+  const rowStyle = [styles.row, { paddingLeft: Spacing.three + insets.left, paddingRight: Spacing.three + insets.right }];
+  const row = (
+    <>
+      {chaptered && <SkipButton {...left} glass={glass} shown={visible} fade={onGlass} Icon={SkipBackIcon} />}
+      {total > 1 ? (
+        <ChromeSurface glass={glass} shown={visible} style={styles.pill}>
+          <Animated.View style={[styles.pillFace, onGlass]}>
+            <GestureDetector gesture={pan}>
+              <View testID="reader.navigator.slider" style={styles.track} onLayout={onTrackLayout}>
+                <View style={styles.bar} />
+                <Animated.View style={[styles.fill, rtl ? styles.fillEnd : styles.fillStart, fillStyle]} />
+                <Animated.View style={[styles.thumb, GLASS && styles.thumbLift, thumbStyle]} />
+              </View>
+            </GestureDetector>
+          </Animated.View>
+        </ChromeSurface>
+      ) : (
+        <View style={styles.spacer} />
+      )}
+      {chaptered && <SkipButton {...right} glass={glass} shown={visible} fade={onGlass} Icon={SkipForwardIcon} />}
+    </>
+  );
+
   return (
     <>
       <Animated.View
         pointerEvents={visible ? 'box-none' : 'none'}
-        style={[styles.wrap, { bottom: chromeBottom + BAR_BOTTOM }, style]}>
-        <View style={styles.row}>
-          {chaptered && <SkipButton {...left} Icon={SkipBackIcon} />}
-          {total > 1 ? (
-            <View style={styles.pill}>
-              <GestureDetector gesture={pan}>
-                <View testID="reader.navigator.slider" style={styles.track} onLayout={onTrackLayout}>
-                  <View style={styles.bar} />
-                  <Animated.View style={[styles.fill, rtl ? styles.fillEnd : styles.fillStart, fillStyle]} />
-                  <Animated.View style={[styles.thumb, thumbStyle]} />
-                </View>
-              </GestureDetector>
-            </View>
-          ) : (
-            <View style={styles.spacer} />
-          )}
-          {chaptered && <SkipButton {...right} Icon={SkipForwardIcon} />}
-        </View>
+        style={[styles.wrap, { bottom: chromeBottom + BAR_BOTTOM }, GLASS ? undefined : fade]}>
+        {/* One container, so the three render as one group of glass as the system bar's items do
+            rather than each sampling the page alone; spacing 0 keeps them from merging. */}
+        {GLASS ? (
+          <GlassContainer spacing={0} style={rowStyle}>
+            {row}
+          </GlassContainer>
+        ) : (
+          <View style={rowStyle}>{row}</View>
+        )}
       </Animated.View>
       {/* The counter, under the bar and on its own fade — see COUNTER_H. Reads the scrub's own
           position while a finger is down (`scrubPage`), for the same reason the pill used to. */}
       <Animated.View
         pointerEvents="none"
-        style={[styles.counterWrap, { bottom: chromeBottom + COUNTER_BOTTOM }, counterStyle]}>
-        <View style={styles.counter}>
-          {/* The one node holding the current page as its own text — e2e reads a page number off
-              the bar by this id, so the total stays a separate node. */}
-          <ThemedText testID="reader.navigator.page" style={styles.counterText}>
-            {scrubPage !== null ? scrubPage + 1 : (pageLabel ?? page + 1)}
-          </ThemedText>
-          <ThemedText style={[styles.counterText, styles.counterTotal]}>/ {total}</ThemedText>
-        </View>
+        style={[styles.counterWrap, { bottom: chromeBottom + COUNTER_BOTTOM }, GLASS ? undefined : counterFade]}>
+        <ChromeSurface glass={glass} shown={visible || countWhenHidden} style={styles.counter}>
+          <Animated.View style={[styles.counterFace, GLASS ? counterFade : undefined]}>
+            {/* The one node holding the current page as its own text — e2e reads a page number off
+                the bar by this id, so the total stays a separate node. */}
+            <ThemedText testID="reader.navigator.page" style={styles.counterText}>
+              {scrubPage !== null ? scrubPage + 1 : (pageLabel ?? page + 1)}
+            </ThemedText>
+            <ThemedText style={[styles.counterText, styles.counterTotal]}>/ {total}</ThemedText>
+          </Animated.View>
+        </ChromeSurface>
       </Animated.View>
     </>
   );
@@ -449,26 +534,70 @@ function SkipButton({
   label,
   onPress,
   enabled,
+  glass,
+  shown,
+  fade,
   Icon,
 }: {
   testID: string;
   label: string;
   onPress: () => void;
   enabled: boolean;
+  glass: boolean;
+  shown: boolean;
+  fade: ComponentProps<typeof Animated.View>['style'];
   Icon: typeof SkipBackIcon;
 }) {
   return (
-    <Pressable
-      testID={testID}
-      onPress={onPress}
-      disabled={!enabled}
-      hitSlop={8}
-      style={styles.skip}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: !enabled }}
-      accessibilityLabel={label}>
-      <Icon color={enabled ? '#fff' : 'rgba(255,255,255,0.3)'} size={20} />
-    </Pressable>
+    <ChromeSurface interactive glass={glass} shown={shown} style={styles.skip}>
+      <Pressable
+        testID={testID}
+        onPress={onPress}
+        disabled={!enabled}
+        hitSlop={8}
+        style={styles.skipFace}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !enabled }}
+        accessibilityLabel={label}>
+        <Animated.View style={fade}>
+          {/* lucide types `color` as a string; react-native-svg takes any ColorValue. */}
+          <Icon color={(enabled ? INK.icon : INK.iconOff) as string} size={20} />
+        </Animated.View>
+      </Pressable>
+    </ChromeSurface>
+  );
+}
+
+/** One of the bar's surfaces: glass where there is glass, the tint otherwise. `style` carries
+ *  the shape (size, radius, padding) and never a colour — the surface decides that (see INK);
+ *  `interactive` for a button, which the glass then presses.
+ *  Until `glass` (see `usePushSettled`) the surface is bare, and then a new view, so the effect
+ *  is set by a first layout that comes after the push. `shown` brings the glass in and out (see
+ *  GLASS); off glass it changes nothing, the bar's wrap fading instead. */
+function ChromeSurface({
+  interactive,
+  glass,
+  shown,
+  style,
+  children,
+  ...rest
+}: ViewProps & { interactive?: boolean; glass: boolean; shown: boolean }) {
+  if (!GLASS) {
+    return (
+      <View style={[style, styles.tinted]} {...rest}>
+        {children}
+      </View>
+    );
+  }
+  return (
+    <GlassView
+      key={glass ? 'glass' : 'bare'}
+      glassEffectStyle={{ style: glass && shown ? 'regular' : 'none', animate: true, animationDuration: FADE_MS / 1000 }}
+      isInteractive={!!interactive}
+      style={style}
+      {...rest}>
+      {children}
+    </GlassView>
   );
 }
 
@@ -483,15 +612,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
+  },
+  tinted: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   skip: {
     width: BAR_H,
     height: BAR_H,
     borderRadius: BAR_H / 2,
+  },
+  skipFace: {
+    width: BAR_H,
+    height: BAR_H,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   spacer: {
     flex: 1,
@@ -506,7 +640,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.two,
     borderRadius: BAR_H / 2,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  pillFace: {
+    flex: 1,
+    flexDirection: 'row',
   },
   counterWrap: {
     position: 'absolute',
@@ -517,21 +654,23 @@ const styles = StyleSheet.create({
   },
   counter: {
     height: COUNTER_H,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.two,
+    borderRadius: COUNTER_H / 2,
+  },
+  counterFace: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    paddingHorizontal: Spacing.two,
-    borderRadius: COUNTER_H / 2,
-    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   counterText: {
-    color: 'rgba(255,255,255,0.9)',
+    color: INK.text,
     fontSize: 11,
     lineHeight: 14,
     fontVariant: ['tabular-nums'],
   },
   counterTotal: {
-    color: 'rgba(255,255,255,0.6)',
+    color: INK.textFaint,
   },
   // Full-height so the whole pill is grabbable, not just the 4px line in it.
   track: {
@@ -545,14 +684,14 @@ const styles = StyleSheet.create({
     top: (BAR_H - TRACK_H) / 2,
     height: TRACK_H,
     borderRadius: TRACK_H / 2,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: INK.track,
   },
   fill: {
     position: 'absolute',
     top: (BAR_H - TRACK_H) / 2,
     height: TRACK_H,
     borderRadius: TRACK_H / 2,
-    backgroundColor: '#fff',
+    backgroundColor: INK.fill,
   },
   fillStart: {
     left: R,
@@ -568,5 +707,9 @@ const styles = StyleSheet.create({
     height: THUMB,
     borderRadius: THUMB / 2,
     backgroundColor: '#fff',
+  },
+  // A white thumb on light glass, as UISlider's, needs its shadow to stand out.
+  thumbLift: {
+    boxShadow: '0px 0.5px 4px rgba(0, 0, 0, 0.3)',
   },
 });

@@ -71,18 +71,23 @@ export const HOVER_FADE = { duration: 110 } as const;
  * ⚠️ NO `theme.accent` (BLUE) IN THIS MENU — not on state toggles, not on the primary row. That has
  * been done twice and reverted twice. If a row needs to stand out, use WEIGHT and POSITION (primary
  * is bold and leads), never hue. An "on" toggle reads through its glyph alone (`iconFilled`).
+ * The one hue is `destructive`'s red, and only on a row that throws something away: the system menu
+ * on iOS draws those red, and these menus say the same thing on Android and web.
  */
 export type MenuRowSpec = {
   label: string;
   Icon: (props: IconProps) => React.ReactElement;
   /** Fill the glyph rather than tint it — how an "on" toggle reads (see above). */
   iconFilled?: boolean;
+  /** The SF Symbol the iOS system menu draws for `Icon` (components/system-context-menu.tsx). */
+  symbol?: string;
   loading: boolean;
   /** Unavailable (e.g. favorites need a login that isn't set) — greyed + inert, like loading but final. */
   disabled?: boolean;
   active?: boolean;
   /** The menu's one real action: bold and leading. NOT coloured — see above. */
   primary?: boolean;
+  destructive?: boolean;
   onPress: () => void;
   /** Automation selector — required so every menu row is reachable (see src/lib/test-id.ts). */
   testID: string;
@@ -111,6 +116,7 @@ export type SubmenuRowSpec = {
   /** Selected/member state — reads as a trailing check glyph (no colour; see the menu rule). */
   active?: boolean;
   loading?: boolean;
+  destructive?: boolean;
   onPress: () => void;
   testID: string;
 };
@@ -129,6 +135,7 @@ function SubmenuRow({
   label,
   active,
   loading,
+  destructive,
   onPress,
   testID,
   index,
@@ -162,7 +169,7 @@ function SubmenuRow({
       }}
       style={menuStyles.row}>
       <ThemedText
-        style={[menuStyles.rowLabel, { color: loading ? theme.textSecondary : theme.text }]}
+        style={[menuStyles.rowLabel, { color: loading ? theme.textSecondary : destructive ? theme.danger : theme.text }]}
         numberOfLines={1}>
         {label}
       </ThemedText>
@@ -288,6 +295,7 @@ export function MenuRow({
   disabled,
   active,
   primary,
+  destructive,
   submenu,
   index,
   onPress,
@@ -305,11 +313,11 @@ export function MenuRow({
 }) {
   const theme = useTheme();
   const inert = loading || !!disabled;
-  const color = inert ? theme.textSecondary : theme.text;
+  const color = inert ? theme.textSecondary : destructive ? theme.danger : theme.text;
   // An off toggle's glyph sits back a little, so the on-state (solid glyph, full contrast) reads as
   // a change without needing a colour of its own. A submenu row's chevron uses the FULL-contrast colour
   // too, so it matches the expanded header's chevron it rotates into (no grey→white shift on open).
-  const iconColor = inert ? theme.textSecondary : primary || active || submenu ? color : theme.textSecondary;
+  const iconColor = inert ? theme.textSecondary : primary || active || submenu || destructive ? color : theme.textSecondary;
   // A row has NO highlight of its own: pressing it — or a pointer resting on it — writes the same
   // channel the held finger does, so the one travelling bubble draws a press, a hover and a peek alike. While a hold owns the selection, the
   // press keeps its hands off (activating the hold cancels the responder → onPressOut fires, which
