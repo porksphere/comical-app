@@ -160,8 +160,12 @@ UIKit has no bold row, so a leading `primary` row gets a section of its own and 
 `SystemContextMenuTarget` marks what lifts when that is less than the whole held view. The system
 menu's rows carry no test ids, so Maestro reaches these menus on Android only.
 Series cards and the History and Activity rows wear it through `series-card-menu.ios.tsx`: a
-card's cover lifts and a row lifts whole, tapping the lifted preview does what tapping the item
+card's cover, or a whole row, grows into `SeriesCardPreview` (the Android panel without what it
+lets you tap, since UIKit's preview takes no touches), tapping that does what tapping the item
 does (`onOpen`), and Save on a saved series is the collections submenu, checks kept in place.
+The preview is drawn by the root host into one native view kept out of the window
+(`SystemContextMenuPreviewSlotView`), the way expo-router hands UIKit a link's preview, so a grid
+mounts no preview per card.
 Secondary controls leave the title: Library's filter/sort share one trailing `⋯`
 `Stack.Toolbar.Menu` (`components/library/library-native-toolbar.tsx`) — NOT a
 `placement="bottom"` toolbar, which is the navigation controller's toolbar and lays out UNDER

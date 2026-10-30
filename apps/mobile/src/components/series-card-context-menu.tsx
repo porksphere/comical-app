@@ -1699,7 +1699,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 }
 
 /** A single line summarizing the series — author · type · status, plus a chapter/page count. */
-function buildMetaLine(
+export function buildMetaLine(
   meta: { label: string; value: string }[] | undefined,
   chapterCount: number | undefined,
   direct: boolean | undefined,

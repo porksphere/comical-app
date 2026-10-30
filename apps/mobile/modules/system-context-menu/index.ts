@@ -3,7 +3,9 @@
  * Native draws. Holding a `SystemContextMenuView` lifts its content, or the
  * `SystemContextMenuTarget` inside it, and opens a UIMenu whose rows are asked for only then:
  * `onMenuRequest` carries a token, `setSystemMenu` answers it, and a later answer under the same
- * token updates the open menu in place. `components/system-context-menu.tsx` is the app's side.
+ * token updates the open menu in place. With `preview`, the held content grows into the one
+ * root-mounted `SystemContextMenuPreviewContent` instead of only lifting. `components/system-context-menu.tsx`
+ * is the app's side.
  *
  * Null where the module isn't linked (Android, web, a build from before it existed).
  */
@@ -39,6 +41,8 @@ export type SystemContextMenuViewProps = ViewProps & {
   previewRadius?: number;
   /** Fills the lifted content behind what React Native draws; clear by default. */
   previewBackground?: ColorValue;
+  /** The held content grows into the shared preview content rather than only lifting. */
+  preview?: boolean;
   onMenuRequest?: (event: TokenEvent) => void;
   onMenuAction?: (event: NativeSyntheticEvent<{ token: number; id: string }>) => void;
   onMenuClose?: (event: TokenEvent) => void;
@@ -51,6 +55,12 @@ export type SystemContextMenuTargetProps = ViewProps & {
   radius?: number;
 };
 
+export type SystemContextMenuPreviewContentProps = ViewProps & {
+  /** The size the open preview takes, which follows changes while it is up. */
+  preferredWidth: number;
+  preferredHeight: number;
+};
+
 type NativeModule = { setMenu(token: number, json: string): void };
 
 const native = requireOptionalNativeModule<NativeModule>('SystemContextMenu');
@@ -61,6 +71,15 @@ export const SystemContextMenuView: ComponentType<SystemContextMenuViewProps> | 
 
 export const SystemContextMenuTarget: ComponentType<SystemContextMenuTargetProps> | null = native
   ? requireNativeView<SystemContextMenuTargetProps>('SystemContextMenu', 'SystemContextMenuTargetView')
+  : null;
+
+/** Holds the preview content out of the window, for UIKit to show; mounted once, at the root. */
+export const SystemContextMenuPreviewSlot: ComponentType<ViewProps> | null = native
+  ? requireNativeView<ViewProps>('SystemContextMenu', 'SystemContextMenuPreviewSlotView')
+  : null;
+
+export const SystemContextMenuPreviewContent: ComponentType<SystemContextMenuPreviewContentProps> | null = native
+  ? requireNativeView<SystemContextMenuPreviewContentProps>('SystemContextMenu', 'SystemContextMenuPreviewView')
   : null;
 
 export function setSystemMenu(token: number, nodes: SystemMenuNode[]): void {

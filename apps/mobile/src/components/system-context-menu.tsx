@@ -1,11 +1,13 @@
 import { observable, ObservableHint, type OpaqueObject } from '@legendapp/state';
-import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
-import { View, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { StyleSheet, useWindowDimensions, View, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
 
 import { ContextMenuHold, openContextMenu, type LiveMenuRows } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import {
   setSystemMenu,
+  SystemContextMenuPreviewContent as PreviewContentView,
+  SystemContextMenuPreviewSlot as PreviewSlotView,
   SystemContextMenuTarget as NativeTarget,
   SystemContextMenuView,
   type SystemMenuNode,
@@ -20,11 +22,15 @@ import {
  *
  * UIKit has no bold row, so a leading `primary` row gets a section of its own, and trailing
  * `destructive` rows close the menu in one, the way the system's own menus group them.
+ *
+ * A menu with a `preview` grows the held content into it, drawn by the same host into one native
+ * view kept out of the window, so a list of cards still mounts no preview of its own. UIKit's
+ * preview takes no touches: tapping it is `onPreviewPress`.
  */
 export const SYSTEM_MENU = SystemContextMenuView !== null;
 
 type Rows = MenuRowSpec[] | LiveMenuRows;
-type SystemMenuRequest = { token: number; rows: Rows };
+type SystemMenuRequest = { token: number; rows: Rows; preview: (() => ReactNode) | undefined };
 
 // Opaque: a request carries functions (`rows` may be one), which an observable would otherwise take
 // for computeds and call.
@@ -37,6 +43,11 @@ let sent: { token: number; json: string } | null = null;
 
 // Long enough for a picked row's action to have run before the live rows it closes over unmount.
 const RELEASE_MS = 1000;
+
+// The preview's size until it has laid out, which it nearly always has by the time UIKit asks.
+const PREVIEW_HEIGHT_ESTIMATE = 250;
+const PREVIEW_MAX_WIDTH = 360;
+const PREVIEW_MARGIN = 12;
 
 function useSystemMenuRequest(): SystemMenuRequest | null {
   return useSyncExternalStore(
@@ -52,6 +63,7 @@ export function SystemContextMenu({
   rows,
   previewRadius,
   previewBackground,
+  preview,
   onPreviewPress,
   style,
   children,
@@ -62,6 +74,8 @@ export function SystemContextMenu({
   rows: () => Rows;
   previewRadius?: number;
   previewBackground?: ColorValue;
+  /** What the held content grows into, drawn at the menu's width; rendered only while it is up. */
+  preview?: () => ReactNode;
   onPreviewPress?: () => void;
   style?: StyleProp<ViewStyle>;
   children: ReactNode;
@@ -73,8 +87,11 @@ export function SystemContextMenu({
       title={title}
       previewRadius={previewRadius}
       previewBackground={previewBackground}
+      preview={!!preview}
       style={style}
-      onMenuRequest={(e) => systemMenu$.set(ObservableHint.opaque({ token: e.nativeEvent.token, rows: rows() }))}
+      onMenuRequest={(e) =>
+        systemMenu$.set(ObservableHint.opaque({ token: e.nativeEvent.token, rows: rows(), preview }))
+      }
       onMenuAction={(e) => {
         if (actions?.token === e.nativeEvent.token) actions.byId.get(e.nativeEvent.id)?.();
       }}
@@ -128,12 +145,42 @@ export function HoldMenu({
   );
 }
 
-/** Root-mounted (see app/_layout.tsx): publishes the open system menu's rows, if any. */
+/**
+ * Root-mounted (see app/_layout.tsx): publishes the open system menu's rows, if any, and draws its
+ * preview.
+ */
 export function SystemContextMenuHost() {
   const req = useSystemMenuRequest();
-  if (!req) return null;
-  if (typeof req.rows === 'function') return req.rows((rows) => <Publish token={req.token} rows={rows} />);
-  return <Publish token={req.token} rows={req.rows} />;
+  return (
+    <>
+      {req &&
+        (typeof req.rows === 'function' ? (
+          req.rows((rows) => <Publish token={req.token} rows={rows} />)
+        ) : (
+          <Publish token={req.token} rows={req.rows} />
+        ))}
+      <PreviewSlot preview={req?.preview} />
+    </>
+  );
+}
+
+/** Its height is measured, kept between opens as the next one's estimate, and followed while up. */
+function PreviewSlot({ preview }: { preview: (() => ReactNode) | undefined }) {
+  const { width: windowWidth } = useWindowDimensions();
+  const [height, setHeight] = useState(PREVIEW_HEIGHT_ESTIMATE);
+  if (!PreviewSlotView || !PreviewContentView) return null;
+  const width = Math.min(windowWidth - 2 * PREVIEW_MARGIN, PREVIEW_MAX_WIDTH);
+  return (
+    <PreviewSlotView style={styles.slot} pointerEvents="none">
+      <PreviewContentView preferredWidth={width} preferredHeight={height} style={[styles.content, { width, height }]}>
+        {preview ? (
+          <View style={{ width }} onLayout={(e) => setHeight(Math.ceil(e.nativeEvent.layout.height))}>
+            {preview()}
+          </View>
+        ) : null}
+      </PreviewContentView>
+    </PreviewSlotView>
+  );
 }
 
 function Publish({ token, rows }: { token: number; rows: MenuRowSpec[] }) {
@@ -198,3 +245,8 @@ function rowNode(row: MenuRowSpec, id: string, byId: Map<string, () => void>): S
     disabled: row.loading || row.disabled,
   };
 }
+
+const styles = StyleSheet.create({
+  slot: { position: 'absolute', width: 0, height: 0 },
+  content: { position: 'absolute', top: 0, left: 0 },
+});

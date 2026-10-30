@@ -39,11 +39,25 @@ public class SystemContextMenuModule: Module {
       Prop("previewBackground") { (view: SystemContextMenuView, color: UIColor?) in
         view.previewBackground = color
       }
+      Prop("preview") { (view: SystemContextMenuView, preview: Bool?) in
+        view.preview = preview ?? false
+      }
     }
 
     View(SystemContextMenuTargetView.self) {
       Prop("radius") { (view: SystemContextMenuTargetView, radius: Double?) in
         view.radius = radius.map { CGFloat($0) }
+      }
+    }
+
+    View(SystemContextMenuPreviewSlotView.self) {}
+
+    View(SystemContextMenuPreviewView.self) {
+      Prop("preferredWidth") { (view: SystemContextMenuPreviewView, width: Double) in
+        view.preferredSize.width = CGFloat(width)
+      }
+      Prop("preferredHeight") { (view: SystemContextMenuPreviewView, height: Double) in
+        view.preferredSize.height = CGFloat(height)
       }
     }
   }
@@ -55,7 +69,8 @@ public class SystemContextMenuModule: Module {
 /// `setMenu`, and every later answer under the same token updates the open menu in place, so rows
 /// waiting on a query fill in while it is up. The rows exist for one open at a time, never once
 /// per card in a grid. Until the first answer the menu holds a deferred element, which UIKit draws
-/// as its loading row; the lift usually outlasts the wait.
+/// as its loading row; the lift usually outlasts the wait. With `preview` the lifted content grows
+/// into the root-mounted `SystemContextMenuPreviewView`, which React fills for the held item.
 final class SystemContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
   private static let rootIdentifier = UIMenu.Identifier("comical.system-context-menu.root")
   private static var lastToken = 0
@@ -70,6 +85,7 @@ final class SystemContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
   var title = ""
   var previewRadius: CGFloat = 0
   var previewBackground: UIColor?
+  var preview = false
 
   private var token = 0
   private var nodes: [MenuNode]?
@@ -213,7 +229,16 @@ final class SystemContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
     stale = false
     Self.active = self
     onMenuRequest(["token": token])
-    return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+    var previewProvider: UIContextMenuContentPreviewProvider?
+    if preview {
+      previewProvider = {
+        guard let content = SystemContextMenuPreviewView.shared else {
+          return nil
+        }
+        return SystemContextMenuPreviewController(content: content)
+      }
+    }
+    return UIContextMenuConfiguration(identifier: nil, previewProvider: previewProvider) { [weak self] _ in
       self?.rootMenu()
     }
   }
@@ -324,4 +349,64 @@ final class SystemContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
 /// cover, not the card with its title under it.
 final class SystemContextMenuTargetView: ExpoView {
   var radius: CGFloat?
+}
+
+/// Root-mounted holder of the one preview a held menu grows into. Its `SystemContextMenuPreviewView`
+/// is kept out of the window: React lays it out and fills it all the same, and the preview
+/// controller shows it. What expo-router does with a link's preview content.
+final class SystemContextMenuPreviewSlotView: ExpoView {
+  override func mountChildComponentView(_ childComponentView: UIView, index: Int) {
+    if let content = childComponentView as? SystemContextMenuPreviewView {
+      SystemContextMenuPreviewView.shared = content
+    } else {
+      super.mountChildComponentView(childComponentView, index: index)
+    }
+  }
+
+  override func unmountChildComponentView(_ childComponentView: UIView, index: Int) {
+    if let content = childComponentView as? SystemContextMenuPreviewView {
+      if SystemContextMenuPreviewView.shared === content {
+        SystemContextMenuPreviewView.shared = nil
+      }
+      content.removeFromSuperview()
+    } else {
+      super.unmountChildComponentView(childComponentView, index: index)
+    }
+  }
+}
+
+/// The preview's content, at the size React measured it, which the open preview follows as it changes.
+final class SystemContextMenuPreviewView: ExpoView {
+  static weak var shared: SystemContextMenuPreviewView?
+
+  weak var controller: UIViewController?
+  var preferredSize: CGSize = .zero {
+    didSet {
+      controller?.preferredContentSize = preferredSize
+    }
+  }
+}
+
+final class SystemContextMenuPreviewController: UIViewController {
+  private let content: SystemContextMenuPreviewView
+
+  init(content: SystemContextMenuPreviewView) {
+    self.content = content
+    super.init(nibName: nil, bundle: nil)
+    preferredContentSize = content.preferredSize
+    content.controller = self
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  /// A container rather than the content itself: the next menu's controller takes the content over
+  /// while this one may still be animating away.
+  override func loadView() {
+    let container = UIView()
+    container.addSubview(content)
+    view = container
+  }
 }
