@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { Stack, useFocusEffect, useIsFocused, useSegments, useTheme as useNavTheme } from 'expo-router';
+import { Stack, useFocusEffect, useIsFocused, useNavigation, useSegments, useTheme as useNavTheme } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -3920,6 +3920,22 @@ function SeriesReaderInstance({
   useEffect(() => {
     if (typeof previewStart === 'number') paneRef.current?.goTo(previewStart, false);
   }, [previewStart]);
+  // A reader page shows where it stands as its way back STARTS, not in its unmount flush after the
+  // pop: the details beneath move their strip while the zoom is still carrying the page down to it,
+  // instead of after it has landed on the old one.
+  const navigation = useNavigation<ClosingNavigation>();
+  useEffect(() => {
+    if (split !== 'reader') return;
+    const show = () => paneRef.current?.showProgress();
+    const offStart = navigation.addListener('transitionStart', (e) => {
+      if (e.data.closing) show();
+    });
+    const offRemove = navigation.addListener('beforeRemove', show);
+    return () => {
+      offStart();
+      offRemove();
+    };
+  }, [navigation, split]);
   // (`visiblePage` / `visibleSequenceEntry` are declared at the top of the component — the detail
   // identity derives from them.)
   // Verify this chapter's collected pages against the page list we already fetched — repairs the
@@ -5285,8 +5301,16 @@ function SeriesDetailsHost({
   );
 }
 
+/** The two events a closing reader page listens for — see `showProgress`. */
+type ClosingNavigation = {
+  addListener(type: 'transitionStart', cb: (e: { data: { closing: boolean } }) => void): () => void;
+  addListener(type: 'beforeRemove', cb: () => void): () => void;
+};
+
 type ReaderPaneHandle = {
   goTo: (index: number, animated?: boolean) => void;
+  /** Puts where the pane stands into the cached history now, ahead of any write. */
+  showProgress: () => void;
   /** The pages of `chapterId` on screen with `page`, in reading order. */
   pagesOnScreen: (chapterId: string, page: number) => { pages: number[]; rtl: boolean };
 };
@@ -5694,7 +5718,6 @@ const ReaderPane = forwardRef<
     },
     [stitched, segments, settings.mode, settings.direction],
   );
-  useImperativeHandle(ref, () => ({ goTo, pagesOnScreen }), [goTo, pagesOnScreen]);
   // Where a scrub release lands: name the landing page immediately (viewability is suppressed
   // during the drag), so the chrome is correct in the same commit.
   const seekTo = useCallback(
@@ -5867,32 +5890,47 @@ const ReaderPane = forwardRef<
   // write sat for 10s+. The full refresh still happens where the shape of things changes — a chapter
   // finished (feed items leave it), a chapter left (`flush`) — and when the row isn't cached yet, so
   // the host decides whether this bridge's reads belong in history at all.
-  const record = useCallback((flush = false) => {
-    if (!recordProgress || !engagedRef.current) return;
-    if (!bridgeId || !seriesId || !pages.length) return;
-    const lastPage = currentRef.current;
-    const pageCount = pages.length;
-    const reachedEnd = lastPage >= pageCount - 1;
-    const entry = {
+  const progressEntry = useCallback(() => {
+    if (!recordProgress || !engagedRef.current) return null;
+    if (!bridgeId || !seriesId || !pages.length) return null;
+    return {
       bridgeId,
       seriesId,
       title: seriesTitle,
       ...(seriesCover ? { thumbnailUrl: seriesCover } : {}),
       chapterId: chapterId ?? DIRECT_CHAPTER_ID,
       ...(chapterName ? { chapterName } : {}),
-      lastPage,
-      pageCount,
+      lastPage: currentRef.current,
+      pageCount: pages.length,
     };
+  }, [recordProgress, bridgeId, seriesId, pages, chapterId, chapterName, seriesTitle, seriesCover]);
+  // Patched ahead of the write as well as after it: the series page's strip reads this row, and on a
+  // closing reader it has to move before the zoom lands, not once the queue gets round to the write.
+  // The patch after the write stays, so a refetch that raced the write can't leave the row behind.
+  const showRow = useCallback(
+    (row: HistoryEntry) => {
+      const key = queryKeys.history(mock);
+      const same = (h: HistoryEntry) => h.bridgeId === row.bridgeId && h.seriesId === row.seriesId;
+      const known = queryClient.getQueryData<HistoryEntry[]>(key)?.some(same) ?? false;
+      if (known) queryClient.setQueryData<HistoryEntry[]>(key, (cur) => (cur ? [row, ...cur.filter((h) => !same(h))] : cur));
+      return known;
+    },
+    [mock, queryClient],
+  );
+  const showProgress = useCallback(() => {
+    const entry = progressEntry();
+    if (entry) showRow({ ...entry, lastReadAt: Date.now() });
+  }, [progressEntry, showRow]);
+  const record = useCallback((flush = false) => {
+    const entry = progressEntry();
+    if (!entry) return;
+    const { bridgeId, seriesId, lastPage, pageCount } = entry;
+    const reachedEnd = lastPage >= pageCount - 1;
     const row: HistoryEntry = { ...entry, lastReadAt: Date.now() };
+    showRow(row);
     const invalidateHistory = () => {
       const key = queryKeys.history(mock);
-      const cached = queryClient.getQueryData<HistoryEntry[]>(key);
-      const known = cached?.some((h) => h.bridgeId === bridgeId && h.seriesId === seriesId) ?? false;
-      if (known) {
-        queryClient.setQueryData<HistoryEntry[]>(key, (cur) =>
-          cur ? [row, ...cur.filter((h) => !(h.bridgeId === bridgeId && h.seriesId === seriesId))] : cur,
-        );
-      }
+      const known = showRow(row);
       if (!known || flush || reachedEnd) {
         void queryClient.invalidateQueries({ queryKey: key });
         void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
@@ -5909,7 +5947,7 @@ const ReaderPane = forwardRef<
       });
     // A direct series' page goes through chapter progress too, under the sentinel: the log write is
     // ignored once the series is collected, and progress is the only thing that moves its resume point.
-    const progressId = chapterId ?? DIRECT_CHAPTER_ID;
+    const progressId = entry.chapterId;
     if (inLibrary) {
       void recordChapter(progressId).then(invalidateHistory).catch(() => {});
       return;
@@ -5920,7 +5958,7 @@ const ReaderPane = forwardRef<
       .then(() => recordChapter(progressId))
       .then(invalidateHistory)
       .catch(() => {});
-  }, [recordProgress, bridgeId, seriesId, pages, inLibrary, chapterId, chapterName, seriesTitle, seriesCover, ds, mock, queryClient]);
+  }, [progressEntry, showRow, inLibrary, chapterName, ds, mock, queryClient]);
   // recordRef itself is declared up with the stitched mappings (the flat crossing flushes through
   // it); this keeps it pointing at the latest closure.
   useEffect(() => {
@@ -5933,6 +5971,7 @@ const ReaderPane = forwardRef<
     return () => clearTimeout(t);
   }, [currentPage]);
   useEffect(() => () => recordRef.current(true), []);
+  useImperativeHandle(ref, () => ({ goTo, pagesOnScreen, showProgress }), [goTo, pagesOnScreen, showProgress]);
 
   // ── Web keyboard nav ─────────────────────────────────────────────────────────
   // Boxed: the screen hands this down as a fresh arrow every render, and re-subscribing the keys

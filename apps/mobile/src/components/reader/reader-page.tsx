@@ -55,6 +55,22 @@ const RETRY_DELAYS_MS = [1000, 2000, 4000];
  */
 const PAGE_FADE_MS = 110;
 
+/**
+ * Pages painted lately, oldest first — what makes a page WARM (see `warm` in ReaderPage). Raw page
+ * paths, capped: a page that fell out has long since left the memory cache it stands for anyway.
+ */
+const painted = new Set<string>();
+const PAINTED_CAP = 48;
+function markPainted(uri: string) {
+  painted.delete(uri);
+  painted.add(uri);
+  if (painted.size <= PAINTED_CAP) return;
+  const oldest = painted.values().next().value;
+  if (oldest !== undefined) painted.delete(oldest);
+}
+/** How long a warm page holds its placeholder back before deciding the picture isn't coming. */
+const WARM_GRACE_MS = 300;
+
 /** Reserved height for the status line UNDER "Page N", whether or not there is a status to show.
  *
  * The line is the download percentage, and it arrives a moment after the placeholder does. Laid out
@@ -219,6 +235,23 @@ export function ReaderPage({
    * was born with, which is the fade that was already applied to the only load it will do.
    */
   const [transitionMs] = useState(() => fadeMs ?? (fit === 'contain' ? PAGE_FADE_MS : 150));
+  /**
+   * A page painted moments ago somewhere else: the series page's strip handing its page to the
+   * reader page, and the reader handing it back. Its picture is in the memory cache, so it paints
+   * in the first frame or near it, and the placeholder every other page starts under is the flash —
+   * an `onLoad` round trip plus the fade, over the very picture the zoom is carrying. A warm page
+   * starts with the placeholder held back, shows it only if the picture is still missing after
+   * WARM_GRACE_MS, and skips the cross-dissolve on a memory hit. Frozen at mount, like
+   * `transitionMs` and for the same reason.
+   */
+  const [warm] = useState(() => painted.has(uri));
+  const [transition] = useState(() => (warm ? { duration: transitionMs, skipOnCacheHit: 'memory' as const } : transitionMs));
+  const [graceOver, setGraceOver] = useState(!warm);
+  useEffect(() => {
+    if (graceOver) return;
+    const t = setTimeout(() => setGraceOver(true), WARM_GRACE_MS);
+    return () => clearTimeout(t);
+  }, [graceOver]);
 
   // Traced against the series page's `reveal commit` (lib/gesture-trace): a flash on the first
   // reveal into the reader is a question about WHEN this page had something to paint. Mounting
@@ -393,10 +426,10 @@ export function ReaderPage({
 
   // The placeholder's own half of the cross-fade: it dissolves as the image rises, over the same
   // span, so nothing between them is ever on screen alone.
-  const fade = useSharedValue(1);
+  const fade = useSharedValue(warm ? 0 : 1);
   useEffect(() => {
-    fade.set(loaded ? withTiming(0, { duration: transitionMs }) : 1);
-  }, [loaded, transitionMs, fade]);
+    fade.set(loaded ? withTiming(0, { duration: transitionMs }) : graceOver ? 1 : 0);
+  }, [loaded, graceOver, transitionMs, fade]);
 
   // …combined with standing down entirely for a scrub — see `scrubbing`. The image is untouched by
   // that one: a page that HAS loaded keeps showing, which is the better feedback of the two and the
@@ -547,8 +580,9 @@ export function ReaderPage({
           // pass is trying to remove. Webtoon keeps it: rows arrive under a continuously moving
           // scroll, where a hard swap is the more jarring of the two. (Both are about PAGE TURNS;
           // a caller holding one standing page overrides with `fadeMs`.) Fixed at mount — see
-          // `transitionMs` for why this must not be recomputed per render.
-          transition={transitionMs}
+          // `transitionMs` for why this must not be recomputed per render, and `warm` for the
+          // memory-hit skip.
+          transition={transition}
           // Hold animated pages (e.g. animated WebP) on their FIRST frame — do not autoplay. On iOS,
           // expo-image animates a WebP via a Core Animation keyframe animation that decodes each frame
           // on the MAIN THREAD inside the layer commit (Sentry COMICAL-APP-1E: CA::Transaction::commit
@@ -559,6 +593,7 @@ export function ReaderPage({
           autoplay={false}
           onLoad={(e: LoadEvent) => {
             traceJS('page', 'loaded', { p: page });
+            markPainted(uri);
             setLoaded(true);
             const w = e.source?.width;
             const h = e.source?.height;

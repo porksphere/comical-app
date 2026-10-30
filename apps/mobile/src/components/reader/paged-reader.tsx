@@ -287,7 +287,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     ref,
     () => ({
       goToPage(logical: number, animated = true) {
-        void listRef.current?.scrollToIndex({ index: toPhysical(spreadAt(logical)), animated });
+        const index = toPhysical(spreadAt(logical));
+        // Viewability only names the new page a beat after the jump, and until it does a standby
+        // strip draws every cell but the old one blank — the empty frame a zoom back to the strip
+        // landed on.
+        const key = animated ? undefined : data[index]?.key;
+        if (key) setActiveKey(key);
+        void listRef.current?.scrollToIndex({ index, animated });
       },
       // The JS-side fallback for the same move (the webtoon reader's scrubber path
       // and web). The native paged scrubber doesn't come through here at all — it
