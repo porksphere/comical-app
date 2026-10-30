@@ -2,10 +2,11 @@ import { observable, ObservableHint, type OpaqueObject } from '@legendapp/state'
 import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
 import { View, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
 
-import type { LiveMenuRows } from '@/components/context-menu-host';
+import { ContextMenuHold, openContextMenu, type LiveMenuRows } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import {
   setSystemMenu,
+  SystemContextMenuTarget as NativeTarget,
   SystemContextMenuView,
   type SystemMenuNode,
 } from '../../modules/system-context-menu';
@@ -86,6 +87,44 @@ export function SystemContextMenu({
       onPreviewPress={onPreviewPress && (() => onPreviewPress())}>
       {children}
     </SystemContextMenuView>
+  );
+}
+
+/** What lifts when the `SystemContextMenu` around it is held, rather than all of it. */
+export function SystemContextMenuTarget({ radius, children }: { radius?: number; children: ReactNode }) {
+  if (!NativeTarget) return <>{children}</>;
+  return <NativeTarget radius={radius}>{children}</NativeTarget>;
+}
+
+type HoldChildren = Parameters<typeof ContextMenuHold>[0]['children'];
+
+/**
+ * A hold menu from one rows builder: the system's on iOS, the custom `ContextMenuHold` one
+ * everywhere else. The system menu needs nothing from the held Pressable, so there the render prop
+ * hands it no long-press handlers.
+ */
+export function HoldMenu({
+  enabled = true,
+  rows,
+  previewRadius,
+  children,
+}: {
+  enabled?: boolean;
+  rows: () => Rows;
+  previewRadius?: number;
+  children: HoldChildren;
+}) {
+  if (SYSTEM_MENU) {
+    return (
+      <SystemContextMenu enabled={enabled} rows={rows} previewRadius={previewRadius}>
+        {children({})}
+      </SystemContextMenu>
+    );
+  }
+  return (
+    <ContextMenuHold enabled={enabled} onOpen={(at) => openContextMenu({ ...at, rows: rows() })}>
+      {children}
+    </ContextMenuHold>
   );
 }
 

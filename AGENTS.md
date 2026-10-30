@@ -156,6 +156,9 @@ row of a list: a SwiftUI context menu mounted per card was removed once for exac
 cost. A row's `symbol` is its SF Symbol there, the third place SF Symbols stand in for lucide.
 UIKit has no bold row, so a leading `primary` row gets a section of its own and trailing
 `destructive` rows (red there, and red in the custom menu to match) close the menu in another.
+`HoldMenu` takes one rows builder and wears whichever menu the platform has (chapter rows use it);
+`SystemContextMenuTarget` marks what lifts when that is less than the whole held view. The system
+menu's rows carry no test ids, so Maestro reaches these menus on Android only.
 Secondary controls leave the title: Library's filter/sort share one trailing `⋯`
 `Stack.Toolbar.Menu` (`components/library/library-native-toolbar.tsx`) — NOT a
 `placement="bottom"` toolbar, which is the navigation controller's toolbar and lays out UNDER

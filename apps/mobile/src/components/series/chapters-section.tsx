@@ -30,7 +30,6 @@ import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
 import { SavedBadge } from '@/components/card-badge';
 import { openCollectionPicker } from '@/components/collection-picker';
-import { ContextMenuHold, openContextMenu, type ContextMenuPoint } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
 import {
@@ -45,6 +44,7 @@ import {
 } from '@/components/icons/ui-icons';
 import { coverRingColor, coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
+import { HoldMenu, SystemContextMenuTarget } from '@/components/system-context-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
@@ -562,7 +562,7 @@ export function ChapterScrollList({
   // series, and the menu is built fresh on every open, so it reads a set that is already warm.
   const rosterQuery = collectionItemsQuery(ds, mock, { type: 'chapter', series: `${bridgeId}:${seed}` });
   useQuery({ ...rosterQuery, enabled: !!bridgeId && !!seed });
-  // Read from the cache at open time, not from render: the list keeps a row's first `onMenu`
+  // Read from the cache at open time, not from render: the list keeps a row's first `menu`
   // closure, so a captured roster would still say "unsaved" after the row's own save.
   const collectedChapterIds = () =>
     new Set(
@@ -628,31 +628,27 @@ export function ChapterScrollList({
     return out;
   }, [loading, hasChapters, groups, collapsible, hiddenCount]);
 
-  // Long-press (or, on web, right-click) a row → the per-chapter menu, in the series card popup's
-  // menu system (frosted point-anchored menu, peek-and-commit) on every platform.
+  // Long-press (or, on web, right-click) a row → the per-chapter menu: the system's on iOS, the
+  // series card popup's menu system (frosted point-anchored menu, peek-and-commit) elsewhere. No
+  // title line — the held row is right there naming the chapter.
   const manifest = useMemo(() => wholeChapters(dl?.chapters ?? []), [dl]);
-  const openChapterMenu = (g: ChapterGroup, at: ContextMenuPoint) => {
-    if (!bridgeId) return;
+  const chapterMenu = (g: ChapterGroup): MenuRowSpec[] => {
+    if (!bridgeId) return [];
     // Built per open, so the "Mark as read/unread" label reflects current state.
     const readArgs = { ds, bridgeId, seriesId: seed, chapters, group: g, onChanged: invalidateReadState };
-    openContextMenu({
-      // No title line — the pressed row is right there naming the chapter; rows only, like the
-      // series popup's own menu.
-      ...at,
-      rows: chapterMenuRows({
-        ds,
-        mock,
-        bridgeId,
-        seriesId: seed,
-        title,
-        chapters,
-        manifest,
-        group: g,
-        preferredGroup,
-        collected: collectedChapterIds(),
-        read: readArgs,
-        canDownload: missingBridgeName === undefined && !removed,
-      }),
+    return chapterMenuRows({
+      ds,
+      mock,
+      bridgeId,
+      seriesId: seed,
+      title,
+      chapters,
+      manifest,
+      group: g,
+      preferredGroup,
+      collected: collectedChapterIds(),
+      read: readArgs,
+      canDownload: missingBridgeName === undefined && !removed,
     });
   };
 
@@ -664,7 +660,7 @@ export function ChapterScrollList({
         group={g}
         preferredGroup={preferredGroup}
         onOpen={openVersion}
-        onMenu={bridgeId ? openChapterMenu : undefined}
+        menu={bridgeId ? chapterMenu : undefined}
         dlState={dlState}
         {...(readable
           ? {}
@@ -857,7 +853,7 @@ function ChapterRow({
   group,
   preferredGroup,
   onOpen,
-  onMenu,
+  menu,
   dlState,
   dimmed,
   unavailable,
@@ -865,8 +861,8 @@ function ChapterRow({
   group: ChapterGroup;
   preferredGroup?: string;
   onOpen: (v: Chapter) => void;
-  /** Long-press / right-click: the per-chapter menu (read state, collections, downloads). */
-  onMenu?: (group: ChapterGroup, at: ContextMenuPoint) => void;
+  /** Long-press / right-click: the per-chapter menu's rows (read state, collections, downloads). */
+  menu?: (group: ChapterGroup) => MenuRowSpec[];
   /** Download indicator for this logical chapter (best state across versions), if any. */
   dlState?: { state: DownloadState; fraction: number } | null;
   /** Rendering offline and not downloaded — unreadable, so the row dims and its press disables. */
@@ -886,66 +882,67 @@ function ChapterRow({
   const open = (v: Chapter) => (unavailable ? showToast(unavailable) : onOpen(v));
 
   return (
-    <ContextMenuHold
-      enabled={!!onMenu && !dimmed}
-      onOpen={(pt) => onMenu?.(group, pt)}>
+    <HoldMenu enabled={!!menu && !dimmed} rows={() => menu?.(group) ?? []}>
       {({ onLongPress, onContextMenu }) => (
     // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
     // list you still have to get through, so they are the ones drawn at full strength.
     <View style={dimmed || unavailable ? styles.rowDimmed : read && !PLATED_ROWS ? styles.rowRead : undefined}>
-      <Pressable
-        testID={testId('series.chapter', group.key)}
-        onPress={() => open(def)}
-        onLongPress={onLongPress}
-        {...({ onContextMenu } as ViewProps)}
-        disabled={dimmed}
-        onHoverIn={rowHover.onHoverIn}
-        onHoverOut={rowHover.onHoverOut}
-        style={({ pressed }) => pressed && styles.rowPressed}>
-        <ThemedView
-          type={PLATED_ROWS ? 'backgroundElement' : 'background'}
-          style={[
-            styles.row,
-            FLAT_ROWS ? styles.rowFlat : BORDERED_ROWS ? { borderColor: theme.hairline } : styles.rowUnbordered,
-            // Brighten (not dim) on hover — same treatment as the chapter tab strip.
-            rowHover.hovered && { backgroundColor: theme.backgroundSelected },
-          ]}>
-          <ThemedText
-            type="small"
-            numberOfLines={1}
-            style={[styles.rowName, read && PLATED_ROWS && { color: theme.textSecondary }]}>
-            {group.name}
-          </ThemedText>
-          {dlState && (
-            <View style={styles.rowDownload} testID={testId('series.chapter', group.key, 'download-state')}>
-              <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
-            </View>
-          )}
-          <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
-            {relativeTime(def.date)}
-          </ThemedText>
-          {/* The slot is reserved on every row, chevron or not, so the dates stay in one column. */}
-          <View style={styles.versionsSlot}>
-            {multi && (
-              <Pressable
-                testID={testId('series.chapter', group.key, 'versions')}
-                onPress={() => setExpanded((v) => !v)}
-                onHoverIn={versionsHover.onHoverIn}
-                onHoverOut={versionsHover.onHoverOut}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel={`${group.versions.length} versions`}
-                accessibilityState={{ expanded }}
-                style={[
-                  styles.versionsBtn,
-                  versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
-                ]}>
-                <TurningChevron open={expanded} color={theme.textSecondary} />
-              </Pressable>
+      {/* Only the row itself lifts on iOS, not the versions list open under it. */}
+      <SystemContextMenuTarget radius={FLAT_ROWS ? 10 : 8}>
+        <Pressable
+          testID={testId('series.chapter', group.key)}
+          onPress={() => open(def)}
+          onLongPress={onLongPress}
+          {...({ onContextMenu } as ViewProps)}
+          disabled={dimmed}
+          onHoverIn={rowHover.onHoverIn}
+          onHoverOut={rowHover.onHoverOut}
+          style={({ pressed }) => pressed && styles.rowPressed}>
+          <ThemedView
+            type={PLATED_ROWS ? 'backgroundElement' : 'background'}
+            style={[
+              styles.row,
+              FLAT_ROWS ? styles.rowFlat : BORDERED_ROWS ? { borderColor: theme.hairline } : styles.rowUnbordered,
+              // Brighten (not dim) on hover — same treatment as the chapter tab strip.
+              rowHover.hovered && { backgroundColor: theme.backgroundSelected },
+            ]}>
+            <ThemedText
+              type="small"
+              numberOfLines={1}
+              style={[styles.rowName, read && PLATED_ROWS && { color: theme.textSecondary }]}>
+              {group.name}
+            </ThemedText>
+            {dlState && (
+              <View style={styles.rowDownload} testID={testId('series.chapter', group.key, 'download-state')}>
+                <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
+              </View>
             )}
-          </View>
-        </ThemedView>
-      </Pressable>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
+              {relativeTime(def.date)}
+            </ThemedText>
+            {/* The slot is reserved on every row, chevron or not, so the dates stay in one column. */}
+            <View style={styles.versionsSlot}>
+              {multi && (
+                <Pressable
+                  testID={testId('series.chapter', group.key, 'versions')}
+                  onPress={() => setExpanded((v) => !v)}
+                  onHoverIn={versionsHover.onHoverIn}
+                  onHoverOut={versionsHover.onHoverOut}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${group.versions.length} versions`}
+                  accessibilityState={{ expanded }}
+                  style={[
+                    styles.versionsBtn,
+                    versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
+                  ]}>
+                  <TurningChevron open={expanded} color={theme.textSecondary} />
+                </Pressable>
+              )}
+            </View>
+          </ThemedView>
+        </Pressable>
+      </SystemContextMenuTarget>
       {multi && (
         <Disclosure open={expanded}>
           <View style={styles.versionList}>
@@ -958,7 +955,7 @@ function ChapterRow({
       {FLAT_ROWS && <View style={[styles.rowDivider, { backgroundColor: theme.hairline }]} />}
     </View>
       )}
-    </ContextMenuHold>
+    </HoldMenu>
   );
 }
 
@@ -1085,8 +1082,7 @@ function chapterMenuActions(args: {
  * The long-press chapter menu: quick per-chapter read + download actions without leaving the list.
  * "Mark read up to here" and "Download from here" are the two one-gesture range answers (everything
  * below this chapter in reading order / this chapter through the end, skipping what's already
- * done); a fully-downloaded chapter offers Delete too. Counts ride in the labels; per the shared
- * menu's rule, nothing is coloured.
+ * done); a fully-downloaded chapter offers Delete too, in red. Counts ride in the labels.
  */
 function chapterMenuRows(
   args: Parameters<typeof chapterMenuActions>[0] & {
@@ -1102,6 +1098,7 @@ function chapterMenuRows(
     {
       label: read ? 'Mark as unread' : 'Mark as read',
       Icon: read ? EyeOffIcon : CheckIcon,
+      symbol: read ? 'eye.slash' : 'checkmark.circle',
       loading: false,
       testID: testId('series.chapter-menu', 'read'),
       onPress: () => void setRead(!read),
@@ -1109,6 +1106,7 @@ function chapterMenuRows(
     {
       label: pending > 1 ? `Mark read up to here (${pending})` : 'Mark read up to here',
       Icon: CheckAllIcon,
+      symbol: 'checklist',
       loading: false,
       // Nothing left below this chapter to mark — the row above already covers this one alone.
       disabled: pending <= 1,
@@ -1120,6 +1118,7 @@ function chapterMenuRows(
     {
       label: collected ? 'Collections…' : 'Save chapter',
       Icon: collected ? CheckIcon : PlusIcon,
+      symbol: collected ? 'folder' : 'plus',
       active: collected,
       loading: false,
       testID: testId('series.chapter-menu', 'collect'),
@@ -1131,6 +1130,7 @@ function chapterMenuRows(
     {
       label: entry?.settled ? 'Already saved' : 'Download chapter',
       Icon: DownloadsIcon,
+      symbol: 'arrow.down.circle',
       loading: false,
       disabled: !args.canDownload || !entry || entry.settled,
       testID: testId('series.chapter-menu', 'this'),
@@ -1139,6 +1139,7 @@ function chapterMenuRows(
     {
       label: span.length > 0 && args.canDownload ? `Download from here (${span.length})` : 'Download from here',
       Icon: ArrowDownIcon,
+      symbol: 'arrow.down.to.line',
       loading: false,
       disabled: !args.canDownload || span.length === 0,
       testID: testId('series.chapter-menu', 'from-here'),
@@ -1149,6 +1150,7 @@ function chapterMenuRows(
     rows.push({
       label: 'Delete download',
       Icon: TrashIcon,
+      symbol: 'trash',
       loading: false,
       destructive: true,
       testID: testId('series.chapter-menu', 'delete'),
