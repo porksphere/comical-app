@@ -174,7 +174,11 @@ width, so UIKit can only centre it over the buttons) and save + settings as glas
 `headerShown` — with every `Stack.Toolbar` unrendered while it is down, since a mounted one sets
 `headerShown: true` over the page's own options — the custom `ReaderToolbar` reduced to its
 gradient shade — and hides the tab bar while the reader is expanded through
-`lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s; the tab stack's `screenLayout`
+`lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s. The reader's bottom bar
+(`components/reader/chapter-navigator.tsx`) is real Liquid Glass (`expo-glass-effect`) in one
+`GlassContainer`, and nothing holding a `GlassView` may fade: UIKit renders an effect wrongly
+under any ancestor alpha below 1, and a glass faded out and back can stay gone, so the glass
+comes and goes through `glassEffectStyle` and only what sits on it fades; the tab stack's `screenLayout`
 applies the series backdrop scale/dim to the screen underneath. Search takes the bar as the
 stack's field (`Stack.SearchBar`, `integratedCentered`, uncontrolled: told the committed query,
 focused after the push settles) with sort as a trailing menu; the route has no title, so the field
