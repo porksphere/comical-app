@@ -156,9 +156,18 @@ type Props = {
  *
  * LegendList positions items itself, from sizes it holds BY KEY, and its
  * `maintainVisibleContentPosition={{ data: true }}` anchors a data change on the
- * item rather than on a view or an index. The prepend then costs nothing here:
- * no correction, no re-window, no flash, and the page under your thumb doesn't
- * move. (Same reason every other list in this app is built on it.)
+ * item rather than on a view or an index: the prepend arrives with the window
+ * already computed around the page you're on, so there's no re-window and no
+ * flash. (Same reason every other list in this app is built on it.)
+ *
+ * Half of that anchoring doesn't happen here, though. The list moves its own
+ * scroll position at once and leaves the native scroll view to follow through
+ * RN's `maintainVisibleContentPosition`, anchored on an empty marker view it
+ * shifts by the inserted length. Fabric flattens that marker away, so the
+ * scroll view anchors on the containers layer instead, which never moves: the
+ * cells mount at the new position, the scroll view stays at the old one, and
+ * the screen is black. The layout effect below finishes the job, parking the
+ * scroll view on the spread's new index when its key stays and its index moves.
  *
  * PAGING ALIGNMENT, the invariant to keep: `pagingEnabled` snaps to multiples of
  * the viewport from the content origin, and LegendList may carry a leading
@@ -285,11 +294,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // Where the pager opens, resolved once — the list reads `initialScrollIndex` at mount and never
   // again, so this must not be recomputed as the window grows around it.
   const [initialIndex] = useState(() => toPhysical(spreadAt(initialPage)));
+  // The same spread by key, standing in for `activeKey` until viewability first names one. A chapter
+  // can join in front before it does, and `initialIndex` names a different spread after that.
+  const [initialKey] = useState(() => data[initialIndex]?.key ?? null);
+  const shownKey = activeKey ?? initialKey;
 
   const activeIndex = useMemo(() => {
-    const found = activeKey ? data.findIndex((item) => item.key === activeKey) : -1;
+    const found = shownKey ? data.findIndex((item) => item.key === shownKey) : -1;
     return found >= 0 ? found : initialIndex;
-  }, [data, activeKey, initialIndex]);
+  }, [data, shownKey, initialIndex]);
 
   useImperativeHandle(
     ref,
@@ -406,8 +419,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   );
 
   // Where the pager sits, for the pinch freeze below to re-snap to — the same value `parkedIndex`
-  // carries, on the thread that needs it.
+  // carries, on the thread that needs it. With the key it was parked on, which is how the layout
+  // effect below tells a page turn (new key) from a chapter joining in front (same key, new index).
   const activeIndexRef = useRef(initialIndex);
+  const parkedKeyRef = useRef(initialKey);
 
   // The refs above (and the shared values) are rewritten AFTER each render rather than during it.
   //
@@ -431,6 +446,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     atEnd.set(activeIndex >= n - 1);
     parkedIndex.set(activeIndex);
     edgeAllowed.set(!zoomed && !standby);
+    // A chapter joined in front of the page on screen. The list has already re-anchored its own
+    // idea of where it is (see the header); this puts the scroll view there too.
+    if (shownKey === parkedKeyRef.current && activeIndex !== activeIndexRef.current) {
+      void listRef.current?.scrollToIndex({ index: activeIndex, animated: false });
+    }
+    parkedKeyRef.current = shownKey;
     activeIndexRef.current = activeIndex;
     // Kept fresh here rather than measured when a drag starts: the origin only moves when the
     // list's own layout does (an anchored insert), which is a render — never mid-drag, where
@@ -490,8 +511,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   //
   // THE FALLBACK, not the way a chapter boundary is normally crossed. The window usually holds the
   // chapter on either side, and crossing one is then an ordinary page turn that happens to relabel
-  // (the screen's `run` machinery, which waits for the previous chapter's page list before building
-  // a window, exists to make that the common case). But a window can still come up short — a
+  // (the screen's `run` machinery, which lets a neighbour's page list join the window whenever it
+  // arrives, exists to make that the common case). But a window can still come up short — a
   // neighbour list that never arrived, or a chapter the run has already crossed back into and can
   // no longer grow toward — and at those ends a `pagingEnabled` list can only rubber-band.
   //
