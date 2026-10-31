@@ -1,12 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { Image } from 'expo-image';
 import { Stack, useFocusEffect, useNavigation } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   BackHandler,
   Platform,
-  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
@@ -23,7 +21,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { usePushSettled } from '@/components/reader/chapter-navigator';
 import { isDesktopPointer, keepZoomLevel } from '@/components/reader/desktop-zoom';
 import { isTypingTarget } from '@/lib/key-hold';
@@ -47,8 +44,8 @@ import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useReaderSettings, useFitOverride } from '@/hooks/use-reader-settings';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
-import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
-import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useIsDesktop } from '@/hooks/use-responsive';
+import { useActiveColorScheme } from '@/hooks/use-theme';
 import { getAdjacentChapter } from '@/lib/chapter-order';
 import { hideNativeTabBar } from '@/lib/native-tab-bar';
 import { LinkAppleZoomTarget, useRouter } from '@/lib/nav';
@@ -62,7 +59,7 @@ import { useSeriesPaneShowsTop } from '@/lib/series-pane';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import { useDimWindowControls, useWindowThemeColor, watchWindowTopEdge } from '@/lib/window-controls';
 import { DetailsHint } from '@/components/series/details-hint';
-import { LeavingMask } from '@/components/series/leaving-mask';
+import { PersistentBack } from '@/components/series/persistent-back';
 import {
   COLLAPSE_ACTIVATE_PX,
   DISMISS_COMMIT_FRACTION,
@@ -98,8 +95,8 @@ import {
   type SeriesReaderParams,
 } from '@/components/series/reader-types';
 import { SplitClip } from '@/components/series/split-clip';
+import { StripDim } from '@/components/series/strip-dim';
 import {
-  FADE_WINDOW,
   HEADER_BAND,
   READER_BACKDROP,
   SHEET_FADE_H,
@@ -111,6 +108,7 @@ import { usePageLeave } from '@/components/series/use-page-leave';
 import { usePageZoom } from '@/components/series/use-page-zoom';
 import { decodeSeriesParams, useSeriesRead } from '@/components/series/use-series-read';
 import { useViewport } from '@/components/series/viewport';
+import { ZoomFrame } from '@/components/series/zoom-frame';
 
 const CHROME_HIDE_MS = 3000;
 
@@ -172,7 +170,6 @@ export function SeriesReaderPage({
 }) {
   const ds = useDataSource();
   const router = useRouter();
-  const theme = useTheme();
   const { width, height } = useViewport();
   const insets = useSafeAreaInsets();
   const mock = useMockActive();
@@ -1268,10 +1265,8 @@ export function SeriesReaderPage({
     sequence ? sequence.uris[seqMountIndex] || sequence.entries[seqMountIndex]?.sourceUrl : cover,
   );
 
-  const topBarHeight = useTopBarHeight();
-  // The PERSISTENT back button (TopBarSwitch's `persistent` slot). It follows the auto-hiding
-  // chrome (via the shared-value mirror), and on the way into the details' strip it stays up and
-  // turns from white over the page to the theme's text colour.
+  // The back chevron follows the auto-hiding chrome (via the shared-value mirror), and on the way
+  // into the details' strip it stays up.
   const chromeVisibleSV = useSharedValue(1);
   useEffect(() => {
     chromeVisibleSV.set(withTiming(chromeVisible ? 1 : 0, { duration: 200 }));
@@ -1282,12 +1277,6 @@ export function SeriesReaderPage({
     const detailsSide = interpolate(progress.value, [0.4, 0.8], [0, 1], Extrapolation.CLAMP);
     return { opacity: Math.max(detailsSide, chromeVisibleSV.value) };
   });
-  const backThemeIconStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0.3, 0.7], [0, 1], Extrapolation.CLAMP),
-  }));
-  const backWhiteIconStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0.3, 0.7], [1, 0], Extrapolation.CLAMP),
-  }));
 
   // The reader FRAME travels only into the strip: on the way it rises by half its hidden height,
   // so the strip shows the page's vertical CENTRE, not its top edge. A dismissal does not move it
@@ -1304,11 +1293,6 @@ export function SeriesReaderPage({
     };
   }, [height, bandH]);
   const readerClipStyle = useAnimatedStyle(() => ({ borderRadius: Math.min(LIFT_CORNER_RADIUS, liftY.value) }));
-  // The collapsed reader's heavy fade — "almost like a faded out background image".
-  const headerReaderFadeStyle = useAnimatedStyle(() => ({ opacity: 0.55 * progress.value }));
-  const readerTintStyle = useAnimatedStyle(() => ({
-    opacity: 0.18 * Math.min(1, progress.value / FADE_WINDOW),
-  }));
 
   // ── The BACKDROP's dim (see lib/series-backdrop.ts) ───────────────────────────────────
   // How much of the screen this page currently covers: `zoom`, which the dismiss drives too.
@@ -1408,22 +1392,7 @@ export function SeriesReaderPage({
             rtl: false,
           };
 
-  // The strip handoff's tint and heavy fade, over the PAGES but UNDER the bottom chrome: they
-  // render inside ReaderPane between the readers and the navigator/pill (or after the
-  // error/loading placeholder), so a handoff part way never washes out the scrubber and skip
-  // buttons.
-  const dimOverlays = (
-    <>
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.readerTint, readerTintStyle]} />
-      {/* The collapsed strip's heavy fade — toward the THEME background (not black), so the
-          strip reads as a faded-out image and the title over the seam stays legible in both
-          themes. */}
-      <Animated.View
-        pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { backgroundColor: theme.background }, headerReaderFadeStyle]}
-      />
-    </>
-  );
+  const dimOverlays = <StripDim progress={progress} />;
 
   // iOS: the system bar is the reader's top chrome, through the route's options: transparent over
   // the page, a white title, the save and settings buttons as glass bar items (ReaderNativeToolbar),
@@ -1494,25 +1463,13 @@ export function SeriesReaderPage({
       mode="reader"
       persistent={
         NATIVE_HEADER ? null : (
-          <Animated.View
+          <PersistentBack
             nativeID={`${chromeId}-back`}
-            pointerEvents={chromeVisible ? 'box-none' : 'none'}
-            style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, backPersistStyle]}>
-            <Pressable
-              testID="series-page.header-back"
-              onPress={backStepsHome ? leaveReaderForDetails : closeLayer}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-              style={styles.headerBackBtn}>
-              <Animated.View style={backWhiteIconStyle}>
-                <ChevronLeftIcon color="#fff" />
-              </Animated.View>
-              <Animated.View style={[StyleSheet.absoluteFill, styles.headerBackBtn, backThemeIconStyle]}>
-                <ChevronLeftIcon color={theme.text} />
-              </Animated.View>
-            </Pressable>
-          </Animated.View>
+            progress={progress}
+            style={backPersistStyle}
+            touchable={chromeVisible}
+            onPress={backStepsHome ? leaveReaderForDetails : closeLayer}
+          />
         )
       }
       bars={{
@@ -1588,18 +1545,19 @@ export function SeriesReaderPage({
           with everything else, which is a swipe-away dragging its own background off with it. */}
       <Animated.View pointerEvents="none" style={[styles.readerSurface, { width, height }, zoomBackdropFadeStyle]} />
 
-      {/* THE MASK — the rounded window the page is seen through, growing from the tapped card's
-          cover box to the whole screen (see zoomMaskStyle). At rest it IS the screen, so it clips
-          nothing that was ever visible. */}
-      <LeavingMask committing={edgeCommitting} leave={leaveOnce} style={[styles.zoomMask, zoomMaskStyle]}>
-      {/* …THE PAGE inside it, scaled and aligned so its own cover lands on that card box (see
-          zoomPageStyle). Transform only — the fade lives on the wrapper below, so the thumbnail
-          copy further down can ride this same transform without fading with it. */}
-      <Animated.View style={[styles.zoomPage, { width, height }, zoomPageStyle]}>
-      {/* …and the page's CONTENT, which is the half of the cross-fade that fades IN. `leaving`
-          drops touches the instant an exit starts, so a page on its way out can't be tapped and
-          can't swallow a tap meant for the grid behind it. */}
-      <Animated.View style={[StyleSheet.absoluteFill, zoomContentFadeStyle]}>
+      <ZoomFrame
+        committing={edgeCommitting}
+        leave={leaveOnce}
+        maskStyle={zoomMaskStyle}
+        pageStyle={zoomPageStyle}
+        contentFadeStyle={zoomContentFadeStyle}
+        width={width}
+        height={height}
+        thumb={
+          hero && zoomGeom && zoomThumbUri
+            ? { uri: zoomThumbUri, rect: zoomGeom.thumb, style: zoomThumbStyle, onPainted: onZoomThumbPainted }
+            : null
+        }>
 
       {/* The reader: full screen, in three layers — a static fading surface above, the traveling
           page subtree, and the chrome that fades with it. The collapse/dismiss pan wraps the whole
@@ -1718,45 +1676,7 @@ export function SeriesReaderPage({
           alike. */}
       {nativeBar}
       {topChrome}
-
-      </Animated.View>
-
-      {/* THE FLYING THUMBNAIL — the other half of the cross-fade, and the reason the motion reads
-          as a picture opening rather than a screen resizing. The library transforms the REAL
-          source element on the screen underneath to track this path; from inside a modal that view
-          is untouchable, so this is a copy of the same cover.
-          Laid out at the DESTINATION bound and left to ride the page's transform, which is what
-          keeps it honest: at rest that transform puts this rect exactly on the tapped card. No
-          second geometry to drift out of sync. The mask supplies the rounded card silhouette, so
-          it needs no radius of its own. */}
-      {hero && zoomGeom && zoomThumbUri && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.zoomThumb,
-            {
-              left: zoomGeom.thumb.x,
-              top: zoomGeom.thumb.y,
-              width: zoomGeom.thumb.width,
-              height: zoomGeom.thumb.height,
-            },
-            zoomThumbStyle,
-          ]}>
-          {/* onLoad/onError are what release the source card's blanking — until this view has
-              pixels the real card underneath is what stands in for it. See `blankSource`. */}
-          <Image
-            source={{ uri: zoomThumbUri }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            onLoad={onZoomThumbPainted}
-            onError={onZoomThumbPainted}
-          />
-        </Animated.View>
-      )}
-
-      </Animated.View>
-      </LeavingMask>
+      </ZoomFrame>
       </SplitClip>
     </View>
   );
@@ -1773,30 +1693,6 @@ const styles = StyleSheet.create({
     // Transparent: the route is a contained transparent modal, and a dismissal fades the page out
     // over the screen beneath.
     backgroundColor: 'transparent',
-  },
-  // The zoom's window (see zoomMaskStyle). Absolutely positioned because its whole box is
-  // animated; `overflow: hidden` is what makes it a mask rather than just a rounded outline.
-  zoomMask: {
-    // Box comes entirely from zoomMaskStyle (always explicit numbers) — nothing here, so a
-    // percentage base can never race the animated one.
-    position: 'absolute',
-    overflow: 'hidden',
-  },
-  // The page inside that window — pinned to the SCREEN's size at the call site, never the mask's,
-  // so a shrinking window crops it instead of reflowing it.
-  zoomPage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-  },
-  // The flying copy of the tapped cover — positioned at the destination bound INSIDE the page, so
-  // the page's own transform carries it from the card to that bound (see the render).
-  zoomThumb: {
-    position: 'absolute',
-    overflow: 'hidden',
-    // The card's own cover backing (series-card.tsx `coverBoxClip`), so a cover that hasn't
-    // decoded yet reads as the same grey plate rather than a hole onto the page underneath.
-    backgroundColor: 'rgba(128,128,128,0.15)',
   },
   // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
   // static full-screen layer BEHIND the frame (readerSurface), so it keeps covering the screen
@@ -1816,18 +1712,6 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     backgroundColor: READER_BACKDROP,
-  },
-  headerBackWrap: {
-    position: 'absolute',
-    left: Spacing.three,
-    zIndex: 4,
-    justifyContent: 'center',
-  },
-  headerBackBtn: {
-    justifyContent: 'center',
-  },
-  readerTint: {
-    backgroundColor: '#000',
   },
   stripZoom: {
     position: 'absolute',
