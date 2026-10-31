@@ -22,6 +22,16 @@ cross-platform via react-native-web, so one `*.tsx` file per icon group covers
 every platform with no `.web.tsx` split needed. Don't hand-roll glyphs. See
 `apps/mobile/src/components/icons/ui-icons.tsx` for the pattern.
 
+# Platform files are checked against their base
+
+tsc resolves every import to the base file (no `moduleSuffixes`), so a `.ios`/`.android`/`.web`
+sibling is never checked against what its callers pass. `src/types/platform-contracts.ts` closes
+that: each sibling has a line there, and a dropped export, a changed type, or a prop the base
+gained that the sibling never declared fails the typecheck. Give a new platform file its line.
+Prefer taking the base's own props type (`series-card-menu.ios.tsx`, `select-row-shared`); a
+sibling with its own props lists what it deliberately goes without in its line, so every platform
+gap is written down in one place.
+
 # Bottom nav: the system bar on iOS, a custom-rendered bar on Android and web
 
 `apps/mobile/src/components/app-tabs.ios.tsx` is the iOS shell: `NativeTabs`
