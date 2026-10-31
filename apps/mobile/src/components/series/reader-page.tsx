@@ -35,6 +35,7 @@ import { RetryBlock } from '@/components/retry-block';
 import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { ThemedText } from '@/components/themed-text';
 import { TopBarSwitch } from '@/components/top-bar-switch';
+import { openedByZoom } from '@/components/zoom-source';
 import { Spacing } from '@/constants/theme';
 import { warmPageImages } from '@/data/warm-pages';
 import { chapterPagesQuery } from '@/data/queries';
@@ -854,12 +855,15 @@ export function SeriesReaderPage({
   // Never under a mouse: a drag there is a PAN of the page, and a pan that set off the return or the
   // dismiss took the reader away mid-read. The desktop has the Details button and Back for those.
   const collapseEnabled = !readerZoomed && !scrubbing && !(IS_WEB && isDesktopPointer());
-  // The split reader's swipe away, paged, on iOS. UIKit's zoom dismissal takes the swipe DOWN (the
-  // screen's `gestureEnabled`) and carries the page and the bar back into the strip. It never
+  // The swipe away, paged, on iOS, of a reader page the details pushed or one that zoomed out of a
+  // History or Activity row. UIKit's zoom dismissal takes the swipe DOWN (the screen's
+  // `gestureEnabled`) and carries the page and the bar back into what it zoomed out of. It never
   // starts on a swipe up, so that half is this pan's: the page lifts and shrinks under the finger,
   // and a committed release runs the same native pop the back button does.
-  const swipeAway = nativePush && params.from === 'details' && settings.mode === 'paged';
+  const swipeAway =
+    nativePush && (params.from === 'details' || openedByZoom(params)) && settings.mode === 'paged';
   const liftY = useSharedValue(0);
+  const popBySwipe = useCallback(() => router.back(), [router]);
   // Each GESTURE is one thing, decided at activation and locked: a drag up on a paged reader grown
   // out of the details' strip is a return into it (progress only); anything else is a dismiss — a
   // free 2D follow in BOTH directions, released on the |cross| decision below, driving the
@@ -987,8 +991,8 @@ export function SeriesReaderPage({
           if (nativePush) {
             if (!swipeAway) return;
             if (releaseCommitted(-e.translationY, -e.velocityY, height * LIFT_COMMIT_FRACTION)) {
-              runOnJS(leaveReaderForDetails)();
-              // Back to full size while the pop runs, so the page is where the strip expects it
+              runOnJS(popBySwipe)();
+              // Back to full size while the pop runs, so the page is where its source expects it
               // when the zoom lands there.
               liftY.set(withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) }));
             } else {
@@ -1078,6 +1082,7 @@ export function SeriesReaderPage({
     stripReader,
     swipeAway,
     liftY,
+    popBySwipe,
     leaveReaderForDetails,
     width,
     height,
@@ -1281,7 +1286,7 @@ export function SeriesReaderPage({
   // The reader FRAME travels only into the strip: on the way it rises by half its hidden height,
   // so the strip shows the page's vertical CENTRE, not its top edge. A dismissal does not move it
   // either — the collapse moves the whole page, and the reader's dark surface stays put and fades.
-  // The split reader's swipe up rides it too (`liftY`), as UIKit's swipe down does the whole screen:
+  // The swipe away's lift rides it too (`liftY`), as UIKit's swipe down does the whole screen:
   // up with the finger, smaller, with rounding corners.
   const readerCardStyle = useAnimatedStyle(() => {
     const lift = liftY.value;
@@ -1663,11 +1668,15 @@ export function SeriesReaderPage({
       </GestureDetector>
 
       {/* UIKit's zoom out of the details' strip lands on the same stretch of this page: the strip's
-          resting rect, centred, as `readerCardStyle` centres the page in the strip on the way back. */}
+          resting rect, centred, as `readerCardStyle` centres the page in the strip on the way back.
+          Out of a thumbnail it lands on the whole screen, which expo-router narrows to the
+          thumbnail's shape, centred: about where a fitted page sits. */}
       {nativePush ? (
-        <View pointerEvents="none" style={[styles.stripZoom, { top: (height - bandH) / 2, width }]}>
+        <View
+          pointerEvents="none"
+          style={[styles.zoomTarget, { top: params.zoomFrom === 'strip' ? (height - bandH) / 2 : 0, width }]}>
           <LinkAppleZoomTarget>
-            <View collapsable={false} style={{ width, height: stripZoomH }} />
+            <View collapsable={false} style={{ width, height: params.zoomFrom === 'strip' ? stripZoomH : height }} />
           </LinkAppleZoomTarget>
         </View>
       ) : null}
@@ -1713,7 +1722,7 @@ const styles = StyleSheet.create({
     left: 0,
     backgroundColor: READER_BACKDROP,
   },
-  stripZoom: {
+  zoomTarget: {
     position: 'absolute',
     top: 0,
     left: 0,

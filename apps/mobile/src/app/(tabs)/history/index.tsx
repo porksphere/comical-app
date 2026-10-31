@@ -13,6 +13,7 @@ import { NativeTabHeader } from '@/components/native-tab-header';
 import { TabScrollMarker } from '@/components/tab-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
+import { useZoomId, withZoomSource } from '@/components/zoom-source';
 import {
   useIsZoomingSeries,
   useZoomOriginSource,
@@ -136,22 +137,26 @@ export default function HistoryScreen() {
 
   // The 3-dot opens the SERIES side of that same page — no `reader` param, so it lands on
   // the details with the reader as the strip, which is exactly a browse open. Same zoom off this
-  // row's thumbnail; the only difference from `resume` below is which side it opens on.
-  const openDetail = (h: HistoryEntry) => {
+  // row's thumbnail; the only difference from `resume` below is which side it opens on. On iOS that
+  // zoom is the system's, out of the thumbnail's source (`zoomId`).
+  const openDetail = (h: HistoryEntry, zoomId: string | null) => {
     router.push({
       pathname: '/series',
-      params: {
-        id: h.seriesId,
-        title: h.title,
-        bridge: encodeSeriesParam(nameOf(h.bridgeId)),
-        bridgeId: h.bridgeId,
-        ...(h.thumbnailUrl ? { cover: encodeSeriesParam(h.thumbnailUrl) } : {}),
-        ...(directOf(h.bridgeId) ? { direct: '1' } : {}),
-      },
+      params: withZoomSource(
+        {
+          id: h.seriesId,
+          title: h.title,
+          bridge: encodeSeriesParam(nameOf(h.bridgeId)),
+          bridgeId: h.bridgeId,
+          ...(h.thumbnailUrl ? { cover: encodeSeriesParam(h.thumbnailUrl) } : {}),
+          ...(directOf(h.bridgeId) ? { direct: '1' } : {}),
+        },
+        zoomId,
+      ),
     });
   };
 
-  const resume = (h: HistoryEntry) => {
+  const resume = (h: HistoryEntry, zoomId: string | null) => {
     const isDirect = h.chapterId === DIRECT_CHAPTER_ID || !h.chapterId;
     // A row is a "carry on reading" action, so it opens the series page straight into the READER
     // — a swipe up brings the details in, and the whole thing collapses back into this row's
@@ -159,16 +164,19 @@ export default function HistoryScreen() {
     // what lets that screen request the page ahead of the series detail.
     router.push({
       pathname: '/series',
-      params: {
-        id: h.seriesId,
-        title: h.title,
-        bridge: encodeSeriesParam(nameOf(h.bridgeId)),
-        bridgeId: h.bridgeId,
-        reader: '1',
-        start: String(h.lastPage ?? 0),
-        ...(h.thumbnailUrl ? { cover: encodeSeriesParam(h.thumbnailUrl) } : {}),
-        ...(isDirect ? { direct: '1' } : { chapterId: h.chapterId!, chapterName: h.chapterName ?? '' }),
-      },
+      params: withZoomSource(
+        {
+          id: h.seriesId,
+          title: h.title,
+          bridge: encodeSeriesParam(nameOf(h.bridgeId)),
+          bridgeId: h.bridgeId,
+          reader: '1',
+          start: String(h.lastPage ?? 0),
+          ...(h.thumbnailUrl ? { cover: encodeSeriesParam(h.thumbnailUrl) } : {}),
+          ...(isDirect ? { direct: '1' } : { chapterId: h.chapterId!, chapterName: h.chapterName ?? '' }),
+        },
+        zoomId,
+      ),
     });
   };
 
@@ -225,8 +233,8 @@ export default function HistoryScreen() {
             renderItem={({ item }) => (
               <HistoryItem
                 item={item}
-                onResume={() => resume(item)}
-                onOpenDetail={() => openDetail(item)}
+                onResume={(zoomId) => resume(item, zoomId)}
+                onOpenDetail={(zoomId) => openDetail(item, zoomId)}
                 onRemove={() => removeMutation.mutate(item)}
                 bridge={nameOf(item.bridgeId)}
                 direct={directOf(item.bridgeId)}
@@ -280,8 +288,9 @@ function HistoryItem({
   chapters,
 }: {
   item: HistoryEntry;
-  onResume: () => void;
-  onOpenDetail: () => void;
+  /** With the thumbnail's zoom source id, on iOS. */
+  onResume: (zoomId: string | null) => void;
+  onOpenDetail: (zoomId: string | null) => void;
   onRemove: () => void;
   bridge: string;
   direct: boolean;
@@ -311,6 +320,8 @@ function HistoryItem({
   const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
   // Radius 6 — the row thumbnail's corner, not the grid card's 10.
   const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomSource, thumbRef, 6);
+  // iOS has the system's zoom instead, out of the thumbnail's source.
+  const [thumbZoomId, onThumbZoomId] = useZoomId();
   // Press-in already measures; it now also starts the fetch the tap is about to need (see
   // data/prefetch). The row resumes reading and the 3-dot opens the details, so they warm
   // different things — each mirroring the params its own handler pushes.
@@ -336,15 +347,16 @@ function HistoryItem({
       title={item.title}
       sub={sub}
       detail={detail}
-      onPress={onResume}
+      onPress={() => onResume(thumbZoomId.current)}
       onPressIn={onRowPressIn}
-      onMore={onOpenDetail}
+      onMore={() => onOpenDetail(thumbZoomId.current)}
       onMorePressIn={onMorePressIn}
       actions={[]}
       progress={progress}
       when={item.lastReadAt}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}
+      onZoomId={onThumbZoomId}
     />
   );
   return (
@@ -367,7 +379,7 @@ function HistoryItem({
             startRadius={6} // matches HistoryRow's thumbnail corner
             zoomSource={zoomSource}
             measureRef={thumbRef}
-            onOpen={onResume}>
+            onOpen={() => onResume(null)}>
             {({ hidden }) => renderRow(hidden)}
           </SeriesCardMenu>
         )}

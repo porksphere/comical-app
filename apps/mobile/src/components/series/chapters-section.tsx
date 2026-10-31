@@ -49,6 +49,7 @@ import { HoldMenu, liftTarget } from '@/components/system-context-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
+import { useZoomHref, useZoomId, ZoomSource } from '@/components/zoom-source';
 import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useSideInsets } from '@/hooks/use-content-width';
 import { useHovered } from '@/hooks/use-hovered';
@@ -1243,10 +1244,12 @@ export function PageThumbList({
    *  button (while collapsed). */
   footer?: ReactElement | null;
   /** Tapping a page thumbnail is handed HERE — same in-place-reader hand-off as
-   *  ChapterScrollList's `onOpenChapter`. */
-  onOpenPage: (pageIndex: number) => void;
+   *  ChapterScrollList's `onOpenChapter`. On iOS with the tile's zoom source, for the reader to grow
+   *  out of. */
+  onOpenPage: (pageIndex: number, zoomId: string | null) => void;
 } & PullListWiring) {
   const theme = useTheme();
+  const zoomHref = useZoomHref('/series/read');
   const sides = useSideInsets();
   const screenW = useSeriesContentWidth();
   const insets = useSafeAreaInsets();
@@ -1396,7 +1399,8 @@ export function PageThumbList({
                 page={cell.pageIndex + 1}
                 width={tileW}
                 collected={collected.has(cell.pageIndex)}
-                onPress={() => onOpenPage(cell.pageIndex)}
+                zoomHref={zoomHref}
+                onPress={(zoomId) => onOpenPage(cell.pageIndex, zoomId)}
               />
             </View>
           ))}
@@ -1496,6 +1500,7 @@ export function PageThumb({
   showPageNumber = true,
   collected = false,
   slotHeight,
+  zoomHref = null,
 }: {
   thumb: PageThumbSource | null;
   index: number;
@@ -1503,7 +1508,8 @@ export function PageThumb({
   bridgeId?: string;
   page: number;
   width: number;
-  onPress?: () => void;
+  /** With the tile's zoom source id when it has one (`zoomHref`). */
+  onPress?: (zoomId: string | null) => void;
   /** The page-number badge — on for the series page grid, off for the compact card-preview rail. */
   showPageNumber?: boolean;
   /** The page is in a collection — the same mark a saved series carries on its cover. */
@@ -1512,11 +1518,14 @@ export function PageThumb({
    *  (variable-width, for the card-preview rail) instead of the grid's default width-driven, constant
    *  2:3 slot. `width` is then ignored for layout — the sprite crop scales to `slotHeight * aspect`. */
   slotHeight?: number;
+  /** iOS: makes the tile a zoom source for the page `onPress` pushes (see ZoomSource). */
+  zoomHref?: ReturnType<typeof useZoomHref>;
 }) {
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
+  const [zoomId, onZoomId] = useZoomId();
   const [loaded, setLoaded] = useState(() => resolvedThumbIds.has(thumbDelayKey(thumb)));
   // Real aspect of a plain `image` tile, learned from its own onLoad (see the
   // note on the derivation below) rather than an off-screen prefetch. A plain,
@@ -1724,7 +1733,7 @@ export function PageThumb({
     <Pressable
       testID={testId('series.page', seed, page)}
       style={slotHeight != null ? { height: slotHeight, aspectRatio } : styles.thumbShell}
-      onPress={onPress}
+      onPress={onPress && (() => onPress(zoomId.current))}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}>
       <View
@@ -1736,6 +1745,11 @@ export function PageThumb({
             setBoxSize({ w: laidOutW, h: laidOutH });
           }
         }}>
+        {zoomHref ? (
+          <View pointerEvents="none" style={styles.tileZoom}>
+            <ZoomSource href={zoomHref} onId={onZoomId} style={{ width: boxWidth, height: boxHeight }} />
+          </View>
+        ) : null}
         <View style={[styles.thumbClip, styles.thumbCorner]}>
           {/* Picture layer, scaled by `pictureStyle` to fake the shrink illusion; `pageNum` is a
               sibling so it never gets stretched. The Lightweight path skips the wrapper VIEW entirely
@@ -2250,6 +2264,11 @@ const styles = StyleSheet.create({
     // constant 2:3 slot this top-aligns within.
     width: '100%',
     position: 'relative',
+  },
+  tileZoom: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
   thumbClip: {
     // Fixed (never transformed) clipping ancestor — the scaled `thumbPicture`

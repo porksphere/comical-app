@@ -370,7 +370,7 @@ export function SeriesBody({
   /** See ChapterScrollList / PageThumbList: hand a tapped chapter version / page thumbnail to that
    *  same in-place reader. */
   onOpenChapter: (version: Chapter) => void;
-  onOpenPage: (pageIndex: number) => void;
+  onOpenPage: (pageIndex: number, zoomId: string | null) => void;
   /** Pull-to-refresh wiring owned by SeriesScreen, threaded to whichever list owns the scroll. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;

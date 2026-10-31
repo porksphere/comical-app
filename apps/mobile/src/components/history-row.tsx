@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, View, type ViewInstance } from 'react-native';
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useZoomHref, ZoomSource } from '@/components/zoom-source';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useIsDesktop } from '@/hooks/use-responsive';
@@ -49,6 +50,7 @@ export function HistoryRow({
   when,
   thumbRef,
   coverHidden,
+  onZoomId,
   testID,
 }: {
   thumbnailUrl?: string;
@@ -80,6 +82,9 @@ export function HistoryRow({
   thumbRef?: RefObject<ViewInstance | null>;
   /** Blank just the thumbnail while this row's long-press menu is open (its lifted preview is a copy). */
   coverHidden?: boolean;
+  /** iOS: makes the thumbnail the zoom source of the pages the row's presses push, handing its id
+   *  here for them to push with (see ZoomSource). */
+  onZoomId?: (id: string | null) => void;
   /** Automation selector for the row. Defaults to `history-row.<title>`; the trailing controls derive
    *  from it (see src/lib/test-id.ts). Pass an explicit id when two rows could share a title. */
   testID?: string;
@@ -89,6 +94,7 @@ export function HistoryRow({
   const resolvedThumb = useResolvedAsset(thumbnailUrl);
   const base = testID ?? testId('history-row', title);
   const thumbStyle = [styles.thumb, desktop && styles.thumbDesktop];
+  const zoomHref = useZoomHref('/series');
   return (
     <View style={[styles.row, desktop && styles.rowDesktop, dimmed && styles.dimmed]}>
       <Pressable
@@ -101,6 +107,11 @@ export function HistoryRow({
           ref={thumbRef}
           collapsable={false}
           style={[styles.thumbWrap, desktop && styles.thumbWrapDesktop, coverHidden && styles.thumbHidden]}>
+          {zoomHref && onZoomId ? (
+            <View pointerEvents="none" style={styles.thumbZoom}>
+              <ZoomSource href={zoomHref} onId={onZoomId} style={[styles.thumbZoomBox, desktop && styles.thumbDesktop]} />
+            </View>
+          ) : null}
           {resolvedThumb ? (
             <Image
               source={{ uri: resolvedThumb }}
@@ -231,6 +242,15 @@ const styles = StyleSheet.create({
   },
   thumbDesktop: {
     width: THUMB_W_DESKTOP,
+  },
+  thumbZoom: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  thumbZoomBox: {
+    width: THUMB_W,
+    aspectRatio: 2 / 3,
   },
   // Inset from the cover's rounded edge rather than clipped by it, so the fill never has to agree
   // with the corner's curve — and the track reads over any cover, light or dark.

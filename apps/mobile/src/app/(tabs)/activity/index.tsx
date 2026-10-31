@@ -30,6 +30,7 @@ import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
+import { useZoomId, withZoomSource } from '@/components/zoom-source';
 import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { autoDownloadNewChapters } from '@/data/downloads/auto';
 import { activityQuery, queryKeys } from '@/data/queries';
@@ -245,38 +246,44 @@ export default function ActivityScreen() {
 
   // See history.tsx's `openDetail` — the same control, opening the same series on its details
   // page.
-  const openDetail = (g: SeriesActivity) => {
+  const openDetail = (g: SeriesActivity, zoomId: string | null) => {
     router.push({
       pathname: '/series',
-      params: {
-        id: g.seriesId,
-        title: g.title,
-        bridge: encodeSeriesParam(nameOf(g.bridgeId)),
-        bridgeId: g.bridgeId,
-        ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
-        ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
-      },
+      params: withZoomSource(
+        {
+          id: g.seriesId,
+          title: g.title,
+          bridge: encodeSeriesParam(nameOf(g.bridgeId)),
+          bridgeId: g.bridgeId,
+          ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
+          ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
+        },
+        zoomId,
+      ),
     });
   };
 
-  const read = (g: SeriesActivity) => {
-    if (g.chapterId === undefined) return openDetail(g);
+  const read = (g: SeriesActivity, zoomId: string | null) => {
+    if (g.chapterId === undefined) return openDetail(g, zoomId);
     // See history.tsx's `resume` — same experiment, same reasoning.
     router.push({
       pathname: '/series',
-      params: {
-        id: g.seriesId,
-        title: g.title,
-        bridge: encodeSeriesParam(nameOf(g.bridgeId)),
-        bridgeId: g.bridgeId,
-        reader: '1',
-        chapterId: g.chapterId,
-        chapterName: g.chapterName ?? '',
-        start: '0',
-        picked: '1',
-        ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
-        ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
-      },
+      params: withZoomSource(
+        {
+          id: g.seriesId,
+          title: g.title,
+          bridge: encodeSeriesParam(nameOf(g.bridgeId)),
+          bridgeId: g.bridgeId,
+          reader: '1',
+          chapterId: g.chapterId,
+          chapterName: g.chapterName ?? '',
+          start: '0',
+          picked: '1',
+          ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
+          ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
+        },
+        zoomId,
+      ),
     });
   };
 
@@ -336,8 +343,8 @@ export default function ActivityScreen() {
               renderItem={({ item }) => (
                 <ActivityItem
                   item={item}
-                  onRead={() => read(item)}
-                  onOpenDetail={() => openDetail(item)}
+                  onRead={(zoomId) => read(item, zoomId)}
+                  onOpenDetail={(zoomId) => openDetail(item, zoomId)}
                   onMarkRead={() => markReadMutation.mutate(item)}
                   onRemove={() => removeMutation.mutate(item)}
                   bridge={nameOf(item.bridgeId)}
@@ -399,8 +406,9 @@ function ActivityItem({
   direct,
 }: {
   item: SeriesActivity;
-  onRead: () => void;
-  onOpenDetail: () => void;
+  /** With the thumbnail's zoom source id, on iOS. */
+  onRead: (zoomId: string | null) => void;
+  onOpenDetail: (zoomId: string | null) => void;
   onMarkRead: () => void;
   onRemove: () => void;
   bridge: string;
@@ -421,6 +429,8 @@ function ActivityItem({
   const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
   // Radius 6 — the row thumbnail's corner, not the grid card's 10.
   const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomSource, thumbRef, 6);
+  // iOS has the system's zoom instead, out of the thumbnail's source.
+  const [thumbZoomId, onThumbZoomId] = useZoomId();
   // See History's copy: press-in warms what the tap will need, and the row (reads) and the 3-dot
   // (details) need different things. `read` always forwards the chapter id, so this always does.
   const warmPages = useWarmChapterPages();
@@ -448,14 +458,15 @@ function ActivityItem({
       sub={activitySub(item, bridge, !desktop)}
       dimmed={!item.hasUnread && !item.removed}
       unread={item.hasUnread}
-      onPress={onRead}
+      onPress={() => onRead(thumbZoomId.current)}
       onPressIn={onRowPressIn}
-      onMore={onOpenDetail}
+      onMore={() => onOpenDetail(thumbZoomId.current)}
       onMorePressIn={onMorePressIn}
       actions={[]}
       when={item.latestAt}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}
+      onZoomId={onThumbZoomId}
     />
   );
   return (
@@ -486,7 +497,7 @@ function ActivityItem({
             startRadius={6} // matches HistoryRow's thumbnail corner
             zoomSource={zoomSource}
             measureRef={thumbRef}
-            onOpen={onRead}>
+            onOpen={() => onRead(null)}>
             {({ hidden }) => renderRow(hidden)}
           </SeriesCardMenu>
         )}

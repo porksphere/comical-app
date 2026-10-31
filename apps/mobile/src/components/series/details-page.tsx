@@ -33,12 +33,11 @@ import { TopBarSwitch } from '@/components/top-bar-switch';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
-import { withoutRouterParams, withZoomSource, ZoomSource } from '@/components/zoom-source';
+import { useZoomHref, withoutRouterParams, withZoomSource, ZoomSource } from '@/components/zoom-source';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
-import { useTabRoute } from '@/lib/focused-tab';
-import { tabHref, useRouter } from '@/lib/nav';
+import { useRouter } from '@/lib/nav';
 import {
   backSwipePan,
   backSwipeShape,
@@ -202,18 +201,15 @@ export function SeriesDetailsPage({
   // center — the strip fades into the details THROUGH the title.
   const headerTopInset = bandH - SHEET_FADE_H / 2 - TITLE_MID;
   // The strip as the zoom source of the reader page it pushes, on iOS (see ZoomSource).
-  const tab = useTabRoute();
   const [stripZoomId, setStripZoomId] = useState<string | null>(null);
-  const stripZoomHref = useMemo(
-    () => (IS_IOS ? (tab ? tabHref(tab, '/series/read', {}) : '/series/read') : null),
-    [tab],
-  );
+  const stripZoomHref = useZoomHref('/series/read');
 
   /**
    * Reading starts on the reader page, pushed over these details with the same params a History row
    * carries, plus `from` so its Details button comes back here.
    *
-   * On iOS the push zooms out of the strip while the strip is on screen. Elsewhere the reader grows
+   * On iOS the push zooms out of the page tile it was tapped on (`zoomId`), or out of the strip
+   * while the strip is on screen. Elsewhere the reader grows
    * out of the strip itself (see SplitHandoff), except in the desktop pane (components/series-pane):
    * a reader is the one thing on web that still takes the whole window, so from there it is a plain
    * push over the pane, which closing the reader comes back to as it was.
@@ -230,7 +226,7 @@ export function SeriesDetailsPage({
   }, [paneHandoffs, progress, detailsActiveSV]);
   // `at` is for callers that set a new target in the same handler: `target` here is still the
   // previous render's, so a page tapped in the details would hand off the old start page.
-  const openReaderPage = useCallback((at: ReadTarget | null = target) => {
+  const openReaderPage = useCallback((at: ReadTarget | null = target, zoomId: string | null = null) => {
     const next = withoutRouterParams(params);
     next.reader = '1';
     next.start = String(at?.start ?? 0);
@@ -266,8 +262,9 @@ export function SeriesDetailsPage({
       return;
     }
     // Scrolled mostly away under the details, the strip is no source to grow out of.
-    const zoomFrom = detailsScrollOffset.get() < headerTopInset / 2 ? stripZoomId : null;
-    router.push({ pathname: '/series', params: withZoomSource(next, zoomFrom) });
+    const stripId = zoomId ? null : detailsScrollOffset.get() < headerTopInset / 2 ? stripZoomId : null;
+    if (stripId) next.zoomFrom = 'strip';
+    router.push({ pathname: '/series', params: withZoomSource(next, zoomId ?? stripId) });
   }, [
     inPane,
     handsStripOff,
@@ -1167,8 +1164,11 @@ export function SeriesDetailsPage({
     [targetChapterId, resume, openReaderPage],
   );
   const openPageFromDetails = useCallback(
-    (pageIndex: number) => {
-      openReaderPage(target ? { ...target, start: pageIndex, picked: true } : { start: pageIndex, picked: true });
+    (pageIndex: number, zoomId: string | null) => {
+      openReaderPage(
+        target ? { ...target, start: pageIndex, picked: true } : { start: pageIndex, picked: true },
+        zoomId,
+      );
     },
     [openReaderPage, target],
   );

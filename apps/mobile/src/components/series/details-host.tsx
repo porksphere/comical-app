@@ -60,7 +60,7 @@ export function SeriesDetailsHost({
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onStartReading: () => void;
   onOpenChapter: (version: Chapter) => void;
-  onOpenPage: (pageIndex: number) => void;
+  onOpenPage: (pageIndex: number, zoomId: string | null) => void;
   /** The tapped card's aspect, so the hero starts the right shape — see the note on `coverAspect`. */
   coverAspectSeed?: number;
   /** Reports the details page's hero cover rect — the zoom's destination bound (see zoomGeom). */

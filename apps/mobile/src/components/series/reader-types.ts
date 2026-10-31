@@ -60,4 +60,7 @@ export type SeriesReaderParams = {
   /** 'details' on a split reader the details page pushed (SeriesSplit): its Details button goes
    *  back to them. */
   from?: string;
+  /** 'strip' on an iOS reader page zooming out of the details' strip, which lands on a band of the
+   *  page the strip's shape rather than the whole page (see the zoom target in reader-page). */
+  zoomFrom?: string;
 };

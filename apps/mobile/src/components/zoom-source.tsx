@@ -1,14 +1,16 @@
-import { use, useEffect } from 'react';
-import { View, type StyleProp, type ViewStyle } from 'react-native';
+import { use, useCallback, useEffect, useMemo, useRef } from 'react';
+import { Platform, View, type StyleProp, type ViewStyle } from 'react-native';
 // Internal (see below): expo-router keeps a zoom source's id in this context and exports neither.
 import { ZoomTransitionSourceContext } from 'expo-router/build/link/zoom/zoom-transition-context.js';
 
-import { Link, LinkTrigger } from '@/lib/nav';
+import { useTabRoute } from '@/lib/focused-tab';
+import { Link, LinkTrigger, tabHref } from '@/lib/nav';
 
 /**
  * iOS: the source of a system zoom for a push made in code, where `<Link>` only builds one out of a
  * press. The series page's strip is one: the Read button and the chapter rows open the reader out
- * of it as well as a tap on the strip itself.
+ * of it as well as a tap on the strip itself. So are a History or Activity row's thumbnail and a page
+ * tile in the details, whose presses do more than push.
  *
  * A Link with `<LinkTrigger withAppleZoom>` registers its child as the source under an id it keeps
  * in a context, and its press adds that id to the href's params, which is what the stack reads to
@@ -49,7 +51,29 @@ function SourceView({ onId, style }: { onId: (id: string | null) => void; style:
   return <View collapsable={false} pointerEvents="none" style={style} />;
 }
 
+/** The href a ZoomSource's Link names: `pathname` in the stack of the tab it is rendered under, the
+ *  root route's outside the tabs. Null off iOS, where nothing zooms. */
+export function useZoomHref(pathname: '/series' | '/series/read') {
+  const tab = useTabRoute();
+  return useMemo(() => (Platform.OS !== 'ios' ? null : tab ? tabHref(tab, pathname, {}) : pathname), [tab, pathname]);
+}
+
+/** A ZoomSource's id for a press handler to push with. Held in a ref, as it is only read at press
+ *  time, so a source registering re-renders nothing: one per row or tile, on every mount. */
+export function useZoomId() {
+  const id = useRef<string | null>(null);
+  const onId = useCallback((next: string | null) => {
+    id.current = next;
+  }, []);
+  return [id, onId] as const;
+}
+
 const SOURCE_PARAM = '__internal_expo_router_zoom_transition_source_id';
+
+/** Whether this page's push zoomed out of a source, a ZoomSource's or a zoom Link's. */
+export function openedByZoom(params: object): boolean {
+  return typeof (params as Record<string, unknown>)[SOURCE_PARAM] === 'string';
+}
 
 export function withZoomSource(params: Record<string, string>, id: string | null): Record<string, string> {
   return id ? { ...params, [SOURCE_PARAM]: id } : params;
