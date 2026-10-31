@@ -61,7 +61,6 @@ import { LeavingMask } from '@/components/series/leaving-mask';
 import {
   COLLAPSE_ARMED,
   DISMISS_COMMIT_FRACTION,
-  NO_ORIGIN_SCALE,
   PULL_COMMIT_PX,
   REVEAL_COMMIT_FRACTION,
   SPRING_BACK,
@@ -83,7 +82,8 @@ import {
   zoomBoundShift,
   zoomCrossAxisDrag,
   zoomDragFollow,
-  zoomMaskBox,
+  zoomContentTransform,
+  zoomThumbFrame,
   zoomThrowSpeed,
 } from '@/components/series/page-motion';
 import { ReaderPane, type ReaderPaneHandle } from '@/components/series/reader-pane';
@@ -848,17 +848,7 @@ export function SeriesDetailsPage({
   );
 
   // ── The zoom: MASK + CONTENT TRANSFORM ───────────────────────────────────────────────────────
-  // A port of react-native-screen-transitions' `navigation.zoom({ target: 'bound' })' (the
-  // transition the React Navigation "building custom screen transitions" post demonstrates). Its
-  // shape, and the reason both earlier attempts here looked wrong:
-  //
-  // There is NO flying copy of anything. The DESTINATION SCREEN ITSELF is scaled and translated
-  // so that its own hero bound lands exactly on the source rect, and a MASK — a rounded rect
-  // growing from the source rect to the full screen — is what you actually see it through. That
-  // pairing is the whole trick. Scaling the page with no mask (attempt one) put a page-shaped
-  // rectangle over a card-shaped hole; flying a separate thumbnail to a made-up destination
-  // (attempt two) had to inflate past anything real and then dissolve down into the strip, which
-  // is the pop on expand. With the mask there is nothing to hand over: one object, one motion.
+  // The page grows out of the card behind a mask: see zoomContentTransform.
   //
   // WHICH destination, of the three in `ZoomDest`, depends on what is actually on screen.
   //
@@ -914,20 +904,10 @@ export function SeriesDetailsPage({
     [zoomBoundLostAt],
   );
 
-  // THE CONTENT. The whole page, scaled about its own centre (which is the screen centre) and
-  // translated onto the source rect, fading in over the first slice of the travel — the library's
-  // `ZOOM_FOCUSED_ELEMENT_OPEN_OPACITY_RANGE`, which is what cross-fades it with the real card
-  // still sitting underneath the transparent modal.
-  //
-  // The `- mask` terms are the correction for the mask being an ancestor. The page sits at the
-  // mask's origin M, so every point of it is already displaced by M before any transform; since
-  // the page is screen-sized its own centre is numerically the screen centre, which makes that
-  // displacement a pure translation, and a window-space "scale s about the screen centre, then
-  // translate T" is reproduced locally by translating T - M.
-  // The back-swipe's drag rides here too: its follow adds to the translate and its shrink
-  // multiplies the scale, so a dismissal drag and the collapse it hands into are one motion.
+  // THE CONTENT (see zoomContentTransform). The back-swipe's drag rides here too: its follow adds
+  // to the translate and its shrink multiplies the scale, so a dismissal drag and the collapse it
+  // hands into are one motion.
   const zoomPageStyle = useAnimatedStyle(() => {
-    const q = Math.max(0, zoom.value); // see zoomMaskStyle
     // Before arming: base layout, so the destination cover measures its true untransformed rect.
     if (!zoomArmed.value) {
       return { transform: [{ translateX: 0 }, { translateY: 0 }, { scale: 1 }] };
@@ -943,54 +923,29 @@ export function SeriesDetailsPage({
       zoomGeomPage,
     );
     const h = (zoomSourceAlive.value ? hero : heroCentred) ?? hero;
-    if (!geom || !h) {
-      // No source rect (deep link, web): no mask, no alignment — just the small centred zoom.
-      // Same three transform entries as every other branch: reanimated wants one stable style
-      // shape per view, and this branch and the unarmed one above can both run for one instance.
-      return {
-        transform: [
-          { translateX: dragX.value },
-          { translateY: dragY.value },
-          { scale: NO_ORIGIN_SCALE + (1 - NO_ORIGIN_SCALE) * q },
-        ],
-      };
-    }
-    const box = zoomMaskBox(h, heroShiftX.value, heroShiftY.value, q, width, height);
-    // Scale: normally the base content scale modulated by the drag's shrink. Once the finger has
-    // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
-    // released at, down to the collapsed scale, biased by the release velocity.
-    const scale = geom.s + (1 - geom.s) * q;
-    // The vertical alignment is corrected for how far the details have SCROLLED since the bound was
-    // measured (see zoomBoundShift). Moving the destination anchor UP by `shift` moves the
-    // translation that lands it on the card DOWN by `s * shift` — the anchor is scaled before it is
-    // translated, so the correction is scaled too. Nothing else in here changes: `s` is a ratio of
-    // sizes, and the mask travels between the card and the screen, neither of which scrolls.
-    const shift = zoomBoundShift(geom, detailsScrollOffset.value);
-    // NOTE the compensation uses the UNDRAGGED mask origin. The mask sits at `box + drag` and the
-    // page at `target - box` inside it, which puts the page at `target + drag` in window space:
-    // mask and content displaced by exactly the same amount, so the window keeps framing the same
-    // part of the page however far it is dragged.
-    //
-    // The homing is NOT in here. It is the mask's alone (`zoomDetach`), because the page is the
-    // mask's child and compensating for the mask's origin is what keeps the two locked together —
-    // put `home` on this target instead and the page slides out from under its own window, which
-    // clips whatever it is meant to be framing.
     return {
-      transform: [
-        // heroShift is added to the page's own target as well as the mask's origin. The mask offset
-        // cancels out of the page's absolute position, so shifting only the mask moves the window
-        // without moving what's behind it.
-        { translateX: (geom.tx + heroShiftX.value) * (1 - q) - box.left },
-        { translateY: (geom.ty + geom.s * shift + heroShiftY.value) * (1 - q) - box.top },
-        { scale },
-      ],
+      transform: zoomContentTransform(
+        geom,
+        h,
+        Math.max(0, zoom.value), // see zoomMaskStyle
+        {
+          shiftX: heroShiftX.value,
+          shiftY: heroShiftY.value,
+          dragX: dragX.value,
+          dragY: dragY.value,
+          // The details may have scrolled since the bound was measured. Nothing else changes for
+          // it: `s` is a ratio of sizes, and the mask travels between the card and the screen,
+          // neither of which scrolls.
+          scrollShift: zoomBoundShift(geom, detailsScrollOffset.value),
+        },
+        width,
+        height,
+      ),
     };
   }, [zoomGeomNoSource, zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, heroCentred]);
 
   // The two halves of the cross-fade. The page's own opacity is separated from its transform so
-  // the thumbnail copy can ride that same transform (it is a sibling INSIDE the transformed page,
-  // laid out at the destination bound — which means it starts life exactly on the tapped card and
-  // arrives exactly on the page's cover, with no geometry of its own to keep in sync).
+  // the thumbnail copy can ride that same transform (see zoomThumbFrame).
   const zoomContentFadeStyle = useAnimatedStyle(() => {
     if (!zoomArmed.value) return { opacity: 0 };
     const q = Math.max(0, zoom.value);
@@ -1029,45 +984,12 @@ export function SeriesDetailsPage({
       zoomGeomPage,
     );
     const base = geom?.thumb ?? { x: 0, y: 0, width: 0, height: 0 };
-    if (!zoomArmed.value) {
-      // Same style SHAPE as the branch below — reanimated wants one per view, and both can run for
-      // one instance.
-      return {
-        left: base.x,
-        top: base.y,
-        width: base.width,
-        height: base.height,
-        opacity: 0,
-        borderRadius: hero ? hero.radius : 0,
-        transform: [{ translateY: 0 }],
-      };
-    }
+    const radius = hero ? hero.radius : 0;
+    // `no-source` draws no copy at all (see zoomThumbFrame).
+    if (!zoomArmed.value || geom?.kind === 'no-source') return zoomThumbFrame(base, 0, radius, 1, 0);
     const q = Math.max(0, zoom.value);
-    // NOT DRAWN AT ALL for `no-source`. The copy's entire job is to be the shared element between
-    // the page and the card — it is what lands ON the card, opaque, while the page underneath has
-    // already gone. With the card removed there is nothing to land on, and it would instead sit
-    // fully opaque in the middle of the screen at q = 0 and then blink out with the page: a cover
-    // appearing from nowhere purely to disappear. Better to never draw it and let the page carry
-    // the whole collapse (see ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE) than to fly a picture to a place
-    // nothing is arriving at.
-    if (geom?.kind === 'no-source') {
-      return {
-        left: base.x,
-        top: base.y,
-        width: base.width,
-        height: base.height,
-        opacity: 0,
-        borderRadius: hero ? hero.radius : 0,
-        transform: [{ translateY: 0 }],
-      };
-    }
     const closing = geom?.kind === 'cover-offscreen' ? ZOOM_THUMB_FADE_CLOSE_OFFCOVER : ZOOM_THUMB_FADE_CLOSE;
     const range = zoomClosing.value ? closing : ZOOM_THUMB_FADE_OPEN;
-    // The copy has to READ as the thumbnail it came off, corner included — 10pt on a grid card, 6
-    // on a History/Activity row (see ZoomOrigin). This
-    // rect rides the page's transform, so divide that scale out to hold the on-screen radius
-    // steady rather than letting it grow with the page. (The library gets this for free: it moves
-    // the real source view, which simply keeps its own radius under the tracked scale.)
     const s = geom ? geom.s + (1 - geom.s) * q : 1;
     let rect = base;
     if (geom && hero && geom.kind === 'cover-offscreen') {
@@ -1088,27 +1010,20 @@ export function SeriesDetailsPage({
       const h = w / Math.max(base.width / base.height, 0.01);
       rect = { x: (width - w) / 2, y: (height - h) / 2, width: w, height: h };
     }
-    return {
-      left: rect.x,
-      top: rect.y,
-      width: rect.width,
-      height: rect.height,
-      opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP),
-      borderRadius: (hero ? hero.radius : 0) / Math.max(s, 0.01),
-      // The SCROLL CORRECTION, which only `cover` ever has (`zoomBoundShift` returns 0 for the
-      // others). The copy is laid out on the destination bound, so this is INSIDE the page, in the
-      // same coordinates the bound was measured in, where "the cover moved up by `shift`" is
-      // exactly `-shift`. Its counterpart in zoomPageStyle carries the same shift the other way,
-      // which is what keeps the copy landing on the card at q = 0 and on the real cover at q = 1.
-      //
-      // Nothing else moves the copy. `cover-offscreen` used to slide in along its own path from
-      // behind the mask edge, on the theory that a picture with nowhere real to start should arrive
-      // rather than appear; at any timing that was still legible it read as a second animation
-      // riding the collapse. Waiting until the window is cover-card sized (see
-      // ZOOM_THUMB_FADE_CLOSE_OFFCOVER) settles it without moving anything.
-      transform: [{ translateY: -zoomBoundShift(geom, detailsScrollOffset.value) }],
-    };
-  }, [zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, width, height]);
+    // The SCROLL CORRECTION, which only `cover` ever has (`zoomBoundShift` returns 0 for the
+    // others). The copy is laid out on the destination bound, so this is INSIDE the page, in the
+    // same coordinates the bound was measured in, where "the cover moved up by `shift`" is
+    // exactly `-shift`. Its counterpart in zoomPageStyle carries the same shift the other way,
+    // which is what keeps the copy landing on the card at q = 0 and on the real cover at q = 1.
+    //
+    // Nothing else moves the copy. `cover-offscreen` used to slide in along its own path from
+    // behind the mask edge, on the theory that a picture with nowhere real to start should arrive
+    // rather than appear; at any timing that was still legible it read as a second animation
+    // riding the collapse. Waiting until the window is cover-card sized (see
+    // ZOOM_THUMB_FADE_CLOSE_OFFCOVER) settles it without moving anything.
+    const opacity = interpolate(q, range, [1, 0], Extrapolation.CLAMP);
+    return zoomThumbFrame(rect, opacity, radius, s, -zoomBoundShift(geom, detailsScrollOffset.value));
+  }, [zoomGeomNoSource, zoomGeomCover, zoomGeomOffCover, zoomGeomPage, hero, width, height]);
   // The flying copy draws the series cover: the route's `cover` param is the tapped card's own URL.
   const zoomThumbUri = useResolvedAsset(cover);
 

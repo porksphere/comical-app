@@ -567,6 +567,98 @@ export function zoomMaskBox(
 }
 
 /**
+ * THE CONTENT of the zoom: the whole page, scaled about its own centre (which is the screen centre)
+ * and translated onto the source rect. A port of react-native-screen-transitions'
+ * `navigation.zoom({ target: 'bound' })` (the transition the React Navigation "building custom
+ * screen transitions" post demonstrates).
+ *
+ * There is NO flying copy of anything. The DESTINATION PAGE ITSELF is scaled and translated so
+ * that its own hero bound lands exactly on the source rect, and a MASK — a rounded rect growing
+ * from the source rect to the full screen — is what you actually see it through. That pairing is
+ * the whole trick. Scaling the page with no mask put a page-shaped rectangle over a card-shaped
+ * hole; flying a separate thumbnail to a made-up destination had to inflate past anything real and
+ * then dissolve down into the strip, which is the pop on expand. With the mask there is nothing to
+ * hand over: one object, one motion.
+ *
+ * The `- box` terms are the correction for the mask being an ancestor. The page sits at the mask's
+ * origin M, so every point of it is already displaced by M before any transform; since the page is
+ * screen-sized its own centre is numerically the screen centre, which makes that displacement a
+ * pure translation, and a window-space "scale s about the screen centre, then translate T" is
+ * reproduced locally by translating T - M.
+ *
+ * The compensation uses the UNDRAGGED mask origin. The mask sits at `box + drag` and the page at
+ * `target - box` inside it, which puts the page at `target + drag` in window space: mask and
+ * content displaced by exactly the same amount, so the window keeps framing the same part of the
+ * page however far it is dragged. The homing is NOT in here. It is the mask's alone (`zoomDetach`),
+ * because the page is the mask's child and compensating for the mask's origin is what keeps the two
+ * locked together — put `home` on this target instead and the page slides out from under its own
+ * window, which clips whatever it is meant to be framing.
+ *
+ * `scrollShift` is how far the destination bound has scrolled since it was measured
+ * (`zoomBoundShift`). Moving the anchor UP by `shift` moves the translation that lands it on the
+ * card DOWN by `s * shift`: the anchor is scaled before it is translated, so the correction is
+ * scaled too.
+ *
+ * With no geometry or no source rect (deep link, web) there is no mask and no alignment, just the
+ * small centred zoom, which the drag carries. Every branch is the same three entries, as is a page
+ * at rest: reanimated wants one stable style shape per view.
+ */
+export function zoomContentTransform(
+  geom: ZoomGeom | null,
+  hero: ZoomOrigin | null,
+  q: number,
+  move: { shiftX: number; shiftY: number; dragX: number; dragY: number; scrollShift: number },
+  width: number,
+  height: number,
+) {
+  'worklet';
+  if (!geom || !hero) {
+    return [
+      { translateX: move.dragX },
+      { translateY: move.dragY },
+      { scale: NO_ORIGIN_SCALE + (1 - NO_ORIGIN_SCALE) * q },
+    ];
+  }
+  const box = zoomMaskBox(hero, move.shiftX, move.shiftY, q, width, height);
+  return [
+    // heroShift is added to the page's own target as well as the mask's origin. The mask offset
+    // cancels out of the page's absolute position, so shifting only the mask moves the window
+    // without moving what's behind it.
+    { translateX: (geom.tx + move.shiftX) * (1 - q) - box.left },
+    { translateY: (geom.ty + geom.s * move.scrollShift + move.shiftY) * (1 - q) - box.top },
+    // A drag's shrink and a released dismissal's finishing curve both arrive through `q`.
+    { scale: geom.s + (1 - geom.s) * q },
+  ];
+}
+
+/**
+ * The flying copy's frame. The copy is a sibling INSIDE the transformed page, laid out at the
+ * destination bound, so it rides the page's transform: it starts life exactly on the tapped card and
+ * arrives exactly on the page's cover. Because of that ride the corner radius divides the page's
+ * scale `s` back out. The copy has to READ as the thumbnail it came off, corner included — 10pt on
+ * a grid card, 6 on a History or Activity row (see ZoomOrigin) — not grow a corner with the page.
+ *
+ * Opacity 0 and `s` 1 for a copy that isn't drawn: unarmed, or a `no-source` collapse. The copy's
+ * entire job is to be the shared element between the page and the card, landing ON the card while
+ * the page underneath has already gone. With the card removed there is nothing to land on: it would
+ * sit fully opaque in the middle of the screen at q = 0 and then blink out with the page, a cover
+ * appearing from nowhere purely to disappear. So the page carries that collapse alone (see
+ * ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE). Same style shape either way: reanimated wants one per view.
+ */
+export function zoomThumbFrame(rect: ZoomRect, opacity: number, radius: number, s: number, translateY: number) {
+  'worklet';
+  return {
+    left: rect.x,
+    top: rect.y,
+    width: rect.width,
+    height: rect.height,
+    opacity,
+    borderRadius: radius / Math.max(s, 0.01),
+    transform: [{ translateY }],
+  };
+}
+
+/**
  * How far to carry the whole assembly off its converging path, so that a page under a finger sits
  * where the swipe put it rather than where the card is.
  *
