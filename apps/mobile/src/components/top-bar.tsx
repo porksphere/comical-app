@@ -19,8 +19,8 @@ import { useWindowControlsClearance } from '@/lib/window-controls';
 /**
  * A bar action, drawn by whichever bar is up: the custom bar as a `TopBarButton` with its
  * `icon`, the system bar as a `Stack.Toolbar.Button` — an SF Symbol, or a word at the weight
- * the system gives it ("Select", "Done"). Without `native` the action is the custom bar's
- * only (a refresh that stands in for pull-to-refresh on the web).
+ * the system gives it ("Select", "Done"). Every action says what it is there: `null` means
+ * the system bar goes without it (a refresh that stands in for pull-to-refresh on the web).
  */
 export type TopBarAction = {
   label: string;
@@ -28,7 +28,7 @@ export type TopBarAction = {
   testID: string;
   onPress: () => void;
   icon: ReactNode;
-  native?: { symbol: BarSymbol } | { text: string; variant?: 'done' | 'prominent' };
+  native: { symbol: BarSymbol } | { text: string; variant?: 'done' | 'prominent' } | null;
 };
 
 type BarSymbol = NonNullable<ComponentProps<typeof Stack.Toolbar.Button>['icon']>;

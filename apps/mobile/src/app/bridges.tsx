@@ -281,6 +281,7 @@ export default function BridgesScreen() {
     testID: 'bridges.check-updates',
     onPress: () => void checkForUpdates(),
     icon: checking ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />,
+    native: null,
   };
 
   return (

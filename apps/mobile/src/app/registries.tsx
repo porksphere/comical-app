@@ -236,6 +236,7 @@ export default function RegistriesScreen() {
     testID: 'registries.refresh',
     onPress: () => void refreshLabels(),
     icon: refreshing ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />,
+    native: null,
   };
 
   return (
