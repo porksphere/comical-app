@@ -371,8 +371,8 @@ details, and each History and Activity row's thumbnail. The reader lands on the 
 its page when it came from the strip (`zoomFrom=strip`), otherwise on the whole screen, which
 expo-router narrows to the source's shape. The zoom's interactive dismissal follows the screen's
 `gestureEnabled`, which the page turns off in the reader, except a paged reader that zoomed in or
-that the details pushed: there UIKit's swipe down is the swipe-away, and the swipe up it never
-starts is the reader's own pan (`swipeAway`), ending in the same pop.
+that the details pushed: there UIKit's swipe down is the only swipe away (`swipeAway`), and the
+reader's own pan is off.
 The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
 runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
 

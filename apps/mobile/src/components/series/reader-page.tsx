@@ -64,8 +64,6 @@ import { PersistentBack } from '@/components/series/persistent-back';
 import {
   COLLAPSE_ACTIVATE_PX,
   DISMISS_COMMIT_FRACTION,
-  LIFT_COMMIT_FRACTION,
-  LIFT_CORNER_RADIUS,
   REVEAL_COMMIT_FRACTION,
   SPRING_BACK,
   ZOOM_BACKDROP_FADE_CLOSE,
@@ -856,14 +854,11 @@ export function SeriesReaderPage({
   // dismiss took the reader away mid-read. The desktop has the Details button and Back for those.
   const collapseEnabled = !readerZoomed && !scrubbing && !(IS_WEB && isDesktopPointer());
   // The swipe away, paged, on iOS, of a reader page the details pushed or one that zoomed out of a
-  // History or Activity row. UIKit's zoom dismissal takes the swipe DOWN (the screen's
-  // `gestureEnabled`) and carries the page and the bar back into what it zoomed out of. It never
-  // starts on a swipe up, so that half is this pan's: the page lifts and shrinks under the finger,
-  // and a committed release runs the same native pop the back button does.
+  // History or Activity row: UIKit's zoom dismissal, on the swipe down it starts on (the screen's
+  // `gestureEnabled`), carrying the page and the bar back into what it zoomed out of. It is the
+  // only one, so this pan stays out of its way.
   const swipeAway =
     nativePush && (params.from === 'details' || openedByZoom(params)) && settings.mode === 'paged';
-  const liftY = useSharedValue(0);
-  const popBySwipe = useCallback(() => router.back(), [router]);
   // Each GESTURE is one thing, decided at activation and locked: a drag up on a paged reader grown
   // out of the details' strip is a return into it (progress only); anything else is a dismiss — a
   // free 2D follow in BOTH directions, released on the |cross| decision below, driving the
@@ -883,7 +878,7 @@ export function SeriesReaderPage({
     {
       const collapseGate = traceGate();
       const pan = Gesture.Pan()
-        .enabled(collapseEnabled)
+        .enabled(collapseEnabled && !swipeAway)
         .onBegin(() => {
           trace('reader.collapse', 'BEGAN');
         })
@@ -915,15 +910,9 @@ export function SeriesReaderPage({
             progress.set(Math.min(1, Math.max(0, progressStartSV.value + -cross / span)));
             return;
           }
-          // A pushed card's only swipe-away is `swipeAway`'s. Otherwise the drag is still claimed, so
-          // nothing beneath scrolls on it, but it moves nothing and releases to nothing.
-          if (nativePush) {
-            if (swipeAway) {
-              const reach = ZOOM_DRAG_FOLLOW_REACH * height * ZOOM_DRAG_TRAVEL;
-              liftY.set(zoomDragFollow(Math.max(0, -e.translationY), reach, ZOOM_DRAG_FOLLOW_GRIP));
-            }
-            return;
-          }
+          // A pushed page's only swipe away is UIKit's (`swipeAway`). Anywhere else the drag is still
+          // claimed, so nothing beneath scrolls on it, but it moves nothing and releases to nothing.
+          if (nativePush) return;
           // The follow: both axes, feeding the collapse instead of a fling. Distance in ANY
           // direction drives it, since unlike an edge swipe this gesture has no single axis to
           // measure along.
@@ -988,18 +977,7 @@ export function SeriesReaderPage({
             }
             return;
           }
-          if (nativePush) {
-            if (!swipeAway) return;
-            if (releaseCommitted(-e.translationY, -e.velocityY, height * LIFT_COMMIT_FRACTION)) {
-              runOnJS(popBySwipe)();
-              // Back to full size while the pop runs, so the page is where its source expects it
-              // when the zoom lands there.
-              liftY.set(withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) }));
-            } else {
-              liftY.set(withSpring(0, SPRING_BACK));
-            }
-            return;
-          }
+          if (nativePush) return;
           // The release decision — the shared projection (lib/gesture-release), judged along the
           // direction the page actually travelled, since this one can be thrown off either side.
           //
@@ -1042,7 +1020,6 @@ export function SeriesReaderPage({
         // Always fires once the gesture resolves (release OR cancel) — the next gesture decides
         // its own mode fresh.
         .onFinalize((_e, success) => {
-          if (swipeAway && !success) liftY.set(withSpring(0, SPRING_BACK));
           // A cancelled dismiss drag never reaches onEnd — don't leave the page part-collapsed.
           // Same `success` test as the details page's back-swipe, for the same reason.
           if (gestureMode.value === 2 && !success) {
@@ -1065,10 +1042,7 @@ export function SeriesReaderPage({
       // The DISTANCE stays this surface's own: nothing here is racing a scroller for the claim, so
       // it can afford to ask for more travel before it takes the gesture.
       const cross = Math.round(COLLAPSE_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
-      if (swipeAway) {
-        // Up only, and out of the way the moment a drag heads down: that one is UIKit's.
-        pan.activeOffsetY(-COLLAPSE_ACTIVATE_PX).failOffsetY(cross).failOffsetX([-cross, cross]);
-      } else if (settings.mode === 'paged') {
+      if (settings.mode === 'paged') {
         pan.activeOffsetY([-COLLAPSE_ACTIVATE_PX, COLLAPSE_ACTIVATE_PX]).failOffsetX([-cross, cross]);
       } else {
         pan.activeOffsetX([-COLLAPSE_ACTIVATE_PX, COLLAPSE_ACTIVATE_PX]).failOffsetY([-cross, cross]);
@@ -1081,8 +1055,6 @@ export function SeriesReaderPage({
     nativePush,
     stripReader,
     swipeAway,
-    liftY,
-    popBySwipe,
     leaveReaderForDetails,
     width,
     height,
@@ -1286,18 +1258,9 @@ export function SeriesReaderPage({
   // The reader FRAME travels only into the strip: on the way it rises by half its hidden height,
   // so the strip shows the page's vertical CENTRE, not its top edge. A dismissal does not move it
   // either — the collapse moves the whole page, and the reader's dark surface stays put and fades.
-  // The swipe away's lift rides it too (`liftY`), as UIKit's swipe down does the whole screen:
-  // up with the finger, smaller, with rounding corners.
-  const readerCardStyle = useAnimatedStyle(() => {
-    const lift = liftY.value;
-    return {
-      transform: [
-        { translateY: (-(height - bandH) / 2) * progress.value - lift },
-        { scale: 1 - lift / (height * ZOOM_DRAG_TRAVEL) },
-      ],
-    };
-  }, [height, bandH]);
-  const readerClipStyle = useAnimatedStyle(() => ({ borderRadius: Math.min(LIFT_CORNER_RADIUS, liftY.value) }));
+  const readerCardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: (-(height - bandH) / 2) * progress.value }],
+  }), [height, bandH]);
 
   // ── The BACKDROP's dim (see lib/series-backdrop.ts) ───────────────────────────────────
   // How much of the screen this page currently covers: `zoom`, which the dismiss drives too.
@@ -1571,7 +1534,7 @@ export function SeriesReaderPage({
         <Animated.View
           testID="series-page.reader-card"
           style={[styles.readerFrame, { top: 0, width, height }, readerCardStyle]}>
-          <Animated.View style={[styles.readerClip, readerClipStyle]}>
+          <View style={styles.readerClip}>
           {error ? (
             <>
               {pagesGone && !missingBridge ? (
@@ -1663,7 +1626,7 @@ export function SeriesReaderPage({
                 onPress={leaveReaderForDetails}
               />
             </View>
-          </Animated.View>
+          </View>
         </Animated.View>
       </GestureDetector>
 

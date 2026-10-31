@@ -26,12 +26,6 @@ export const REVEAL_COMMIT_FRACTION = 0.25;
 
 export const DISMISS_COMMIT_FRACTION = 0.5;
 
-// The split reader's swipe UP (see `liftY`). Less than a dismissal asks, so it doesn't feel heavier
-// than the system's swipe down beside it.
-export const LIFT_COMMIT_FRACTION = 0.25;
-
-export const LIFT_CORNER_RADIUS = 40;
-
 // The reveal pull: how far past the details list's top the rubber-band must be pulled, at
 // release, to expand the reader. Roughly usePullToRefresh's trigger feel.
 export const PULL_COMMIT_PX = 80;
