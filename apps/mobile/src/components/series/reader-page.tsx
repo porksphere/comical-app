@@ -39,29 +39,20 @@ import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { ThemedText } from '@/components/themed-text';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
-import { seriesGoneReason } from '@/data/api';
 import { warmPageImages } from '@/data/warm-pages';
-import {
-  chapterPagesQuery,
-  directPagesQuery,
-  historyQuery,
-  inLibraryQuery,
-  seriesDetailQuery,
-  seriesListQuery,
-} from '@/data/queries';
+import { chapterPagesQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID } from '@/data/types';
-import { useMissingBridge } from '@/hooks/use-bridges';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useReaderSettings, useFitOverride } from '@/hooks/use-reader-settings';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
-import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
+import { getAdjacentChapter } from '@/lib/chapter-order';
 import { hideNativeTabBar } from '@/lib/native-tab-bar';
 import { LinkAppleZoomTarget, useRouter } from '@/lib/nav';
-import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
+import { getPreferredGroup } from '@/lib/preferred-group';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { desktopShell } from '@/lib/desktop-shell';
 import { trace, traceGate, traceJS, traceThrottled } from '@/lib/gesture-trace';
@@ -118,6 +109,7 @@ import {
 } from '@/components/series/split-handoff';
 import { usePageLeave } from '@/components/series/use-page-leave';
 import { usePageZoom } from '@/components/series/use-page-zoom';
+import { decodeSeriesParams, useSeriesRead } from '@/components/series/use-series-read';
 import { useViewport } from '@/components/series/viewport';
 
 const CHROME_HIDE_MS = 3000;
@@ -189,16 +181,13 @@ export function SeriesReaderPage({
   const {
     id,
     title,
-    bridge: bridgeParam,
     bridgeId,
-    cover: coverParam,
-    direct,
     chapterId: seedChapterId,
     chapterName: seedChapterName,
     start: seedStart,
     picked: seedPicked,
   } = params;
-  const seriesKey = bridgeId && id ? `${bridgeId}:${id}` : null;
+  const { seriesKey, bridge, cover, isDirect } = decodeSeriesParams(params);
   const [settings] = useReaderSettings(seriesKey);
   // Off iOS this page draws the move from its details itself: it grows out of their strip and
   // shrinks back into it, and details brought up in its place slide up over it (see SplitHandoff).
@@ -207,9 +196,6 @@ export function SeriesReaderPage({
   const [splitHandoff] = useState(() => (splitDrawn && seriesKey ? takeSplitHandoff(seriesKey, 'strip') : null));
   const stripFrom = splitHandoff?.kind === 'strip' ? splitHandoff : null;
   const stripReader = stripFrom !== null;
-  const bridge = bridgeParam ? decodeURIComponent(bridgeParam) : undefined;
-  const cover = coverParam ? decodeURIComponent(coverParam) : undefined;
-  const isDirect = direct === '1';
 
   // ── The visible page — and, in sequence mode, the visible ENTRY ────────────────────────────
   // Lives at this level because the TOOLBAR is rendered here (the pane reports it up through
@@ -232,55 +218,6 @@ export function SeriesReaderPage({
   const detailTitle = sequence ? visibleSequenceEntry?.seriesTitle : title;
   const detailIsDirect = sequence ? visibleSequenceEntry?.chapterId === DIRECT_CHAPTER_ID : isDirect;
 
-  // Opening a different series clears the remembered scanlation group (same as series.tsx).
-  useEffect(() => {
-    resetPreferredGroup();
-  }, [id]);
-
-  // Chapter list (chaptered series only) — drives resume-or-first resolution and prev/next
-  // adjacency for the reader pane. A sequence loads nothing about a series: its chrome describes
-  // the visible entry, and an album that wanders through five series must not fetch five series'
-  // details on the way.
-  const { data: listData } = useQuery(seriesListQuery(ds, mock, bridgeId ?? '', id ?? '', false, !isDirect && !sequence));
-  const chapters = listData?.chapters;
-
-  // Library membership — tells the reader pane whether a read also has to keep the reading log's row
-  // up to date (see its `record`). The query lives HERE, not in the pane:
-  // the pane re-renders on every page sweep, and useQuery's per-render subscription work (query
-  // key hashing) is measurable at that cadence.
-  const { data: inLibrary } = useQuery({
-    ...inLibraryQuery(ds, mock, bridgeId ?? '', id ?? ''),
-    retry: false,
-    enabled: !!bridgeId && !!id && !sequence,
-  });
-
-  // ── Where does reading start? ────────────────────────────────────────────
-  // Resume from the reading history (same lookup as useStartReading — resolved here, not at the
-  // card tap, so cards in recycled lists never subscribe to history), else the first chapter in
-  // reading order, else — for a direct series — the pages themselves. The derived value settles
-  // once the history (and, chaptered, the chapter list) is in; after that, chapter navigation
-  // OVERRIDES it. The mounted pane seeds its position once at mount, so later history refetches
-  // (our own progress writes invalidate it) never yank the pager.
-  const { data: history, isLoading: historyLoading } = useQuery(historyQuery(ds, mock));
-  const resume = useMemo(
-    () => history?.find((h) => h.bridgeId === bridgeId && h.seriesId === id),
-    [history, bridgeId, id],
-  );
-  const derivedTarget: ReadTarget | null = useMemo(() => {
-    if (historyLoading) return null;
-    if (isDirect) {
-      const resumeDirect = resume && (resume.chapterId === DIRECT_CHAPTER_ID || !resume.chapterId);
-      return { start: resumeDirect ? (resume?.lastPage ?? 0) : 0 };
-    }
-    if (resume?.chapterId && resume.chapterId !== DIRECT_CHAPTER_ID) {
-      return { chapterId: resume.chapterId, chapterName: resume.chapterName, start: resume.lastPage ?? 0 };
-    }
-    if (chapters?.length) {
-      const first = firstChapterInReadingOrder(chapters, getPreferredGroup());
-      if (first) return { chapterId: first.id, chapterName: first.name, start: 0 };
-    }
-    return null; // chapter list still loading (or empty)
-  }, [historyLoading, isDirect, resume, chapters]);
   // Reader-first entries seed this from their params, which is what makes the pages query live on
   // the very first commit — no waiting on history, and the request goes out ahead of detail.
   const [override, setOverride] = useState<ReadTarget | null>(() => {
@@ -288,7 +225,7 @@ export function SeriesReaderPage({
     const at = Number.isFinite(parsed) ? parsed : 0;
     const picked = seedPicked === '1';
     if (seedChapterId) return { chapterId: seedChapterId, chapterName: seedChapterName, start: at, picked };
-    if (direct === '1') return { start: at, picked };
+    if (isDirect) return { start: at, picked };
     return null;
   });
   // Sequence mode: the target is the sequence itself. `chapterId` is deliberately ABSENT — it
@@ -302,59 +239,20 @@ export function SeriesReaderPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seeded once, see above
     [inSequence],
   );
-  const target = sequenceTarget ?? override ?? derivedTarget;
-  const targetChapterId = target?.chapterId;
-
-  // Keep next/prev chapter following the same scanlation group.
-  useEffect(() => {
-    if (!targetChapterId) return;
-    const group = chapters?.find((c) => c.id === targetChapterId)?.group;
-    if (group !== undefined) setPreferredGroup(group);
-  }, [targetChapterId, chapters]);
-
-  // The target chapter's pages (or the direct page list). Cached per chapter, so revisiting one
-  // (or skipping back) repaints from the query cache.
   const {
-    data: chapterPagesData = null,
-    error: queryError,
+    chapters,
+    inLibrary,
+    target,
+    targetChapterId,
+    pages: chapterPages,
     refetch,
-  } = useQuery({
-    ...(targetChapterId
-      ? chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', targetChapterId)
-      : directPagesQuery(ds, mock, bridgeId ?? '', id ?? '')),
-    // A DIRECT series' page list is just "this series' pages" — `directPagesQuery` takes nothing
-    // from the read target, so waiting for one held it behind the history query for no reason
-    // (history only decides which PAGE to land on, which the pane needs, not which request to
-    // make). Chaptered still waits, and genuinely must: until the target resolves there is no
-    // chapter id, and firing without one would ask `directPagesQuery` for a series that has none.
-    enabled: !!id && (isDirect || !!target) && !sequence,
-  });
-  // In sequence mode the sequence IS the page list — the chapter query above never runs.
-  const pages = sequence ? sequence.uris : chapterPagesData;
-  // Series detail for the toolbar/settings gear (placeholder-seeded from the forwarded
-  // title+cover). The details beneath subscribe to this same query key, so this costs one fetch.
-  const { data: series = null } = useQuery({
-    ...seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
-      direct: isDirect,
-      bridgeName: bridge ?? 'Library',
-      title,
-      cover,
-    }),
-    // `!!id` preserves the option's own guard, which this override replaces.
-    enabled: !!id && !sequence,
-  });
-  // ORDERING, and why this query sits HERE rather than at the top of the component. React Query
-  // dispatches on mount effects, which run in hook order, so declaration order IS request order
-  // for anything enabled on the first commit. The row a reader opens from seeds the target from
-  // its own params, so the pages query is live on the first commit and, being declared above, is
-  // dispatched first: the page History and Activity tapped to keep reading, then the rest. That
-  // matters on device, where the on-device runtime serves everything through one in-process
-  // transport and order of arrival is order of service.
-
-  const error = !sequence && queryError ? (queryError as Error).message || 'Failed to load pages' : null;
-  // The bridge's own error for a bridge that isn't there is a server path and a Retry that can't work.
-  const missingBridge = useMissingBridge(sequence ? undefined : bridgeId);
-  const pagesGone = !sequence && seriesGoneReason(queryError) !== undefined;
+    series,
+    error,
+    missingBridge,
+    pagesGone,
+  } = useSeriesRead(params, { pinned: sequenceTarget ?? override, off: !!sequence });
+  // In sequence mode the sequence IS the page list — the chapter query never runs.
+  const pages = sequence ? sequence.uris : chapterPages;
 
   // ── Adjacent chapters (chaptered only; no stitching — see the header comment) ──
   const currentChapter = useMemo(
