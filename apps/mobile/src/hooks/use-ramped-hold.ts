@@ -1,7 +1,7 @@
 /**
  * A hold-to-arm gesture: press and KEEP holding, and three haptic beats ramp up in intensity
  * (soft → light → medium) as a countdown; keep holding through all three and the hold ARMS —
- * `onArm` fires once, on the ramp's ONE strong closing beat. The felt shape is
+ * `onArm` fires once, just after the ramp's ONE strong closing beat. The felt shape is
  * "bip. bip.. bip… BIP": three escalating small beats — each arriving after a LONGER pause than
  * the last — then a single heavy thump as the commit, after the longest pause of all.
  * Releasing (or the press being cancelled) at any point before that aborts silently. Deliberate
@@ -93,7 +93,11 @@ export function useRampedHold(
           hapticImpactHeavy();
           if (sound) playHoldSound(3);
           pulse(BEAT_SCALE[3]);
-          armRef.current();
+          // The arm waits out the swell. Run in this tick, it held the swell back behind its own
+          // work (the pulse only leaves for the UI thread once this callback returns) and landed
+          // its re-render on top of it: on iOS a new header rebuilds the bar, title view and all.
+          // Not a tracked timer: letting go now can't take back a commit already felt.
+          setTimeout(() => armRef.current(), PULSE_UP_MS + PULSE_DOWN_MS);
         }, BEAT_AT_MS[3]),
       );
     },
