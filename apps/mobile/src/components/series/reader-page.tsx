@@ -126,19 +126,6 @@ const CHROME_HOVER_EDGE = 80;
 /** How long a toolbar brought up by hovering outlasts the pointer leaving it. */
 const CHROME_HOVER_HIDE_MS = 500;
 
-/**
- * The longest a NEW stitched window will wait for the previous chapter's page list before being
- * created without it (see the `run` machinery).
- *
- * A ceiling, not a delay — both page lists are requested in the same commit, so what is actually
- * being waited on is the gap between two responses already in flight, and a boundary visited before
- * (every neighbour list is fetched eagerly and the query cache is persisted) resolves in the same
- * render and waits for nothing. What the ceiling buys is the case that can't be waited out: a
- * source that is slow or gone. There it spends this much of the "Loading…" already on screen and
- * then goes on without it, rather than holding the reader on a request that may never land.
- */
-const PREV_WINDOW_GRACE_MS = 600;
-
 const IS_WEB = Platform.OS === 'web';
 
 const IS_IOS = Platform.OS === 'ios';
@@ -317,14 +304,13 @@ export function SeriesReaderPage({
   const pushSettled = usePushSettled();
   // EAGER, deliberately — not deferred behind `standby` like the render window is.
   //
-  // A run can only take its previous chapter at the instant it is created (see the window below),
-  // so how soon these resolve decides whether the FIRST chapter boundary you read backward across
-  // is seamless. Deferring them, as this did for a while, guaranteed they lost that race on every
-  // cold open.
+  // The window takes each neighbour as its list lands (see the run below), so how soon these
+  // resolve decides whether the first chapter boundary you read across is a page turn or a jump.
+  // Deferring them, as this did for a while, lost that race on every cold open.
   //
   // The cost is two page LISTS — cache-first, and a list is just URLs. It does not mount page cells
   // or warm images: both of those key off `standby` in ReaderPane.
-  const { data: prevPages, error: prevPagesError } = useQuery({
+  const { data: prevPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
     enabled: stitched && !!id && !!prevChapter,
   });
@@ -392,41 +378,12 @@ export function SeriesReaderPage({
   // backward stays a page turn chapter after chapter instead of turning into a jump at the second
   // boundary.
   //
-  // The hold below stays anyway. A window that is right when it is BUILT never has to anchor
-  // anything, and the cheapest correction is the one that doesn't happen.
-  //
-  // ── …and why the window is worth WAITING a beat for ─────────────────────────────────────────
-  // Creation being the only moment a run can take its previous chapter makes that moment worth
-  // getting right. A run created the instant this chapter's own pages land is a run created into
-  // a race: the neighbour's list was requested in the same commit and is usually a beat behind, so
-  // the window came out one chapter short and the boundary it was short of was the one the reader
-  // was parked on — swipe back from page 1 and there was nothing there to swipe to.
-  //
-  // So a NEW run holds for the previous chapter's list, and the pane holds with it (`readerReady`
-  // below) rather than mounting onto a window that is about to be wrong. Not indefinitely: the
-  // hold is capped at PREV_WINDOW_GRACE_MS, past which the run is created without it and the
-  // backward boundary falls back to the pager's off-the-end hand-off (paged-reader's `edgeTurn`),
-  // which crosses by jumping rather than by turning. The cap is what keeps a slow or dead source
-  // from holding the reader: it can cost a moment of the "Loading…" that was already on screen,
-  // never the page itself.
-  //
-  // What it must NOT become is a wait for something already in hand — every neighbour list is
-  // fetched eagerly and persisted, so the second visit to a boundary resolves in the same render
-  // and holds for nothing at all.
+  // So the window is built the moment this chapter's own pages are in, with whichever neighbours
+  // are in hand, and a neighbour that lands later joins at its end of it (the merge below). Nothing
+  // waits for the head. Holding the window back for the previous chapter's list held the pane back
+  // with it, and a reader that zoomed open spent the whole flight on a black "Loading…", waiting on
+  // a chapter it wasn't showing.
   const [run, setRun] = useState<{ key: number; segs: Segment[] }>({ key: 0, segs: [] });
-  // The grace clock, armed the moment a run COULD be created (this chapter's pages are in) and
-  // belonging to that chapter, so navigating re-arms it. Keyed by string rather than timestamped so
-  // nothing here has to read a clock during render. A chapter whose grace has run out stays run out
-  // for the life of this screen, deliberately: by then its neighbour's list has either arrived — in
-  // which case it is cached and the next run takes it with no wait at all — or it is not coming,
-  // and waiting a second time would buy the same nothing twice.
-  const graceKey = pages && stitched ? (targetChapterId ?? DIRECT_CHAPTER_ID) : null;
-  const [graceOverFor, setGraceOverFor] = useState<string | null>(null);
-  useEffect(() => {
-    if (!graceKey) return;
-    const t = setTimeout(() => setGraceOverFor(graceKey), PREV_WINDOW_GRACE_MS);
-    return () => clearTimeout(t);
-  }, [graceKey]);
   const { segments, runKey } = useMemo(() => {
     if (!pages || !stitched) return { segments: NO_SEGMENTS, runKey: run.key };
     const currentId = targetChapterId ?? DIRECT_CHAPTER_ID;
@@ -441,20 +398,6 @@ export function SeriesReaderPage({
 
     const at = run.segs.findIndex((s) => s.id === currentId);
     if (at === -1) {
-      // The hold (see above). It waits on the RESPONSE, not on a usable segment: a chapter that
-      // comes back with no pages, or a request that comes back an error, has answered — there is
-      // nothing further to wait for and the run is created without it. `NO_SEGMENTS` — one stable
-      // array, not a fresh `[]` — because this return feeds the adjust-state-on-render below, and
-      // a new identity every render is an infinite loop.
-      //
-      // Not knowing yet whether there IS a previous chapter counts as waiting, and that case is
-      // not exotic — it is how RESUMING works. A resumed target comes from the reading history,
-      // which is local and instant, so the pages request goes out (and can come back) while the
-      // chapter LIST is still in flight; until that list lands there is no `prevChapter` to have a
-      // page list for, and a run built in that gap is built blind. The same grace covers it.
-      const awaitingPrev =
-        !!targetChapterId && (!chapters || (!!prevChapter && prevPages === undefined && !prevPagesError));
-      if (awaitingPrev && graceOverFor !== currentId) return { segments: NO_SEGMENTS, runKey: run.key };
       const segs: Segment[] = [];
       if (prevSeg) segs.push(prevSeg);
       segs.push({ id: currentId, name: target?.chapterName, pages });
@@ -501,13 +444,10 @@ export function SeriesReaderPage({
     stitched,
     targetChapterId,
     target?.chapterName,
-    chapters,
     prevChapter,
     prevPages,
-    prevPagesError,
     nextChapter,
     nextPages,
-    graceOverFor,
     collapsing,
   ]);
   // Catch the run state up DURING render (React's adjust-state-on-render pattern — the merge
@@ -518,9 +458,8 @@ export function SeriesReaderPage({
     setRun({ key: runKey, segs: segments });
   }
 
-  // Ready to read: the target's own pages, AND — where the pager is stitched — the window they go
-  // in. Holding the pane back for the window is the point of the hold above: a pane mounted onto a
-  // one-chapter window reads `initialPage` there and then, and no later arrival can move it.
+  // Ready to read: the target's own pages (and, stitched, the window built from them in the same
+  // render).
   const readerReady = !!target && !!pages && (!stitched || segments.length > 0);
 
   // What the reader side has to render, and WHEN it got it. A flash on the first reveal is a
