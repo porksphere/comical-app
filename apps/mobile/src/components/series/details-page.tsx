@@ -1,4 +1,4 @@
-import { Stack, useNavigation, useTheme as useNavTheme } from 'expo-router';
+import { Stack, useNavigation } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -51,7 +51,6 @@ import { releaseCommitted } from '@/lib/gesture-release';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import { type ZoomRect } from '@/lib/series-zoom';
-import { truncateTopBarTitle } from '@/components/series/series-body';
 import { SeriesDetailsHost } from '@/components/series/details-host';
 import { PersistentBack } from '@/components/series/persistent-back';
 import {
@@ -131,7 +130,6 @@ export function SeriesDetailsPage({
   const theme = useTheme();
   // The navigation theme, for the system bar's own tint (iOS): the details hand it back after the
   // reader's white.
-  const navTheme = useNavTheme();
   const { width, height } = useViewport();
   const insets = useSafeAreaInsets();
 
@@ -1178,14 +1176,8 @@ export function SeriesDetailsPage({
   const scheme = useActiveColorScheme();
   const seriesTitle = series?.title ?? title ?? id ?? 'Reader';
 
-  // Same "<Bridge> / <Title>" the /series TopBar shows (shared truncation rule).
-  const topBarSeries = series?.title ?? title;
-  const topBarBridgeName = series?.bridge ?? bridge;
-  const headerBarTitle = topBarSeries
-    ? topBarBridgeName
-      ? `${topBarBridgeName} / ${truncateTopBarTitle(topBarSeries)}`
-      : truncateTopBarTitle(topBarSeries)
-    : (topBarBridgeName ?? '');
+  // The series' title alone, which the bar truncates to its one line.
+  const headerBarTitle = series?.title ?? title ?? '';
 
   const dimOverlays = <StripDim progress={progress} />;
 
@@ -1213,7 +1205,6 @@ export function SeriesDetailsPage({
             title: barSolid ? headerBarTitle : '',
             headerTitle: barSolid ? headerBarTitle : '',
             headerBlurEffect: barSolid ? 'systemChromeMaterial' : undefined,
-            headerTintColor: navTheme.colors.primary,
           }}
         />
         {!nativePush ? (

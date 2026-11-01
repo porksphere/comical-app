@@ -101,16 +101,6 @@ function SeriesCoverBox({
   );
 }
 
-// Conservative cap on the top bar's "<Bridge> / <Title>" title portion — some
-// series titles run extremely long, and letting the bar's own `numberOfLines={1}`
-// truncate the combined string could clip the bridge name off the front entirely.
-const TOP_BAR_TITLE_MAX_CHARS = 40;
-
-/** Exported for the series page, whose details top bar and its reader toolbar share one title. */
-export function truncateTopBarTitle(t: string): string {
-  return t.length > TOP_BAR_TITLE_MAX_CHARS ? `${t.slice(0, TOP_BAR_TITLE_MAX_CHARS).trimEnd()}…` : t;
-}
-
 /** Meta cells whose value should open a matching search, keyed by the
  *  cell's `label` (see `buildMeta` in `data/source.ts`) to the `SearchIntent`
  *  meta key it maps to. STATUS is left static — a lifecycle value like
