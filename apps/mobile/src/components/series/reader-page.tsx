@@ -50,6 +50,7 @@ import { useActiveColorScheme } from '@/hooks/use-theme';
 import { getAdjacentChapter } from '@/lib/chapter-order';
 import { hideNativeTabBar } from '@/lib/native-tab-bar';
 import { LinkAppleZoomTarget, useRouter } from '@/lib/nav';
+import { useTabRoute } from '@/lib/focused-tab';
 import { getPreferredGroup } from '@/lib/preferred-group';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { desktopShell } from '@/lib/desktop-shell';
@@ -108,6 +109,7 @@ import { usePageZoom } from '@/components/series/use-page-zoom';
 import { decodeSeriesParams, useSeriesRead } from '@/components/series/use-series-read';
 import { useViewport } from '@/components/series/viewport';
 import { ZoomFrame } from '@/components/series/zoom-frame';
+import { ZoomCoverCopy } from '@/components/series/zoom-cover-copy';
 
 const CHROME_HIDE_MS = 3000;
 
@@ -157,6 +159,7 @@ export function SeriesReaderPage({
   const ds = useDataSource();
   const router = useRouter();
   const { width, height } = useViewport();
+  const inTabStack = useTabRoute() !== null;
   const insets = useSafeAreaInsets();
   const mock = useMockActive();
   const fitOverride = useFitOverride();
@@ -1180,6 +1183,10 @@ export function SeriesReaderPage({
   const zoomThumbUri = useResolvedAsset(
     sequence ? sequence.uris[seqMountIndex] || sequence.entries[seqMountIndex]?.sourceUrl : cover,
   );
+  // iOS: zoomed out of a History or Activity row's cover, under a tab's stack (whose provider
+  // ZoomCoverCopy reads the transition from).
+  const coverZoom = nativePush && inTabStack && params.zoomFrom === 'cover' && openedByZoom(params);
+  const zoomRect = zoomTargetRect(params.zoomFrom, width, height, bandH, stripZoomH);
 
   // The back chevron follows the auto-hiding chrome (via the shared-value mirror), and on the way
   // into the details' strip it stays up.
@@ -1572,14 +1579,15 @@ export function SeriesReaderPage({
       {/* UIKit's zoom out of the details' strip lands on the same stretch of this page: the strip's
           resting rect, centred, as `readerCardStyle` centres the page in the strip on the way back.
           Out of a thumbnail it lands on the whole screen, which expo-router narrows to the
-          thumbnail's shape, centred: about where a fitted page sits. */}
+          thumbnail's shape, centred: about where a fitted page sits. Out of a row's cover that box
+          is spelled out, since the copy of the cover drawn over it has to sit exactly where the
+          thumbnail lands. */}
       {nativePush ? (
-        <View
-          pointerEvents="none"
-          style={[styles.zoomTarget, { top: params.zoomFrom === 'strip' ? (height - bandH) / 2 : 0, width }]}>
+        <View pointerEvents="none" style={[styles.zoomTarget, zoomRect]}>
           <LinkAppleZoomTarget>
-            <View collapsable={false} style={{ width, height: params.zoomFrom === 'strip' ? stripZoomH : height }} />
+            <View collapsable={false} style={{ width: zoomRect.width, height: zoomRect.height }} />
           </LinkAppleZoomTarget>
+          {coverZoom && zoomThumbUri ? <ZoomCoverCopy uri={zoomThumbUri} loading={!readerReady && !error} /> : null}
         </View>
       ) : null}
 
@@ -1591,6 +1599,18 @@ export function SeriesReaderPage({
       </SplitClip>
     </View>
   );
+}
+
+/** Where the system zoom lands on the reader page, for the `zoomFrom` it was pushed with. */
+function zoomTargetRect(zoomFrom: string | undefined, width: number, height: number, bandH: number, stripH: number) {
+  if (zoomFrom === 'strip') return { top: (height - bandH) / 2, left: 0, width, height: stripH };
+  if (zoomFrom === 'cover') {
+    // A 2:3 cover's contain box.
+    const w = Math.min(width, (height * 2) / 3);
+    const h = w * 1.5;
+    return { top: (height - h) / 2, left: (width - w) / 2, width: w, height: h };
+  }
+  return { top: 0, left: 0, width, height };
 }
 
 type ClosingNavigation = {

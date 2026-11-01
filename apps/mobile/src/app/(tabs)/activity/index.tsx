@@ -281,6 +281,7 @@ export default function ActivityScreen() {
           picked: '1',
           ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
           ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
+          ...(zoomId && g.thumbnailUrl ? { zoomFrom: 'cover' } : {}),
         },
         zoomId,
       ),

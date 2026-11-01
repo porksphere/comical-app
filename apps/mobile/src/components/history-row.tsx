@@ -248,9 +248,12 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
   },
+  // The thumbnail's corners, which UIKit's zoom starts its window with.
   thumbZoomBox: {
     width: THUMB_W,
     aspectRatio: 2 / 3,
+    ...ContinuousCorner,
+    borderRadius: 6,
   },
   // Inset from the cover's rounded edge rather than clipped by it, so the fill never has to agree
   // with the corner's curve — and the track reads over any cover, light or dark.

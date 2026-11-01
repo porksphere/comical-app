@@ -173,6 +173,7 @@ export default function HistoryScreen() {
           reader: '1',
           start: String(h.lastPage ?? 0),
           ...(h.thumbnailUrl ? { cover: encodeSeriesParam(h.thumbnailUrl) } : {}),
+          ...(zoomId && h.thumbnailUrl ? { zoomFrom: 'cover' } : {}),
           ...(isDirect ? { direct: '1' } : { chapterId: h.chapterId!, chapterName: h.chapterName ?? '' }),
         },
         zoomId,

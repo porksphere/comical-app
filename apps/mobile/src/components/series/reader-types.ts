@@ -61,6 +61,8 @@ export type SeriesReaderParams = {
    *  back to them. */
   from?: string;
   /** 'strip' on an iOS reader page zooming out of the details' strip, which lands on a band of the
-   *  page the strip's shape rather than the whole page (see the zoom target in reader-page). */
+   *  page the strip's shape rather than the whole page (see the zoom target in reader-page).
+   *  'cover' on one zooming out of a History or Activity row's cover, which lands on the cover's
+   *  box with a copy of the cover over it (ZoomCoverCopy). */
   zoomFrom?: string;
 };

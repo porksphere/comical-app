@@ -1,5 +1,6 @@
 import { Slot, Stack } from 'expo-router';
 import type { ComponentProps, ReactNode } from 'react';
+import { ReanimatedScreenProvider } from 'react-native-screens/reanimated';
 
 import { TabRootScrollContext } from '@/components/tab-scroll-marker';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
@@ -47,6 +48,10 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * hooks report the FOCUSED tab, and every tab stays mounted); a series card under it builds its
  * zoom Link's href from it — see `TabRouteContext`. The tab also reports its bottom inset, the
  * one place that knows where UIKit put the tab bar, for the root overlays (`tab-bar-clearance`).
+ *
+ * The provider makes each screen of the stack hand its own transition progress to reanimated, which
+ * is what a reader zooming out of a History or Activity row times its copy of the cover by (see
+ * ZoomCoverCopy). It only samples while a transition runs.
  */
 export default function TabStack({ tab }: { tab: string }) {
   if (!NATIVE_HEADER) return <Slot />;
@@ -54,20 +59,22 @@ export default function TabStack({ tab }: { tab: string }) {
   return (
     <TabRouteContext.Provider value={tab}>
       <TabBarClearanceReporter />
-      <Stack
-        screenOptions={{
-          headerTransparent: true,
-          headerShadowVisible: false,
-          headerBackButtonDisplayMode: 'minimal',
-          scrollEdgeEffects: { top: 'soft' },
-        }}
-        screenLayout={scrolledMaterial ? materialTabScreenLayout : bareTabScreenLayout}>
-        {scrolledMaterial ? <Stack.Screen name="index" options={SCROLLED_MATERIAL} /> : null}
-        {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
-        <Stack.Screen name="in-tab/series/index" options={{ headerShown: false }} />
-        <Stack.Screen name="in-tab/series/read" options={{ headerShown: false }} />
-        <Stack.Screen name="in-tab/series/search" options={NESTED_SEARCH_BAR} />
-      </Stack>
+      <ReanimatedScreenProvider>
+        <Stack
+          screenOptions={{
+            headerTransparent: true,
+            headerShadowVisible: false,
+            headerBackButtonDisplayMode: 'minimal',
+            scrollEdgeEffects: { top: 'soft' },
+          }}
+          screenLayout={scrolledMaterial ? materialTabScreenLayout : bareTabScreenLayout}>
+          {scrolledMaterial ? <Stack.Screen name="index" options={SCROLLED_MATERIAL} /> : null}
+          {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
+          <Stack.Screen name="in-tab/series/index" options={{ headerShown: false }} />
+          <Stack.Screen name="in-tab/series/read" options={{ headerShown: false }} />
+          <Stack.Screen name="in-tab/series/search" options={NESTED_SEARCH_BAR} />
+        </Stack>
+      </ReanimatedScreenProvider>
     </TabRouteContext.Provider>
   );
 }
