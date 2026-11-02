@@ -4,6 +4,7 @@ import { ReanimatedScreenProvider } from 'react-native-screens/reanimated';
 
 import { TabRootScrollContext } from '@/components/tab-scroll-marker';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
+import { useWideVerticalBar } from '@/hooks/use-responsive';
 import { TabRouteContext } from '@/lib/focused-tab';
 import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
 import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
@@ -20,7 +21,10 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * scrolled under it. Most tabs take the soft one, a fade, since the bar's items are already
  * Liquid Glass and a glass bar under glass buttons read as two layers of frosting. Over the
  * covers of Browse and Library it is the hard one (`SCROLLED_MATERIAL`), the near-opaque
- * backing that stands in for the old bar material. Not a background in the bar's appearance:
+ * backing that stands in for the old bar material, except beside the vertical bar of an iPhone
+ * Duo open in landscape: the window is short there and the bar's items have gone to the side, so
+ * a solid strip across the top cost a row of covers to back a title and a section label, and the
+ * soft one does that job. Not a background in the bar's appearance:
  * on iOS 26 that sits on top of the edge effect, and UIKit never once switched these bars from
  * their scroll-edge appearance to the standard one.
  *
@@ -54,8 +58,13 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * ZoomCoverCopy). It only samples while a transition runs.
  */
 export default function TabStack({ tab }: { tab: string }) {
-  if (!NATIVE_HEADER) return <Slot />;
-  const scrolledMaterial = SCROLLED_MATERIAL_TABS.has(tab);
+  return NATIVE_HEADER ? <NativeTabStack tab={tab} /> : <Slot />;
+}
+
+function NativeTabStack({ tab }: { tab: string }) {
+  const wideVerticalBar = useWideVerticalBar();
+  const coversTab = SCROLLED_MATERIAL_TABS.has(tab);
+  const scrolledMaterial = coversTab && !wideVerticalBar;
   return (
     <TabRouteContext.Provider value={tab}>
       <TabBarClearanceReporter />
@@ -68,7 +77,7 @@ export default function TabStack({ tab }: { tab: string }) {
             scrollEdgeEffects: { top: 'soft' },
           }}
           screenLayout={scrolledMaterial ? materialTabScreenLayout : bareTabScreenLayout}>
-          {scrolledMaterial ? <Stack.Screen name="index" options={SCROLLED_MATERIAL} /> : null}
+          {coversTab ? <Stack.Screen name="index" options={scrolledMaterial ? SCROLLED_MATERIAL : SOFT_EDGE} /> : null}
           {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
           <Stack.Screen name="in-tab/series/index" options={{ headerShown: false }} />
           <Stack.Screen name="in-tab/series/read" options={{ headerShown: false }} />
@@ -85,6 +94,10 @@ const SCROLLED_MATERIAL_TABS = new Set(['(home)', 'library']);
 /** The bar of a covers tab: the hard scroll-edge effect, which the list's marker sets too. */
 const SCROLLED_MATERIAL: ComponentProps<typeof Stack.Screen>['options'] = {
   scrollEdgeEffects: { top: 'hard' },
+};
+
+const SOFT_EDGE: ComponentProps<typeof Stack.Screen>['options'] = {
+  scrollEdgeEffects: { top: 'soft' },
 };
 
 const BARE_ROOT = { scrolledMaterial: false };
