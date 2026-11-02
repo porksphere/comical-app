@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 
 import { barExtentLayout } from '@/components/bar-extent';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
-import { settingsScreen, useBarMaterial } from '@/lib/native-bar';
+import { useBarMaterial, useSettingsScreen } from '@/lib/native-bar';
 import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
 
 // The series page is a CONTAINED TRANSPARENT MODAL (see the root layout), and
@@ -32,6 +32,7 @@ import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
 // layer-push through registerDrillSeries via useDrillRelatedSeries, gated by this context.
 export default function SeriesReaderLayout() {
   const barMaterial = useBarMaterial();
+  const settingsScreen = useSettingsScreen();
   return (
     <InSeriesPageStack.Provider value={true}>
       <Stack screenOptions={{ headerShown: false, headerBlurEffect: barMaterial }} screenLayout={barExtentLayout}>

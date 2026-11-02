@@ -35,7 +35,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { SplashGate } from '@/components/splash-gate';
 import { barExtentLayout } from '@/components/bar-extent';
-import { pushedScreen, settingsScreen, useBarMaterial } from '@/lib/native-bar';
+import { pushedScreen, useBarMaterial, useSettingsScreen } from '@/lib/native-bar';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ConfirmPopupHost } from '@/components/confirm-popup';
@@ -139,6 +139,7 @@ function RootNavigation() {
   const scheme = useActiveColorScheme();
   const statusBar = useRootStatusBarOptions(scheme);
   const barMaterial = useBarMaterial();
+  const settingsScreen = useSettingsScreen();
   useWindowThemeColor(Colors[scheme].background);
   const filterSheet: ComponentProps<typeof Stack.Screen>['options'] = {
     headerShown: false,

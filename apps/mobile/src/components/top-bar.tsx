@@ -36,7 +36,7 @@ type BarSymbol = NonNullable<ComponentProps<typeof Stack.Toolbar.Button>['icon']
 /**
  * The top bar of every pushed screen (bridge/tracker settings, registries, the download pages, …).
  *
- * On iOS it IS the system navigation bar: the screen is registered with `settingsScreen()` /
+ * On iOS it IS the system navigation bar: the screen is registered with `useSettingsScreen()` /
  * `pushedScreen` (`lib/native-bar.ts`), and this retitles that bar as the screen goes (a
  * selection's count) and puts the `actions` in it as trailing toolbar items — the back chevron
  * is the stack's own, so `onBack`, `left` and `right` have no say there. Elsewhere it is the

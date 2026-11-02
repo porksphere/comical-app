@@ -295,10 +295,10 @@ Already on `main`, so not from this work: `ZOOM_BOUND_WAIT_MS`, `ZOOM_THUMB_PAIN
 
 ### 21. No bar material on the folded Duo
 
-- **What:** the bar has no frosted material on the Duo's folded panel. A tab's stack takes the system's
-  hard scroll edge in its place, which shows only once content is under the bar.
-- **Where:** `useBarMaterial` and `useFoldedBarEdge` in `src/lib/native-bar.ts`, used by
-  `tab-stack.ios.tsx` and `screen-scroll-marker.tsx`.
+- **What:** the bar has no frosted material on the Duo's folded panel. A tab's stack and every settings
+  screen take the system's hard scroll edge in its place, which shows only once content is under the bar.
+- **Where:** `useBarMaterial`, `useFoldedBarEdge` and `useSettingsScreen` in `src/lib/native-bar.ts`, used
+  by `tab-stack.ios.tsx`, `screen-scroll-marker.tsx` and the two root layouts.
 - **Why:** UIKit starts the bar below a strip at the top of that panel, and no bar background reaches
   into it, in a bare UIKit app too. FB24859353 on Apple's side, closed as a platform limit by
   react-native-screens (#4956). The other way out is a view of our own above the bar, which would not
@@ -329,4 +329,4 @@ fails silently and only shows here.
 - [ ] **Item 15:** a soft edge backs the status bar once Browse's bar has slid away.
 - [ ] **Item 17:** in the reader, the status bar hides with the chrome.
 - [ ] **Item 18:** with nothing unread, the Activity and Settings tabs show no badge.
-- [ ] **Item 21:** folded, no gap above the bar, and Browse and Library back the bar once scrolled. Unfolded in both orientations, the frost reaches the top.
+- [ ] **Item 21:** folded, no gap above the bar, and Browse, Library and the settings pages back the bar once scrolled. Unfolded in both orientations, the frost reaches the top.

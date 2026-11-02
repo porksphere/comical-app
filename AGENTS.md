@@ -57,8 +57,8 @@ always (`useBarMaterial` in `lib/native-bar.ts`, in each stack's `screenOptions`
 switched these bars from a bare scroll-edge appearance to the frosted standard one, with or without
 the list handed to it, so there is no "bare until scrolled" to be had natively. The exception is the
 folded iPhone Duo, where no bar background reaches the top of the panel: there it has none, and a
-tab's stack takes the hard scroll edge instead, on the stack and on the root list's marker
-(`useFoldedBarEdge`). The soft
+tab's stack and every settings screen take the hard scroll edge instead, a tab root on its list's
+marker too (`useFoldedBarEdge`). The soft
 edge stays on under the material, which hides it while the bar is there; it backs the status bar
 once the bar has slid away. Nothing
 may be laid in ahead of the list there, so on iOS
@@ -81,7 +81,7 @@ elsewhere), so the tab screen gets a UINavigationBar INSIDE the UITabBarControll
 what lets UIKit carry its toolbar items into the side column together with the tabs. Those screens
 render `Stack.Title` / `Stack.Toolbar` / `Stack.SearchBar` items instead of `TabTitleBar`. Every
 pushed settings-reachable screen (categories, bridges, registries, downloads, …) is registered
-with `settingsScreen()` (`lib/native-bar.ts`) so it takes the system bar; its `TopBar` then IS
+with `useSettingsScreen()` (`lib/native-bar.ts`) so it takes the system bar; its `TopBar` then IS
 that bar on iOS — it retitles it and renders the structured `actions` as trailing
 `Stack.Toolbar.Button`s (an SF Symbol, or the Select / Done words from `useSelectToggle`),
 and draws the custom overlay with the same actions as lucide buttons elsewhere. The system bar

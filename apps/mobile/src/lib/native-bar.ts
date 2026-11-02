@@ -43,8 +43,8 @@ export function useBarMaterial() {
 /**
  * The hard scroll edge on the folded iPhone Duo, the system's near-opaque backing under the bar once
  * content scrolls beneath it, where the bar can have no material. Undefined elsewhere: leave the edge
- * as it was. For a tab's stack and for the list's marker, since the last one set on the scroll view
- * wins.
+ * as it was. For a tab's stack, a settings screen and a tab root list's marker, since the last one set
+ * on the scroll view wins.
  */
 export function useFoldedBarEdge() {
   return useIsFoldedDuo() ? HARD_TOP_EDGE : undefined;
@@ -82,10 +82,15 @@ export const NATIVE_BAR: ScreenOptions = {
 export const pushedScreen: ScreenOptions = NATIVE_HEADER ? NATIVE_BAR : { headerShown: false };
 
 /**
- * A settings screen: the system bar on iOS, titled for its first frame — the screen's `TopBar`
- * retitles it as it goes (a selection's count) and adds its actions. Elsewhere the bar is hidden
- * behind that `TopBar`. The screens pad past whichever is there via `useSettingsScrollPadding`.
+ * The options of a settings screen: the system bar on iOS, titled for its first frame — the screen's
+ * `TopBar` retitles it as it goes (a selection's count) and adds its actions. Elsewhere the bar is
+ * hidden behind that `TopBar`. The screens pad past whichever is there via
+ * `useSettingsScrollPadding`.
  */
-export function settingsScreen(title: string): ScreenOptions {
-  return NATIVE_HEADER ? { title, ...NATIVE_BAR } : { headerShown: false };
+export function useSettingsScreen() {
+  const foldedEdge = useFoldedBarEdge();
+  return (title: string): ScreenOptions =>
+    NATIVE_HEADER
+      ? { title, ...NATIVE_BAR, ...(foldedEdge && { scrollEdgeEffects: foldedEdge }) }
+      : { headerShown: false };
 }
