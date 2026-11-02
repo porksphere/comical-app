@@ -10,8 +10,6 @@ import { Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useWindowControlsInset, windowDragRegion } from '@/lib/window-controls';
 
-import { SoftEdgeBlur } from '../../../modules/soft-edge-blur';
-
 /** Width of the trailing control slot — TWO 32×32 buttons (collect + settings) plus the gap
  *  between them. The leading spacer matches it exactly, which is the only thing keeping the titles
  *  optically centred; change one and change the other. */
@@ -103,30 +101,6 @@ export function ReaderToolbar({
     </Animated.View>
   );
 }
-
-/** The backing under the reader's bar on iOS, where the bar is the system's (`ReaderNativeToolbar`,
- *  transparent) and this is the one part of the reader's top chrome still drawn here: a soft blur
- *  of the system's dark material (`soft-edge-blur`) that keeps a white title legible over a white
- *  page in either theme, paged or webtoon alike. The system's own soft scroll edge can't be it: iOS
- *  draws that only over content scrolled under the bar, which a sideways pager never is, and in a
- *  light theme it pales a bright page under a white title. It comes and goes with the chrome, as
- *  the bar slides, and runs a bar's height on past the bar, easing out there: ended at the bar's
- *  edge it read as a bar of its own. A build without the module keeps a plain gradient shade. */
-export function ReaderBarShade({ visible }: { visible: boolean }) {
-  const insets = useSafeAreaInsets();
-  const barHeight = useTopBarHeight();
-  const height = insets.top + barHeight * 2;
-  const style = useAnimatedStyle(() => ({ opacity: withTiming(visible ? 1 : 0, { duration: 200 }) }));
-  if (SoftEdgeBlur) return <SoftEdgeBlur pointerEvents="none" visible={visible} style={[styles.wrap, { height }]} />;
-  return (
-    <Animated.View pointerEvents="none" style={[styles.wrap, { height }, style]}>
-      <LinearGradient colors={SHADE_COLORS} locations={SHADE_STOPS} style={StyleSheet.absoluteFill} />
-    </Animated.View>
-  );
-}
-
-const SHADE_COLORS = ['rgba(0,0,0,0.5)', 'rgba(0,0,0,0.38)', 'rgba(0,0,0,0.24)', 'rgba(0,0,0,0.08)', 'rgba(0,0,0,0)'] as const;
-const SHADE_STOPS = [0, 0.35, 0.6, 0.82, 1] as const;
 
 const styles = StyleSheet.create({
   wrap: {

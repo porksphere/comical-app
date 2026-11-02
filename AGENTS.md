@@ -213,16 +213,12 @@ the nested in-series stack (`app/series/_layout.tsx`), so series code asks `useS
 pathname, to know which copy it is in. The series page takes the system bar in BOTH its modes —
 one bar, so the back button and the items morph between them: details transparent over the hero,
 `systemChromeMaterial` once the title would collide, a toolbar chevron in place of the custom one;
-the reader transparent over the page with a one-line white title UIKit lays out between the
-items (the chapter; a sequence's visible series — a title VIEW is sized by React at the bar's full
-width, so UIKit can only centre it over the buttons) and save + settings as glass bar buttons
-(`components/reader/reader-native-toolbar.tsx`), the bar following the chrome's auto-hide through
-`headerShown` — with every `Stack.Toolbar` unrendered while it is down, since a mounted one sets
-`headerShown: true` over the page's own options — the custom `ReaderToolbar` reduced to its
-soft blur under the bar, in every mode: the local Expo module `apps/mobile/modules/soft-edge-blur`,
-the system's dark material under a gradient mask, with the system's own scroll edge hidden on the
-reader's bar, since iOS draws that only over content scrolled under the bar (a sideways pager never
-is) and in a light theme it pales a bright page under the white title —
+the reader nothing but its glass items over the page, the back button and save + settings
+(`components/reader/reader-native-toolbar.tsx`), with no title and nothing behind them, the bar
+following the chrome's auto-hide through `headerShown` — with every `Stack.Toolbar` unrendered while
+it is down, since a mounted one sets `headerShown: true` over the page's own options — and the
+system's scroll edge hidden on it in both modes: Apple keeps that for content scrolled under a bar,
+which a sideways pager never is, and plain title text is what made a backing necessary at all —
 and hides the tab bar while the reader is expanded through
 `lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s. The reader's bottom bar
 (`components/reader/chapter-navigator.tsx`) is real Liquid Glass (`expo-glass-effect`) in one

@@ -26,7 +26,7 @@ import { isDesktopPointer, keepZoomLevel } from '@/components/reader/desktop-zoo
 import { isTypingTarget } from '@/lib/key-hold';
 import { claimReaderScope, isKey, keyActionOf } from '@/lib/keybindings';
 import { TAB_KEY_ACTIONS } from '@/lib/keymap';
-import { ReaderBarShade, ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
+import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
 import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
 import { CollectPageControl, CollectPageShortcut } from '@/components/reader/collect-page-control';
 import { SettingsControl } from '@/components/reader/settings-panel';
@@ -1305,26 +1305,21 @@ export function SeriesReaderPage({
 
   const dimOverlays = <StripDim progress={progress} />;
 
-  // iOS: the system bar is the reader's top chrome, through the route's options: transparent over
-  // the page, a white title, the save and settings buttons as glass bar items (ReaderNativeToolbar),
-  // following the chrome's auto-hide through `headerShown`, so UIKit slides it away and back. A
-  // mounted Stack.Toolbar sets `headerShown: true` on top of these options (expo-router merges its
-  // items in over the page's own), so no toolbar renders its items while the bar is down. Only the
-  // top instance sets the options (they are the route's, shared by every layer), and the elements
-  // mount only while it is top, so a layer that becomes top again re-applies them. Pushed over the
-  // details the back button is the system's. A reader that is the root's first page reaches the
-  // `index` of the nested stack (app/series/_layout), never the contained transparent modal around
-  // it, whose content react-native-screens remounts when its `headerShown` flips; a nested root
-  // has no back of its own, hence the chevron.
-  // In sequence mode the reader's chrome describes the VISIBLE entry — which series the page in
-  // front of you belongs to is the one thing this bar must answer there.
+  // iOS: the system bar is the reader's top chrome, through the route's options: its glass items
+  // alone over the page, the back button and the save and settings buttons (ReaderNativeToolbar),
+  // with no title and nothing behind them, following the chrome's auto-hide through `headerShown`,
+  // so UIKit slides it away and back. A mounted Stack.Toolbar sets `headerShown: true` on top of
+  // these options (expo-router merges its items in over the page's own), so no toolbar renders its
+  // items while the bar is down. Only the top instance sets the options (they are the route's,
+  // shared by every layer), and the elements mount only while it is top, so a layer that becomes
+  // top again re-applies them. Pushed over the details the back button is the system's. A reader
+  // that is the root's first page reaches the `index` of the nested stack (app/series/_layout),
+  // never the contained transparent modal around it, whose content react-native-screens remounts
+  // when its `headerShown` flips; a nested root has no back of its own, hence the chevron.
+  // Off iOS, in sequence mode, the reader's own bar describes the VISIBLE entry — which series the
+  // page in front of you belongs to is the one thing that bar must answer there.
   const readerBarTitle = sequence ? (visibleSequenceEntry?.seriesTitle ?? seriesTitle) : seriesTitle;
   const readerBarSubtitle = sequence ? (visibleSequenceEntry?.chapterName ?? '') : (target?.chapterName ?? '');
-  // iOS gives it one line, a plain title UIKit lays out and truncates between the back button and
-  // the bar buttons: a title view is sized by React at the bar's full width, and UIKit can only
-  // centre that over them. Outside a sequence the line is the chapter, which nothing else in the
-  // reader names; the series is the page the back button returns to.
-  const nativeReaderTitle = sequence ? readerBarTitle : readerBarSubtitle || readerBarTitle;
   const nativeBar =
     NATIVE_HEADER && isTop ? (
       <>
@@ -1337,12 +1332,14 @@ export function SeriesReaderPage({
             // UIKit's interactive dismissal only where it is the reader's swipe away (`swipeAway`);
             // anywhere else the reader's own drags own the screen.
             gestureEnabled: nativePush && swipeAway && !readerZoomed && !scrubbing,
-            title: nativeReaderTitle,
-            headerTitle: nativeReaderTitle,
+            // No title: plain text in the bar is what needs a backing behind it, and the system's
+            // automatic edge goes opaque for one. Liquid Glass items read over any page by themselves.
+            title: '',
+            headerTitle: '',
             headerBlurEffect: undefined,
             headerTintColor: '#fff',
-            // The bar's backing is the page's own soft blur (ReaderBarShade), in every mode; the
-            // system's scroll edge would stack a second one under it down a webtoon.
+            // Nothing behind the items in either mode, so a webtoon scrolled under the bar matches
+            // a pager, which never is.
             scrollEdgeEffects: { top: 'hidden' },
           }}
         />
@@ -1387,10 +1384,8 @@ export function SeriesReaderPage({
         )
       }
       bars={{
-        reader: NATIVE_HEADER ? (
-          // The bar is the system's on iOS (nativeBar); its soft blur is drawn here.
-          <ReaderBarShade visible={chromeVisible} />
-        ) : (
+        // The bar is the system's on iOS (nativeBar), with nothing drawn behind it.
+        reader: NATIVE_HEADER ? null : (
           // The reader's own fully transparent toolbar, with no back of its own: the persistent
           // chevron above is the back button. Its auto-hide rides `visible`.
           <View nativeID={`${chromeId}-bar`} pointerEvents="box-none">
