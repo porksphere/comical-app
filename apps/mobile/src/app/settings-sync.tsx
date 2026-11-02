@@ -6,11 +6,12 @@
  */
 import type { PairedDevice } from '@comical/sync';
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
 import { OverlayHeading, useOverlay } from '@/components/overlay/overlay';
 import { QrCode } from '@/components/qr-code';
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { RemoteServerForm } from '@/components/settings/remote-server-form';
 import { SettingsTextRow, SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
@@ -64,9 +65,9 @@ export default function SyncSettingsScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Sync" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
+      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>{desktop ? <HubRows /> : <DeviceRows />}</SettingsSection>
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

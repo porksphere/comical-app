@@ -4,7 +4,11 @@ public class ContentScrollViewModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ContentScrollView")
 
-    View(ContentScrollAnchorView.self)
+    View(ContentScrollAnchorView.self) {
+      Prop("active") { (view: ContentScrollAnchorView, active: Bool?) in
+        view.active = active ?? true
+      }
+    }
   }
 }
 
@@ -13,6 +17,16 @@ public class ContentScrollViewModule: Module {
 /// expo-router uses, doesn't name it; its newer stack does, with this same call.
 final class ContentScrollAnchorView: ExpoView {
   private var scheduled = false
+
+  /// Layers on one screen share its controller: only the top one's list is named, and it is named
+  /// again when the layer over it goes.
+  var active = true {
+    didSet {
+      if active && !oldValue {
+        schedule()
+      }
+    }
+  }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
@@ -37,7 +51,7 @@ final class ContentScrollAnchorView: ExpoView {
   }
 
   private func nameContentScrollView() {
-    guard window != nil, let scrollView = firstScrollView(), let controller = owningController() else {
+    guard active, window != nil, let scrollView = firstScrollView(), let controller = owningController() else {
       return
     }
     controller.setContentScrollView(scrollView, for: .top)

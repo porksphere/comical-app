@@ -44,6 +44,7 @@ import {
   TrashIcon,
 } from '@/components/icons/ui-icons';
 import { OVERFLOW_MENU, OverflowMenu } from '@/components/overflow-menu';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { coverRingColor, coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { HoldMenu, liftTarget } from '@/components/system-context-menu';
@@ -827,7 +828,9 @@ export function ChapterScrollList({
   // handlers; this scroller only feeds its scroll offset up and rides the shift.
   return (
     <Animated.View style={[styles.chapterList, wrapperStyle]}>
-      {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+      <ScreenScrollMarker>
+        {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+      </ScreenScrollMarker>
     </Animated.View>
   );
 }
@@ -1423,7 +1426,9 @@ export function PageThumbList({
   );
   return (
     <Animated.View style={[styles.pageList, wrapperStyle]}>
-      {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+      <ScreenScrollMarker>
+        {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+      </ScreenScrollMarker>
     </Animated.View>
   );
 }

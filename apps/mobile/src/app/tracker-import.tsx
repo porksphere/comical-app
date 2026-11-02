@@ -34,6 +34,7 @@ import { CoverRoute, importStyles as styles } from '@/components/import/import-l
 import { PILL_HEIGHT, SelectLead, SelectLeadGap, SelectPillBar, useDragSelect, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useOverlay } from '@/components/overlay/overlay';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { RowIcon } from '@/components/settings/row-icon';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsRow } from '@/components/settings/settings-row';
@@ -484,65 +485,67 @@ export default function TrackerImportScreen() {
         </ThemedText>
       )}
 
-      <LegendList
-        ref={listRef}
-        onScroll={(e) => {
-          scrollYRef.current = e.nativeEvent.contentOffset.y;
-        }}
-        scrollEventThrottle={16}
-        style={[styles.list, scrollbarInset(paddingTop)]}
-        data={rows}
-        keyExtractor={(r) => r.key}
-        recycleItems
-        estimatedItemSize={SettingsRowHeight}
-        getFixedItemSize={() => SettingsRowHeight}
-        maintainVisibleContentPosition={{ data: false, size: false }}
-        extraData={rowsExtra}
-        renderItem={renderItem}
-        ListHeaderComponent={header}
-        ListFooterComponent={
-          data?.truncated ? (
-            <ThemedText type="small" themeColor="textSecondary" style={styles.footerNote}>
-              Showing the first {rows.length} — this list is longer than one import can walk.
-            </ThemedText>
-          ) : null
-        }
-        ListEmptyComponent={
-          isLoading ? (
-            <View style={styles.state}>
-              <ActivityIndicator size="small" />
-              <ThemedText type="small" themeColor="textSecondary">
-                Loading your list…
+      <ScreenScrollMarker>
+        <LegendList
+          ref={listRef}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
+          style={[styles.list, scrollbarInset(paddingTop)]}
+          data={rows}
+          keyExtractor={(r) => r.key}
+          recycleItems
+          estimatedItemSize={SettingsRowHeight}
+          getFixedItemSize={() => SettingsRowHeight}
+          maintainVisibleContentPosition={{ data: false, size: false }}
+          extraData={rowsExtra}
+          renderItem={renderItem}
+          ListHeaderComponent={header}
+          ListFooterComponent={
+            data?.truncated ? (
+              <ThemedText type="small" themeColor="textSecondary" style={styles.footerNote}>
+                Showing the first {rows.length} — this list is longer than one import can walk.
               </ThemedText>
-            </View>
-          ) : error ? (
-            <View style={styles.state}>
-              <ThemedText type="small" style={[styles.stateText, { color: theme.danger }]}>
-                {friendlyError(error, 'Could not load the list')}
-              </ThemedText>
-              <Pressable testID="tracker-import.retry" onPress={() => void refetch()} hitSlop={8} accessibilityRole="button">
-                <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                  {isFetching ? 'Retrying…' : 'Retry'}
+            ) : null
+          }
+          ListEmptyComponent={
+            isLoading ? (
+              <View style={styles.state}>
+                <ActivityIndicator size="small" />
+                <ThemedText type="small" themeColor="textSecondary">
+                  Loading your list…
                 </ThemedText>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.state}>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.stateText}>
-                Your {trackerName} list is empty.
-              </ThemedText>
-            </View>
-          )
-        }
-        contentContainerStyle={{
-          flexGrow: 1,
-          paddingTop,
-          paddingLeft: listPad.left,
-          paddingRight: listPad.right,
-          paddingBottom: PILL_HEIGHT + Spacing.six,
-        }}
-        showsVerticalScrollIndicator={Platform.OS === 'web'}
-      />
+              </View>
+            ) : error ? (
+              <View style={styles.state}>
+                <ThemedText type="small" style={[styles.stateText, { color: theme.danger }]}>
+                  {friendlyError(error, 'Could not load the list')}
+                </ThemedText>
+                <Pressable testID="tracker-import.retry" onPress={() => void refetch()} hitSlop={8} accessibilityRole="button">
+                  <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                    {isFetching ? 'Retrying…' : 'Retry'}
+                  </ThemedText>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.state}>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.stateText}>
+                  Your {trackerName} list is empty.
+                </ThemedText>
+              </View>
+            )
+          }
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingTop,
+            paddingLeft: listPad.left,
+            paddingRight: listPad.right,
+            paddingBottom: PILL_HEIGHT + Spacing.six,
+          }}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+        />
+      </ScreenScrollMarker>
 
       <SelectPillBar
         left={sidePad.left}

@@ -37,6 +37,7 @@ import {
   useSelectToggle,
 } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -368,48 +369,50 @@ export default function DownloadsScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title={selecting ? `${ms.count} selected` : 'Downloads'} actions={[selectToggle]} />
-      <LegendList
-        ref={listRef}
-        onScroll={(e) => {
-          scrollYRef.current = e.nativeEvent.contentOffset.y;
-        }}
-        // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
-        // tracking manual scrolling accurately without spamming.
-        scrollEventThrottle={16}
-        style={[styles.list, scrollbarInset(paddingTop)]}
-        data={rows}
-        keyExtractor={(r) => r.key}
-        // Recycle row views instead of mounting/unmounting a fresh gesture+reanimated swipe stack for
-        // every row that scrolls into view (the heavy part); the swipe row resets its gesture state on
-        // recycle via `recycleKey`.
-        recycleItems
-        estimatedItemSize={SettingsRowHeight}
-        // Every row is exactly one settings-row tall, so declare it KNOWN — LegendList then skips
-        // measuring each row after render (the main source of this list's lag vs. the grid pages, which
-        // are fixed-size too). With sizes known, also stop retro-correcting scroll offset from
-        // measurements, which otherwise adds a flinging jitter. Mirrors `RecyclerList`.
-        getFixedItemSize={() => SettingsRowHeight}
-        maintainVisibleContentPosition={{ data: false, size: false }}
-        // Selection lives OUTSIDE the row objects (identity-cached — see `buildRows`); this tells
-        // the list to repaint visible rows when the selection set or the mode changes.
-        extraData={rowsExtra}
-        renderItem={renderItem}
-        ListHeaderComponent={header}
-        ListEmptyComponent={
-          <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-            No downloads yet. Open a series and tap Download to keep chapters for offline reading.
-          </ThemedText>
-        }
-        contentContainerStyle={{
-          flexGrow: 1,
-          paddingTop,
-          // Room for the floating pills while selecting, so the last rows can scroll clear of them.
-          paddingBottom: paddingBottom + (selecting ? PILL_HEIGHT + Spacing.six : 0),
-          paddingLeft: listPad.left,
-          paddingRight: listPad.right,
-        }}
-        showsVerticalScrollIndicator={Platform.OS === 'web'}
-      />
+      <ScreenScrollMarker>
+        <LegendList
+          ref={listRef}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+          }}
+          // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
+          // tracking manual scrolling accurately without spamming.
+          scrollEventThrottle={16}
+          style={[styles.list, scrollbarInset(paddingTop)]}
+          data={rows}
+          keyExtractor={(r) => r.key}
+          // Recycle row views instead of mounting/unmounting a fresh gesture+reanimated swipe stack for
+          // every row that scrolls into view (the heavy part); the swipe row resets its gesture state on
+          // recycle via `recycleKey`.
+          recycleItems
+          estimatedItemSize={SettingsRowHeight}
+          // Every row is exactly one settings-row tall, so declare it KNOWN — LegendList then skips
+          // measuring each row after render (the main source of this list's lag vs. the grid pages, which
+          // are fixed-size too). With sizes known, also stop retro-correcting scroll offset from
+          // measurements, which otherwise adds a flinging jitter. Mirrors `RecyclerList`.
+          getFixedItemSize={() => SettingsRowHeight}
+          maintainVisibleContentPosition={{ data: false, size: false }}
+          // Selection lives OUTSIDE the row objects (identity-cached — see `buildRows`); this tells
+          // the list to repaint visible rows when the selection set or the mode changes.
+          extraData={rowsExtra}
+          renderItem={renderItem}
+          ListHeaderComponent={header}
+          ListEmptyComponent={
+            <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
+              No downloads yet. Open a series and tap Download to keep chapters for offline reading.
+            </ThemedText>
+          }
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingTop,
+            // Room for the floating pills while selecting, so the last rows can scroll clear of them.
+            paddingBottom: paddingBottom + (selecting ? PILL_HEIGHT + Spacing.six : 0),
+            paddingLeft: listPad.left,
+            paddingRight: listPad.right,
+          }}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+        />
+      </ScreenScrollMarker>
 
       {/* The floating select-mode chrome, over the selected SERIES: staging "…" bottom-left, all
           valid verbs in ONE pill bottom-right. */}

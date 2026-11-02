@@ -25,7 +25,7 @@ import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { NativeTabHeader } from '@/components/native-tab-header';
-import { TabScrollMarker } from '@/components/tab-scroll-marker';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -314,7 +314,7 @@ export default function ActivityScreen() {
         </View>
       ) : (
         <Animated.View style={[styles.list, pull.listStyle]}>
-          <TabScrollMarker>
+          <ScreenScrollMarker>
             <AnimatedLegendList
               ref={listRef}
               // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
@@ -367,7 +367,7 @@ export default function ActivityScreen() {
                 pull.onScrollEndDrag?.();
               }}
             />
-          </TabScrollMarker>
+          </ScreenScrollMarker>
         </Animated.View>
       )}
 

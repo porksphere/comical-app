@@ -1,5 +1,6 @@
-import { Platform, ScrollView, StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedView } from '@/components/themed-view';
@@ -25,7 +26,7 @@ export default function DeveloperSettingsScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Developer" />
-      <ScrollView
+      <ScreenScrollView
         style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
@@ -52,7 +53,7 @@ export default function DeveloperSettingsScreen() {
             />
           </SettingsSection>
         )}
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

@@ -22,7 +22,7 @@ import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radi
 import { UpdatePip } from '@/components/tab-badge';
 import { SettingsSection, settingsRowFrame } from '@/components/settings/settings-row';
 import { NativeTabHeader } from '@/components/native-tab-header';
-import { TabScrollMarker } from '@/components/tab-scroll-marker';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -81,7 +81,7 @@ export default function SettingsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TabScrollMarker>
+      <ScreenScrollMarker>
         <ScrollView
           ref={scrollRef}
           style={scrollbarInset(contentPadding.paddingTop)}
@@ -210,7 +210,7 @@ export default function SettingsScreen() {
             </SettingsSection>
           </View>
         </ScrollView>
-      </TabScrollMarker>
+      </ScreenScrollMarker>
 
       {NATIVE_HEADER ? (
         <NativeTabHeader title="Settings" holdTestID="settings.nsfw-hold" />

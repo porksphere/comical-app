@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GripIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { HoverRailContext } from '@/components/settings/hover-rail';
 import { SettingsCard } from '@/components/settings/settings-row';
 import { CAN_HOVER, WEB_LANE } from '@/components/settings/swipeable-row';
@@ -138,43 +139,45 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh,
   return (
     // Touch-driven pull (web + Android) is caught here; iOS pulls from the scroll bounce.
     <View style={styles.host} {...pull.touchHandlers}>
-      <Animated.ScrollView
-        ref={scrollRef}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        onScrollEndDrag={pull.onScrollEndDrag}
-        // Fill the viewport even for a short list + always allow the bounce, so a pull anywhere on the
-        // page engages the refresh — not only over the rows.
-        alwaysBounceVertical
-        style={scrollbarInset(contentPadding.paddingTop)}
-        contentContainerStyle={[contentPadding, styles.grow]}>
-        <Animated.View style={[styles.grow, pull.listStyle]}>
-          {/* The rows' card is exactly the rows' height: the filler that makes the pull reachable
-              below a short list is the outer view's growth, not the card's. */}
-          <SettingsCard style={{ height: contentHeight }}>
-            {data.map((item, i) => (
-              <DragRow
-                key={keyOf(item)}
-                id={keyOf(item)}
-                count={count}
-                divider={i < count - 1}
-                dragEnabled={dragEnabled}
-                scrollRef={scrollRef}
-                scrollY={scrollY}
-                svTop={svTop}
-                svHeight={svHeight}
-                order={order}
-                activeId={activeId}
-                activeTop={activeTop}
-                grabOffset={grabOffset}
-                fingerVY={fingerVY}
-                onCommit={commit}>
-                {renderRow(item)}
-              </DragRow>
-            ))}
-          </SettingsCard>
-        </Animated.View>
-      </Animated.ScrollView>
+      <ScreenScrollMarker>
+        <Animated.ScrollView
+          ref={scrollRef}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          onScrollEndDrag={pull.onScrollEndDrag}
+          // Fill the viewport even for a short list + always allow the bounce, so a pull anywhere on the
+          // page engages the refresh — not only over the rows.
+          alwaysBounceVertical
+          style={scrollbarInset(contentPadding.paddingTop)}
+          contentContainerStyle={[contentPadding, styles.grow]}>
+          <Animated.View style={[styles.grow, pull.listStyle]}>
+            {/* The rows' card is exactly the rows' height: the filler that makes the pull reachable
+                below a short list is the outer view's growth, not the card's. */}
+            <SettingsCard style={{ height: contentHeight }}>
+              {data.map((item, i) => (
+                <DragRow
+                  key={keyOf(item)}
+                  id={keyOf(item)}
+                  count={count}
+                  divider={i < count - 1}
+                  dragEnabled={dragEnabled}
+                  scrollRef={scrollRef}
+                  scrollY={scrollY}
+                  svTop={svTop}
+                  svHeight={svHeight}
+                  order={order}
+                  activeId={activeId}
+                  activeTop={activeTop}
+                  grabOffset={grabOffset}
+                  fingerVY={fingerVY}
+                  onCommit={commit}>
+                  {renderRow(item)}
+                </DragRow>
+              ))}
+            </SettingsCard>
+          </Animated.View>
+        </Animated.ScrollView>
+      </ScreenScrollMarker>
       <PullIndicator {...pull.indicator} top={insets.top + barHeight} />
     </View>
   );

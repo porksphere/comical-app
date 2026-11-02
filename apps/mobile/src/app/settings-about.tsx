@@ -13,9 +13,10 @@
 import { CONTRACT_VERSION } from '@comical/contract';
 import * as Device from 'expo-device';
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Platform, Share, StyleSheet, View } from 'react-native';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { UpdateDot } from '@/components/tab-badge';
 import { ThemedText } from '@/components/themed-text';
@@ -145,7 +146,7 @@ export default function AboutScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="About" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
+      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {/* No blurb above the list: the section headings and row labels already say what every value
             is, and a paragraph explaining a table of facts only pushed the facts down the screen. */}
         {sections.map(([title, rows]) => (
@@ -218,7 +219,7 @@ export default function AboutScreen() {
             onPress={exportReport}
           />
         </SettingsSection>
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

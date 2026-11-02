@@ -29,7 +29,7 @@ import { setBackdropRecede } from '@/lib/series-backdrop';
  * capsule is tapped — and ONLY then. That is UIKit's design, not a bug to work around: the previous
  * native shell spent days trying to make it re-expand mid-scroll like the custom bar does, and it
  * can't be done from outside UIKit's private implementation (react-native-screens #3954). The
- * scroll view it watches is the one each tab's root screen registers through `TabScrollMarker`
+ * scroll view it watches is the one each tab's root screen registers through `ScreenScrollMarker`
  * (left to its own first-descendant walk, UIKit never found Browse's list behind the feed's
  * backdrop).
  *

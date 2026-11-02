@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Pressable, Share, StyleSheet, View } from 'react-native';
 
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
@@ -36,7 +37,7 @@ export default function DiagnosticsScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Diagnostics" />
-      <ScrollView
+      <ScreenScrollView
         style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[styles.content, contentPadding]}>
         <ThemedText type="small" themeColor="textSecondary">
@@ -101,7 +102,7 @@ export default function DiagnosticsScreen() {
             ))}
           </View>
         )}
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

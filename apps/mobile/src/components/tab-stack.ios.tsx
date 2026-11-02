@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react';
 import { ReanimatedScreenProvider } from 'react-native-screens/reanimated';
 
 import { barExtentLayout } from '@/components/bar-extent';
-import { TabRootScrollContext } from '@/components/tab-scroll-marker';
+import { TabRootScrollContext } from '@/components/screen-scroll-marker';
 import { TabRouteContext } from '@/lib/focused-tab';
 import { NATIVE_BAR } from '@/lib/native-bar';
 import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
@@ -45,7 +45,7 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  *
  * The tab's root screen is the one whose list the system tab bar follows (minimize on scroll,
  * scroll-to-top): `TabRootScrollContext` is what lets that list register itself — see
- * `tab-scroll-marker`.
+ * `screen-scroll-marker`.
  *
  * `tab` is this directory's route name, which the layout cannot read for itself (the segments
  * hooks report the FOCUSED tab, and every tab stays mounted); a series card under it builds its

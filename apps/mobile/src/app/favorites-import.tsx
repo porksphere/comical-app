@@ -37,6 +37,7 @@ import { ImportCover, importStyles as styles } from '@/components/import/import-
 import { CheckIcon, ClearIcon, ListPlusIcon, StarIcon } from '@/components/icons/ui-icons';
 import { PILL_HEIGHT, SelectLead, SelectPillBar, useDragSelect, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { SettingsRow } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -234,77 +235,79 @@ export default function FavoritesImportScreen() {
         </ThemedText>
       )}
 
-      <LegendList
-        ref={listRef}
-        onScroll={(e) => {
-          scrollYRef.current = e.nativeEvent.contentOffset.y;
-        }}
-        scrollEventThrottle={16}
-        style={[styles.list, scrollbarInset(paddingTop)]}
-        data={rows}
-        keyExtractor={(i) => i.seriesId}
-        recycleItems
-        estimatedItemSize={SettingsRowHeight}
-        getFixedItemSize={() => SettingsRowHeight}
-        maintainVisibleContentPosition={{ data: false, size: false }}
-        // Selection lives outside the row objects (they're the query's own candidates); this tells
-        // the list to repaint visible rows when the selection set changes.
-        extraData={rowsExtra}
-        renderItem={renderItem}
-        ListHeaderComponent={
-          rows.length > 0 ? (
-            <ThemedText type="small" themeColor="textSecondary" style={styles.intro}>
-              {`Favorites on ${bridgeName}. Series already in your library from another source are left unchecked — check one to add it as a second source for that series.`}
-            </ThemedText>
-          ) : null
-        }
-        ListFooterComponent={
-          data?.truncated ? (
-            <ThemedText type="small" themeColor="textSecondary" style={styles.footerNote}>
-              Showing the first {rows.length} — this account has more favorites than one import can walk.
-            </ThemedText>
-          ) : null
-        }
-        ListEmptyComponent={
-          isLoading ? (
-            <View style={styles.state}>
-              <ActivityIndicator size="small" />
-              <ThemedText type="small" themeColor="textSecondary">
-                Loading favorites…
+      <ScreenScrollMarker>
+        <LegendList
+          ref={listRef}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
+          style={[styles.list, scrollbarInset(paddingTop)]}
+          data={rows}
+          keyExtractor={(i) => i.seriesId}
+          recycleItems
+          estimatedItemSize={SettingsRowHeight}
+          getFixedItemSize={() => SettingsRowHeight}
+          maintainVisibleContentPosition={{ data: false, size: false }}
+          // Selection lives outside the row objects (they're the query's own candidates); this tells
+          // the list to repaint visible rows when the selection set changes.
+          extraData={rowsExtra}
+          renderItem={renderItem}
+          ListHeaderComponent={
+            rows.length > 0 ? (
+              <ThemedText type="small" themeColor="textSecondary" style={styles.intro}>
+                {`Favorites on ${bridgeName}. Series already in your library from another source are left unchecked — check one to add it as a second source for that series.`}
               </ThemedText>
-            </View>
-          ) : error ? (
-            <View style={styles.state}>
-              {/* A bridge with no credentials throws its own actionable message ("favorites require
-                  a username + password…") — surface it verbatim, since the fields it names are on
-                  the very screen this one was pushed from. */}
-              <ThemedText type="small" style={[styles.stateText, { color: theme.danger }]}>
-                {friendlyError(error, 'Could not load favorites')}
+            ) : null
+          }
+          ListFooterComponent={
+            data?.truncated ? (
+              <ThemedText type="small" themeColor="textSecondary" style={styles.footerNote}>
+                Showing the first {rows.length} — this account has more favorites than one import can walk.
               </ThemedText>
-              <Pressable testID="favorites-import.retry" onPress={() => void refetch()} hitSlop={8} accessibilityRole="button">
-                <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                  {isFetching ? 'Retrying…' : 'Retry'}
+            ) : null
+          }
+          ListEmptyComponent={
+            isLoading ? (
+              <View style={styles.state}>
+                <ActivityIndicator size="small" />
+                <ThemedText type="small" themeColor="textSecondary">
+                  Loading favorites…
                 </ThemedText>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.state}>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.stateText}>
-                This account has no favorites on {bridgeName}.
-              </ThemedText>
-            </View>
-          )
-        }
-        contentContainerStyle={{
-          flexGrow: 1,
-          paddingTop,
-          paddingLeft: listPad.left,
-          paddingRight: listPad.right,
-          // Room for the floating pills, so the last rows can scroll clear of them.
-          paddingBottom: PILL_HEIGHT + Spacing.six,
-        }}
-        showsVerticalScrollIndicator={Platform.OS === 'web'}
-      />
+              </View>
+            ) : error ? (
+              <View style={styles.state}>
+                {/* A bridge with no credentials throws its own actionable message ("favorites require
+                    a username + password…") — surface it verbatim, since the fields it names are on
+                    the very screen this one was pushed from. */}
+                <ThemedText type="small" style={[styles.stateText, { color: theme.danger }]}>
+                  {friendlyError(error, 'Could not load favorites')}
+                </ThemedText>
+                <Pressable testID="favorites-import.retry" onPress={() => void refetch()} hitSlop={8} accessibilityRole="button">
+                  <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                    {isFetching ? 'Retrying…' : 'Retry'}
+                  </ThemedText>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.state}>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.stateText}>
+                  This account has no favorites on {bridgeName}.
+                </ThemedText>
+              </View>
+            )
+          }
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingTop,
+            paddingLeft: listPad.left,
+            paddingRight: listPad.right,
+            // Room for the floating pills, so the last rows can scroll clear of them.
+            paddingBottom: PILL_HEIGHT + Spacing.six,
+          }}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+        />
+      </ScreenScrollMarker>
 
       {/* The floating select-mode chrome: staging "…" bottom-left, the lone Import verb bottom-right
           (a solid accent circle, since it's the only verb this screen has). */}

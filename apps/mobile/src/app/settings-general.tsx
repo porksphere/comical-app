@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Platform, ScrollView, StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
 import { useOverlay } from '@/components/overlay/overlay';
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { DataLocationSheet } from '@/components/settings/data-location-sheet';
 import { RemoteServerForm } from '@/components/settings/remote-server-form';
 import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
@@ -145,7 +146,7 @@ export default function GeneralSettingsScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="General" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
+      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {/* Section titles name the GROUP, never a row in it: "APPEARANCE" over a row called
             Appearance said nothing the row didn't. */}
         <SettingsSection
@@ -270,7 +271,7 @@ export default function GeneralSettingsScreen() {
           <SettingsToggleRow label="Saved pages" value={autoPages} onChange={(v) => downloadPrefs$.autoPages.set(v)} />
         </SettingsSection>
         <LibraryBackupSection />
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

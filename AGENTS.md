@@ -42,14 +42,16 @@ That is the whole reason it exists — a custom bar can only imitate that adapta
 content scrolls down and re-expands only at the very top or on a tap. That is UIKit's design
 (react-native-screens #3954), not a list bug — the earlier native shell chased mid-scroll
 re-expansion for days and reverted, so don't. The scroll view the bar follows is registered by
-`TabScrollMarker` (react-native-screens' `ScrollViewMarker`, keyed with the list
+`ScreenScrollMarker` (react-native-screens' `ScrollViewMarker`, keyed with the list
 it wraps) around each tab ROOT screen's list, under `TabRootScrollContext` from the tab's stack —
-never a pushed page's: the registration is a hand-off to UIKit nothing takes back. The marker
+never a pushed page's: the registration is a hand-off to UIKit nothing takes back. That part
 reaches the TAB screen only, never the stack screen holding the navigation bar. That screen is
 told by the local module `apps/mobile/modules/content-scroll-view`
-(`UIViewController.setContentScrollView`, inside `TabScrollMarker`), because a list under wrappers
-goes unfound by UIKit and the bar never slides away from it. The screen also finds the list by a
-walk of its own, each first subview down from it, to put its iOS 26
+(`UIViewController.setContentScrollView`), because a list under wrappers goes unfound by UIKit and
+the bar never slides away from it. So EVERY screen's main list goes through `ScreenScrollMarker`,
+pushed pages and the series details included, or that screen's bar stays put; a page that is one
+ScrollView uses `ScreenScrollView`. The reader takes no marker: its bar never slides. The screen also
+finds the list by a walk of its own, each first subview down from it, to put its iOS 26
 scroll-edge effect on the list: the system's own treatment of content under the bar, shown only
 once the list has scrolled under it. Every tab takes the soft one, Browse and Library included:
 the hard one over their covers was a near-opaque strip that cost a row of covers to back a title.

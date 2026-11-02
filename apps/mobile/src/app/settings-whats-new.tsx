@@ -15,8 +15,9 @@
  * The toast deliberately doesn't carry any of this — it says an update exists and points here. A
  * changelog is something you read when you choose to, not something to put over the screen.
  */
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -74,7 +75,7 @@ export default function WhatsNewScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="What's new" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
+      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         {pending.length > 0 && (
           <SettingsSection title={pending.length > 1 ? 'Available now' : 'Available'}>
             {pending.map((note) => (
@@ -115,7 +116,7 @@ export default function WhatsNewScreen() {
             />
           </SettingsSection>
         )}
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

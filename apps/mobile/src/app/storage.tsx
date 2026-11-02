@@ -15,9 +15,10 @@
  * space occupied, not work in flight.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { StorageBreakdownBar, STORAGE_PALETTE } from '@/components/downloads/storage-breakdown-bar';
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
@@ -124,7 +125,7 @@ export default function StorageScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Storage" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
+      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
           <View style={styles.summary}>
             <StorageBreakdownBar segments={segments} totalBytes={downloadsBytes + libraryBytes + (cacheSize ?? 0)} />
@@ -186,7 +187,7 @@ export default function StorageScreen() {
             placeholder="Unlimited"
           />
         </SettingsSection>
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

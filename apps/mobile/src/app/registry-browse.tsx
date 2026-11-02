@@ -2,9 +2,10 @@ import { CONTRACT_VERSION, parseBridgeId } from '@comical/contract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useLocalSearchParams } from '@/lib/nav';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { RetryBlock } from '@/components/retry-block';
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -55,7 +56,7 @@ export default function RegistryBrowseScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Browse registry" />
-      <ScrollView
+      <ScreenScrollView
         style={scrollbarInset(contentPadding.paddingTop)}
         contentContainerStyle={[styles.content, contentPadding]}>
         <ThemedText type="small" themeColor="textSecondary">
@@ -99,7 +100,7 @@ export default function RegistryBrowseScreen() {
             </SettingsSection>
           </>
         )}
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

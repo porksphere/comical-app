@@ -1,7 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
-import { Platform, ScrollView, StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsSection } from '@/components/settings/settings-row';
 import { ThemedView } from '@/components/themed-view';
@@ -95,7 +96,7 @@ export default function NotificationsSettingsScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Notifications" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
+      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection
           title="Checking"
           footer={`Your library is scanned for new chapters when you open the app${
@@ -131,7 +132,7 @@ export default function NotificationsSettingsScreen() {
         <SettingsSection title="New chapters" footer="Series you're behind on stay out of Activity until you catch up.">
           <SettingsToggleRow label="Only for series I'm caught up on" value={caughtUpOnly} onChange={toggleCaughtUpOnly} />
         </SettingsSection>
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

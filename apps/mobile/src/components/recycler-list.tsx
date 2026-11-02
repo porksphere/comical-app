@@ -11,7 +11,7 @@ import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/
 import { stableScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { ZoomSurfaceContext, useZoomSurfaceKey } from '@/lib/series-zoom';
-import { TabScrollMarker } from '@/components/tab-scroll-marker';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 
 /**
  * THE one virtualized-list primitive. Every scrolling list of cards/rows in the app — the uniform
@@ -152,7 +152,7 @@ export function RecyclerList<T>({
   // The marker is keyed WITH the list: it registers the scroll view once per attach, so a list
   // remounting under a standing marker would leave UIKit following the old one.
   const list = (
-    <TabScrollMarker markerKey={listKey}>
+    <ScreenScrollMarker markerKey={listKey}>
         <AnimatedLegendList
           ref={ref}
           // AnimatedLegendList types this as a ref to ITS OWN AnimatedScrollView alias, which isn't
@@ -237,7 +237,7 @@ export function RecyclerList<T>({
             onMomentumScrollEnd?.(e);
           }}
         />
-    </TabScrollMarker>
+    </ScreenScrollMarker>
   );
 
   return (

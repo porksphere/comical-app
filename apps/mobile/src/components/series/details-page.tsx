@@ -27,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { usePushSettled } from '@/components/reader/chapter-navigator';
 import { focusSkip } from '@/lib/focus-nav';
 import { RetryBlock } from '@/components/retry-block';
+import { ScreenScrollActiveContext } from '@/components/screen-scroll-marker';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
@@ -1296,6 +1297,7 @@ export function SeriesDetailsPage({
           <Animated.View style={[styles.detailsContent, detailsContentStyle]}>
             {/* Everything below can yield the back-swipe to a horizontal scroller of its own. */}
             <BackSwipeGestureContext.Provider value={detailsBackSwipe}>
+            <ScreenScrollActiveContext.Provider value={isTop}>
             <SeriesDetailsHost
               bridgeId={bridgeId}
               id={id}
@@ -1316,6 +1318,7 @@ export function SeriesDetailsPage({
               coverAspectSeed={heroAspectSeed}
               saveKeyEnabled={IS_WEB && !!isTop}
             />
+            </ScreenScrollActiveContext.Provider>
             </BackSwipeGestureContext.Provider>
           </Animated.View>
         </Animated.View>

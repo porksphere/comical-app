@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TrashIcon } from '@/components/icons/ui-icons';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { NativeTabHeader } from '@/components/native-tab-header';
-import { TabScrollMarker } from '@/components/tab-scroll-marker';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import { useZoomId, withZoomSource } from '@/components/zoom-source';
@@ -206,7 +206,7 @@ export default function HistoryScreen() {
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
-        <TabScrollMarker>
+        <ScreenScrollMarker>
           <AnimatedLegendList
             ref={listRef}
             // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
@@ -249,7 +249,7 @@ export default function HistoryScreen() {
             // owns its list rather than going through RecyclerList, which reports them itself.
             {...scrollPhaseHandlers}
           />
-        </TabScrollMarker>
+        </ScreenScrollMarker>
       )}
 
       {NATIVE_HEADER ? (
