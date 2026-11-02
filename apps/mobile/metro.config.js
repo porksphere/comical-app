@@ -116,4 +116,20 @@ config.server.enhanceMiddleware = (metroMiddleware, server) => {
   };
 };
 
+// react-native-screens 4.31 nightly: its web stub for the TurboModule moved into fabric/legacy while the
+// index still imports fabric/NativeScreensModule, which calls TurboModuleRegistry (absent on web) at load.
+// Point web at the stub until the stable release ships with the two back together.
+const priorResolve = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  const resolve = priorResolve ?? context.resolveRequest;
+  if (
+    platform === 'web' &&
+    moduleName === './fabric/NativeScreensModule' &&
+    /[\\/]react-native-screens[\\/]/.test(context.originModulePath)
+  ) {
+    return resolve(context, './fabric/legacy/NativeScreensModule', platform);
+  }
+  return resolve(context, moduleName, platform);
+};
+
 module.exports = config;
