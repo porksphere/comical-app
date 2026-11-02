@@ -33,6 +33,8 @@ import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { useDismissKey } from '@/lib/dismiss-key';
 import { focusLayer, focusMarks } from '@/lib/focus-nav';
+import { closeNativeSheet, holdNativeSheet, NATIVE_OVERLAY_SHEETS } from '@/lib/native-overlay-sheets';
+import { presentOverlaySheet } from '@/lib/nav';
 import {
   overlayPresentation,
   topUsesWebOutsideClick,
@@ -45,6 +47,9 @@ import { useWindowControlsStrip, windowModalLayer } from '@/lib/window-controls'
 // A small stacked-overlay system. On phones, task surfaces are bottom sheets
 // with drag-to-dismiss; desktop presents anchored choices as popovers and
 // explicit task surfaces as centered dialogs. Works on iOS, Android and web.
+// On iOS every item is a system sheet instead, drawn by UIKit (see
+// lib/native-overlay-sheets): the stack below still holds it, so opening,
+// closing and the trigger toggles are the same calls, but nothing is drawn here.
 
 /** On-screen rectangle of the trigger that opened an overlay, in window
  *  coordinates (from `measureInWindow`). Used to position the desktop popover. */
@@ -450,7 +455,11 @@ type Item = {
   dialog?: boolean;
   accessibilityLabel?: string;
   returnFocus?: HTMLElement | null;
+  /** Presented as a system sheet (iOS), so not drawn by the provider. */
+  native?: boolean;
 };
+
+const NO_ITEMS: Item[] = [];
 
 /** What the stack still holds, for a watchdog entry. The first question anyone asks of one of
  *  those is whether the app was pushed back by an overlay that never left (items listed) or by a
@@ -506,18 +515,38 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     itemsRef.current = items;
   }, [items]);
 
-  const append = useCallback((render: () => ReactNode, item: Omit<Item, 'id' | 'node'>) => {
-    const id = idRef.current++;
-    // Traced (in memory, one line per open — not per frame) because a stuck pushback is a question
-    // about WHICH overlay never left, and by the time anyone notices, the app has been used for
-    // minutes since. See lib/pushback-watchdog.
-    notePushback(
-      'overlay open',
-      `id=${id}${item.anchor ? ' anchored' : ''}${item.popover ? ' popover' : ''}${item.dialog ? ' dialog' : ''}`,
-    );
-    setItems((prev) => [...prev, { id, node: render(), ...item }]);
-    return id;
+  // Idempotent by construction (`filter` on an id that's already gone is a no-op), which is what
+  // lets every exit path below — the curve's own callback, the wall-clock backstop, a second close
+  // — call it without any of them having to know whether one of the others got there first.
+  const remove = useCallback((id: number) => {
+    notePushback('overlay remove', `id=${id}`);
+    closers.current.delete(id);
+    setItems((prev) => prev.filter((it) => it.id !== id));
   }, []);
+
+  const append = useCallback(
+    (render: () => ReactNode, item: Omit<Item, 'id' | 'node'>) => {
+      const id = idRef.current++;
+      // Traced (in memory, one line per open — not per frame) because a stuck pushback is a question
+      // about WHICH overlay never left, and by the time anyone notices, the app has been used for
+      // minutes since. See lib/pushback-watchdog.
+      notePushback(
+        'overlay open',
+        `id=${id}${item.anchor ? ' anchored' : ''}${item.popover ? ' popover' : ''}${item.dialog ? ' dialog' : ''}`,
+      );
+      // Built here rather than inside the state updater, which React may run twice: a system sheet's
+      // content is handed to its route before the item reaches state.
+      const node = render();
+      if (NATIVE_OVERLAY_SHEETS) {
+        closers.current.set(id, () => closeNativeSheet(id));
+        holdNativeSheet(id, node, () => remove(id));
+        presentOverlaySheet(id);
+      }
+      setItems((prev) => [...prev, { id, node, ...item, ...(NATIVE_OVERLAY_SHEETS ? { native: true } : {}) }]);
+      return id;
+    },
+    [remove],
+  );
 
   const open = useCallback(
     (render: () => ReactNode, anchor?: AnchorRect | null, opts?: { popover?: boolean }) =>
@@ -538,14 +567,6 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     [append],
   );
 
-  // Idempotent by construction (`filter` on an id that's already gone is a no-op), which is what
-  // lets every exit path below — the curve's own callback, the wall-clock backstop, a second close
-  // — call it without any of them having to know whether one of the others got there first.
-  const remove = useCallback((id: number) => {
-    notePushback('overlay remove', `id=${id}`);
-    closers.current.delete(id);
-    setItems((prev) => prev.filter((it) => it.id !== id));
-  }, []);
 
   const register = useCallback((id: number, fn: () => void) => {
     closers.current.set(id, fn);
@@ -580,8 +601,10 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     [isLargeScreen],
   );
 
-  const depth = items.length;
-  const topIsWebPopover = topUsesWebOutsideClick(items, isLargeScreen, Platform.OS === 'web');
+  // What this provider draws: everything but the system sheets, which on iOS is nothing at all.
+  const drawn = NATIVE_OVERLAY_SHEETS ? NO_ITEMS : items;
+  const depth = drawn.length;
+  const topIsWebPopover = topUsesWebOutsideClick(drawn, isLargeScreen, Platform.OS === 'web');
 
   useEffect(() => {
     if (!topIsWebPopover) return;
@@ -597,8 +620,8 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     document.addEventListener('mousedown', handler, true);
     return () => document.removeEventListener('mousedown', handler, true);
   }, [topIsWebPopover, closeTop]);
-  const sheetDepth = items.filter((it) => presentationFor(it) === 'sheet').length;
-  const dialogDepth = items.filter((it) => presentationFor(it) === 'dialog').length;
+  const sheetDepth = drawn.filter((it) => presentationFor(it) === 'sheet').length;
+  const dialogDepth = drawn.filter((it) => presentationFor(it) === 'dialog').length;
 
   const appProgress = useSharedValue(0);
   const anyProgress = useSharedValue(0);
@@ -684,7 +707,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
           onPress={closeTop}
         />
 
-        {items.map((it, i) =>
+        {drawn.map((it, i) =>
           presentationFor(it) === 'popover' && it.anchor ? (
             <OverlayPopover
               key={it.id}
@@ -702,7 +725,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
             <OverlayDialog
               key={it.id}
               id={it.id}
-              isTop={i === items.length - 1}
+              isTop={i === drawn.length - 1}
               accessibilityLabel={it.accessibilityLabel}
               returnFocus={it.returnFocus}
               onClosed={() => remove(it.id)}
@@ -713,7 +736,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
             <OverlaySheet
               key={it.id}
               id={it.id}
-              depthFromTop={items.length - 1 - i}
+              depthFromTop={drawn.length - 1 - i}
               onClosed={() => remove(it.id)}
               register={register}>
               {it.node}
@@ -1053,6 +1076,44 @@ function OverlaySheet({
     </Animated.View>
   );
 }
+
+/**
+ * An overlay item's content inside its system sheet (app/overlay-sheet), on iOS. UIKit draws the
+ * sheet, the grabber and the swipe away; this is the body `OverlaySheet` draws inside its own, with
+ * the contexts the content reads, so a menu or a form lays out the same in either.
+ *
+ * Unlike that body it scrolls: the reader's settings run past a short window, a Duo's landscape
+ * one first, and there was nothing to reach the rest with. The sheet sizes itself to this view
+ * (`fitToContents`), so the scroller's cap is also the sheet's: the tallest a sheet can be,
+ * which leaves the top safe area and a margin above it and stands on the bottom inset.
+ */
+export function NativeSheetBody({ children }: { children: ReactNode }) {
+  const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const maxHeight = height - insets.top - insets.bottom - Spacing.four;
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const budget = useMemo<SheetBudget>(
+    () => ({ budget: maxHeight - NATIVE_SHEET_TOP, headerHeight, setHeaderHeight }),
+    [maxHeight, headerHeight],
+  );
+  return (
+    <OverlayPresentationContext.Provider value="sheet">
+      <SheetBudgetContext.Provider value={budget}>
+        <GHScrollView
+          style={{ maxHeight }}
+          contentContainerStyle={styles.nativeSheetBody}
+          alwaysBounceVertical={false}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
+          {children}
+        </GHScrollView>
+      </SheetBudgetContext.Provider>
+    </OverlayPresentationContext.Provider>
+  );
+}
+
+// The system grabber sits where `OverlaySheet`'s handle does, so the content starts as far down.
+const NATIVE_SHEET_TOP = HANDLE_AREA_HEIGHT;
 
 const DIALOG_WIDTH = 440;
 const DIALOG_VIEWPORT_GUTTER = Spacing.five;
@@ -1410,6 +1471,12 @@ const styles = StyleSheet.create({
   // every platform.
   sheetBody: {
     gap: Spacing.two,
+  },
+  nativeSheetBody: {
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    paddingTop: NATIVE_SHEET_TOP,
+    paddingBottom: Spacing.two,
   },
   dim: {
     backgroundColor: '#000000',

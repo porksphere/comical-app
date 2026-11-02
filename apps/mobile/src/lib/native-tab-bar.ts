@@ -2,6 +2,8 @@ import { useNavigation } from 'expo-router';
 import { useEffect, useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
 
+import { isNativeSheetUp } from '@/lib/native-overlay-sheets';
+
 /**
  * Whether the iOS system tab bar is hidden — a count of the screens asking for that, for the same
  * reason `tab-bar-visibility` keeps a count: two series layers can both be on their pages, and a
@@ -58,7 +60,8 @@ export function useNativeTabBarHidden(): boolean {
  * transition away STARTS — a swipe, a back, a page pushed over this one — and UIKit's own
  * animation of it runs alongside. It does not track the finger the way the native property
  * would. A cancelled swipe takes the bar away again; react-native-screens reports that only to
- * the screen that was swiped, which is this one.
+ * the screen that was swiped, which is this one. A system overlay sheet blurs the screen too
+ * (it is a route over the whole shell), and the bar stays down under one.
  */
 export function useHidesNativeTabBar(): void {
   const navigation = useNavigation<TransitionNavigation>();
@@ -75,7 +78,9 @@ export function useHidesNativeTabBar(): void {
     if (navigation.isFocused()) hide();
     const offs = [
       navigation.addListener('focus', hide),
-      navigation.addListener('blur', show),
+      navigation.addListener('blur', () => {
+        if (!isNativeSheetUp()) show();
+      }),
       navigation.addListener('transitionStart', (e) => {
         if (e.data.closing) show();
       }),

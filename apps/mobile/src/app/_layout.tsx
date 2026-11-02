@@ -28,6 +28,7 @@ Sentry.init({
    first thing to run. */
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import type { ComponentProps } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -127,6 +128,8 @@ function FrameTrace() {
   return null;
 }
 
+const SYSTEM_SHEET_GLASS = Platform.OS === 'ios' && isLiquidGlassAvailable();
+
 function RootNavigation() {
   // Active scheme from context (resolved once by ThemeSchemeProvider above) so the
   // navigation theme + status bar match the app content and re-theme live when the
@@ -139,6 +142,14 @@ function RootNavigation() {
     sheetAllowedDetents: [0.6, 1],
     sheetGrabberVisible: true,
     contentStyle: { backgroundColor: Colors[scheme].backgroundPanel },
+  };
+  const overlaySheet: ComponentProps<typeof Stack.Screen>['options'] = {
+    headerShown: false,
+    presentation: 'formSheet',
+    sheetAllowedDetents: 'fitToContents',
+    sheetGrabberVisible: true,
+    // Clear where the system draws a sheet's glass (iOS 26), so it shows; opaque where it doesn't.
+    contentStyle: { backgroundColor: SYSTEM_SHEET_GLASS ? 'transparent' : Colors[scheme].overlaySurface },
   };
   useDesktopShellCommands();
   useNavigationKeys();
@@ -164,6 +175,9 @@ function RootNavigation() {
               A sheet is its own view controller, above the app-root overlay hosts, so it hosts a
               stack of its own and pushes the editors as screens — see app/search-filters. */}
           <Stack.Screen name="search-filters" options={filterSheet} />
+          {/* Each item of the overlay stack, as a system sheet sized to its content (iOS; the
+              provider draws its own sheets everywhere else) — see lib/native-overlay-sheets. */}
+          <Stack.Screen name="overlay-sheet" options={overlaySheet} />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-collections" options={settingsScreen('Manage Collections')} />
           <Stack.Screen name="results" options={pushedScreen} />
