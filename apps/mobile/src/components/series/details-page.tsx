@@ -1034,7 +1034,8 @@ export function SeriesDetailsPage({
   useAnimatedReaction(
     () => detailsScrollOffset.value > barOnOffset - 4,
     (solid, prev) => {
-      if (solid !== prev) runOnJS(setBarSolid)(solid);
+      // Only the custom bar reads it, so the iOS page never renders again for it.
+      if (solid !== prev && !NATIVE_HEADER) runOnJS(setBarSolid)(solid);
     },
     [barOnOffset],
   );
@@ -1181,8 +1182,8 @@ export function SeriesDetailsPage({
 
   const dimOverlays = <StripDim progress={progress} />;
 
-  // iOS: the system bar, through the route's options: transparent over the cover, the glass
-  // material and the title arriving where the custom bar goes solid, the navigation theme's tint.
+  // iOS: the system bar, through the route's options: only its items, in the navigation theme's
+  // tint, with no title or material at any scroll; the content scrolls under them.
   // Only the top instance sets them (they are the route's, shared by every layer), and they mount
   // only while it is top, so a layer that becomes top again re-applies them: Stack.Screen's effect
   // runs on mount, and the toolbar unregisters its item on unmount. Inside a tab the route is the
@@ -1202,9 +1203,8 @@ export function SeriesDetailsPage({
             headerBackVisible: nativePush,
             // Not a pushed card, nothing for UIKit to pop: the edge is the page's own back-swipe.
             gestureEnabled: nativePush,
-            title: barSolid ? headerBarTitle : '',
-            headerTitle: barSolid ? headerBarTitle : '',
-            headerBlurEffect: barSolid ? 'systemChromeMaterial' : undefined,
+            title: '',
+            headerTitle: '',
           }}
         />
         {!nativePush ? (

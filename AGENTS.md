@@ -210,8 +210,8 @@ segments) — on iOS only; Android and web keep the root routes. A new pushed sc
 behave the same gets a stub in each tab's `in-tab/` and its path in `IN_TAB_PATHS`. Only the ROOT `series` route has
 the nested in-series stack (`app/series/_layout.tsx`), so series code asks `useSegments()`, not the
 pathname, to know which copy it is in. The series page takes the system bar in BOTH its modes —
-one bar, so the back button and the items morph between them: details transparent over the hero,
-`systemChromeMaterial` once the title would collide, a toolbar chevron in place of the custom one;
+one bar, so the back button and the items morph between them: details transparent over the hero
+with no title or material at any scroll, a toolbar chevron in place of the custom one;
 the reader nothing but its glass items over the page, the back button and save + settings
 (`components/reader/reader-native-toolbar.tsx`), with no title and nothing behind them, the bar
 following the chrome's auto-hide through `headerShown` — with every `Stack.Toolbar` unrendered while
