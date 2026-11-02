@@ -1,4 +1,5 @@
 import { createContext, useState, type ReactElement } from 'react';
+import { StyleSheet } from 'react-native';
 import { SafeAreaListener } from 'react-native-safe-area-context';
 
 /**
@@ -32,9 +33,16 @@ function BarExtent({ slides, children }: { slides: boolean; children: ReactEleme
   const [measured] = useState(slides);
   const [top, setTop] = useState<number | null>(null);
   if (!measured) return children;
+  // Beside the page, never around it: UIKit finds the list the bar follows by itself, and on a
+  // device one wrapper more around the list was enough to stop the bar sliding.
   return (
-    <SafeAreaListener onChange={({ insets }) => setTop(insets.top)}>
-      <BarExtentContext.Provider value={top}>{children}</BarExtentContext.Provider>
-    </SafeAreaListener>
+    <BarExtentContext.Provider value={top}>
+      {children}
+      <SafeAreaListener
+        pointerEvents="none"
+        style={StyleSheet.absoluteFill}
+        onChange={({ insets }) => setTop(insets.top)}
+      />
+    </BarExtentContext.Provider>
   );
 }
