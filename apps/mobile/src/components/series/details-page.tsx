@@ -1184,9 +1184,10 @@ export function SeriesDetailsPage({
 
   const dimOverlays = <StripDim progress={progress} />;
 
-  // iOS: the system bar, through the route's options: its items, in the navigation theme's tint,
-  // on the frosted material and with no title; the content scrolls under it, and the bar slides
-  // away while it does, like every pushed page's (SLIDE_AWAY_BAR).
+  // iOS: the system bar, through the route's options: the series' title and its items, in the
+  // navigation theme's tint, on the frosted material; the content scrolls under it, and the bar
+  // slides away while it does, like every pushed page's (SLIDE_AWAY_BAR). The title holds the bar
+  // open where the back button has moved to the Duo's vertical bar: it has nothing else in it there.
   // Only the top instance sets them (they are the route's, shared by every layer), and they mount
   // only while it is top, so a layer that becomes top again re-applies them: Stack.Screen's effect
   // runs on mount, and the toolbar unregisters its item on unmount. Inside a tab the route is the
@@ -1208,8 +1209,8 @@ export function SeriesDetailsPage({
             headerBackVisible: nativePush,
             // Not a pushed card, nothing for UIKit to pop: the edge is the page's own back-swipe.
             gestureEnabled: nativePush,
-            title: '',
-            headerTitle: '',
+            title: headerBarTitle,
+            headerTitle: headerBarTitle,
             unstable_nativeProps: SLIDE_AWAY_BAR,
           }}
         />
