@@ -105,17 +105,21 @@ export function ReaderToolbar({
 /** The toolbar's shade alone — the top gradient that keeps a white title legible over a white
  *  page — for iOS, where the bar is the system's (`ReaderNativeToolbar`, transparent) and this
  *  backing is the one part of the reader's top chrome still drawn here. Fades with the chrome, as
- *  the bar slides. */
+ *  the bar slides. It runs a bar's height on past the bar and eases out there: ended at the bar's
+ *  edge it read as a bar of its own. */
 export function ReaderBarShade({ visible }: { visible: boolean }) {
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
   const style = useAnimatedStyle(() => ({ opacity: withTiming(visible ? 1 : 0, { duration: 200 }) }));
   return (
-    <Animated.View pointerEvents="none" style={[styles.wrap, { height: insets.top + barHeight }, style]}>
-      <LinearGradient colors={['rgba(0,0,0,0.78)', 'transparent']} style={StyleSheet.absoluteFill} />
+    <Animated.View pointerEvents="none" style={[styles.wrap, { height: insets.top + barHeight * 2 }, style]}>
+      <LinearGradient colors={SHADE_COLORS} locations={SHADE_STOPS} style={StyleSheet.absoluteFill} />
     </Animated.View>
   );
 }
+
+const SHADE_COLORS = ['rgba(0,0,0,0.5)', 'rgba(0,0,0,0.38)', 'rgba(0,0,0,0.24)', 'rgba(0,0,0,0.08)', 'rgba(0,0,0,0)'] as const;
+const SHADE_STOPS = [0, 0.35, 0.6, 0.82, 1] as const;
 
 const styles = StyleSheet.create({
   wrap: {

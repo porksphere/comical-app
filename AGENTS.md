@@ -211,7 +211,10 @@ width, so UIKit can only centre it over the buttons) and save + settings as glas
 (`components/reader/reader-native-toolbar.tsx`), the bar following the chrome's auto-hide through
 `headerShown` — with every `Stack.Toolbar` unrendered while it is down, since a mounted one sets
 `headerShown: true` over the page's own options — the custom `ReaderToolbar` reduced to its
-gradient shade — and hides the tab bar while the reader is expanded through
+gradient shade, in paged mode only: down a webtoon the system's soft scroll-edge blur backs the
+bar, which it finds because the reader's backdrop holds the page rather than sitting ahead of it,
+but iOS draws that blur only over content scrolled under the bar and a sideways pager never is —
+and hides the tab bar while the reader is expanded through
 `lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s. The reader's bottom bar
 (`components/reader/chapter-navigator.tsx`) is real Liquid Glass (`expo-glass-effect`) in one
 `GlassContainer`, and nothing holding a `GlassView` may fade: UIKit renders an effect wrongly

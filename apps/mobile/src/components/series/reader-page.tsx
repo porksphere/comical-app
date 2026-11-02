@@ -13,6 +13,7 @@ import Animated, {
   Easing,
   Extrapolation,
   interpolate,
+  interpolateColor,
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
@@ -1113,12 +1114,13 @@ export function SeriesReaderPage({
     const range = zoomClosing.value ? closing : ZOOM_CONTENT_FADE_OPEN;
     return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
   }, [zoomGeomNoSource, zoomGeom]);
-  // See ZOOM_BACKDROP_FADE_CLOSE / _OPEN — same shape as the content fade, its own ranges.
+  // See ZOOM_BACKDROP_FADE_CLOSE / _OPEN — same shape as the content fade, its own ranges. Its
+  // colour fades, not its opacity: the backdrop holds the reader, which must not fade with it.
   const zoomBackdropFadeStyle = useAnimatedStyle(() => {
-    if (!zoomArmed.value) return { opacity: 0 };
+    if (!zoomArmed.value) return { backgroundColor: BACKDROP_CLEAR };
     const q = Math.max(0, zoom.value);
     const range = zoomClosing.value ? ZOOM_BACKDROP_FADE_CLOSE : ZOOM_BACKDROP_FADE_OPEN;
-    return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
+    return { backgroundColor: interpolateColor(q, range, [BACKDROP_CLEAR, READER_BACKDROP]) };
   });
   // Sequence mode only: the copy IS the page's own image (not a series cover standing in for a
   // card), so its rect MORPHS — from the tile-shaped `thumb` rect at q = 0, where cover-fit
@@ -1388,8 +1390,10 @@ export function SeriesReaderPage({
       }
       bars={{
         reader: NATIVE_HEADER ? (
-          // The bar is the system's on iOS (nativeBar); only its shade is still drawn here.
-          <ReaderBarShade visible={chromeVisible} />
+          // The bar is the system's on iOS (nativeBar). Down a webtoon the system's soft scroll-edge
+          // blur backs its white title; iOS draws that only over content scrolled under the bar,
+          // which a sideways pager never is, so a paged reader keeps a shade of its own.
+          settings.mode === 'paged' ? <ReaderBarShade visible={chromeVisible} /> : null
         ) : (
           // The reader's own fully transparent toolbar, with no back of its own: the persistent
           // chevron above is the back button. Its auto-hide rides `visible`.
@@ -1444,21 +1448,27 @@ export function SeriesReaderPage({
     // Plain (transparent) root — the route is a contained transparent modal, so a dismissal can
     // fade the layers out over the screen beneath. The reader's surface supplies the opaque fill.
     <View style={styles.container}>
-      {/* While the reader is up the system bars stay horizontal, the opt-out iOS 27 keeps for
-          full-screen media: in the vertical bar beside the page they would take its width, and the
-          status bar there cannot hide with the chrome. */}
+      {/* The bar's buttons go to the vertical bar of a folded or landscape display like every
+          other screen's, the title staying on top. Not the opt-out: expo-status-bar has iOS re-lay
+          the bars out from the window's root controller only, so leaving a reader that had opted
+          out left the details on a horizontal bar until something else re-laid them out. */}
       <StatusBar
         style={settings.mode === 'paged' ? (scheme === 'dark' ? 'light' : 'dark') : 'light'}
         hidden={settings.mode !== 'paged' && !chromeVisible}
-        verticalBarBehaviorIOS="disabled"
+        verticalBarBehaviorIOS="automatic"
       />
 
       <SplitClip travel={stripFrom ? height - stripFrom.stripBottom : null} progress={progress}>
       {/* THE READER'S BACKDROP: full screen, never moving, fading IN PLACE as the collapse carries
           the page over it. Outside the mask on purpose — inside it, it travelled and scaled along
-          with everything else, which is a swipe-away dragging its own background off with it. */}
-      <Animated.View pointerEvents="none" style={[styles.readerSurface, { width, height }, zoomBackdropFadeStyle]} />
-
+          with everything else, which is a swipe-away dragging its own background off with it. It
+          holds the reader instead of sitting behind it as a sibling: the iOS bar finds the list it
+          blurs under itself by walking each first subview down, and a backdrop laid in first was
+          all that walk ever reached. */}
+      <Animated.View
+        collapsable={false}
+        pointerEvents="box-none"
+        style={[styles.readerSurface, { width, height }, zoomBackdropFadeStyle]}>
       <ZoomFrame
         committing={edgeCommitting}
         leave={leaveOnce}
@@ -1596,6 +1606,7 @@ export function SeriesReaderPage({
       {nativeBar}
       {topChrome}
       </ZoomFrame>
+      </Animated.View>
       </SplitClip>
     </View>
   );
@@ -1618,6 +1629,9 @@ type ClosingNavigation = {
   addListener(type: 'beforeRemove', cb: () => void): () => void;
 };
 
+/** The backdrop's colour with none of it: the same black, so the fade in never passes through grey. */
+const BACKDROP_CLEAR = 'rgba(0,0,0,0)';
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1625,10 +1639,10 @@ const styles = StyleSheet.create({
     // over the screen beneath.
     backgroundColor: 'transparent',
   },
-  // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
-  // static full-screen layer BEHIND the frame (readerSurface), so it keeps covering the screen
-  // while the strip-centering translate moves the frame, and a dismissal can dissolve it in
-  // place while only the page travels.
+  // The reader's frame + clip. No background on either: the dark reader surface is a static
+  // full-screen layer AROUND the frame (readerSurface), so it keeps covering the screen while the
+  // strip-centering translate moves the frame, and a dismissal can dissolve it in place while only
+  // the page travels.
   readerFrame: {
     position: 'absolute',
     top: 0,
@@ -1642,7 +1656,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-    backgroundColor: READER_BACKDROP,
   },
   zoomTarget: {
     position: 'absolute',
