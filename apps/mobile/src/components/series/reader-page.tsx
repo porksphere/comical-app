@@ -1341,6 +1341,9 @@ export function SeriesReaderPage({
             headerTitle: nativeReaderTitle,
             headerBlurEffect: undefined,
             headerTintColor: '#fff',
+            // The bar's backing is the page's own soft blur (ReaderBarShade), in every mode; the
+            // system's scroll edge would stack a second one under it down a webtoon.
+            scrollEdgeEffects: { top: 'hidden' },
           }}
         />
         {!nativePush && chromeVisible ? (
@@ -1385,10 +1388,8 @@ export function SeriesReaderPage({
       }
       bars={{
         reader: NATIVE_HEADER ? (
-          // The bar is the system's on iOS (nativeBar). Down a webtoon the system's soft scroll-edge
-          // blur backs its white title; iOS draws that only over content scrolled under the bar,
-          // which a sideways pager never is, so a paged reader keeps a shade of its own.
-          settings.mode === 'paged' ? <ReaderBarShade visible={chromeVisible} /> : null
+          // The bar is the system's on iOS (nativeBar); its soft blur is drawn here.
+          <ReaderBarShade visible={chromeVisible} />
         ) : (
           // The reader's own fully transparent toolbar, with no back of its own: the persistent
           // chevron above is the back button. Its auto-hide rides `visible`.
@@ -1457,8 +1458,8 @@ export function SeriesReaderPage({
       {/* THE READER'S BACKDROP: full screen, never moving, fading IN PLACE as the collapse carries
           the page over it. Outside the mask on purpose — inside it, it travelled and scaled along
           with everything else, which is a swipe-away dragging its own background off with it. It
-          holds the reader instead of sitting behind it as a sibling: the iOS bar finds the list it
-          blurs under itself by walking each first subview down, and a backdrop laid in first was
+          holds the reader instead of sitting behind it as a sibling: the iOS bar finds the list whose
+          scroll edge it styles by walking each first subview down, and a backdrop laid in first was
           all that walk ever reached. */}
       <Animated.View
         collapsable={false}
