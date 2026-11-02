@@ -642,6 +642,12 @@ export function ChapterScrollList({
   // series card popup's menu system (frosted point-anchored menu, peek-and-commit) elsewhere. No
   // title line — the held row is right there naming the chapter.
   const manifest = useMemo(() => wholeChapters(dl?.chapters ?? []), [dl]);
+  // What the rows read besides their group (see AGENTS.md on list rows): without it a download
+  // finishing, or a page of one landing, never reached a row already on screen.
+  const rowsExtra = useMemo(
+    () => [dl, preferredGroup, offline, missingBridgeName, removed, theme, expandMiddleHover.hovered],
+    [dl, preferredGroup, offline, missingBridgeName, removed, theme, expandMiddleHover.hovered],
+  );
   const chapterMenu = (g: ChapterGroup): MenuRowSpec[] => {
     if (!bridgeId) return [];
     // Built per open, so the "Mark as read/unread" label reflects current state.
@@ -777,6 +783,7 @@ export function ChapterScrollList({
       onScrollEndDrag={onScrollEndDrag}
       {...pullScrollProps}
       data={data}
+      extraData={rowsExtra}
       keyExtractor={(item) =>
         item.type === 'chapter' ? `c:${item.group.key}` : item.type
       }
