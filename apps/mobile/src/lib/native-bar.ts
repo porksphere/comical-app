@@ -29,17 +29,35 @@ export const SLIDE_AWAY_BAR = {
  *
  * None on the folded iPhone Duo. UIKit starts the bar below a strip at the top of that panel, and
  * no bar background reaches into it: a material stops short and leaves a gap, in a bare UIKit app
- * too (FB24859353). With none, the soft scroll edge under the bar runs to the top of the screen. The
- * vertical bar in a tall window is that pose: open in portrait there is no vertical bar, and open
- * in landscape the window is wide and the bar's background does reach the top.
+ * too (FB24859353). The frost there is the scroll edge's, which does run to the top of the screen
+ * (`useFoldedBarEdge`).
  *
  * It goes in a stack's `screenOptions` and on the series details, the pages that set their own bar.
  */
 export function useBarMaterial() {
+  const folded = useIsFoldedDuo();
+  if (!NATIVE_HEADER) return undefined;
+  return folded ? ('none' as const) : ('systemUltraThinMaterial' as const);
+}
+
+/**
+ * The hard scroll edge on the folded iPhone Duo, the system's near-opaque backing under the bar once
+ * content scrolls beneath it, where the bar can have no material. Undefined elsewhere: leave the edge
+ * as it was. For a tab's stack and for the list's marker, since the last one set on the scroll view
+ * wins.
+ */
+export function useFoldedBarEdge() {
+  return useIsFoldedDuo() ? HARD_TOP_EDGE : undefined;
+}
+
+const HARD_TOP_EDGE = { top: 'hard' } as const;
+
+// A vertical bar in a tall window: open in portrait there is no vertical bar, and open in landscape
+// the window is wide and the bar's background does reach the top.
+function useIsFoldedDuo() {
   const verticalBarEdge = useVerticalBarEdgeIOS();
   const { width, height } = useWindowDimensions();
-  if (!NATIVE_HEADER) return undefined;
-  return verticalBarEdge != null && height > width ? ('none' as const) : ('systemUltraThinMaterial' as const);
+  return NATIVE_HEADER && verticalBarEdge != null && height > width;
 }
 
 /**

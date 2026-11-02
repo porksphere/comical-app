@@ -2,6 +2,8 @@ import { createContext, use, type ComponentProps, type ReactNode } from 'react';
 import { Platform, ScrollView, StyleSheet } from 'react-native';
 import { ScrollViewMarker } from 'react-native-screens';
 
+import { useFoldedBarEdge } from '@/lib/native-bar';
+
 import { ContentScrollAnchor } from '../../modules/content-scroll-view';
 
 /**
@@ -37,8 +39,8 @@ export const ScreenScrollActiveContext = createContext(true);
  * walks to the list by itself, each first subview down, to put its scroll-edge effect on it. Nothing
  * may be laid in ahead of the list there: Browse draws its colour backdrop inside the list's content
  * on iOS for that reason (see `ContentFeed`). The marker sets an edge effect too, its default
- * (`automatic`, soft under a bar), and the last one set on the scroll view wins, so every tab root
- * leaves it there.
+ * (`automatic`, soft under a bar with a custom title), and the last one set on the scroll view wins,
+ * so every tab root leaves it there, except on the folded Duo (`useFoldedBarEdge`).
  *
  * On Android and web it renders the child alone.
  */
@@ -51,8 +53,9 @@ export function ScreenScrollMarker({
 }) {
   const tabRoot = use(TabRootScrollContext);
   const active = use(ScreenScrollActiveContext);
+  const foldedEdge = useFoldedBarEdge();
   if (Platform.OS !== 'ios') return children;
-  const list = tabRoot ? <ScrollViewMarker key={markerKey} style={styles.fill}>{children}</ScrollViewMarker> : children;
+  const list = tabRoot ? <ScrollViewMarker key={markerKey} style={styles.fill} scrollEdgeEffects={foldedEdge}>{children}</ScrollViewMarker> : children;
   if (!ContentScrollAnchor) return list;
   return (
     <ContentScrollAnchor key={markerKey} active={active} style={styles.fill}>

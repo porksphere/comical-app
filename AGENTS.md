@@ -56,7 +56,9 @@ scroll-edge effect on the list. Every bar but the reader's has the system's fros
 always (`useBarMaterial` in `lib/native-bar.ts`, in each stack's `screenOptions`): UIKit never once
 switched these bars from a bare scroll-edge appearance to the frosted standard one, with or without
 the list handed to it, so there is no "bare until scrolled" to be had natively. The exception is the
-folded iPhone Duo, where no bar background reaches the top of the panel: there it has none. The soft
+folded iPhone Duo, where no bar background reaches the top of the panel: there it has none, and a
+tab's stack takes the hard scroll edge instead, on the stack and on the root list's marker
+(`useFoldedBarEdge`). The soft
 edge stays on under the material, which hides it while the bar is there; it backs the status bar
 once the bar has slid away. Nothing
 may be laid in ahead of the list there, so on iOS

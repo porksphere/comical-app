@@ -5,7 +5,7 @@ import { ReanimatedScreenProvider } from 'react-native-screens/reanimated';
 import { barExtentLayout } from '@/components/bar-extent';
 import { TabRootScrollContext } from '@/components/screen-scroll-marker';
 import { TabRouteContext } from '@/lib/focused-tab';
-import { NATIVE_BAR, useBarMaterial } from '@/lib/native-bar';
+import { NATIVE_BAR, useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
 import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
 import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
 
@@ -55,11 +55,14 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  */
 export default function TabStack({ tab }: { tab: string }) {
   const barMaterial = useBarMaterial();
+  const foldedEdge = useFoldedBarEdge();
   return (
     <TabRouteContext.Provider value={tab}>
       <TabBarClearanceReporter />
       <ReanimatedScreenProvider>
-        <Stack screenOptions={{ ...NATIVE_BAR, headerBlurEffect: barMaterial }} screenLayout={tabScreenLayout}>
+        <Stack
+          screenOptions={{ ...NATIVE_BAR, headerBlurEffect: barMaterial, ...(foldedEdge && { scrollEdgeEffects: foldedEdge }) }}
+          screenLayout={tabScreenLayout}>
           {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
           <Stack.Screen name="in-tab/series/index" options={{ headerShown: false }} />
           <Stack.Screen name="in-tab/series/read" options={{ headerShown: false }} />
