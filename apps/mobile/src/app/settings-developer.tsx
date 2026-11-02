@@ -1,4 +1,4 @@
-import { ScrollView, StyleSheet } from 'react-native';
+import { Platform, ScrollView, StyleSheet } from 'react-native';
 
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
@@ -10,6 +10,7 @@ import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useApiBase } from '@/data/api';
 import { useMockDataToggle } from '@/data/source';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
+import { router } from '@/lib/nav';
 
 /** Dev-build-only: lets local development iterate against mock data without a running backend, and
  *  shows which server real requests target. The Settings screen only links here when
@@ -40,6 +41,17 @@ export default function DeveloperSettingsScreen() {
           />
           <SettingsRow label="Server" description={apiBase} descriptionSelectable />
         </SettingsSection>
+        {/* THROWAWAY: the bar slide-away test (components/bar-test); its in-tab copy is on the Settings tab. */}
+        {Platform.OS === 'ios' && (
+          <SettingsSection title="Bar test">
+            <SettingsRow testID="developer.bar-test" label="Root stack" onPress={() => router.push('/bar-test')} />
+            <SettingsRow
+              testID="developer.bar-test-upstream"
+              label="Upstream copy"
+              onPress={() => router.push('/bar-test-upstream')}
+            />
+          </SettingsSection>
+        )}
       </ScrollView>
     </ThemedView>
   );

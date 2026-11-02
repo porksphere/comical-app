@@ -44,7 +44,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { APP_VERSION } from '@/lib/build-info';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { hapticImpactLight } from '@/lib/haptics';
-import { useRouter } from '@/lib/nav';
+import { tabHref, useRouter } from '@/lib/nav';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 // The keys are only listened for on web, which is also what the desktop app runs. A phone has no
@@ -196,6 +196,15 @@ export default function SettingsScreen() {
                   icon={<DeveloperIcon color={theme.text} size={18} />}
                   title="Developer"
                   onPress={() => router.push('/settings-developer')}
+                />
+              )}
+              {/* THROWAWAY: the bar slide-away test inside this tab's stack (components/bar-test). */}
+              {PROFILING_ENABLED && Platform.OS === 'ios' && (
+                <CategoryRow
+                  testID="settings.category.bar-test"
+                  icon={<DeveloperIcon color={theme.text} size={18} />}
+                  title="Bar test (in tab)"
+                  onPress={() => router.push(tabHref('settings', '/bar-test', {}))}
                 />
               )}
             </SettingsSection>
