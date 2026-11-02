@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Stack, useFocusEffect, useNavigation } from 'expo-router';
+import { Stack, useNavigation } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
@@ -49,7 +49,7 @@ import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useActiveColorScheme } from '@/hooks/use-theme';
 import { getAdjacentChapter } from '@/lib/chapter-order';
-import { hideNativeTabBar } from '@/lib/native-tab-bar';
+import { useHidesNativeTabBar } from '@/lib/native-tab-bar';
 import { LinkAppleZoomTarget, useRouter } from '@/lib/nav';
 import { useTabRoute } from '@/lib/focused-tab';
 import { getPreferredGroup } from '@/lib/preferred-group';
@@ -286,12 +286,7 @@ export function SeriesReaderPage({
   useEffect(() => () => keepZoomLevel(1), []);
   // iOS: the system tab bar goes with the pages, which are full-bleed. This page stays mounted
   // under details it pushes, so the bar goes only while it is the page on screen.
-  useFocusEffect(
-    useCallback(() => {
-      if (!NATIVE_HEADER) return;
-      return hideNativeTabBar();
-    }, []),
-  );
+  useHidesNativeTabBar();
   useWindowThemeColor(READER_BACKDROP, 1);
   // Whether the ENTRANCE animation has finished (the zoom spring's completion callback flips it —
   // see startZoom). The zoom scales the WHOLE destination screen behind a growing mask, and a
