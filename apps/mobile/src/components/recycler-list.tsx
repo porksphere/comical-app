@@ -1,11 +1,12 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
-import type { ComponentProps, ReactElement, RefObject } from 'react';
+import { type ComponentProps, type ReactElement, type RefObject, useRef } from 'react';
 import { Platform, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
-import { useSideInsets } from '@/hooks/use-content-width';
+import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
+import { useFixedSizeReset } from '@/hooks/use-fixed-size-reset';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 import { stableScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
@@ -141,13 +142,19 @@ export function RecyclerList<T>({
   // The list runs under the safe area's sides and its content stays inside them, so the colour behind
   // a landscape iPhone's sensor housing is the screen's and no card sits under it.
   const insets = useSideInsets();
+  // Every caller's fixed sizes come out of the content width (`useGridLayout`), so a new width is
+  // when the list has to ask for them again.
+  const ownListRef = useRef<LegendListRef>(null);
+  const ref = listRef ?? ownListRef;
+  const contentWidth = useContentWidth();
+  useFixedSizeReset(ref, `${contentWidth}:${insets.left}:${insets.right}`);
 
   // The marker is keyed WITH the list: it registers the scroll view once per attach, so a list
   // remounting under a standing marker would leave UIKit following the old one.
   const list = (
     <TabScrollMarker markerKey={listKey}>
         <AnimatedLegendList
-          ref={listRef}
+          ref={ref}
           // AnimatedLegendList types this as a ref to ITS OWN AnimatedScrollView alias, which isn't
           // structurally the same declaration as `Animated.ScrollView` even though it is the same
           // component. One cast, at the one boundary, rather than leaking the alias upward through

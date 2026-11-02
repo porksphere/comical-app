@@ -6,6 +6,7 @@ import Animated from 'react-native-reanimated';
 
 import { BackSwipeBoundary } from '@/components/back-swipe-boundary';
 import { useSideInsets } from '@/hooks/use-content-width';
+import { useFixedSizeReset } from '@/hooks/use-fixed-size-reset';
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import {
   coverStyles,
@@ -334,16 +335,19 @@ export function Rail({
     };
   }, [wide, itemSize, bridgeId, section.id]);
 
-  // Restore the rail's last resting card index on (re)mount — see `railRestIndex`. On a rail-heavy
-  // home this is what brings a recycled rail back to where the user left it. Defaulting to 0 also
-  // subsumes the old iOS-only workaround for a horizontal LegendList mounting already scrolled away
-  // (legendapp/list#458): scrolling to offset 0 is a harmless no-op on web/Android and the fix on iOS.
+  useFixedSizeReset(listRef, itemSize);
+  // Restore the rail's last resting card index on (re)mount — see `railRestIndex` — and again when a
+  // fold or a rotation re-lays it out, since the strip either mounts then or keeps an offset in the
+  // old card's widths. On a rail-heavy home this is what brings a recycled rail back to where the
+  // user left it. Defaulting to 0 also subsumes the old iOS-only workaround for a horizontal
+  // LegendList mounting already scrolled away (legendapp/list#458): scrolling to offset 0 is a
+  // harmless no-op on web/Android and the fix on iOS.
   useEffect(() => {
     if (wide) return;
     const idx = railRestIndex.get(railRestKey(bridgeId, section.id)) ?? 0;
     listRef.current?.scrollToOffset({ offset: idx * itemSize, animated: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [wide, itemSize]);
 
   const zoomSurface = useZoomSurfaceKey(`rail:${section.id}`);
   // A rail can lose a card without going anywhere itself (a filter narrowing its contents), which
