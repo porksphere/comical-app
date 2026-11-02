@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
-import { GlassContainer, GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { useNavigation } from 'expo-router';
 import {
   DynamicColorIOS,
@@ -102,9 +102,9 @@ const BAR_H = 40;
  *  Nothing that holds a glass view may fade. UIKit renders a visual effect wrongly, or not at all,
  *  under an alpha below 1 anywhere above it, and a glass faded out and back in can stay gone, so
  *  the chrome toggle used to leave the surfaces flat, missing, or unlike one another. On glass the
- *  surfaces come and go as an effect (`ChromeSurface`'s `shown`, which UIKit animates the way it
- *  does the system bar's own items) and only what sits on them fades; off glass the whole bar
- *  still fades as one. */
+ *  surfaces come and go as an effect (`GlassSurface`, which UIKit animates the way it does the
+ *  system bar's own items) and only what sits on them fades; off glass the whole bar still fades
+ *  as one. */
 const GLASS = Platform.OS === 'ios' && isLiquidGlassAvailable();
 
 /** What sits on the surfaces. Glass takes the window's appearance, as the system bar's glass above
@@ -499,15 +499,7 @@ export function ChapterNavigator({
       <Animated.View
         pointerEvents={visible ? 'box-none' : 'none'}
         style={[styles.wrap, { bottom: chromeBottom + BAR_BOTTOM }, GLASS ? undefined : fade]}>
-        {/* One container, so the three render as one group of glass as the system bar's items do
-            rather than each sampling the page alone; spacing 0 keeps them from merging. */}
-        {GLASS ? (
-          <GlassContainer spacing={0} style={rowStyle}>
-            {row}
-          </GlassContainer>
-        ) : (
-          <View style={rowStyle}>{row}</View>
-        )}
+        <View style={rowStyle}>{row}</View>
       </Animated.View>
       {/* The counter, under the bar and on its own fade — see COUNTER_H. Reads the scrub's own
           position while a finger is down (`scrubPage`), for the same reason the pill used to. */}
@@ -568,20 +560,13 @@ function SkipButton({
   );
 }
 
+type SurfaceProps = ViewProps & { interactive?: boolean; glass: boolean; shown: boolean };
+
 /** One of the bar's surfaces: glass where there is glass, the tint otherwise. `style` carries
  *  the shape (size, radius, padding) and never a colour — the surface decides that (see INK);
- *  `interactive` for a button, which the glass then presses.
- *  Until `glass` (see `usePushSettled`) the surface is bare, and then a new view, so the effect
- *  is set by a first layout that comes after the push. `shown` brings the glass in and out (see
- *  GLASS); off glass it changes nothing, the bar's wrap fading instead. */
-function ChromeSurface({
-  interactive,
-  glass,
-  shown,
-  style,
-  children,
-  ...rest
-}: ViewProps & { interactive?: boolean; glass: boolean; shown: boolean }) {
+ *  `interactive` for a button, which the glass then presses. `shown` brings the glass in and out
+ *  (see GLASS); off glass it changes nothing, the bar's wrap fading instead. */
+function ChromeSurface({ style, children, ...rest }: SurfaceProps) {
   if (!GLASS) {
     return (
       <View style={[style, styles.tinted]} {...rest}>
@@ -590,9 +575,35 @@ function ChromeSurface({
     );
   }
   return (
+    <GlassSurface style={style} {...rest}>
+      {children}
+    </GlassSurface>
+  );
+}
+
+/** Every showing of the glass is a NEW view, which takes its effect once it has laid out, so
+ *  UIKit materializes it on a view that never held glass. Hiding dematerializes the view in place.
+ *  A view whose glass was taken away and given back is what came back flat or missing: the
+ *  scrubber and the skip buttons, shown and hidden with the chrome, while the counter beside
+ *  them, glass from its first layout to its last, never did. Until `glass` (see `usePushSettled`)
+ *  nothing is shown at all. The surfaces are not grouped in a GlassContainer either: the
+ *  container sets its effect before it has a window or a layout, which a glass view has to wait
+ *  for. */
+function GlassSurface({ interactive, glass, shown, style, children, ...rest }: SurfaceProps) {
+  const on = glass && shown;
+  const [showing, setShowing] = useState({ on, view: 0 });
+  if (showing.on !== on) setShowing({ on, view: on ? showing.view + 1 : showing.view });
+  const [laidOut, setLaidOut] = useState(-1);
+  const view = showing.view;
+  return (
     <GlassView
-      key={glass ? 'glass' : 'bare'}
-      glassEffectStyle={{ style: glass && shown ? 'regular' : 'none', animate: true, animationDuration: FADE_MS / 1000 }}
+      key={view}
+      onLayout={() => setLaidOut(view)}
+      glassEffectStyle={{
+        style: on && laidOut === view ? 'regular' : 'none',
+        animate: true,
+        animationDuration: FADE_MS / 1000,
+      }}
       isInteractive={!!interactive}
       style={style}
       {...rest}>
