@@ -35,7 +35,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { SplashGate } from '@/components/splash-gate';
 import { barExtentLayout } from '@/components/bar-extent';
-import { pushedScreen, settingsScreen } from '@/lib/native-bar';
+import { pushedScreen, settingsScreen, useBarMaterial } from '@/lib/native-bar';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ConfirmPopupHost } from '@/components/confirm-popup';
@@ -138,6 +138,7 @@ function RootNavigation() {
   // preference changes.
   const scheme = useActiveColorScheme();
   const statusBar = useRootStatusBarOptions(scheme);
+  const barMaterial = useBarMaterial();
   useWindowThemeColor(Colors[scheme].background);
   const filterSheet: ComponentProps<typeof Stack.Screen>['options'] = {
     headerShown: false,
@@ -172,7 +173,7 @@ function RootNavigation() {
             pushed screen below hide the native header and render their own chrome,
             except the settings categories, which take the system bar on iOS; those
             measure the bar they pad past (barExtentLayout). */}
-        <Stack screenOptions={statusBar} screenLayout={barExtentLayout}>
+        <Stack screenOptions={{ ...statusBar, headerBlurEffect: barMaterial }} screenLayout={barExtentLayout}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="search" options={pushedScreen} />
           {/* The search filters as a system form sheet (iOS; the custom bars keep their shutter).

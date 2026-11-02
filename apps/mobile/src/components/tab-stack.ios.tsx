@@ -5,7 +5,7 @@ import { ReanimatedScreenProvider } from 'react-native-screens/reanimated';
 import { barExtentLayout } from '@/components/bar-extent';
 import { TabRootScrollContext } from '@/components/screen-scroll-marker';
 import { TabRouteContext } from '@/lib/focused-tab';
-import { NATIVE_BAR } from '@/lib/native-bar';
+import { NATIVE_BAR, useBarMaterial } from '@/lib/native-bar';
 import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
 import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
 
@@ -16,7 +16,7 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * screen, which draws the custom TabTitleBar overlay (tab-stack.tsx).
  *
  * The content scrolls behind the bar exactly as it did behind the overlay (and pads itself by
- * useTopChromeHeight). The bar has the system's frosted material (`BAR_MATERIAL`), always: UIKit
+ * useTopChromeHeight). The bar has the system's frosted material (`useBarMaterial`), always: UIKit
  * never once switched these bars from a bare scroll-edge appearance to the frosted standard one.
  * It slides away as the content scrolls down and back as it scrolls up, the iOS 27 minimization
  * every bar takes (`NATIVE_BAR`); each screen measures the bar it pads past, since the height the
@@ -54,11 +54,12 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * ZoomCoverCopy). It only samples while a transition runs.
  */
 export default function TabStack({ tab }: { tab: string }) {
+  const barMaterial = useBarMaterial();
   return (
     <TabRouteContext.Provider value={tab}>
       <TabBarClearanceReporter />
       <ReanimatedScreenProvider>
-        <Stack screenOptions={NATIVE_BAR} screenLayout={tabScreenLayout}>
+        <Stack screenOptions={{ ...NATIVE_BAR, headerBlurEffect: barMaterial }} screenLayout={tabScreenLayout}>
           {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
           <Stack.Screen name="in-tab/series/index" options={{ headerShown: false }} />
           <Stack.Screen name="in-tab/series/read" options={{ headerShown: false }} />

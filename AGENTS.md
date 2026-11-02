@@ -53,10 +53,12 @@ pushed pages and the series details included, or that screen's bar stays put; a 
 ScrollView uses `ScreenScrollView`. The reader takes no marker: its bar never slides. The screen also
 finds the list by a walk of its own, each first subview down from it, to put its iOS 26
 scroll-edge effect on the list. Every bar but the reader's has the system's frosted material,
-always (`BAR_MATERIAL` in `lib/native-bar.ts`): UIKit never once switched these bars from a bare
-scroll-edge appearance to the frosted standard one, with or without the list handed to it, so
-there is no "bare until scrolled" to be had natively. The soft edge stays on under the material,
-which hides it while the bar is there; it backs the status bar once the bar has slid away. Nothing
+always (`useBarMaterial` in `lib/native-bar.ts`, in each stack's `screenOptions`): UIKit never once
+switched these bars from a bare scroll-edge appearance to the frosted standard one, with or without
+the list handed to it, so there is no "bare until scrolled" to be had natively. The exception is the
+folded iPhone Duo, where no bar background reaches the top of the panel: there it has none. The soft
+edge stays on under the material, which hides it while the bar is there; it backs the status bar
+once the bar has slid away. Nothing
 may be laid in ahead of the list there, so on iOS
 Browse's colour backdrop is drawn inside the list's content, behind its rows (`BACKDROP_IN_LIST`
 in `components/content-feed.tsx`). Liquid Glass bars tint from the

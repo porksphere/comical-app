@@ -41,6 +41,7 @@ the end of this doc is the only guard.
 | 18 | Tab badge rendered only above zero | Library bug | Keep | [ ] |
 | 19 | Type casts at library seams | Typing | Keep | [ ] |
 | 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
+| 21 | No bar material on the folded Duo | Pose inferred around a UIKit limit | Keep | [ ] |
 
 ## Blockers
 
@@ -290,6 +291,20 @@ Already on `main`, so not from this work: `ZOOM_BOUND_WAIT_MS`, `ZOOM_THUMB_PAIN
 `ZOOM_OUT_BACKSTOP_MS`, `ZOOM_THUMB_BIAS_RESTORE_MS`, `POSTER_BACKSTOP_MS`, and the 800ms in
 `search-field.tsx`.
 
+## Platform limits
+
+### 21. No bar material on the folded Duo
+
+- **What:** the bar has no frosted material on the Duo's folded panel, only the soft scroll edge.
+- **Where:** `useBarMaterial` in `src/lib/native-bar.ts`.
+- **Why:** UIKit starts the bar below a strip at the top of that panel, and no bar background reaches
+  into it, in a bare UIKit app too. FB24859353 on Apple's side, closed as a platform limit by
+  react-native-screens (#4956). The other way out is a view of our own above the bar, which would not
+  slide with it.
+- **How it fails:** the pose is inferred, a vertical bar in a tall window. A folded pose it misses shows
+  the gap; a pose it wrongly catches loses the frost.
+- **Removed by:** Apple extending the bar's background.
+
 ## Looked at, not hacks
 
 - `plugins/with-cmake-long-paths.js`: local Windows build tooling, gated on the host OS.
@@ -312,3 +327,4 @@ fails silently and only shows here.
 - [ ] **Item 15:** a soft edge backs the status bar once Browse's bar has slid away.
 - [ ] **Item 17:** in the reader, the status bar hides with the chrome.
 - [ ] **Item 18:** with nothing unread, the Activity and Settings tabs show no badge.
+- [ ] **Item 21:** folded, no gap above the bar. Unfolded in both orientations, the frost reaches the top.

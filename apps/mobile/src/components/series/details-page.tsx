@@ -38,7 +38,7 @@ import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
-import { BAR_MATERIAL, SLIDE_AWAY_BAR } from '@/lib/native-bar';
+import { SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
 import {
   backSwipePan,
   backSwipeShape,
@@ -1195,6 +1195,7 @@ export function SeriesDetailsPage({
   // nested stack (app/series/_layout), never the contained transparent modal around it:
   // react-native-screens remounts a modal's content when its `headerShown` flips, as the search
   // layer flips it; a nested root has no back of its own, hence the toolbar chevron.
+  const barMaterial = useBarMaterial();
   const nativeBar =
     NATIVE_HEADER && isTop ? (
       <>
@@ -1203,7 +1204,7 @@ export function SeriesDetailsPage({
             headerShown: true,
             headerTransparent: true,
             headerShadowVisible: false,
-            headerBlurEffect: BAR_MATERIAL,
+            headerBlurEffect: barMaterial,
             headerBackVisible: nativePush,
             // Not a pushed card, nothing for UIKit to pop: the edge is the page's own back-swipe.
             gestureEnabled: nativePush,

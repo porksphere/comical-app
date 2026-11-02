@@ -1,5 +1,7 @@
 import type { Stack } from 'expo-router';
+import { useVerticalBarEdgeIOS } from 'expo-status-bar';
 import type { ComponentProps } from 'react';
+import { useWindowDimensions } from 'react-native';
 
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 
@@ -20,23 +22,36 @@ export const SLIDE_AWAY_BAR = {
 } as const;
 
 /**
- * The frosted material behind a bar, UIKit's own: a `UIBlurEffect` in the bar's appearance. Always
- * on, at the top of a list too: UIKit never switched these bars from a bare scroll-edge appearance
- * to this one on a device, and the bar is out of the way once the content scrolls anyway.
+ * The frosted material behind a bar, UIKit's own: a `UIBlurEffect` in the bar's appearance, the
+ * lightest of the system's. Always on, at the top of a list too: UIKit never switched these bars
+ * from a bare scroll-edge appearance to this one on a device, and the bar is out of the way once
+ * the content scrolls anyway.
+ *
+ * None on the folded iPhone Duo. UIKit starts the bar below a strip at the top of that panel, and
+ * no bar background reaches into it: a material stops short and leaves a gap, in a bare UIKit app
+ * too (FB24859353). With none, the soft scroll edge under the bar runs to the top of the screen. The
+ * vertical bar in a tall window is that pose: open in portrait there is no vertical bar, and open
+ * in landscape the window is wide and the bar's background does reach the top.
+ *
+ * It goes in a stack's `screenOptions` and on the series details, the pages that set their own bar.
  */
-export const BAR_MATERIAL = 'systemChromeMaterial';
+export function useBarMaterial() {
+  const verticalBarEdge = useVerticalBarEdgeIOS();
+  const { width, height } = useWindowDimensions();
+  if (!NATIVE_HEADER) return undefined;
+  return verticalBarEdge != null && height > width ? ('none' as const) : ('systemUltraThinMaterial' as const);
+}
 
 /**
- * The system navigation bar on an iOS screen: title, back chevron, the frosted material, over a
- * soft scroll edge that backs the status bar once the bar has slid away — see `tab-stack`.
- * `headerShown` is explicit so the options also stand inside a stack whose default hides it (the
- * series page's).
+ * The system navigation bar on an iOS screen: title, back chevron, over a soft scroll edge that
+ * backs the status bar once the bar has slid away — see `tab-stack`. The stack adds the material
+ * (`useBarMaterial`). `headerShown` is explicit so the options also stand inside a stack whose
+ * default hides it (the series page's).
  */
 export const NATIVE_BAR: ScreenOptions = {
   headerShown: true,
   headerTransparent: true,
   headerShadowVisible: false,
-  headerBlurEffect: BAR_MATERIAL,
   headerBackButtonDisplayMode: 'minimal',
   scrollEdgeEffects: { top: 'soft' },
   unstable_nativeProps: SLIDE_AWAY_BAR,
