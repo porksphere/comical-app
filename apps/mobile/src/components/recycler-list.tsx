@@ -6,7 +6,7 @@ import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from '
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
-import { useFixedSizeReset } from '@/hooks/use-fixed-size-reset';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 import { stableScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
@@ -66,7 +66,8 @@ export function RecyclerList<T>({
    *  item, so without this a mounted row keeps rendering the value it captured — which is exactly
    *  how the sticky's hidden-row flag got stuck: scrolling down hid a heading (the row often
    *  re-rendered anyway, having just been recycled into view), scrolling back up never un-hid it,
-   *  and that heading was simply gone until something else forced the row to re-render. */
+   *  and that heading was simply gone until something else forced the row to re-render. The
+   *  content width and side insets are folded in here already (`useListLayout`). */
   extraData?: unknown;
   /** Pools recycled views per returned tag, so unlike-shaped items don't recycle into each other.
    *  Omit for a uniform list (one implicit type). */
@@ -142,12 +143,11 @@ export function RecyclerList<T>({
   // The list runs under the safe area's sides and its content stays inside them, so the colour behind
   // a landscape iPhone's sensor housing is the screen's and no card sits under it.
   const insets = useSideInsets();
-  // Every caller's fixed sizes come out of the content width (`useGridLayout`), so a new width is
-  // when the list has to ask for them again.
+  // Every caller's rows and fixed sizes come out of the content width (`useGridLayout`).
   const ownListRef = useRef<LegendListRef>(null);
   const ref = listRef ?? ownListRef;
   const contentWidth = useContentWidth();
-  useFixedSizeReset(ref, `${contentWidth}:${insets.left}:${insets.right}`);
+  const listExtra = useListLayout(ref, `${contentWidth}:${insets.left}:${insets.right}`, extraData);
 
   // The marker is keyed WITH the list: it registers the scroll view once per attach, so a list
   // remounting under a standing marker would leave UIKit following the old one.
@@ -165,7 +165,7 @@ export function RecyclerList<T>({
           data={data}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
-          extraData={extraData}
+          extraData={listExtra}
           getItemType={getItemType}
           getFixedItemSize={getFixedItemSize}
           estimatedItemSize={estimatedItemSize}

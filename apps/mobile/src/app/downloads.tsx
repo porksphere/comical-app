@@ -54,6 +54,7 @@ import { hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useContentWidth } from '@/hooks/use-content-width';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { useSeriesSubPath } from '@/lib/series-nav';
@@ -191,6 +192,7 @@ export default function DownloadsScreen() {
 
   // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
   const listRef = useRef<LegendListRef>(null);
+  const rowsExtra = useListLayout(listRef, sidePad.left, listExtra);
   const scrollYRef = useRef(0);
   const dragSelect = useDragSelect({
     keys: allKeys,
@@ -390,7 +392,7 @@ export default function DownloadsScreen() {
         maintainVisibleContentPosition={{ data: false, size: false }}
         // Selection lives OUTSIDE the row objects (identity-cached — see `buildRows`); this tells
         // the list to repaint visible rows when the selection set or the mode changes.
-        extraData={listExtra}
+        extraData={rowsExtra}
         renderItem={renderItem}
         ListHeaderComponent={header}
         ListEmptyComponent={

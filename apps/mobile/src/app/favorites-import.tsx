@@ -47,6 +47,7 @@ import type { FavoritesImportCandidate, FavoritesImportItem } from '@/data/api';
 import { favoritesImportPreviewQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
@@ -103,6 +104,7 @@ export default function FavoritesImportScreen() {
 
   // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
   const listRef = useRef<LegendListRef>(null);
+  const rowsExtra = useListLayout(listRef, sidePad.left, listExtra);
   const scrollYRef = useRef(0);
   const dragSelect = useDragSelect({
     keys: allKeys,
@@ -247,7 +249,7 @@ export default function FavoritesImportScreen() {
         maintainVisibleContentPosition={{ data: false, size: false }}
         // Selection lives outside the row objects (they're the query's own candidates); this tells
         // the list to repaint visible rows when the selection set changes.
-        extraData={listExtra}
+        extraData={rowsExtra}
         renderItem={renderItem}
         ListHeaderComponent={
           rows.length > 0 ? (

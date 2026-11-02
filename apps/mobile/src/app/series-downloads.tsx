@@ -74,6 +74,7 @@ import { usePreferredGroup } from '@/lib/preferred-group';
 import { testId } from '@/lib/test-id';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useContentWidth } from '@/hooks/use-content-width';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import type { ChapterGroup } from '@/lib/chapter-order';
@@ -394,6 +395,7 @@ export default function SeriesDownloadsScreen() {
   // Full-width scroller centered within the settings column (same treatment as the Downloads page).
   const sidePad = useSettingsSidePad(width);
   const listPad = useSettingsListPad(width);
+  const rowsExtra = useListLayout(listRef, sidePad.left, listExtra);
 
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
 
@@ -524,7 +526,7 @@ export default function SeriesDownloadsScreen() {
         maintainVisibleContentPosition={{ data: false, size: false }}
         // Selection lives OUTSIDE the row objects (identity-cached — see `rows`); this tells the
         // list to repaint visible rows when the selection set or the mode changes.
-        extraData={listExtra}
+        extraData={rowsExtra}
         renderItem={renderItem}
         ListEmptyComponent={
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>

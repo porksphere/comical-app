@@ -48,6 +48,7 @@ import { applyOrder, useBridgeOrder } from '@/data/list-order';
 import { libraryQuery, queryKeys, trackerImportPreviewQuery } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
@@ -150,6 +151,7 @@ export default function TrackerImportScreen() {
   }, [ms.selected]);
 
   const listRef = useRef<LegendListRef>(null);
+  const rowsExtra = useListLayout(listRef, sidePad.left, listExtra);
   const scrollYRef = useRef(0);
   const dragSelect = useDragSelect({
     keys: allKeys,
@@ -495,7 +497,7 @@ export default function TrackerImportScreen() {
         estimatedItemSize={SettingsRowHeight}
         getFixedItemSize={() => SettingsRowHeight}
         maintainVisibleContentPosition={{ data: false, size: false }}
-        extraData={listExtra}
+        extraData={rowsExtra}
         renderItem={renderItem}
         ListHeaderComponent={header}
         ListFooterComponent={

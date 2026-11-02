@@ -6,7 +6,7 @@ import Animated from 'react-native-reanimated';
 
 import { BackSwipeBoundary } from '@/components/back-swipe-boundary';
 import { useSideInsets } from '@/hooks/use-content-width';
-import { useFixedSizeReset } from '@/hooks/use-fixed-size-reset';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import {
   coverStyles,
@@ -335,7 +335,7 @@ export function Rail({
     };
   }, [wide, itemSize, bridgeId, section.id]);
 
-  useFixedSizeReset(listRef, itemSize);
+  const stripExtra = useListLayout(listRef, `${cardWidth}:${stripGap}`);
   // Restore the rail's last resting card index on (re)mount — see `railRestIndex` — and again when a
   // fold or a rotation re-lays it out, since the strip either mounts then or keeps an offset in the
   // old card's widths. On a rail-heavy home this is what brings a recycled rail back to where the
@@ -424,6 +424,7 @@ export function Rail({
             Platform.OS === 'ios' && { overflow: 'visible' },
           ]}
           data={section.items}
+          extraData={stripExtra}
           keyExtractor={(it) => it.id}
           // Recycle-safe now (SeriesCard resets its per-item state on entry change), so reuse card
           // instances as the strip scrolls instead of remounting each heavy card.

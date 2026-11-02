@@ -1,3 +1,4 @@
+import type { LegendListRef } from '@legendapp/list/react-native';
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
 import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
@@ -53,6 +54,7 @@ import { useZoomHref, useZoomId, ZoomSource } from '@/components/zoom-source';
 import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useSideInsets } from '@/hooks/use-content-width';
 import { useHovered } from '@/hooks/use-hovered';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
 import { sizeClassFor } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
@@ -1280,6 +1282,10 @@ export function PageThumbList({
   // wider than 2:3 is SHORTER than its slot and top-aligns in it, keeping its own shape; that space
   // below it is by design, not the grey strip (which was the crop, see SpriteCrop).
   const slotHeightPx = tileW / DEFAULT_THUMB_ASPECT;
+  // A save changes no row's data, so without the set in here the recycled cells keep their old badge
+  // state.
+  const listRef = useRef<LegendListRef>(null);
+  const listExtra = useListLayout(listRef, `${tileW}:${rtl}`, collected);
   // The collapsed fade height mirrors the reference's `.page-thumbs-more`: ~0.6 of
   // a tile's height, so the last row reads as fading out under the button.
   const fadeHeight = Math.round(slotHeightPx * 0.6);
@@ -1315,9 +1321,9 @@ export function PageThumbList({
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
       {...pullScrollProps}
+      ref={listRef}
       data={data}
-      // A save changes no row's data, so without this the recycled cells keep their old badge state.
-      extraData={collected}
+      extraData={listExtra}
       keyExtractor={(_, i) => String(i)}
       recycleItems
       // Every row's real height is this, exactly, regardless of content — the slot never resizes

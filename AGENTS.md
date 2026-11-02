@@ -369,6 +369,16 @@ specific to that site — not a category name. `reportUnusedDisableDirectives` i
 directive that stops suppressing anything fails the lint rather than rotting in place. If a
 suppression doesn't fit one of the three cases above, it's a code change, not a comment.
 
+# A list row renders again only for a new item or a new `extraData`
+
+LegendList memoizes each mounted row on its item and `extraData`, never on `renderItem`, so a row
+keeps whatever its first closure held until it is recycled. Anything a row reads that is not part of
+its item goes in `extraData`. That includes anything worked out from the window (a card width, a
+gap, a side inset), and those also size the rows: pass them through `useListLayout`
+(`hooks/use-list-layout.ts`), which clears the list's remembered sizes when they change and hands
+back the `extraData`. `RecyclerList` already does this for the content width; a list of its own
+names its own layout key. Skipping it is how a Browse rail kept the open Duo's spacing after a fold.
+
 # Zoom transitions
 
 The series page grows out of the card that opened it and collapses back into it (`apps/mobile/src/lib/series-zoom.ts`)
