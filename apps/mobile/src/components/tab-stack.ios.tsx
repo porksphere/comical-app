@@ -15,17 +15,14 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * toolbar items over to the side column together with the tabs. Elsewhere the tab is just its
  * screen, which draws the custom TabTitleBar overlay (tab-stack.tsx).
  *
- * The bar is transparent so the content scrolls behind it exactly as it did behind the overlay
- * (and pads itself by useTopChromeHeight). What keeps it legible is the iOS 26 scroll-edge
- * effect: the system's own treatment of the content under a bar, shown only once the list has
- * scrolled under it. Every tab takes the soft one, a fade, the bar holding only Liquid Glass items
- * and the tab's name; the hard one Browse and Library once took over their covers was a
- * near-opaque strip that cost a row of covers to back a title. Not a background in the bar's
- * appearance: on iOS 26 that sits on top of the edge effect, and UIKit never once switched these
- * bars from their scroll-edge appearance to the standard one. The bar slides away as the content
- * scrolls down and back as it scrolls up, the iOS 27 minimization every pushed bar takes
- * (`NATIVE_BAR`); each screen measures the bar it pads past, since the height the stack reports
- * follows the bar out (`barExtentLayout`).
+ * The content scrolls behind the bar exactly as it did behind the overlay (and pads itself by
+ * useTopChromeHeight). The bar has the system's frosted material (`BAR_MATERIAL`), always: UIKit
+ * never once switched these bars from a bare scroll-edge appearance to the frosted standard one.
+ * It slides away as the content scrolls down and back as it scrolls up, the iOS 27 minimization
+ * every bar takes (`NATIVE_BAR`); each screen measures the bar it pads past, since the height the
+ * stack reports follows the bar out (`barExtentLayout`). The soft scroll-edge effect stays on under
+ * it: the material hides it while the bar is there, and it backs the status bar once the bar has
+ * gone.
  *
  * The stack also carries the tab's own copies of the pages a tab pushes — series, search, results
  * (one-line re-exports under each tab's `in-tab/`; `destinationHref` in lib/nav sends a push there) —

@@ -20,14 +20,23 @@ export const SLIDE_AWAY_BAR = {
 } as const;
 
 /**
- * The system navigation bar on a pushed iOS screen: title, back chevron, the same transparent bar
- * over a soft scroll edge the tab stacks use — see `tab-stack`. `headerShown` is explicit so the
- * options also stand inside a stack whose default hides it (the series page's).
+ * The frosted material behind a bar, UIKit's own: a `UIBlurEffect` in the bar's appearance. Always
+ * on, at the top of a list too: UIKit never switched these bars from a bare scroll-edge appearance
+ * to this one on a device, and the bar is out of the way once the content scrolls anyway.
+ */
+export const BAR_MATERIAL = 'systemChromeMaterial';
+
+/**
+ * The system navigation bar on an iOS screen: title, back chevron, the frosted material, over a
+ * soft scroll edge that backs the status bar once the bar has slid away — see `tab-stack`.
+ * `headerShown` is explicit so the options also stand inside a stack whose default hides it (the
+ * series page's).
  */
 export const NATIVE_BAR: ScreenOptions = {
   headerShown: true,
   headerTransparent: true,
   headerShadowVisible: false,
+  headerBlurEffect: BAR_MATERIAL,
   headerBackButtonDisplayMode: 'minimal',
   scrollEdgeEffects: { top: 'soft' },
   unstable_nativeProps: SLIDE_AWAY_BAR,

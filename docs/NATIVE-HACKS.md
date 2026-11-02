@@ -234,7 +234,8 @@ These use public APIs, but the shape exists only because of a gap somewhere.
 - **Why:** react-native-screens finds the list by walking first subviews, and anything laid in ahead of
   the list ends that walk. This replaced a module that reached into the bar, so it is the better of the
   two. The rule still applies to every tab root: **nothing renders ahead of the list.**
-- **How it fails:** silent. The scroll-edge effect disappears from that screen.
+- **How it fails:** silent. The scroll-edge effect disappears from that screen, which shows once the bar
+  has slid away: nothing backs the status bar.
 
 ### 16. Reader bar options in both modes
 
@@ -308,6 +309,6 @@ fails silently and only shows here.
 - [ ] **Item 8:** scroll a settings page, a series details page and a Browse root. The bar slides away.
 - [ ] **Item 10:** on a sidebar layout, the grid fills its column with no gap.
 - [ ] **Item 14:** while the bar slides, no row moves under the finger.
-- [ ] **Item 15:** a soft edge shows behind the bar when Browse is scrolled.
+- [ ] **Item 15:** a soft edge backs the status bar once Browse's bar has slid away.
 - [ ] **Item 17:** in the reader, the status bar hides with the chrome.
 - [ ] **Item 18:** with nothing unread, the Activity and Settings tabs show no badge.

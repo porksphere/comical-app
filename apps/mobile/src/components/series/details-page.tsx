@@ -38,7 +38,7 @@ import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
-import { SLIDE_AWAY_BAR } from '@/lib/native-bar';
+import { BAR_MATERIAL, SLIDE_AWAY_BAR } from '@/lib/native-bar';
 import {
   backSwipePan,
   backSwipeShape,
@@ -1184,9 +1184,9 @@ export function SeriesDetailsPage({
 
   const dimOverlays = <StripDim progress={progress} />;
 
-  // iOS: the system bar, through the route's options: only its items, in the navigation theme's
-  // tint, with no title or material at any scroll; the content scrolls under them, and the bar
-  // slides away while it does, like every pushed page's (SLIDE_AWAY_BAR).
+  // iOS: the system bar, through the route's options: its items, in the navigation theme's tint,
+  // on the frosted material and with no title; the content scrolls under it, and the bar slides
+  // away while it does, like every pushed page's (SLIDE_AWAY_BAR).
   // Only the top instance sets them (they are the route's, shared by every layer), and they mount
   // only while it is top, so a layer that becomes top again re-applies them: Stack.Screen's effect
   // runs on mount, and the toolbar unregisters its item on unmount. Inside a tab the route is the
@@ -1203,6 +1203,7 @@ export function SeriesDetailsPage({
             headerShown: true,
             headerTransparent: true,
             headerShadowVisible: false,
+            headerBlurEffect: BAR_MATERIAL,
             headerBackVisible: nativePush,
             // Not a pushed card, nothing for UIKit to pop: the edge is the page's own back-swipe.
             gestureEnabled: nativePush,

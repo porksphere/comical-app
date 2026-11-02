@@ -52,13 +52,12 @@ the bar never slides away from it. So EVERY screen's main list goes through `Scr
 pushed pages and the series details included, or that screen's bar stays put; a page that is one
 ScrollView uses `ScreenScrollView`. The reader takes no marker: its bar never slides. The screen also
 finds the list by a walk of its own, each first subview down from it, to put its iOS 26
-scroll-edge effect on the list: the system's own treatment of content under the bar, shown only
-once the list has scrolled under it. Every tab takes the soft one, Browse and Library included:
-the hard one over their covers was a near-opaque strip that cost a row of covers to back a title.
-Not a background in the bar's appearance:
-Apple's guidance for iOS 26 is that a custom bar background sits on top of the edge effect, and
-UIKit never once switched these bars from their scroll-edge appearance to the standard one, with
-or without the list handed to it. Nothing may be laid in ahead of the list there, so on iOS
+scroll-edge effect on the list. Every bar but the reader's has the system's frosted material,
+always (`BAR_MATERIAL` in `lib/native-bar.ts`): UIKit never once switched these bars from a bare
+scroll-edge appearance to the frosted standard one, with or without the list handed to it, so
+there is no "bare until scrolled" to be had natively. The soft edge stays on under the material,
+which hides it while the bar is there; it backs the status bar once the bar has slid away. Nothing
+may be laid in ahead of the list there, so on iOS
 Browse's colour backdrop is drawn inside the list's content, behind its rows (`BACKDROP_IN_LIST`
 in `components/content-feed.tsx`). Liquid Glass bars tint from the
 WINDOW's interface style, not from the content, so `ThemeSchemeProvider` mirrors the theme
@@ -224,8 +223,8 @@ segments) — on iOS only; Android and web keep the root routes. A new pushed sc
 behave the same gets a stub in each tab's `in-tab/` and its path in `IN_TAB_PATHS`. Only the ROOT `series` route has
 the nested in-series stack (`app/series/_layout.tsx`), so series code asks `useSegments()`, not the
 pathname, to know which copy it is in. The series page takes the system bar in BOTH its modes —
-one bar, so the back button and the items morph between them: details transparent over the hero
-with no title or material at any scroll, a toolbar chevron in place of the custom one;
+one bar, so the back button and the items morph between them: details on the frosted material
+with no title, a toolbar chevron in place of the custom one;
 the reader nothing but its glass items over the page, the back button and save + settings
 (`components/reader/reader-native-toolbar.tsx`), with no title and nothing behind them, the bar
 following the chrome's auto-hide through `headerShown` — with every `Stack.Toolbar` unrendered while

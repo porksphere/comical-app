@@ -1336,7 +1336,7 @@ export function SeriesReaderPage({
             // automatic edge goes opaque for one. Liquid Glass items read over any page by themselves.
             title: '',
             headerTitle: '',
-            headerBlurEffect: undefined,
+            headerBlurEffect: 'none',
             headerTintColor: '#fff',
             // Nothing behind the items in either mode, so a webtoon scrolled under the bar matches
             // a pager, which never is.
