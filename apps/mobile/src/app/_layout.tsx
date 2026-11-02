@@ -57,6 +57,7 @@ import { useDesktopShellCommands, useNavigationKeys } from '@/lib/desktop-comman
 import { installFocusNav } from '@/lib/focus-nav';
 import { FocusedTabTracker } from '@/lib/focused-tab';
 import { installKeyboardScroll } from '@/lib/keyboard-scroll';
+import { useRootStatusBarOptions } from '@/lib/status-bar';
 import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { useWindowThemeColor } from '@/lib/window-controls';
@@ -135,6 +136,7 @@ function RootNavigation() {
   // navigation theme + status bar match the app content and re-theme live when the
   // preference changes.
   const scheme = useActiveColorScheme();
+  const statusBar = useRootStatusBarOptions(scheme);
   useWindowThemeColor(Colors[scheme].background);
   const filterSheet: ComponentProps<typeof Stack.Screen>['options'] = {
     headerShown: false,
@@ -157,8 +159,8 @@ function RootNavigation() {
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       {/* Status-bar contents follow the active scheme (light glyphs on the dark
           theme, dark glyphs on light) so a forced theme reads right even when it
-          differs from the OS. */}
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+          differs from the OS. On iOS the root screens carry it (lib/status-bar). */}
+      {Platform.OS === 'ios' ? null : <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />}
       <SplashGate />
       <FrameTrace />
       <FocusedTabTracker />
@@ -168,7 +170,7 @@ function RootNavigation() {
             gesture) and the native toolbar on Android. The tab group and every
             pushed screen below hide the native header and render their own chrome,
             except the settings categories, which take the system bar on iOS. */}
-        <Stack>
+        <Stack screenOptions={statusBar}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="search" options={pushedScreen} />
           {/* The search filters as a system form sheet (iOS; the custom bars keep their shutter).

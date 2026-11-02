@@ -1,5 +1,4 @@
 import { Stack, useNavigation } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackHandler,
@@ -51,6 +50,7 @@ import { releaseCommitted } from '@/lib/gesture-release';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import { type ZoomRect } from '@/lib/series-zoom';
+import { ScreenStatusBar } from '@/lib/status-bar';
 import { SeriesDetailsHost } from '@/components/series/details-host';
 import { PersistentBack } from '@/components/series/persistent-back';
 import {
@@ -1245,7 +1245,7 @@ export function SeriesDetailsPage({
     // Plain (transparent) root — the route is a contained transparent modal, so a dismissal can
     // fade the layers out over the screen beneath. The details layer supplies the opaque fill.
     <View style={styles.container}>
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} hidden={false} verticalBarBehaviorIOS="automatic" />
+      <ScreenStatusBar style={scheme === 'dark' ? 'light' : 'dark'} hidden={false} />
 
       <ZoomFrame
         committing={edgeCommitting}

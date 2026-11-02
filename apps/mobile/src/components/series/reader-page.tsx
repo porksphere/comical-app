@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { Stack, useNavigation } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   BackHandler,
@@ -50,6 +49,7 @@ import { useIsDesktop } from '@/hooks/use-responsive';
 import { useActiveColorScheme } from '@/hooks/use-theme';
 import { getAdjacentChapter } from '@/lib/chapter-order';
 import { useHidesNativeTabBar } from '@/lib/native-tab-bar';
+import { ScreenStatusBar } from '@/lib/status-bar';
 import { LinkAppleZoomTarget, useRouter } from '@/lib/nav';
 import { useTabRoute } from '@/lib/focused-tab';
 import { getPreferredGroup } from '@/lib/preferred-group';
@@ -1444,14 +1444,14 @@ export function SeriesReaderPage({
     // Plain (transparent) root — the route is a contained transparent modal, so a dismissal can
     // fade the layers out over the screen beneath. The reader's surface supplies the opaque fill.
     <View style={styles.container}>
-      {/* The bar's buttons go to the vertical bar of a folded or landscape display like every
-          other screen's, the title staying on top. Not the opt-out: expo-status-bar has iOS re-lay
-          the bars out from the window's root controller only, so leaving a reader that had opted
-          out left the details on a horizontal bar until something else re-laid them out. */}
-      <StatusBar
+      {/* The status bar shows with the chrome and goes with it, in every mode. The bar's buttons
+          go to the vertical bar of a folded or landscape display like every other screen's, the
+          title staying on top. Not the opt-out (expo-status-bar's verticalBarBehaviorIOS): it has
+          iOS re-lay the bars out from the window's root controller only, so leaving a reader that
+          had opted out left the details on a horizontal bar until something else re-laid them out. */}
+      <ScreenStatusBar
         style={settings.mode === 'paged' ? (scheme === 'dark' ? 'light' : 'dark') : 'light'}
-        hidden={settings.mode !== 'paged' && !chromeVisible}
-        verticalBarBehaviorIOS="automatic"
+        hidden={!chromeVisible}
       />
 
       <SplitClip travel={stripFrom ? height - stripFrom.stripBottom : null} progress={progress}>

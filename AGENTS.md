@@ -83,6 +83,14 @@ has no testIDs either: `screen-title.*`, `*.search-icon`, `browse.bridge-selecto
 native bar's height on iOS, status bar + custom overlay elsewhere), so a screen swaps bars without
 relayout. Android and web keep the custom `TopBar`/`TabTitleBar` overlay.
 
+The iOS status bar belongs to the view controllers (`UIViewControllerBasedStatusBarAppearance` in
+app.json): a build against the iOS 27 SDK ignores the app-wide calls React Native's `StatusBar`
+makes, so never mount it (or expo-status-bar's) on iOS — under this appearance it reports an
+error on every update. A screen sets its glyphs or hides the bar with `ScreenStatusBar`
+(`lib/status-bar.tsx`), which on iOS asks the ROOT stack's screens to carry it, since iOS asks
+the root stack and react-native-screens looks no further than the tab bar controller or a modal
+that is not full screen. Elsewhere it is expo-status-bar's.
+
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
 names the screen and the search: every tab uses an inline title that fades out over the first
 scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's `scrollY`;
