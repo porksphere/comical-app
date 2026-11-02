@@ -31,7 +31,7 @@ import { contentRowType, type ContentRow, type FeedCardEntry, type SeeAllTarget 
 import { DEFAULT_THUMB_ASPECT, rowCoverAspect } from '@/lib/aspect-ratio';
 import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 import { useGridLayout } from '@/hooks/use-grid-layout';
-import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
+import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useRouter } from '@/lib/nav';
 
 // Terminal-grid cell inter-row spacing — mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM so a home
@@ -171,7 +171,7 @@ export function ContentFeed({
   scrollEnabled?: boolean;
 }) {
   const { numColumns, cardWidth, columnGap, railViewport, width, gutter, insets } = useGridLayout();
-  const wide = useIsLargeScreen();
+  const wide = useIsDesktop();
   // The breakpoint `SectionHead` itself reads — the sticky sizes its band from the head's real
   // height. A DIFFERENT breakpoint from `wide` above.
   const compact = useIsCompact();

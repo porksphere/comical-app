@@ -19,9 +19,9 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { DEFAULT_THUMB_ASPECT, rowCoverAspect, rowCoverAspects } from '@/lib/aspect-ratio';
-import { GRID_ROW_GAP, gridGeometry } from '@/hooks/use-grid-layout';
+import { GRID_ROW_GAP, gridColumnsFor, gridGeometry } from '@/hooks/use-grid-layout';
 import { useHovered } from '@/hooks/use-hovered';
-import { sizeClassFor, useIsCompact, useIsDesktop, useIsLargeScreen } from '@/hooks/use-responsive';
+import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
 import { ZoomSurfaceContext, useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
@@ -33,9 +33,10 @@ const COVER_RATIO = 3 / 2;
 const STRIP_PAD_V = Spacing.one;
 
 // A rail: section header (a title that doubles as the drill-down link, chevron inline) above its
-// cards. Mobile/narrow desktop keeps a snap-scrolling horizontal strip (mirrors the reference's
-// `.carousel`); wide desktop instead lays the first two rows out as a static grid (no horizontal
-// scroll) — the heading's drill-down reaches the rest. A hero's grid shows every item.
+// cards. A touch screen of any size and a narrow web window keep a snap-scrolling horizontal strip
+// (mirrors the reference's `.carousel`); a wide web window instead lays the first two rows out as a
+// static grid (no horizontal scroll) — the heading's drill-down reaches the rest. A hero's grid shows
+// every item.
 
 const CARD_SIZE: Record<RailSection['kind'], CardSize> = {
   hero: 'hero',
@@ -56,38 +57,30 @@ function wideGridItems<T>(kind: RailSection['kind'], items: readonly T[], column
 // section heading and the grid below it.
 const STRIP_PAD = TopLevelGutter;
 
-/** Reference: carousel gap is 1rem desktop / 0.5rem mobile (`@media max-width:
- *  560px`); here it follows the size class, like this file's other compact/regular split. */
-function stripGapFor(viewport: number): number {
-  return sizeClassFor(viewport) === 'compact' ? Spacing.two : Spacing.three;
-}
+/** Reference: carousel gap is 0.5rem mobile. The strip is never on a desktop, whose gap is the grid's. */
+const STRIP_GAP = Spacing.two;
 
 /**
  * Responsive card width per rail kind, given the current viewport width (passed
- * in from the screen so there's a single, hydration-safe dimensions source). On
- * mobile we size so that N full cards plus a ⅓ peek of the next fit the
- * viewport: with left pad P and gap G,
+ * in from the screen so there's a single, hydration-safe dimensions source). We
+ * size so that N full cards plus a ⅓ peek of the next fit the viewport: with left
+ * pad P and gap G,
  *   P + N·c + N·G + c/3 = viewport  ⇒  c = (viewport − P − N·G) / (N + ⅓).
- * Regular/ranked carousels show 3 full + ⅓ (the reference's mobile CSS collapses
- * both to the same width); hero cards are larger, showing 2 full + ⅓. This
+ * Regular/ranked carousels show as many full cards as the grid has columns at that
+ * width, 3 on a phone (the reference's mobile CSS collapses both to the same width);
+ * hero cards are larger, showing 2 full + ⅓ at every width. This
  * converges to nearly the same card width the reference's raw `flex-basis: 30%`
  * computes once its own padding is netted out — deriving it from the "N + ⅓
  * cards visible" constraint directly is more robust than porting the percentage
  * literally, which (having tried it) overshoots because comical-app's strip
- * doesn't share the reference's full-bleed padding cancellation. On wide
- * layouts we use comfortable fixed sizes.
+ * doesn't share the reference's full-bleed padding cancellation.
  */
 function peekWidth(viewport: number, fullCards: number, gap: number): number {
   return Math.round((viewport - STRIP_PAD - fullCards * gap) / (fullCards + 1 / 3));
 }
 
 function cardWidthFor(kind: RailSection['kind'], viewport: number): number {
-  if (sizeClassFor(viewport) === 'regular') {
-    return kind === 'hero' ? 210 : kind === 'ranked' ? 160 : 150;
-  }
-  const gap = stripGapFor(viewport);
-  if (kind === 'hero') return peekWidth(viewport, 2, gap);
-  return peekWidth(viewport, 3, gap);
+  return peekWidth(viewport, kind === 'hero' ? 2 : gridColumnsFor(viewport), STRIP_GAP);
 }
 
 /**
@@ -233,11 +226,11 @@ export function Rail({
   direct?: boolean;
 }) {
   const size = CARD_SIZE[section.kind];
-  const wide = useIsLargeScreen();
+  const wide = useIsDesktop();
   // Whether this rail's bridge sends card subtitles — sets whether the strip reserves the sub line.
   const { subOf } = useBridgeMap();
   const hasSub = subOf(bridgeId);
-  const stripGap = stripGapFor(viewportWidth);
+  const stripGap = STRIP_GAP;
   // The inter-card gap is split as symmetric padding on each item wrapper (not an
   // ItemSeparator), so the highlight ring's outward bleed has room on BOTH sides of
   // every card. LegendList's web item container is `contain: paint` (react-native.web.js),
@@ -518,13 +511,13 @@ export function Rail({
  *  layout's GRID_ROWS-row static grid) without knowing the eventual title/item
  *  count, same way `SeriesSkeleton` mirrors series content it hasn't fetched yet. */
 export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; title?: string }) {
-  const wide = useIsLargeScreen();
-  const desktop = useIsDesktop();
+  const wide = useIsDesktop();
   const gutter = useScrollbarGutter();
   const grid = wideGrid(viewportWidth, gutter);
-  const stripGap = wide ? grid.columnGap : stripGapFor(viewportWidth);
+  const stripGap = wide ? grid.columnGap : STRIP_GAP;
   const cardWidth = wide ? grid.cardWidth : cardWidthFor('regular', viewportWidth);
-  const count = wide ? grid.columns : 4;
+  // The strip's full cards and the one peeking in.
+  const count = wide ? grid.columns : gridColumnsFor(viewportWidth) + 1;
   // The wide skeleton is the full grid the feed already reserves height for (railStripHeight with
   // no count) — rows at the loaded grid's own pitch, so nothing shifts when the cards arrive.
   const rows = wide ? GRID_ROWS : 1;
@@ -535,7 +528,7 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
           <Skeleton
             style={[
               { width: cardWidth, height: cardWidth * COVER_RATIO },
-              desktop ? [coverStyles.corner, coverStyles.cornerDesktop] : styles.skelCoverPhone,
+              wide ? [coverStyles.corner, coverStyles.cornerDesktop] : styles.skelCoverPhone,
             ]}
           />
           <Skeleton style={styles.skelCardLine} />
@@ -724,7 +717,7 @@ const styles = StyleSheet.create({
     marginLeft: CHEVRON_NUDGE,
   },
   strip: {
-    // gap is viewport-dependent — set inline (see `stripGapFor`) alongside this.
+    // gap is set inline (STRIP_GAP, the skeleton's own on a desktop) alongside this.
     paddingHorizontal: STRIP_PAD,
     // Vertical breathing room so the highlight ring (which sits just outside the
     // card) isn't clipped at the top/bottom of the horizontal strip.
@@ -733,12 +726,12 @@ const styles = StyleSheet.create({
   // Per-card wrapper for the LegendList strip. LegendList's web item container is `contain: paint`,
   // so the highlight ring (which bleeds a couple px outside the cover) is clipped to this wrapper's
   // box — hence the ring's room lives here: STRIP_PAD_V vertically, and `paddingHorizontal:
-  // stripHalfGap` (applied inline, since the gap is viewport-dependent) horizontally.
+  // stripHalfGap` (applied inline) horizontally.
   stripItem: {
     paddingVertical: STRIP_PAD_V,
   },
   // Wide-desktop static grid — paddingHorizontal/gap set inline (STRIP_PAD /
-  // stripGapFor), row gap matches the column gap for an even grid.
+  // the grid's column gap), row gap matches the column gap for an even grid.
   grid: {
     paddingVertical: Spacing.one,
   },

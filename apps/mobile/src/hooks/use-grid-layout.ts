@@ -34,6 +34,16 @@ export const GRID_ROW_GAP = Spacing.one;
 export const GRID_ROW_PAD_TOP = GRID_ROW_GAP / 2;
 export const GRID_ROW_PAD_BOTTOM = GRID_ROW_GAP - GRID_ROW_PAD_TOP;
 
+// The narrowest card a regular-width grid goes to. A touch screen holds a smaller card than a desktop
+// window does: 150 is five columns across the Duo's open landscape.
+const GRID_MIN_CARD = Platform.OS === 'web' ? 200 : 150;
+
+/** Cards across a content width: the grid's columns, and how many whole cards a native rail shows. */
+export function gridColumnsFor(width: number): number {
+  if (sizeClassFor(width) !== 'regular') return 3;
+  return Math.min(6, Math.max(3, Math.floor(width / GRID_MIN_CARD)));
+}
+
 export type GridLayout = {
   numColumns: number;
   /** Symmetric horizontal padding that centres content within MaxTopLevelWidth. */
@@ -73,7 +83,7 @@ export function gridGeometry(
   gutter: number,
 ): Pick<GridLayout, 'numColumns' | 'sidePad' | 'cardWidth' | 'columnGap'> {
   const large = hydrated && sizeClassFor(width) === 'regular';
-  const numColumns = large ? Math.min(6, Math.max(3, Math.floor(width / 200))) : 3;
+  const numColumns = large ? gridColumnsFor(width) : 3;
   const columnGap = large && Platform.OS === 'web' ? GRID_COLUMN_GAP_DESKTOP : GRID_COLUMN_GAP;
   // Center content within MaxTopLevelWidth (web only — see topLevelCenterInset) plus the edge gutter;
   // header/footer blocks bleed TopLevelGutter of this back out (see the Browse list). On native this is

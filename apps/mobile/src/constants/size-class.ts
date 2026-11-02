@@ -14,7 +14,8 @@
 export type SizeClass = 'compact' | 'regular';
 
 /** Width at which the layout becomes REGULAR: the series detail goes two-column, the browse grid
- *  stops being the three-column phone grid, rails become grids, the top bar takes its taller form.
+ *  stops being the three-column phone grid, rails show more cards (and on the web become grids), the
+ *  top bar takes its taller form.
  *  768 is iPad-portrait's logical width and lands a Duo's Split View half (≈445pt) and the Duo's
  *  outer display (678pt) firmly in compact. */
 export const RegularWidthBreakpoint = 768;
