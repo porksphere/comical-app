@@ -6,6 +6,20 @@ import { NATIVE_HEADER } from '@/hooks/use-native-header';
 type ScreenOptions = ComponentProps<typeof Stack.Screen>['options'];
 
 /**
+ * The bar slides away as the content scrolls down and comes back as soon as it scrolls up: iOS 27's
+ * bar minimization, the way Settings' own pages behave. UIKit leaves it to the system by default,
+ * and the system keeps our bars in place, so it is asked for outright. The safe area stays put
+ * while the bar goes (`safeAreaAdjustment`): the content pads itself past the bar, and following
+ * the bar would move every row under the finger. Older iOS ignores both.
+ *
+ * Through react-native-screens' header config, which expo-router passes on as is; the props are
+ * new in react-native-screens 4.31.
+ */
+export const SLIDE_AWAY_BAR = {
+  headerConfig: { minimizationBehavior: 'onScrollDown', safeAreaAdjustment: 'disabled' },
+} as const;
+
+/**
  * The system navigation bar on a pushed iOS screen: title, back chevron, the same transparent bar
  * over a soft scroll edge the tab stacks use — see `tab-stack`. `headerShown` is explicit so the
  * options also stand inside a stack whose default hides it (the series page's).
@@ -16,6 +30,7 @@ export const NATIVE_BAR: ScreenOptions = {
   headerShadowVisible: false,
   headerBackButtonDisplayMode: 'minimal',
   scrollEdgeEffects: { top: 'soft' },
+  unstable_nativeProps: SLIDE_AWAY_BAR,
 };
 
 /**

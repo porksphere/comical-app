@@ -1,7 +1,7 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LibraryCollectionSelector, LibraryKindSelector } from '@/components/library-collection-selector';
@@ -18,7 +18,6 @@ import { BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
-import { useCollectedView } from '@/data/collected-view';
 import {
   ALL_VIEW_NAME,
   effectiveItemKind,
@@ -37,7 +36,6 @@ import { useCollections } from '@/hooks/use-collections';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
-import { useLibraryGrouping } from '@/hooks/use-library-sort';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -83,9 +81,6 @@ export default function LibraryScreen() {
   );
   // The pinned section's label, which the iOS bar shows as its title — see NativeTabHeader.
   const [section, setSection] = useState<string | null>(null);
-  const [seriesGrouping] = useLibraryGrouping();
-  const [savedView] = useCollectedView(collection, kind === 'series' ? 'chapter' : kind);
-  const grouped = (kind === 'series' ? seriesGrouping : savedView.grouping) !== 'none';
 
   const chrome: LibraryGridChrome = {
     listRef,
@@ -120,8 +115,6 @@ export default function LibraryScreen() {
           selectedKind={selectedKind}
           railNav={railNav}
           filter={filter}
-          scrollY={sharedValues.scrollOffset}
-          grouped={grouped}
           section={section}
         />
       ) : (
@@ -185,12 +178,11 @@ export default function LibraryScreen() {
 }
 
 /**
- * The iOS navigation bar, in Browse's shape: the tab's name as the fading inline title (and the
+ * The iOS navigation bar, in Browse's shape: the tab's name as the inline title (and the
  * NSFW hold target), the view's mark as ONE bare leading button opening the collection and kind
  * menu (`LibraryCollectionMenu`), the search as the system search item, and the arranging
  * `⋯` trailing. The filter and sort are secondary to what's showing, so they share that one menu
- * (LibraryNativeToolbar). A pinned section's label takes the title's place once it has faded —
- * see NativeTabHeader. An ungrouped listing has no heading to take it, so there the title stays.
+ * (LibraryNativeToolbar). A pinned section's label takes the title's place — see NativeTabHeader.
  */
 function LibraryNativeHeader({
   collection,
@@ -200,8 +192,6 @@ function LibraryNativeHeader({
   selectedKind,
   railNav,
   filter,
-  scrollY,
-  grouped,
   section,
 }: {
   collection: string | null;
@@ -211,8 +201,6 @@ function LibraryNativeHeader({
   selectedKind: ItemKind;
   railNav: boolean;
   filter: TabFilter;
-  scrollY: SharedValue<number>;
-  grouped: boolean;
   section: string | null;
 }) {
   const kinds = itemKindOptions(kindsPresent, selectedKind);
@@ -220,7 +208,6 @@ function LibraryNativeHeader({
     <>
       <NativeTabHeader
         title="Library"
-        {...(grouped ? { scrollY } : {})}
         section={section}
         filter={filter}
         placeholder="Filter library…"

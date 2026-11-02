@@ -759,7 +759,6 @@ export default function BrowseScreen() {
     <>
       <NativeTabHeader
         title="Browse"
-        scrollY={scrollY}
         section={section}
         holdTestID="browse.nsfw-hold"
       />

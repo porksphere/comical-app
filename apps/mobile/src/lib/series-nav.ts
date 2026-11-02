@@ -1,10 +1,10 @@
-import type { Href, Stack } from 'expo-router';
+import type { Href } from 'expo-router';
 import { useNavigation, useSegments } from 'expo-router';
-import type { ComponentProps } from 'react';
 import { createContext, useCallback, useContext } from 'react';
 
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useRouter } from '@/lib/nav';
+import { NATIVE_BAR } from '@/lib/native-bar';
 import { claimNavigation, navTargetKey } from '@/lib/nav-guard';
 
 /** The sub-pages a series page (or its reader) can push. (The tag/author/type SEARCH is routed
@@ -140,13 +140,7 @@ export function registerOpenSearchLayer(fn: () => void): () => void {
  * is their own `Stack.Screen`'s business; this is the same transparent, chevron-only bar every
  * pushed page gets from the root and tab stacks.
  */
-export const NESTED_SEARCH_BAR: ComponentProps<typeof Stack.Screen>['options'] = {
-  headerShown: true,
-  headerTransparent: true,
-  headerShadowVisible: false,
-  headerBackButtonDisplayMode: 'minimal',
-  scrollEdgeEffects: { top: 'soft' },
-};
+export const NESTED_SEARCH_BAR = NATIVE_BAR;
 
 /**
  * Tag/author/type search, for the series details: null outside the series page (callers fall

@@ -42,7 +42,7 @@ That is the whole reason it exists — a custom bar can only imitate that adapta
 content scrolls down and re-expands only at the very top or on a tap. That is UIKit's design
 (react-native-screens #3954), not a list bug — the earlier native shell chased mid-scroll
 re-expansion for days and reverted, so don't. The scroll view the bar follows is registered by
-`TabScrollMarker` (`react-native-screens/experimental`'s `ScrollViewMarker`, keyed with the list
+`TabScrollMarker` (react-native-screens' `ScrollViewMarker`, keyed with the list
 it wraps) around each tab ROOT screen's list, under `TabRootScrollContext` from the tab's stack —
 never a pushed page's: the registration is a hand-off to UIKit nothing takes back. The marker
 reaches the TAB screen only, never the stack screen holding the navigation bar. That screen
@@ -68,7 +68,7 @@ leaves `tabBarProgress` at 0 there; a ROOT overlay (toast, request pill, card co
 testIDs, so the Maestro `tab.<name>` taps are Android/web only.
 
 The TOP bar follows the same split (`apps/mobile/src/hooks/use-native-header.ts`, `NATIVE_HEADER`):
-on iOS each tab directory is its own native Stack (`components/tab-stack.tsx`; a plain `Slot`
+on iOS each tab directory is its own native Stack (`components/tab-stack.ios.tsx`; a plain `Slot`
 elsewhere), so the tab screen gets a UINavigationBar INSIDE the UITabBarController — which is
 what lets UIKit carry its toolbar items into the side column together with the tabs. Those screens
 render `Stack.Title` / `Stack.Toolbar` / `Stack.SearchBar` items instead of `TabTitleBar`. Every
@@ -92,9 +92,14 @@ the root stack and react-native-screens looks no further than the tab bar contro
 that is not full screen. Elsewhere it is expo-status-bar's.
 
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
-names the screen and the search: every tab uses an inline title that fades out over the first
-scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's `scrollY`;
-large titles looked foreign beside the custom clusters). The title is the tab's name, Browse and
+names the screen and the search: every tab uses an inline title (`components/native-tab-header.tsx`,
+`Stack.Title asChild`; large titles looked foreign beside the custom clusters) that stays put
+while the BAR slides away as the content scrolls down and back as it scrolls up: iOS 27's bar
+minimization, the way Settings' own pages behave, asked for on every tab and pushed bar
+(`SLIDE_AWAY_BAR` in `lib/native-bar.ts`, react-native-screens' header config through
+expo-router's `unstable_nativeProps`). The props arrive in react-native-screens 4.31, a NIGHTLY
+here until it ships, and so does the tsconfig line pointing its `reanimated` types at the folder
+its build writes them to. The reader's bar never slides (`never`): it follows the chrome. The title is the tab's name, Browse and
 Library included, and on every tab it is also the NSFW hold target (`NativeTabHeader holdTestID`,
 required), because the bars hold only SYSTEM items and a `UIBarButtonItem` has no long-press of
 its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`,
@@ -137,9 +142,8 @@ every surface tried there failed (a band floated, a scrim running up to the bar 
 bar, a glass capsule hugging the heading was a badge drifting over the covers), so on iOS
 `StickySectionHeader` draws nothing (`IN_BAR`) and only reports which section is under the bar
 (`onSectionChange` on the grids and feed), and the screen hands that label to `NativeTabHeader
-section`: it takes the faded title's place in the bar, the way Photos names the month there and
-Music the album, cross-fading as the next heading arrives. Library's title fades only while its listing is
-grouped: an ungrouped one has no heading to take its place. The inline headings scroll away like
+section`: it takes the title's place in the bar, the way Photos names the month there and
+Music the album, cross-fading as the next heading arrives. The inline headings scroll away like
 any other row. A series opened from a tab is a real pushed card of that tab's stack (route
 `in-tab/series/index` — the tab's `in-tab/series/` directory has no layout on purpose, so the
 page IS the pushed screen and its `Stack.Screen` addresses it), so the tab's leading item morphs into its
@@ -198,8 +202,10 @@ the floating tab bar. The native toolbar
 only reads `Stack.Toolbar.*` elements that are its DIRECT children — a component wrapping one is
 invisible to it — so shared menus are builder FUNCTIONS returning the element (`libraryFilterMenu`,
 `librarySortMenu`, `collectedSortMenu`), one toolbar component per kind. `useNativeHeaderHeight()`
-reports the RESTING height — a large title collapses on scroll and the stack reports the shrinking
-bar as it goes, but the content pads once, by the expanded height.
+reports the RESTING height — the stack reports the sliding bar's height as it goes, but the content
+pads once, by how far the bar reaches at rest. Each screen whose bar slides measures that itself
+(`components/bar-extent.tsx`, the stacks' `screenLayout`: the screen's own safe area, which holds
+still while the bar goes), so no row moves under the finger.
 
 Pushed screens stay INSIDE the tab on iOS. A series page, a search and its results open in the
 focused tab's native stack, not the root stack, so the system tab bar (or its side column) stays up

@@ -375,7 +375,6 @@ export default function ActivityScreen() {
       {NATIVE_HEADER ? (
         <NativeTabHeader
           title="Activity"
-          scrollY={scrollY}
           filter={filter}
           placeholder="Filter activity…"
           holdTestID="activity.nsfw-hold"

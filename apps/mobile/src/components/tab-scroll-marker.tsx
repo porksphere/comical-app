@@ -1,6 +1,6 @@
 import { createContext, use, type ReactNode } from 'react';
 import { Platform, StyleSheet } from 'react-native';
-import { ScrollViewMarker } from 'react-native-screens/experimental';
+import { ScrollViewMarker } from 'react-native-screens';
 
 /**
  * True inside a tab's ROOT screen (the tab's own stack provides it — see `tab-stack`), false under

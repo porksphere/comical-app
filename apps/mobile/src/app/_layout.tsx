@@ -34,6 +34,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { SplashGate } from '@/components/splash-gate';
+import { barExtentLayout } from '@/components/bar-extent';
 import { pushedScreen, settingsScreen } from '@/lib/native-bar';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -169,8 +170,9 @@ function RootNavigation() {
         {/* Native stack: real UINavigationController on iOS (large titles, back
             gesture) and the native toolbar on Android. The tab group and every
             pushed screen below hide the native header and render their own chrome,
-            except the settings categories, which take the system bar on iOS. */}
-        <Stack screenOptions={statusBar}>
+            except the settings categories, which take the system bar on iOS; those
+            measure the bar they pad past (barExtentLayout). */}
+        <Stack screenOptions={statusBar} screenLayout={barExtentLayout}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="search" options={pushedScreen} />
           {/* The search filters as a system form sheet (iOS; the custom bars keep their shutter).

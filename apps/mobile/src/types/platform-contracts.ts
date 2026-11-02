@@ -18,6 +18,8 @@ import type * as WebtoonReaderWeb from '@/components/reader/webtoon-reader.web';
 import type * as SeriesCardMenu from '@/components/series-card-menu';
 import type * as SeriesCardMenuIos from '@/components/series-card-menu.ios';
 import type * as SeriesCardMenuWeb from '@/components/series-card-menu.web';
+import type * as ZoomCoverCopy from '@/components/series/zoom-cover-copy';
+import type * as ZoomCoverCopyIos from '@/components/series/zoom-cover-copy.ios';
 import type * as PaneActions from '@/components/settings/pane-actions';
 import type * as PaneActionsWeb from '@/components/settings/pane-actions.web';
 import type * as RangeSlider from '@/components/settings/range-slider';
@@ -30,6 +32,8 @@ import type * as WebLoginSheet from '@/components/settings/web-login-sheet';
 import type * as WebLoginSheetWeb from '@/components/settings/web-login-sheet.web';
 import type * as SplashGate from '@/components/splash-gate';
 import type * as SplashGateWeb from '@/components/splash-gate.web';
+import type * as TabStack from '@/components/tab-stack';
+import type * as TabStackIos from '@/components/tab-stack.ios';
 import type * as BackupFile from '@/data/backup-file';
 import type * as BackupFileWeb from '@/data/backup-file.web';
 import type * as Startup from '@/data/embedded/startup';
@@ -134,6 +138,7 @@ export type PlatformContracts = [
   >,
   Conforms<Drift<typeof SeriesCardMenu, typeof SeriesCardMenuIos>>,
   Conforms<Drift<typeof SeriesCardMenu, typeof SeriesCardMenuWeb>>,
+  Conforms<Drift<typeof ZoomCoverCopy, typeof ZoomCoverCopyIos>>,
   Conforms<Drift<typeof PaneActions, typeof PaneActionsWeb>>,
   Conforms<Drift<typeof RangeSlider, typeof RangeSliderAndroid>>,
   Conforms<Drift<typeof RangeSlider, typeof RangeSliderIos>>,
@@ -141,6 +146,7 @@ export type PlatformContracts = [
   Conforms<Drift<typeof SelectRow, typeof SelectRowIos>>,
   Conforms<Drift<typeof WebLoginSheet, typeof WebLoginSheetWeb>>,
   Conforms<Drift<typeof SplashGate, typeof SplashGateWeb>>,
+  Conforms<Drift<typeof TabStack, typeof TabStackIos>>,
   Conforms<Drift<typeof BackupFile, typeof BackupFileWeb>>,
   Conforms<Drift<typeof Startup, typeof StartupWeb>>,
   Conforms<Drift<typeof UseColorScheme, typeof UseColorSchemeWeb>>,

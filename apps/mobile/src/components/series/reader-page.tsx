@@ -1341,6 +1341,8 @@ export function SeriesReaderPage({
             // Nothing behind the items in either mode, so a webtoon scrolled under the bar matches
             // a pager, which never is.
             scrollEdgeEffects: { top: 'hidden' },
+            // The bar comes and goes with the chrome, never with the scroll (see SLIDE_AWAY_BAR).
+            unstable_nativeProps: { headerConfig: { minimizationBehavior: 'never' } },
           }}
         />
         {!nativePush && chromeVisible ? (

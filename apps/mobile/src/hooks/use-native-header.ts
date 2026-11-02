@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeaderHeightContext } from 'expo-router/build/react-navigation/elements/Header/HeaderHeightContext.js';
 
+import { BarExtentContext } from '@/components/bar-extent';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 
 /**
@@ -23,16 +24,21 @@ export const NATIVE_HEADER = Platform.OS === 'ios';
  * Read from the context directly rather than through useHeaderHeight, which throws outside a
  * header-bearing stack — and most of the app is outside one.
  *
- * A bar that hides (the reader's, with its chrome) reports 0 while it is gone, and the content
- * under it must not jump up and back, so the last height it showed at stands. A bar that is shown
- * is taken at its word, smaller included: a rotation to landscape shrinks it, and the content that
+ * A bar that slides away on scroll reports less and less as it goes, and the content padded past
+ * it must not ride along, so where the screen measures its bar (`BarExtentContext`) that full
+ * extent holds; the reported height still covers the frames before the measure lands. A bar that
+ * hides (the reader's, with its chrome) reports 0 while it is gone, and the content under it must
+ * not jump up and back, so the last height it showed at stands. A bar that is shown is otherwise
+ * taken at its word, smaller included: a rotation to landscape shrinks it, and the content that
  * padded for the portrait bar would keep a band of dead space above it.
  */
 export function useNativeHeaderHeight(): number {
   const reported = use(HeaderHeightContext) ?? 0;
+  const extent = use(BarExtentContext) ?? 0;
+  const height = Math.max(reported, extent);
   const [shown, setShown] = useState(reported);
-  if (reported > 0 && reported !== shown) setShown(reported);
-  return reported > 0 ? reported : shown;
+  if (reported > 0 && height !== shown) setShown(height);
+  return reported > 0 ? height : shown;
 }
 
 /**

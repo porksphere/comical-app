@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { Platform } from 'react-native';
 
+import { barExtentLayout } from '@/components/bar-extent';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { settingsScreen } from '@/lib/native-bar';
 import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
@@ -32,7 +33,7 @@ import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
 export default function SeriesReaderLayout() {
   return (
     <InSeriesPageStack.Provider value={true}>
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false }} screenLayout={barExtentLayout}>
         <Stack.Screen
           name="index"
           options={{
