@@ -3,11 +3,10 @@ import { Platform, StyleSheet } from 'react-native';
 import { ScrollViewMarker } from 'react-native-screens/experimental';
 
 /**
- * Set inside a tab's ROOT screen (the tab's own stack provides it — see `tab-stack`), null under
- * every page the tab pushes and outside the tabs. `scrolledMaterial` is true for the tabs whose
- * bar takes the hard scroll-edge effect once the list is scrolled (tab-stack's SCROLLED_MATERIAL).
+ * True inside a tab's ROOT screen (the tab's own stack provides it — see `tab-stack`), false under
+ * every page the tab pushes and outside the tabs.
  */
-export const TabRootScrollContext = createContext<{ scrolledMaterial: boolean } | null>(null);
+export const TabRootScrollContext = createContext(false);
 
 /**
  * Marks the scroll view the system tab bar follows (iOS 26 `minimizeBehavior`, status-bar tap
@@ -25,9 +24,8 @@ export const TabRootScrollContext = createContext<{ scrolledMaterial: boolean } 
  * told, and finds the list for itself by that walk, each first subview down from the screen,
  * which is how it puts its own scroll-edge effect on the list. Nothing may be laid in ahead of
  * the list there: Browse draws its colour backdrop inside the list's content on iOS for that
- * reason (see `ContentFeed`). The marker sets the same edge effect, since the last one set on
- * the scroll view wins: the hard one under the bar of a covers tab (`scrolledMaterial`), and
- * elsewhere its default (`automatic`, soft under a bar).
+ * reason (see `ContentFeed`). The marker sets an edge effect too, its default (`automatic`, soft
+ * under a bar), and the last one set on the scroll view wins, so every tab root leaves it there.
  *
  * Elsewhere, and on Android/web, it renders the child alone.
  */
@@ -41,16 +39,11 @@ export function TabScrollMarker({
   const tabRoot = use(TabRootScrollContext);
   if (Platform.OS !== 'ios' || !tabRoot) return children;
   return (
-    <ScrollViewMarker
-      key={markerKey}
-      style={styles.fill}
-      {...(tabRoot.scrolledMaterial ? { scrollEdgeEffects: HARD_TOP_EDGE } : {})}>
+    <ScrollViewMarker key={markerKey} style={styles.fill}>
       {children}
     </ScrollViewMarker>
   );
 }
-
-const HARD_TOP_EDGE = { top: 'hard' } as const;
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },

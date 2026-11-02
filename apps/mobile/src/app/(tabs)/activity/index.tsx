@@ -373,7 +373,13 @@ export default function ActivityScreen() {
 
       <PullIndicator {...pull.indicator} top={headerHeight} />
       {NATIVE_HEADER ? (
-        <NativeTabHeader title="Activity" scrollY={scrollY} filter={filter} placeholder="Filter activity…" />
+        <NativeTabHeader
+          title="Activity"
+          scrollY={scrollY}
+          filter={filter}
+          placeholder="Filter activity…"
+          holdTestID="activity.nsfw-hold"
+        />
       ) : (
         <TabTitleBar
           title="Activity"

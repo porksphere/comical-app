@@ -1,10 +1,9 @@
 import { Slot, Stack } from 'expo-router';
-import type { ComponentProps, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { ReanimatedScreenProvider } from 'react-native-screens/reanimated';
 
 import { TabRootScrollContext } from '@/components/tab-scroll-marker';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
-import { useWideVerticalBar } from '@/hooks/use-responsive';
 import { TabRouteContext } from '@/lib/focused-tab';
 import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
 import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
@@ -18,15 +17,11 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * The bar is transparent so the content scrolls behind it exactly as it did behind the overlay
  * (and pads itself by useTopChromeHeight). What keeps it legible is the iOS 26 scroll-edge
  * effect: the system's own treatment of the content under a bar, shown only once the list has
- * scrolled under it. Most tabs take the soft one, a fade, since the bar's items are already
- * Liquid Glass and a glass bar under glass buttons read as two layers of frosting. Over the
- * covers of Browse and Library it is the hard one (`SCROLLED_MATERIAL`), the near-opaque
- * backing that stands in for the old bar material, except beside the vertical bar of an iPhone
- * Duo open in landscape: the window is short there and the bar's items have gone to the side, so
- * a solid strip across the top cost a row of covers to back a title and a section label, and the
- * soft one does that job. Not a background in the bar's appearance:
- * on iOS 26 that sits on top of the edge effect, and UIKit never once switched these bars from
- * their scroll-edge appearance to the standard one.
+ * scrolled under it. Every tab takes the soft one, a fade, the bar holding only Liquid Glass items
+ * and the tab's name; the hard one Browse and Library once took over their covers was a
+ * near-opaque strip that cost a row of covers to back a title. Not a background in the bar's
+ * appearance: on iOS 26 that sits on top of the edge effect, and UIKit never once switched these
+ * bars from their scroll-edge appearance to the standard one.
  *
  * The stack also carries the tab's own copies of the pages a tab pushes — series, search, results
  * (one-line re-exports under each tab's `in-tab/`; `destinationHref` in lib/nav sends a push there) —
@@ -62,9 +57,6 @@ export default function TabStack({ tab }: { tab: string }) {
 }
 
 function NativeTabStack({ tab }: { tab: string }) {
-  const wideVerticalBar = useWideVerticalBar();
-  const coversTab = SCROLLED_MATERIAL_TABS.has(tab);
-  const scrolledMaterial = coversTab && !wideVerticalBar;
   return (
     <TabRouteContext.Provider value={tab}>
       <TabBarClearanceReporter />
@@ -76,8 +68,7 @@ function NativeTabStack({ tab }: { tab: string }) {
             headerBackButtonDisplayMode: 'minimal',
             scrollEdgeEffects: { top: 'soft' },
           }}
-          screenLayout={scrolledMaterial ? materialTabScreenLayout : bareTabScreenLayout}>
-          {coversTab ? <Stack.Screen name="index" options={scrolledMaterial ? SCROLLED_MATERIAL : SOFT_EDGE} /> : null}
+          screenLayout={tabScreenLayout}>
           {/* The page shows the bar itself, details only (reader: none) — see its Stack.Screen. */}
           <Stack.Screen name="in-tab/series/index" options={{ headerShown: false }} />
           <Stack.Screen name="in-tab/series/read" options={{ headerShown: false }} />
@@ -88,27 +79,7 @@ function NativeTabStack({ tab }: { tab: string }) {
   );
 }
 
-/** The tabs whose root list is covers, over which the bar needs a material once scrolled. */
-const SCROLLED_MATERIAL_TABS = new Set(['(home)', 'library']);
-
-/** The bar of a covers tab: the hard scroll-edge effect, which the list's marker sets too. */
-const SCROLLED_MATERIAL: ComponentProps<typeof Stack.Screen>['options'] = {
-  scrollEdgeEffects: { top: 'hard' },
-};
-
-const SOFT_EDGE: ComponentProps<typeof Stack.Screen>['options'] = {
-  scrollEdgeEffects: { top: 'soft' },
-};
-
-const BARE_ROOT = { scrolledMaterial: false };
-const MATERIAL_ROOT = { scrolledMaterial: true };
-
-function bareTabScreenLayout({ route, children }: { route: { name: string }; children: ReactNode }) {
+function tabScreenLayout({ route, children }: { route: { name: string }; children: ReactNode }) {
   if (route.name !== 'index') return <>{children}</>;
-  return <TabRootScrollContext.Provider value={BARE_ROOT}>{children}</TabRootScrollContext.Provider>;
-}
-
-function materialTabScreenLayout({ route, children }: { route: { name: string }; children: ReactNode }) {
-  if (route.name !== 'index') return <>{children}</>;
-  return <TabRootScrollContext.Provider value={MATERIAL_ROOT}>{children}</TabRootScrollContext.Provider>;
+  return <TabRootScrollContext.Provider value>{children}</TabRootScrollContext.Provider>;
 }

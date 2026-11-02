@@ -213,7 +213,11 @@ export default function SettingsScreen() {
         </Animated.ScrollView>
       </TabScrollMarker>
 
-      {NATIVE_HEADER ? <NativeTabHeader title="Settings" scrollY={scrollY} /> : <TabTitleBar title="Settings" />}
+      {NATIVE_HEADER ? (
+        <NativeTabHeader title="Settings" scrollY={scrollY} holdTestID="settings.nsfw-hold" />
+      ) : (
+        <TabTitleBar title="Settings" />
+      )}
     </ThemedView>
   );
 }

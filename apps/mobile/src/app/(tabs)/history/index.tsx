@@ -253,7 +253,13 @@ export default function HistoryScreen() {
       )}
 
       {NATIVE_HEADER ? (
-        <NativeTabHeader title="History" scrollY={scrollY} filter={filter} placeholder="Filter history…" />
+        <NativeTabHeader
+          title="History"
+          scrollY={scrollY}
+          filter={filter}
+          placeholder="Filter history…"
+          holdTestID="history.nsfw-hold"
+        />
       ) : (
         <TabTitleBar
           title="History"

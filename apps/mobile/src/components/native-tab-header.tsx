@@ -41,9 +41,9 @@ const SWAP_MS = 180;
  * expands into the field on tap (iOS 26; an inline field under the title before that). Cancel
  * clears the query, which is what closing the custom field does too.
  *
- * With `holdTestID` the title is also the screen's NSFW hold target (`HoldActionTarget`): Browse
- * keeps the gesture on its heading since its bar button is a system item, and a UIBarButtonItem
- * has no long-press of its own; holding one only ever opens its menu.
+ * The title is also the tab's NSFW hold target (`HoldActionTarget`), on every tab: the bar holds
+ * only system items, and a UIBarButtonItem has no long-press of its own; holding one only ever
+ * opens its menu.
  */
 export function NativeTabHeader({
   title,
@@ -60,7 +60,7 @@ export function NativeTabHeader({
   section?: string | null;
   filter?: TabFilter;
   placeholder?: string;
-  holdTestID?: string;
+  holdTestID: string;
 }) {
   const theme = useTheme();
   const still = useSharedValue(0);
@@ -82,21 +82,14 @@ export function NativeTabHeader({
     const s = sectioned.value;
     return { opacity: arrival.value * (s + (1 - s) * scrolled) };
   });
-  const text = (
-    <Animated.Text numberOfLines={1} style={[styles.title, { color: theme.text }, fade]}>
-      {shown}
-    </Animated.Text>
-  );
   return (
     <>
       <Stack.Title asChild>
-        {holdTestID ? (
-          <HoldActionTarget testID={holdTestID} label={title}>
-            {text}
-          </HoldActionTarget>
-        ) : (
-          text
-        )}
+        <HoldActionTarget testID={holdTestID} label={title}>
+          <Animated.Text numberOfLines={1} style={[styles.title, { color: theme.text }, fade]}>
+            {shown}
+          </Animated.Text>
+        </HoldActionTarget>
       </Stack.Title>
       {filter ? (
         <Stack.SearchBar

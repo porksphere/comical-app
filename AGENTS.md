@@ -48,9 +48,9 @@ never a pushed page's: the registration is a hand-off to UIKit nothing takes bac
 reaches the TAB screen only, never the stack screen holding the navigation bar. That screen
 finds the list for itself, by the walk each first subview down from it, to put its iOS 26
 scroll-edge effect on the list: the system's own treatment of content under the bar, shown only
-once the list has scrolled under it. Most tabs take the soft one; Browse and Library take the
-hard one over their covers (`SCROLLED_MATERIAL` in `components/tab-stack.tsx`), the near-opaque
-backing that stands in for the old bar material. Not a background in the bar's appearance:
+once the list has scrolled under it. Every tab takes the soft one, Browse and Library included:
+the hard one over their covers was a near-opaque strip that cost a row of covers to back a title.
+Not a background in the bar's appearance:
 Apple's guidance for iOS 26 is that a custom bar background sits on top of the edge effect, and
 UIKit never once switched these bars from their scroll-edge appearance to the standard one, with
 or without the list handed to it. Nothing may be laid in ahead of the list there, so on iOS
@@ -94,17 +94,16 @@ that is not full screen. Elsewhere it is expo-status-bar's.
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
 names the screen and the search: every tab uses an inline title that fades out over the first
 scroll (`components/native-tab-header.tsx`, `Stack.Title asChild` fed the screen's `scrollY`;
-large titles looked foreign beside the custom clusters). Browse's title is "<bridge> <page>" and
-Library's "<view> <kind>" (the view alone while it holds one kind), and on both it is also the NSFW hold target (`NativeTabHeader
-holdTestID`), because their bars hold only SYSTEM items and a `UIBarButtonItem` has no
-long-press of its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`,
+large titles looked foreign beside the custom clusters). The title is the tab's name, Browse and
+Library included, and on every tab it is also the NSFW hold target (`NativeTabHeader holdTestID`,
+required), because the bars hold only SYSTEM items and a `UIBarButtonItem` has no long-press of
+its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`,
 flat — inline sections, never submenus, so every pick is open and tap — Browse the current
 bridge's thumbnail as a circle over the bridges and then the pages as checkmarked rows
 (`components/browse-native-toolbar.tsx`), Library the view's mark (the
 collection's initial, All's asterisk) with the views and "Manage collections…" and then the
 kind, Series / Chapters / Pages, as a second section while the view holds more than one
-(`LibraryCollectionMenu` in `components/library/library-native-toolbar.tsx`; Library's title
-is then "<view> <kind>", as Browse's is "<bridge> <page>") — and the search
+(`LibraryCollectionMenu` in `components/library/library-native-toolbar.tsx`) — and the search
 trailing, so UIKit lays the bar out itself (an image item joins the vertical bar of a folded or
 landscape display). The leading image button keeps its Liquid Glass capsule: a bare circle
 (`hidesSharedBackground`, the way a round account picture is itself the button in Apple's bars)

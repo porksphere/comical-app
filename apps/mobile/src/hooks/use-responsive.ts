@@ -1,4 +1,3 @@
-import { useVerticalBarEdgeIOS } from 'expo-status-bar';
 import { useSyncExternalStore } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
 
@@ -95,18 +94,6 @@ export function useSizeClass(): SizeClass {
   const { width } = useWindowDimensions();
   const hydrated = useHydrated();
   return hydrated ? sizeClassFor(width) : 'compact';
-}
-
-/**
- * True when the system bars stand in a vertical bar beside a REGULAR-width window: the iPhone Duo
- * open in landscape. The status bar and the navigation bar's items have moved to the side there,
- * so the height a screen still spends across its top buys little. Never the Duo's outer display,
- * which is compact, and never where the system draws no vertical bar (before iOS 27.1, every other
- * device, Android, web).
- */
-export function useWideVerticalBar(): boolean {
-  const edge = useVerticalBarEdgeIOS();
-  return useSizeClass() === 'regular' && edge !== null;
 }
 
 /** True when the viewport is REGULAR width (≥768px) — `useSizeClass() === 'regular'`, under the name
