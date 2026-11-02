@@ -2,6 +2,8 @@ import { createContext, use, type ReactNode } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { ScrollViewMarker } from 'react-native-screens';
 
+import { ContentScrollAnchor } from '../../modules/content-scroll-view';
+
 /**
  * True inside a tab's ROOT screen (the tab's own stack provides it — see `tab-stack`), false under
  * every page the tab pushes and outside the tabs.
@@ -20,9 +22,10 @@ export const TabRootScrollContext = createContext(false);
  * child list remounts (RecyclerList's `listKey`) — the marker registers once per attach, so a new
  * scroll view under an old marker would go unregistered.
  *
- * The marker reaches the TAB screen only; the stack screen holding the navigation bar is never
- * told, and finds the list for itself by that walk, each first subview down from the screen,
- * which is how it puts its own scroll-edge effect on the list. Nothing may be laid in ahead of
+ * The marker reaches the TAB screen only. The stack screen holding the navigation bar is told by
+ * `ContentScrollAnchor`, since a tab root's list is too deep for UIKit to find, and the bar can't
+ * slide away from a list it hasn't found. That screen still finds the list by a walk of its own,
+ * each first subview down, to put its scroll-edge effect on it. Nothing may be laid in ahead of
  * the list there: Browse draws its colour backdrop inside the list's content on iOS for that
  * reason (see `ContentFeed`). The marker sets an edge effect too, its default (`automatic`, soft
  * under a bar), and the last one set on the scroll view wins, so every tab root leaves it there.
@@ -38,10 +41,16 @@ export function TabScrollMarker({
 }) {
   const tabRoot = use(TabRootScrollContext);
   if (Platform.OS !== 'ios' || !tabRoot) return children;
-  return (
+  const marker = (
     <ScrollViewMarker key={markerKey} style={styles.fill}>
       {children}
     </ScrollViewMarker>
+  );
+  if (!ContentScrollAnchor) return marker;
+  return (
+    <ContentScrollAnchor key={markerKey} style={styles.fill}>
+      {marker}
+    </ContentScrollAnchor>
   );
 }
 

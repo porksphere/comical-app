@@ -45,8 +45,11 @@ re-expansion for days and reverted, so don't. The scroll view the bar follows is
 `TabScrollMarker` (react-native-screens' `ScrollViewMarker`, keyed with the list
 it wraps) around each tab ROOT screen's list, under `TabRootScrollContext` from the tab's stack —
 never a pushed page's: the registration is a hand-off to UIKit nothing takes back. The marker
-reaches the TAB screen only, never the stack screen holding the navigation bar. That screen
-finds the list for itself, by the walk each first subview down from it, to put its iOS 26
+reaches the TAB screen only, never the stack screen holding the navigation bar. That screen is
+told by the local module `apps/mobile/modules/content-scroll-view`
+(`UIViewController.setContentScrollView`, inside `TabScrollMarker`), because a list under wrappers
+goes unfound by UIKit and the bar never slides away from it. The screen also finds the list by a
+walk of its own, each first subview down from it, to put its iOS 26
 scroll-edge effect on the list: the system's own treatment of content under the bar, shown only
 once the list has scrolled under it. Every tab takes the soft one, Browse and Library included:
 the hard one over their covers was a near-opaque strip that cost a row of covers to back a title.
@@ -206,7 +209,9 @@ invisible to it — so shared menus are builder FUNCTIONS returning the element 
 reports the RESTING height — the stack reports the sliding bar's height as it goes, but the content
 pads once, by how far the bar reaches at rest. Each screen whose bar slides measures that itself
 (`components/bar-extent.tsx`, the stacks' `screenLayout`: the screen's own safe area, which holds
-still while the bar goes), so no row moves under the finger.
+still while the bar goes), so no row moves under the finger. Its measuring view sits BESIDE the
+page: wrapped around it, it put a settings page's list one view deeper, and on a device one wrapper
+more around the list stopped the bar sliding.
 
 Pushed screens stay INSIDE the tab on iOS. A series page, a search and its results open in the
 focused tab's native stack, not the root stack, so the system tab bar (or its side column) stays up

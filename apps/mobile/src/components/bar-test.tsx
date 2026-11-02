@@ -12,6 +12,8 @@ import {
   type ScreenStackHeaderConfigProps,
 } from 'react-native-screens';
 
+import { ContentScrollAnchor } from '../../modules/content-scroll-view';
+
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -28,12 +30,14 @@ const DEFAULT = 'default';
 type Minimize = HeaderMinimizationBehavior | typeof DEFAULT;
 type SafeArea = HeaderSafeAreaAdjustment | typeof DEFAULT;
 type Inset = 'automatic' | 'never';
-type Wrap = 'none' | 'view' | 'sibling';
+type Wrap = 'none' | 'view' | 'sibling' | 'two' | 'three';
+type Named = 'off' | 'on';
 
 const MINIMIZE: Minimize[] = [DEFAULT, 'automatic', 'onScrollDown', 'never'];
 const SAFE_AREA: SafeArea[] = [DEFAULT, 'automatic', 'enabled', 'disabled'];
 const INSETS: Inset[] = ['automatic', 'never'];
-const WRAPS: Wrap[] = ['none', 'view', 'sibling'];
+const WRAPS: Wrap[] = ['none', 'view', 'sibling', 'two', 'three'];
+const NAMED: Named[] = ['off', 'on'];
 const HOSTS = ['Screen', 'ScreenStackItem'] as const;
 
 function next<T>(values: readonly T[], value: T): T {
@@ -95,6 +99,7 @@ export function BarTest({ where }: { where: string }) {
   const [safeArea, setSafeArea] = useState<SafeArea>('disabled');
   const [inset, setInset] = useState<Inset>('never');
   const [wrap, setWrap] = useState<Wrap>('view');
+  const [named, setNamed] = useState<Named>('off');
   const reported = use(HeaderHeightContext) ?? 0;
   const barHeight = useNativeHeaderHeight();
 
@@ -102,7 +107,7 @@ export function BarTest({ where }: { where: string }) {
 
   const scroll = (
     <ScrollView
-      key={`${minimize}-${safeArea}-${inset}-${wrap}`}
+      key={`${minimize}-${safeArea}-${inset}-${wrap}-${named}`}
       style={wrap === 'none' && { backgroundColor: theme.background }}
       contentInsetAdjustmentBehavior={inset}
       contentContainerStyle={{ paddingTop: (inset === 'never' ? barHeight : 0) + SettingsTopGap }}>
@@ -111,10 +116,17 @@ export function BarTest({ where }: { where: string }) {
         <Choice id="safe-area" label="safeAreaAdjustment" values={SAFE_AREA} value={safeArea} onChange={setSafeArea} />
         <Choice id="inset" label="contentInsetAdjustment" values={INSETS} value={inset} onChange={setInset} />
         <Choice id="wrap" label="Ahead of the list" values={WRAPS} value={wrap} onChange={setWrap} />
+        <Choice id="named" label="Named to UIKit" values={NAMED} value={named} onChange={setNamed} />
       </SettingsSection>
       <Rows />
     </ScrollView>
   );
+  const list =
+    named === 'on' && ContentScrollAnchor ? (
+      <ContentScrollAnchor style={styles.fill}>{scroll}</ContentScrollAnchor>
+    ) : (
+      scroll
+    );
   const readout = <Readout text={`reported bar ${Math.round(reported)}`} />;
 
   return (
@@ -124,13 +136,25 @@ export function BarTest({ where }: { where: string }) {
       />
       {wrap === 'none' ? (
         <>
-          {scroll}
+          {list}
           {readout}
         </>
       ) : (
         <ThemedView style={styles.fill}>
           {wrap === 'sibling' && <View collapsable={false} pointerEvents="none" style={styles.sibling} />}
-          {scroll}
+          {wrap === 'two' || wrap === 'three' ? (
+            <View collapsable={false} style={styles.fill}>
+              {wrap === 'three' ? (
+                <View collapsable={false} style={styles.fill}>
+                  {list}
+                </View>
+              ) : (
+                list
+              )}
+            </View>
+          ) : (
+            list
+          )}
           {readout}
         </ThemedView>
       )}
