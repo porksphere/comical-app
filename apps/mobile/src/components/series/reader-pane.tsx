@@ -250,8 +250,17 @@ export const ReaderPane = forwardRef<
   const currentRef = useRef(startIndex);
   // Pairing is fixed for a pager's lifetime (see PagedReader's `double`), so a layout change —
   // the setting, the shift, or a rotation under `auto` — remounts it on the page being read. The
-  // mode is in it so the reader a switch brings up opens on that page too.
-  const pagerLayout = `${settings.mode}:${double}:${shift}`;
+  // mode is in it so the reader a switch brings up opens on that page too. So is the length a
+  // native pager turns its pages by: it lays every page out at the size it was first given and
+  // keeps its place in pixels, so a fold from the inner display left it straddling two pages.
+  const pageStep = IS_WEB
+    ? ''
+    : settings.mode === 'paged'
+      ? Math.round(width)
+      : webtoonFit(settings.pageFit) === 'fit-page'
+        ? Math.round(height)
+        : '';
+  const pagerLayout = `${settings.mode}:${double}:${shift}:${pageStep}`;
   const [pagerMount, setPagerMount] = useState({ layout: pagerLayout, page: startIndex });
   if (pagerMount.layout !== pagerLayout) setPagerMount({ layout: pagerLayout, page: currentPage });
   // Whether the mounted list has REPORTED a position yet. A recording answered how much this
@@ -911,6 +920,7 @@ export const ReaderPane = forwardRef<
         />
       ) : (
         <WebtoonReader
+          key={pagerMount.layout}
           ref={webtoonRef}
           // The same stitched window the pager gets: scrolling off either end of a chapter simply
           // continues into the next one, with the page you are heading for already under the
