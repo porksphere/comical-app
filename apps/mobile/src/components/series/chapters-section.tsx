@@ -52,6 +52,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { useZoomHref, useZoomId, ZoomSource } from '@/components/zoom-source';
+import { InlineSeriesTitle } from '@/components/series/inline-title';
 import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useSideInsets } from '@/hooks/use-content-width';
 import { useHovered } from '@/hooks/use-hovered';
@@ -692,9 +693,9 @@ export function ChapterScrollList({
   // Series title — full-width above the two-column hero. series.tsx no longer bundles it into
   // `header`, so every layout below renders it from the `title` prop here.
   const titleEl = (
-    <ThemedText type="subtitle" style={styles.seriesTitle} selectable>
+    <InlineSeriesTitle type="subtitle" style={styles.seriesTitle} selectable>
       {title}
-    </ThemedText>
+    </InlineSeriesTitle>
   );
 
   // The "Chapters" heading + tab/sort controls — or the loading skeleton where the rows will land

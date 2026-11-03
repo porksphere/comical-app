@@ -31,6 +31,7 @@ import { SeriesDownloadButton } from '@/components/series/download-button';
 import { SeriesRemovedNotice } from '@/components/series/series-removed';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
+import { InlineSeriesTitle } from '@/components/series/inline-title';
 import { ThemedText } from '@/components/themed-text';
 import { showToast } from '@/components/toast';
 import { useTopBarInset } from '@/components/top-bar';
@@ -843,9 +844,9 @@ export function SeriesBody({
   // header.
   const heroBlock = (
     <>
-      <ThemedText type="subtitle" style={styles.title} selectable>
+      <InlineSeriesTitle type="subtitle" style={styles.title} selectable>
         {series.title}
-      </ThemedText>
+      </InlineSeriesTitle>
 
       {isLarge ? (
         /* Large screen: two-column layout — cover+actions left, content right. */

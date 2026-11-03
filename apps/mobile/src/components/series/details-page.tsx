@@ -1,4 +1,4 @@
-import { Stack, useNavigation } from 'expo-router';
+import { useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackHandler,
@@ -28,6 +28,8 @@ import { usePushSettled } from '@/components/reader/chapter-navigator';
 import { focusSkip } from '@/lib/focus-nav';
 import { RetryBlock } from '@/components/retry-block';
 import { ScreenScrollActiveContext } from '@/components/screen-scroll-marker';
+import { SeriesDetailsNativeBar } from '@/components/series/details-native-bar';
+import { InlineTitleHeightContext } from '@/components/series/inline-title';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
@@ -38,7 +40,6 @@ import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
-import { SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
 import {
   backSwipePan,
   backSwipeShape,
@@ -180,6 +181,7 @@ export function SeriesDetailsPage({
   // the same `sharedValues` wiring pull-to-refresh uses) — drives the strip occlusion, the top
   // bar's scroll crossfade, and the pull-past-top reveal.
   const detailsScrollOffset = useSharedValue(0);
+  const inlineTitleHeight = useSharedValue(0);
   const sharedValues = useMemo(() => ({ scrollOffset: detailsScrollOffset }), [detailsScrollOffset]);
   // Whether the details are the page at rest: false from the moment a drag or a pull commits to
   // the reader page until the page is put back behind it (`paneHandoffs`, or the strip hand-off's
@@ -1184,42 +1186,16 @@ export function SeriesDetailsPage({
 
   const dimOverlays = <StripDim progress={progress} />;
 
-  // iOS: the system bar, through the route's options: the series' title and its items, in the
-  // navigation theme's tint, on the frosted material; the content scrolls under it, and the bar
-  // slides away while it does, like every pushed page's (SLIDE_AWAY_BAR). The title holds the bar
-  // open where the back button has moved to the Duo's vertical bar: it has nothing else in it there.
-  // Only the top instance sets them (they are the route's, shared by every layer), and they mount
-  // only while it is top, so a layer that becomes top again re-applies them: Stack.Screen's effect
-  // runs on mount, and the toolbar unregisters its item on unmount. Inside a tab the route is the
-  // tab stack's own pushed card (useNativePush), whose back button is the system's, the one the
-  // tab's leading item morphs into. At the root the route these options reach is the `index` of the
-  // nested stack (app/series/_layout), never the contained transparent modal around it:
-  // react-native-screens remounts a modal's content when its `headerShown` flips, as the search
-  // layer flips it; a nested root has no back of its own, hence the toolbar chevron.
-  const barMaterial = useBarMaterial();
   const nativeBar =
     NATIVE_HEADER && isTop ? (
-      <>
-        <Stack.Screen
-          options={{
-            headerShown: true,
-            headerTransparent: true,
-            headerShadowVisible: false,
-            headerBlurEffect: barMaterial,
-            headerBackVisible: nativePush,
-            // Not a pushed card, nothing for UIKit to pop: the edge is the page's own back-swipe.
-            gestureEnabled: nativePush,
-            title: headerBarTitle,
-            headerTitle: headerBarTitle,
-            unstable_nativeProps: SLIDE_AWAY_BAR,
-          }}
-        />
-        {!nativePush ? (
-          <Stack.Toolbar placement="left">
-            <Stack.Toolbar.Button icon="chevron.left" accessibilityLabel="Go back" onPress={closeLayer} />
-          </Stack.Toolbar>
-        ) : null}
-      </>
+      <SeriesDetailsNativeBar
+        title={headerBarTitle}
+        nativePush={nativePush}
+        onClose={closeLayer}
+        scrollOffset={detailsScrollOffset}
+        contentTop={headerTopInset}
+        inlineTitleHeight={inlineTitleHeight}
+      />
     ) : null;
   // Elsewhere: the shared TopBar (back-less: transparent over the strip, opaque once scrolled)
   // under a persistent chevron above the band overlay, so its taps win.
@@ -1301,6 +1277,7 @@ export function SeriesDetailsPage({
             {/* Everything below can yield the back-swipe to a horizontal scroller of its own. */}
             <BackSwipeGestureContext.Provider value={detailsBackSwipe}>
             <ScreenScrollActiveContext.Provider value={isTop}>
+            <InlineTitleHeightContext.Provider value={inlineTitleHeight}>
             <SeriesDetailsHost
               bridgeId={bridgeId}
               id={id}
@@ -1321,6 +1298,7 @@ export function SeriesDetailsPage({
               coverAspectSeed={heroAspectSeed}
               saveKeyEnabled={IS_WEB && !!isTop}
             />
+            </InlineTitleHeightContext.Provider>
             </ScreenScrollActiveContext.Provider>
             </BackSwipeGestureContext.Provider>
           </Animated.View>
