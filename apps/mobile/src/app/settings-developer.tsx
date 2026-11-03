@@ -10,7 +10,6 @@ import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useApiBase } from '@/data/api';
 import { useMockDataToggle } from '@/data/source';
-import { barFade$, useBarFadeExperiment } from '@/lib/bar-fade-flag';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 import { router } from '@/lib/nav';
 
@@ -23,7 +22,6 @@ export default function DeveloperSettingsScreen() {
   const [mockEnabled, setMockEnabled] = useMockDataToggle();
   const [apiBase] = useApiBase();
   const profilerOn = useDevProfilerEnabled();
-  const barFadeOn = useBarFadeExperiment();
 
   return (
     <ThemedView style={styles.container}>
@@ -52,13 +50,6 @@ export default function DeveloperSettingsScreen() {
               testID="developer.bar-test-upstream"
               label="Upstream copy"
               onPress={() => router.push('/bar-test-upstream')}
-            />
-            {/* THROWAWAY: the series bar's fade candidates (lib/bar-fade-flag). */}
-            <SettingsRow
-              testID="developer.bar-fade"
-              label="Fade the series bar"
-              description="Switches the series bar at the page's title with a Core Animation fade, instead of UIKit's scroll-edge crossfade."
-              right={<ThemedSwitch value={barFadeOn} onValueChange={(v) => barFade$.enabled.set(v)} />}
             />
           </SettingsSection>
         )}

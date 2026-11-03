@@ -1,8 +1,13 @@
 import ExpoModulesCore
+import UIKit
 
 public class NavBarFadeModule: Module {
   public func definition() -> ModuleDefinition {
     Name("NavBarFade")
+
+    OnCreate {
+      MinimizationGuard.install()
+    }
 
     View(NavBarFadeView.self) {}
   }
@@ -29,6 +34,7 @@ final class NavBarFadeView: ExpoView {
   }
 
   private func attach() {
+    MinimizationGuard.install()
     guard let owner = owningController(of: self), owner !== controller else {
       return
     }
@@ -62,6 +68,47 @@ final class NavBarFadeView: ExpoView {
     transition.duration = Self.duration
     transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
     navigation.navigationBar.layer.add(transition, forKey: "comical.navBarFade")
+  }
+}
+
+/// react-native-screens hands every navigation item a NEW `UIBarMinimization` on every header update,
+/// even when nothing about the slide-away changed. A bar mid-slide when that lands stops sliding and
+/// snaps into place, so a title switched as the bar came back in popped it in instead. This drops an
+/// assignment that matches what the item already has, app-wide, which UIKit has no reason to see.
+///
+/// Through the runtime, by name, so it builds against any SDK and does nothing before iOS 27.
+private enum MinimizationGuard {
+  private static let keys = ["minimizationBehavior", "restorationBehavior", "safeAreaAdjustment"]
+  private static var installed = false
+
+  static func install() {
+    guard !installed else { return }
+    installed = true
+    let getter = NSSelectorFromString("navigationBarMinimization")
+    let setter = NSSelectorFromString("setNavigationBarMinimization:")
+    guard UINavigationItem.instancesRespond(to: getter),
+          let method = class_getInstanceMethod(UINavigationItem.self, setter) else {
+      return
+    }
+    typealias Setter = @convention(c) (UINavigationItem, Selector, AnyObject?) -> Void
+    let original = unsafeBitCast(method_getImplementation(method), to: Setter.self)
+    let replacement: @convention(block) (UINavigationItem, AnyObject?) -> Void = { item, next in
+      if let next = next as? NSObject,
+         let current = item.perform(getter)?.takeUnretainedValue() as? NSObject,
+         same(current, next) {
+        return
+      }
+      original(item, setter, next)
+    }
+    method_setImplementation(method, imp_implementationWithBlock(replacement))
+  }
+
+  private static func same(_ a: NSObject, _ b: NSObject) -> Bool {
+    keys.allSatisfy { key in
+      let selector = NSSelectorFromString(key)
+      guard a.responds(to: selector), b.responds(to: selector) else { return false }
+      return (a.value(forKey: key) as? NSNumber) == (b.value(forKey: key) as? NSNumber)
+    }
   }
 }
 

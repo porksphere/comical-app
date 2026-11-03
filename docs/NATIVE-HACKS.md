@@ -42,7 +42,7 @@ the end of this doc is the only guard.
 | 19 | Type casts at library seams | Typing | Keep | [ ] |
 | 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
 | 21 | No bar material on the folded Duo | Pose inferred around a UIKit limit | Keep | [ ] |
-| 22 | `nav-bar-fade` and its Developer switch | Throwaway experiment, animates a library-owned bar | Blocker | [ ] |
+| 22 | `nav-bar-fade` | Animates a library-owned bar, swizzles a UIKit setter | Decide | [ ] |
 
 ## Blockers
 
@@ -82,21 +82,6 @@ the end of this doc is the only guard.
 - **Removed by:** moving release to an image with the iOS 27 SDK. Choose that deliberately, either
   releasing from the preview image or waiting until it leaves preview. Then make the runner the same
   on every lane and drop the conditional.
-
-### 22. `nav-bar-fade` and its Developer switch
-
-- **What:** an experiment for the series details bar. Off (the default), the bar's frost is UIKit's
-  scroll-edge crossfade. On, the material switches with the title as options, and a zero-size view
-  that found the screen's `UINavigationItem` through the responder chain watches its `title` and
-  `standardAppearance` with KVO and adds a `CATransition` fade to the navigation bar's layer from
-  inside react-native-screens' setter.
-- **Where:** `apps/mobile/modules/nav-bar-fade/`, `src/lib/bar-fade-flag.ts`, its row in
-  `app/settings-developer.tsx`, and the `fade` branch in `src/components/series/details-native-bar.tsx`.
-- **Why:** react-native-screens applies header options unanimated, so the switch back to a bare bar
-  landed in one frame.
-- **Risk:** it animates a layer UIKit owns, and relies on KVO firing inside the library's update.
-- **Removed by:** picking one after testing on a device. Delete the module, the flag and the row
-  either way; if the fade wins, it moves to "Decide" as a permanent module.
 
 ## Internals and private reach
 
@@ -208,6 +193,32 @@ the end of this doc is the only guard.
   `app-tabs.ios.tsx` also casts `onLayout` in, because the screen's props are typed without it.
 - **How it fails:** silent. A renamed prop means a fixed bar or a wrong column width on a sidebar layout.
 - **Removed by:** expo-router exposing these options.
+
+### 22. `nav-bar-fade`
+
+- **What:** two things for the series details bar.
+  - **The fade:** a zero-size view finds the screen's `UINavigationItem` through the responder chain,
+    watches its `title` and `standardAppearance` with KVO, and adds a `CATransition` fade to the
+    navigation bar's layer from inside react-native-screens' setter.
+  - **The minimization guard:** swizzles `-[UINavigationItem setNavigationBarMinimization:]`, app-wide,
+    to drop an assignment whose behaviour, restoration and safe-area adjustment all match the
+    item's current one. It's done through the runtime by name, so it builds against any SDK.
+- **Where:** `apps/mobile/modules/nav-bar-fade/`, and its view in
+  `src/components/series/details-native-bar.tsx`.
+- **Why:**
+  - react-native-screens applies header options unanimated, so the bar's title and material
+    switched in one frame. UIKit's own scroll-edge crossfade was tried instead and never ran.
+  - Every header update also sets a new `UIBarMinimization`, even an identical one
+    (`RNSScreenStackHeaderConfig.mm`, `updateViewController`). Landing while the bar was sliding
+    back in, it popped the bar into place.
+- **Risk:**
+  - The fade animates a layer UIKit owns, and relies on KVO firing inside the library's update.
+  - The swizzle changes a UIKit setter for every bar in the app. It only skips no-op assignments,
+    but if UIKit ever relies on one to re-evaluate the bar, that re-evaluation is gone.
+- **How it fails:** silent. Without the guard, the bar pops in again on the first scroll up. If the
+  KVO stops firing, the switch is instant again.
+- **Removed by:** react-native-screens animating option changes and assigning the minimization only
+  when it changes. The second is worth filing upstream. Not filed.
 
 ## Shaped workarounds
 
