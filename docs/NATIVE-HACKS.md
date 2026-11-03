@@ -42,7 +42,7 @@ the end of this doc is the only guard.
 | 19 | Type casts at library seams | Typing | Keep | [ ] |
 | 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
 | 21 | No bar material on the folded Duo | Pose inferred around a UIKit limit | Keep | [ ] |
-| 22 | `nav-bar-fade` | Animates a library-owned bar, swizzles a UIKit setter | Decide | [ ] |
+| 22 | `nav-bar-fade`, with a temporary trace | Animates a library-owned bar, swizzles a UIKit setter | Blocker (the trace), then Decide | [ ] |
 | 23 | Tab filters open from a plain magnifier | Stand-in for the system search item | Keep | [ ] |
 
 ## Blockers
@@ -210,8 +210,14 @@ the end of this doc is the only guard.
   - react-native-screens applies header options unanimated, so the bar's title and material
     switched in one frame. UIKit's own scroll-edge crossfade was tried instead and never ran.
   - Every header update also sets a new `UIBarMinimization`, even an identical one
-    (`RNSScreenStackHeaderConfig.mm`, `updateViewController`). Landing while the bar was sliding
-    back in, it popped the bar into place.
+    (`RNSScreenStackHeaderConfig.mm`, `updateViewController`). That was suspected of popping the bar
+    into place on the first scroll back up. **Unconfirmed:** the first build with the guard still
+    popped, so either it isn't the cause or the guard isn't running.
+- **Temporary trace (Blocker):** the view also reports each switch to Settings > Diagnostics
+  (`bar-fade` entries): whether the guard is on and how many assignments it skipped, where the bar's
+  content sits and what's on screen, and the animations running, at the switch and 50ms and 350ms
+  after. Remove the `onTrace` event, the counters and `traceBar` in `details-native-bar.tsx` once
+  the pop is understood. If the guard turns out not to matter, remove it too.
 - **Risk:**
   - The fade animates a layer UIKit owns, and relies on KVO firing inside the library's update.
   - The swizzle changes a UIKit setter for every bar in the app. It only skips no-op assignments,

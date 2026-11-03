@@ -9,6 +9,11 @@ import { requireNativeView, requireOptionalNativeModule } from 'expo';
 import type { ComponentType } from 'react';
 import type { ViewProps } from 'react-native';
 
-export const NavBarFade: ComponentType<ViewProps> | null = requireOptionalNativeModule('NavBarFade')
-  ? requireNativeView<ViewProps>('NavBarFade')
+export type NavBarFadeProps = ViewProps & {
+  /** TEMPORARY: the bar's state at each switch, for the Diagnostics screen. */
+  onTrace?: (event: { nativeEvent: { message: string } }) => void;
+};
+
+export const NavBarFade: ComponentType<NavBarFadeProps> | null = requireOptionalNativeModule('NavBarFade')
+  ? requireNativeView<NavBarFadeProps>('NavBarFade')
   : null;

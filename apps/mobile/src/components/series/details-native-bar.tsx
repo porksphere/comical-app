@@ -5,6 +5,7 @@ import { runOnJS, useAnimatedReaction, useSharedValue, type SharedValue } from '
 
 import { BarContentGap } from '@/constants/theme';
 import { useNativeHeaderHeight } from '@/hooks/use-native-header';
+import { logDiagnostic } from '@/lib/diagnostics';
 import { SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
 
 import { NavBarFade } from '../../../modules/nav-bar-fade';
@@ -86,7 +87,7 @@ export function SeriesDetailsNativeBar({
           unstable_nativeProps: SLIDE_AWAY_BAR,
         }}
       />
-      {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" /> : null}
+      {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" onTrace={traceBar} /> : null}
       {!nativePush ? (
         <Stack.Toolbar placement="left">
           <Stack.Toolbar.Button icon="chevron.left" accessibilityLabel="Go back" onPress={onClose} />
@@ -94,6 +95,11 @@ export function SeriesDetailsNativeBar({
       ) : null}
     </>
   );
+}
+
+// TEMPORARY: the bar's first pop in, traced to Settings > Diagnostics (docs/NATIVE-HACKS.md, item 22).
+function traceBar(e: { nativeEvent: { message: string } }) {
+  logDiagnostic('bar-fade', e.nativeEvent.message);
 }
 
 const styles = StyleSheet.create({
