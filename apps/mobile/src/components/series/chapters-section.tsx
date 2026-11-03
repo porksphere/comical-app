@@ -466,6 +466,9 @@ const pullScrollProps = {
   renderScrollComponent:
     Platform.OS === 'web' ? (scrollProps: object) => <Animated.ScrollView {...scrollProps} /> : undefined,
   overScrollMode: Platform.OS === 'android' ? ('never' as const) : undefined,
+  // As RecyclerList: no correcting the offset from measurements. Chapter rows are measured as they
+  // first scroll in, so the corrections land on the first swipe, under the finger.
+  maintainVisibleContentPosition: { data: false, size: false },
 };
 
 /**
