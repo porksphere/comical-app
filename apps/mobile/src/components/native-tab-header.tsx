@@ -1,6 +1,5 @@
 import { Stack } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import type { SearchBarCommands } from 'react-native-screens';
+import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -27,13 +26,9 @@ const SWAP_MS = 180;
  * short cross-fade as the next heading arrives. Nothing pins under the native bar — this is where
  * the pinned heading went.
  *
- * The filter opens from a plain magnifier among the trailing items (`tabSearchButton`), not the
- * system's search item: UIKit moves a plain bar button into the vertical bar of a folded or
- * landscape Duo, as Browse's is, but keeps the system's search item in the top bar, and the item
- * that represents it elsewhere goes only in the bottom toolbar, which a tab root never shows. The
- * field mounts on the tap, as the integrated-button placement, and is focused once it is in the
- * bar. Cancel clears the query and puts the magnifier back, which is what closing the custom field
- * does too, and so does leaving the field empty. A field left with a query stays open, showing it.
+ * The search bar is the integrated-button placement: a magnifier among the trailing items that
+ * expands into the field on tap (iOS 26; an inline field under the title before that). Cancel
+ * clears the query, which is what closing the custom field does too.
  *
  * The title is also the tab's NSFW hold target (`HoldActionTarget`), on every tab: the bar holds
  * only system items, and a UIBarButtonItem has no long-press of its own; holding one only ever
@@ -45,7 +40,6 @@ export function NativeTabHeader({
   filter,
   placeholder,
   holdTestID,
-  toolbarHoldsSearch = false,
 }: {
   title: string;
   /** The label of the section heading scrolled under the bar, null above the first. */
@@ -53,8 +47,6 @@ export function NativeTabHeader({
   filter?: TabFilter;
   placeholder?: string;
   holdTestID: string;
-  /** The screen has a trailing Stack.Toolbar of its own, and puts `tabSearchButton` in it. */
-  toolbarHoldsSearch?: boolean;
 }) {
   const theme = useTheme();
   const shown = section ?? title;
@@ -76,56 +68,15 @@ export function NativeTabHeader({
           </Animated.Text>
         </HoldActionTarget>
       </Stack.Title>
-      {filter && isFiltering(filter) ? (
-        <TabSearchBar filter={filter} placeholder={placeholder} />
-      ) : null}
-      {filter && !toolbarHoldsSearch && !isFiltering(filter) ? (
-        <Stack.Toolbar placement="right">{tabSearchButton(filter)}</Stack.Toolbar>
+      {filter ? (
+        <Stack.SearchBar
+          placeholder={placeholder}
+          placement="integratedButton"
+          onChangeText={(e) => filter.setQuery(e.nativeEvent.text)}
+          onCancelButtonPress={filter.close}
+        />
       ) : null}
     </>
-  );
-}
-
-function isFiltering(filter: TabFilter) {
-  return filter.opened || !!filter.query;
-}
-
-/**
- * The magnifier that opens a tab's filter, null while it is open. A builder, not a component: the
- * native toolbar reads only its direct children, and Library's trailing toolbar holds this too.
- */
-export function tabSearchButton(filter: TabFilter | undefined) {
-  if (!filter || isFiltering(filter)) return null;
-  return <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={filter.show} />;
-}
-
-// The field reaches the navigation item only after react-native-screens' header update, which lands
-// after the commit that mounts it, and a focus before that is dropped. No event marks it.
-const FOCUS_RETRY_MS = 250;
-
-function TabSearchBar({ filter, placeholder }: { filter: TabFilter; placeholder?: string }) {
-  const ref = useRef<SearchBarCommands>(null);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => ref.current?.focus());
-    const retry = setTimeout(() => ref.current?.focus(), FOCUS_RETRY_MS);
-    return () => {
-      cancelAnimationFrame(frame);
-      clearTimeout(retry);
-    };
-  }, []);
-  return (
-    <Stack.SearchBar
-      ref={ref}
-      placeholder={placeholder}
-      placement="integratedButton"
-      onChangeText={(e) => filter.setQuery(e.nativeEvent.text)}
-      onCancelButtonPress={filter.close}
-      // Tapped away from with nothing typed, the field folds back into the system's own search item,
-      // which stays in the top bar; iOS sends no close, only the blur.
-      onBlur={() => {
-        if (!filter.query) filter.close();
-      }}
-    />
   );
 }
 

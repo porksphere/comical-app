@@ -6,8 +6,6 @@ import { librarySortMenu } from '@/components/library-sort-button';
 import { type LeadingMenuSection, NavBarLeadingMenu } from '@/components/nav-bar-leading-menu';
 import { useLibrarySavedPresent } from '@/components/library/library-saved-view';
 import { useLibrarySeriesPresent } from '@/components/library/library-series-view';
-import { tabSearchButton } from '@/components/native-tab-header';
-import type { TabFilter } from '@/components/tab-filter';
 import { useCollectedView } from '@/data/collected-view';
 import {
   ITEM_KIND_LABELS,
@@ -117,30 +115,21 @@ const KIND_SYMBOLS: Record<ItemKind, 'books.vertical' | 'book' | 'photo'> = {
  * direct child of Stack.Toolbar (the native bar reads the element tree, so a wrapper component is
  * invisible to it) and each kind's menus read a different listing for their source list.
  */
-export function LibraryNativeToolbar({
-  collection,
-  kind,
-  filter,
-}: {
-  collection: string | null;
-  kind: ItemKind;
-  filter: TabFilter;
-}) {
+export function LibraryNativeToolbar({ collection, kind }: { collection: string | null; kind: ItemKind }) {
   return kind === 'series' ? (
-    <SeriesToolbar collection={collection} filter={filter} />
+    <SeriesToolbar collection={collection} />
   ) : (
-    <SavedToolbar collection={collection} kind={kind} filter={filter} />
+    <SavedToolbar collection={collection} kind={kind} />
   );
 }
 
-function SeriesToolbar({ collection, filter }: { collection: string | null; filter: TabFilter }) {
+function SeriesToolbar({ collection }: { collection: string | null }) {
   const [sort, setSort] = useLibrarySort(collection);
   const [grouping, setGrouping] = useLibraryGrouping();
   const present = useLibrarySeriesPresent(collection, sort);
   const filterState = useLibraryFilterState(present);
   return (
     <Stack.Toolbar placement="right">
-      {tabSearchButton(filter)}
       <Stack.Toolbar.Menu {...arrangeMenu(libraryFilterNarrowing({ withShow: true, ...filterState }))}>
         {libraryFilterMenu({ withShow: true, ...filterState })}
         {librarySortMenu({ value: sort, onChange: setSort, grouping, onGroupingChange: setGrouping })}
@@ -149,13 +138,12 @@ function SeriesToolbar({ collection, filter }: { collection: string | null; filt
   );
 }
 
-function SavedToolbar({ collection, kind, filter }: { collection: string | null; kind: SavedKind; filter: TabFilter }) {
+function SavedToolbar({ collection, kind }: { collection: string | null; kind: SavedKind }) {
   const [view, setView] = useCollectedView(collection, kind);
   const present = useLibrarySavedPresent(collection, kind, view);
   const filterState = useLibraryFilterState(present);
   return (
     <Stack.Toolbar placement="right">
-      {tabSearchButton(filter)}
       <Stack.Toolbar.Menu {...arrangeMenu(libraryFilterNarrowing({ withShow: false, ...filterState }))}>
         {libraryFilterMenu({ withShow: false, ...filterState })}
         {collectedSortMenu({ value: view, onChange: setView })}

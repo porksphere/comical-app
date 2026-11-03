@@ -180,7 +180,7 @@ export default function LibraryScreen() {
 /**
  * The iOS navigation bar, in Browse's shape: the tab's name as the inline title (and the
  * NSFW hold target), the view's mark as ONE bare leading button opening the collection and kind
- * menu (`LibraryCollectionMenu`), the search as a magnifier (`tabSearchButton`), and the arranging
+ * menu (`LibraryCollectionMenu`), the search as the system search item, and the arranging
  * `⋯` trailing. The filter and sort are secondary to what's showing, so they share that one menu
  * (LibraryNativeToolbar). A pinned section's label takes the title's place — see NativeTabHeader.
  */
@@ -212,10 +212,9 @@ function LibraryNativeHeader({
         filter={filter}
         placeholder="Filter library…"
         holdTestID="library.nsfw-hold"
-        toolbarHoldsSearch
       />
       <LibraryCollectionMenu collection={collection} collections={collections} kind={kind} kinds={kinds} railNav={railNav} />
-      <LibraryNativeToolbar collection={collection} kind={kind} filter={filter} />
+      <LibraryNativeToolbar collection={collection} kind={kind} />
     </>
   );
 }
