@@ -31,7 +31,7 @@ const SWAP_MS = 180;
  * expands into the field on tap (iOS 26; an inline field under the title before that). Cancel
  * clears the query, which is what closing the custom field does too.
  *
- * With `searchInVerticalBar`, where iOS 27 has a vertical bar the search item goes in the screen's
+ * Where iOS 27 has a vertical bar the search item goes in the screen's
  * toolbar instead, UIKit's own slot for it (`searchBarPlacementBarButtonItem`): the vertical bar
  * hosts toolbar items beside the tabs, and in the navigation bar the item stays up top.
  *
@@ -44,7 +44,6 @@ export function NativeTabHeader({
   section,
   filter,
   placeholder,
-  searchInVerticalBar,
   holdTestID,
 }: {
   title: string;
@@ -52,7 +51,6 @@ export function NativeTabHeader({
   section?: string | null;
   filter?: TabFilter;
   placeholder?: string;
-  searchInVerticalBar?: boolean;
   holdTestID: string;
 }) {
   const theme = useTheme();
@@ -84,7 +82,7 @@ export function NativeTabHeader({
           onCancelButtonPress={filter.close}
         />
       ) : null}
-      {filter && searchInVerticalBar && verticalBarEdge != null ? (
+      {filter && verticalBarEdge != null ? (
         <Stack.Toolbar>
           <Stack.Toolbar.SearchBarSlot />
         </Stack.Toolbar>
