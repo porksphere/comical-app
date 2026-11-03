@@ -57,7 +57,8 @@ always (`useBarMaterial` in `lib/native-bar.ts`, in each stack's `screenOptions`
 switched these bars from a bare scroll-edge appearance to the frosted standard one, with or without
 the list handed to it, so there is no "bare until scrolled" to be had natively. Two exceptions. The
 series details' bar is bare until the page's own title has scrolled under it, a plain option switch
-at that point (`components/series/details-native-bar.tsx`). And the
+made only on the way back up (on the way down the bar is sliding away, and an option change brings it
+back for a moment) (`components/series/details-native-bar.tsx`). And the
 folded iPhone Duo, where no bar background reaches the top of the panel: there it has none, and a
 tab's stack and every settings screen take the hard scroll edge instead, a tab root on its list's
 marker too (`useFoldedBarEdge`). The soft

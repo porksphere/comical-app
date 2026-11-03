@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import { useState } from 'react';
-import { runOnJS, useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
+import { runOnJS, useAnimatedReaction, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
 import { BarContentGap } from '@/constants/theme';
 import { useNativeHeaderHeight } from '@/hooks/use-native-header';
@@ -11,8 +11,13 @@ import { SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
  * and it slides away while that happens, like every pushed page's (SLIDE_AWAY_BAR).
  *
  * Over the strip it is bare, with the page's own title below it. Once that title has gone under the
- * bar, the bar takes over: the series' title on the frosted material. The switch is an option change
- * like any other, so it is its own component and a crossing re-renders this much and no more. Those
+ * bar, the bar takes over: the series' title on the frosted material. It takes over only on the way
+ * back up. Scrolling down the bar is sliding away anyway, and every option change hands UIKit a new
+ * minimization, which seemed to bring the hiding bar back for a moment: a flash of title and frost.
+ * So the bar returns already titled, and goes bare again once the page's title is back below it.
+ *
+ * The switch is an option change like any other, so it is its own component and a crossing
+ * re-renders this much and no more. Those
  * options go through react-native-screens' whole header update, which also rebuilds the bar's items,
  * so the switch is not animated. A pushed card's back button is the system's and isn't one of them.
  *
@@ -47,11 +52,17 @@ export function SeriesDetailsNativeBar({
   const material = useBarMaterial();
   const barBottom = useNativeHeaderHeight();
   const [pastTitle, setPastTitle] = useState(false);
+  const titled = useSharedValue(false);
   const titleTop = contentTop + BarContentGap - barBottom;
   useAnimatedReaction(
-    () => scrollOffset.value > titleTop + inlineTitleHeight.value,
-    (past, prev) => {
-      if (past !== prev) runOnJS(setPastTitle)(past);
+    () => scrollOffset.value,
+    (offset, prev) => {
+      const past = offset > titleTop + inlineTitleHeight.value;
+      // A page that opens already scrolled past its title has a bar in view: title it straight away.
+      const next = past ? titled.value || prev == null || offset < prev : false;
+      if (next === titled.value) return;
+      titled.value = next;
+      runOnJS(setPastTitle)(next);
     },
     [titleTop],
   );
