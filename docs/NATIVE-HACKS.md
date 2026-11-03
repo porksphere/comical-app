@@ -43,6 +43,7 @@ the end of this doc is the only guard.
 | 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
 | 21 | No bar material on the folded Duo | Pose inferred around a UIKit limit | Keep | [ ] |
 | 22 | `nav-bar-fade` | Animates a library-owned bar, swizzles a UIKit setter | Decide | [ ] |
+| 23 | Tab filters open from a plain magnifier | Stand-in for the system search item | Keep | [ ] |
 
 ## Blockers
 
@@ -335,6 +336,23 @@ Already on `main`, so not from this work: `ZOOM_BOUND_WAIT_MS`, `ZOOM_THUMB_PAIN
   the gap; a pose it wrongly catches loses the frost.
 - **Removed by:** Apple extending the bar's background.
 
+### 23. Tab filters open from a plain magnifier
+
+- **What:** Library, History and Activity open their filter from a plain bar button, not the system's
+  search item. The tap mounts the integrated-button search bar and focuses it; cancel unmounts it and
+  the button comes back.
+- **Where:** `tabSearchButton` and `TabSearchBar` in `src/components/native-tab-header.tsx`, and
+  Library's trailing toolbar in `src/components/library/library-native-toolbar.tsx`.
+- **Why:** UIKit carries a plain bar button into the Duo's vertical bar but keeps the system search
+  item in the top bar. The item that stands for the search elsewhere
+  (`searchBarPlacementBarButtonItem`) goes only in the bottom toolbar, which a tab root never shows,
+  and UIKit throws if it is placed among the navigation bar's own items.
+- **How it fails:** the expand animation from the button is the system's only when it is the system's
+  item, so opening is a field appearing rather than a button growing. The focus waits out a timer
+  (`FOCUS_RETRY_MS`, in the timers table), so a slow device can open the field without the keyboard.
+- **Removed by:** UIKit moving the system search item into the vertical bar, or a search tab
+  (`UISearchTab`) taking over search.
+
 ## Looked at, not hacks
 
 - `plugins/with-cmake-long-paths.js`: local Windows build tooling, gated on the host OS.
@@ -358,3 +376,7 @@ fails silently and only shows here.
 - [ ] **Item 17:** in the reader, the status bar hides with the chrome.
 - [ ] **Item 18:** with nothing unread, the Activity and Settings tabs show no badge.
 - [ ] **Item 21:** folded, no gap above the bar, and Browse, Library and the settings pages back the bar once scrolled. Unfolded in both orientations, the frost reaches the top.
+- [ ] **Item 22:** on a series details page, scroll down until the bar slides away, then up once. The
+      bar slides back in while its title and frost fade in, and fades back to bare at the page's title.
+- [ ] **Item 23:** folded, the magnifier on Library, History and Activity is in the vertical bar. A tap
+      opens the field with the keyboard up; Cancel brings the magnifier back.
