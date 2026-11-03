@@ -93,7 +93,10 @@ that bar on iOS — it retitles it and renders the structured `actions` as trail
 and draws the custom overlay with the same actions as lucide buttons elsewhere. The system bar
 draws its own items, so its `Stack.Toolbar.Button`/`MenuAction` icons are SF Symbols too, and it
 has no testIDs either: `screen-title.*`, `*.search-icon`, `browse.bridge-selector`,
-`library.collection-selector` are Android/web only. Content pads by `useTopChromeHeight()` (the
+`library.collection-selector` are Android/web only. A tab's in-place filter opens from a plain
+magnifier among those items (`tabSearchButton` in `components/native-tab-header.tsx`), since UIKit
+carries a plain bar button into the Duo's vertical bar but keeps the system's search item on top; the
+field mounts as the integrated-button search bar on the tap and closes back into the magnifier. Content pads by `useTopChromeHeight()` (the
 native bar's height on iOS, status bar + custom overlay elsewhere), so a screen swaps bars without
 relayout. Android and web keep the custom `TopBar`/`TabTitleBar` overlay.
 

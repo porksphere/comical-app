@@ -42,7 +42,7 @@ export function useTabFilter() {
   // A query typed beside the rail outlives a resize below it, where it keeps the field open rather
   // than filtering the screen out of sight.
   const open = !docked && (opened || !!query);
-  return { docked, open, query, setQuery, focusRequest, show, close };
+  return { docked, open, opened, query, setQuery, focusRequest, show, close };
 }
 
 /** The bar's leading content while the filter is open: a back chevron that closes it, and the field. */

@@ -310,6 +310,7 @@ this branch, unless marked otherwise.
 | `MOUNT_BACKSTOP_MS` 2000 | `lib/native-overlay-sheets.ts:40` | Drops a sheet whose route never mounted | Fallback only |
 | `PENDING_DRILL_MS` 1500 | `lib/series-nav.ts:96` | Expires a drill held across a pop | Clear it on the pop's completion |
 | `SPLIT_HANDOFF_MAX_AGE_MS` 1500 | `components/series/split-handoff.ts:61` | Expires a details to reader hand-off | Key it to the push |
+| `FOCUS_RETRY_MS` 250 | `components/native-tab-header.tsx:104` | Focuses a tab's filter field again once it should be in the bar | None known: the header update has no event |
 
 **Decide:** `HELD_POPS` and `POSTER_SETTLE_MS` are the two worth replacing. The rest are fallbacks that
 should never run in normal use.
