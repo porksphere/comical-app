@@ -1,25 +1,34 @@
 import { Stack } from 'expo-router';
 import { useState } from 'react';
+import { StyleSheet } from 'react-native';
 import { runOnJS, useAnimatedReaction, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
 import { BarContentGap } from '@/constants/theme';
 import { useNativeHeaderHeight } from '@/hooks/use-native-header';
+import { useBarFadeExperiment } from '@/lib/bar-fade-flag';
 import { SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
+
+import { NavBarFade } from '../../../modules/nav-bar-fade';
 
 /**
  * The series details' system bar on iOS, through the route's options. The content scrolls under it,
  * and it slides away while that happens, like every pushed page's (SLIDE_AWAY_BAR).
  *
- * Over the strip it is bare, with the page's own title below it. Once that title has gone under the
- * bar, the bar takes over: the series' title on the frosted material. It takes over only on the way
- * back up. Scrolling down the bar is sliding away anyway, and every option change hands UIKit a new
- * minimization, which seemed to bring the hiding bar back for a moment: a flash of title and frost.
- * So the bar returns already titled, and goes bare again once the page's title is back below it.
+ * Over the strip it is bare, with the page's own title below it. The frost is UIKit's: the material
+ * sits in the standard appearance and the scroll-edge one is transparent (headerLargeStyle), so the
+ * bar crossfades between them as the list leaves its top edge, both ways, as every system bar does.
+ * The series' title takes over once the page's own has gone under the bar, and only on the way back
+ * up. Scrolling down the bar is sliding away anyway, and every option change hands UIKit a new
+ * minimization, which seemed to bring the hiding bar back for a moment: a flash of the title. So the
+ * bar returns already titled, and drops the title once the page's is back below it.
  *
- * The switch is an option change like any other, so it is its own component and a crossing
- * re-renders this much and no more. Those
- * options go through react-native-screens' whole header update, which also rebuilds the bar's items,
- * so the switch is not animated. A pushed card's back button is the system's and isn't one of them.
+ * TEMPORARY (Developer > "Fade the series bar"): the other candidate. The material switches with the
+ * title, as options, and `nav-bar-fade` crossfades the bar over each switch.
+ *
+ * The title is an option change like any other, so it is its own component and a crossing
+ * re-renders this much and no more. Options go through react-native-screens' whole header update,
+ * which also rebuilds the bar's items, unanimated. A pushed card's back button is the system's and
+ * isn't one of them.
  *
  * With no title, the bar collapses where the back button has moved to the Duo's vertical bar. With
  * no material either, there is nothing left of it to see.
@@ -50,6 +59,7 @@ export function SeriesDetailsNativeBar({
   inlineTitleHeight: SharedValue<number>;
 }) {
   const material = useBarMaterial();
+  const fade = useBarFadeExperiment() && NavBarFade != null;
   const barBottom = useNativeHeaderHeight();
   const [pastTitle, setPastTitle] = useState(false);
   const titled = useSharedValue(false);
@@ -74,7 +84,8 @@ export function SeriesDetailsNativeBar({
           headerShown: true,
           headerTransparent: true,
           headerShadowVisible: false,
-          headerBlurEffect: pastTitle ? material : 'none',
+          headerBlurEffect: fade && !pastTitle ? 'none' : material,
+          headerLargeStyle: fade ? undefined : SCROLL_EDGE_BARE,
           headerBackVisible: nativePush,
           // Not a pushed card, nothing for UIKit to pop: the edge is the page's own back-swipe.
           gestureEnabled: nativePush,
@@ -83,6 +94,7 @@ export function SeriesDetailsNativeBar({
           unstable_nativeProps: SLIDE_AWAY_BAR,
         }}
       />
+      {fade && NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" /> : null}
       {!nativePush ? (
         <Stack.Toolbar placement="left">
           <Stack.Toolbar.Button icon="chevron.left" accessibilityLabel="Go back" onPress={onClose} />
@@ -91,3 +103,9 @@ export function SeriesDetailsNativeBar({
     </>
   );
 }
+
+const SCROLL_EDGE_BARE = { backgroundColor: 'transparent' };
+
+const styles = StyleSheet.create({
+  probe: { position: 'absolute', width: 0, height: 0 },
+});

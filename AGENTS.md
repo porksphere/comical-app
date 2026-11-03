@@ -56,9 +56,11 @@ scroll-edge effect on the list. Every bar but the reader's has the system's fros
 always (`useBarMaterial` in `lib/native-bar.ts`, in each stack's `screenOptions`): UIKit never once
 switched these bars from a bare scroll-edge appearance to the frosted standard one, with or without
 the list handed to it, so there is no "bare until scrolled" to be had natively. Two exceptions. The
-series details' bar is bare until the page's own title has scrolled under it, a plain option switch
-made only on the way back up (on the way down the bar is sliding away, and an option change brings it
-back for a moment) (`components/series/details-native-bar.tsx`). And the
+series details' bar, being tried again there: bare scroll-edge appearance over frosted standard
+one, plus the series' title once the page's own has scrolled under the bar, set only on the way back
+up (on the way down the bar is sliding away, and an option change brings it back for a moment).
+A temporary Developer switch tries the alternative, material and title switched together as options
+with `modules/nav-bar-fade` crossfading the bar (`components/series/details-native-bar.tsx`). And the
 folded iPhone Duo, where no bar background reaches the top of the panel: there it has none, and a
 tab's stack and every settings screen take the hard scroll edge instead, a tab root on its list's
 marker too (`useFoldedBarEdge`). The soft
@@ -230,9 +232,9 @@ segments) — on iOS only; Android and web keep the root routes. A new pushed sc
 behave the same gets a stub in each tab's `in-tab/` and its path in `IN_TAB_PATHS`. Only the ROOT `series` route has
 the nested in-series stack (`app/series/_layout.tsx`), so series code asks `useSegments()`, not the
 pathname, to know which copy it is in. The series page takes the system bar in BOTH its modes —
-one bar, so the back button and the items morph between them: details bare over the strip, then on
-the frosted material with the series' title once the page's own has scrolled under the bar, a
-toolbar chevron in place of the custom one;
+one bar, so the back button and the items morph between them: details bare over the strip, frosted
+once scrolled, with the series' title once the page's own has scrolled under the bar, a toolbar
+chevron in place of the custom one;
 the reader nothing but its glass items over the page, the back button and save + settings
 (`components/reader/reader-native-toolbar.tsx`), with no title and nothing behind them, the bar
 following the chrome's auto-hide through `headerShown` — with every `Stack.Toolbar` unrendered while

@@ -42,6 +42,7 @@ the end of this doc is the only guard.
 | 19 | Type casts at library seams | Typing | Keep | [ ] |
 | 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
 | 21 | No bar material on the folded Duo | Pose inferred around a UIKit limit | Keep | [ ] |
+| 22 | `nav-bar-fade` and its Developer switch | Throwaway experiment, animates a library-owned bar | Blocker | [ ] |
 
 ## Blockers
 
@@ -81,6 +82,21 @@ the end of this doc is the only guard.
 - **Removed by:** moving release to an image with the iOS 27 SDK. Choose that deliberately, either
   releasing from the preview image or waiting until it leaves preview. Then make the runner the same
   on every lane and drop the conditional.
+
+### 22. `nav-bar-fade` and its Developer switch
+
+- **What:** an experiment for the series details bar. Off (the default), the bar's frost is UIKit's
+  scroll-edge crossfade. On, the material switches with the title as options, and a zero-size view
+  that found the screen's `UINavigationItem` through the responder chain watches its `title` and
+  `standardAppearance` with KVO and adds a `CATransition` fade to the navigation bar's layer from
+  inside react-native-screens' setter.
+- **Where:** `apps/mobile/modules/nav-bar-fade/`, `src/lib/bar-fade-flag.ts`, its row in
+  `app/settings-developer.tsx`, and the `fade` branch in `src/components/series/details-native-bar.tsx`.
+- **Why:** react-native-screens applies header options unanimated, so the switch back to a bare bar
+  landed in one frame.
+- **Risk:** it animates a layer UIKit owns, and relies on KVO firing inside the library's update.
+- **Removed by:** picking one after testing on a device. Delete the module, the flag and the row
+  either way; if the fade wins, it moves to "Decide" as a permanent module.
 
 ## Internals and private reach
 
