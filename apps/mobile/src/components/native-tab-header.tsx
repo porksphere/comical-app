@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router';
+import { useVerticalBarEdgeIOS } from 'expo-status-bar';
 import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -30,6 +31,10 @@ const SWAP_MS = 180;
  * expands into the field on tap (iOS 26; an inline field under the title before that). Cancel
  * clears the query, which is what closing the custom field does too.
  *
+ * With `searchInVerticalBar`, where iOS 27 has a vertical bar the search item goes in the screen's
+ * toolbar instead, UIKit's own slot for it (`searchBarPlacementBarButtonItem`): the vertical bar
+ * hosts toolbar items beside the tabs, and in the navigation bar the item stays up top.
+ *
  * The title is also the tab's NSFW hold target (`HoldActionTarget`), on every tab: the bar holds
  * only system items, and a UIBarButtonItem has no long-press of its own; holding one only ever
  * opens its menu.
@@ -39,6 +44,7 @@ export function NativeTabHeader({
   section,
   filter,
   placeholder,
+  searchInVerticalBar,
   holdTestID,
 }: {
   title: string;
@@ -46,9 +52,11 @@ export function NativeTabHeader({
   section?: string | null;
   filter?: TabFilter;
   placeholder?: string;
+  searchInVerticalBar?: boolean;
   holdTestID: string;
 }) {
   const theme = useTheme();
+  const verticalBarEdge = useVerticalBarEdgeIOS();
   const shown = section ?? title;
   // Re-runs 0→1 on every change of the shown text: the cross-fade between labels.
   const arrival = useSharedValue(1);
@@ -75,6 +83,11 @@ export function NativeTabHeader({
           onChangeText={(e) => filter.setQuery(e.nativeEvent.text)}
           onCancelButtonPress={filter.close}
         />
+      ) : null}
+      {filter && searchInVerticalBar && verticalBarEdge != null ? (
+        <Stack.Toolbar>
+          <Stack.Toolbar.SearchBarSlot />
+        </Stack.Toolbar>
       ) : null}
     </>
   );

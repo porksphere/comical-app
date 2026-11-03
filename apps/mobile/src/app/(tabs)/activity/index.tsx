@@ -377,6 +377,7 @@ export default function ActivityScreen() {
           title="Activity"
           filter={filter}
           placeholder="Filter activity…"
+          searchInVerticalBar
           holdTestID="activity.nsfw-hold"
         />
       ) : (

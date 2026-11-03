@@ -257,6 +257,7 @@ export default function HistoryScreen() {
           title="History"
           filter={filter}
           placeholder="Filter history…"
+          searchInVerticalBar
           holdTestID="history.nsfw-hold"
         />
       ) : (
