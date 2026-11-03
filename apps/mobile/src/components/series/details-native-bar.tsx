@@ -25,8 +25,10 @@ import { NavBarFade } from '../../../modules/nav-bar-fade';
  * which also rebuilds the bar's items, unanimated. A pushed card's back button is the system's and
  * isn't one of them.
  *
- * With no title, the bar collapses where the back button has moved to the Duo's vertical bar. With
- * no material either, there is nothing left of it to see.
+ * Where the back button has moved to the Duo's vertical bar, a bar with no title has nothing in it
+ * and collapses to no height, so the first title grew it from nothing in one frame, which no fade
+ * covers. Bare, it holds a blank title instead (UNTITLED), which keeps it at full height, so the title
+ * only ever changes inside it.
  *
  * Only the top instance mounts this (the options are the route's, shared by every layer), so a
  * layer that becomes top again re-applies them: Stack.Screen's effect runs on mount, and the toolbar
@@ -70,7 +72,7 @@ export function SeriesDetailsNativeBar({
     },
     [titleTop],
   );
-  const barTitle = pastTitle ? title : '';
+  const barTitle = pastTitle ? title : UNTITLED;
   return (
     <>
       <Stack.Screen
@@ -96,6 +98,8 @@ export function SeriesDetailsNativeBar({
     </>
   );
 }
+
+const UNTITLED = ' ';
 
 // TEMPORARY: the bar's first pop in, traced to Settings > Diagnostics (docs/NATIVE-HACKS.md, item 22).
 function traceBar(e: { nativeEvent: { message: string } }) {

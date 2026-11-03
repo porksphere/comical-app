@@ -59,9 +59,9 @@ the list handed to it, so there is no "bare until scrolled" to be had natively. 
 series details' bar: bare until the page's own title has scrolled under it, then the material and
 the series' title together as options, set only on the way back up (on the way down the bar is
 sliding away), with the local module `modules/nav-bar-fade` crossfading the bar over each switch
-(`components/series/details-native-bar.tsx`). The same module stops react-native-screens' header
-updates from re-handing UIKit an identical slide-away setting, which snapped a sliding bar into
-place. And the
+(`components/series/details-native-bar.tsx`). Bare, the bar holds a blank title: where the back
+button sits in the Duo's vertical bar an untitled bar collapses to no height, and the first title
+then grew it from nothing in one frame. And the
 folded iPhone Duo, where no bar background reaches the top of the panel: there it has none, and a
 tab's stack and every settings screen take the hard scroll edge instead, a tab root on its list's
 marker too (`useFoldedBarEdge`). The soft

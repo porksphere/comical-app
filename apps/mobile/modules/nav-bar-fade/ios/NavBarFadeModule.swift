@@ -5,10 +5,6 @@ public class NavBarFadeModule: Module {
   public func definition() -> ModuleDefinition {
     Name("NavBarFade")
 
-    OnCreate {
-      MinimizationGuard.install()
-    }
-
     View(NavBarFadeView.self) {
       Events("onTrace")
     }
@@ -38,7 +34,6 @@ final class NavBarFadeView: ExpoView {
   }
 
   private func attach() {
-    MinimizationGuard.install()
     guard let owner = owningController(of: self), owner !== controller else {
       return
     }
@@ -97,59 +92,8 @@ extension NavBarFadeView {
     let barAnimations = bar.layer.animationKeys()?.count ?? 0
     let subviewAnimations = shown.reduce(0) { $0 + ($1.layer.animationKeys()?.count ?? 0) }
     let presented = bar.subviews.compactMap { $0.layer.presentation()?.frame.maxY }.max().map { Int($0) } ?? -1
-    onTrace(["message": "\(event) | guard \(MinimizationGuard.status) skipped \(MinimizationGuard.skipped) "
-      + "passed \(MinimizationGuard.passed) | bar h\(Int(bar.bounds.height)) alpha \(bar.alpha) "
+    onTrace(["message": "\(event) | bar h\(Int(bar.bounds.height)) alpha \(bar.alpha) "
       + "content \(top)..\(bottom) on-screen \(presented) | anims bar \(barAnimations) sub \(subviewAnimations)"])
-  }
-}
-
-/// react-native-screens hands every navigation item a NEW `UIBarMinimization` on every header update,
-/// even when nothing about the slide-away changed. Suspected of snapping a bar that is sliding back in
-/// into place; the first build with this guard still popped, so the trace is there to settle it. This
-/// drops an assignment that matches what the item already has, app-wide, which UIKit has no reason to
-/// see.
-///
-/// Through the runtime, by name, so it builds against any SDK and does nothing before iOS 27.
-private enum MinimizationGuard {
-  private static let keys = ["minimizationBehavior", "restorationBehavior", "safeAreaAdjustment"]
-  private static var installed = false
-  // TEMPORARY, for the trace.
-  static var status = "not installed"
-  static var skipped = 0
-  static var passed = 0
-
-  static func install() {
-    guard !installed else { return }
-    installed = true
-    let getter = NSSelectorFromString("navigationBarMinimization")
-    let setter = NSSelectorFromString("setNavigationBarMinimization:")
-    guard UINavigationItem.instancesRespond(to: getter),
-          let method = class_getInstanceMethod(UINavigationItem.self, setter) else {
-      status = "unavailable"
-      return
-    }
-    status = "on"
-    typealias Setter = @convention(c) (UINavigationItem, Selector, AnyObject?) -> Void
-    let original = unsafeBitCast(method_getImplementation(method), to: Setter.self)
-    let replacement: @convention(block) (UINavigationItem, AnyObject?) -> Void = { item, next in
-      if let next = next as? NSObject,
-         let current = item.perform(getter)?.takeUnretainedValue() as? NSObject,
-         same(current, next) {
-        skipped += 1
-        return
-      }
-      passed += 1
-      original(item, setter, next)
-    }
-    method_setImplementation(method, imp_implementationWithBlock(replacement))
-  }
-
-  private static func same(_ a: NSObject, _ b: NSObject) -> Bool {
-    keys.allSatisfy { key in
-      let selector = NSSelectorFromString(key)
-      guard a.responds(to: selector), b.responds(to: selector) else { return false }
-      return (a.value(forKey: key) as? NSNumber) == (b.value(forKey: key) as? NSNumber)
-    }
   }
 }
 

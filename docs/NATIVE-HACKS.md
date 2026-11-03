@@ -42,8 +42,7 @@ the end of this doc is the only guard.
 | 19 | Type casts at library seams | Typing | Keep | [ ] |
 | 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
 | 21 | No bar material on the folded Duo | Pose inferred around a UIKit limit | Keep | [ ] |
-| 22 | `nav-bar-fade`, with a temporary trace | Animates a library-owned bar, swizzles a UIKit setter | Blocker (the trace), then Decide | [ ] |
-| 23 | Tab filters open from a plain magnifier | Stand-in for the system search item | Keep | [ ] |
+| 22 | `nav-bar-fade`, with a temporary trace | Animates a library-owned bar | Blocker (the trace), then Decide | [ ] |
 
 ## Blockers
 
@@ -197,35 +196,25 @@ the end of this doc is the only guard.
 
 ### 22. `nav-bar-fade`
 
-- **What:** two things for the series details bar.
-  - **The fade:** a zero-size view finds the screen's `UINavigationItem` through the responder chain,
-    watches its `title` and `standardAppearance` with KVO, and adds a `CATransition` fade to the
-    navigation bar's layer from inside react-native-screens' setter.
-  - **The minimization guard:** swizzles `-[UINavigationItem setNavigationBarMinimization:]`, app-wide,
-    to drop an assignment whose behaviour, restoration and safe-area adjustment all match the
-    item's current one. It's done through the runtime by name, so it builds against any SDK.
+- **What:** a zero-size view in the series details finds the screen's `UINavigationItem` through the
+  responder chain, watches its `title` and `standardAppearance` with KVO, and adds a `CATransition`
+  fade to the navigation bar's layer from inside react-native-screens' setter.
 - **Where:** `apps/mobile/modules/nav-bar-fade/`, and its view in
   `src/components/series/details-native-bar.tsx`.
-- **Why:**
-  - react-native-screens applies header options unanimated, so the bar's title and material
-    switched in one frame. UIKit's own scroll-edge crossfade was tried instead and never ran.
-  - Every header update also sets a new `UIBarMinimization`, even an identical one
-    (`RNSScreenStackHeaderConfig.mm`, `updateViewController`). That was suspected of popping the bar
-    into place on the first scroll back up. **Unconfirmed:** the first build with the guard still
-    popped, so either it isn't the cause or the guard isn't running.
+- **Why:** react-native-screens applies header options unanimated, so the bar's title and material
+  switched in one frame. UIKit's own scroll-edge crossfade was tried instead and never ran.
+- **Paired with a blank title:** where the back button sits in the Duo's vertical bar, an untitled bar
+  has nothing in it and collapses to no height, so the first title grew it from nothing in a single
+  frame, which no fade covers. The bare bar holds a single-space title (`UNTITLED`) to keep its height.
+  A trace on the device showed it: 0pt high at the switch, 58pt a frame later, no slide running.
 - **Temporary trace (Blocker):** the view also reports each switch to Settings > Diagnostics
-  (`bar-fade` entries): whether the guard is on and how many assignments it skipped, where the bar's
-  content sits and what's on screen, and the animations running, at the switch and 50ms and 350ms
-  after. Remove the `onTrace` event, the counters and `traceBar` in `details-native-bar.tsx` once
-  the pop is understood. If the guard turns out not to matter, remove it too.
-- **Risk:**
-  - The fade animates a layer UIKit owns, and relies on KVO firing inside the library's update.
-  - The swizzle changes a UIKit setter for every bar in the app. It only skips no-op assignments,
-    but if UIKit ever relies on one to re-evaluate the bar, that re-evaluation is gone.
-- **How it fails:** silent. Without the guard, the bar pops in again on the first scroll up. If the
-  KVO stops firing, the switch is instant again.
-- **Removed by:** react-native-screens animating option changes and assigning the minimization only
-  when it changes. The second is worth filing upstream. Not filed.
+  (`bar-fade` entries): the bar's height, where its content sits and what's on screen, and the
+  animations running, at the switch and 50ms and 350ms after. Remove the `onTrace` event and
+  `traceBar` in `details-native-bar.tsx` once the blank title is confirmed on a device.
+- **Risk:** it animates a layer UIKit owns, and relies on KVO firing inside the library's update.
+- **How it fails:** silent. If the KVO stops firing, the switch is instant again. If UIKit starts
+  collapsing a bar whose title is blank, the first scroll back up pops again.
+- **Removed by:** react-native-screens animating option changes.
 
 ## Shaped workarounds
 
@@ -341,23 +330,6 @@ Already on `main`, so not from this work: `ZOOM_BOUND_WAIT_MS`, `ZOOM_THUMB_PAIN
   the gap; a pose it wrongly catches loses the frost.
 - **Removed by:** Apple extending the bar's background.
 
-### 23. Tab filters open from a plain magnifier
-
-- **What:** Library, History and Activity open their filter from a plain bar button, not the system's
-  search item. The tap mounts the integrated-button search bar and focuses it; cancel unmounts it and
-  the button comes back.
-- **Where:** `tabSearchButton` and `TabSearchBar` in `src/components/native-tab-header.tsx`, and
-  Library's trailing toolbar in `src/components/library/library-native-toolbar.tsx`.
-- **Why:** UIKit carries a plain bar button into the Duo's vertical bar but keeps the system search
-  item in the top bar. The item that stands for the search elsewhere
-  (`searchBarPlacementBarButtonItem`) goes only in the bottom toolbar, which a tab root never shows,
-  and UIKit throws if it is placed among the navigation bar's own items.
-- **How it fails:** the expand animation from the button is the system's only when it is the system's
-  item, so opening is a field appearing rather than a button growing. The focus waits out a timer
-  (`FOCUS_RETRY_MS`, in the timers table), so a slow device can open the field without the keyboard.
-- **Removed by:** UIKit moving the system search item into the vertical bar, or a search tab
-  (`UISearchTab`) taking over search.
-
 ## Looked at, not hacks
 
 - `plugins/with-cmake-long-paths.js`: local Windows build tooling, gated on the host OS.
@@ -383,5 +355,3 @@ fails silently and only shows here.
 - [ ] **Item 21:** folded, no gap above the bar, and Browse, Library and the settings pages back the bar once scrolled. Unfolded in both orientations, the frost reaches the top.
 - [ ] **Item 22:** on a series details page, scroll down until the bar slides away, then up once. The
       bar slides back in while its title and frost fade in, and fades back to bare at the page's title.
-- [ ] **Item 23:** folded, the magnifier on Library, History and Activity is in the vertical bar. A tap
-      opens the field with the keyboard up; Cancel brings the magnifier back.
