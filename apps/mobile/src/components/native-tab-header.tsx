@@ -33,7 +33,7 @@ const SWAP_MS = 180;
  * that represents it elsewhere goes only in the bottom toolbar, which a tab root never shows. The
  * field mounts on the tap, as the integrated-button placement, and is focused once it is in the
  * bar. Cancel clears the query and puts the magnifier back, which is what closing the custom field
- * does too.
+ * does too, and so does leaving the field empty. A field left with a query stays open, showing it.
  *
  * The title is also the tab's NSFW hold target (`HoldActionTarget`), on every tab: the bar holds
  * only system items, and a UIBarButtonItem has no long-press of its own; holding one only ever
@@ -120,6 +120,11 @@ function TabSearchBar({ filter, placeholder }: { filter: TabFilter; placeholder?
       placement="integratedButton"
       onChangeText={(e) => filter.setQuery(e.nativeEvent.text)}
       onCancelButtonPress={filter.close}
+      // Tapped away from with nothing typed, the field folds back into the system's own search item,
+      // which stays in the top bar; iOS sends no close, only the blur.
+      onBlur={() => {
+        if (!filter.query) filter.close();
+      }}
     />
   );
 }
