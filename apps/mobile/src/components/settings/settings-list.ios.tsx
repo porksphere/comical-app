@@ -9,7 +9,6 @@ import {
   Picker,
   ProgressView,
   RNHostView,
-  ScrollView,
   Section,
   SecureField,
   Spacer,
@@ -53,9 +52,10 @@ import {
   textSelection,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { ChipRow } from '@/components/chip';
 import { useOverlay } from '@/components/overlay/overlay';
 import { MultiSelectPicker, multiSummary } from '@/components/settings/multi-select-row';
 import {
@@ -69,6 +69,7 @@ import {
   type SettingsTone,
 } from '@/components/settings/settings-form';
 import { useReselectScrollToTop } from '@/hooks/use-scroll-to-top-on-reselect';
+import { SettingsCardInset, Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/menu-thumb-files';
 import { testId } from '@/lib/test-id';
@@ -245,36 +246,16 @@ function Field({ field, section }: { field: SettingsField; section: SettingsForm
         </VStack>
       );
     case 'chips':
-      // A row that scrolls sideways, as the App Store's tags do: the labels as capsules in the
-      // chip colours, inset like the row's text, running under the row's edge.
+      // The app's own chips, hosted: one chip, drawn once, everywhere.
       return (
-        <ScrollView axes="horizontal" showsIndicators={false} modifiers={[accessibilityIdentifier(id), listRowInsets({ top: 0, bottom: 0, leading: 0, trailing: 0 })]}>
-          <HStack spacing={6} modifiers={[padding({ horizontal: 16, vertical: 10 })]}>
-            {field.items.map((item, i) => (
-              <Text
-                key={`${i}-${item}`}
-                modifiers={[
-                  FOOTNOTE,
-                  foregroundStyle(theme.chipText),
-                  padding({ horizontal: 10, vertical: 5 }),
-                  background(theme.chipBg, shapes.capsule()),
-                ]}>
-                {item}
-              </Text>
-            ))}
-          </HStack>
-        </ScrollView>
+        <Hosted id={id}>
+          <View style={styles.chips}>
+            <ChipRow labels={[...field.items]} accent />
+          </View>
+        </Hosted>
       );
     case 'custom':
-      // The screen's own block, hosted in a row of its own with no inset of the row's: the block
-      // keeps the inset it draws with elsewhere.
-      return (
-        <VStack modifiers={[listRowInsets({ top: 0, bottom: 0, leading: 0, trailing: 0 })]}>
-          <RNHostView matchContents={{ vertical: true }}>
-            <View testID={id}>{field.render()}</View>
-          </RNHostView>
-        </VStack>
-      );
+      return <Hosted id={id}>{field.render()}</Hosted>;
     default: {
       const unhandled: never = field;
       return unhandled;
@@ -395,6 +376,18 @@ function LinkRow({ field, section, id }: { field: Extract<SettingsField, { kind:
   );
 }
 
+/** A React Native block hosted in a row of its own, with no inset of the row's: the block keeps
+ *  the inset it draws with elsewhere. For what a screen draws itself, and the app's chips. */
+function Hosted({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <VStack modifiers={[listRowInsets({ top: 0, bottom: 0, leading: 0, trailing: 0 })]}>
+      <RNHostView matchContents={{ vertical: true }}>
+        <View testID={id}>{children}</View>
+      </RNHostView>
+    </VStack>
+  );
+}
+
 /** A row's label, with its note under it in the footnote size where it has one. */
 function Labelled({
   label,
@@ -485,5 +478,9 @@ function toneColor(theme: ReturnType<typeof useTheme>, tone: SettingsTone | unde
 const styles = StyleSheet.create({
   fill: {
     flex: 1,
+  },
+  chips: {
+    paddingVertical: Spacing.three,
+    paddingHorizontal: SettingsCardInset,
   },
 });
