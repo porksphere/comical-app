@@ -75,10 +75,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        env:
-          # This job only runs the Expo web export — no Electron binary is launched, so skip its
-          # ~110 MB postinstall download. The `windows` job below deliberately does NOT set this.
-          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
 
       # The submodule's own deps (hono/zod/cheerio) hoisted where metro.config.js looks for them.
       # No `build:native` here — that generates the QuickJS harness for Android, and desktop runs

@@ -29,6 +29,7 @@ import {
 } from "./data-dir.ts";
 import { shellIcon } from "./icon.ts";
 import { LOGIN_ARG } from "./login-item.ts";
+import { relaunch as restart } from "./relaunch.ts";
 
 export type DataLaunch =
   /** The data is in `dir`, and this launch runs on it. */
@@ -82,13 +83,9 @@ function pointTo(dir: string, rest: Omit<Pointer, "dir"> = {}): void {
   writePointer(pointerFile(), { ...(samePath(dir, defaultDir) ? {} : { dir }), ...rest });
 }
 
-/** An AppImage's own binary is inside the mounted image, which goes when this process does. A link
- *  the launch was opened with, or a login start's flag, has done its job and would only repeat. */
+/** A link the launch was opened with, or a login start's flag, has done its job and would only repeat. */
 function relaunch(): void {
-  app.relaunch({
-    execPath: process.env.APPIMAGE ?? process.execPath,
-    args: process.argv.slice(1).filter((arg) => !arg.startsWith("comical:") && arg !== LOGIN_ARG),
-  });
+  restart(process.argv.slice(1).filter((arg) => !arg.startsWith("comical:") && arg !== LOGIN_ARG));
 }
 
 const targetOf = (dir: string): Target | Problem =>

@@ -73,10 +73,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        env:
-          # apps/desktop pulls in `electron`, whose postinstall fetches a ~110 MB binary. Nothing
-          # in this workflow launches it — the `.d.ts` that `tsc` needs ships in the npm package.
-          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
 
       - name: Enforce testIDs on interactive elements
         working-directory: apps/mobile
@@ -121,9 +117,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        env:
-          # See the note in the `testids` job — no Electron binary is launched here either.
-          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
 
       # The submodule's own deps (hono/zod, which `@comical/*` import). Not `--frozen-lockfile`: that
       # repo commits no lockfile. No `build:native` either — that generates the Android harness
@@ -171,8 +164,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
 
       - name: Typecheck site
         working-directory: apps/site
