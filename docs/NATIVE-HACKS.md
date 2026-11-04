@@ -203,17 +203,19 @@ the end of this doc is the only guard.
   `src/components/series/details-native-bar.tsx`.
 - **Why:** react-native-screens applies header options unanimated, so the bar's title and material
   switched in one frame. UIKit's own scroll-edge crossfade was tried instead and never ran.
-- **Paired with a blank title:** where the back button sits in the Duo's vertical bar, an untitled bar
-  has nothing in it and collapses to no height, so the first title grew it from nothing in a single
-  frame, which no fade covers. The bare bar holds a single-space title (`UNTITLED`) to keep its height.
-  A trace on the device showed it: 0pt high at the switch, 58pt a frame later, no slide running.
+- **The title isn't part of it:** the series title is a custom title view that is always in the
+  bar, its opacity following the scroll, so it never goes through an option change. A plain-text
+  title went through one, and where the back button sits in the Duo's vertical bar an untitled bar
+  collapses to no height, so the first title grew it from nothing in one frame (a trace on the
+  device: 0pt at the switch, 58pt a frame later). A blank plain-text title kept the height but got
+  the system's backing, a visibly empty bar. Only the unfolded material switch is faded now.
 - **Temporary trace (Blocker):** the view also reports each switch to Settings > Diagnostics
   (`bar-fade` entries): the bar's height, where its content sits and what's on screen, and the
   animations running, at the switch and 50ms and 350ms after. Remove the `onTrace` event and
-  `traceBar` in `details-native-bar.tsx` once the blank title is confirmed on a device.
+  `traceBar` in `details-native-bar.tsx` once the custom title is confirmed on a device.
 - **Risk:** it animates a layer UIKit owns, and relies on KVO firing inside the library's update.
 - **How it fails:** silent. If the KVO stops firing, the switch is instant again. If UIKit starts
-  collapsing a bar whose title is blank, the first scroll back up pops again.
+  backing a custom title view, the bare bar shows a band over the strip.
 - **Removed by:** react-native-screens animating option changes.
 
 ## Shaped workarounds

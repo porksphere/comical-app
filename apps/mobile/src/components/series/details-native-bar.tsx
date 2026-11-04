@@ -1,10 +1,18 @@
 import { Stack } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet } from 'react-native';
-import { runOnJS, useAnimatedReaction, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { StyleSheet, useWindowDimensions } from 'react-native';
+import Animated, {
+  interpolate,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { BarContentGap } from '@/constants/theme';
 import { useNativeHeaderHeight } from '@/hooks/use-native-header';
+import { useTheme } from '@/hooks/use-theme';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
 
@@ -14,21 +22,23 @@ import { NavBarFade } from '../../../modules/nav-bar-fade';
  * The series details' system bar on iOS, through the route's options. The content scrolls under it,
  * and it slides away while that happens, like every pushed page's (SLIDE_AWAY_BAR).
  *
- * Over the strip it is bare, with the page's own title below it. The series' title and the frosted
- * material take over together once the page's own title has gone under the bar, and only on the way
- * back up: scrolling down the bar is sliding away anyway. Options apply unanimated, so `nav-bar-fade`
- * crossfades the bar over each switch. UIKit's own crossfade, a transparent scroll-edge appearance
- * over the frosted standard one, was tried and never ran on a device.
+ * Over the strip it is bare, with the page's own title below it. The series' title fades in as the
+ * page's own goes under the bar, following the scroll, the way UIKit brings in an inline title under
+ * a large one. It is a custom title view that is always there at some opacity, never an option:
+ * - Options apply unanimated, through a whole header update.
+ * - A plain-text title gets a backing from the system's scroll edge, a blank one included.
+ * - Where the back button sits in the Duo's vertical bar, a bar with no title has nothing in it and
+ *   collapses to no height, so a first title grew it from nothing in one frame.
+ * The frosted material still switches as an option, once the page's title is past, and only on the
+ * way back up (scrolling down the bar is sliding away anyway); `nav-bar-fade` crossfades it. UIKit's
+ * own crossfade, a transparent scroll-edge appearance over the frosted standard one, never ran on a
+ * device. On the folded Duo there is no material, so nothing in the bar changes at all.
  *
  * The title is an option change like any other, so it is its own component and a crossing
  * re-renders this much and no more. Options go through react-native-screens' whole header update,
  * which also rebuilds the bar's items, unanimated. A pushed card's back button is the system's and
  * isn't one of them.
  *
- * Where the back button has moved to the Duo's vertical bar, a bar with no title has nothing in it
- * and collapses to no height, so the first title grew it from nothing in one frame, which no fade
- * covers. Bare, it holds a blank title instead (UNTITLED), which keeps it at full height, so the title
- * only ever changes inside it.
  *
  * Only the top instance mounts this (the options are the route's, shared by every layer), so a
  * layer that becomes top again re-applies them: Stack.Screen's effect runs on mount, and the toolbar
@@ -72,7 +82,16 @@ export function SeriesDetailsNativeBar({
     },
     [titleTop],
   );
-  const barTitle = pastTitle ? title : UNTITLED;
+  const theme = useTheme();
+  const { width } = useWindowDimensions();
+  const titleFade = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollOffset.value,
+      [titleTop, titleTop + Math.max(inlineTitleHeight.value, 1)],
+      [0, 1],
+      'clamp',
+    ),
+  }));
   return (
     <>
       <Stack.Screen
@@ -84,11 +103,17 @@ export function SeriesDetailsNativeBar({
           headerBackVisible: nativePush,
           // Not a pushed card, nothing for UIKit to pop: the edge is the page's own back-swipe.
           gestureEnabled: nativePush,
-          title: barTitle,
-          headerTitle: barTitle,
+          title,
           unstable_nativeProps: SLIDE_AWAY_BAR,
         }}
       />
+      <Stack.Title asChild>
+        <Animated.Text
+          numberOfLines={1}
+          style={[styles.title, { color: theme.text, maxWidth: width * TITLE_MAX_WIDTH }, titleFade]}>
+          {title}
+        </Animated.Text>
+      </Stack.Title>
       {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" onTrace={traceBar} /> : null}
       {!nativePush ? (
         <Stack.Toolbar placement="left">
@@ -99,7 +124,8 @@ export function SeriesDetailsNativeBar({
   );
 }
 
-const UNTITLED = ' ';
+// What the bar leaves the title between its leading and trailing items.
+const TITLE_MAX_WIDTH = 0.6;
 
 // TEMPORARY: the bar's first pop in, traced to Settings > Diagnostics (docs/NATIVE-HACKS.md, item 22).
 function traceBar(e: { nativeEvent: { message: string } }) {
@@ -108,4 +134,6 @@ function traceBar(e: { nativeEvent: { message: string } }) {
 
 const styles = StyleSheet.create({
   probe: { position: 'absolute', width: 0, height: 0 },
+  // UIKit's inline navigation title: 17pt semibold in the system font.
+  title: { fontSize: 17, fontWeight: '600' },
 });
