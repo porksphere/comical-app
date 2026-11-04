@@ -25,7 +25,7 @@ import type { Size } from '@/components/reader/page-geometry';
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
-import { webtoonFit } from '@/components/reader/settings-panel';
+import { webtoonFit } from '@/components/reader/reader-settings-form';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommitted } from '@/lib/gesture-release';

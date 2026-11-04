@@ -204,6 +204,12 @@ export function presentOverlaySheet(id: number): void {
   expoRouter.push(`/overlay-sheet?id=${id}` as Href);
 }
 
+/** Presents the reader's settings sheet (app/reader-settings), past the guard for the same reasons:
+ *  the gear that opens it is under the sheet while it is up. */
+export function presentReaderSettings(seriesKey: string | null): void {
+  expoRouter.push({ pathname: '/reader-settings', params: seriesKey ? { seriesKey } : {} } as Href);
+}
+
 type LinkProps = ComponentProps<typeof ExpoLink>;
 type LinkPressEvent = Parameters<NonNullable<LinkProps['onPress']>>[0];
 

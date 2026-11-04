@@ -17,7 +17,7 @@ import { KeepScreenAwake } from '@/components/reader/keep-awake';
 import { otherFit, type Size } from '@/components/reader/page-geometry';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { buildSpreads, knownPageSize, readsDouble, spreadHalves, spreadRangeLabel } from '@/components/reader/spreads';
-import { webtoonFit } from '@/components/reader/settings-panel';
+import { webtoonFit } from '@/components/reader/reader-settings-form';
 import { StartPoster, type PosterLayout } from '@/components/reader/start-poster';
 import { createZoomHold, keyZoomSpeed, resetZoom, stepZoom, zoomHoldDirection } from '@/components/reader/desktop-zoom';
 import { isControlTarget, isTypingTarget } from '@/lib/key-hold';

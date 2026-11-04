@@ -1,27 +1,14 @@
 import { useEffect, type ComponentType } from 'react';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
 import type { IconProps } from '@/components/icons/ui-icons';
 import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
 import { IntStepper } from '@/components/reader/int-stepper';
-import { readsDouble } from '@/components/reader/spreads';
+import { useReaderSettingsForm, type ReaderSettingsField } from '@/components/reader/reader-settings-form';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
-import {
-  PREFETCH_AHEAD_MAX,
-  PREFETCH_AHEAD_MIN,
-  setSpreadShift,
-  useReaderSettings,
-  useSpreadShift,
-  type DoubleTapMode,
-  type PageFit,
-  type PageLayout,
-  type ReaderDirection,
-  type ReaderSettings,
-} from '@/hooks/use-reader-settings';
-import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
@@ -67,9 +54,9 @@ export function SettingsControl({
 }
 
 /** The settings sheet behind any trigger: anchored to `ref` when the trigger is a view that can
- *  be measured (the gear above), a plain sheet when it is not (the iOS bar button is UIKit's and
- *  has no ref to give — `ReaderNativeToolbar`). `onOpenChange` follows the sheet, for the reader
- *  to hold its chrome up while it is open. */
+ *  be measured (the gear above), a plain sheet when it is not. `onOpenChange` follows the sheet,
+ *  for the reader to hold its chrome up while it is open. (iOS presents a system sheet of its own
+ *  instead — the `.ios` sibling.) */
 export function useReaderSettingsOverlay(seriesKey: string | null, onOpenChange?: (open: boolean) => void) {
   const { ref, openAt, isOpen } = useAnchoredOverlay();
   useEffect(() => {
@@ -77,199 +64,70 @@ export function useReaderSettingsOverlay(seriesKey: string | null, onOpenChange?
     onOpenChange(true);
     return () => onOpenChange(false);
   }, [isOpen, onOpenChange]);
-  const open = () => openAt(() => <SettingsContent seriesKey={seriesKey} />);
+  const open = () => openAt(() => <ReaderSettingsBody seriesKey={seriesKey} />);
   return { ref, open };
 }
 
-/** Reader settings content, rendered inside the overlay (sheet or popover).
+/** The reader's settings (`useReaderSettingsForm`) as the custom panel: segments, the app's switch
+ *  and the platform's stepper, inside the overlay (sheet or popover).
  *  Note: the overlay panel follows the app's theme (`useTheme`), so under a
  *  light appearance it renders light while the reader keeps its own always-dark
  *  viewing surface — an intentional split, matching how media
  *  readers stay dark for immersion while their controls track the app theme.
  *  So every colour in here is the theme's: a hardcoded white was white on white. */
-function SettingsContent({ seriesKey }: { seriesKey: string | null }) {
-  const [settings, set] = useReaderSettings(seriesKey);
-  const shift = useSpreadShift(seriesKey);
-  // The window stands in for the reader's frame, which is the window less any safe-area inset —
-  // close enough to say whether `auto` is pairing right now.
-  const window = useWindowDimensions();
-  const paged = settings.mode === 'paged';
-  const pairing = paged && readsDouble(settings.pageLayout, window);
-  const theme = useTheme();
-  const hint = [styles.hint, { color: theme.textSecondary }];
-  // A desktop window has no orientation to speak of; it is nearly always wider than tall.
-  const desktop = useIsDesktop();
+export function ReaderSettingsBody({ seriesKey }: { seriesKey: string | null }) {
+  const fields = useReaderSettingsForm(seriesKey);
   return (
     <View style={styles.content}>
       <OverlayHeading>Reader settings</OverlayHeading>
-      <DirectionRow settings={settings} set={set} />
-      <Segment
-        label="Page fit"
-        testIdPrefix="reader.settings.page-fit"
-        // Webtoon has only the two layouts (one page per screen, or a continuous strip), so it
-        // shows two and reads `auto` as the page — the same mapping WebtoonReader applies.
-        value={settings.mode === 'webtoon' ? (webtoonFit(settings.pageFit) === 'fit-page' ? 'fit-height' : 'fit-width') : settings.pageFit}
-        options={[
-          ...(settings.mode === 'paged' ? [['auto', 'Auto'] as [string, string]] : []),
-          ['fit-width', 'Fit width'],
-          ['fit-height', 'Fit height'],
-        ]}
-        onChange={(v) => set({ pageFit: v as PageFit })}
-      />
-      {settings.mode === 'webtoon' && (
-        <ThemedText style={hint}>
-          {webtoonFit(settings.pageFit) === 'fit-page' ? 'One page at a time, like Paged' : 'Continuous scroll'}
-        </ThemedText>
-      )}
-      <Segment
-        label="Double-tap"
-        testIdPrefix="reader.settings.double-tap"
-        value={settings.doubleTap}
-        options={[
-          ['magnify', 'Magnify'],
-          ['switch-fit', 'Switch fit'],
-          ['off', 'Off'],
-        ]}
-        onChange={(v) => set({ doubleTap: v as DoubleTapMode })}
-      />
-      <Segment
-        label="Page layout"
-        testIdPrefix="reader.settings.page-layout"
-        value={settings.pageLayout}
-        options={[
-          ['single', 'Single'],
-          ['double', 'Double'],
-          ['auto', 'Auto'],
-        ]}
-        onChange={(v) => set({ pageLayout: v as PageLayout })}
-        disabled={!paged}
-      />
-      {paged && settings.pageLayout === 'auto' && (
-        <ThemedText style={hint}>
-          {desktop ? 'Two pages side by side when the window is wider than tall' : 'Two pages side by side in landscape'}
-        </ThemedText>
-      )}
-      <ToggleRow
-        label="Shift spreads by a page"
-        testID="reader.settings.spread-shift"
-        value={shift}
-        onChange={(v) => seriesKey && setSpreadShift(seriesKey, v)}
-        disabled={!pairing || !seriesKey}
-      />
-      <ToggleRow
-        label="Keep screen on"
-        testID="reader.settings.keep-awake"
-        value={settings.keepAwake}
-        onChange={(v) => set({ keepAwake: v })}
-      />
-      <ToggleRow
-        label="Show page count when hidden"
-        testID="reader.settings.page-count"
-        value={settings.pageCountWhenHidden}
-        onChange={(v) => set({ pageCountWhenHidden: v })}
-      />
-      <ToggleRow
-        label="Respect safe areas"
-        testID="reader.settings.safe-area"
-        value={settings.respectSafeArea}
-        onChange={(v) => set({ respectSafeArea: v })}
-      />
-      {/* The web image ignores `allowDownscaling` — the browser decodes an <img> its own way. */}
-      {Platform.OS !== 'web' && (
-        <ToggleRow
-          label="Downsample images"
-          testID="reader.settings.downsample"
-          value={settings.downsample}
-          onChange={(v) => set({ downsample: v })}
-        />
-      )}
-      <StepperRow
-        label="Preload ahead"
-        testIdPrefix="reader.settings.preload-ahead"
-        value={settings.prefetchAhead}
-        min={PREFETCH_AHEAD_MIN}
-        max={PREFETCH_AHEAD_MAX}
-        onChange={(v) => set({ prefetchAhead: v })}
-      />
+      {fields.map((field) => (
+        <Field key={field.key} field={field} />
+      ))}
     </View>
   );
 }
 
-/** The layout webtoon gives a page fit — see `PageFit`: one page per screen, or the strip. */
-export function webtoonFit(fit: PageFit): 'fit-page' | 'fit-width' {
-  return fit === 'fit-width' ? 'fit-width' : 'fit-page';
+function Field({ field }: { field: ReaderSettingsField }) {
+  const theme = useTheme();
+  switch (field.kind) {
+    case 'choice':
+      return (
+        <>
+          <Segment field={field} />
+          {field.hint ? <ThemedText style={[styles.hint, { color: theme.textSecondary }]}>{field.hint}</ThemedText> : null}
+        </>
+      );
+    case 'toggle':
+      return <ToggleRow field={field} />;
+    case 'stepper':
+      return <StepperRow field={field} />;
+    default: {
+      const unhandled: never = field;
+      return unhandled;
+    }
+  }
 }
 
-const DIRECTION_OPTIONS: { value: 'ltr' | 'vertical' | 'rtl'; label: string; Icon: ComponentType<IconProps> }[] = [
-  { value: 'ltr', label: 'L → R', Icon: MoveRightIcon },
-  { value: 'vertical', label: 'Vertical', Icon: MoveVerticalIcon },
-  { value: 'rtl', label: 'R → L', Icon: MoveLeftIcon },
-];
-
-/** Merges "Mode" (Paged/Webtoon) and "Direction" (L→R/R→L) into one 3-way row —
- *  reading direction is really one choice, not two independent settings. Picking
- *  "Vertical" only touches `mode`; `direction` is left as whatever it was, so
- *  switching back to L→R/R→L restores it (harmless — unread while webtoon). */
-function DirectionRow({
-  settings,
-  set,
-}: {
-  settings: ReaderSettings;
-  set: (patch: Partial<ReaderSettings>) => void;
-}) {
-  const c = useSegmentColors();
-  const value = settings.mode === 'webtoon' ? 'vertical' : settings.direction;
-  const onChange = (v: 'ltr' | 'vertical' | 'rtl') =>
-    v === 'vertical' ? set({ mode: 'webtoon' }) : set({ mode: 'paged', direction: v as ReaderDirection });
-  return (
-    <View style={styles.seg}>
-      <ThemedText style={c.label}>Reading direction</ThemedText>
-      <View style={styles.segRow}>
-        {DIRECTION_OPTIONS.map(({ value: v, label, Icon }) => {
-          const on = value === v;
-          return (
-            <Pressable
-              key={v}
-              testID={testId('reader.settings.direction', v)}
-              onPress={() => onChange(v)}
-              style={[styles.opt, styles.optIcon, on ? c.optOn : c.opt]}>
-              <Icon color={on ? c.onColor : c.offColor} size={18} />
-              <ThemedText style={on ? c.optTextOn : c.optText}>{label}</ThemedText>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
+// The reading direction's options draw their arrow beside the label.
+const OPTION_ICONS: Record<string, ComponentType<IconProps>> = {
+  ltr: MoveRightIcon,
+  vertical: MoveVerticalIcon,
+  rtl: MoveLeftIcon,
+};
 
 /** A bounded whole number: label on the left, the platform's integer control on the right (see
  *  `IntStepper` — a system stepper on iOS, a discrete slider on Android, −/+ on web). */
-function StepperRow({
-  label,
-  value,
-  min,
-  max,
-  onChange,
-  testIdPrefix,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange: (value: number) => void;
-  testIdPrefix: string;
-}) {
+function StepperRow({ field }: { field: Extract<ReaderSettingsField, { kind: 'stepper' }> }) {
   const c = useSegmentColors();
   return (
     <View style={styles.toggleRow}>
-      <ThemedText style={c.label}>{label}</ThemedText>
+      <ThemedText style={c.label}>{field.label}</ThemedText>
       <IntStepper
-        value={value}
-        min={min}
-        max={max}
-        onChange={onChange}
-        testIdPrefix={testIdPrefix}
+        value={field.value}
+        min={field.min}
+        max={field.max}
+        onChange={field.onChange}
+        testIdPrefix={`reader.settings.${field.key}`}
         // The sheet springs up from below the screen; the native control is mounted once it has
         // arrived — see `deferMountMs`.
         deferMountMs={SHEET_SETTLE_MS}
@@ -280,59 +138,42 @@ function StepperRow({
 
 /** A boolean row: label on the left, the app's switch (the same `ThemedSwitch` every Settings
  *  toggle uses) on the right — an on/off choice is a switch, not a two-way segment. */
-function ToggleRow({
-  label,
-  value,
-  onChange,
-  testID,
-  disabled = false,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (value: boolean) => void;
-  testID: string;
-  disabled?: boolean;
-}) {
+function ToggleRow({ field }: { field: Extract<ReaderSettingsField, { kind: 'toggle' }> }) {
   const c = useSegmentColors();
+  const disabled = field.disabled ?? false;
   return (
     <View style={[styles.toggleRow, disabled && styles.disabled]}>
-      <ThemedText style={c.label}>{label}</ThemedText>
-      <ThemedSwitch testID={testID} value={value} onValueChange={onChange} disabled={disabled} />
+      <ThemedText style={c.label}>{field.label}</ThemedText>
+      <ThemedSwitch
+        testID={`reader.settings.${field.key}`}
+        value={field.value}
+        onValueChange={field.onChange}
+        disabled={disabled}
+      />
     </View>
   );
 }
 
-function Segment({
-  label,
-  value,
-  options,
-  onChange,
-  testIdPrefix,
-  disabled = false,
-}: {
-  label: string;
-  value: string;
-  options: [string, string][];
-  onChange: (value: string) => void;
-  testIdPrefix: string;
-  disabled?: boolean;
-}) {
+function Segment({ field }: { field: Extract<ReaderSettingsField, { kind: 'choice' }> }) {
   const c = useSegmentColors();
+  const disabled = field.disabled ?? false;
   return (
     <View style={[styles.seg, disabled && styles.disabled]}>
-      <ThemedText style={c.label}>{label}</ThemedText>
+      <ThemedText style={c.label}>{field.label}</ThemedText>
       <View style={styles.segRow}>
-        {options.map(([v, l]) => {
-          const on = value === v;
+        {field.options.map((option) => {
+          const on = field.value === option.value;
+          const Icon = OPTION_ICONS[option.value];
           return (
             <Pressable
-              key={v}
-              testID={testId(testIdPrefix, v)}
-              onPress={() => onChange(v)}
+              key={option.value}
+              testID={testId(`reader.settings.${field.key}`, option.value)}
+              onPress={() => field.onChange(option.value)}
               disabled={disabled}
               accessibilityState={{ disabled, selected: on }}
-              style={[styles.opt, on ? c.optOn : c.opt]}>
-              <ThemedText style={on ? c.optTextOn : c.optText}>{l}</ThemedText>
+              style={[styles.opt, Icon && styles.optIcon, on ? c.optOn : c.opt]}>
+              {Icon ? <Icon color={on ? c.onColor : c.offColor} size={18} /> : null}
+              <ThemedText style={on ? c.optTextOn : c.optText}>{option.label}</ThemedText>
             </Pressable>
           );
         })}

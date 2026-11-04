@@ -50,12 +50,30 @@ export function holdNativeSheet(id: number, node: ReactNode, onGone: () => void)
   sheets.set(id, { node, onGone, close: null, closeAsked: false, backstop, leaving: null });
 }
 
+// Form sheets of the app's own (`/reader-settings`), counted beside the overlay items.
+let formSheets = 0;
+
 /**
- * Whether a native overlay sheet is up. Pushing one blurs the screen it covers, and a screen that
- * acts on its blur (the reader giving the tab bar back) asks this to tell a sheet from leaving.
+ * Counts a form sheet route as a system sheet until the returned release is called. Taken BEFORE
+ * its push: the blur the push causes is when the screen under it asks `isNativeSheetUp`.
+ */
+export function holdSystemSheet(): () => void {
+  formSheets += 1;
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    formSheets -= 1;
+  };
+}
+
+/**
+ * Whether a system sheet is up, an overlay item's or a form sheet route. Pushing one blurs the
+ * screen it covers, and a screen that acts on its blur (the reader giving the tab bar back) asks
+ * this to tell a sheet from leaving.
  */
 export function isNativeSheetUp(): boolean {
-  return sheets.size > 0;
+  return sheets.size > 0 || formSheets > 0;
 }
 
 /** The content of sheet `id`, or undefined when there is none (a stale route). */

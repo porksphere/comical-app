@@ -12,6 +12,8 @@ import type * as IntStepper from '@/components/reader/int-stepper';
 import type * as IntStepperAndroid from '@/components/reader/int-stepper.android';
 import type * as IntStepperIos from '@/components/reader/int-stepper.ios';
 import type * as PagedReader from '@/components/reader/paged-reader';
+import type * as SettingsPanel from '@/components/reader/settings-panel';
+import type * as SettingsPanelIos from '@/components/reader/settings-panel.ios';
 import type * as PagedReaderWeb from '@/components/reader/paged-reader.web';
 import type * as WebtoonReader from '@/components/reader/webtoon-reader';
 import type * as WebtoonReaderWeb from '@/components/reader/webtoon-reader.web';
@@ -110,6 +112,7 @@ export type PlatformContracts = [
   Conforms<Drift<typeof ImageProgress, typeof ImageProgressWeb>>,
   Conforms<Drift<typeof IntStepper, typeof IntStepperAndroid>>,
   Conforms<Drift<typeof IntStepper, typeof IntStepperIos>>,
+  Conforms<Drift<typeof SettingsPanel, typeof SettingsPanelIos>>,
   // Web has no continuous scrubber (the progress pill jumps) and no poster for the list to end
   // (see reader-pane). It zooms the page itself and never says so, so on a touch browser the
   // reader's swipe-down stays armed while a page is zoomed.

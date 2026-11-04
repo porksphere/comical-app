@@ -156,6 +156,17 @@ function RootNavigation() {
     // Clear where the system draws a sheet's glass (iOS 26), so it shows; opaque where it doesn't.
     contentStyle: { backgroundColor: SYSTEM_SHEET_GLASS ? 'transparent' : Colors[scheme].overlaySurface },
   };
+  // The reader's settings as a system form sheet (iOS): a SwiftUI form that scrolls inside the
+  // sheet's detent, titled by the bar. Its content is cleared where the system draws the sheet's
+  // glass, like `overlaySheet`; the form drops its own background there (settings-panel.ios).
+  const readerSettingsSheet: ComponentProps<typeof Stack.Screen>['options'] = {
+    title: 'Reader Settings',
+    presentation: 'formSheet',
+    sheetAllowedDetents: [0.6, 1],
+    sheetGrabberVisible: true,
+    headerShadowVisible: false,
+    contentStyle: { backgroundColor: SYSTEM_SHEET_GLASS ? 'transparent' : Colors[scheme].backgroundPanel },
+  };
   useDesktopShellCommands();
   useNavigationKeys();
   return (
@@ -184,6 +195,9 @@ function RootNavigation() {
           {/* Each item of the overlay stack, as a system sheet sized to its content (iOS; the
               provider draws its own sheets everywhere else) — see lib/native-overlay-sheets. */}
           <Stack.Screen name="overlay-sheet" options={overlaySheet} />
+          {/* The reader's settings as a system form sheet (iOS; the custom panel keeps the overlay
+              elsewhere) — see components/reader/settings-panel.ios. */}
+          <Stack.Screen name="reader-settings" options={readerSettingsSheet} />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-collections" options={settingsScreen('Manage Collections')} />
           <Stack.Screen name="results" options={pushedScreen} />
