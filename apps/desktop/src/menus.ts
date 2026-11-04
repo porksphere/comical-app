@@ -92,7 +92,7 @@ export function attachContextMenu(win: BrowserWindow, appOrigin: string): void {
       const url = p.linkURL;
       groups.push([
         { label: "Open link in browser", click: () => void shell.openExternal(url) },
-        { label: "Copy link", click: () => clipboard.writeText(url) },
+        { label: "Copy link", click: () => void clipboard.writeText(url).catch((err: unknown) => console.error("[menus] copy failed:", err)) },
       ]);
     }
 
