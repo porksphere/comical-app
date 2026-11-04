@@ -36,7 +36,7 @@ export function coverBinding(rightToLeft: boolean): CoverBinding {
  * How much of the cover's width the spine-side treatment covers, as a fraction. Anything laid over
  * the cover on that side (badges, the library ribbon) starts past it rather than on the crease.
  */
-export const SPINE_FRACTION: Record<CoverForm, number> = { volume: 0.08, issue: 0.042, scroll: 0 };
+export const SPINE_FRACTION: Record<CoverForm, number> = { volume: 0.1, issue: 0.05, scroll: 0 };
 
 /** One object per form and binding, so a card's `book` prop is the same object from render to render
  *  and nothing below it re-renders for a new-but-equal value while a list recycles. */
@@ -63,19 +63,21 @@ export function bookRadius(cover: BookCover, desktop: boolean): number {
 export type Shade = { colors: readonly [string, string, ...string[]]; locations: readonly [number, number, ...number[]] };
 
 /**
- * The spine-side shading, read from the spine inward: a dark band at the binding edge, a highlight
- * where the board folds, then a soft crease. About a tenth of the width; this is the detail that
- * makes the tile a book.
+ * The spine-side shading, read from the spine inward: a faint shade at the binding edge, a soft
+ * highlight where the board folds, then a gentle crease. Kept soft on purpose: at card size a crisp
+ * dark band or bright line reads as a second edge — dark on a light cover, gone on a dark one — so the
+ * same 3 pt gap between cards looks a different width beside every cover, and a cover still loading
+ * looks like an empty frame.
  */
 export const HINGE: Shade = {
-  colors: ['rgba(0,0,0,0.34)', 'rgba(0,0,0,0.12)', 'rgba(255,255,255,0.30)', 'rgba(255,255,255,0.06)', 'rgba(0,0,0,0.20)', 'rgba(0,0,0,0.06)', 'rgba(0,0,0,0)'],
-  locations: [0, 0.018, 0.03, 0.044, 0.052, 0.076, 0.11],
+  colors: ['rgba(0,0,0,0.10)', 'rgba(0,0,0,0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0.07)', 'rgba(0,0,0,0)'],
+  locations: [0, 0.04, 0.06, 0.09, 0.105, 0.16],
 };
 
-/** A saddle-stitched issue's fold: the hinge's shape at half the width, since there is no board. */
+/** A saddle-stitched issue's fold: the hinge's shape at about half the width, since there is no board. */
 export const FOLD: Shade = {
-  colors: ['rgba(0,0,0,0.26)', 'rgba(255,255,255,0.34)', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0)'],
-  locations: [0, 0.012, 0.024, 0.046],
+  colors: ['rgba(0,0,0,0.08)', 'rgba(0,0,0,0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0.05)', 'rgba(0,0,0,0)'],
+  locations: [0, 0.025, 0.035, 0.05, 0.06, 0.09],
 };
 
 /** The diagonal band of gloss a thin issue's cover stock catches. */
