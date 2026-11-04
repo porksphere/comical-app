@@ -8,6 +8,12 @@ public class ContentScrollViewModule: Module {
       Prop("active") { (view: ContentScrollAnchorView, active: Bool?) in
         view.active = active ?? true
       }
+      Prop("tabBar") { (view: ContentScrollAnchorView, tabBar: Bool?) in
+        view.tabBar = tabBar ?? false
+      }
+      AsyncFunction("scrollToTop") { (view: ContentScrollAnchorView) in
+        view.scrollToTop()
+      }
     }
   }
 }
@@ -23,6 +29,16 @@ final class ContentScrollAnchorView: ExpoView {
   var active = true {
     didSet {
       if active && !oldValue {
+        schedule()
+      }
+    }
+  }
+
+  /// Name the list for the bottom bar too: a tab root whose list react-native-screens' marker can't
+  /// hold (a SwiftUI list, deep in its host), so the tab bar's edge follows it.
+  var tabBar = false {
+    didSet {
+      if tabBar != oldValue {
         schedule()
       }
     }
@@ -51,19 +67,40 @@ final class ContentScrollAnchorView: ExpoView {
   }
 
   private func nameContentScrollView() {
-    guard active, window != nil, let scrollView = firstScrollView(), let controller = owningController() else {
+    guard active, window != nil, let scrollView = findScrollView(), let controller = owningController() else {
       return
     }
-    controller.setContentScrollView(scrollView, for: .top)
+    controller.setContentScrollView(scrollView, for: tabBar ? .all : .top)
   }
 
-  private func firstScrollView() -> UIScrollView? {
+  /// The tab's reselect, for a list react-native-screens can't scroll itself (see `tabBar`).
+  func scrollToTop() {
+    guard let scrollView = findScrollView() else {
+      return
+    }
+    let top = CGPoint(x: scrollView.contentOffset.x, y: -scrollView.adjustedContentInset.top)
+    scrollView.setContentOffset(top, animated: true)
+  }
+
+  /// The list first in line, each first subview down: a page's one list under its wrappers. Failing
+  /// that, the nearest list the size of the page anywhere under here: a SwiftUI list is a few views
+  /// in and not first among its host's.
+  private func findScrollView() -> UIScrollView? {
     var view: UIView? = self
     while let current = view {
       if let scrollView = current as? UIScrollView {
         return scrollView
       }
       view = current.subviews.first
+    }
+    let minHeight = (window?.bounds.height ?? 0) / 2
+    var queue: [UIView] = subviews
+    while !queue.isEmpty {
+      let current = queue.removeFirst()
+      if let scrollView = current as? UIScrollView, scrollView.bounds.height >= minHeight {
+        return scrollView
+      }
+      queue.append(contentsOf: current.subviews)
     }
     return nil
   }

@@ -18,13 +18,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { StyleSheet, View } from 'react-native';
 
 import { StorageBreakdownBar, STORAGE_PALETTE } from '@/components/downloads/storage-breakdown-bar';
-import { ScreenScrollView } from '@/components/screen-scroll-marker';
-import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { select, type SettingsFormSection, type SettingsOption } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, SettingsCardInset, Spacing } from '@/constants/theme';
+import { SettingsCardInset, Spacing } from '@/constants/theme';
 import { dlStorageUsage, libraryUsage } from '@/data/api';
 import { readDiskInfo } from '@/data/downloads/disk';
 import { EMPTY_STORAGE_USAGE } from '@/data/downloads/derive';
@@ -32,8 +31,6 @@ import { formatBytes } from '@/data/downloads/format';
 import { getResolvedModeSync } from '@/data/embedded/preference';
 import { queryKeys } from '@/data/queries';
 import { applyImageCacheConfig, cachePrefs$, clearImageCache, measureCacheUsage, useCachePrefs } from '@/data/image-cache';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useRouter } from '@/lib/nav';
 
 const MB = 1024 * 1024;
@@ -69,7 +66,6 @@ function cacheEntryLabel(name: string): string {
 }
 
 export default function StorageScreen() {
-  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const router = useRouter();
   const queryClient = useQueryClient();
   const cacheMax = useCachePrefs().maxBytes;
@@ -95,7 +91,7 @@ export default function StorageScreen() {
   // per-entry split of the Caches dir — what shares it beyond expo-image's images (bridge bundles,
   // NSURLCache, framework caches), which is why the total can exceed the max cap. A cached query,
   // not a per-open walk: within the stale window a re-open shows the last measurement at once, and
-  // a cold start shows the persisted one while the walk refreshes it. The row re-measures on tap.
+  // a cold start shows the persisted one while the walk refreshes it. A row re-measures on tap.
   const {
     data: cacheUsage,
     isFetching: measuring,
@@ -122,72 +118,70 @@ export default function StorageScreen() {
   ];
   const disk = readDiskInfo();
 
+  const sections: SettingsFormSection[] = [
+    {
+      fields: [
+        {
+          kind: 'custom',
+          testID: 'storage.summary',
+          render: () => (
+            <View style={styles.summary}>
+              <StorageBreakdownBar segments={segments} totalBytes={downloadsBytes + libraryBytes + (cacheSize ?? 0)} />
+              {disk.usable && (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {formatBytes(disk.available)} free on this device
+                </ThemedText>
+              )}
+            </View>
+          ),
+        },
+      ],
+    },
+    {
+      title: 'Downloads',
+      fields: [
+        // Totals come from whichever HOST owns the bytes. Embedded: the manifest rollup, shown
+        // beside the bar's actual-disk number so a gap surfaces orphaned blobs. Remote: the
+        // server's true blob-root size (`diskBytes`), labeled as such — none of it occupies this
+        // device, which is why the device bar above excludes it.
+        {
+          kind: 'value',
+          label: 'Downloaded content',
+          description:
+            usage.seriesCount === 0
+              ? 'Nothing downloaded yet.'
+              : `${embedded ? formatBytes(usage.totalBytes) : `${formatBytes(usage.diskBytes ?? usage.totalBytes)} on the server`} · ${usage.seriesCount} series · ${usage.chapterCount} chapter${usage.chapterCount === 1 ? '' : 's'} · ${usage.pageCount} page${usage.pageCount === 1 ? '' : 's'}`,
+        },
+        { kind: 'link', label: 'Manage downloads', onPress: () => router.push('/downloads') },
+      ],
+    },
+    {
+      title: 'Image cache',
+      footer:
+        "Covers and pages you've viewed. Least-recently-used images are evicted to stay under the cap; clearing frees the space, and images re-download when next viewed.",
+      fields: [
+        { kind: 'value', label: 'Cached images', value: cacheSize === null ? 'Measuring…' : formatBytes(cacheSize) },
+        ...breakdown.map((e) => ({ kind: 'value' as const, testID: `storage.cache.${e.name}`, label: cacheEntryLabel(e.name), value: formatBytes(e.bytes) })),
+        { kind: 'action', label: 'Re-measure', detail: measuring ? 'Measuring…' : undefined, disabled: measuring, onPress: () => void remeasure() },
+        { kind: 'action', label: 'Clear image cache', onPress: () => void clearCache() },
+        select({
+          label: 'Max image cache',
+          value: String(cacheMax),
+          options: CACHE_MAX_OPTIONS,
+          onChange: (v) => {
+            cachePrefs$.maxBytes.set(Number(v));
+            applyImageCacheConfig(); // hand the new cap to the native cache immediately
+          },
+          placeholder: 'Unlimited',
+        }),
+      ],
+    },
+  ];
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Storage" />
-      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
-        <SettingsSection>
-          <View style={styles.summary}>
-            <StorageBreakdownBar segments={segments} totalBytes={downloadsBytes + libraryBytes + (cacheSize ?? 0)} />
-            {disk.usable && (
-              <ThemedText type="small" themeColor="textSecondary">
-                {formatBytes(disk.available)} free on this device
-              </ThemedText>
-            )}
-          </View>
-        </SettingsSection>
-
-        <SettingsSection title="Downloads">
-          {/* Totals come from whichever HOST owns the bytes. Embedded: the manifest rollup, shown
-              beside the bar's actual-disk number so a gap surfaces orphaned blobs. Remote: the
-              server's true blob-root size (`diskBytes`), labeled as such — none of it occupies this
-              device, which is why the device bar above excludes it. */}
-          <SettingsRow
-            label="Downloaded content"
-            description={
-              usage.seriesCount === 0
-                ? 'Nothing downloaded yet.'
-                : `${embedded ? formatBytes(usage.totalBytes) : `${formatBytes(usage.diskBytes ?? usage.totalBytes)} on the server`} · ${usage.seriesCount} series · ${usage.chapterCount} chapter${usage.chapterCount === 1 ? '' : 's'} · ${usage.pageCount} page${usage.pageCount === 1 ? '' : 's'}`
-            }
-          />
-          <SettingsRow label="Manage downloads" onPress={() => router.push('/downloads')} />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Image cache"
-          footer="Covers and pages you've viewed. Least-recently-used images are evicted to stay under the cap; clearing frees the space, and images re-download when next viewed.">
-          <SettingsRow
-            label="Cached images"
-            description={cacheSize === null ? 'Measuring…' : `${formatBytes(cacheSize)}${measuring ? ' · re-measuring…' : ' · tap to re-measure'}`}
-            onPress={() => void remeasure()}
-          />
-          {breakdown.length > 0 && (
-            <View style={styles.breakdown}>
-              {breakdown.map((e) => (
-                <View key={e.name} style={styles.breakdownRow}>
-                  <ThemedText type="small" themeColor="textSecondary" style={styles.breakdownName} numberOfLines={1}>
-                    {cacheEntryLabel(e.name)}
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {formatBytes(e.bytes)}
-                  </ThemedText>
-                </View>
-              ))}
-            </View>
-          )}
-          <SettingsRow label="Clear image cache" onPress={() => void clearCache()} />
-          <SettingsSelectRow
-            label="Max image cache"
-            value={String(cacheMax)}
-            options={CACHE_MAX_OPTIONS}
-            onChange={(v) => {
-              cachePrefs$.maxBytes.set(Number(v));
-              applyImageCacheConfig(); // hand the new cap to the native cache immediately
-            }}
-            placeholder="Unlimited"
-          />
-        </SettingsSection>
-      </ScreenScrollView>
+      <SettingsList sections={sections} />
     </ThemedView>
   );
 }
@@ -196,28 +190,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    gap: Spacing.five,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
-  },
   summary: {
     paddingVertical: Spacing.three,
     paddingHorizontal: SettingsCardInset,
     gap: Spacing.two,
-  },
-  breakdown: {
-    paddingHorizontal: SettingsCardInset,
-    paddingBottom: Spacing.three,
-    gap: Spacing.one,
-  },
-  breakdownRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: Spacing.three,
-  },
-  breakdownName: {
-    flexShrink: 1,
   },
 });

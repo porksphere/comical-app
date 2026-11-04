@@ -1,6 +1,6 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import type { FlatList, ScrollViewInstance } from 'react-native';
 
 import { registerScrollToTop } from '@/lib/reselect-scroll';
@@ -23,6 +23,24 @@ export function useScrollToTopOnReselect(routeName: string, ref: RefObject<Scrol
         else node.scrollTo({ y: 0, animated: true });
       });
       // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [routeName]),
+  );
+}
+
+/**
+ * The same registration for a list reached some other way than a ref — a native list scrolled
+ * through its own call — and for a screen that is only sometimes a tab root (`routeName`
+ * undefined elsewhere: nothing is registered). The latest `scrollToTop` is the one called.
+ */
+export function useReselectScrollToTop(routeName: string | undefined, scrollToTop: () => void) {
+  const latest = useRef(scrollToTop);
+  useEffect(() => {
+    latest.current = scrollToTop;
+  });
+  useFocusEffect(
+    useCallback(() => {
+      if (!routeName) return;
+      return registerScrollToTop(routeName, () => latest.current());
     }, [routeName]),
   );
 }

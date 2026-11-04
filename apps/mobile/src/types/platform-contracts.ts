@@ -30,6 +30,8 @@ import type * as RangeSliderIos from '@/components/settings/range-slider.ios';
 import type * as RangeSliderWeb from '@/components/settings/range-slider.web';
 import type * as SelectRow from '@/components/settings/select-row';
 import type * as SelectRowIos from '@/components/settings/select-row.ios';
+import type * as SettingsList from '@/components/settings/settings-list';
+import type * as SettingsListIos from '@/components/settings/settings-list.ios';
 import type * as WebLoginSheet from '@/components/settings/web-login-sheet';
 import type * as WebLoginSheetWeb from '@/components/settings/web-login-sheet.web';
 import type * as SplashGate from '@/components/splash-gate';
@@ -147,6 +149,7 @@ export type PlatformContracts = [
   Conforms<Drift<typeof RangeSlider, typeof RangeSliderIos>>,
   Conforms<Drift<typeof RangeSlider, typeof RangeSliderWeb>>,
   Conforms<Drift<typeof SelectRow, typeof SelectRowIos>>,
+  Conforms<Drift<typeof SettingsList, typeof SettingsListIos>>,
   Conforms<Drift<typeof WebLoginSheet, typeof WebLoginSheetWeb>>,
   Conforms<Drift<typeof SplashGate, typeof SplashGateWeb>>,
   Conforms<Drift<typeof TabStack, typeof TabStackIos>>,

@@ -130,12 +130,14 @@ export function SettingsSection({
 export function SettingsRow({
   label,
   labelBold,
+  labelColor,
   description,
   descriptionColor,
   descriptionSelectable,
   contentInset,
   leading,
   right,
+  chevron,
   onPress,
   onLongPress,
   onHoverIn,
@@ -146,6 +148,9 @@ export function SettingsRow({
   label: string;
   /** Render the label in the bolder weight — used to make a parent row stand above its nested children. */
   labelBold?: boolean;
+  /** Overrides the label's colour: the accent on a row that is an action, the danger colour on one
+   *  that destroys. Defaults to `text`. */
+  labelColor?: string;
   description?: string;
   /** Extra left padding for the row's content (leading + text + chevron), indenting a NESTED row under
    *  its parent while its background/press highlight still span the full width. */
@@ -157,6 +162,10 @@ export function SettingsRow({
   /** Lets the description text be selected/copied (e.g. a server URL) — off by default. */
   descriptionSelectable?: boolean;
   right?: ReactNode;
+  /** Whether a pressable row ends in a chevron. Defaults to whether `right` is empty: a Switch
+   *  shouldn't also show one. `false` on an action row, which does its work here and leads
+   *  nowhere; `true` on a row that shows a value AND leads somewhere. */
+  chevron?: boolean;
   onPress?: () => void;
   /** Long-press on a pressable row (e.g. multi-select range-fill). Only fires when `onPress` is set.
    *  Takes the press event so a `Holdable`'s web handler can be passed straight through. */
@@ -182,7 +191,16 @@ export function SettingsRow({
   const rowTestID = testID ?? testId('settings.row', label);
   // On a pressable row the id lives on the Pressable; on a static row it lives on the root View — never
   // both, so a locator resolves to exactly one node.
-  const trailing = right ?? (onPress && <ChevronRightIcon color={theme.textSecondary} size={18} />);
+  const arrow = (chevron ?? (!!onPress && right === undefined)) && <ChevronRightIcon color={theme.textSecondary} size={18} />;
+  const trailing =
+    right !== undefined && arrow ? (
+      <View style={styles.trailingPair}>
+        {right}
+        {arrow}
+      </View>
+    ) : (
+      (right ?? arrow)
+    );
   const content = (highlighted?: boolean, rootTestID?: string) => (
     <View
       testID={rootTestID}
@@ -194,7 +212,7 @@ export function SettingsRow({
       ]}>
       {leading && <View style={[styles.leading, disabled && styles.disabled]}>{leading}</View>}
       <View style={[settingsRowFrame.text, disabled && styles.disabled]}>
-        <ThemedText type={labelBold ? 'smallBold' : 'small'} numberOfLines={1}>
+        <ThemedText type={labelBold ? 'smallBold' : 'small'} numberOfLines={1} style={labelColor ? { color: labelColor } : null}>
           {label}
         </ThemedText>
         {description && (
@@ -285,6 +303,13 @@ const styles = StyleSheet.create({
   },
   trailingCovered: {
     opacity: 0,
+  },
+  trailingPair: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    flexShrink: 1,
+    minWidth: 0,
   },
   rowPressable: {
     cursor: 'pointer',

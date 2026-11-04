@@ -168,7 +168,17 @@ any other row. A series opened from a tab is a real pushed card of that tab's st
 page IS the pushed screen and its `Stack.Screen` addresses it), so the tab's leading item morphs into its
 back button and the slide and edge-pop are the system's; `useNativePush` in
 `components/series/viewport.ts` is what the zoom rig gives up there.
-The settings screens' enum rows are SYSTEM menus too: `SettingsSelectRow` is
+The settings screens themselves are ONE model and two renderers, the reader's pattern below:
+`components/settings/settings-form.ts` is a screen's sections of fields (toggle, select, link,
+action, value, note, custom), the only place a row is added, with `fieldTestID` giving each row
+the id its component had; `settings-list.tsx` draws them as the app's cards and rows (Android, web,
+the desktop panes) and `settings-list.ios.tsx` as a SwiftUI `Form` filling the screen under the
+system bar, its rows the system's switches, menu pickers, buttons and label–value rows, a `custom`
+field hosted in a row through `RNHostView`. Each renderer's switch over the kinds is complete or the
+typecheck fails. The landing tab, General, Notifications, Developer, About, What's new, Storage and
+Diagnostics are on it; Sync, Keyboard, the bridge and tracker settings and the list screens
+(Bridges, Trackers, Registries, Custom pages, Downloads) still draw their rows themselves, and
+their enum rows are SYSTEM menus too: `SettingsSelectRow` is
 platform-split (`components/settings/select-row.ios.tsx` — the row drawn in RN in iOS Settings'
 popup-row shape, `label … value ⌃⌄`, with the local Expo module `apps/mobile/modules/menu-anchor`
 laid over it: an invisible UIButton whose tap opens a UIMenu of checkmarked options with the

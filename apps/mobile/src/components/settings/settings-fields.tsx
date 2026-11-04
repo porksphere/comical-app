@@ -127,6 +127,7 @@ export function SettingsToggleRow({
   onChange,
   right,
   disabled,
+  testID,
 }: {
   label: string;
   description?: string;
@@ -136,6 +137,8 @@ export function SettingsToggleRow({
   right?: ReactNode;
   /** See `SettingsRow`'s `disabled`: greyed out, never hidden. */
   disabled?: boolean;
+  /** The switch's id. Defaults to `settings.toggle.<label>`. */
+  testID?: string;
 }) {
   return (
     <SettingsRow
@@ -144,7 +147,12 @@ export function SettingsToggleRow({
       disabled={disabled}
       right={
         right ?? (
-          <ThemedSwitch testID={testId('settings.toggle', label)} value={value} onValueChange={onChange} disabled={disabled} />
+          <ThemedSwitch
+            testID={testID ?? testId('settings.toggle', label)}
+            value={value}
+            onValueChange={onChange}
+            disabled={disabled}
+          />
         )
       }
     />

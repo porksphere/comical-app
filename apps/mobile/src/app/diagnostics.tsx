@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Pressable, Share, StyleSheet, View } from 'react-native';
+import { Share, StyleSheet } from 'react-native';
 
-import { ScreenScrollView } from '@/components/screen-scroll-marker';
-import { ThemedText } from '@/components/themed-text';
+import { type SettingsField, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-
-import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
-import { useTheme } from '@/hooks/use-theme';
 import { clearDiagnostics, getDiagnostics, subscribeDiagnostics, type DiagnosticEntry } from '@/lib/diagnostics';
 import { useRouter } from '@/lib/nav';
 
@@ -21,9 +16,19 @@ function formatEntry(e: DiagnosticEntry): string {
   return lines.join('\n');
 }
 
+/** A logged failure as a block in the card: its category and time over the message and where. */
+function entryNote(e: DiagnosticEntry): SettingsField {
+  return {
+    kind: 'note',
+    testID: `diagnostics.entry.${e.id}`,
+    title: e.category,
+    caption: new Date(e.time).toLocaleTimeString(),
+    text: [e.message, e.context, e.url].filter(Boolean).join('\n'),
+    selectable: true,
+  };
+}
+
 export default function DiagnosticsScreen() {
-  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
-  const theme = useTheme();
   const router = useRouter();
   const [entries, setEntries] = useState<DiagnosticEntry[]>(getDiagnostics());
 
@@ -34,75 +39,30 @@ export default function DiagnosticsScreen() {
     Share.share({ message: entries.map(formatEntry).join('\n\n') });
   };
 
+  const sections: SettingsFormSection[] = [
+    {
+      footer:
+        'Records what the swipe recognizers actually did — whether they saw the touches, began, activated, and what state they saw — and, on the same timeline, what the reader asked for each page and whether an answer came back. Off unless you turn it on.',
+      fields: [{ kind: 'link', testID: 'diagnostics.gesture-trace', label: 'Gesture trace', onPress: () => router.push('/gesture-trace') }],
+    },
+    {
+      title: 'Failures',
+      footer:
+        'Failures that would otherwise be invisible — bridge scrapes, writes (favorites, settings), and asset loads (page images, thumbnails) — newest first. Nothing here is sent anywhere automatically; use Share to send it yourself.',
+      fields: [
+        { kind: 'action', testID: 'diagnostics.share', label: 'Share', disabled: entries.length === 0, onPress: shareLog },
+        { kind: 'action', testID: 'diagnostics.clear', label: 'Clear', role: 'destructive', disabled: entries.length === 0, onPress: clearDiagnostics },
+      ],
+    },
+    {
+      fields: entries.length === 0 ? [{ kind: 'note', testID: 'diagnostics.empty', title: 'No failures logged yet.' }] : entries.map(entryNote),
+    },
+  ];
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Diagnostics" />
-      <ScreenScrollView
-        style={scrollbarInset(contentPadding.paddingTop)}
-        contentContainerStyle={[styles.content, contentPadding]}>
-        <ThemedText type="small" themeColor="textSecondary">
-          Failures that would otherwise be invisible — bridge scrapes, writes (favorites, settings),
-          and asset loads (page images, thumbnails) — newest first. Nothing here is sent anywhere
-          automatically; use Share to send it yourself.
-        </ThemedText>
-
-        <Pressable
-          testID="diagnostics.gesture-trace"
-          onPress={() => router.push('/gesture-trace')}
-          style={[styles.entry, { borderColor: theme.hairline }]}>
-          <ThemedText type="smallBold">Gesture trace</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            Records what the swipe recognizers actually did — whether they saw the touches, began,
-            activated, and what state they saw — and, on the same timeline, what the reader asked
-            for each page and whether an answer came back. Off unless you turn it on.
-          </ThemedText>
-        </Pressable>
-
-        <View style={styles.actions}>
-          <Pressable testID="diagnostics.share" onPress={shareLog} disabled={entries.length === 0} style={[styles.actionBtn, { borderColor: theme.hairline }]}>
-            <ThemedText type="smallBold" style={entries.length === 0 && { color: theme.textSecondary }}>
-              Share
-            </ThemedText>
-          </Pressable>
-          <Pressable testID="diagnostics.clear" onPress={clearDiagnostics} disabled={entries.length === 0} style={[styles.actionBtn, { borderColor: theme.hairline }]}>
-            <ThemedText type="smallBold" style={entries.length === 0 ? { color: theme.textSecondary } : { color: theme.danger }}>
-              Clear
-            </ThemedText>
-          </Pressable>
-        </View>
-
-        {entries.length === 0 ? (
-          <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-            No failures logged yet.
-          </ThemedText>
-        ) : (
-          <View style={styles.list}>
-            {entries.map((e) => (
-              <ThemedView key={e.id} type="backgroundElement" style={[styles.entry, { borderColor: theme.hairline }]}>
-                <View style={styles.entryHead}>
-                  <ThemedText type="smallBold">{e.category}</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {new Date(e.time).toLocaleTimeString()}
-                  </ThemedText>
-                </View>
-                <ThemedText type="small" selectable>
-                  {e.message}
-                </ThemedText>
-                {e.context && (
-                  <ThemedText type="small" themeColor="textSecondary" selectable>
-                    {e.context}
-                  </ThemedText>
-                )}
-                {e.url && (
-                  <ThemedText type="small" themeColor="textSecondary" selectable>
-                    {e.url}
-                  </ThemedText>
-                )}
-              </ThemedView>
-            ))}
-          </View>
-        )}
-      </ScreenScrollView>
+      <SettingsList sections={sections} />
     </ThemedView>
   );
 }
@@ -110,37 +70,5 @@ export default function DiagnosticsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  content: {
-    gap: Spacing.four,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: Spacing.three,
-  },
-  actionBtn: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.four,
-    borderRadius: Spacing.three,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  empty: {
-    paddingVertical: Spacing.three,
-  },
-  list: {
-    gap: Spacing.two,
-  },
-  entry: {
-    gap: Spacing.half,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  entryHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
   },
 });

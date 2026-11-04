@@ -1,11 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { type ReactNode, useRef } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 import {
   AboutIcon,
   BridgesIcon,
-  ChevronRightIcon,
   CustomPagesIcon,
   DeveloperIcon,
   DiagnosticsIcon,
@@ -18,18 +16,14 @@ import {
   SyncIcon,
   TrackersIcon,
 } from '@/components/icons/ui-icons';
-import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
-import { UpdatePip } from '@/components/tab-badge';
-import { SettingsSection, settingsRowFrame } from '@/components/settings/settings-row';
+import { fields, type SettingsFormSection, type SettingsIcon } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { NativeTabHeader } from '@/components/native-tab-header';
-import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
-import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { MaxTopLevelWidth } from '@/constants/theme';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
 import { EMPTY_STORAGE_USAGE, overallProgress } from '@/data/downloads/derive';
@@ -37,20 +31,33 @@ import { queryKeys } from '@/data/queries';
 import { useRegistryUpdateCounts } from '@/data/use-settings-badge';
 import { useAppUpdateCheck } from '@/data/use-app-update';
 import { useDataSource, useHideNsfw } from '@/data/source';
-import { useHovered } from '@/hooks/use-hovered';
 import { usePinnedTabBar } from '@/hooks/use-pinned-tab-bar';
-import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
-import { useTheme } from '@/hooks/use-theme';
 import { APP_VERSION } from '@/lib/build-info';
 import { PROFILING_ENABLED } from '@/lib/profiling';
-import { hapticImpactLight } from '@/lib/haptics';
 import { tabHref, useRouter } from '@/lib/nav';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 // The keys are only listened for on web, which is also what the desktop app runs. A phone has no
 // keyboard to rebind, so the row isn't there at all rather than greyed out: nothing about the device
 // could ever make it apply.
 const HAS_SHORTCUTS = Platform.OS === 'web';
+
+/** Each category's glyph, in both languages (`SettingsIcon`): the lucide icon the app's rows draw
+ *  and the SF Symbol the iOS form draws, chosen to say the same thing. */
+const ICONS = {
+  general: { symbol: 'slider.horizontal.3', glyph: (color, size) => <GeneralSettingsIcon color={color} size={size} /> },
+  notifications: { symbol: 'bell', glyph: (color, size) => <NotificationsIcon color={color} size={size} /> },
+  sync: { symbol: 'macbook.and.iphone', glyph: (color, size) => <SyncIcon color={color} size={size} /> },
+  keyboard: { symbol: 'keyboard', glyph: (color, size) => <KeyboardIcon color={color} size={size} /> },
+  bridges: { symbol: 'puzzlepiece', glyph: (color, size) => <BridgesIcon color={color} size={size} /> },
+  trackers: { symbol: 'arrow.clockwise', glyph: (color, size) => <TrackersIcon color={color} size={size} /> },
+  registries: { symbol: 'cylinder', glyph: (color, size) => <RegistriesIcon color={color} size={size} /> },
+  customPages: { symbol: 'square.grid.2x2', glyph: (color, size) => <CustomPagesIcon color={color} size={size} /> },
+  downloads: { symbol: 'arrow.down.circle', glyph: (color, size) => <DownloadsIcon color={color} size={size} /> },
+  storage: { symbol: 'externaldrive', glyph: (color, size) => <StorageIcon color={color} size={size} /> },
+  diagnostics: { symbol: 'ladybug', glyph: (color, size) => <DiagnosticsIcon color={color} size={size} /> },
+  about: { symbol: 'info.circle', glyph: (color, size) => <AboutIcon color={color} size={size} /> },
+  developer: { symbol: 'apple.terminal', glyph: (color, size) => <DeveloperIcon color={color} size={size} /> },
+} satisfies Record<string, SettingsIcon>;
 
 /**
  * The Settings landing screen is a table of contents, nothing more: every category owns its own
@@ -58,16 +65,15 @@ const HAS_SHORTCUTS = Platform.OS === 'web';
  * on `/bridges`, adding and removing registries on `/registries`, and so on). It used to inline
  * every section here, which meant management was scattered — you uninstalled a bridge from inside
  * its detail page and removed a registry from a text button wedged into a row.
+ *
+ * The titles alone carry the table of contents — the per-category explanation lives on the pushed
+ * screen. A row's trailing count reads the SAME query its screen does (`useCategoryCounts`).
  */
 export default function SettingsScreen() {
   const router = useRouter();
-  const theme = useTheme();
-  const scrollRef = useRef<ScrollViewInstance>(null);
-  useScrollToTopOnReselect('settings', scrollRef);
   // Settings keeps its bottom bar: this screen IS navigation, so sliding the nav away under the
   // finger only takes away the thing you came here to tap. See `usePinnedTabBar`.
   usePinnedTabBar();
-  const contentPadding = useSettingsScrollPadding(MaxTopLevelWidth);
 
   const counts = useCategoryCounts();
   // Same sources as the Settings tab pip — badge the exact rows that produced it so opening Settings
@@ -79,139 +85,120 @@ export default function SettingsScreen() {
   const appUpdate = useAppUpdateCheck();
   const customPageCount = useCustomPages().length;
 
+  const sections: SettingsFormSection[] = [
+    {
+      fields: fields(
+        { kind: 'link', testID: 'settings.category.general', icon: ICONS.general, label: 'General', onPress: () => router.push('/settings-general') },
+        {
+          kind: 'link',
+          testID: 'settings.category.notifications',
+          icon: ICONS.notifications,
+          label: 'Notifications',
+          onPress: () => router.push('/settings-notifications'),
+        },
+        { kind: 'link', testID: 'settings.category.sync', icon: ICONS.sync, label: 'Sync', onPress: () => router.push('/settings-sync') },
+        HAS_SHORTCUTS && {
+          kind: 'link',
+          testID: 'settings.category.shortcuts',
+          icon: ICONS.keyboard,
+          label: 'Keyboard',
+          onPress: () => router.push('/settings-shortcuts'),
+        },
+      ),
+    },
+    {
+      fields: [
+        {
+          kind: 'link',
+          testID: 'settings.category.bridges',
+          icon: ICONS.bridges,
+          label: 'Bridges',
+          value: counts.bridges,
+          badge: updates.bridges,
+          onPress: () => router.push('/bridges'),
+        },
+        {
+          kind: 'link',
+          testID: 'settings.category.trackers',
+          icon: ICONS.trackers,
+          label: 'Trackers',
+          value: counts.trackers,
+          badge: updates.trackers,
+          onPress: () => router.push('/trackers'),
+        },
+        {
+          kind: 'link',
+          testID: 'settings.category.registries',
+          icon: ICONS.registries,
+          label: 'Registries',
+          value: counts.registries,
+          onPress: () => router.push('/registries'),
+        },
+        {
+          kind: 'link',
+          testID: 'settings.category.custom-pages',
+          icon: ICONS.customPages,
+          label: 'Custom Pages',
+          value: customPageCount ? String(customPageCount) : undefined,
+          onPress: () => router.push('/custom-pages'),
+        },
+      ],
+    },
+    {
+      fields: [
+        {
+          kind: 'link',
+          testID: 'settings.category.downloads',
+          icon: ICONS.downloads,
+          label: 'Downloads',
+          value: counts.downloads,
+          progress: counts.downloadsProgress,
+          onPress: () => router.push('/downloads'),
+        },
+        { kind: 'link', testID: 'settings.category.storage', icon: ICONS.storage, label: 'Storage', onPress: () => router.push('/storage') },
+      ],
+    },
+    {
+      fields: fields(
+        { kind: 'link', testID: 'settings.category.diagnostics', icon: ICONS.diagnostics, label: 'Diagnostics', onPress: () => router.push('/diagnostics') },
+        {
+          kind: 'link',
+          testID: 'settings.category.about',
+          icon: ICONS.about,
+          label: 'About',
+          // The version doubles as the row's value, so the answer to "which build am I on?" is on
+          // the landing screen itself — the screen behind it is for the rest of the readout.
+          value: APP_VERSION,
+          // A newer build of this channel exists. Only ever 0 or 1 (there's one app, not a list of
+          // them), which still goes through the counted pip rather than a bare UpdateDot: this is a
+          // CATEGORY row like Bridges/Trackers, and keeping the same pill means the tab badge's
+          // total is exactly the sum of the pips visible on this screen.
+          badge: appUpdate.status === 'update-available' ? 1 : 0,
+          onPress: () => router.push('/settings-about'),
+        },
+        PROFILING_ENABLED && {
+          kind: 'link',
+          testID: 'settings.category.developer',
+          icon: ICONS.developer,
+          label: 'Developer',
+          onPress: () => router.push('/settings-developer'),
+        },
+        // THROWAWAY: the bar slide-away test inside this tab's stack (components/bar-test).
+        PROFILING_ENABLED &&
+          Platform.OS === 'ios' && {
+            kind: 'link',
+            testID: 'settings.category.bar-test',
+            icon: ICONS.developer,
+            label: 'Bar test (in tab)',
+            onPress: () => router.push(tabHref('settings', '/bar-test', {})),
+          },
+      ),
+    },
+  ];
+
   return (
     <ThemedView style={styles.container}>
-      <ScreenScrollMarker>
-        <ScrollView
-          ref={scrollRef}
-          style={scrollbarInset(contentPadding.paddingTop)}
-          contentContainerStyle={[
-            styles.content,
-            contentPadding,
-            // flexGrow: fill the viewport even when the list is short, so the space below it is still
-            // draggable (see SeriesGrid's note).
-            styles.fill,
-          ]}>
-          <View style={styles.list}>
-            <SettingsSection>
-              <CategoryRow
-                testID="settings.category.general"
-                icon={<GeneralSettingsIcon color={theme.text} size={18} />}
-                title="General"
-                onPress={() => router.push('/settings-general')}
-              />
-              <CategoryRow
-                testID="settings.category.notifications"
-                icon={<NotificationsIcon color={theme.text} size={18} />}
-                title="Notifications"
-                onPress={() => router.push('/settings-notifications')}
-              />
-              <CategoryRow
-                testID="settings.category.sync"
-                icon={<SyncIcon color={theme.text} size={18} />}
-                title="Sync"
-                onPress={() => router.push('/settings-sync')}
-              />
-              {HAS_SHORTCUTS && (
-                <CategoryRow
-                  testID="settings.category.shortcuts"
-                  icon={<KeyboardIcon color={theme.text} size={18} />}
-                  title="Keyboard"
-                  onPress={() => router.push('/settings-shortcuts')}
-                />
-              )}
-            </SettingsSection>
-            <SettingsSection>
-              <CategoryRow
-                testID="settings.category.bridges"
-                icon={<BridgesIcon color={theme.text} size={18} />}
-                title="Bridges"
-                value={counts.bridges}
-                updates={updates.bridges}
-                onPress={() => router.push('/bridges')}
-              />
-              <CategoryRow
-                testID="settings.category.trackers"
-                icon={<TrackersIcon color={theme.text} size={18} />}
-                title="Trackers"
-                value={counts.trackers}
-                updates={updates.trackers}
-                onPress={() => router.push('/trackers')}
-              />
-              <CategoryRow
-                testID="settings.category.registries"
-                icon={<RegistriesIcon color={theme.text} size={18} />}
-                title="Registries"
-                value={counts.registries}
-                onPress={() => router.push('/registries')}
-              />
-              <CategoryRow
-                testID="settings.category.custom-pages"
-                icon={<CustomPagesIcon color={theme.text} size={18} />}
-                title="Custom Pages"
-                value={customPageCount ? String(customPageCount) : undefined}
-                onPress={() => router.push('/custom-pages')}
-              />
-            </SettingsSection>
-            <SettingsSection>
-              <CategoryRow
-                testID="settings.category.downloads"
-                icon={<DownloadsIcon color={theme.text} size={18} />}
-                title="Downloads"
-                value={counts.downloads}
-                progress={counts.downloadsProgress}
-                onPress={() => router.push('/downloads')}
-              />
-              <CategoryRow
-                testID="settings.category.storage"
-                icon={<StorageIcon color={theme.text} size={18} />}
-                title="Storage"
-                onPress={() => router.push('/storage')}
-              />
-            </SettingsSection>
-            <SettingsSection>
-              <CategoryRow
-                testID="settings.category.diagnostics"
-                icon={<DiagnosticsIcon color={theme.text} size={18} />}
-                title="Diagnostics"
-                onPress={() => router.push('/diagnostics')}
-              />
-              <CategoryRow
-                testID="settings.category.about"
-                icon={<AboutIcon color={theme.text} size={18} />}
-                title="About"
-                // The version doubles as the row's value, so the answer to "which build am I on?" is on
-                // the landing screen itself — the screen behind it is for the rest of the readout.
-                value={APP_VERSION}
-                // A newer build of this channel exists. Only ever 0 or 1 (there's one app, not a list of
-                // them), which still goes through the counted pip rather than a bare UpdateDot: this is a
-                // CATEGORY row like Bridges/Trackers, and keeping the same pill means the tab badge's
-                // total is exactly the sum of the pips visible on this screen.
-                updates={appUpdate.status === 'update-available' ? 1 : 0}
-                onPress={() => router.push('/settings-about')}
-              />
-              {PROFILING_ENABLED && (
-                <CategoryRow
-                  testID="settings.category.developer"
-                  icon={<DeveloperIcon color={theme.text} size={18} />}
-                  title="Developer"
-                  onPress={() => router.push('/settings-developer')}
-                />
-              )}
-              {/* THROWAWAY: the bar slide-away test inside this tab's stack (components/bar-test). */}
-              {PROFILING_ENABLED && Platform.OS === 'ios' && (
-                <CategoryRow
-                  testID="settings.category.bar-test"
-                  icon={<DeveloperIcon color={theme.text} size={18} />}
-                  title="Bar test (in tab)"
-                  onPress={() => router.push(tabHref('settings', '/bar-test', {}))}
-                />
-              )}
-            </SettingsSection>
-          </View>
-        </ScrollView>
-      </ScreenScrollMarker>
-
+      <SettingsList sections={sections} column={MaxTopLevelWidth} reselectRoute="settings" />
       {NATIVE_HEADER ? (
         <NativeTabHeader title="Settings" holdTestID="settings.nsfw-hold" />
       ) : (
@@ -270,122 +257,8 @@ function useCategoryCounts() {
   };
 }
 
-/** A top-level Settings entry: leading glyph, title, an optional count, and a chevron. The titles
- *  alone carry the table of contents — the per-category explanation lives on the pushed screen. */
-function CategoryRow({
-  icon,
-  title,
-  value,
-  updates,
-  progress,
-  disabled,
-  onPress,
-  testID,
-}: {
-  icon: ReactNode;
-  title: string;
-  value?: string;
-  /** Updates available for this category — registry updates on Bridges/Trackers, a pending app
-   *  update on About. Renders the same accent pip as the tab badge. */
-  updates?: number;
-  /** Cumulative download progress [0,1] — renders a small radial before the chevron while in flight. */
-  progress?: number;
-  disabled?: boolean;
-  onPress: () => void;
-  testID: string;
-}) {
-  const theme = useTheme();
-  const { hovered, onHoverIn, onHoverOut } = useHovered();
-  return (
-    <Pressable
-      testID={testID}
-      onPress={() => {
-        hapticImpactLight();
-        onPress();
-      }}
-      onHoverIn={onHoverIn}
-      onHoverOut={onHoverOut}
-      disabled={disabled}
-      android_ripple={disabled ? undefined : { color: theme.backgroundSelected }}
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      accessibilityState={{ disabled: !!disabled }}>
-      {({ pressed }) => (
-        <View
-          style={[
-            settingsRowFrame.row,
-            styles.row,
-            disabled && styles.disabled,
-            !disabled && (pressed || hovered) && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
-          ]}>
-          <View style={[styles.icon, { backgroundColor: theme.tileWash }]}>
-            {icon}
-            {/* The registry-update pip sits on the row's icon tile the way the tab pip sits on the
-                tab icon — same corner placement, so the two read as the same signal. */}
-            {updates !== undefined && updates > 0 && (
-              <View style={styles.iconPip} pointerEvents="none">
-                <UpdatePip count={updates} />
-              </View>
-            )}
-          </View>
-          <View style={settingsRowFrame.text}>
-            <ThemedText type="small" numberOfLines={1}>
-              {title}
-            </ThemedText>
-          </View>
-          {value !== undefined && (
-            <ThemedText type="small" themeColor="textSecondary">
-              {value}
-            </ThemedText>
-          )}
-          {progress !== undefined && <CumulativeDownloadRadial fraction={progress} size={20} strokeWidth={2.5} />}
-          <ChevronRightIcon color={theme.textSecondary} size={18} />
-        </View>
-      )}
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  content: {
-    // Horizontal padding comes from `useSettingsScrollPadding` — see `SettingsGutter`.
-    width: '100%',
-    maxWidth: MaxTopLevelWidth,
-    alignSelf: 'center',
-  },
-  fill: {
-    flexGrow: 1,
-  },
-  list: {
-    width: '100%',
-    gap: Spacing.four,
-  },
-  // Only what a category row adds ON TOP of `settingsRowFrame.row` (which it spreads): a pointer
-  // cursor, and no `justifyContent` — its icon/text/count/chevron lay out left to right rather than
-  // pushing a single control to the far end.
-  row: {
-    justifyContent: 'flex-start',
-    cursor: 'pointer',
-  },
-  disabled: {
-    opacity: 0.4,
-    cursor: 'auto',
-  },
-  // The glyph's tile: the same shape a bridge's icon takes in `RowIcon`, so the hub's rows and the
-  // list rows behind them share a leading column.
-  icon: {
-    width: 28,
-    height: 28,
-    borderRadius: Spacing.two,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconPip: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
   },
 });

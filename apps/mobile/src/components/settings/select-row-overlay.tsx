@@ -51,12 +51,13 @@ export function SettingsSelectRow<T extends string>({
   onChange,
   heading,
   placeholder,
+  testID,
 }: SettingsSelectRowProps<T>) {
   const theme = useTheme();
   const { ref, openAt } = useAnchoredOverlay();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const current = options.find((o) => o.value === value);
-  const base = testId('settings.select', label);
+  const base = testID ?? testId('settings.select', label);
   // See the docblock: on a narrow viewport the value takes the second line and the description
   // stands down, rather than the two of them splitting one line badly.
   const stacked = useIsCompact();

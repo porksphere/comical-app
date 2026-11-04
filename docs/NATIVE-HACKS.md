@@ -162,14 +162,21 @@ the end of this doc is the only guard.
 
 - **What:** a view that names a screen's list to its view controller, with the public
   `setContentScrollView(_:for:)`. It finds the controller through the responder chain and the list by
-  walking first subviews.
+  walking first subviews, and failing that by the nearest list at least half the window tall anywhere
+  under it: a SwiftUI list (the settings screens' form, `settings-list.ios.tsx`) sits a few views
+  into its host and not first among them. For that list it also stands in for the marker, which can
+  hold only a React Native scroll view: `tabBar` names the list for the tab bar too (`.all`), and
+  `scrollToTop` (a view function) scrolls it on the tab's reselect, since react-native-screens
+  scrolls only the list its marker holds.
 - **Where:** `apps/mobile/modules/content-scroll-view/`, `src/components/screen-scroll-marker.tsx`, and
-  around every screen's main list.
+  around every screen's main list; `settings-list.ios.tsx` renders it directly.
 - **Why:** react-native-screens' legacy stack, which expo-router uses, never names the list. Its newer
   stack does, with this same call. Left to itself, UIKit found the list under one wrapper and lost it
   under two, and the bar stopped sliding. That depth limit is **observed on one device, not documented**.
 - **Status: naming is unverified on a device.** The test that found this confirmed only the
-  one-wrapper case. If naming does not work, every wrapped screen stays put.
+  one-wrapper case. If naming does not work, every wrapped screen stays put. The SwiftUI search,
+  `tabBar` and `scrollToTop` are unverified too: if the search fails, the settings screens' bars stay
+  put and the Settings tab's reselect scrolls nothing.
 - **Risks:**
   - It is a convention. A new screen whose list has no marker silently keeps a fixed bar.
   - Series details has layers on one route, so `ScreenScrollActiveContext` makes only the top layer's

@@ -20,4 +20,6 @@ export type SettingsSelectRowProps<T extends string> = {
   heading?: string;
   /** Muted text shown on the right when `value` matches no option (nothing chosen yet). */
   placeholder?: string;
+  /** The row's id. Defaults to `settings.select.<label>`. */
+  testID?: string;
 };

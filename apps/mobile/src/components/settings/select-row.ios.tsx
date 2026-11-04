@@ -38,6 +38,7 @@ function MenuSelectRow<T extends string>({
   onChange,
   heading,
   placeholder,
+  testID,
   anchor: Anchor,
 }: SettingsSelectRowProps<T> & { anchor: NonNullable<typeof MenuAnchor> }) {
   const theme = useTheme();
@@ -56,7 +57,7 @@ function MenuSelectRow<T extends string>({
     on: option.value === value,
   }));
   return (
-    <View testID={testId('settings.select', label)} style={settingsRowFrame.row}>
+    <View testID={testID ?? testId('settings.select', label)} style={settingsRowFrame.row}>
       <View style={settingsRowFrame.text}>
         <ThemedText type="small" numberOfLines={1}>
           {label}

@@ -2,11 +2,20 @@
  * `content-scroll-view` tells the screen's view controller which list under it is its content, so
  * the navigation bar can follow a list UIKit wouldn't find for itself. See `ScreenScrollMarker`.
  *
+ * `tabBar` names the list for the tab bar too, and `scrollToTop` (on the ref) scrolls it: for a
+ * tab root whose list is a SwiftUI one (the Settings form), which react-native-screens' marker
+ * can't hold and so can't scroll on the tab's reselect.
+ *
  * Null where the module isn't linked (Android, web, a build from before it existed).
  */
 import { requireNativeView, requireOptionalNativeModule } from 'expo';
-import type { ComponentType } from 'react';
+import type { ComponentType, Ref } from 'react';
 import type { ViewProps } from 'react-native';
 
-export const ContentScrollAnchor: ComponentType<ViewProps & { active?: boolean }> | null =
-  requireOptionalNativeModule('ContentScrollView') ? requireNativeView('ContentScrollView') : null;
+export type ContentScrollAnchorRef = { scrollToTop(): Promise<void> };
+
+export type ContentScrollAnchorProps = ViewProps & { active?: boolean; tabBar?: boolean; ref?: Ref<ContentScrollAnchorRef> };
+
+export const ContentScrollAnchor: ComponentType<ContentScrollAnchorProps> | null = requireOptionalNativeModule('ContentScrollView')
+  ? requireNativeView<ContentScrollAnchorProps>('ContentScrollView')
+  : null;
