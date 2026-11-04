@@ -62,8 +62,10 @@ tab's SwiftUI list reports it through the content-scroll-view anchor's `scrolled
 material as an option — `none` over the top of the page, the material once content is under the
 bar — and `nav-bar-fade` crossfades the switch, as on the series page. Pushed pages keep the
 material always; their title is a custom title view (`TopBar`, `barTitleStyle`), centred by
-UIKit as the tabs' is, where a plain-text title sat at the leading edge, with `nav-bar-fade`
-registering it for the folded Duo's hard edge. Two exceptions. The
+UIKit as the tabs' is, where a plain-text title sat at the leading edge. Their backing over
+content is the system's scroll edge (the soft one; the folded Duo's hard one), which UIKit draws
+only behind what the bar registers — a plain-text title, never a custom view — so `nav-bar-fade`
+registers the view on every pushed page. Two exceptions. The
 series details' bar: bare over the strip, the series' title a custom title view always in the bar
 that fades in with the scroll as the page's own title goes under it (never an option: a plain-text
 title is backed by the scroll edge, and where the back button sits in the Duo's vertical bar an

@@ -15,7 +15,6 @@ import { useInSettingsPane } from '@/lib/settings-pane';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
-import { useFoldedBarEdge } from '@/lib/native-bar';
 import { useWindowControlsClearance } from '@/lib/window-controls';
 
 import { NavBarFade } from '../../modules/nav-bar-fade';
@@ -71,7 +70,6 @@ export function TopBar({
   const barHeight = useTopBarHeight();
   const clearance = useWindowControlsClearance();
   const inPane = useInSettingsPane();
-  const foldedEdge = useFoldedBarEdge();
   // Inside the settings modal the pane has no bar of its own: the modal supplies the header, and a
   // back button here would point at a stack this pane isn't on. The trailing actions still have to
   // land somewhere, so they go into that header.
@@ -89,9 +87,10 @@ export function TopBar({
     const items = actions?.filter((action) => action.native) ?? [];
     // The title as a custom title view, as the tabs' is: centred by UIKit between the items, where
     // the plain-text title sat at the leading edge and moved with the bar's minimization. The option
-    // still names the screen (the back button, accessibility). UIKit draws the folded Duo's hard
-    // edge only behind what the bar registers, which a custom view isn't, so `nav-bar-fade` registers
-    // it there, as on the series page.
+    // still names the screen (the back button, accessibility). The bar's backing over content is
+    // the system's scroll edge — the soft one, the folded Duo's hard one — which UIKit draws only
+    // behind what the bar registers: a plain-text title, not a custom view. So `nav-bar-fade`
+    // registers the view, as it does on the series page once its title is past.
     return (
       <>
         <Stack.Screen options={{ title }} />
@@ -100,7 +99,7 @@ export function TopBar({
             {title}
           </ThemedText>
         </Stack.Title>
-        {NavBarFade && foldedEdge ? <NavBarFade style={styles.probe} pointerEvents="none" edgeBacked /> : null}
+        {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" edgeBacked /> : null}
         {items.length > 0 ? (
           <Stack.Toolbar placement="right">
             {items.map((action) =>
