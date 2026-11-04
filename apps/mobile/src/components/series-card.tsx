@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { BookChrome, CoverShadow, HiddenCover, LooseSheet } from '@/components/book-chrome';
+import { BookChrome, CoverShadow, LooseSheet } from '@/components/book-chrome';
 import { CardOverlays } from '@/components/card-badge';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -19,7 +19,7 @@ import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { BOOK_COVERS, SHEET_OFFSET, bookRadius, type BookCover } from '@/lib/book-cover';
+import { SHEET_OFFSET, bookRadius, type BookCover } from '@/lib/book-cover';
 import { useTabRoute } from '@/lib/focused-tab';
 import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, LinkTrigger, router, tabHref } from '@/lib/nav';
@@ -637,23 +637,15 @@ export function SeriesCard({
   // placeholder that keeps the slot (grid counts/columns stay stable) but never
   // even requests the real cover/title — mirrors the reference's `makeCard`
   // (app.ts:2649), which renders excluded entries without touching their image.
+  // Never drawn as a book, even with book covers on: dressed as one, a blank tile reads as a prop.
   if (entry.excluded) {
-    // As a book it is always a plain volume: there is no cover to judge its shape by.
-    const wrapped = book && BOOK_COVERS.volume[book.binding];
     return (
       <View style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}>
-        {wrapped ? (
-          <CoverFrame aspect={DEFAULT_THUMB_ASPECT} book={wrapped}>
-            <HiddenCover />
-            <BookChrome cover={wrapped} />
-          </CoverFrame>
-        ) : (
-          <CoverFrame aspect={DEFAULT_THUMB_ASPECT} contentStyle={styles.hiddenCover}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Hidden
-            </ThemedText>
-          </CoverFrame>
-        )}
+        <CoverFrame aspect={DEFAULT_THUMB_ASPECT} contentStyle={styles.hiddenCover}>
+          <ThemedText type="small" themeColor="textSecondary">
+            Hidden
+          </ThemedText>
+        </CoverFrame>
       </View>
     );
   }

@@ -1,7 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -81,19 +80,6 @@ export function LibraryRibbon({ style }: { style: StyleProp<ViewStyle> }) {
   );
 }
 
-/** A hidden series: the book stays on the shelf as a plain board with no cover on it, saying so in the
- *  same word the flat card does. Drawn under `BookChrome`. */
-export function HiddenCover() {
-  const theme = useTheme();
-  return (
-    <View style={[styles.fill, styles.hidden, { backgroundColor: theme.coverBlank }]}>
-      <ThemedText type="small" themeColor="textSecondary">
-        Hidden
-      </ThemedText>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   fill: {
     position: 'absolute',
@@ -135,9 +121,5 @@ const styles = StyleSheet.create({
     width: 0,
     height: 0,
     borderBottomColor: 'transparent',
-  },
-  hidden: {
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
