@@ -163,7 +163,15 @@ export default function SettingsScreen() {
     },
     {
       fields: fields(
-        { kind: 'link', testID: 'settings.category.diagnostics', icon: ICONS.diagnostics, label: 'Diagnostics', onPress: () => router.push('/diagnostics') },
+        {
+          kind: 'link',
+          testID: 'settings.category.diagnostics',
+          icon: ICONS.diagnostics,
+          label: 'Diagnostics',
+          // EXPERIMENT: pushed in this tab's own stack on iOS, where the swipe back lands on a
+          // screen with a bar — see `in-tab/diagnostics`.
+          onPress: () => router.push(NATIVE_HEADER ? tabHref('settings', '/diagnostics', {}) : '/diagnostics'),
+        },
         {
           kind: 'link',
           testID: 'settings.category.about',
