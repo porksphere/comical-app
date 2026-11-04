@@ -61,7 +61,7 @@ export function bridgeMetaSections(info: ApiBridgeInfo): SettingsFormSection[] {
     },
     {
       title: 'Capabilities',
-      fields: capabilities.length > 0 ? [{ kind: 'note', testID: 'settings.bridge.capabilities', title: capabilities.map(capabilityLabel).join(', ') }] : [],
+      fields: capabilities.length > 0 ? [{ kind: 'chips', testID: 'settings.bridge.capabilities', items: capabilities.map(capabilityLabel) }] : [],
     },
   ];
 }

@@ -153,6 +153,12 @@ export type SettingsField =
       testID?: string;
     }
   | {
+      /** A run of short labels as chips: a bridge's capabilities. The id keys it. */
+      kind: 'chips';
+      testID: string;
+      items: readonly string[];
+    }
+  | {
       /** Anything else, drawn by the screen. The id keys it; nothing is derived from it. */
       kind: 'custom';
       testID: string;
@@ -247,6 +253,7 @@ export function fieldTestID(field: SettingsField): string {
       return field.testID ?? testId('settings.row', field.label);
     case 'note':
       return field.testID ?? testId('settings.note', field.title);
+    case 'chips':
     case 'custom':
       return field.testID;
   }

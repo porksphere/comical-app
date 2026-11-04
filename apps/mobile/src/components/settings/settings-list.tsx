@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 
+import { ChipRow } from '@/components/chip';
 import { Holdable } from '@/components/context-menu';
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
 import { SelectLead, SelectLeadGap } from '@/components/multi-select/select-mode';
@@ -239,6 +240,12 @@ function Field({ field, section }: { field: SettingsField; section: SettingsForm
           ))}
         </View>
       );
+    case 'chips':
+      return (
+        <View testID={id} style={styles.chips}>
+          <ChipRow labels={[...field.items]} accent />
+        </View>
+      );
     case 'custom':
       return <>{field.render()}</>;
     default: {
@@ -367,6 +374,10 @@ const styles = StyleSheet.create({
   value: {
     flexShrink: 1,
     textAlign: 'right',
+  },
+  chips: {
+    paddingVertical: Spacing.three,
+    paddingHorizontal: SettingsCardInset,
   },
   note: {
     paddingVertical: Spacing.three,

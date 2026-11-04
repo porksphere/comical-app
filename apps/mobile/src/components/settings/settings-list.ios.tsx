@@ -9,6 +9,7 @@ import {
   Picker,
   ProgressView,
   RNHostView,
+  ScrollView,
   Section,
   SecureField,
   Spacer,
@@ -242,6 +243,27 @@ function Field({ field, section }: { field: SettingsField; section: SettingsForm
             </HStack>
           ))}
         </VStack>
+      );
+    case 'chips':
+      // A row that scrolls sideways, as the App Store's tags do: the labels as capsules in the
+      // chip colours, inset like the row's text, running under the row's edge.
+      return (
+        <ScrollView axes="horizontal" showsIndicators={false} modifiers={[accessibilityIdentifier(id), listRowInsets({ top: 0, bottom: 0, leading: 0, trailing: 0 })]}>
+          <HStack spacing={6} modifiers={[padding({ horizontal: 16, vertical: 10 })]}>
+            {field.items.map((item, i) => (
+              <Text
+                key={`${i}-${item}`}
+                modifiers={[
+                  FOOTNOTE,
+                  foregroundStyle(theme.chipText),
+                  padding({ horizontal: 10, vertical: 5 }),
+                  background(theme.chipBg, shapes.capsule()),
+                ]}>
+                {item}
+              </Text>
+            ))}
+          </HStack>
+        </ScrollView>
       );
     case 'custom':
       // The screen's own block, hosted in a row of its own with no inset of the row's: the block
