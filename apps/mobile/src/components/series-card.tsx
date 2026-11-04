@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
+import { BookChrome, PaperWrap } from '@/components/book-chrome';
 import { CardOverlays } from '@/components/card-badge';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -12,11 +13,13 @@ import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
+import { useBookCover } from '@/hooks/use-book-covers';
 import { useSavedInLibrary } from '@/hooks/use-library-marker';
 import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { bookCorners, bookZoomRadius, COVER_SHADOW, type BookCover } from '@/lib/book-cover';
 import { useTabRoute } from '@/lib/focused-tab';
 import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, LinkTrigger, router, tabHref } from '@/lib/nav';
@@ -139,6 +142,7 @@ export function CoverFrame({
   ring,
   onLayout,
   contentStyle,
+  book,
   children,
 }: {
   aspect: number;
@@ -153,10 +157,25 @@ export function CoverFrame({
   onLayout?: (e: LayoutChangeEvent) => void;
   /** How the box arranges and backs what it holds, over its own defaults. */
   contentStyle?: StyleProp<ViewStyle>;
+  /** Drawn as a book: its corners, and a shadow beneath it. The chrome itself is the caller's. */
+  book?: BookCover | null;
   children: ReactNode;
 }) {
   const desktop = useIsDesktop();
   const theme = useTheme();
+  const corners = book ? [ContinuousCorner, bookCorners(book, desktop)] : null;
+  if (book && Platform.OS !== 'web') {
+    // The shadow sits on a box that doesn't clip. Whether `overflow: hidden` cuts a `boxShadow` off
+    // its own view isn't documented, so the clip moves one level in rather than risk it.
+    return (
+      <View
+        ref={coverRef}
+        style={[styles.coverBox, { aspectRatio: aspect }, corners, styles.bookShadow, hidden && styles.coverHidden]}
+        onLayout={onLayout}>
+        <View style={[styles.coverClip, corners, contentStyle]}>{children}</View>
+      </View>
+    );
+  }
   if (Platform.OS !== 'web') {
     // Native has no ring, so the box IS the clip — one fewer host view means one fewer Fabric clone
     // up the ancestor chain on every commit, on the platform that scrolls these grids.
@@ -173,17 +192,16 @@ export function CoverFrame({
     // Web draws the ring as a sibling over the clip, so a scaled picture inside the clip can't cover it.
     <View
       ref={coverRef}
-      style={[styles.coverBox, { aspectRatio: aspect }, hidden && styles.coverHidden]}
+      style={[styles.coverBox, { aspectRatio: aspect }, corners && [corners, styles.bookShadow], hidden && styles.coverHidden]}
       onLayout={onLayout}>
-      <View style={[styles.coverClip, coverStyles.corner, desktop && coverStyles.cornerDesktop, contentStyle]}>
+      <View style={[styles.coverClip, corners ?? [coverStyles.corner, desktop && coverStyles.cornerDesktop], contentStyle]}>
         {children}
       </View>
       {ring && (
         <View
           style={[
             coverStyles.ring,
-            coverStyles.corner,
-            desktop && coverStyles.cornerDesktop,
+            corners ?? [coverStyles.corner, desktop && coverStyles.cornerDesktop],
             { borderColor: coverRingColor(theme), pointerEvents: 'none' },
           ]}
         />
@@ -433,6 +451,7 @@ export function SeriesCard({
   // `transform`-only illusion that never triggers another relayout — see
   // `pictureStyle`/`trailingStyle`.
   const [learnedAspect, learnCoverAspect] = useCoverAspect(entry.id, entry.coverAspect);
+  const book = useBookCover({ bridgeId, seriesId: entry.id, direct: !!direct, aspect: learnedAspect });
   // Never taller than the row was laid out for: a bridge hint that turns out wrong once the picture
   // lands crops the cover (it's `contentFit="cover"`) rather than overflowing the row.
   const coverAspect = Math.max(learnedAspect, rowAspect);
@@ -483,9 +502,11 @@ export function SeriesCard({
   const zoomSource = useZoomSourceKey();
   const zoomFlying = useIsZoomingSeries(entry.id, zoomSource);
   const coverRef = useRef<ViewInstance>(null);
-  // Radius 10 = CARD_COVER_RADIUS, matching `coverBoxClip` / `coverClip` below. The hook also
-  // registers this cover as re-measurable, so a collapse asks where it is NOW — see series-zoom.
-  const captureZoomOrigin = useZoomOriginSource(entry.id, zoomSource, coverRef, 10, !isWeb);
+  // Radius 10 = CARD_COVER_RADIUS, matching `coverBoxClip` / `coverClip` below; a book starts from its
+  // fore-edge instead. The hook also registers this cover as re-measurable, so a collapse asks where
+  // it is NOW — see series-zoom.
+  const coverRadius = book ? bookZoomRadius(book) : COVER_CORNER.borderRadius;
+  const captureZoomOrigin = useZoomOriginSource(entry.id, zoomSource, coverRef, coverRadius, !isWeb);
   // The detail this card opens, started when the finger lands rather than when the route mounts —
   // see useWarmSeriesDetail. Same opts the destination will use, so it adopts this fetch rather
   // than issuing its own.
@@ -608,13 +629,22 @@ export function SeriesCard({
   // even requests the real cover/title — mirrors the reference's `makeCard`
   // (app.ts:2649), which renders excluded entries without touching their image.
   if (entry.excluded) {
+    // As a book it is always a plain volume: there is no cover to judge its shape by.
+    const wrapped: BookCover | null = book && { form: 'volume', binding: book.binding };
     return (
       <View style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}>
-        <CoverFrame aspect={DEFAULT_THUMB_ASPECT} contentStyle={styles.hiddenCover}>
-          <ThemedText type="small" themeColor="textSecondary">
-            Hidden
-          </ThemedText>
-        </CoverFrame>
+        {wrapped ? (
+          <CoverFrame aspect={DEFAULT_THUMB_ASPECT} book={wrapped}>
+            <PaperWrap />
+            <BookChrome cover={wrapped} />
+          </CoverFrame>
+        ) : (
+          <CoverFrame aspect={DEFAULT_THUMB_ASPECT} contentStyle={styles.hiddenCover}>
+            <ThemedText type="small" themeColor="textSecondary">
+              Hidden
+            </ThemedText>
+          </CoverFrame>
+        )}
       </View>
     );
   }
@@ -732,7 +762,8 @@ export function SeriesCard({
         ) : (
           pictureInner
         )}
-        <CardOverlays badges={entry.badges} rank={rank} saved={saved} unread={entry.unread} />
+        {book && <BookChrome cover={book} />}
+        <CardOverlays badges={entry.badges} rank={rank} saved={saved} unread={entry.unread} book={book} />
         {/* A wash in the page colour, not an opacity dim: here "broken" is the message, but the
             badges above still have to read. */}
         {entry.unavailable && (
@@ -752,10 +783,11 @@ export function SeriesCard({
             coverRef={coverRef}
             hidden={coverHidden}
             ring={active || menuOpen}
+            book={book}
             onLayout={shrink.onCoverLayout}>
             {coverContents}
           </CoverFrame>,
-          COVER_CORNER.borderRadius,
+          coverRadius,
         )}
 
         {/* Trailing group is an Animated.View only when the shrink illusion drives its translateY;
@@ -997,6 +1029,9 @@ const styles = StyleSheet.create({
   // preserved; only the cover goes invisible.
   coverHidden: {
     opacity: 0,
+  },
+  bookShadow: {
+    boxShadow: COVER_SHADOW,
   },
   trailingGroup: {
     // Replaces the spacing `card`'s own `gap` used to provide between the cover

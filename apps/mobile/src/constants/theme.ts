@@ -70,6 +70,11 @@ export const Colors = {
     chipBg: '#F0F0F3',
     chipBorder: '#B9CEF5',
     chipText: '#2257C7',
+    // Book covers: the half-point rim that keeps a pale cover off a white page, and the plain
+    // bookshop paper a hidden series is wrapped in (with the ink its label is stamped in).
+    coverRim: 'rgba(0,0,0,0.13)',
+    paperWrap: '#E8E1CF',
+    paperWrapInk: '#6E6551',
     // Destructive actions/errors (uninstall, remove registry, save failures) —
     // was hardcoded per-callsite as '#E5484D'; centralized here so it reads from
     // the theme like every other color and stays in sync across screens.
@@ -131,6 +136,10 @@ export const Colors = {
     chipBg: '#212225',
     chipBorder: '#2c4060',
     chipText: '#8ab4f8',
+    // On black a shadow is invisible, so the rim is what holds a cover's edge.
+    coverRim: 'rgba(255,255,255,0.14)',
+    paperWrap: '#CFC8B6',
+    paperWrapInk: '#5E5645',
     danger: '#E5484D',
   },
 } as const;

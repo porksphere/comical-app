@@ -63,6 +63,11 @@ appId: com.porksphere.comical
 - takeScreenshot: general
 - assertVisible:
     id: "settings.select.appearance"
+# Book covers: off and back on, so the flows after this one see the default.
+- tapOn:
+    id: "settings.toggle.book-covers"
+- tapOn:
+    id: "settings.toggle.book-covers"
 # Auto-download: per-kind toggles under their own heading. Flipped on and back off, so the
 # walkthrough leaves no download policy behind for the flows after it.
 - scrollUntilVisible:

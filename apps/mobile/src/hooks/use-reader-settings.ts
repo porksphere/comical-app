@@ -114,6 +114,16 @@ export function useReadsRightToLeft(): boolean {
   });
 }
 
+/** The reader's own mode, without any series' override. */
+export function useDefaultReaderMode(): ReaderMode {
+  return use$(() => settings$.mode.get() ?? DEFAULT_SETTINGS.mode);
+}
+
+/** The reader's direction setting. Global: nothing stores a direction per series or per bridge. */
+export function useDefaultReaderDirection(): ReaderDirection {
+  return use$(() => settings$.direction.get() ?? DEFAULT_SETTINGS.direction);
+}
+
 /** `[settings, patch]`. Reads spread over the defaults so a blob persisted before a
  *  field existed still surfaces every key. Given a series, `mode` is that series' own where it has
  *  one (see `seriesMode$`), and a patch to `mode` then stays with the series — as the reader's
