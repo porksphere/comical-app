@@ -4,14 +4,13 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-import { FOLD, GLOSS, HINGE, PANE, SHADOW, SHADOW_DEPTH, SHEET_OFFSET, bookRadius, ribbonSize, type BookCover } from '@/lib/book-cover';
+import { FOLD, HINGE, PANE, SHADOW, SHADOW_DEPTH, SHEET_OFFSET, bookRadius, ribbonSize, type BookCover } from '@/lib/book-cover';
 
 const FROM_SPINE = {
   left: { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } },
   right: { start: { x: 1, y: 0 }, end: { x: 0, y: 0 } },
 } as const;
 const DOWN = { start: { x: 0, y: 0 }, end: { x: 0, y: 1 } } as const;
-const ACROSS_THE_GRAIN = { start: { x: 0, y: 0.25 }, end: { x: 1, y: 0.75 } } as const;
 
 /** The book drawn over a cover's picture, inside its clip: the spine-side shading for its form, then
  *  the rim and top-edge light. Never takes a touch. The rim's corner is the clip's own shape, not just
@@ -31,7 +30,6 @@ export function BookChrome({ cover }: { cover: BookCover }) {
           {...FROM_SPINE[cover.binding]}
         />
       )}
-      {cover.form === 'issue' && <LinearGradient style={styles.fill} colors={GLOSS.colors} locations={GLOSS.locations} {...ACROSS_THE_GRAIN} />}
       <View style={[styles.fill, styles.rim, ContinuousCorner, { borderRadius: radius, borderColor: theme.coverRim }]} />
     </>
   );

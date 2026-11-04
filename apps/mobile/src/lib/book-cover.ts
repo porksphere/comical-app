@@ -113,16 +113,12 @@ export const FOLD: Shade = {
   locations: [0, 0.025, 0.035, 0.05, 0.06, 0.09],
 };
 
-/** The diagonal band of gloss a thin issue's cover stock catches. */
-export const GLOSS: Shade = {
-  colors: ['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)', 'rgba(255,255,255,0)'],
-  locations: [0.36, 0.46, 0.57],
-};
-
-/** An unbound pane's light: bright along the top edge, a little shade at the foot. Read top to bottom. */
+/** An unbound pane's light, read top to bottom: a catch of light along the top edge and a little
+ *  shade at the foot, both kept to the edges. Nothing here crosses the picture — a band laid over the
+ *  art (an issue's gloss, a pane's top fifth washed white) reads as glare on a busy or dark cover. */
 export const PANE: Shade = {
-  colors: ['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.12)'],
-  locations: [0, 0.2, 0.78, 1],
+  colors: ['rgba(255,255,255,0.10)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.07)'],
+  locations: [0, 0.05, 0.88, 1],
 };
 
 /**
