@@ -2,7 +2,8 @@ import { createContext, use, type ComponentProps, type ReactNode } from 'react';
 import { Platform, ScrollView, StyleSheet } from 'react-native';
 import { ScrollViewMarker } from 'react-native-screens';
 
-import { useFoldedBarEdge } from '@/lib/native-bar';
+import { BAR_SCROLLED_AT, useReportBarScrolled } from '@/components/bar-scrolled';
+import { HIDDEN_TOP_EDGE, useFoldedBarEdge } from '@/lib/native-bar';
 
 import { ContentScrollAnchor } from '../../modules/content-scroll-view';
 
@@ -54,11 +55,23 @@ export function ScreenScrollMarker({
   const tabRoot = use(TabRootScrollContext);
   const active = use(ScreenScrollActiveContext);
   const foldedEdge = useFoldedBarEdge();
+  const report = useReportBarScrolled();
   if (Platform.OS !== 'ios') return children;
-  const list = tabRoot ? <ScrollViewMarker key={markerKey} style={styles.fill} scrollEdgeEffects={foldedEdge}>{children}</ScrollViewMarker> : children;
+  const list = tabRoot ? (
+    <ScrollViewMarker key={markerKey} style={styles.fill} scrollEdgeEffects={foldedEdge ?? HIDDEN_TOP_EDGE}>
+      {children}
+    </ScrollViewMarker>
+  ) : (
+    children
+  );
   if (!ContentScrollAnchor) return list;
   return (
-    <ContentScrollAnchor key={markerKey} active={active} style={styles.fill}>
+    <ContentScrollAnchor
+      key={markerKey}
+      active={active}
+      style={styles.fill}
+      scrolledPast={report ? BAR_SCROLLED_AT : undefined}
+      onScrolledPast={report ? (e) => report(e.nativeEvent.past) : undefined}>
       {list}
     </ContentScrollAnchor>
   );

@@ -62,7 +62,6 @@ import type { Bridge, BridgeList } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { useHasSidebar } from '@/hooks/use-content-width';
 import { useGridLayout } from '@/hooks/use-grid-layout';
-import { useBarScrolled } from '@/hooks/use-bar-scrolled';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
@@ -659,7 +658,6 @@ export default function BrowseScreen() {
   const [section, setSection] = useState<string | null>(null);
   // Where the system bar has slid to, so that label changes at the bar's edge — see the hook.
   const nativeBar = useNativeBarOffset();
-  const scrolled = useBarScrolled(scrollY);
 
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
@@ -765,7 +763,6 @@ export default function BrowseScreen() {
       <NativeTabHeader
         title={[currentBridge?.name, pageLabels[pageKey(page)]].filter(Boolean).join(' ')}
         section={section}
-        scrolled={scrolled}
         holdTestID="browse.nsfw-hold"
       />
       <BrowseNativeToolbar

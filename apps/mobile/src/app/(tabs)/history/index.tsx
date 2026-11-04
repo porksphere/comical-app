@@ -37,7 +37,6 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
-import { useBarScrolled } from '@/hooks/use-bar-scrolled';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useIsDesktop } from '@/hooks/use-responsive';
@@ -67,8 +66,7 @@ export default function HistoryScreen() {
   const zoomSurface = useZoomSurfaceKey('history');
   // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it (hence the
   // AnimatedLegendList below), `onScroll` only keeps the bottom-bounce measurement in sync.
-  const { scrollY, sharedValues, onScroll } = useHideTabBarOnScroll();
-  const scrolled = useBarScrolled(scrollY);
+  const { sharedValues, onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
   const ready = useDeferredMount();
 
@@ -257,7 +255,6 @@ export default function HistoryScreen() {
       {NATIVE_HEADER ? (
         <NativeTabHeader
           title="History"
-          scrolled={scrolled}
           filter={filter}
           placeholder="Filter history…"
           holdTestID="history.nsfw-hold"

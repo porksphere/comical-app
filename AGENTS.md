@@ -56,16 +56,19 @@ finds the list by a walk of its own, each first subview down from it, to put its
 scroll-edge effect on the list. Every bar but the reader's has the system's frosted material
 (`useBarMaterial` in `lib/native-bar.ts`, in each stack's `screenOptions`): UIKit never once
 switched these bars from a bare scroll-edge appearance to the frosted standard one, with or without
-the list handed to it, so there is no "bare until scrolled" to be had natively. The tab roots make
-their own: `NativeTabHeader scrolled` (from `useBarScrolled`, a few points of scroll; the Settings
-tab's SwiftUI list reports it through the content-scroll-view anchor's `scrolledPast`) sets the
-material as an option — `none` over the top of the page, the material once content is under the
-bar — and `nav-bar-fade` crossfades the switch, as on the series page. Pushed pages keep the
-material always; their title is a custom title view (`TopBar`, `barTitleStyle`), centred by
-UIKit as the tabs' is, where a plain-text title sat at the leading edge. Their backing over
-content is the system's scroll edge (the soft one; the folded Duo's hard one), which UIKit draws
-only behind what the bar registers — a plain-text title, never a custom view — so `nav-bar-fade`
-registers the view on every pushed page. Two exceptions. The
+the list handed to it, so there is no "bare until scrolled" to be had natively. The tab roots and
+the pushed pages make their own (`components/bar-scrolled.tsx`): each stack's `screenLayout`
+provides a screen's `scrolled`, the content-scroll-view anchor under the screen's list reports it
+natively (a few points past the top, crossings only; `ScreenScrollMarker` for a React Native
+list, the settings form for its SwiftUI one), and `NativeTabHeader` and `TopBar` set the material
+as an option — `none` over the top of the page, the material once content is under the bar —
+with `nav-bar-fade` crossfading the switch, as on the series page. The system's soft scroll edge
+is hidden on those screens (`HIDDEN_TOP_EDGE`): UIKit fades it in behind the bar's buttons as
+content slides under, a half-backed bar for the first points, and cuts it the instant the list is
+back at the top. The folded Duo keeps its hard edge, which is the backing there; UIKit draws an
+edge only behind what the bar registers — a plain-text title, never a custom view — so
+`nav-bar-fade` registers a pushed page's title view, which is a custom one (`barTitleStyle`),
+centred by UIKit as the tabs' is, where a plain-text title sat at the leading edge. Two exceptions. The
 series details' bar: bare over the strip, the series' title a custom title view always in the bar
 that fades in with the scroll as the page's own title goes under it (never an option: a plain-text
 title is backed by the scroll edge, and where the back button sits in the Duo's vertical bar an

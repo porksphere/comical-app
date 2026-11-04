@@ -168,7 +168,8 @@ the end of this doc is the only guard.
   hold only a React Native scroll view: `tabBar` names the list for the tab bar too (`.all`), and
   `scrollToTop` (a view function) scrolls it on the tab's reselect, since react-native-screens
   scrolls only the list its marker holds; `scrolledPast` has it watch the list's offset (KVO) and
-  report crossings of a threshold, for the Settings tab's bar material.
+  report crossings of a threshold, which is how every iOS screen's bar learns to take its material
+  (`bar-scrolled.tsx`).
 - **Where:** `apps/mobile/modules/content-scroll-view/`, `src/components/screen-scroll-marker.tsx`, and
   around every screen's main list; `settings-list.ios.tsx` renders it directly.
 - **Why:** react-native-screens' legacy stack, which expo-router uses, never names the list. Its newer
@@ -229,9 +230,11 @@ the end of this doc is the only guard.
   folded, once the page's title is past.
 - **Temporary trace (Blocker):** the view also reports each switch to Settings > Diagnostics
   (`bar-fade` entries): the bar's height, where its content sits and what's on screen, and the
-  animations running, at the switch and 50ms and 350ms after. Remove the `onTrace` event and
-  `traceBar` in `details-native-bar.tsx` once the folded edge backing is confirmed on a device
-  (`edge: on` / `edge: off` entries, or why it couldn't: no title view, no scroll view).
+  animations running, at the switch and 50ms and 350ms after. Remove the `onTrace` event, and the
+  handlers in `details-native-bar.tsx`, `native-tab-header.tsx` and `top-bar.tsx`, once the folded
+  edge backing and the tabs' and pushed pages' crossfade are confirmed on a device (`material`
+  entries at each switch; `edge: on` / `edge: off` entries, or why it couldn't: no title view, no
+  scroll view).
 - **Risk:** it animates a layer UIKit owns, and relies on KVO firing inside the library's update.
 - **How it fails:** silent. If the KVO stops firing, the switch is instant again. If UIKit starts
   backing a custom title view, the bare bar shows a band over the strip. If the title view or list

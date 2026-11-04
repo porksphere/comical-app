@@ -52,6 +52,13 @@ export function useFoldedBarEdge() {
 
 const HARD_TOP_EDGE = { top: 'hard' } as const;
 
+/**
+ * No system scroll edge under the bar: on a screen whose bar switches its own material with the
+ * scroll (`bar-scrolled.tsx`), where the soft edge fading in behind the bar's buttons was a
+ * half-backed bar for the first points. The folded Duo keeps its hard edge: it is the backing there.
+ */
+export const HIDDEN_TOP_EDGE = { top: 'hidden' } as const;
+
 // A vertical bar in a tall window: open in portrait there is no vertical bar, and open in landscape
 // the window is wide and the bar's background does reach the top.
 function useIsFoldedDuo() {

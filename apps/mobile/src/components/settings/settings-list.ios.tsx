@@ -56,6 +56,7 @@ import { useMemo, useRef, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ChipRow } from '@/components/chip';
+import { BAR_SCROLLED_AT, useReportBarScrolled } from '@/components/bar-scrolled';
 import { useOverlay } from '@/components/overlay/overlay';
 import { MultiSelectPicker, multiSummary } from '@/components/settings/multi-select-row';
 import {
@@ -68,7 +69,6 @@ import {
   type SettingsListProps,
   type SettingsTone,
 } from '@/components/settings/settings-form';
-import { BAR_SCROLLED_AT } from '@/hooks/use-bar-scrolled';
 import { useReselectScrollToTop } from '@/hooks/use-scroll-to-top-on-reselect';
 import { SettingsCardInset, Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -97,10 +97,11 @@ const CHEVRON = font({ size: 13, weight: 'semibold' });
  * slide, and the tab bar's edge on the landing tab), and scrolls it on the tab's reselect.
  * `column` is the reading column's cap, which the form has no need of: a list insets itself.
  */
-export function SettingsList({ sections, reselectRoute, refresh, onScrolledPast }: SettingsListProps) {
+export function SettingsList({ sections, reselectRoute, refresh }: SettingsListProps) {
   const scheme = useActiveColorScheme();
   const theme = useTheme();
   const anchor = useRef<ContentScrollAnchorRef>(null);
+  const report = useReportBarScrolled();
   useReselectScrollToTop(reselectRoute, () => void anchor.current?.scrollToTop());
   const form = (
     <Host style={styles.fill} colorScheme={scheme} seedColor={theme.accent} useViewportSizeMeasurement>
@@ -136,8 +137,8 @@ export function SettingsList({ sections, reselectRoute, refresh, onScrolledPast 
       ref={anchor}
       style={styles.fill}
       tabBar={!!reselectRoute}
-      scrolledPast={onScrolledPast ? BAR_SCROLLED_AT : undefined}
-      onScrolledPast={onScrolledPast ? (e) => onScrolledPast(e.nativeEvent.past) : undefined}>
+      scrolledPast={report ? BAR_SCROLLED_AT : undefined}
+      onScrolledPast={report ? (e) => report(e.nativeEvent.past) : undefined}>
       {form}
     </ContentScrollAnchor>
   );

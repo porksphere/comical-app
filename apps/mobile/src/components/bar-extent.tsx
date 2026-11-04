@@ -1,6 +1,7 @@
 import { createContext, useState, type ReactElement } from 'react';
 import { StyleSheet } from 'react-native';
 import { SafeAreaListener } from 'react-native-safe-area-context';
+import { BarScrolledProvider } from '@/components/bar-scrolled';
 
 /**
  * How far down the screen its native bar reaches, status bar included, while the bar slides away
@@ -26,7 +27,12 @@ type LayoutArgs = {
  */
 export function barExtentLayout({ options, children }: LayoutArgs): ReactElement {
   const slides = options.unstable_nativeProps?.headerConfig?.minimizationBehavior === 'onScrollDown';
-  return <BarExtent slides={slides}>{children}</BarExtent>;
+  // Context only, no view: UIKit's search for the list is not deepened by it (see BarExtent).
+  return (
+    <BarScrolledProvider>
+      <BarExtent slides={slides}>{children}</BarExtent>
+    </BarScrolledProvider>
+  );
 }
 
 function BarExtent({ slides, children }: { slides: boolean; children: ReactElement }) {

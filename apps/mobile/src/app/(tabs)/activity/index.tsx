@@ -40,7 +40,6 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
-import { useBarScrolled } from '@/hooks/use-bar-scrolled';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
@@ -127,7 +126,6 @@ export default function ActivityScreen() {
   // to the list via `sharedValues` below, so the bar reads one value rather than a second that could
   // disagree with it. `onScroll` only keeps the bottom-bounce measurement in sync.
   const { onScroll } = useHideTabBarOnScroll({ scrollY });
-  const scrolled = useBarScrolled(scrollY);
   const refresh = useCallback(async () => {
     try {
       const res = await ds.checkForUpdates({ force: true });
@@ -377,7 +375,6 @@ export default function ActivityScreen() {
       {NATIVE_HEADER ? (
         <NativeTabHeader
           title="Activity"
-          scrolled={scrolled}
           filter={filter}
           placeholder="Filter activity…"
           holdTestID="activity.nsfw-hold"

@@ -3,10 +3,12 @@ import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
+import { useBarScrolled } from '@/components/bar-scrolled';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import type { TabFilter } from '@/components/tab-filter';
 import { useTheme } from '@/hooks/use-theme';
-import { useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
+import { logDiagnostic } from '@/lib/diagnostics';
+import { HIDDEN_TOP_EDGE, useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
 
 import { NavBarFade } from '../../modules/nav-bar-fade';
 
@@ -40,7 +42,6 @@ const SWAP_MS = 180;
 export function NativeTabHeader({
   title,
   section,
-  scrolled,
   filter,
   placeholder,
   holdTestID,
@@ -48,15 +49,14 @@ export function NativeTabHeader({
   title: string;
   /** The label of the section heading scrolled under the bar, null above the first. */
   section?: string | null;
-  /** Whether the list has scrolled past the top (`useBarScrolled`): the bar is bare over the top
-   *  of the page and takes its material once content is under it, the series page's way, with
-   *  `nav-bar-fade` crossfading the switch. */
-  scrolled: boolean;
   filter?: TabFilter;
   placeholder?: string;
   holdTestID: string;
 }) {
   const theme = useTheme();
+  // The bar is bare over the top of the page and takes its material once the list is under it,
+  // the series page's way, with `nav-bar-fade` crossfading the switch — see `bar-scrolled.tsx`.
+  const scrolled = useBarScrolled();
   const material = useBarMaterial();
   const foldedEdge = useFoldedBarEdge();
   const shown = section ?? title;
@@ -71,8 +71,16 @@ export function NativeTabHeader({
   const fade = useAnimatedStyle(() => ({ opacity: arrival.value }));
   return (
     <>
-      <Stack.Screen options={{ headerBlurEffect: scrolled ? material : 'none' }} />
-      {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" edgeBacked={foldedEdge != null && scrolled} /> : null}
+      <Stack.Screen options={{ headerBlurEffect: scrolled ? material : 'none', scrollEdgeEffects: foldedEdge ?? HIDDEN_TOP_EDGE }} />
+      {NavBarFade ? (
+        <NavBarFade
+          style={styles.probe}
+          pointerEvents="none"
+          edgeBacked={foldedEdge != null && scrolled}
+          // TEMPORARY: each switch to Settings > Diagnostics, until the fade is confirmed on a device.
+          onTrace={(e) => logDiagnostic('bar-fade', `${title}: ${e.nativeEvent.message}`)}
+        />
+      ) : null}
       <Stack.Title asChild>
         <HoldActionTarget testID={holdTestID} label={title}>
           <Animated.Text numberOfLines={1} style={[styles.title, { color: theme.text }, fade]}>

@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance } from 'react-native';
+import { ActivityIndicator, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 
 import { ChipRow } from '@/components/chip';
 import { Holdable } from '@/components/context-menu';
@@ -25,7 +25,6 @@ import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { UpdateDot, UpdatePip } from '@/components/tab-badge';
 import { ThemedText } from '@/components/themed-text';
 import { MaxContentWidth, SettingsCardInset, Spacing } from '@/constants/theme';
-import { BAR_SCROLLED_AT } from '@/hooks/use-bar-scrolled';
 import { useReselectScrollToTop } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
@@ -42,16 +41,9 @@ import { scrollbarInset } from '@/lib/scrollbar-inset';
  * which owns its scroll, its pull and its card; any other screen scrolls its sections, with the
  * shared pull where it refreshes.
  */
-export function SettingsList({ sections, column = MaxContentWidth, reselectRoute, refresh, onScrolledPast }: SettingsListProps) {
+export function SettingsList({ sections, column = MaxContentWidth, reselectRoute, refresh }: SettingsListProps) {
   const padding = useSettingsScrollPadding(column);
   const ref = useRef<ScrollViewInstance>(null);
-  const past = useRef(false);
-  const reportScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const next = e.nativeEvent.contentOffset.y > BAR_SCROLLED_AT;
-    if (next === past.current) return;
-    past.current = next;
-    onScrolledPast?.(next);
-  };
   useReselectScrollToTop(reselectRoute, () => ref.current?.scrollTo({ y: 0, animated: true }));
   const [only] = sections;
   if (sections.length === 1 && only?.onReorder) {
@@ -87,8 +79,6 @@ export function SettingsList({ sections, column = MaxContentWidth, reselectRoute
   return (
     <ScreenScrollView
       ref={ref}
-      onScroll={onScrolledPast ? reportScroll : undefined}
-      scrollEventThrottle={16}
       style={scrollbarInset(padding.paddingTop)}
       contentContainerStyle={[
         styles.content,

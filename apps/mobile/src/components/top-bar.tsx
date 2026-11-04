@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarSurface } from '@/components/bar-surface';
+import { useBarScrolled } from '@/components/bar-scrolled';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { barTitleStyle } from '@/components/native-tab-header';
 import { PaneActions } from '@/components/settings/pane-actions';
@@ -15,6 +16,8 @@ import { useInSettingsPane } from '@/lib/settings-pane';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
+import { logDiagnostic } from '@/lib/diagnostics';
+import { HIDDEN_TOP_EDGE, useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
 import { useWindowControlsClearance } from '@/lib/window-controls';
 
 import { NavBarFade } from '../../modules/nav-bar-fade';
@@ -70,6 +73,9 @@ export function TopBar({
   const barHeight = useTopBarHeight();
   const clearance = useWindowControlsClearance();
   const inPane = useInSettingsPane();
+  const scrolled = useBarScrolled();
+  const material = useBarMaterial();
+  const foldedEdge = useFoldedBarEdge();
   // Inside the settings modal the pane has no bar of its own: the modal supplies the header, and a
   // back button here would point at a stack this pane isn't on. The trailing actions still have to
   // land somewhere, so they go into that header.
@@ -87,19 +93,28 @@ export function TopBar({
     const items = actions?.filter((action) => action.native) ?? [];
     // The title as a custom title view, as the tabs' is: centred by UIKit between the items, where
     // the plain-text title sat at the leading edge and moved with the bar's minimization. The option
-    // still names the screen (the back button, accessibility). The bar's backing over content is
-    // the system's scroll edge — the soft one, the folded Duo's hard one — which UIKit draws only
-    // behind what the bar registers: a plain-text title, not a custom view. So `nav-bar-fade`
-    // registers the view, as it does on the series page once its title is past.
+    // still names the screen (the back button, accessibility). The bar is bare over the top of the
+    // page and takes its material once the list is under it, as the tabs' are (`bar-scrolled.tsx`),
+    // with `nav-bar-fade` crossfading the switch; the folded Duo's backing is its hard edge, which
+    // UIKit draws only behind what the bar registers — a plain-text title, not a custom view — so
+    // the probe registers the view there.
     return (
       <>
-        <Stack.Screen options={{ title }} />
+        <Stack.Screen options={{ title, headerBlurEffect: scrolled ? material : 'none', scrollEdgeEffects: foldedEdge ?? HIDDEN_TOP_EDGE }} />
         <Stack.Title asChild>
           <ThemedText numberOfLines={1} style={barTitleStyle}>
             {title}
           </ThemedText>
         </Stack.Title>
-        {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" edgeBacked /> : null}
+        {NavBarFade ? (
+          <NavBarFade
+            style={styles.probe}
+            pointerEvents="none"
+            edgeBacked={foldedEdge != null}
+            // TEMPORARY: each switch to Settings > Diagnostics, until the fade is confirmed on a device.
+            onTrace={(e) => logDiagnostic('bar-fade', `${title}: ${e.nativeEvent.message}`)}
+          />
+        ) : null}
         {items.length > 0 ? (
           <Stack.Toolbar placement="right">
             {items.map((action) =>
