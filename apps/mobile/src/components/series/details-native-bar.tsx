@@ -14,7 +14,7 @@ import { BarContentGap } from '@/constants/theme';
 import { useNativeHeaderHeight } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
 import { logDiagnostic } from '@/lib/diagnostics';
-import { SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
+import { SLIDE_AWAY_BAR, useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
 
 import { NavBarFade } from '../../../modules/nav-bar-fade';
 
@@ -32,7 +32,9 @@ import { NavBarFade } from '../../../modules/nav-bar-fade';
  * The frosted material still switches as an option, once the page's title is past, and only on the
  * way back up (scrolling down the bar is sliding away anyway); `nav-bar-fade` crossfades it. UIKit's
  * own crossfade, a transparent scroll-edge appearance over the frosted standard one, never ran on a
- * device. On the folded Duo there is no material, so nothing in the bar changes at all.
+ * device. On the folded Duo there is no material: the backing is the scroll view's hard top edge, as
+ * on every page there, but UIKit draws an edge only behind what the bar registers, and a custom
+ * title view isn't, so `nav-bar-fade` registers it once the page's title is past.
  *
  * The title is an option change like any other, so it is its own component and a crossing
  * re-renders this much and no more. Options go through react-native-screens' whole header update,
@@ -66,6 +68,7 @@ export function SeriesDetailsNativeBar({
   inlineTitleHeight: SharedValue<number>;
 }) {
   const material = useBarMaterial();
+  const foldedEdge = useFoldedBarEdge();
   const barBottom = useNativeHeaderHeight();
   const [pastTitle, setPastTitle] = useState(false);
   const titled = useSharedValue(false);
@@ -105,6 +108,8 @@ export function SeriesDetailsNativeBar({
           gestureEnabled: nativePush,
           title,
           unstable_nativeProps: SLIDE_AWAY_BAR,
+          // A tab's stack sets it already; the root's series stack doesn't.
+          ...(foldedEdge && { scrollEdgeEffects: foldedEdge }),
         }}
       />
       <Stack.Title asChild>
@@ -114,7 +119,14 @@ export function SeriesDetailsNativeBar({
           {title}
         </Animated.Text>
       </Stack.Title>
-      {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" onTrace={traceBar} /> : null}
+      {NavBarFade ? (
+        <NavBarFade
+          style={styles.probe}
+          pointerEvents="none"
+          edgeBacked={foldedEdge != null && pastTitle}
+          onTrace={traceBar}
+        />
+      ) : null}
       {!nativePush ? (
         <Stack.Toolbar placement="left">
           <Stack.Toolbar.Button icon="chevron.left" accessibilityLabel="Go back" onPress={onClose} />

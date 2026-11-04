@@ -209,13 +209,22 @@ the end of this doc is the only guard.
   collapses to no height, so the first title grew it from nothing in one frame (a trace on the
   device: 0pt at the switch, 58pt a frame later). A blank plain-text title kept the height but got
   the system's backing, a visibly empty bar. Only the unfolded material switch is faded now.
+  Confirmed on a device, unfolded.
+- **Folded edge backing:** the folded Duo's bar has no material (`useBarMaterial`); its backing is
+  the scroll view's hard top edge. UIKit draws a scroll edge only behind what the bar registers, a
+  text title but not a custom view, so the series bar was bare there. The view adds a
+  `UIScrollEdgeElementContainerInteraction` (iOS 26) to the navigation item's title view, for the
+  page's list (the nearest scroll view at least half the window tall), while `edgeBacked` is on:
+  folded, once the page's title is past.
 - **Temporary trace (Blocker):** the view also reports each switch to Settings > Diagnostics
   (`bar-fade` entries): the bar's height, where its content sits and what's on screen, and the
   animations running, at the switch and 50ms and 350ms after. Remove the `onTrace` event and
-  `traceBar` in `details-native-bar.tsx` once the custom title is confirmed on a device.
+  `traceBar` in `details-native-bar.tsx` once the folded edge backing is confirmed on a device
+  (`edge: on` / `edge: off` entries, or why it couldn't: no title view, no scroll view).
 - **Risk:** it animates a layer UIKit owns, and relies on KVO firing inside the library's update.
 - **How it fails:** silent. If the KVO stops firing, the switch is instant again. If UIKit starts
-  backing a custom title view, the bare bar shows a band over the strip.
+  backing a custom title view, the bare bar shows a band over the strip. If the title view or list
+  can't be found, the folded bar stays bare past the title.
 - **Removed by:** react-native-screens animating option changes.
 
 ## Shaped workarounds
@@ -357,3 +366,4 @@ fails silently and only shows here.
 - [ ] **Item 21:** folded, no gap above the bar, and Browse, Library and the settings pages back the bar once scrolled. Unfolded in both orientations, the frost reaches the top.
 - [ ] **Item 22:** on a series details page, scroll down until the bar slides away, then up once. The
       bar slides back in while its title and frost fade in, and fades back to bare at the page's title.
+      On the folded Duo the same, with the hard scroll edge behind the title in place of the frost.

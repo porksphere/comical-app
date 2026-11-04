@@ -7,6 +7,10 @@ public class NavBarFadeModule: Module {
 
     View(NavBarFadeView.self) {
       Events("onTrace")
+
+      Prop("edgeBacked") { (view: NavBarFadeView, backed: Bool) in
+        view.edgeBacked = backed
+      }
     }
   }
 }
@@ -24,13 +28,27 @@ final class NavBarFadeView: ExpoView {
   /// TEMPORARY: what the bar was doing at each switch, for the Diagnostics screen.
   let onTrace = EventDispatcher()
 
+  /// Whether the scroll view's top edge effect shows behind the custom title view. UIKit draws a
+  /// scroll edge only behind what a bar registers, and it registers a text title but not a custom
+  /// view, so the title is registered by hand while this is on.
+  var edgeBacked = false {
+    didSet {
+      if edgeBacked != oldValue {
+        applyEdgeBacking()
+      }
+    }
+  }
+  private var edgeInteraction: UIInteraction?
+
   override func didMoveToWindow() {
     super.didMoveToWindow()
     guard window != nil else {
       observations = []
+      removeEdgeInteraction()
       return
     }
     attach()
+    applyEdgeBacking()
   }
 
   private func attach() {
@@ -54,6 +72,77 @@ final class NavBarFadeView: ExpoView {
         }
       },
     ]
+  }
+
+  private func applyEdgeBacking() {
+    guard #available(iOS 26.0, *) else {
+      return
+    }
+    guard edgeBacked, window != nil else {
+      removeEdgeInteraction()
+      return
+    }
+    // react-native-screens sets the title view in its own header update: give it the turn.
+    DispatchQueue.main.async { [weak self] in
+      self?.addEdgeInteraction()
+    }
+  }
+
+  @available(iOS 26.0, *)
+  private func addEdgeInteraction() {
+    guard edgeBacked, window != nil else {
+      return
+    }
+    guard let titleView = controller?.navigationItem.titleView else {
+      trace("edge: no title view")
+      return
+    }
+    if let current = edgeInteraction, current.view === titleView {
+      return
+    }
+    guard let scrollView = nearestPageScrollView() else {
+      trace("edge: no scroll view")
+      return
+    }
+    removeEdgeInteraction()
+    let interaction = UIScrollEdgeElementContainerInteraction()
+    interaction.scrollView = scrollView
+    interaction.edge = .top
+    titleView.addInteraction(interaction)
+    edgeInteraction = interaction
+    trace("edge: on")
+  }
+
+  private func removeEdgeInteraction() {
+    guard let interaction = edgeInteraction else {
+      return
+    }
+    interaction.view?.removeInteraction(interaction)
+    edgeInteraction = nil
+    trace("edge: off")
+  }
+
+  /// The page's list: the scroll view nearest to this view that fills most of the screen (a rail is
+  /// a scroll view too), searched from its parent outwards, so a series layered over another finds
+  /// its own list first.
+  private func nearestPageScrollView() -> UIScrollView? {
+    let minHeight = (window?.bounds.height ?? 0) / 2
+    var container = superview
+    while let current = container {
+      var queue: [UIView] = [current]
+      while !queue.isEmpty {
+        let candidate = queue.removeFirst()
+        if let scrollView = candidate as? UIScrollView, scrollView.bounds.height >= minHeight {
+          return scrollView
+        }
+        queue.append(contentsOf: candidate.subviews)
+      }
+      if current === controller?.view {
+        return nil
+      }
+      container = current.superview
+    }
+    return nil
   }
 
   private func fade(because reason: String) {
