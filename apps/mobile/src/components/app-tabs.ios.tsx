@@ -24,14 +24,11 @@ import { setBackdropRecede } from '@/lib/series-backdrop';
  * `preferredPlacement` (iOS 27+) asks for it at the widths Android and web give the labelled
  * sidebar (`navModeFor`), and leaves the choice to UIKit below that.
  *
- * `minimizeBehavior` is the system's own hide-on-scroll (iOS 26): the bar shrinks to the selected
- * tab's capsule as the content scrolls down, and comes back when the scroll reaches the top or the
- * capsule is tapped — and ONLY then. That is UIKit's design, not a bug to work around: the previous
- * native shell spent days trying to make it re-expand mid-scroll like the custom bar does, and it
- * can't be done from outside UIKit's private implementation (react-native-screens #3954). The
- * scroll view it watches is the one each tab's root screen registers through `ScreenScrollMarker`
- * (left to its own first-descendant walk, UIKit never found Browse's list behind the feed's
- * backdrop).
+ * The bar never minimizes (`minimizeBehavior="never"`): it stays as it is while the content scrolls,
+ * as in most of Apple's own apps. iOS 26's hide-on-scroll shrank it to the selected tab's capsule
+ * and brought it back only at the top or on a tap, which is UIKit's design and can't be changed from
+ * outside (react-native-screens #3954). Each tab root's list is still registered with it through
+ * `ScreenScrollMarker`, for the status bar's tap-to-top.
  *
  * Route NAMES (`(home)`, `library`, …) are the trigger names; the TABS table in `app-tabs.tsx` keys
  * everything else by the tab's own name (`browse`, …), so the two are mapped here once.
@@ -92,7 +89,7 @@ export default function AppTabs() {
       <NativeTabs
         sidebarAdaptable
         preferredPlacement={navModeFor(windowWidth, false) === 'sidebar' ? 'sidebar' : 'automatic'}
-        minimizeBehavior="onScrollDown"
+        minimizeBehavior="never"
         hidden={hidden}
         tintColor={theme.tabIconActive}
         iconColor={theme.tabIconInactive}

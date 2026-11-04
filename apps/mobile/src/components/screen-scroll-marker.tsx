@@ -26,7 +26,7 @@ export const ScreenScrollActiveContext = createContext(true);
  * - The navigation bar sliding away (iOS 27 minimization, `SLIDE_AWAY_BAR`). The screen's view
  *   controller is told by `ContentScrollAnchor`, since UIKit left to find the list for itself
  *   stops at a wrapper or two, and the bar never moves.
- * - The system tab bar (iOS 26 `minimizeBehavior`, status-bar tap scroll-to-top), tab roots only:
+ * - The system tab bar (the status bar's tap-to-top; the bar itself never minimizes), tab roots only:
  *   react-native-screens' `ScrollViewMarker`, whose ONE child must itself be the scroll view (a
  *   LegendList's root is its Animated.ScrollView). The registration is a strong hand-off to UIKit
  *   that nothing takes back, so a pushed page's list registered and then popped would leave the tab

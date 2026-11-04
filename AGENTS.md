@@ -37,11 +37,12 @@ gap is written down in one place.
 `apps/mobile/src/components/app-tabs.ios.tsx` is the iOS shell: `NativeTabs`
 (`expo-router/native-tabs`) over the real `UITabBarController`, so UIKit itself moves the
 bar to the side as a symbol-only column on a regular-width resizable scene and to a sidebar on iPad.
-That is the whole reason it exists — a custom bar can only imitate that adaptation. It asks for
-`minimizeBehavior="onScrollDown"`: on iOS 26 the bar collapses to the selected item while the
-content scrolls down and re-expands only at the very top or on a tap. That is UIKit's design
-(react-native-screens #3954), not a list bug — the earlier native shell chased mid-scroll
-re-expansion for days and reverted, so don't. The scroll view the bar follows is registered by
+That is the whole reason it exists — a custom bar can only imitate that adaptation. The bar never
+minimizes (`minimizeBehavior="never"`), as in most of Apple's own apps: iOS 26's `onScrollDown`
+collapsed it to the selected item and re-expanded it only at the very top or on a tap, which is
+UIKit's design (react-native-screens #3954), not a list bug — the earlier native shell chased
+mid-scroll re-expansion for days and reverted, so don't. The scroll view the bar follows (for the
+status bar's tap-to-top) is registered by
 `ScreenScrollMarker` (react-native-screens' `ScrollViewMarker`, keyed with the list
 it wraps) around each tab ROOT screen's list, under `TabRootScrollContext` from the tab's stack —
 never a pushed page's: the registration is a hand-off to UIKit nothing takes back. That part

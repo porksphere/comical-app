@@ -40,8 +40,8 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  * system's. Its tag search is the sibling `in-tab/series/search`, pushed over it with the search
  * bar, and its reader the sibling `in-tab/series/read`, which grows out of the page's strip.
  *
- * The tab's root screen is the one whose list the system tab bar follows (minimize on scroll,
- * scroll-to-top): `TabRootScrollContext` is what lets that list register itself — see
+ * The tab's root screen is the one whose list the system tab bar follows (the status bar's
+ * tap-to-top): `TabRootScrollContext` is what lets that list register itself — see
  * `screen-scroll-marker`.
  *
  * `tab` is this directory's route name, which the layout cannot read for itself (the segments
