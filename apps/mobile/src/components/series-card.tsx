@@ -720,7 +720,7 @@ export function SeriesCard({
     );
     const trailingInner = (
       <>
-        {book && !coverHidden && <CoverShadow sheets={book.form === 'sheets'} />}
+        {book && !coverHidden && <CoverShadow cover={book} />}
         {isWeb ? (
           <View ref={titleRef} style={styles.titleWrap}>
             {titleText}

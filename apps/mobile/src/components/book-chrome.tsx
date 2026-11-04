@@ -2,7 +2,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { EyeOffIcon } from '@/components/icons/ui-icons';
-import { Spacing } from '@/constants/theme';
+import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { FOLD, GLOSS, HINGE, PANE, SHADOW, SHADOW_DEPTH, SHEET_OFFSET, bookRadius, ribbonSize, type BookCover } from '@/lib/book-cover';
@@ -15,7 +15,8 @@ const DOWN = { start: { x: 0, y: 0 }, end: { x: 0, y: 1 } } as const;
 const ACROSS_THE_GRAIN = { start: { x: 0, y: 0.25 }, end: { x: 1, y: 0.75 } } as const;
 
 /** The book drawn over a cover's picture, inside its clip: the spine-side shading for its form, then
- *  the rim and top-edge light. Never takes a touch. */
+ *  the rim and top-edge light. Never takes a touch. The rim's corner is the clip's own shape, not just
+ *  its radius: a circular arc inside a continuous corner draws a second edge across the picture. */
 export function BookChrome({ cover }: { cover: BookCover }) {
   const theme = useTheme();
   const radius = bookRadius(cover, useIsDesktop());
@@ -32,18 +33,20 @@ export function BookChrome({ cover }: { cover: BookCover }) {
         />
       )}
       {cover.form === 'issue' && <LinearGradient style={styles.fill} colors={GLOSS.colors} locations={GLOSS.locations} {...ACROSS_THE_GRAIN} />}
-      <View style={[styles.fill, styles.rim, { borderRadius: radius, borderColor: theme.coverRim }]} />
+      <View style={[styles.fill, styles.rim, ContinuousCorner, { borderRadius: radius, borderColor: theme.coverRim }]} />
     </>
   );
 }
 
 /** The shadow under a cover — see `SHADOW`. Lives in the card's trailing group, which starts one gap
- *  below the cover and moves with it while the cover's aspect settles. Under a CG set it stops where
- *  the front sheet does. */
-export function CoverShadow({ sheets }: { sheets: boolean }) {
+ *  below the cover and moves with it while the cover's aspect settles. It spans only the cover's flat
+ *  bottom edge, since a straight strip under a rounded corner shows as a bar poking out past it; under
+ *  a CG set it also stops where the front sheet does. */
+export function CoverShadow({ cover }: { cover: BookCover }) {
+  const inset = bookRadius(cover, useIsDesktop());
   return (
     <LinearGradient
-      style={[styles.shadow, sheets && styles.shadowUnderFrontSheet]}
+      style={[styles.shadow, { left: inset, right: inset }, cover.form === 'sheets' && styles.shadowUnderFrontSheet]}
       colors={SHADOW.colors}
       locations={SHADOW.locations}
       {...DOWN}
@@ -55,7 +58,7 @@ export function CoverShadow({ sheets }: { sheets: boolean }) {
  *  along the top and the far edge. Drawn under the front sheet, outside its clip. */
 export function LooseSheet({ radius }: { radius: number }) {
   const theme = useTheme();
-  return <View style={[styles.sheetBehind, { borderRadius: radius, backgroundColor: theme.coverSheet, borderColor: theme.coverRim }]} />;
+  return <View style={[styles.sheetBehind, ContinuousCorner, { borderRadius: radius, backgroundColor: theme.coverSheet, borderColor: theme.coverRim }]} />;
 }
 
 /** "In your library", as the bookmark it already was in icon form, hanging from the head of the
@@ -105,8 +108,6 @@ const styles = StyleSheet.create({
   shadow: {
     position: 'absolute',
     top: -Spacing.two,
-    left: 1,
-    right: 1,
     height: SHADOW_DEPTH,
     pointerEvents: 'none',
   },
