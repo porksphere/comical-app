@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { BOUND_MAX_ASPECT, bookCorners, bookZoomRadius, coverBinding, coverForm } from './book-cover';
+import { BOOK_COVERS, BOUND_MAX_ASPECT, bookRadius, coverBinding, coverForm } from './book-cover';
 
 describe('coverForm', () => {
   test('a book-shaped cover is a volume', () => {
@@ -28,25 +28,25 @@ describe('coverBinding', () => {
   });
 });
 
-describe('bookCorners', () => {
-  test('a volume is square at the spine and rounded at the fore-edge', () => {
-    const left = bookCorners({ form: 'volume', binding: 'left' }, false);
-    expect(left.borderTopLeftRadius).toBeLessThan(left.borderTopRightRadius);
-    expect(left.borderBottomLeftRadius).toBe(left.borderTopLeftRadius);
-    expect(left.borderBottomRightRadius).toBe(left.borderTopRightRadius);
+describe('BOOK_COVERS', () => {
+  test('hands out one object per form and binding', () => {
+    for (const form of ['volume', 'issue', 'scroll'] as const) {
+      for (const binding of ['left', 'right'] as const) {
+        expect(BOOK_COVERS[form][binding]).toEqual({ form, binding });
+        expect(BOOK_COVERS[form][binding]).toBe(BOOK_COVERS[form][binding]);
+      }
+    }
   });
-  test('binding on the right mirrors the corners', () => {
-    const left = bookCorners({ form: 'volume', binding: 'left' }, false);
-    const right = bookCorners({ form: 'volume', binding: 'right' }, false);
-    expect(right.borderTopLeftRadius).toBe(left.borderTopRightRadius);
-    expect(right.borderTopRightRadius).toBe(left.borderTopLeftRadius);
+});
+
+describe('bookRadius', () => {
+  test('bound forms are squarer than the flat card; an unbound pane keeps the flat corner', () => {
+    expect(bookRadius(BOOK_COVERS.volume.left, false)).toBeLessThan(10);
+    expect(bookRadius(BOOK_COVERS.issue.left, false)).toBeLessThan(bookRadius(BOOK_COVERS.volume.left, false));
+    expect(bookRadius(BOOK_COVERS.scroll.left, false)).toBe(10);
+    expect(bookRadius(BOOK_COVERS.scroll.left, true)).toBe(20);
   });
-  test('an unbound pane keeps the flat card corner all round', () => {
-    const c = bookCorners({ form: 'scroll', binding: 'left' }, false);
-    expect(new Set(Object.values(c))).toEqual(new Set([10]));
-  });
-  test('a zoom starts from the fore-edge radius', () => {
-    expect(bookZoomRadius({ form: 'volume', binding: 'right' })).toBe(4);
-    expect(bookZoomRadius({ form: 'scroll', binding: 'left' })).toBe(10);
+  test('does not depend on the binding side', () => {
+    expect(bookRadius(BOOK_COVERS.volume.right, false)).toBe(bookRadius(BOOK_COVERS.volume.left, false));
   });
 });

@@ -114,14 +114,13 @@ export function useReadsRightToLeft(): boolean {
   });
 }
 
-/** The reader's own mode, without any series' override. */
-export function useDefaultReaderMode(): ReaderMode {
-  return use$(() => settings$.mode.get() ?? DEFAULT_SETTINGS.mode);
-}
-
-/** The reader's direction setting. Global: nothing stores a direction per series or per bridge. */
-export function useDefaultReaderDirection(): ReaderDirection {
-  return use$(() => settings$.direction.get() ?? DEFAULT_SETTINGS.direction);
+/** The reader's own mode (without any series' override) and its direction, which is global: nothing
+ *  stores a direction per series or per bridge. Tracked when read inside `use$` or `computed`. */
+export function readerDefaults(): { mode: ReaderMode; direction: ReaderDirection } {
+  return {
+    mode: settings$.mode.get() ?? DEFAULT_SETTINGS.mode,
+    direction: settings$.direction.get() ?? DEFAULT_SETTINGS.direction,
+  };
 }
 
 /** `[settings, patch]`. Reads spread over the defaults so a blob persisted before a

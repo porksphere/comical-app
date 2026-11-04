@@ -4,8 +4,7 @@
  * draws them and `hooks/use-book-covers.ts` decides which ones apply to a card.
  *
  * Three forms, each the quietest take of its kind:
- *  - `volume` — a bound book: a hinge on the binding side, square-ish at the spine, rounded at the
- *    fore-edge.
+ *  - `volume` — a bound book: a hinge on the binding side.
  *  - `issue` — a saddle-stitched booklet (direct/gallery series): a narrow fold and a band of gloss.
  *  - `scroll` — nothing bound (webtoons): even corners and a glass highlight, no spine.
  */
@@ -39,32 +38,26 @@ export function coverBinding(rightToLeft: boolean): CoverBinding {
  */
 export const SPINE_FRACTION: Record<CoverForm, number> = { volume: 0.08, issue: 0.042, scroll: 0 };
 
-export type CoverCorners = {
-  borderTopLeftRadius: number;
-  borderTopRightRadius: number;
-  borderBottomRightRadius: number;
-  borderBottomLeftRadius: number;
+/** One object per form and binding, so a card's `book` prop is the same object from render to render
+ *  and nothing below it re-renders for a new-but-equal value while a list recycles. */
+export const BOOK_COVERS: Readonly<Record<CoverForm, Readonly<Record<CoverBinding, BookCover>>>> = {
+  volume: { left: { form: 'volume', binding: 'left' }, right: { form: 'volume', binding: 'right' } },
+  issue: { left: { form: 'issue', binding: 'left' }, right: { form: 'issue', binding: 'right' } },
+  scroll: { left: { form: 'scroll', binding: 'left' }, right: { form: 'scroll', binding: 'right' } },
 };
 
 /** The card's ordinary corner (`coverStyles.corner` / `cornerDesktop`), which an unbound pane keeps. */
 export const FLAT_CORNER = { phone: 10, desktop: 20 } as const;
 
-export function bookCorners(cover: BookCover, desktop: boolean): CoverCorners {
-  if (cover.form === 'scroll') {
-    const flat = desktop ? FLAT_CORNER.desktop : FLAT_CORNER.phone;
-    return { borderTopLeftRadius: flat, borderTopRightRadius: flat, borderBottomRightRadius: flat, borderBottomLeftRadius: flat };
-  }
-  const fore = cover.form === 'issue' ? (desktop ? 2.5 : 1.5) : desktop ? 7 : 4;
-  const spine = desktop ? 2 : 1.5;
-  const left = cover.binding === 'left' ? spine : fore;
-  const right = cover.binding === 'left' ? fore : spine;
-  return { borderTopLeftRadius: left, borderTopRightRadius: right, borderBottomRightRadius: right, borderBottomLeftRadius: left };
-}
-
-/** The radius a zoom flying out of this cover starts from: its fore-edge, the corner you see turn. */
-export function bookZoomRadius(cover: BookCover): number {
-  const c = bookCorners(cover, false);
-  return Math.max(c.borderTopLeftRadius, c.borderTopRightRadius);
+/**
+ * One radius for all four corners. A book is squarer at the spine than at the fore-edge, but on iOS a
+ * clipping view whose corners differ gets a mask layer instead of `cornerRadius`, and a mask is an
+ * offscreen pass on every card in every frame of a scroll. The hinge already says which side is bound.
+ */
+export function bookRadius(cover: BookCover, desktop: boolean): number {
+  if (cover.form === 'scroll') return desktop ? FLAT_CORNER.desktop : FLAT_CORNER.phone;
+  if (cover.form === 'issue') return desktop ? 2.5 : 1.5;
+  return desktop ? 6 : 3;
 }
 
 export type Shade = { colors: readonly [string, string, ...string[]]; locations: readonly [number, number, ...number[]] };
@@ -98,12 +91,17 @@ export const PANE: Shade = {
 };
 
 /**
- * Two downward shadows, neither reaching sideways: a virtualized list paint-contains each item to its
- * slot, which ends exactly where an outer column's cover does, so any sideways spread is cut off at
- * the grid's edges. Each blur equals its negative spread, which leaves exactly zero sideways reach;
- * downward it lands in the gap above the title, inside the slot.
+ * The shadow under a cover, as a gradient strip in the gap above the title rather than a `boxShadow`.
+ * It only ever falls straight down — a virtualized list paint-contains each item to its slot, so any
+ * sideways reach is cut off at the grid's edges — and a shadow that only falls down IS a gradient.
+ * A `boxShadow` would blur for it: a masked shadow layer per card on iOS, a `BlurMaskFilter` paint on
+ * Android, both rebuilt whenever a recycled card's size changes.
  */
-export const COVER_SHADOW = '0px 1px 1px -1px rgba(18, 22, 30, 0.32), 0px 5px 5px -5px rgba(18, 22, 30, 0.45)';
+export const SHADOW: Shade = {
+  colors: ['rgba(18,22,30,0.24)', 'rgba(18,22,30,0.08)', 'rgba(18,22,30,0)'],
+  locations: [0, 0.35, 1],
+};
+export const SHADOW_DEPTH = 5;
 
 /** The library ribbon: hangs from the head of the spine, just past the hinge. */
 export function ribbonSize(desktop: boolean): { width: number; height: number } {
