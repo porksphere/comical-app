@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { EyeOffIcon } from '@/components/icons/ui-icons';
+import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -81,13 +81,15 @@ export function LibraryRibbon({ style }: { style: StyleProp<ViewStyle> }) {
   );
 }
 
-/** A hidden series: the book stays on the shelf with no cover on it, over the same grey a cover still
- *  loading shows, and the one mark that tells the two apart. Drawn under `BookChrome`. */
+/** A hidden series: the book stays on the shelf as a plain board with no cover on it, saying so in the
+ *  same word the flat card does. Drawn under `BookChrome`. */
 export function HiddenCover() {
   const theme = useTheme();
   return (
-    <View accessibilityLabel="Hidden" style={[styles.fill, styles.hidden]}>
-      <EyeOffIcon color={theme.textSecondary} size={18} />
+    <View style={[styles.fill, styles.hidden, { backgroundColor: theme.coverBlank }]}>
+      <ThemedText type="small" themeColor="textSecondary">
+        Hidden
+      </ThemedText>
     </View>
   );
 }
@@ -137,6 +139,5 @@ const styles = StyleSheet.create({
   hidden: {
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.7,
   },
 });

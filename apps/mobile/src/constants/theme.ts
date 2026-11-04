@@ -74,6 +74,8 @@ export const Colors = {
     coverRim: 'rgba(0,0,0,0.13)',
     // The sheet showing behind a CG set's front picture.
     coverSheet: '#E9E7E2',
+    // A hidden series' book: a plain board, a step off the page whichever way the theme runs.
+    coverBlank: '#E5E5EA',
     // Destructive actions/errors (uninstall, remove registry, save failures) —
     // was hardcoded per-callsite as '#E5484D'; centralized here so it reads from
     // the theme like every other color and stays in sync across screens.
@@ -138,6 +140,7 @@ export const Colors = {
     // On black a shadow is invisible, so the rim is what holds a cover's edge.
     coverRim: 'rgba(255,255,255,0.14)',
     coverSheet: '#3A3A3D',
+    coverBlank: '#2C2C2E',
     danger: '#E5484D',
   },
 } as const;

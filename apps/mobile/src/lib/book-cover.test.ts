@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { BOOK_COVERS, BOUND_MAX_ASPECT, bookRadius, resolveCover } from './book-cover';
+import { BOOK_COVERS, BOUND_CORNER, BOUND_MAX_ASPECT, LOOSE_CORNER, bookRadius, resolveCover } from './book-cover';
 
 const GUESS = { readsVertically: false, readerRightToLeft: false, direct: false, aspect: 0.7 };
 
@@ -56,12 +56,16 @@ describe('BOOK_COVERS', () => {
 });
 
 describe('bookRadius', () => {
-  test('bound forms and sheets are squarer than the flat card; an unbound pane keeps the flat corner', () => {
-    expect(bookRadius(BOOK_COVERS.volume.left, false)).toBeLessThan(10);
-    expect(bookRadius(BOOK_COVERS.issue.left, false)).toBeLessThan(bookRadius(BOOK_COVERS.volume.left, false));
-    expect(bookRadius(BOOK_COVERS.sheets.left, false)).toBe(bookRadius(BOOK_COVERS.issue.left, false));
-    expect(bookRadius(BOOK_COVERS.scroll.left, false)).toBe(10);
-    expect(bookRadius(BOOK_COVERS.scroll.left, true)).toBe(20);
+  test('bound books take the book corner; loose pages round further', () => {
+    for (const form of ['volume', 'issue'] as const) {
+      expect(bookRadius(BOOK_COVERS[form].left, false)).toBe(BOUND_CORNER.phone);
+      expect(bookRadius(BOOK_COVERS[form].left, true)).toBe(BOUND_CORNER.desktop);
+    }
+    for (const form of ['scroll', 'sheets'] as const) {
+      expect(bookRadius(BOOK_COVERS[form].left, false)).toBe(LOOSE_CORNER.phone);
+      expect(bookRadius(BOOK_COVERS[form].left, true)).toBe(LOOSE_CORNER.desktop);
+    }
+    expect(BOUND_CORNER.phone).toBeLessThan(LOOSE_CORNER.phone);
   });
   test('does not depend on the binding side', () => {
     expect(bookRadius(BOOK_COVERS.volume.right, false)).toBe(bookRadius(BOOK_COVERS.volume.left, false));

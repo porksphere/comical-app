@@ -75,8 +75,13 @@ export const BOOK_COVERS: Readonly<Record<CoverForm, Readonly<Record<CoverBindin
  *  on a 2:3 box. */
 export const SHEET_OFFSET = { top: 0.04, right: 0.06 } as const;
 
-/** The card's ordinary corner (`coverStyles.corner` / `cornerDesktop`), which an unbound pane keeps. */
-export const FLAT_CORNER = { phone: 10, desktop: 20 } as const;
+/** A bound book's corner, fitted to Apple Books' book covers: about 3.5% of the cover's width drawn as
+ *  a squircle, which is a phone card at 4 pt and the middle of the desktop's widths at 8. */
+export const BOUND_CORNER = { phone: 4, desktop: 8 } as const;
+
+/** Loose pages — a webtoon pane, a CG set's sheets — round further, as Apple Books rounds a square
+ *  audiobook cover against its books: fitted to that cover, which is still squarer than a flat card. */
+export const LOOSE_CORNER = { phone: 7, desktop: 14 } as const;
 
 /**
  * One radius for all four corners. A book is squarer at the spine than at the fore-edge, but on iOS a
@@ -84,9 +89,8 @@ export const FLAT_CORNER = { phone: 10, desktop: 20 } as const;
  * offscreen pass on every card in every frame of a scroll. The hinge already says which side is bound.
  */
 export function bookRadius(cover: BookCover, desktop: boolean): number {
-  if (cover.form === 'scroll') return desktop ? FLAT_CORNER.desktop : FLAT_CORNER.phone;
-  if (cover.form === 'issue' || cover.form === 'sheets') return desktop ? 2.5 : 1.5;
-  return desktop ? 6 : 3;
+  const corner = cover.form === 'volume' || cover.form === 'issue' ? BOUND_CORNER : LOOSE_CORNER;
+  return desktop ? corner.desktop : corner.phone;
 }
 
 export type Shade = { colors: readonly [string, string, ...string[]]; locations: readonly [number, number, ...number[]] };
