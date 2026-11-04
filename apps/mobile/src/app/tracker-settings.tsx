@@ -1,26 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet } from 'react-native';
 
-import { RefreshableScrollView } from '@/components/settings/refreshable-scroll';
-import { SettingFieldEditor, isAutoPersistedField } from '@/components/settings/setting-field';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
-import { ThemedText } from '@/components/themed-text';
+import { RetryBlock } from '@/components/retry-block';
+import { isAutoPersistedField, useDescriptorFields } from '@/components/settings/setting-field';
+import { fields, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
 import type { SettingValue, TrackerSettingsInfo } from '@/data/api';
 import { isSecretSetting } from '@comical/contract';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { usePackageUpdate, useUpdatingIds } from '@/data/use-package-update';
 import { useRecheckRegistryUpdates, useTrackerUpdateMap } from '@/data/use-settings-badge';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { useTheme } from '@/hooks/use-theme';
 import { useLocalSearchParams, useRouter } from '@/lib/nav';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 /** The sign-in field(s) still empty, by label — the import needs an account before it can list anything. */
 function signInPending(data: TrackerSettingsInfo): string | null {
@@ -33,8 +28,6 @@ export default function TrackerSettingsScreen() {
   const { trackerId } = useLocalSearchParams<{ trackerId?: string }>();
   const router = useRouter();
   const ds = useDataSource();
-  const theme = useTheme();
-  const contentPadding = useSettingsScrollPadding();
   const queryClient = useQueryClient();
 
   const { data, error, isLoading, refetch } = useQuery({
@@ -94,6 +87,14 @@ export default function TrackerSettingsScreen() {
     ]);
   };
 
+  const { fieldsFor, extras } = useDescriptorFields({
+    valueOf: (key) => (key in edits ? edits[key] : data?.values[key]),
+    secretSet: (key) => !!data?.secretsSet.includes(key),
+    trackerId,
+    onChange: setField,
+    onCommit: commitField,
+  });
+
   const updateMap = useTrackerUpdateMap();
   const availableVersion = trackerId ? updateMap.get(trackerId) : undefined;
   const updateMutation = usePackageUpdate('tracker');
@@ -110,122 +111,84 @@ export default function TrackerSettingsScreen() {
     if (trackerId && !updates.trackers.some((u) => u.id === trackerId)) showToast(`${data?.info.name ?? 'Tracker'} is up to date`);
   };
 
-  return (
-    <ThemedView style={styles.container}>
-      <TopBar title={data?.info.name ?? 'Tracker settings'} />
-      <RefreshableScrollView
-        refresh={refresh}
-        style={scrollbarInset(contentPadding.paddingTop)}
-        contentContainerStyle={contentPadding}
-        contentStyle={styles.content}>
-        {isLoading ? (
-          <ActivityIndicator />
-        ) : error ? (
-          <View style={styles.center}>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.centerText}>
-              {(error as Error).message || 'Failed to load tracker settings'}
-            </ThemedText>
-            <Pressable testID="settings.tracker.retry" onPress={() => refetch()}>
-              <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                Retry
-              </ThemedText>
-            </Pressable>
-          </View>
-        ) : data ? (
-          <>
-            {(availableVersion || updating) && (
-              <ThemedView type="backgroundElement" style={[styles.updateBanner, { borderColor: theme.hairline }]}>
-                <ThemedText type="small" style={styles.updateBannerText}>
-                  {updating ? (availableVersion ? `Updating to v${availableVersion}…` : 'Updating…') : `Update available — v${availableVersion}`}
-                </ThemedText>
-                {updating ? (
-                  <ActivityIndicator size="small" testID="settings.tracker.updating" />
-                ) : (
-                  <Pressable testID="settings.tracker.update" onPress={performUpdate} hitSlop={8}>
-                    <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                      Update
-                    </ThemedText>
-                  </Pressable>
-                )}
-              </ThemedView>
-            )}
-            {updateError && (
-              <ThemedText type="small" style={{ color: theme.danger }}>
-                {updateError}
-              </ThemedText>
-            )}
-
-            {data.settings.length === 0 ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                This tracker has no configurable settings.
-              </ThemedText>
-            ) : (
-              // Untitled: the TopBar already names the tracker, and unlike a bridge (whose fields sit
-              // below its metadata and update banner) these fields ARE the whole screen — so the
-              // heading labelled nothing it wasn't already next to.
-              <SettingsSection>
-                {data.settings.map((d) => (
-                  <SettingFieldEditor
-                    key={d.key}
-                    descriptor={d}
-                    value={d.key in edits ? edits[d.key] : data.values[d.key]}
-                    secretSet={data.secretsSet.includes(d.key)}
-                    trackerId={trackerId}
-                    onChange={(v) => setField(d.key, v)}
-                    onCommit={(v) => commitField(d.key, v)}
-                  />
-                ))}
-
-                {/* The Save button only exists for fields that stage their value (typed strings,
-                    numbers, toggles, paste-style OAuth). When every field auto-persists on interaction
-                    (e.g. a lone "Connect" OAuth row like AniList), signing in is the save — no button. */}
-                {data.settings.some((d) => !isAutoPersistedField(d)) && (
-                  <>
-                    {saveError && (
-                      <ThemedText type="small" style={{ color: theme.danger }}>
-                        {saveError}
-                      </ThemedText>
-                    )}
-                    {saved && !saveError && (
-                      <ThemedText type="small" themeColor="textSecondary">
-                        Saved.
-                      </ThemedText>
-                    )}
-                    <Pressable testID="settings.tracker.save" onPress={save} disabled={saving}>
-                      <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, saving && styles.saveBtnDisabled]}>
-                        <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
-                          {saving ? 'Saving…' : 'Save'}
-                        </ThemedText>
-                      </ThemedView>
-                    </Pressable>
-                  </>
-                )}
-              </SettingsSection>
-            )}
-
-            {data.info.capabilities.includes('library-sync') && (
-              <SettingsSection title="Library">
-                {signInPending(data) && (
-                  <ThemedText type="small" themeColor="textSecondary" style={styles.note}>
-                    Importing needs an account — {signInPending(data)} above.
-                  </ThemedText>
-                )}
-                <SettingsRow
-                  testID="settings.tracker.import"
-                  label="Import list into library"
-                  description="Link what's already here, add the rest"
-                  onPress={() =>
+  const sections: SettingsFormSection[] = isLoading
+    ? [{ fields: [{ kind: 'custom', testID: 'settings.tracker.loading', render: () => <ActivityIndicator /> }] }]
+    : error
+      ? [
+          {
+            fields: [
+              {
+                kind: 'custom',
+                testID: 'settings.tracker.retry',
+                render: () => <RetryBlock message={(error as Error).message || 'Failed to load tracker settings'} onRetry={() => refetch()} />,
+              },
+            ],
+          },
+        ]
+      : data
+        ? [
+            {
+              fields: fields(
+                (!!availableVersion || updating) && {
+                  kind: 'action',
+                  testID: 'settings.tracker.update',
+                  label: updating ? (availableVersion ? `Updating to v${availableVersion}…` : 'Updating…') : `Update to v${availableVersion}`,
+                  description: updateError ?? undefined,
+                  tone: updateError ? 'danger' : undefined,
+                  busy: updating,
+                  disabled: updating,
+                  onPress: performUpdate,
+                },
+              ),
+            },
+            // Untitled: the bar already names the tracker, and these fields ARE the whole screen.
+            {
+              fields:
+                data.settings.length === 0
+                  ? [{ kind: 'note', testID: 'settings.tracker.no-settings', title: 'This tracker has no configurable settings.' }]
+                  : fields(
+                      ...data.settings.flatMap(fieldsFor),
+                      // The Save button only exists for fields that stage their value (typed strings,
+                      // numbers, toggles, paste-style OAuth). When every field auto-persists on
+                      // interaction (a lone "Connect" OAuth row like AniList), signing in is the save.
+                      data.settings.some((d) => !isAutoPersistedField(d)) && {
+                        kind: 'action',
+                        testID: 'settings.tracker.save',
+                        label: 'Save',
+                        description: saveError ?? (saved ? 'Saved.' : undefined),
+                        tone: saveError ? 'danger' : undefined,
+                        detail: saving ? 'Saving…' : undefined,
+                        busy: saving,
+                        disabled: saving,
+                        onPress: save,
+                      },
+                    ),
+            },
+            {
+              title: 'Library',
+              footer: signInPending(data) ? `Importing needs an account — ${signInPending(data)} above.` : undefined,
+              fields: fields(
+                data.info.capabilities.includes('library-sync') && {
+                  kind: 'link',
+                  testID: 'settings.tracker.import',
+                  label: 'Import list into library',
+                  description: "Link what's already here, add the rest",
+                  onPress: () =>
                     router.push({
                       pathname: '/tracker-import',
                       params: { trackerId: trackerId!, trackerName: data.info.name },
-                    })
-                  }
-                />
-              </SettingsSection>
-            )}
-          </>
-        ) : null}
-      </RefreshableScrollView>
+                    }),
+                },
+              ),
+            },
+          ]
+        : [];
+
+  return (
+    <ThemedView style={styles.container}>
+      <TopBar title={data?.info.name ?? 'Tracker settings'} />
+      <SettingsList sections={sections} refresh={refresh} />
+      {extras}
     </ThemedView>
   );
 }
@@ -233,44 +196,5 @@ export default function TrackerSettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  content: {
-    // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
-    gap: Spacing.five,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
-  },
-  updateBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  updateBannerText: {
-    flex: 1,
-  },
-  note: {
-    paddingHorizontal: Spacing.three,
-    paddingBottom: Spacing.two,
-  },
-  center: {
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.five,
-  },
-  centerText: {
-    textAlign: 'center',
-  },
-  saveBtn: {
-    alignItems: 'center',
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  saveBtnDisabled: {
-    opacity: 0.6,
   },
 });

@@ -5,20 +5,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
-import { Holdable } from '@/components/context-menu';
 import { CheckIcon, ClearIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { SelectLead, SelectPillBar, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
-import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
-import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
+import { type SettingsField, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar, type TopBarAction } from '@/components/top-bar';
-import { SettingsCardInset, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import type { SavedRegistry } from '@/data/api';
 import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
@@ -27,7 +26,6 @@ import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
-import { hapticSelection } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
@@ -188,47 +186,30 @@ export default function RegistriesScreen() {
       },
     });
 
-  const renderRow = (r: SavedRegistry) => (
-    // In select mode the row toggles (tap) / range-fills (hold, via the shared Holdable) instead of
-    // opening the registry, and its swipe action is parked. Same pattern as the Downloads screen.
-    <Holdable
-      key={r.url}
-      enabled={selecting}
-      onHold={() => {
-        hapticSelection();
-        ms.rangeFill(r.url);
-      }}>
-      {({ onLongPress }) => (
-        <SwipeableSettingsRow
-          // Operator-set label (e.g. "SFW") shown next to the derived owner/repo name, so one publisher's
-          // several registries are distinguishable. Falls back to just the name.
-          label={r.displayName ? `${r.displayName} — ${r.name}` : r.name}
-          // A held move takes over the description line: it's the one thing about this registry the
-          // user has to act on, and browsing it meanwhile reads the address that's going away.
-          description={r.pendingMove ? `Moved — tap to review the new address` : r.url}
-          descriptionColor={r.pendingMove ? theme.accent : undefined}
-          swipeEnabled={!selecting}
-          leading={
-            <SelectLead progress={mode.progress} selected={ms.isSelected(r.url)} itemKey={r.url} edgeOffset={SettingsCardInset} />
-          }
-          onPress={
-            selecting
-              ? () => ms.toggle(r.url)
-              : r.pendingMove
-                ? () => reviewMove(r)
-                : () => router.push({ pathname: '/registry-browse', params: { url: r.url } })
-          }
-          onLongPress={selecting ? onLongPress : undefined}
-          actions={[
-            ...(r.pendingMove
-              ? [{ label: 'Ignore', icon: ClearIcon, onPress: () => ignoreMove(r) }]
-              : []),
-            { label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => confirmRemoveOne(r) },
-          ]}
-        />
-      )}
-    </Holdable>
-  );
+  const row = (r: SavedRegistry): SettingsField => ({
+    kind: 'link',
+    key: r.url,
+    testID: testId('registries.row', r.url),
+    // Operator-set label (e.g. "SFW") shown next to the derived owner/repo name, so one publisher's
+    // several registries are distinguishable. Falls back to just the name.
+    label: r.displayName ? `${r.displayName} — ${r.name}` : r.name,
+    // A held move takes over the description line: it's the one thing about this registry the
+    // user has to act on, and browsing it meanwhile reads the address that's going away.
+    description: r.pendingMove ? `Moved — tap to review the new address` : r.url,
+    tone: r.pendingMove ? 'info' : undefined,
+    onPress: r.pendingMove ? () => reviewMove(r) : () => router.push({ pathname: '/registry-browse', params: { url: r.url } }),
+    actions: [
+      ...(r.pendingMove ? [{ label: 'Ignore', symbol: 'xmark' as const, glyph: ClearIcon, onPress: () => ignoreMove(r) }] : []),
+      { label: 'Remove', symbol: 'trash' as const, glyph: TrashIcon, destructive: true, onPress: () => confirmRemoveOne(r) },
+    ],
+  });
+  const sections: SettingsFormSection[] = [
+    {
+      fields: Array.isArray(ordered) ? ordered.map(row) : [],
+      onReorder: (urls) => setRegistryOrder(urls),
+      selection: { selecting, progress: mode.progress, selected: ms.selected, toggle: ms.toggle, rangeFill: ms.rangeFill },
+    },
+  ];
 
   // Web has no pull-to-refresh on this list, so the check gets a button there.
   const refresh: TopBarAction = {
@@ -278,7 +259,8 @@ export default function RegistriesScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ReorderableList data={ordered} keyOf={(r) => r.url} renderRow={renderRow} onReorder={(urls) => setRegistryOrder(urls)} dragEnabled={!selecting} refresh={reconcileLabels} />
+        // The live list is the draggable list; a pull reconciles the labels.
+        <SettingsList sections={sections} refresh={reconcileLabels} />
       )}
 
       {/* The + add affordance: a floating FAB in normal mode, hidden while selecting. */}

@@ -175,11 +175,22 @@ the id its component had; `settings-list.tsx` draws them as the app's cards and 
 the desktop panes) and `settings-list.ios.tsx` as a SwiftUI `Form` filling the screen under the
 system bar, its rows the system's switches, menu pickers, buttons and label–value rows, a `custom`
 field hosted in a row through `RNHostView`. Each renderer's switch over the kinds is complete or the
-typecheck fails. The landing tab, General, Notifications, Developer, About, What's new, Storage and
-Diagnostics are on it; Sync, Keyboard, the bridge and tracker settings and the list screens
-(Bridges, Trackers, Registries, Custom pages, Downloads) still draw their rows themselves, and
-their enum rows are SYSTEM menus too: `SettingsSelectRow` is
-platform-split (`components/settings/select-row.ios.tsx` — the row drawn in RN in iOS Settings'
+typecheck fails. Every settings screen but Downloads is on it, the list screens included: a
+section with `onReorder` is a draggable list (the app's `ReorderableList`; SwiftUI's `List.ForEach`
+move), a `link` row's `actions` are its swipe actions (`SwipeableSettingsRow`; SwiftUI's
+`SwipeActions`), and a section's `selection` is the screen's select mode (the animated check
+circle on the app's rows; a check circle the iOS row draws, since the form never enters the
+list's edit mode). A `text` field is the system's text or secure field on iOS, a `stepper` its
+stepper, a `multi` field the overlay's checklist everywhere (a system menu holds one check).
+A bridge's or tracker's descriptors become fields through `useDescriptorFields`
+(`components/settings/setting-field.tsx`), one hook holding every sign-in row's state by key;
+`bridge-extras.tsx` gives the per-bridge sections as hooks. Colour is one rule: the thing that
+acts is tinted (an action's `verb` where it has one, else its label; red when destructive) and
+nothing else, which the iOS renderer names explicitly since a SwiftUI button tints its label and a
+hierarchical style inside one resolves against that tint. On iOS the enum rows are the form's menu
+pickers, so the menu-anchor select row (`SettingsSelectRow`, below) is reached only through the
+app's own renderer, on Android and web:
+it is platform-split (`components/settings/select-row.ios.tsx` — the row drawn in RN in iOS Settings'
 popup-row shape, `label … value ⌃⌄`, with the local Expo module `apps/mobile/modules/menu-anchor`
 laid over it: an invisible UIButton whose tap opens a UIMenu of checkmarked options with the
 bridge thumbnails from the same thumb files; `select-row-overlay.tsx` is the anchored overlay

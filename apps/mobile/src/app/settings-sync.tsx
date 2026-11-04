@@ -11,23 +11,20 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { openConfirm } from '@/components/confirm-popup';
 import { OverlayHeading, useOverlay } from '@/components/overlay/overlay';
 import { QrCode } from '@/components/qr-code';
-import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { RemoteServerForm } from '@/components/settings/remote-server-form';
-import { SettingsTextRow, SettingsToggleRow } from '@/components/settings/settings-fields';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { fields, type SettingsField, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useApiBase, useSyncPaired } from '@/data/api';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { connectServer } from '@/data/switch-server';
 import { setSyncEnabled, syncLibraryNow, useSyncStatus, type SyncStatus } from '@/data/sync';
 import { useHydrated } from '@/hooks/use-responsive';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { useTheme } from '@/hooks/use-theme';
 import {
   closeSyncPairing,
   desktopShell,
@@ -43,7 +40,6 @@ import {
 import { defaultSyncDeviceName, useChosenSyncDeviceName } from '@/lib/device-name';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { testId } from '@/lib/test-id';
 
 const timeOf = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -57,23 +53,19 @@ function syncDescription(sync: SyncStatus): string {
 }
 
 export default function SyncSettingsScreen() {
-  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   // Gated on hydration: the static web render has no shell, so the rows would otherwise appear
   // only after it and mismatch.
   const desktop = useHydrated() && !!desktopShell();
-
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Sync" />
-      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
-        <SettingsSection>{desktop ? <HubRows /> : <DeviceRows />}</SettingsSection>
-      </ScreenScrollView>
+      {desktop ? <HubSync /> : <DeviceSync />}
     </ThemedView>
   );
 }
 
 /** A phone's side: its own library, kept in step with a hub. */
-function DeviceRows() {
+function DeviceSync() {
   const router = useRouter();
   const { openDialog } = useOverlay();
   const [onDevice] = useEmbeddedEnabled();
@@ -87,159 +79,148 @@ function DeviceRows() {
   const embeddedAvailable = isEmbeddedRuntimeAvailable();
   const embeddedActive = onDevice && embeddedAvailable;
 
-  if (!embeddedAvailable) {
-    return (
-      <SettingsRow
-        testID="settings.sync.nothing"
-        label="Sync library"
-        description="Nothing to sync here: your library lives on the server this app reads from, which everything using it already shares."
-      />
-    );
-  }
-  if (!embeddedActive) {
-    return (
-      <SettingsRow
-        testID="settings.sync.needs-on-device"
-        label="Sync library"
-        description="Turn on Run bridges on this device first — only a library kept on this device has anything to sync."
-        onPress={() => router.push('/settings-general')}
-      />
-    );
-  }
-  return (
-    <>
-      <SettingsToggleRow
-        label="Sync library"
-        description={
-          sync.unlinked
-            ? 'Your computer unlinked this device. Pair again to keep syncing.'
-            : 'Keep your library in step with your computer.'
-        }
-        value={sync.enabled}
-        onChange={(v) => void setSyncEnabled(v)}
-      />
-      {sync.enabled && (
-        <SettingsRow
-          testID="settings.sync.sync-now"
-          label="Sync now"
-          description={syncDescription(sync)}
-          onPress={() => void syncLibraryNow()}
-        />
-      )}
-      {sync.enabled && (
-        <SettingsRow
-          testID="settings.sync.server"
-          label="Sync server"
-          description={apiBase}
-          onPress={() =>
-            openDialog(
-              () => (
-                <RemoteServerForm
-                  title="Sync server"
-                  description="The computer this library syncs with. Scan the code on its Sync settings, or type the address shown beside it."
-                  currentUrl={apiBase}
-                  resetLabel={paired ? 'Unpair' : undefined}
-                  onSave={connectServer}
-                  // The scanner is a camera, so only where there is one.
-                  onScan={Platform.OS === 'web' ? undefined : () => router.push('/scan-sync-server')}
-                />
+  const rows: SettingsField[] = !embeddedAvailable
+    ? [
+        {
+          kind: 'value',
+          testID: 'settings.sync.nothing',
+          label: 'Sync library',
+          description: 'Nothing to sync here: your library lives on the server this app reads from, which everything using it already shares.',
+        },
+      ]
+    : !embeddedActive
+      ? [
+          {
+            kind: 'link',
+            testID: 'settings.sync.needs-on-device',
+            label: 'Sync library',
+            description: 'Turn on Run bridges on this device first — only a library kept on this device has anything to sync.',
+            onPress: () => router.push('/settings-general'),
+          },
+        ]
+      : fields(
+          {
+            kind: 'toggle',
+            label: 'Sync library',
+            description: sync.unlinked
+              ? 'Your computer unlinked this device. Pair again to keep syncing.'
+              : 'Keep your library in step with your computer.',
+            value: sync.enabled,
+            onChange: (v) => void setSyncEnabled(v),
+          },
+          sync.enabled && {
+            kind: 'action',
+            testID: 'settings.sync.sync-now',
+            label: 'Sync now',
+            description: syncDescription(sync),
+            onPress: () => void syncLibraryNow(),
+          },
+          sync.enabled && {
+            kind: 'link',
+            testID: 'settings.sync.server',
+            label: 'Sync server',
+            description: apiBase,
+            onPress: () =>
+              openDialog(
+                () => (
+                  <RemoteServerForm
+                    title="Sync server"
+                    description="The computer this library syncs with. Scan the code on its Sync settings, or type the address shown beside it."
+                    currentUrl={apiBase}
+                    resetLabel={paired ? 'Unpair' : undefined}
+                    onSave={connectServer}
+                    // The scanner is a camera, so only where there is one.
+                    onScan={Platform.OS === 'web' ? undefined : () => router.push('/scan-sync-server')}
+                  />
+                ),
+                { accessibilityLabel: 'Sync server' },
               ),
-              { accessibilityLabel: 'Sync server' },
-            )
-          }
-        />
-      )}
-      {sync.enabled && (
-        <SettingsToggleRow
-          label="Read from your computer"
-          description="When it can be reached, take the pages it has downloaded from it instead of the source."
-          value={fromHub}
-          onChange={(v) => downloadPrefs$.fromHub.set(v)}
-        />
-      )}
-      {sync.enabled && (
-        <SettingsTextRow
-          label="This phone's name"
-          description="How the computer lists it."
-          value={chosenName}
-          placeholder={defaultSyncDeviceName()}
-          onChange={setChosenName}
-          autoCorrect={false}
-        />
-      )}
-    </>
-  );
+          },
+          sync.enabled && {
+            kind: 'toggle',
+            label: 'Read from your computer',
+            description: 'When it can be reached, take the pages it has downloaded from it instead of the source.',
+            value: fromHub,
+            onChange: (v) => downloadPrefs$.fromHub.set(v),
+          },
+          sync.enabled && {
+            kind: 'text',
+            label: "This phone's name",
+            description: 'How the computer lists it.',
+            value: chosenName,
+            placeholder: defaultSyncDeviceName(),
+            onChange: setChosenName,
+          },
+        );
+  const sections: SettingsFormSection[] = [{ fields: rows }];
+  return <SettingsList sections={sections} />;
 }
 
 /** The desktop's side: a hub phones sync with. */
-function HubRows() {
+function HubSync() {
   const { openDialog } = useOverlay();
   const [networkSync, setNetworkSync] = useNetworkSync();
   const networkSyncAddress = useNetworkSyncAddress();
   const devices = useSyncDevices();
+  const now = useMinuteTick();
   useEffect(refreshNetworkSyncAddress, []);
 
-  if (!desktopSyncsDevices()) {
-    return <SettingsRow label="Nothing to sync" description="This build of the desktop app can't be a sync hub." />;
-  }
-  return (
-    <>
-      <SettingsToggleRow
-        label="Sync with your phone"
-        description="Let phones on your network keep their library in step with this computer."
-        value={networkSync}
-        onChange={setNetworkSync}
-      />
-      {networkSync && (
-        <SettingsRow
-          testID="settings.sync.pair-phone"
-          label="Pair a phone"
-          description={networkSyncAddress ? 'Show a code for one phone to scan' : 'Not connected to a network'}
-          onPress={networkSyncAddress ? () => openDialog(() => <PairPhoneSheet />, { accessibilityLabel: 'Pair a phone' }) : undefined}
-        />
-      )}
-      {networkSync && devices.length === 0 && (
-        <SettingsRow testID="settings.sync.no-devices" label="No phones yet" description="A phone appears here once it is paired." />
-      )}
-      {/* Listed while sync is off too: a phone can be unlinked without opening the door to do it. */}
-      {devices.map((device) => (
-        <DeviceRow key={device.id} device={device} />
-      ))}
-    </>
-  );
+  const rows: SettingsField[] = !desktopSyncsDevices()
+    ? [{ kind: 'value', label: 'Nothing to sync', description: "This build of the desktop app can't be a sync hub." }]
+    : fields(
+        {
+          kind: 'toggle',
+          label: 'Sync with your phone',
+          description: 'Let phones on your network keep their library in step with this computer.',
+          value: networkSync,
+          onChange: setNetworkSync,
+        },
+        networkSync &&
+          (networkSyncAddress
+            ? {
+                kind: 'link',
+                testID: 'settings.sync.pair-phone',
+                label: 'Pair a phone',
+                description: 'Show a code for one phone to scan',
+                onPress: () => openDialog(() => <PairPhoneSheet />, { accessibilityLabel: 'Pair a phone' }),
+              }
+            : { kind: 'value', testID: 'settings.sync.pair-phone', label: 'Pair a phone', description: 'Not connected to a network' }),
+        networkSync &&
+          devices.length === 0 && {
+            kind: 'value',
+            testID: 'settings.sync.no-devices',
+            label: 'No phones yet',
+            description: 'A phone appears here once it is paired.',
+          },
+        // Listed while sync is off too: a phone can be unlinked without opening the door to do it.
+        // There is no "connected" to show — a sync is a request and a reply — so when it was last
+        // here is the whole status. Its key is its own, so unlinking it cuts off that phone and no other.
+        ...devices.map(
+          (device): SettingsField => ({
+            kind: 'action',
+            testID: testId('settings.sync.device', device.id),
+            label: device.name,
+            description: device.lastSeenAt === null ? 'Paired, not synced yet' : `Synced ${relTime(device.lastSeenAt, now)}`,
+            verb: 'Unlink',
+            role: 'destructive',
+            onPress: () => confirmUnlink(device),
+          }),
+        ),
+      );
+  const sections: SettingsFormSection[] = [{ fields: rows }];
+  return <SettingsList sections={sections} />;
 }
 
-/**
- * One phone paired with this computer. There is no "connected" to show — a sync is a request and a
- * reply — so when it was last here is the whole status. Its key is its own, so unlinking it cuts
- * off that phone and no other.
- */
-function DeviceRow({ device }: { device: PairedDevice }) {
-  const theme = useTheme();
-  const now = useMinuteTick();
-  return (
-    <SettingsRow
-      testID={testId('settings.sync.device', device.id)}
-      label={device.name}
-      description={device.lastSeenAt === null ? 'Paired, not synced yet' : `Synced ${relTime(device.lastSeenAt, now)}`}
-      right={
-        <ThemedText type="smallBold" style={{ color: theme.danger }}>
-          Unlink
-        </ThemedText>
-      }
-      onPress={() =>
-        openConfirm({
-          title: `Unlink ${device.name}?`,
-          message: 'It stops syncing with this computer until it is paired again. The library already on it stays there.',
-          confirmLabel: 'Unlink',
-          pendingLabel: 'Unlinking…',
-          tone: 'danger',
-          errorFallback: "Couldn't unlink",
-          onConfirm: () => unlinkSyncDevice(device.id),
-        })
-      }
-    />
-  );
+function confirmUnlink(device: PairedDevice) {
+  openConfirm({
+    title: `Unlink ${device.name}?`,
+    message: 'It stops syncing with this computer until it is paired again. The library already on it stays there.',
+    confirmLabel: 'Unlink',
+    pendingLabel: 'Unlinking…',
+    tone: 'danger',
+    errorFallback: "Couldn't unlink",
+    onConfirm: () => unlinkSyncDevice(device.id),
+  });
 }
 
 /** Re-renders once a minute, so "Synced 3m ago" keeps pace without anything else changing. */
@@ -315,12 +296,6 @@ function PairPhoneSheet() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  content: {
-    gap: Spacing.five,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
   },
   sheet: {
     gap: Spacing.three,

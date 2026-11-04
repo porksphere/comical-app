@@ -264,7 +264,11 @@ These use public APIs, but the shape exists only because of a gap somewhere.
 - **Where:** `apps/mobile/modules/menu-anchor/`, `src/components/settings/select-row.ios.tsx`.
 - **Why:** `@expo/ui`'s menu renders pictures at 1×. This replaced the one dependency patch this branch
   ever had.
-- **Removed by:** a fully native settings screen, or `@expo/ui` decoding at screen scale.
+- **Status:** unreached on iOS since the settings screens became the SwiftUI form
+  (`settings-list.ios.tsx`), whose enum rows are the form's own menu pickers. The row file and the
+  module are only resolved by the app's own renderer, on Android and web, where the module is null.
+- **Removed by:** deleting `select-row.ios.tsx` and the module once no iOS screen draws the app's
+  own rows, or `@expo/ui` decoding at screen scale.
 
 ### 12. `shaped-image` and `menu-thumb-files`
 

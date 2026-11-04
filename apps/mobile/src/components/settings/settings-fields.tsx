@@ -51,6 +51,7 @@ export function SettingsTextRow({
   autoCapitalize,
   autoCorrect,
   secureTextEntry,
+  testID,
 }: {
   label: string;
   description?: string;
@@ -62,11 +63,13 @@ export function SettingsTextRow({
   autoCorrect?: boolean;
   /** Mask the value (a secret / password). A reveal (eye) button is shown to toggle visibility. */
   secureTextEntry?: boolean;
+  /** The row's id; its input is `<id>.input`. Defaults to `settings.text.<label>`. */
+  testID?: string;
 }) {
   const theme = useTheme();
   const [revealed, setRevealed] = useState(false);
   const [focused, setFocused] = useState(false);
-  const base = testId('settings.text', label);
+  const base = testID ?? testId('settings.text', label);
   return (
     <View style={settingsRowFrame.row}>
       <View style={styles.textRowLabel}>

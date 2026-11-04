@@ -5,23 +5,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
-import { Holdable } from '@/components/context-menu';
 import { ArrowUpIcon, BridgesIcon, CheckIcon, ClearIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { SelectLead, SelectLeadGap, SelectPillBar, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
-import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
 import { useBrowseRegistry } from '@/components/settings/browse-registry';
-import { RowIcon } from '@/components/settings/row-icon';
-import { SettingsRow } from '@/components/settings/settings-row';
-import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
-import type { SwipeRowAction } from '@/components/settings/swipeable-row';
-import { UpdateDot } from '@/components/tab-badge';
+import { type SettingsField, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar, type TopBarAction } from '@/components/top-bar';
-import { SettingsCardInset, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import type { BridgeSummary } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyOrder, setBridgeOrder, useBridgeOrder } from '@/data/list-order';
@@ -33,7 +28,6 @@ import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { UNINSTALL_ONE_MESSAGE } from '@/lib/bridge-uninstall';
 import { friendlyError, UserFacingError } from '@/lib/friendly-error';
-import { hapticSelection } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
@@ -100,13 +94,14 @@ export default function BridgesScreen() {
 
   // ── Multi-select mode (the shared select-mode chrome) — bulk-uninstall bridges ──
   // Only REGISTRY-INSTALLED bridges are selectable (a server-built one has nothing to uninstall,
-  // same `source` gate as the row's swipe); server rows keep alignment via `SelectLeadGap`.
+  // same `source` gate as the row's swipe); server rows keep their column.
   const mode = useSelectMode();
   const selecting = mode.selecting;
   const allKeys = useMemo(
     () => (visible ?? []).filter((b) => b.source === 'registry').map((b) => b.info.id),
     [visible],
   );
+  const selectable = useMemo(() => new Set(allKeys), [allKeys]);
   const ms = useMultiSelect(allKeys);
   const toggleSelecting = () => {
     if (selecting) ms.clear();
@@ -191,9 +186,7 @@ export default function BridgesScreen() {
     }
   };
 
-  // The page's real row — full swipe-to-uninstall + tap. On native the reorder list wraps this
-  // unchanged inside a drag item (swipe stays identical); on web it's the normal-mode row.
-  const renderRow = (b: BridgeSummary) => {
+  const row = (b: BridgeSummary): SettingsField => {
     // The live check wins over the summary's cached annotation, so a freshly-published update shows
     // its dot/swipe without waiting for the annotation to be re-persisted; fall back to the annotation
     // when the check hasn't resolved (or is offline) so a known update still surfaces.
@@ -201,80 +194,38 @@ export default function BridgesScreen() {
     const updating = updatingIds.has(b.info.id);
     const status = bridgeStatus(b, availableVersion, updating);
     const hasUpdate = !!availableVersion && !updating;
-    const spinner = updating ? <ActivityIndicator size="small" testID={testId('bridges.updating', b.info.id)} /> : undefined;
-    const openBridge = () => router.push({ pathname: '/bridge-settings', params: { bridgeId: b.info.id, source: b.source } });
-    const statusColor = status && (status.tone === 'warn' ? theme.badgeWarn : theme.badgeInfo);
-    // The row's own accent dot — the per-bridge form of the counted pip on the Settings "Bridges"
-    // icon, so a bridge that surfaced that pip is identifiable in the list itself.
-    const icon = (
-      <View>
-        <RowIcon uri={b.info.iconUrl} fallback={(color, size) => <BridgesIcon color={color} size={size} />} />
-        {hasUpdate && (
-          <View style={styles.iconDot} pointerEvents="none">
-            <UpdateDot />
-          </View>
-        )}
-      </View>
-    );
-    // Only registry-installed bridges can be uninstalled — a server-built one has nothing to remove,
-    // so it gets a plain non-swipeable row (same `source` gate bridge-settings.tsx uses), isn't
-    // selectable, and goes inert while select mode is on.
-    if (b.source !== 'registry') {
-      return (
-        <SettingsRow
-          key={b.info.id}
-          label={b.info.name}
-          description={status?.text}
-          descriptionColor={statusColor}
-          leading={
-            <>
-              <SelectLeadGap progress={mode.progress} />
-              {icon}
-            </>
-          }
-          right={spinner}
-          onPress={selecting ? undefined : openBridge}
-        />
-      );
-    }
-    const key = b.info.id;
-    // "Update" (accent) sits left of the destructive "Uninstall" (edge slot) — a direct way to update
-    // from the list instead of opening each bridge. Only shown when an update is actually available.
-    const rowActions: SwipeRowAction[] = [
-      ...(hasUpdate ? [{ key: 'update', label: 'Update', icon: ArrowUpIcon, onPress: () => void updateOne(b) }] : []),
-      { key: 'uninstall', label: 'Uninstall', icon: TrashIcon, destructive: true, onPress: () => confirmUninstallOne(b) },
-    ];
-    return (
-      // In select mode the row toggles (tap) / range-fills (hold, via the shared Holdable) instead
-      // of opening bridge settings, and its swipe is parked. Same pattern as the Downloads screen.
-      <Holdable
-        key={key}
-        enabled={selecting}
-        onHold={() => {
-          hapticSelection();
-          ms.rangeFill(key);
-        }}>
-        {({ onLongPress }) => (
-          <SwipeableSettingsRow
-            label={b.info.name}
-            description={status?.text}
-            descriptionColor={statusColor}
-            leading={
-              <>
-                <SelectLead progress={mode.progress} selected={ms.isSelected(key)} itemKey={key} edgeOffset={SettingsCardInset} />
-                {icon}
-              </>
-            }
-            right={spinner}
-            swipeEnabled={!selecting}
-            onPress={selecting ? () => ms.toggle(key) : openBridge}
-            onLongPress={selecting ? onLongPress : undefined}
-            actions={rowActions}
-          />
-        )}
-      </Holdable>
-    );
+    return {
+      kind: 'link',
+      key: b.info.id,
+      testID: testId('bridges.row', b.info.id),
+      label: b.info.name,
+      description: status?.text,
+      tone: status?.tone,
+      icon: { symbol: 'puzzlepiece', glyph: (color, size) => <BridgesIcon color={color} size={size} />, uri: b.info.iconUrl },
+      // The row's own accent dot — the per-bridge form of the counted pip on the Settings "Bridges"
+      // icon, so a bridge that surfaced that pip is identifiable in the list itself.
+      marked: hasUpdate,
+      busy: updating,
+      onPress: () => router.push({ pathname: '/bridge-settings', params: { bridgeId: b.info.id, source: b.source } }),
+      // Only registry-installed bridges can be uninstalled — a server-built one has nothing to remove
+      // (same `source` gate bridge-settings.tsx uses). "Update" sits left of the destructive
+      // "Uninstall" (edge slot), only when an update is actually available.
+      actions:
+        b.source === 'registry'
+          ? [
+              ...(hasUpdate ? [{ key: 'update', label: 'Update', symbol: 'arrow.up' as const, glyph: ArrowUpIcon, onPress: () => void updateOne(b) }] : []),
+              { key: 'uninstall', label: 'Uninstall', symbol: 'trash' as const, glyph: TrashIcon, destructive: true, onPress: () => confirmUninstallOne(b) },
+            ]
+          : undefined,
+    };
   };
+  const sections: SettingsFormSection[] = [
+    {
+      fields: (visible ?? []).map(row),
+      onReorder,
+      selection: { selecting, progress: mode.progress, selected: ms.selected, selectable, toggle: ms.toggle, rangeFill: ms.rangeFill },
+    },
+  ];
 
   const checkUpdates: TopBarAction = {
     label: 'Check for bridge updates',
@@ -325,9 +276,8 @@ export default function BridgesScreen() {
           )}
         </View>
       ) : (
-        // The live list IS the reorderable list (long-press drag on touch, a hover handle with a
-        // mouse). It owns its own scroll and pull-to-refresh; a pull runs the update check.
-        <ReorderableList data={visible} keyOf={(b) => b.info.id} renderRow={renderRow} onReorder={onReorder} dragEnabled={!selecting} refresh={checkForUpdates} />
+        // The live list is the draggable list; a pull runs the update check.
+        <SettingsList sections={sections} refresh={checkForUpdates} />
       )}
 
       {/* The + install affordance: a floating FAB in normal mode, hidden while selecting. */}
@@ -372,13 +322,6 @@ export default function BridgesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  // Hugs the top-right corner of the 28-wide RowIcon tile so the dot overlaps the artwork, mirroring
-  // how the Settings category row places its update pip over the section glyph.
-  iconDot: {
-    position: 'absolute',
-    top: -3,
-    right: -3,
   },
   stateHost: {
     flex: 1,
