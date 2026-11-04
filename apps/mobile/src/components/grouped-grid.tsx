@@ -64,6 +64,7 @@ export function GroupedGrid<T>({
   sidePad,
   stickyHeaderTop,
   stickyPinned,
+  stickyBarOffset,
   onSectionChange,
   sharedValues,
   onScroll,
@@ -88,6 +89,9 @@ export function GroupedGrid<T>({
   /** Written by the sticky: 1 while a heading is pinned. The screen drops its top bar's own rule
    *  off this, on the same frame — see StickySectionHeader's `pinnedValue`. */
   stickyPinned?: SharedValue<number>;
+  /** How far the top bar has slid from rest (0 → −its height), so the heading's line follows the
+   *  bar's edge, not where it rests. */
+  stickyBarOffset?: SharedValue<number>;
   /** The section whose heading is pinned, by label — null above the first. The iOS bar shows it
    *  as its title, since nothing pins under the native bar (see StickySectionHeader). */
   onSectionChange?: (label: string | null) => void;
@@ -180,6 +184,7 @@ export function GroupedGrid<T>({
           sidePad={sidePad}
           resetKey={scopeKey}
           scrollOffset={sharedValues.scrollOffset}
+          barOffset={stickyBarOffset}
           onActiveChange={onActiveChange}
           {...(stickyPinned && { pinnedValue: stickyPinned })}
           // The SAME component the list renders inline — see StickySectionHeader.

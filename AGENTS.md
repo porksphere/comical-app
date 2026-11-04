@@ -159,7 +159,9 @@ every surface tried there failed (a band floated, a scrim running up to the bar 
 bar, a glass capsule hugging the heading was a badge drifting over the covers), so on iOS
 `StickySectionHeader` draws nothing (`IN_BAR`) and only reports which section is under the bar
 (`onSectionChange` on the grids and feed), and the screen hands that label to `NativeTabHeader
-section`: it takes the title's place in the bar, the way Photos names the month there and
+section` — measured against the bar's edge where it has slid to, which the local module
+`modules/nav-bar-edge` reads off the bar (`useNativeBarOffset`), so the label never swaps under a
+bar half gone: it takes the title's place in the bar, the way Photos names the month there and
 Music the album, cross-fading as the next heading arrives. The inline headings scroll away like
 any other row. A series opened from a tab is a real pushed card of that tab's stack (route
 `in-tab/series/index` — the tab's `in-tab/series/` directory has no layout on purpose, so the

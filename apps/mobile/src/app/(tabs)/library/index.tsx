@@ -13,6 +13,7 @@ import { type TabFilter, TabFilterField, TabFilterTrigger, useTabFilter } from '
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { HoldActionTarget } from '@/components/hold-action-target';
+import { useNativeBarOffset } from '@/components/native-bar-edge';
 import { NativeTabHeader } from '@/components/native-tab-header';
 import { BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
@@ -81,6 +82,8 @@ export default function LibraryScreen() {
   );
   // The pinned section's label, which the iOS bar shows as its title — see NativeTabHeader.
   const [section, setSection] = useState<string | null>(null);
+  // Where the system bar has slid to, so that label changes at the bar's edge — see the hook.
+  const nativeBar = useNativeBarOffset();
 
   const chrome: LibraryGridChrome = {
     listRef,
@@ -90,7 +93,7 @@ export default function LibraryScreen() {
     // (content scrolls under it).
     stickyHeaderTop: headerHeight,
     stickyPinned,
-    ...(NATIVE_HEADER ? { onSectionChange: setSection } : {}),
+    ...(NATIVE_HEADER ? { onSectionChange: setSection, stickyBarOffset: nativeBar.offset } : {}),
     sharedValues,
     onScroll,
   };
@@ -173,6 +176,7 @@ export default function LibraryScreen() {
           }
         />
       )}
+      {nativeBar.probe}
     </ThemedView>
   );
 }

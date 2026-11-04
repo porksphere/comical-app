@@ -283,7 +283,8 @@ export function StickySectionHeader<S extends StickySection>({
   /** The list's UI-thread scroll offset (the same one the tab bar slides off). */
   scrollOffset: SharedValue<number>;
   /** The top bar's own translateY (0 visible → −barHeight hidden), where the bar slides with the
-   *  scroll (Browse). The pin line and the pinned heading both ride it. */
+   *  scroll (Browse's custom bar, and the iOS system bar through `useNativeBarOffset`). The pin line
+   *  and the pinned heading both ride it. */
   barOffset?: SharedValue<number>;
   /** The row key of the heading being stood in for (null = none). The caller hides that row's
    *  content, so the pinned copy never doubles the heading it replaced. */

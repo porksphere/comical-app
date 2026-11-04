@@ -26,6 +26,7 @@ import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import { BrowseNativeToolbar } from '@/components/browse-native-toolbar';
+import { useNativeBarOffset } from '@/components/native-bar-edge';
 import { NativeTabHeader } from '@/components/native-tab-header';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import {
@@ -655,6 +656,8 @@ export default function BrowseScreen() {
   );
   // The pinned section's label, which the iOS bar shows as its title — see NativeTabHeader.
   const [section, setSection] = useState<string | null>(null);
+  // Where the system bar has slid to, so that label changes at the bar's edge — see the hook.
+  const nativeBar = useNativeBarOffset();
 
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
@@ -911,7 +914,7 @@ export default function BrowseScreen() {
           // edge whether the bar is expanded or docked under the status bar. (Under the native bar
           // it is the heading alone, fading at the same edge — StickySectionHeader's own split.)
           stickyHeaderTop={headerHeight}
-          stickyBarOffset={barOffset}
+          stickyBarOffset={NATIVE_HEADER ? nativeBar.offset : barOffset}
           stickyPinned={stickyPinned}
           {...(NATIVE_HEADER ? { onSectionChange: setSection } : {})}
           ambient={feedTint}
@@ -948,6 +951,7 @@ export default function BrowseScreen() {
         />
       )}
       {NATIVE_HEADER ? nativeHeader : topBar}
+      {nativeBar.probe}
       <PullIndicator {...pull.indicator} top={headerHeight} />
     </ThemedView>
   );

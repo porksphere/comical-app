@@ -21,6 +21,8 @@ export type LibraryGridChrome = {
   paddingBottom: number;
   stickyHeaderTop: number;
   stickyPinned: SharedValue<number>;
+  /** iOS only: how far the system bar has slid away — see `useNativeBarOffset`. */
+  stickyBarOffset?: SharedValue<number>;
   /** iOS only: the pinned section's label, for the bar's title — see `GroupedGrid`. */
   onSectionChange?: (label: string | null) => void;
   sharedValues: { scrollOffset: SharedValue<number> };

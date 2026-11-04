@@ -43,6 +43,7 @@ the end of this doc is the only guard.
 | 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
 | 21 | No bar material on the folded Duo | Pose inferred around a UIKit limit | Keep | [ ] |
 | 22 | `nav-bar-fade`, with a temporary trace | Animates a library-owned bar | Blocker (the trace), then Decide | [ ] |
+| 23 | `nav-bar-edge` | Reads a library-owned bar's layers every frame | Decide | [ ] |
 
 ## Blockers
 
@@ -227,6 +228,25 @@ the end of this doc is the only guard.
   can't be found, the folded bar stays bare past the title.
 - **Removed by:** react-native-screens animating option changes.
 
+### 23. `nav-bar-edge`
+
+- **What:** a zero-size view on Browse and Library finds the screen's navigation bar through the
+  responder chain and, once a frame on a `CADisplayLink`, reads where the bar subview holding the
+  title sits on screen, through its presentation layer. It reports how far that is above the lowest
+  it has been (the rest, forgotten when the bar changes height), and the screen hands that to the
+  sticky section header as its `barOffset` (`useNativeBarOffset`, `components/native-bar-edge.tsx`).
+- **Where:** `apps/mobile/modules/nav-bar-edge/`, and the probe in `app/(tabs)/(home)/index.tsx` and
+  `app/(tabs)/library/index.tsx`.
+- **Why:** the section label in a tab's bar changed as a heading passed the line where the bar rests.
+  The bar slides away with the scroll, so the swap landed under a bar half slid away. iOS bar
+  minimization moves the bar's content, not the bar, and reports nothing, so its edge has to be read.
+- **Risk:** it leans on the minimization moving the subview that holds the title view, and on a
+  display link running while the tab is on screen.
+- **How it fails:** silent. If the content stops moving where this looks, the offset stays 0 and the
+  label changes at the bar's rest again, as before. A bar already slid away when the screen appears
+  reads as at rest until it comes back once.
+- **Removed by:** UIKit or react-native-screens reporting the bar's minimization progress.
+
 ## Shaped workarounds
 
 These use public APIs, but the shape exists only because of a gap somewhere.
@@ -367,3 +387,6 @@ fails silently and only shows here.
 - [ ] **Item 22:** on a series details page, scroll down until the bar slides away, then up once. The
       bar slides back in while its title and frost fade in, and fades back to bare at the page's title.
       On the folded Duo the same, with the hard scroll edge behind the title in place of the frost.
+- [ ] **Item 23:** on Browse, scroll down slowly from the top. The bar's title becomes the first
+      section's name only once the bar has slid away, never while it is half gone; scroll back up and
+      it returns with the bar.
