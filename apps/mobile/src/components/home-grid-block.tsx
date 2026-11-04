@@ -45,7 +45,7 @@ export function HomeGridBlock({
    *  row above the block. Default keeps the head so the component stays usable standalone. */
   headless?: boolean;
 }) {
-  const { cardWidth, columnGap } = useGridLayout();
+  const { cardWidth, columnGap, rowGap } = useGridLayout();
   const ds = useDataSource();
   const mock = useMockActive();
   const queryClient = useQueryClient();
@@ -97,7 +97,9 @@ export function HomeGridBlock({
     // already supplies the heading→body gap (see ContentFeed's HEADING_GAP).
     <View style={[styles.homeGridBlock, headless && styles.homeGridBlockHeadless]}>
       {!headless && <SectionHead title={section.title} />}
-      <View style={styles.homeGridRows}>
+      {/* The virtualized grids' own row gap, so a non-terminal block's rows can't read looser or
+          tighter than the terminal grid on the same page. */}
+      <View style={{ gap: rowGap }}>
         {rows.map((row, r) => (
           <View key={r} style={[styles.row, styles.gridRow, { gap: columnGap }]}>
             {row.map((item) => (
@@ -138,11 +140,6 @@ const styles = StyleSheet.create({
   },
   homeGridBlockHeadless: {
     paddingTop: 0,
-  },
-  homeGridRows: {
-    // Matches the virtualized grids' inter-row space (series-grid/content-feed CELL_ROW_GAP = 4px),
-    // so a non-terminal block's rows can't read looser than the terminal grid on the same page.
-    gap: Spacing.one,
   },
   row: {
     paddingHorizontal: TopLevelGutter,

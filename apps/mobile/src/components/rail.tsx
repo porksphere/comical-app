@@ -19,7 +19,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { DEFAULT_THUMB_ASPECT, rowCoverAspect, rowCoverAspects } from '@/lib/aspect-ratio';
-import { GRID_ROW_GAP, gridColumnsFor, gridGeometry } from '@/hooks/use-grid-layout';
+import { useBookCoversEnabled } from '@/hooks/use-book-covers';
+import { cardGap, gridColumnsFor, gridGeometry } from '@/hooks/use-grid-layout';
 import { useHovered } from '@/hooks/use-hovered';
 import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -57,8 +58,11 @@ function wideGridItems<T>(kind: RailSection['kind'], items: readonly T[], column
 // section heading and the grid below it.
 const STRIP_PAD = TopLevelGutter;
 
-/** Reference: carousel gap is 0.5rem mobile. The strip is never on a desktop, whose gap is the grid's. */
-const STRIP_GAP = Spacing.two;
+/** The grid's own phone gap (`cardGap`) — the reference's 0.5rem carousel gap for flat cards. The
+ *  strip is never on a desktop, whose gap is the grid's. */
+function stripGapFor(books: boolean): number {
+  return cardGap(books, false);
+}
 
 /**
  * Responsive card width per rail kind, given the current viewport width (passed
@@ -79,8 +83,8 @@ function peekWidth(viewport: number, fullCards: number, gap: number): number {
   return Math.round((viewport - STRIP_PAD - fullCards * gap) / (fullCards + 1 / 3));
 }
 
-function cardWidthFor(kind: RailSection['kind'], viewport: number): number {
-  return peekWidth(viewport, kind === 'hero' ? 2 : gridColumnsFor(viewport), STRIP_GAP);
+function cardWidthFor(kind: RailSection['kind'], viewport: number, books: boolean): number {
+  return peekWidth(viewport, kind === 'hero' ? 2 : gridColumnsFor(viewport), stripGapFor(books));
 }
 
 /**
@@ -94,13 +98,14 @@ function cardWidthFor(kind: RailSection['kind'], viewport: number): number {
 function wideGrid(
   viewport: number,
   gutter: number,
+  books: boolean,
   kind: RailSection['kind'] = 'regular',
-): { columns: number; cardWidth: number; columnGap: number } {
-  const { numColumns, cardWidth, columnGap } = gridGeometry(viewport, true, gutter);
-  if (kind !== 'hero') return { columns: numColumns, cardWidth, columnGap };
+): { columns: number; cardWidth: number; columnGap: number; rowGap: number } {
+  const { numColumns, cardWidth, columnGap, rowGap } = gridGeometry(viewport, true, gutter, books);
+  if (kind !== 'hero') return { columns: numColumns, cardWidth, columnGap, rowGap };
   const columns = Math.max(2, Math.round((numColumns * 2) / 3));
   const contentWidth = numColumns * cardWidth + (numColumns - 1) * columnGap;
-  return { columns, cardWidth: (contentWidth - (columns - 1) * columnGap) / columns, columnGap };
+  return { columns, cardWidth: (contentWidth - (columns - 1) * columnGap) / columns, columnGap, rowGap };
 }
 
 // Rendered height of a `SectionHead` on the WIDE breakpoint, and the real thing rather than an
@@ -159,6 +164,7 @@ export function railStripHeight(
   wide: boolean,
   hasSub: boolean,
   gutter: number,
+  books: boolean,
   /** The rail's items, when known: a rail too short to fill the wide grid draws only the rows it
    *  has, each at its own covers' height (`rowCoverAspect`). Unknown reserves the full grid. */
   items?: readonly SeriesEntry[],
@@ -166,16 +172,16 @@ export function railStripHeight(
   if (wide) {
     // Static grid of up to GRID_ROWS rows: rows of `estimatedCardHeight` cards + inter-row gaps +
     // the grid wrapper's own `Spacing.one` vertical padding (styles.grid).
-    const { columns, cardWidth } = wideGrid(viewportWidth, gutter, kind);
+    const { columns, cardWidth, rowGap } = wideGrid(viewportWidth, gutter, books, kind);
     const rowAspects =
       items === undefined || items.length === 0
         ? Array<number>(items === undefined ? GRID_ROWS : 1).fill(DEFAULT_THUMB_ASPECT)
         : rowCoverAspects(wideGridItems(kind, items, columns), columns);
     const cards = rowAspects.reduce((sum, aspect) => sum + estimatedCardHeight(cardWidth, hasSub, aspect), 0);
-    return Spacing.one * 2 + cards + (rowAspects.length - 1) * GRID_ROW_GAP;
+    return Spacing.one * 2 + cards + (rowAspects.length - 1) * rowGap;
   }
   // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
-  return estimatedCardHeight(cardWidthFor(kind, viewportWidth), hasSub) + STRIP_PAD_V * 2;
+  return estimatedCardHeight(cardWidthFor(kind, viewportWidth, books), hasSub) + STRIP_PAD_V * 2;
 }
 
 /** Whole rail row INCLUDING its own heading — for callers where the rail renders its own head (a
@@ -187,8 +193,9 @@ export function railRowHeight(
   wide: boolean,
   hasSub: boolean,
   gutter: number,
+  books: boolean,
 ): number {
-  return SECTION_HEAD_HEIGHT + Spacing.two + railStripHeight(kind, viewportWidth, wide, hasSub, gutter);
+  return SECTION_HEAD_HEIGHT + Spacing.two + railStripHeight(kind, viewportWidth, wide, hasSub, gutter, books);
 }
 
 // Per-rail resting card index, remembered for the session so a rail that unmounts and remounts —
@@ -230,7 +237,8 @@ export function Rail({
   // Whether this rail's bridge sends card subtitles — sets whether the strip reserves the sub line.
   const { subOf } = useBridgeMap();
   const hasSub = subOf(bridgeId);
-  const stripGap = STRIP_GAP;
+  const books = useBookCoversEnabled();
+  const stripGap = stripGapFor(books);
   // The inter-card gap is split as symmetric padding on each item wrapper (not an
   // ItemSeparator), so the highlight ring's outward bleed has room on BOTH sides of
   // every card. LegendList's web item container is `contain: paint` (react-native.web.js),
@@ -238,8 +246,8 @@ export function Rail({
   // card sat flush against its box's left edge, so the ring's left stroke was cut off.
   const stripHalfGap = stripGap / 2;
   const gutter = useScrollbarGutter();
-  const grid = wideGrid(viewportWidth, gutter, section.kind);
-  const cardWidth = wide ? grid.cardWidth : cardWidthFor(section.kind, viewportWidth);
+  const grid = wideGrid(viewportWidth, gutter, books, section.kind);
+  const cardWidth = wide ? grid.cardWidth : cardWidthFor(section.kind, viewportWidth, books);
   // One card's scroll "slot" (card width + inter-card gap). The strip snaps to multiples of this and
   // the resting card index is derived from it, so it's the single value shared by getFixedItemSize,
   // snapToInterval, and the rest-index persist/restore below — they can't disagree.
@@ -370,7 +378,7 @@ export function Rail({
         />
       )}
       {wide ? (
-        <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: GRID_ROW_GAP }]}>
+        <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: grid.rowGap }]}>
           {gridRows.map((row, r) => (
             <View
               key={r}
@@ -513,9 +521,10 @@ export function Rail({
 export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; title?: string }) {
   const wide = useIsDesktop();
   const gutter = useScrollbarGutter();
-  const grid = wideGrid(viewportWidth, gutter);
-  const stripGap = wide ? grid.columnGap : STRIP_GAP;
-  const cardWidth = wide ? grid.cardWidth : cardWidthFor('regular', viewportWidth);
+  const books = useBookCoversEnabled();
+  const grid = wideGrid(viewportWidth, gutter, books);
+  const stripGap = wide ? grid.columnGap : stripGapFor(books);
+  const cardWidth = wide ? grid.cardWidth : cardWidthFor('regular', viewportWidth, books);
   // The strip's full cards and the one peeking in.
   const count = wide ? grid.columns : gridColumnsFor(viewportWidth) + 1;
   // The wide skeleton is the full grid the feed already reserves height for (railStripHeight with
@@ -550,7 +559,7 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
         </View>
       )}
       {wide ? (
-        <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: GRID_ROW_GAP }]}>
+        <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: grid.rowGap }]}>
           {Array.from({ length: rows }).map((_, r) => (
             <View key={r} style={[styles.gridRow, { gap: stripGap, height: estimatedCardHeight(cardWidth, false) }]}>
               {cards}
@@ -717,7 +726,7 @@ const styles = StyleSheet.create({
     marginLeft: CHEVRON_NUDGE,
   },
   strip: {
-    // gap is set inline (STRIP_GAP, the skeleton's own on a desktop) alongside this.
+    // gap is set inline (`stripGapFor`, the skeleton's own on a desktop) alongside this.
     paddingHorizontal: STRIP_PAD,
     // Vertical breathing room so the highlight ring (which sits just outside the
     // card) isn't clipped at the top/bottom of the horizontal strip.
