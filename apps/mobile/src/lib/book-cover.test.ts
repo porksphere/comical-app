@@ -1,48 +1,65 @@
 import { describe, expect, test } from 'bun:test';
 
-import { BOOK_COVERS, BOUND_MAX_ASPECT, bookRadius, coverBinding, coverForm } from './book-cover';
+import { BOOK_COVERS, BOUND_MAX_ASPECT, bookRadius, resolveCover } from './book-cover';
 
-describe('coverForm', () => {
-  test('a book-shaped cover is a volume', () => {
-    expect(coverForm({ aspect: 0.64, direct: false, vertical: false })).toBe('volume');
-    expect(coverForm({ aspect: 0.75, direct: false, vertical: false })).toBe('volume');
+const GUESS = { readsVertically: false, readerRightToLeft: false, direct: false, aspect: 0.7 };
+
+describe('resolveCover — what the app guesses when the bridge says nothing', () => {
+  test('a book-shaped cover is a volume, bound on the side the reader reads from', () => {
+    expect(resolveCover(GUESS)).toBe(BOOK_COVERS.volume.left);
+    expect(resolveCover({ ...GUESS, readerRightToLeft: true })).toBe(BOOK_COVERS.volume.right);
   });
   test('a direct series is a stapled issue', () => {
-    expect(coverForm({ aspect: 0.7, direct: true, vertical: false })).toBe('issue');
+    expect(resolveCover({ ...GUESS, direct: true })).toBe(BOOK_COVERS.issue.left);
   });
   test('a series read vertically is unbound, whatever its cover', () => {
-    expect(coverForm({ aspect: 0.64, direct: false, vertical: true })).toBe('scroll');
-    expect(coverForm({ aspect: 0.7, direct: true, vertical: true })).toBe('scroll');
+    expect(resolveCover({ ...GUESS, readsVertically: true }).form).toBe('scroll');
+    expect(resolveCover({ ...GUESS, readsVertically: true, direct: true }).form).toBe('scroll');
   });
   test('a bound form wider than a book drops its spine', () => {
-    expect(coverForm({ aspect: BOUND_MAX_ASPECT, direct: false, vertical: false })).toBe('volume');
-    expect(coverForm({ aspect: 1, direct: false, vertical: false })).toBe('scroll');
-    expect(coverForm({ aspect: 1.41, direct: true, vertical: false })).toBe('scroll');
+    expect(resolveCover({ ...GUESS, aspect: BOUND_MAX_ASPECT }).form).toBe('volume');
+    expect(resolveCover({ ...GUESS, aspect: 1 }).form).toBe('scroll');
+    expect(resolveCover({ ...GUESS, aspect: 1.41, direct: true }).form).toBe('scroll');
   });
 });
 
-describe('coverBinding', () => {
-  test('follows the reading direction', () => {
-    expect(coverBinding(true)).toBe('right');
-    expect(coverBinding(false)).toBe('left');
+describe('resolveCover — what the bridge says wins', () => {
+  test('a declared form beats every guess', () => {
+    expect(resolveCover({ ...GUESS, form: 'sheets', direct: true }).form).toBe('sheets');
+    expect(resolveCover({ ...GUESS, form: 'volume', readsVertically: true }).form).toBe('volume');
+    expect(resolveCover({ ...GUESS, form: 'scroll' }).form).toBe('scroll');
+  });
+  test('loose sheets keep their form at any shape', () => {
+    expect(resolveCover({ ...GUESS, form: 'sheets', aspect: 1.5 }).form).toBe('sheets');
+  });
+  test('a declared bound form still drops its spine on a wide cover', () => {
+    expect(resolveCover({ ...GUESS, form: 'issue', aspect: 1.4 }).form).toBe('scroll');
+  });
+  test('a declared direction sets the binding over the reader setting', () => {
+    expect(resolveCover({ ...GUESS, direction: 'rtl' }).binding).toBe('right');
+    expect(resolveCover({ ...GUESS, direction: 'ltr', readerRightToLeft: true }).binding).toBe('left');
+  });
+  test('a declared vertical direction unbinds the cover, and a declared paged one keeps it bound', () => {
+    expect(resolveCover({ ...GUESS, direction: 'vertical' }).form).toBe('scroll');
+    expect(resolveCover({ ...GUESS, direction: 'rtl', readsVertically: true }).form).toBe('volume');
   });
 });
 
 describe('BOOK_COVERS', () => {
   test('hands out one object per form and binding', () => {
-    for (const form of ['volume', 'issue', 'scroll'] as const) {
+    for (const form of ['volume', 'issue', 'scroll', 'sheets'] as const) {
       for (const binding of ['left', 'right'] as const) {
         expect(BOOK_COVERS[form][binding]).toEqual({ form, binding });
-        expect(BOOK_COVERS[form][binding]).toBe(BOOK_COVERS[form][binding]);
       }
     }
   });
 });
 
 describe('bookRadius', () => {
-  test('bound forms are squarer than the flat card; an unbound pane keeps the flat corner', () => {
+  test('bound forms and sheets are squarer than the flat card; an unbound pane keeps the flat corner', () => {
     expect(bookRadius(BOOK_COVERS.volume.left, false)).toBeLessThan(10);
     expect(bookRadius(BOOK_COVERS.issue.left, false)).toBeLessThan(bookRadius(BOOK_COVERS.volume.left, false));
+    expect(bookRadius(BOOK_COVERS.sheets.left, false)).toBe(bookRadius(BOOK_COVERS.issue.left, false));
     expect(bookRadius(BOOK_COVERS.scroll.left, false)).toBe(10);
     expect(bookRadius(BOOK_COVERS.scroll.left, true)).toBe(20);
   });

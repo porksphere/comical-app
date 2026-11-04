@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { BookChrome, CoverShadow, PaperWrap } from '@/components/book-chrome';
+import { BookChrome, CoverShadow, LooseSheet, PaperWrap } from '@/components/book-chrome';
 import { CardOverlays } from '@/components/card-badge';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -19,7 +19,7 @@ import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { BOOK_COVERS, bookRadius, type BookCover } from '@/lib/book-cover';
+import { BOOK_COVERS, SHEET_OFFSET, bookRadius, type BookCover } from '@/lib/book-cover';
 import { useTabRoute } from '@/lib/focused-tab';
 import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, LinkTrigger, router, tabHref } from '@/lib/nav';
@@ -164,6 +164,20 @@ export function CoverFrame({
   const desktop = useIsDesktop();
   const theme = useTheme();
   const corners = book ? [ContinuousCorner, { borderRadius: bookRadius(book, desktop) }] : null;
+  if (book?.form === 'sheets') {
+    // A CG set: the front sheet holds the picture, and the sheet behind it shows above and beside it.
+    // The behind sheet is outside the clip, so the box itself can't clip; this is the one form that
+    // pays for a second view on native.
+    return (
+      <View ref={coverRef} style={[styles.coverBox, { aspectRatio: aspect }, hidden && styles.coverHidden]} onLayout={onLayout}>
+        <LooseSheet radius={bookRadius(book, desktop)} />
+        <View style={[styles.coverClip, styles.frontSheet, corners, contentStyle]}>{children}</View>
+        {ring && (
+          <View style={[coverStyles.ring, styles.frontSheet, corners, { borderColor: coverRingColor(theme), pointerEvents: 'none' }]} />
+        )}
+      </View>
+    );
+  }
   if (Platform.OS !== 'web') {
     // Native has no ring, so the box IS the clip — one fewer host view means one fewer Fabric clone
     // up the ancestor chain on every commit, on the platform that scrolls these grids.
@@ -439,7 +453,14 @@ export function SeriesCard({
   // `transform`-only illusion that never triggers another relayout — see
   // `pictureStyle`/`trailingStyle`.
   const [learnedAspect, learnCoverAspect] = useCoverAspect(entry.id, entry.coverAspect);
-  const book = useBookCover({ bridgeId, seriesId: entry.id, direct: !!direct, aspect: learnedAspect });
+  const book = useBookCover({
+    bridgeId,
+    seriesId: entry.id,
+    direct: !!direct,
+    aspect: learnedAspect,
+    coverForm: entry.coverForm,
+    readingDirection: entry.readingDirection,
+  });
   // Never taller than the row was laid out for: a bridge hint that turns out wrong once the picture
   // lands crops the cover (it's `contentFit="cover"`) rather than overflowing the row.
   const coverAspect = Math.max(learnedAspect, rowAspect);
@@ -699,7 +720,7 @@ export function SeriesCard({
     );
     const trailingInner = (
       <>
-        {book && !coverHidden && <CoverShadow />}
+        {book && !coverHidden && <CoverShadow sheets={book.form === 'sheets'} />}
         {isWeb ? (
           <View ref={titleRef} style={styles.titleWrap}>
             {titleText}
@@ -1018,6 +1039,13 @@ const styles = StyleSheet.create({
   // preserved; only the cover goes invisible.
   coverHidden: {
     opacity: 0,
+  },
+  frontSheet: {
+    position: 'absolute',
+    top: `${SHEET_OFFSET.top * 100}%`,
+    right: `${SHEET_OFFSET.right * 100}%`,
+    bottom: 0,
+    left: 0,
   },
   trailingGroup: {
     // Replaces the spacing `card`'s own `gap` used to provide between the cover

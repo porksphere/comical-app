@@ -3,13 +3,15 @@
  * decisions only — no react-native imports — so the rules can be tested; `components/book-chrome.tsx`
  * draws them and `hooks/use-book-covers.ts` decides which ones apply to a card.
  *
- * Three forms, each the quietest take of its kind:
+ * Four forms, each the quietest take of its kind — the contract's `coverForm`:
  *  - `volume` — a bound book: a hinge on the binding side.
- *  - `issue` — a saddle-stitched booklet (direct/gallery series): a narrow fold and a band of gloss.
+ *  - `issue` — a saddle-stitched booklet (doujinshi, oneshots): a narrow fold and a band of gloss.
  *  - `scroll` — nothing bound (webtoons): even corners and a glass highlight, no spine.
+ *  - `sheets` — loose pictures (CG sets): the front one with another sheet showing behind it.
  */
+import type { CoverForm, ReadingDirection } from '@comical/contract';
 
-export type CoverForm = 'volume' | 'issue' | 'scroll';
+export type { CoverForm, ReadingDirection };
 export type CoverBinding = 'left' | 'right';
 export type BookCover = { form: CoverForm; binding: CoverBinding };
 
@@ -21,22 +23,43 @@ export type BookCover = { form: CoverForm; binding: CoverBinding };
  */
 export const BOUND_MAX_ASPECT = 0.8;
 
-export function coverForm({ aspect, direct, vertical }: { aspect: number; direct: boolean; vertical: boolean }): CoverForm {
-  if (vertical) return 'scroll';
-  if (aspect > BOUND_MAX_ASPECT) return 'scroll';
-  return direct ? 'issue' : 'volume';
-}
-
-/** Right-to-left reading binds on the right, the way a tankōbon is. */
-export function coverBinding(rightToLeft: boolean): CoverBinding {
-  return rightToLeft ? 'right' : 'left';
+/**
+ * How a card is drawn. What the bridge says wins — the series' own hint, then its bridge's default —
+ * and the app only guesses what neither said: a series the reader reads vertically is unbound, a
+ * direct (page-gallery) series is an issue, anything else a volume. The binding follows the declared
+ * direction, else the reader's own setting.
+ */
+export function resolveCover({
+  form,
+  direction,
+  readsVertically,
+  readerRightToLeft,
+  direct,
+  aspect,
+}: {
+  /** The series' `coverForm`, else its bridge's. */
+  form?: CoverForm;
+  /** The series' `readingDirection`, else its bridge's. */
+  direction?: ReadingDirection;
+  /** The reader shows this series vertically: its own mode, or the reader's when it has none. */
+  readsVertically: boolean;
+  readerRightToLeft: boolean;
+  direct: boolean;
+  /** The cover's own shape (width / height). */
+  aspect: number;
+}): BookCover {
+  const vertical = direction ? direction === 'vertical' : readsVertically;
+  let resolved: CoverForm = form ?? (vertical ? 'scroll' : direct ? 'issue' : 'volume');
+  if ((resolved === 'volume' || resolved === 'issue') && aspect > BOUND_MAX_ASPECT) resolved = 'scroll';
+  const rightToLeft = direction === 'rtl' || (direction !== 'ltr' && readerRightToLeft);
+  return BOOK_COVERS[resolved][rightToLeft ? 'right' : 'left'];
 }
 
 /**
  * How much of the cover's width the spine-side treatment covers, as a fraction. Anything laid over
  * the cover on that side (badges, the library ribbon) starts past it rather than on the crease.
  */
-export const SPINE_FRACTION: Record<CoverForm, number> = { volume: 0.1, issue: 0.05, scroll: 0 };
+export const SPINE_FRACTION: Record<CoverForm, number> = { volume: 0.1, issue: 0.05, scroll: 0, sheets: 0 };
 
 /** One object per form and binding, so a card's `book` prop is the same object from render to render
  *  and nothing below it re-renders for a new-but-equal value while a list recycles. */
@@ -44,7 +67,13 @@ export const BOOK_COVERS: Readonly<Record<CoverForm, Readonly<Record<CoverBindin
   volume: { left: { form: 'volume', binding: 'left' }, right: { form: 'volume', binding: 'right' } },
   issue: { left: { form: 'issue', binding: 'left' }, right: { form: 'issue', binding: 'right' } },
   scroll: { left: { form: 'scroll', binding: 'left' }, right: { form: 'scroll', binding: 'right' } },
+  sheets: { left: { form: 'sheets', binding: 'left' }, right: { form: 'sheets', binding: 'right' } },
 };
+
+/** Where a CG set's front sheet sits in the cover box, as fractions: down from the top and in from the
+ *  right, leaving the sheet behind it showing above and beside. About the same in points both ways
+ *  on a 2:3 box. */
+export const SHEET_OFFSET = { top: 0.04, right: 0.06 } as const;
 
 /** The card's ordinary corner (`coverStyles.corner` / `cornerDesktop`), which an unbound pane keeps. */
 export const FLAT_CORNER = { phone: 10, desktop: 20 } as const;
@@ -56,7 +85,7 @@ export const FLAT_CORNER = { phone: 10, desktop: 20 } as const;
  */
 export function bookRadius(cover: BookCover, desktop: boolean): number {
   if (cover.form === 'scroll') return desktop ? FLAT_CORNER.desktop : FLAT_CORNER.phone;
-  if (cover.form === 'issue') return desktop ? 2.5 : 1.5;
+  if (cover.form === 'issue' || cover.form === 'sheets') return desktop ? 2.5 : 1.5;
   return desktop ? 6 : 3;
 }
 

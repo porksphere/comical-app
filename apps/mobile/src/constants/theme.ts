@@ -73,6 +73,8 @@ export const Colors = {
     // Book covers: the half-point rim that keeps a pale cover off a white page, and the plain
     // bookshop paper a hidden series is wrapped in (with the ink its label is stamped in).
     coverRim: 'rgba(0,0,0,0.13)',
+    // The sheet showing behind a CG set's front picture.
+    coverSheet: '#E9E7E2',
     paperWrap: '#E8E1CF',
     paperWrapInk: '#6E6551',
     // Destructive actions/errors (uninstall, remove registry, save failures) —
@@ -138,6 +140,7 @@ export const Colors = {
     chipText: '#8ab4f8',
     // On black a shadow is invisible, so the rim is what holds a cover's edge.
     coverRim: 'rgba(255,255,255,0.14)',
+    coverSheet: '#3A3A3D',
     paperWrap: '#CFC8B6',
     paperWrapInk: '#5E5645',
     danger: '#E5484D',

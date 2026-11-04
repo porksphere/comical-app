@@ -5,7 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-import { FOLD, GLOSS, HINGE, PANE, SHADOW, SHADOW_DEPTH, bookRadius, ribbonSize, type BookCover } from '@/lib/book-cover';
+import { FOLD, GLOSS, HINGE, PANE, SHADOW, SHADOW_DEPTH, SHEET_OFFSET, bookRadius, ribbonSize, type BookCover } from '@/lib/book-cover';
 
 const FROM_SPINE = {
   left: { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } },
@@ -21,7 +21,7 @@ export function BookChrome({ cover }: { cover: BookCover }) {
   const radius = bookRadius(cover, useIsDesktop());
   return (
     <>
-      {cover.form === 'scroll' ? (
+      {cover.form === 'scroll' || cover.form === 'sheets' ? (
         <LinearGradient style={styles.fill} colors={PANE.colors} locations={PANE.locations} {...DOWN} />
       ) : (
         <LinearGradient
@@ -38,9 +38,24 @@ export function BookChrome({ cover }: { cover: BookCover }) {
 }
 
 /** The shadow under a cover — see `SHADOW`. Lives in the card's trailing group, which starts one gap
- *  below the cover and moves with it while the cover's aspect settles. */
-export function CoverShadow() {
-  return <LinearGradient style={styles.shadow} colors={SHADOW.colors} locations={SHADOW.locations} {...DOWN} />;
+ *  below the cover and moves with it while the cover's aspect settles. Under a CG set it stops where
+ *  the front sheet does. */
+export function CoverShadow({ sheets }: { sheets: boolean }) {
+  return (
+    <LinearGradient
+      style={[styles.shadow, sheets && styles.shadowUnderFrontSheet]}
+      colors={SHADOW.colors}
+      locations={SHADOW.locations}
+      {...DOWN}
+    />
+  );
+}
+
+/** The sheet behind a CG set's front picture: the same size, offset up and to the right, so it shows
+ *  along the top and the far edge. Drawn under the front sheet, outside its clip. */
+export function LooseSheet({ radius }: { radius: number }) {
+  const theme = useTheme();
+  return <View style={[styles.sheetBehind, { borderRadius: radius, backgroundColor: theme.coverSheet, borderColor: theme.coverRim }]} />;
 }
 
 /** "In your library", as the bookmark it already was in icon form, hanging from the head of the
@@ -95,6 +110,18 @@ const styles = StyleSheet.create({
     left: 1,
     right: 1,
     height: SHADOW_DEPTH,
+    pointerEvents: 'none',
+  },
+  shadowUnderFrontSheet: {
+    right: `${SHEET_OFFSET.right * 100}%`,
+  },
+  sheetBehind: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: `${SHEET_OFFSET.top * 100}%`,
+    left: `${SHEET_OFFSET.right * 100}%`,
+    borderWidth: StyleSheet.hairlineWidth,
     pointerEvents: 'none',
   },
   ribbon: {
