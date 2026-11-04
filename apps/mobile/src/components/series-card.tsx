@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { BookChrome, CoverShadow, LooseSheet, PaperWrap } from '@/components/book-chrome';
+import { BookChrome, CoverShadow, HiddenCover, LooseSheet } from '@/components/book-chrome';
 import { CardOverlays } from '@/components/card-badge';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -644,7 +644,7 @@ export function SeriesCard({
       <View style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}>
         {wrapped ? (
           <CoverFrame aspect={DEFAULT_THUMB_ASPECT} book={wrapped}>
-            <PaperWrap />
+            <HiddenCover />
             <BookChrome cover={wrapped} />
           </CoverFrame>
         ) : (

@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
+import { EyeOffIcon } from '@/components/icons/ui-icons';
 import { Spacing } from '@/constants/theme';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -78,15 +78,13 @@ export function LibraryRibbon({ style }: { style: StyleProp<ViewStyle> }) {
   );
 }
 
-/** A hidden series, wrapped in plain paper the way a bookshop wraps a book nobody should see you
- *  reading: the object stays on the shelf, its cover doesn't. Drawn under `BookChrome`. */
-export function PaperWrap() {
+/** A hidden series: the book stays on the shelf with no cover on it, over the same grey a cover still
+ *  loading shows, and the one mark that tells the two apart. Drawn under `BookChrome`. */
+export function HiddenCover() {
   const theme = useTheme();
   return (
-    <View style={[styles.fill, styles.wrap, { backgroundColor: theme.paperWrap }]}>
-      <View style={[styles.label, { borderColor: theme.paperWrapInk }]}>
-        <ThemedText style={[styles.labelText, { color: theme.paperWrapInk }]}>Hidden</ThemedText>
-      </View>
+    <View accessibilityLabel="Hidden" style={[styles.fill, styles.hidden]}>
+      <EyeOffIcon color={theme.textSecondary} size={18} />
     </View>
   );
 }
@@ -135,19 +133,9 @@ const styles = StyleSheet.create({
     height: 0,
     borderBottomColor: 'transparent',
   },
-  wrap: {
+  hidden: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  label: {
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  labelText: {
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
+    opacity: 0.7,
   },
 });
