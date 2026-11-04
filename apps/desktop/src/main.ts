@@ -20,6 +20,7 @@ import { iconImage, shellIcon } from "./icon.ts";
 import { createSyncGate, startSyncListener, type SyncListener } from "./host/sync-listener.ts";
 import { linkInArgs, linkRoute, registerLinkScheme } from "./links.ts";
 import { canOpenAtLogin, launchedAtLogin, setOpenAtLogin } from "./login-item.ts";
+import { awaitPredecessor } from "./relaunch.ts";
 import { attachContextMenu, setAppMenu, type NavDirection } from "./menus.ts";
 import { shellSettings, updateShellSettings } from "./shell-settings.ts";
 import { setTray, trayNotice } from "./tray.ts";
@@ -497,6 +498,10 @@ async function openWindow(): Promise<void> {
 // shared with an installed build has `bun run dev` hand over to that build and exit — and where it
 // isn't running, has two versions of the host writing one library.
 if (!app.isPackaged) app.setPath("userData", `${app.getPath("userData")}-dev`);
+
+// A relaunch starts while the launch that asked for it is still on its way out, holding the lock
+// and flushing its profile.
+awaitPredecessor();
 
 // Before the lock, which lives in whichever folder this picks.
 const dataLaunch = locateData();
