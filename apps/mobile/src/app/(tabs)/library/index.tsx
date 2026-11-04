@@ -37,6 +37,7 @@ import { useSavedItemKinds } from '@/hooks/use-saved-item-kinds';
 import { useCollections } from '@/hooks/use-collections';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
+import { useBarScrolled } from '@/hooks/use-bar-scrolled';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
@@ -49,7 +50,8 @@ export default function LibraryScreen() {
   useScrollToTopOnReselect('library', listRef);
   // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it, `onScroll` only
   // keeps the bottom-bounce measurement in sync. See use-hide-tab-bar-on-scroll.
-  const { sharedValues, onScroll } = useHideTabBarOnScroll();
+  const { scrollY, sharedValues, onScroll } = useHideTabBarOnScroll();
+  const scrolled = useBarScrolled(scrollY);
   // Let the tab swap paint before mounting the (non-recycled) card grid — until
   // this flips, the list holds empty data and the header shows a skeleton.
   const ready = useDeferredMount();
@@ -121,6 +123,7 @@ export default function LibraryScreen() {
           railNav={railNav}
           filter={filter}
           section={section}
+          scrolled={scrolled}
         />
       ) : (
         <TabTitleBar
@@ -201,6 +204,7 @@ function LibraryNativeHeader({
   railNav,
   filter,
   section,
+  scrolled,
 }: {
   collection: string | null;
   collections: Collection[];
@@ -211,6 +215,7 @@ function LibraryNativeHeader({
   railNav: boolean;
   filter: TabFilter;
   section: string | null;
+  scrolled: boolean;
 }) {
   const kinds = itemKindOptions(kindsPresent, selectedKind);
   return (
@@ -218,6 +223,7 @@ function LibraryNativeHeader({
       <NativeTabHeader
         title={kinds.length > 1 ? `${viewName} ${ITEM_KIND_LABELS[kind]}` : viewName}
         section={section}
+        scrolled={scrolled}
         filter={filter}
         placeholder="Filter library…"
         holdTestID="library.nsfw-hold"

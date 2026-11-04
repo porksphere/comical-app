@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 
 import {
@@ -84,6 +85,8 @@ export default function SettingsScreen() {
   const updates = useRegistryUpdateCounts();
   const appUpdate = useAppUpdateCheck();
   const customPageCount = useCustomPages().length;
+  // The bar's material, once the list is under it — see NativeTabHeader.
+  const [scrolled, setScrolled] = useState(false);
 
   const sections: SettingsFormSection[] = [
     {
@@ -198,9 +201,9 @@ export default function SettingsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SettingsList sections={sections} column={MaxTopLevelWidth} reselectRoute="settings" />
+      <SettingsList sections={sections} column={MaxTopLevelWidth} reselectRoute="settings" onScrolledPast={setScrolled} />
       {NATIVE_HEADER ? (
-        <NativeTabHeader title="Settings" holdTestID="settings.nsfw-hold" />
+        <NativeTabHeader title="Settings" scrolled={scrolled} holdTestID="settings.nsfw-hold" />
       ) : (
         <TabTitleBar title="Settings" />
       )}

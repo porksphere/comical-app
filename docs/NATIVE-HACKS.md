@@ -167,7 +167,8 @@ the end of this doc is the only guard.
   into its host and not first among them. For that list it also stands in for the marker, which can
   hold only a React Native scroll view: `tabBar` names the list for the tab bar too (`.all`), and
   `scrollToTop` (a view function) scrolls it on the tab's reselect, since react-native-screens
-  scrolls only the list its marker holds.
+  scrolls only the list its marker holds; `scrolledPast` has it watch the list's offset (KVO) and
+  report crossings of a threshold, for the Settings tab's bar material.
 - **Where:** `apps/mobile/modules/content-scroll-view/`, `src/components/screen-scroll-marker.tsx`, and
   around every screen's main list; `settings-list.ios.tsx` renders it directly.
 - **Why:** react-native-screens' legacy stack, which expo-router uses, never names the list. Its newer
@@ -208,7 +209,9 @@ the end of this doc is the only guard.
   responder chain, watches its `title` and `standardAppearance` with KVO, and adds a `CATransition`
   fade to the navigation bar's layer from inside react-native-screens' setter.
 - **Where:** `apps/mobile/modules/nav-bar-fade/`, and its view in
-  `src/components/series/details-native-bar.tsx`.
+  `src/components/series/details-native-bar.tsx`, in every tab's `NativeTabHeader` (the material
+  switching on scroll) and in `TopBar` on iOS (the pushed pages' custom title, registered for the
+  folded Duo's edge).
 - **Why:** react-native-screens applies header options unanimated, so the bar's title and material
   switched in one frame. UIKit's own scroll-edge crossfade was tried instead and never ran.
 - **The title isn't part of it:** the series title is a custom title view that is always in the

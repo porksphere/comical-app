@@ -232,6 +232,9 @@ export type SettingsListProps = {
   reselectRoute?: string;
   /** Pull to refresh. */
   refresh?: () => Promise<unknown>;
+  /** Told when the list scrolls past the top and back (`BAR_SCROLLED_AT`), for the bar over a
+   *  tab root; on a list that refreshes it is not reported. */
+  onScrolledPast?: (past: boolean) => void;
 };
 
 /** The id a field's row carries, for tests and as its React key. */

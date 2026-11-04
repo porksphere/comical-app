@@ -6,6 +6,9 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import { HoldActionTarget } from '@/components/hold-action-target';
 import type { TabFilter } from '@/components/tab-filter';
 import { useTheme } from '@/hooks/use-theme';
+import { useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
+
+import { NavBarFade } from '../../modules/nav-bar-fade';
 
 // A section label's arrival in the bar, and the bar's hand-back to the screen title.
 const SWAP_MS = 180;
@@ -37,6 +40,7 @@ const SWAP_MS = 180;
 export function NativeTabHeader({
   title,
   section,
+  scrolled,
   filter,
   placeholder,
   holdTestID,
@@ -44,11 +48,17 @@ export function NativeTabHeader({
   title: string;
   /** The label of the section heading scrolled under the bar, null above the first. */
   section?: string | null;
+  /** Whether the list has scrolled past the top (`useBarScrolled`): the bar is bare over the top
+   *  of the page and takes its material once content is under it, the series page's way, with
+   *  `nav-bar-fade` crossfading the switch. */
+  scrolled: boolean;
   filter?: TabFilter;
   placeholder?: string;
   holdTestID: string;
 }) {
   const theme = useTheme();
+  const material = useBarMaterial();
+  const foldedEdge = useFoldedBarEdge();
   const shown = section ?? title;
   // Re-runs 0→1 on every change of the shown text: the cross-fade between labels.
   const arrival = useSharedValue(1);
@@ -61,6 +71,8 @@ export function NativeTabHeader({
   const fade = useAnimatedStyle(() => ({ opacity: arrival.value }));
   return (
     <>
+      <Stack.Screen options={{ headerBlurEffect: scrolled ? material : 'none' }} />
+      {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" edgeBacked={foldedEdge != null && scrolled} /> : null}
       <Stack.Title asChild>
         <HoldActionTarget testID={holdTestID} label={title}>
           <Animated.Text numberOfLines={1} style={[styles.title, { color: theme.text }, fade]}>
@@ -80,10 +92,19 @@ export function NativeTabHeader({
   );
 }
 
-const styles = StyleSheet.create({
-  // UIKit's inline navigation title: 17pt semibold in the system font.
+/** UIKit's inline navigation title: 17pt semibold in the system font, for a custom title view
+ *  that is to be indistinguishable from the system's at rest. */
+export const barTitleStyle = StyleSheet.create({
   title: {
     fontSize: 17,
     fontWeight: '600',
+  },
+}).title;
+
+const styles = StyleSheet.create({
+  title: barTitleStyle,
+  probe: {
+    width: 0,
+    height: 0,
   },
 });

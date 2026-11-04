@@ -68,6 +68,7 @@ import {
   type SettingsListProps,
   type SettingsTone,
 } from '@/components/settings/settings-form';
+import { BAR_SCROLLED_AT } from '@/hooks/use-bar-scrolled';
 import { useReselectScrollToTop } from '@/hooks/use-scroll-to-top-on-reselect';
 import { SettingsCardInset, Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -96,7 +97,7 @@ const CHEVRON = font({ size: 13, weight: 'semibold' });
  * slide, and the tab bar's edge on the landing tab), and scrolls it on the tab's reselect.
  * `column` is the reading column's cap, which the form has no need of: a list insets itself.
  */
-export function SettingsList({ sections, reselectRoute, refresh }: SettingsListProps) {
+export function SettingsList({ sections, reselectRoute, refresh, onScrolledPast }: SettingsListProps) {
   const scheme = useActiveColorScheme();
   const theme = useTheme();
   const anchor = useRef<ContentScrollAnchorRef>(null);
@@ -131,7 +132,12 @@ export function SettingsList({ sections, reselectRoute, refresh }: SettingsListP
   );
   if (!ContentScrollAnchor) return form;
   return (
-    <ContentScrollAnchor ref={anchor} style={styles.fill} tabBar={!!reselectRoute}>
+    <ContentScrollAnchor
+      ref={anchor}
+      style={styles.fill}
+      tabBar={!!reselectRoute}
+      scrolledPast={onScrolledPast ? BAR_SCROLLED_AT : undefined}
+      onScrolledPast={onScrolledPast ? (e) => onScrolledPast(e.nativeEvent.past) : undefined}>
       {form}
     </ContentScrollAnchor>
   );

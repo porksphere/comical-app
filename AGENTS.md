@@ -53,10 +53,17 @@ the bar never slides away from it. So EVERY screen's main list goes through `Scr
 pushed pages and the series details included, or that screen's bar stays put; a page that is one
 ScrollView uses `ScreenScrollView`. The reader takes no marker: its bar never slides. The screen also
 finds the list by a walk of its own, each first subview down from it, to put its iOS 26
-scroll-edge effect on the list. Every bar but the reader's has the system's frosted material,
-always (`useBarMaterial` in `lib/native-bar.ts`, in each stack's `screenOptions`): UIKit never once
+scroll-edge effect on the list. Every bar but the reader's has the system's frosted material
+(`useBarMaterial` in `lib/native-bar.ts`, in each stack's `screenOptions`): UIKit never once
 switched these bars from a bare scroll-edge appearance to the frosted standard one, with or without
-the list handed to it, so there is no "bare until scrolled" to be had natively. Two exceptions. The
+the list handed to it, so there is no "bare until scrolled" to be had natively. The tab roots make
+their own: `NativeTabHeader scrolled` (from `useBarScrolled`, a few points of scroll; the Settings
+tab's SwiftUI list reports it through the content-scroll-view anchor's `scrolledPast`) sets the
+material as an option — `none` over the top of the page, the material once content is under the
+bar — and `nav-bar-fade` crossfades the switch, as on the series page. Pushed pages keep the
+material always; their title is a custom title view (`TopBar`, `barTitleStyle`), centred by
+UIKit as the tabs' is, where a plain-text title sat at the leading edge, with `nav-bar-fade`
+registering it for the folded Duo's hard edge. Two exceptions. The
 series details' bar: bare over the strip, the series' title a custom title view always in the bar
 that fades in with the scroll as the page's own title goes under it (never an option: a plain-text
 title is backed by the scroll edge, and where the back button sits in the Duo's vertical bar an

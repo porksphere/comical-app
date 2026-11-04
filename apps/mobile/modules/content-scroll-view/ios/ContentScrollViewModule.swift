@@ -5,11 +5,15 @@ public class ContentScrollViewModule: Module {
     Name("ContentScrollView")
 
     View(ContentScrollAnchorView.self) {
+      Events("onScrolledPast")
       Prop("active") { (view: ContentScrollAnchorView, active: Bool?) in
         view.active = active ?? true
       }
       Prop("tabBar") { (view: ContentScrollAnchorView, tabBar: Bool?) in
         view.tabBar = tabBar ?? false
+      }
+      Prop("scrolledPast") { (view: ContentScrollAnchorView, threshold: Double?) in
+        view.threshold = threshold.map { CGFloat($0) }
       }
       AsyncFunction("scrollToTop") { (view: ContentScrollAnchorView) in
         view.scrollToTop()
@@ -23,6 +27,9 @@ public class ContentScrollViewModule: Module {
 /// expo-router uses, doesn't name it; its newer stack does, with this same call.
 final class ContentScrollAnchorView: ExpoView {
   private var scheduled = false
+  private var offsetObservation: NSKeyValueObservation?
+  private var past: Bool?
+  let onScrolledPast = EventDispatcher()
 
   /// Layers on one screen share its controller: only the top one's list is named, and it is named
   /// again when the layer over it goes.
@@ -44,8 +51,21 @@ final class ContentScrollAnchorView: ExpoView {
     }
   }
 
+  /// Report whether the list has scrolled past this many points from its rest at the top
+  /// (`onScrolledPast`), for a bar that takes its material only once content is under it. Nil: no
+  /// reports.
+  var threshold: CGFloat? {
+    didSet {
+      past = nil
+      schedule()
+    }
+  }
+
   override func didMoveToWindow() {
     super.didMoveToWindow()
+    if window == nil {
+      offsetObservation = nil
+    }
     schedule()
   }
 
@@ -71,6 +91,25 @@ final class ContentScrollAnchorView: ExpoView {
       return
     }
     controller.setContentScrollView(scrollView, for: tabBar ? .all : .top)
+    watch(scrollView)
+  }
+
+  private func watch(_ scrollView: UIScrollView) {
+    offsetObservation = nil
+    guard let threshold else {
+      return
+    }
+    offsetObservation = scrollView.observe(\.contentOffset, options: [.initial, .new]) { [weak self] scrollView, _ in
+      guard let self else {
+        return
+      }
+      let next = scrollView.contentOffset.y + scrollView.adjustedContentInset.top > threshold
+      if next == self.past {
+        return
+      }
+      self.past = next
+      self.onScrolledPast(["past": next])
+    }
   }
 
   /// The tab's reselect, for a list react-native-screens can't scroll itself (see `tabBar`).
