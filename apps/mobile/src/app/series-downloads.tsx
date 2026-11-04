@@ -38,14 +38,8 @@ import {
   PlayIcon,
   TrashIcon,
 } from '@/components/icons/ui-icons';
-import {
-  PILL_HEIGHT,
-  SelectLead,
-  SelectPillBar,
-  useDragSelect,
-  useSelectMode,
-  useSelectToggle,
-} from '@/components/multi-select/select-mode';
+import { PILL_HEIGHT, SelectLead, useDragSelect, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';

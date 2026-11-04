@@ -27,7 +27,7 @@ import { ANDROID_BLUR, type MenuRowSpec } from '@/components/context-menu-materi
 import type { IconProps } from '@/components/icons/ui-icons';
 import { SelectModeIcon, SelectOptionsIcon } from '@/components/icons/ui-icons';
 import { SelectCircle } from '@/components/multi-select/selectable-row';
-import type { TopBarAction } from '@/components/top-bar';
+import type { BarSymbol, TopBarAction } from '@/components/top-bar';
 import { Spacing } from '@/constants/theme';
 import { hapticSelection } from '@/lib/haptics';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -425,6 +425,9 @@ export interface SelectVerb {
   /** Accessible label, e.g. "Pause 3 chapters". */
   label: string;
   Icon: (props: IconProps) => ReactElement;
+  /** The SF Symbol the iOS toolbar draws for `Icon` (`select-pill-bar.ios.tsx`); the label
+   *  stands in without one. */
+  symbol?: BarSymbol;
   /** The verb's accent — see the interface doc. Omit for the default icon colour. */
   color?: string;
   onPress: () => void;
@@ -437,14 +440,7 @@ export interface SelectVerb {
  * a solid colour circle (its `color`, white icon); multiple verbs make it the frosted glass with
  * per-icon colours. Renders nothing when there's neither a menu nor a verb.
  */
-export function SelectPillBar({
-  verbs,
-  options,
-  optionsTestID = 'select.options',
-  left,
-  right,
-  bottom,
-}: {
+export type SelectPillBarProps = {
   verbs: SelectVerb[];
   /** Staging-menu rows for the bottom-left "…" button (Select all / unread / …). */
   options?: MenuRowSpec[];
@@ -452,7 +448,9 @@ export function SelectPillBar({
   left: number;
   right: number;
   bottom: number;
-}) {
+};
+
+export function SelectPillBar({ verbs, options, optionsTestID = 'select.options', left, right, bottom }: SelectPillBarProps) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
   const showOptions = !!options && options.length > 0;

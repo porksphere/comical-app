@@ -182,6 +182,13 @@ move), a `link` row's `actions` are its swipe actions (`SwipeableSettingsRow`; S
 circle on the app's rows; a check circle the iOS row draws, since the form never enters the
 list's edit mode). A `text` field is the system's text or secure field on iOS, a `stepper` its
 stepper, a `multi` field the overlay's checklist everywhere (a system menu holds one check).
+The chrome around a list follows: the add button (`components/add-fab.tsx`) and the select
+mode's verbs and staging menu (`components/multi-select/select-pill-bar.tsx`) are the floating
+button and pills on Android and web, and on iOS the screen's system bottom toolbar
+(`add-fab.ios.tsx`, `select-pill-bar.ios.tsx`: `Stack.Toolbar placement="bottom"`, which the
+pushed settings screens can use since they sit over the tab bar; a `SelectVerb` and a
+`MenuRowSpec` carry the SF `symbol` the toolbar draws). A selecting row on iOS is plain content
+with tap and hold gestures, not a button: a long press on a SwiftUI button swallows its tap.
 A bridge's or tracker's descriptors become fields through `useDescriptorFields`
 (`components/settings/setting-field.tsx`), one hook holding every sign-in row's state by key;
 `bridge-extras.tsx` gives the per-bridge sections as hooks. Colour is one rule: the thing that

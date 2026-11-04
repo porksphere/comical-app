@@ -28,14 +28,8 @@ import { DownloadStatusIndicator } from '@/components/downloads/download-status-
 import { seriesActions, seriesCan } from '@/components/downloads/row-actions';
 import { SeriesStorageBar } from '@/components/downloads/series-storage-bar';
 import { CheckIcon, ClearIcon, PauseIcon, PlayIcon, TrashIcon } from '@/components/icons/ui-icons';
-import {
-  PILL_HEIGHT,
-  SelectLead,
-  SelectPillBar,
-  useDragSelect,
-  useSelectMode,
-  useSelectToggle,
-} from '@/components/multi-select/select-mode';
+import { PILL_HEIGHT, SelectLead, useDragSelect, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
@@ -425,16 +419,16 @@ export default function DownloadsScreen() {
           optionsTestID="downloads.select-options"
           verbs={[
             ...(toPause.length > 0
-              ? [{ key: 'pause', label: `Pause ${toPause.length} series`, Icon: PauseIcon, onPress: pauseSelected, testID: 'downloads.pause' }]
+              ? [{ key: 'pause', symbol: 'pause' as const, label: `Pause ${toPause.length} series`, Icon: PauseIcon, onPress: pauseSelected, testID: 'downloads.pause' }]
               : []),
             ...(toResume.length > 0
-              ? [{ key: 'resume', label: `Resume ${toResume.length} series`, Icon: PlayIcon, onPress: resumeSelected, testID: 'downloads.resume' }]
+              ? [{ key: 'resume', symbol: 'play' as const, label: `Resume ${toResume.length} series`, Icon: PlayIcon, onPress: resumeSelected, testID: 'downloads.resume' }]
               : []),
             ...(toCancel.length > 0
-              ? [{ key: 'cancel', label: `Cancel ${toCancel.length} in-flight series`, Icon: ClearIcon, color: theme.danger, onPress: () => void cancelSelected(), testID: 'downloads.cancel' }]
+              ? [{ key: 'cancel', symbol: 'xmark' as const, label: `Cancel ${toCancel.length} in-flight series`, Icon: ClearIcon, color: theme.danger, onPress: () => void cancelSelected(), testID: 'downloads.cancel' }]
               : []),
             ...(toDelete.length > 0
-              ? [{ key: 'delete', label: `Delete ${toDelete.length} series`, Icon: TrashIcon, color: theme.danger, onPress: confirmDeleteSelected, testID: 'downloads.delete' }]
+              ? [{ key: 'delete', symbol: 'trash' as const, label: `Delete ${toDelete.length} series`, Icon: TrashIcon, color: theme.danger, onPress: confirmDeleteSelected, testID: 'downloads.delete' }]
               : []),
           ]}
         />

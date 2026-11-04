@@ -6,7 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { ArrowUpIcon, BridgesIcon, CheckIcon, ClearIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { SelectPillBar, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { RetryBlock } from '@/components/retry-block';
 import { useBrowseRegistry } from '@/components/settings/browse-registry';
@@ -113,6 +114,7 @@ export default function BridgesScreen() {
     {
       label: allSelected ? 'Deselect all' : 'Select all',
       Icon: allSelected ? ClearIcon : CheckIcon,
+      symbol: allSelected ? ('xmark.circle' as const) : ('checkmark.circle' as const),
       loading: false,
       disabled: allKeys.length === 0,
       onPress: allSelected ? ms.clear : ms.selectAll,
@@ -305,6 +307,7 @@ export default function BridgesScreen() {
                   {
                     key: 'uninstall',
                     label: `Uninstall ${ms.count} bridges`,
+                    symbol: 'trash' as const,
                     Icon: TrashIcon,
                     color: theme.danger,
                     onPress: confirmUninstallSelected,

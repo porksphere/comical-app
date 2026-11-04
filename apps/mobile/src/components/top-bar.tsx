@@ -31,7 +31,8 @@ export type TopBarAction = {
   native: { symbol: BarSymbol } | { text: string; variant?: 'done' | 'prominent' } | null;
 };
 
-type BarSymbol = NonNullable<ComponentProps<typeof Stack.Toolbar.Button>['icon']>;
+/** An SF Symbol name the system bar draws. */
+export type BarSymbol = NonNullable<ComponentProps<typeof Stack.Toolbar.Button>['icon']>;
 
 /**
  * The top bar of every pushed screen (bridge/tracker settings, registries, the download pages, …).

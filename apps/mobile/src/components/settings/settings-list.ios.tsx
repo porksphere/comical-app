@@ -39,6 +39,7 @@ import {
   moveDisabled,
   multilineTextAlignment,
   onLongPressGesture,
+  onTapGesture,
   padding,
   pickerStyle,
   progressViewStyle,
@@ -317,38 +318,42 @@ function LinkRow({ field, section, id }: { field: Extract<SettingsField, { kind:
   const selecting = !!selection?.selecting;
   const selected = selectable && !!selection?.selected.has(key);
   const rangeFill = selection?.rangeFill;
-  const onPress = selecting ? (selectable ? () => selection!.toggle(key) : undefined) : field.onPress;
+  const content = (
+    <HStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}>
+      {selecting && selectable ? (
+        <Image systemName={selected ? 'checkmark.circle.fill' : 'circle'} size={22} color={selected ? theme.accent : theme.textSecondary} />
+      ) : null}
+      {field.icon ? <Tile icon={field.icon} /> : null}
+      <Labelled label={field.label} description={field.description} tone={field.tone} color={theme.text} />
+      <Spacer />
+      {field.value !== undefined ? <Text modifiers={[foregroundStyle(theme.textSecondary), lineLimit(1)]}>{field.value}</Text> : null}
+      {field.progress !== undefined ? (
+        <Text modifiers={[foregroundStyle(theme.textSecondary), monospacedDigit()]}>{`${Math.round(field.progress * 100)}%`}</Text>
+      ) : null}
+      {field.busy ? <ProgressView modifiers={[progressViewStyle('circular')]} /> : null}
+      {field.badge !== undefined && field.badge > 0 ? (
+        <Pip count={field.badge} />
+      ) : field.marked ? (
+        <Image systemName="circle.fill" size={8} color={theme.accent} />
+      ) : null}
+      {selecting ? null : <Chevron />}
+    </HStack>
+  );
+  if (selecting) {
+    // Not a button while selecting: a long press on a SwiftUI button swallows its tap, so the row
+    // is plain content with the tap and the hold as gestures of its own, and it holds its place in
+    // the order. An unselectable row goes inert.
+    const gestures = selectable
+      ? [onTapGesture(() => selection!.toggle(key)), ...(rangeFill ? [onLongPressGesture(() => rangeFill(key))] : [])]
+      : [disabled()];
+    return <HStack modifiers={[accessibilityIdentifier(id), moveDisabled(true), ...gestures]}>{content}</HStack>;
+  }
   const row = (
-    <Button
-      onPress={onPress ?? (() => {})}
-      modifiers={[
-        accessibilityIdentifier(id),
-        ...(selecting ? [moveDisabled(true)] : []),
-        ...(selecting && !selectable ? [disabled()] : []),
-        ...(selecting && selectable && rangeFill ? [onLongPressGesture(() => rangeFill(key))] : []),
-      ]}>
-      <HStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}>
-        {selecting && selectable ? (
-          <Image systemName={selected ? 'checkmark.circle.fill' : 'circle'} size={22} color={selected ? theme.accent : theme.textSecondary} />
-        ) : null}
-        {field.icon ? <Tile icon={field.icon} /> : null}
-        <Labelled label={field.label} description={field.description} tone={field.tone} color={theme.text} />
-        <Spacer />
-        {field.value !== undefined ? <Text modifiers={[foregroundStyle(theme.textSecondary), lineLimit(1)]}>{field.value}</Text> : null}
-        {field.progress !== undefined ? (
-          <Text modifiers={[foregroundStyle(theme.textSecondary), monospacedDigit()]}>{`${Math.round(field.progress * 100)}%`}</Text>
-        ) : null}
-        {field.busy ? <ProgressView modifiers={[progressViewStyle('circular')]} /> : null}
-        {field.badge !== undefined && field.badge > 0 ? (
-          <Pip count={field.badge} />
-        ) : field.marked ? (
-          <Image systemName="circle.fill" size={8} color={theme.accent} />
-        ) : null}
-        {selecting ? null : <Chevron />}
-      </HStack>
+    <Button onPress={field.onPress} modifiers={[accessibilityIdentifier(id)]}>
+      {content}
     </Button>
   );
-  if (!field.actions?.length || selecting) return row;
+  if (!field.actions?.length) return row;
   return (
     <SwipeActions>
       {row}

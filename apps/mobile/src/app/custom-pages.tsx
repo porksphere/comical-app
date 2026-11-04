@@ -5,7 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { CheckIcon, ClearIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { SelectPillBar, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { type SettingsFormSection } from '@/components/settings/settings-form';
@@ -51,6 +52,7 @@ export default function CustomPagesScreen() {
     {
       label: allSelected ? 'Deselect all' : 'Select all',
       Icon: allSelected ? ClearIcon : CheckIcon,
+      symbol: allSelected ? ('xmark.circle' as const) : ('checkmark.circle' as const),
       loading: false,
       disabled: allKeys.length === 0,
       onPress: allSelected ? ms.clear : ms.selectAll,
@@ -166,6 +168,7 @@ export default function CustomPagesScreen() {
                   {
                     key: 'delete',
                     label: `Delete ${ms.count} pages`,
+                    symbol: 'trash' as const,
                     Icon: TrashIcon,
                     color: theme.danger,
                     onPress: confirmDeleteSelected,

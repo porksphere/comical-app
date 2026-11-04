@@ -1,11 +1,15 @@
 import type { ReactNode } from 'react';
 
+import type * as AddFab from '@/components/add-fab';
+import type * as AddFabIos from '@/components/add-fab.ios';
 import type * as AppTabs from '@/components/app-tabs';
 import type * as AppTabsIos from '@/components/app-tabs.ios';
 import type * as FloatOver from '@/components/float-over';
 import type * as FloatOverWeb from '@/components/float-over.web';
 import type * as OverflowMenu from '@/components/overflow-menu';
 import type * as OverflowMenuAndroid from '@/components/overflow-menu.android';
+import type * as SelectPillBar from '@/components/multi-select/select-pill-bar';
+import type * as SelectPillBarIos from '@/components/multi-select/select-pill-bar.ios';
 import type * as ImageProgress from '@/components/reader/image-progress';
 import type * as ImageProgressWeb from '@/components/reader/image-progress.web';
 import type * as IntStepper from '@/components/reader/int-stepper';
@@ -108,7 +112,9 @@ type Drift<Base, Impl, Skipped extends string = never> = {
 type Conforms<T extends Record<string, never>> = T;
 
 export type PlatformContracts = [
+  Conforms<Drift<typeof AddFab, typeof AddFabIos>>,
   Conforms<Drift<typeof AppTabs, typeof AppTabsIos>>,
+  Conforms<Drift<typeof SelectPillBar, typeof SelectPillBarIos>>,
   Conforms<Drift<typeof FloatOver, typeof FloatOverWeb>>,
   Conforms<Drift<typeof OverflowMenu, typeof OverflowMenuAndroid>>,
   Conforms<Drift<typeof ImageProgress, typeof ImageProgressWeb>>,
