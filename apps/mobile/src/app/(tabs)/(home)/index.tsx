@@ -755,13 +755,13 @@ export default function BrowseScreen() {
     </BarSurface>
   );
   // On iOS the bar holds only system items: the bridge's circle as the leading menu button
-  // (the bridges, then the pages), the search trailing. The inline title is the tab's name,
-  // fading out over the first scroll as every tab's does, and is the NSFW hold target: a bar
+  // (the bridges, then the pages), the search trailing. The inline title names the view,
+  // "<bridge> <page>", as the custom bar's selectors do, and is the NSFW hold target: a bar
   // button's hold is its menu, so the gesture moves to the one thing in the bar that is ours.
   const nativeHeader = (
     <>
       <NativeTabHeader
-        title="Browse"
+        title={[currentBridge?.name, pageLabels[pageKey(page)]].filter(Boolean).join(' ')}
         section={section}
         holdTestID="browse.nsfw-hold"
       />

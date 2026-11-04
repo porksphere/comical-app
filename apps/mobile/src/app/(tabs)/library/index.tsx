@@ -22,6 +22,7 @@ import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import {
   ALL_VIEW_NAME,
   effectiveItemKind,
+  ITEM_KIND_LABELS,
   type ItemKind,
   itemKindOptions,
   type KindsPresent,
@@ -113,6 +114,7 @@ export default function LibraryScreen() {
         <LibraryNativeHeader
           collection={collection}
           collections={collections}
+          viewName={viewName}
           kind={kind}
           kindsPresent={kindsPresent}
           selectedKind={selectedKind}
@@ -182,8 +184,9 @@ export default function LibraryScreen() {
 }
 
 /**
- * The iOS navigation bar, in Browse's shape: the tab's name as the inline title (and the
- * NSFW hold target), the view's mark as ONE bare leading button opening the collection and kind
+ * The iOS navigation bar, in Browse's shape: "<view> <kind>" as the inline title (and the NSFW
+ * hold target) — the kind only while the view holds more than one, as Browse's is "<bridge>
+ * <page>" — the view's mark as ONE bare leading button opening the collection and kind
  * menu (`LibraryCollectionMenu`), the search as the system search item, and the arranging
  * `⋯` trailing. The filter and sort are secondary to what's showing, so they share that one menu
  * (LibraryNativeToolbar). A pinned section's label takes the title's place — see NativeTabHeader.
@@ -191,6 +194,7 @@ export default function LibraryScreen() {
 function LibraryNativeHeader({
   collection,
   collections,
+  viewName,
   kind,
   kindsPresent,
   selectedKind,
@@ -200,6 +204,7 @@ function LibraryNativeHeader({
 }: {
   collection: string | null;
   collections: Collection[];
+  viewName: string;
   kind: ItemKind;
   kindsPresent: KindsPresent;
   selectedKind: ItemKind;
@@ -211,7 +216,7 @@ function LibraryNativeHeader({
   return (
     <>
       <NativeTabHeader
-        title="Library"
+        title={kinds.length > 1 ? `${viewName} ${ITEM_KIND_LABELS[kind]}` : viewName}
         section={section}
         filter={filter}
         placeholder="Filter library…"
