@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
 import type { SyncGate } from "./host/sync-listener.ts";
 import { clearScratch, currentDataDir, locateData, registerDataLocation, settleData } from "./data-location.ts";
+import { registerDesktopEntry } from "./desktop-entry.ts";
 import { createDesktopHost, type DesktopHost } from "./host/create-host.ts";
 import { startLoopbackServer, type LoopbackServer } from "./host/serve.ts";
 import { iconImage, shellIcon } from "./icon.ts";
@@ -585,6 +586,7 @@ if (primary) {
       if (dataLaunch.kind !== "run") return settleData(dataLaunch);
       clearScratch();
       setAppMenu(navigate);
+      registerDesktopEntry().catch((err: unknown) => console.error("[desktop-entry] failed:", err));
       registerLinkScheme();
       const settings = shellSettings();
       setTray(settings.runInTray, showWindow);
