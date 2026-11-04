@@ -1,6 +1,7 @@
 import { useIsLastItem } from "@legendapp/list/react-native";
 import { StyleSheet, View } from "react-native";
 
+import { useSideInsets } from "@/hooks/use-content-width";
 import { useIsDesktop } from "@/hooks/use-responsive";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -16,21 +17,24 @@ import { useTheme } from "@/hooks/use-theme";
  *
  * Not drawn on desktop: there the rows have the room to separate themselves, and a line that stops
  * at the content column's edge reads as a rule that ran out, not as a divider.
+ *
+ * Runs out past the safe area's sides, which the rows keep clear of (the lists pad their content
+ * by them): on the folded iPhone Duo those sides are the vertical bar, and a rule that stopped at
+ * its edge read as cut off. The row's own content, its `⋯` included, stays where it is.
  */
 export function RowHairline() {
   const theme = useTheme();
   const isLast = useIsLastItem();
   const desktop = useIsDesktop();
+  const sides = useSideInsets();
   return isLast || desktop ? null : (
-    <View style={[styles.line, { backgroundColor: theme.hairline }]} />
+    <View style={[styles.line, { backgroundColor: theme.hairline, left: -sides.left, right: -sides.right }]} />
   );
 }
 
 const styles = StyleSheet.create({
   line: {
     position: "absolute",
-    left: 0,
-    right: 0,
     bottom: 0,
     height: StyleSheet.hairlineWidth,
   },
