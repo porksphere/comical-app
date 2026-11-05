@@ -4,7 +4,7 @@ import { NavBarLeadingMenu } from '@/components/nav-bar-leading-menu';
 import type { PageOption } from '@/data/browse-page';
 import type { Bridge } from '@/data/types';
 import { initialSymbol } from '@/lib/initial-symbol';
-import { BAR_THUMB_RADIUS, MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/menu-thumb-files';
+import { BAR_THUMB_PX, BAR_THUMB_RADIUS, MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/menu-thumb-files';
 
 /**
  * Browse's controls in the iOS navigation bar: ONE leading button, the current bridge's icon as
@@ -50,7 +50,7 @@ export function BrowseNativeToolbar({
   onSelectPage: (key: string) => void;
   onSearch: () => void;
 }) {
-  const circles = useMenuThumbFiles(thumbnails, sources, BAR_THUMB_RADIUS);
+  const circles = useMenuThumbFiles(thumbnails, sources, BAR_THUMB_RADIUS, BAR_THUMB_PX);
   const tiles = useMenuThumbFiles(thumbnails, sources, MENU_THUMB_RADIUS);
   const current = bridges.find((b) => b.id === bridgeId);
   const pageSection = {

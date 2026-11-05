@@ -19,18 +19,22 @@ import shapedImage from '../../modules/shaped-image';
 export const MENU_THUMB_PX = 28;
 /** The tile's corner, in points — the overlay menus' `thumb` radius. */
 export const MENU_THUMB_RADIUS = 6;
+/** The side of a bar button's picture, in points: most of the button's glass circle, as the App
+ *  Store's account picture fills its button, rather than a menu tile's size inside it. */
+export const BAR_THUMB_PX = 36;
 /** Half the side: the circle a bar button's picture is clipped to. */
-export const BAR_THUMB_RADIUS = MENU_THUMB_PX / 2;
+export const BAR_THUMB_RADIUS = BAR_THUMB_PX / 2;
 
 const files = new Map<string, Promise<string | null>>();
 
-/** Resolves to the `file://` URI of `source`'s tile, clipped to `radius` points where the
- *  shaping module is linked (the square tile elsewhere), or null when it can't be loaded. */
-export function menuThumbFile(source: string | number, radius?: number): Promise<string | null> {
-  const key = `${typeof source === 'number' ? `asset:${source}` : source}#${radius ?? ''}`;
+/** Resolves to the `file://` URI of `source`'s tile, `size` points a side (a menu tile's by
+ *  default), clipped to `radius` points where the shaping module is linked (the square tile
+ *  elsewhere), or null when it can't be loaded. */
+export function menuThumbFile(source: string | number, radius?: number, size = MENU_THUMB_PX): Promise<string | null> {
+  const key = `${typeof source === 'number' ? `asset:${source}` : source}#${radius ?? ''}#${size}`;
   let file = files.get(key);
   if (!file) {
-    file = renderTile(source)
+    file = renderTile(source, size)
       .then((uri) =>
         radius && shapedImage ? shapedImage.clip(uri, radius, PixelRatio.get()).catch(() => uri) : uri,
       )
@@ -40,8 +44,8 @@ export function menuThumbFile(source: string | number, radius?: number): Promise
   return file;
 }
 
-async function renderTile(source: string | number): Promise<string> {
-  const px = Math.round(MENU_THUMB_PX * PixelRatio.get());
+async function renderTile(source: string | number, size: number): Promise<string> {
+  const px = Math.round(size * PixelRatio.get());
   const loaded = await Image.loadAsync(source, { maxWidth: 4 * px, maxHeight: 4 * px });
   try {
     const { width, height } = loaded;
@@ -71,13 +75,14 @@ export function useMenuThumbFiles(
   thumbnails?: Record<string, string>,
   sources?: Record<string, number>,
   radius?: number,
+  size?: number,
 ): Record<string, string> {
   const wanted = useMemo(() => ({ ...thumbnails, ...sources }), [thumbnails, sources]);
   const [ready, setReady] = useState<Record<string, string>>({});
   useEffect(() => {
     let live = true;
     for (const [key, source] of Object.entries(wanted)) {
-      void menuThumbFile(source, radius).then((uri) => {
+      void menuThumbFile(source, radius, size).then((uri) => {
         if (!live || !uri) return;
         setReady((prev) => (prev[key] === uri ? prev : { ...prev, [key]: uri }));
       });
@@ -85,6 +90,6 @@ export function useMenuThumbFiles(
     return () => {
       live = false;
     };
-  }, [wanted, radius]);
+  }, [wanted, radius, size]);
   return ready;
 }
