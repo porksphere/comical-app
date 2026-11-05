@@ -57,6 +57,9 @@ jobs:
       configuration: Debug
       dev_client: true
       channel: ios-devclient
+      # The iOS 27 SDK, as the PR lane: the shell is for iterating on what that SDK brings (the
+      # bar minimization, a folded display's vertical bar), which compiles away on the default.
+      runner: xcode-27
     secrets: inherit
 
   publish:
