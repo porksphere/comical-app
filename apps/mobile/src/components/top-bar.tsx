@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarSurface } from '@/components/bar-surface';
-import { useBarScrolled } from '@/components/bar-scrolled';
+import { useBarScrolled, useManagesBar } from '@/components/bar-scrolled';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { barTitleStyle } from '@/components/native-tab-header';
 import { PaneActions } from '@/components/settings/pane-actions';
@@ -74,6 +74,7 @@ export function TopBar({
   const clearance = useWindowControlsClearance();
   const inPane = useInSettingsPane();
   const scrolled = useBarScrolled();
+  useManagesBar(NATIVE_HEADER && !inPane);
   const material = useBarMaterial();
   const foldedEdge = useFoldedBarEdge();
   // Inside the settings modal the pane has no bar of its own: the modal supplies the header, and a

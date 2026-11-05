@@ -15,6 +15,9 @@ public class ContentScrollViewModule: Module {
       Prop("scrolledPast") { (view: ContentScrollAnchorView, threshold: Double?) in
         view.threshold = threshold.map { CGFloat($0) }
       }
+      Prop("topEdge") { (view: ContentScrollAnchorView, edge: String?) in
+        view.topEdge = edge
+      }
       AsyncFunction("scrollToTop") { (view: ContentScrollAnchorView) in
         view.scrollToTop()
       }
@@ -47,6 +50,17 @@ final class ContentScrollAnchorView: ExpoView {
   var tabBar = false {
     didSet {
       if tabBar != oldValue {
+        schedule()
+      }
+    }
+  }
+
+  /// The list's top scroll edge effect (iOS 26): `hidden`, `soft`, `hard` or `automatic`. For a
+  /// list react-native-screens can't reach with the screen's own option — a SwiftUI list, deep in
+  /// its host — and set where the list is found. Nil: left as it is.
+  var topEdge: String? {
+    didSet {
+      if topEdge != oldValue {
         schedule()
       }
     }
@@ -106,7 +120,29 @@ final class ContentScrollAnchorView: ExpoView {
     }
     retries = 0
     controller.setContentScrollView(scrollView, for: tabBar ? .all : .top)
+    applyTopEdge(scrollView)
     watch(scrollView)
+  }
+
+  private func applyTopEdge(_ scrollView: UIScrollView) {
+    guard #available(iOS 26.0, *), let topEdge else {
+      return
+    }
+    let effect = scrollView.topEdgeEffect
+    switch topEdge {
+    case "hidden":
+      effect.isHidden = true
+      effect.style = .automatic
+    case "soft":
+      effect.isHidden = false
+      effect.style = .soft
+    case "hard":
+      effect.isHidden = false
+      effect.style = .hard
+    default:
+      effect.isHidden = false
+      effect.style = .automatic
+    }
   }
 
   private func watch(_ scrollView: UIScrollView) {

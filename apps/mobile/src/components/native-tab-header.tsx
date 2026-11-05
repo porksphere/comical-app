@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { useBarScrolled } from '@/components/bar-scrolled';
+import { useBarScrolled, useManagesBar } from '@/components/bar-scrolled';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import type { TabFilter } from '@/components/tab-filter';
 import { useTheme } from '@/hooks/use-theme';
@@ -57,6 +57,7 @@ export function NativeTabHeader({
   // The bar is bare over the top of the page and takes its material once the list is under it,
   // the series page's way, with `nav-bar-fade` crossfading the switch — see `bar-scrolled.tsx`.
   const scrolled = useBarScrolled();
+  useManagesBar();
   const material = useBarMaterial();
   const foldedEdge = useFoldedBarEdge();
   const shown = section ?? title;
