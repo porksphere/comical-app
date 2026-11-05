@@ -33,6 +33,7 @@ final class ContentScrollAnchorView: ExpoView {
   private var retries = 0
   private var offsetObservation: NSKeyValueObservation?
   private var past: Bool?
+  private var lastOffset: CGFloat?
   let onScrolledPast = EventDispatcher()
 
   /// Layers on one screen share its controller: only the top one's list is named, and it is named
@@ -67,12 +68,15 @@ final class ContentScrollAnchorView: ExpoView {
   }
 
   /// Report whether the list has scrolled past this many points from its rest at the top
-  /// (`onScrolledPast`), for a bar that takes its material only once content is under it, and back
-  /// only once it is within a quarter of that: a crossing is a switch, and a list resting on the
-  /// line would switch on every point. Nil: no reports.
+  /// (`onScrolledPast`), for a bar that takes its material only once content is under it — and
+  /// only as the list comes back up, when the bar is returning: scrolling down the bar is sliding
+  /// away, and a backing switched under the slide flickers (the series page's rule). Back only once
+  /// within a quarter of the threshold: a crossing is a switch, and a list resting on the line
+  /// would switch on every point. Nil: no reports.
   var threshold: CGFloat? {
     didSet {
       past = nil
+      lastOffset = nil
       schedule()
     }
   }
@@ -160,7 +164,9 @@ final class ContentScrollAnchorView: ExpoView {
         return
       }
       let offset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-      let next = self.past == true ? offset > threshold / 4 : offset > threshold
+      let up = self.lastOffset.map { offset < $0 } ?? true
+      self.lastOffset = offset
+      let next = self.past == true ? offset > threshold / 4 : offset > threshold && up
       if next == self.past {
         return
       }
