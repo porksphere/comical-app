@@ -12,39 +12,47 @@ import { createContext, use, useEffect, useMemo, useState, type ReactNode } from
  * its SwiftUI one — through the content-scroll-view anchor, which watches the list's offset
  * natively and reports only the crossings. Read by `NativeTabHeader` and `TopBar`, which also
  * say they switch the bar (`useManagesBar`): only then is the list's own edge hidden, so a screen
- * with a bar of its own — the series page, a search — keeps the system's edge.
+ * with a bar of its own — a search — keeps the system's edge. The series page's bar switches at
+ * its own line, the page's title, and reports that itself (`useManagesBar(true, 'bar')`): the
+ * list's edge then follows it, and the anchor reports nothing.
  */
 export const BAR_SCROLLED_AT = 8;
+
+/** Who switches the screen's bar: its list's crossings (the anchor's reports), or the bar itself. */
+export type BarManager = 'list' | 'bar' | null;
 
 type BarScrolled = {
   scrolled: boolean;
   report: (scrolled: boolean) => void;
-  managed: boolean;
-  manage: (managed: boolean) => void;
+  managed: BarManager;
+  manage: (managed: BarManager) => void;
 };
 
 const BarScrolledContext = createContext<BarScrolled | null>(null);
 
 export function BarScrolledProvider({ children }: { children: ReactNode }) {
   const [scrolled, report] = useState(false);
-  const [managed, manage] = useState(false);
+  const [managed, manage] = useState<BarManager>(null);
   const value = useMemo(() => ({ scrolled, report, managed, manage }), [scrolled, managed]);
   return <BarScrolledContext.Provider value={value}>{children}</BarScrolledContext.Provider>;
 }
 
-/** Said by the bar that switches its material from `useBarScrolled`, while it is mounted. */
-export function useManagesBar(enabled = true): void {
+/**
+ * Said by the bar that switches its backing from `useBarScrolled`, while it is mounted: switched
+ * at the list's crossings by default, or at the bar's own line (`'bar'`), which it then reports.
+ */
+export function useManagesBar(enabled = true, by: Exclude<BarManager, null> = 'list'): void {
   const manage = use(BarScrolledContext)?.manage;
   useEffect(() => {
     if (!enabled || !manage) return;
-    manage(true);
-    return () => manage(false);
-  }, [enabled, manage]);
+    manage(by);
+    return () => manage(null);
+  }, [enabled, by, manage]);
 }
 
-/** Whether the screen's bar switches its own material, so the list's own edge is to be hidden. */
-export function useBarManaged(): boolean {
-  return use(BarScrolledContext)?.managed ?? false;
+/** Who switches the screen's bar, so the list's own edge is to be hidden; null for nobody. */
+export function useBarManaged(): BarManager {
+  return use(BarScrolledContext)?.managed ?? null;
 }
 
 /** Whether the screen's list is past the top; false outside a stack's screen. */

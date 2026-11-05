@@ -74,15 +74,13 @@ export function ScreenScrollMarker({
       key={markerKey}
       active={active}
       style={styles.fill}
-      scrolledPast={report ? BAR_SCROLLED_AT : undefined}
-      onScrolledPast={report ? (e) => report(e.nativeEvent.past) : undefined}
+      scrolledPast={report && managed === 'list' ? BAR_SCROLLED_AT : undefined}
+      onScrolledPast={report && managed === 'list' ? (e) => report(e.nativeEvent.past) : undefined}
       // Where the bar switches its own backing, the list's edge is its: hidden, so the system's soft
       // edge never half-backs the bar; on the folded Duo, where the hard edge IS the backing, that
-      // edge comes and goes with the scroll as the material does elsewhere. Under a bar of the
-      // screen's own (the series page's) the folded Duo's hard edge stays on, as the stack's option
-      // has it: that option reaches a list first in line when the screen is pushed, and the series
-      // list mounts later, behind its strip, so it gets the edge here, where the list is found.
-      topEdge={managed ? (foldedEdge && scrolled ? 'hard' : 'hidden') : foldedEdge?.top}>
+      // edge comes and goes with the scroll as the material does elsewhere. The screen's own edge
+      // option reaches a list first in line; one under wrappers gets it here.
+      topEdge={managed ? (foldedEdge && scrolled ? 'hard' : 'hidden') : undefined}>
       {list}
     </ContentScrollAnchor>
   );

@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import Animated, {
   interpolate,
@@ -10,11 +10,12 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { useManagesBar, useReportBarScrolled } from '@/components/bar-scrolled';
 import { BarContentGap } from '@/constants/theme';
 import { useNativeHeaderHeight } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
 import { logDiagnostic } from '@/lib/diagnostics';
-import { SLIDE_AWAY_BAR, useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
+import { HIDDEN_TOP_EDGE, SLIDE_AWAY_BAR, useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
 
 import { NavBarFade } from '../../../modules/nav-bar-fade';
 
@@ -34,7 +35,9 @@ import { NavBarFade } from '../../../modules/nav-bar-fade';
  * own crossfade, a transparent scroll-edge appearance over the frosted standard one, never ran on a
  * device. On the folded Duo there is no material: the backing is the scroll view's hard top edge, as
  * on every page there, but UIKit draws an edge only behind what the bar registers, and a custom
- * title view isn't, so `nav-bar-fade` registers it once the page's title is past.
+ * title view isn't, so `nav-bar-fade` registers it once the page's title is past. The edge itself
+ * comes and goes with the title too (`bar-scrolled`, the list's anchor applying it): at rest over
+ * the strip a hard edge drew a band behind the bar's empty items, which went as the bar slid away.
  *
  * The title is an option change like any other, so it is its own component and a crossing
  * re-renders this much and no more. Options go through react-native-screens' whole header update,
@@ -71,6 +74,12 @@ export function SeriesDetailsNativeBar({
   const foldedEdge = useFoldedBarEdge();
   const barBottom = useNativeHeaderHeight();
   const [pastTitle, setPastTitle] = useState(false);
+  // Folded, the list's edge is this bar's to switch, at the page's title, not at the list's top.
+  useManagesBar(foldedEdge != null, 'bar');
+  const report = useReportBarScrolled();
+  useEffect(() => {
+    if (foldedEdge) report?.(pastTitle);
+  }, [foldedEdge, pastTitle, report]);
   const titled = useSharedValue(false);
   const titleTop = contentTop + BarContentGap - barBottom;
   useAnimatedReaction(
@@ -108,8 +117,9 @@ export function SeriesDetailsNativeBar({
           gestureEnabled: nativePush,
           title,
           unstable_nativeProps: SLIDE_AWAY_BAR,
-          // A tab's stack sets it already; the root's series stack doesn't.
-          ...(foldedEdge && { scrollEdgeEffects: foldedEdge }),
+          // Folded, the edge is the anchor's to switch (above); a tab's stack would set the hard
+          // edge on every screen, and the root's series stack sets none.
+          ...(foldedEdge && { scrollEdgeEffects: HIDDEN_TOP_EDGE }),
         }}
       />
       <Stack.Title asChild>

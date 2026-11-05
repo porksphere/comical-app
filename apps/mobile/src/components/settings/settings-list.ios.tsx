@@ -141,8 +141,8 @@ export function SettingsList({ sections, reselectRoute, refresh }: SettingsListP
       ref={anchor}
       style={styles.fill}
       tabBar={!!reselectRoute}
-      scrolledPast={report ? BAR_SCROLLED_AT : undefined}
-      onScrolledPast={report ? (e) => report(e.nativeEvent.past) : undefined}
+      scrolledPast={report && managed === 'list' ? BAR_SCROLLED_AT : undefined}
+      onScrolledPast={report && managed === 'list' ? (e) => report(e.nativeEvent.past) : undefined}
       // The screen's own edge option never reaches a SwiftUI list: set on the list itself, where
       // the bar switches its own backing — see ScreenScrollMarker.
       topEdge={managed ? (foldedEdge && scrolled ? 'hard' : 'hidden') : undefined}>
