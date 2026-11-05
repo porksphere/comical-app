@@ -1,4 +1,4 @@
-import { use$ } from '@legendapp/state/react';
+import { useSelector } from '@legendapp/state/react';
 import { useIsFocused } from 'expo-router';
 import { createContext, useState, type ReactElement } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
@@ -55,7 +55,10 @@ function BarExtent({ slides, children }: { slides: boolean; children: ReactEleme
   const [measured] = useState(slides);
   const { width, height } = useWindowDimensions();
   const pose = `${width}x${height}`;
-  const top = use$(barExtents$[pose]) ?? null;
+  // `useSelector`, not `use$`: the React Compiler knows a hook by its name and `use$` isn't one to
+  // it, so it memoized the read on the window size and skipped it on the next render, which React
+  // throws on (fewer hooks than expected), and the app never left its splash.
+  const top = useSelector(barExtents$[pose]) ?? null;
   const focused = useIsFocused();
   if (!measured) return children;
   // Beside the page, never around it: UIKit finds the list the bar follows by itself, and on a

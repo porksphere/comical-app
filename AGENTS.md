@@ -404,7 +404,11 @@ Writing a local store:
 - **In-memory**: `const x$ = observable(initial)` directly.
 - **Read** in a component with `use$(x$)` (from `@legendapp/state/react`); read
   outside React with `x$.peek()` (non-tracking); write with `x$.set(v)` /
-  `x$.assign(patch)`. Legend State no-ops a set to the current value, so no
+  `x$.assign(patch)`. A read whose argument comes from render (`x$[key]`, a selector
+  closing over a prop) goes through `useSelector`, the same hook: the React Compiler
+  knows a hook by its name, `use$` isn't one to it, and it memoized such a read on its
+  argument and skipped it on the next render, a hook-count error that kept the app on
+  its splash. Legend State no-ops a set to the current value, so no
   "skip if equal" guards. Keep exported hook signatures stable when migrating an
   existing store so call sites don't change.
 
