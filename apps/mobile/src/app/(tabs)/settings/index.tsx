@@ -34,7 +34,7 @@ import { useDataSource, useHideNsfw } from '@/data/source';
 import { usePinnedTabBar } from '@/hooks/use-pinned-tab-bar';
 import { APP_VERSION } from '@/lib/build-info';
 import { PROFILING_ENABLED } from '@/lib/profiling';
-import { tabHref, useRouter } from '@/lib/nav';
+import { useRouter } from '@/lib/nav';
 
 // The keys are only listened for on web, which is also what the desktop app runs. A phone has no
 // keyboard to rebind, so the row isn't there at all rather than greyed out: nothing about the device
@@ -160,15 +160,7 @@ export default function SettingsScreen() {
     },
     {
       fields: fields(
-        {
-          kind: 'link',
-          testID: 'settings.category.diagnostics',
-          icon: ICONS.diagnostics,
-          label: 'Diagnostics',
-          // EXPERIMENT: pushed in this tab's own stack on iOS, where the swipe back lands on a
-          // screen with a bar — see `in-tab/diagnostics`.
-          onPress: () => router.push(NATIVE_HEADER ? tabHref('settings', '/diagnostics', {}) : '/diagnostics'),
-        },
+        { kind: 'link', testID: 'settings.category.diagnostics', icon: ICONS.diagnostics, label: 'Diagnostics', onPress: () => router.push('/diagnostics') },
         {
           kind: 'link',
           testID: 'settings.category.about',
@@ -198,7 +190,7 @@ export default function SettingsScreen() {
             testID: 'settings.category.bar-test',
             icon: ICONS.developer,
             label: 'Bar test (in tab)',
-            onPress: () => router.push(tabHref('settings', '/bar-test', {})),
+            onPress: () => router.push('/bar-test'),
           },
       ),
     },

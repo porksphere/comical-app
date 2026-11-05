@@ -2,20 +2,24 @@ import { Stack } from 'expo-router';
 
 import type { SelectPillBarProps } from '@/components/multi-select/select-mode';
 import type { BarSymbol } from '@/components/top-bar';
+import { useHidesNativeTabBar } from '@/lib/native-tab-bar';
 
 /**
  * The select mode's bulk verbs as the screen's system bottom toolbar, where iOS puts them (Mail,
  * Files): the staging rows as a `⋯` menu at the leading end, the verbs as buttons at the trailing
- * end — a symbol where the verb names one, its label otherwise, in its colour. The pushed settings
- * screens sit over the tab bar, so the toolbar has the bottom to itself; the position props are
- * the floating pills' and go unused. Renders nothing when there is neither a menu nor a verb.
+ * end — a symbol where the verb names one, its label otherwise, in its colour. Under the system tab
+ * bar the toolbar is laid out BENEATH it, so the tab bar is hidden while this is on screen; the
+ * position props are the floating pills' and go unused. Renders nothing when there is neither a
+ * menu nor a verb, and holds nothing then.
  *
  * Every item is a direct child of `Stack.Toolbar`: the native bar reads the element tree, and a
  * wrapper component is invisible to it.
  */
 export function SelectPillBar({ verbs, options }: SelectPillBarProps) {
   const rows = options ?? [];
-  if (verbs.length === 0 && rows.length === 0) return null;
+  const shown = verbs.length > 0 || rows.length > 0;
+  useHidesNativeTabBar(shown);
+  if (!shown) return null;
   return (
     <Stack.Toolbar placement="bottom">
       {rows.length > 0 ? (

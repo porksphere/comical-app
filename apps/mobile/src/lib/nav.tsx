@@ -141,8 +141,46 @@ function takeContentPane(href: unknown): boolean {
  */
 type PushHref = Parameters<Router['push']>[0];
 const IN_TAB_PATHS = new Set(['/series', '/search', '/results']);
+/**
+ * The settings pages, which the Settings tab pushes into its OWN stack (their copies under
+ * `app/(tabs)/settings/in-tab/`): a page pushed on the root stack pops back to the tabs screen,
+ * whose root bar is hidden, and the bar's title drifted as UIKit hid it under the swipe; popped
+ * inside the tab, the bar stays and nothing moves. From any other tab (a bridge's settings from
+ * Browse) they stay root pages.
+ */
+const SETTINGS_PATHS = new Set([
+  '/settings-general',
+  '/settings-notifications',
+  '/settings-shortcuts',
+  '/settings-sync',
+  '/settings-developer',
+  '/settings-about',
+  '/settings-whats-new',
+  '/scan-sync-server',
+  '/bridges',
+  '/trackers',
+  '/bridge-settings',
+  '/tracker-settings',
+  '/registries',
+  '/custom-pages',
+  '/custom-page-editor',
+  '/custom-section-editor',
+  '/registry-browse',
+  '/add-registry',
+  '/diagnostics',
+  '/gesture-trace',
+  '/bar-test',
+  '/downloads',
+  '/series-downloads',
+  '/storage',
+  '/favorites-import',
+  '/tracker-import',
+]);
 function destinationHref(href: PushHref): PushHref {
   const { pathname, params } = splitHref(href);
+  if (pathname && SETTINGS_PATHS.has(pathname) && Platform.OS === 'ios' && focusedTabRoute() === 'settings') {
+    return tabHref('settings', pathname, params);
+  }
   if (!pathname || !IN_TAB_PATHS.has(pathname)) return href;
   const page = pathname === '/series' && (params.reader === '1' || params.seq === '1') ? '/series/read' : pathname;
   const tab = Platform.OS === 'ios' ? focusedTabRoute() : null;

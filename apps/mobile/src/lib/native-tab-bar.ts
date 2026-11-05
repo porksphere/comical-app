@@ -55,6 +55,6 @@ export function useNativeTabBarHidden(): boolean {
  * The bar comes back as a transition away starts (see `useWhileOnScreen`), alongside UIKit's own
  * animation of it. It does not track the finger the way the native property would.
  */
-export function useHidesNativeTabBar(): void {
-  useWhileOnScreen(hideNativeTabBar, Platform.OS === 'ios');
+export function useHidesNativeTabBar(enabled = true): void {
+  useWhileOnScreen(hideNativeTabBar, enabled && Platform.OS === 'ios');
 }

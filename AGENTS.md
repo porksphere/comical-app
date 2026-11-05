@@ -198,9 +198,12 @@ stepper, a `multi` field the overlay's checklist everywhere (a system menu holds
 The chrome around a list follows: the add button (`components/add-fab.tsx`) and the select
 mode's verbs and staging menu (`components/multi-select/select-pill-bar.tsx`) are the floating
 button and pills on Android and web, and on iOS the screen's system bottom toolbar
-(`add-fab.ios.tsx`, `select-pill-bar.ios.tsx`: `Stack.Toolbar placement="bottom"`, which the
-pushed settings screens can use since they sit over the tab bar; a `SelectVerb` and a
-`MenuRowSpec` carry the SF `symbol` the toolbar draws). A selecting row on iOS is plain content
+(`add-fab.ios.tsx`, `select-pill-bar.ios.tsx`: `Stack.Toolbar placement="bottom"`, which hides
+the system tab bar while it is on screen, since UIKit lays the toolbar out beneath the tab bar; a
+`SelectVerb` and a `MenuRowSpec` carry the SF `symbol` the toolbar draws). On iOS the settings
+pages pushed from the Settings tab open INSIDE that tab's stack (their copies under
+`app/(tabs)/settings/in-tab/`, `SETTINGS_PATHS` in `lib/nav.tsx`): popped on the root stack they
+landed on the bar-less tabs screen and the bar's title drifted as UIKit hid it under the swipe. A selecting row on iOS is plain content
 with tap and hold gestures, not a button: a long press on a SwiftUI button swallows its tap.
 A bridge's or tracker's descriptors become fields through `useDescriptorFields`
 (`components/settings/setting-field.tsx`), one hook holding every sign-in row's state by key;

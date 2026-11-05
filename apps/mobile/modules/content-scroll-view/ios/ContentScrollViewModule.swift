@@ -27,6 +27,7 @@ public class ContentScrollViewModule: Module {
 /// expo-router uses, doesn't name it; its newer stack does, with this same call.
 final class ContentScrollAnchorView: ExpoView {
   private var scheduled = false
+  private var retries = 0
   private var offsetObservation: NSKeyValueObservation?
   private var past: Bool?
   let onScrolledPast = EventDispatcher()
@@ -66,6 +67,7 @@ final class ContentScrollAnchorView: ExpoView {
     if window == nil {
       offsetObservation = nil
     }
+    retries = 0
     schedule()
   }
 
@@ -87,9 +89,22 @@ final class ContentScrollAnchorView: ExpoView {
   }
 
   private func nameContentScrollView() {
-    guard active, window != nil, let scrollView = findScrollView(), let controller = owningController() else {
+    guard active, window != nil, let controller = owningController() else {
       return
     }
+    // A SwiftUI list is laid out after its host is on the window, and the search wants a list the
+    // size of the page: look again, a few times, until it is there.
+    guard let scrollView = findScrollView() else {
+      guard retries < 20 else {
+        return
+      }
+      retries += 1
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+        self?.nameContentScrollView()
+      }
+      return
+    }
+    retries = 0
     controller.setContentScrollView(scrollView, for: tabBar ? .all : .top)
     watch(scrollView)
   }

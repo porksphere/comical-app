@@ -285,10 +285,16 @@ These use public APIs, but the shape exists only because of a gap somewhere.
 
 ### 13. `in-tab/` route copies
 
-- **What:** 26 route files under `app/(tabs)/<tab>/in-tab/`, plus a rewrite of pushes in `lib/nav.tsx`
-  (`destinationHref`, `tabHref`).
+- **What:** route files under `app/(tabs)/<tab>/in-tab/` — the series, search and results pages under
+  every tab, and every settings page under the Settings tab — plus a rewrite of pushes in
+  `lib/nav.tsx` (`destinationHref`, `tabHref`).
 - **Why:** a series page has to open inside the tab's own stack for the tab bar to stay up. A same-URL
-  copy in a group captures plain pushes, so the copies need a real path segment.
+  copy in a group captures plain pushes, so the copies need a real path segment. The settings pages
+  are in the Settings tab's stack for the bar: pushed on the root stack they popped back to the tabs
+  screen, whose root bar is hidden, and the bar's title drifted as UIKit hid it under the swipe
+  (confirmed on a device: a page inside the tab held still, the same page on the root stack
+  drifted). A page with a bottom toolbar (the add button, the select mode's verbs) hides the tab bar
+  while it is on screen, since the toolbar is laid out beneath the tab bar otherwise.
 - **Risks:** a new page that should live in a tab needs a copy per tab. The iOS tab table also still
   exists in more than one place (an open item from the code-patterns audit).
 
