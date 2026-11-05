@@ -125,24 +125,28 @@ final class ContentScrollAnchorView: ExpoView {
     watch(scrollView)
   }
 
+  /// Animated: the folded Duo's hard edge comes and goes with the scroll, as the material does
+  /// elsewhere, and nothing else fades an edge.
   private func applyTopEdge(_ scrollView: UIScrollView) {
     guard #available(iOS 26.0, *), let topEdge else {
       return
     }
     let effect = scrollView.topEdgeEffect
-    switch topEdge {
-    case "hidden":
-      effect.isHidden = true
-      effect.style = .automatic
-    case "soft":
-      effect.isHidden = false
-      effect.style = .soft
-    case "hard":
-      effect.isHidden = false
-      effect.style = .hard
-    default:
-      effect.isHidden = false
-      effect.style = .automatic
+    UIView.animate(withDuration: 0.25) {
+      switch topEdge {
+      case "hidden":
+        effect.isHidden = true
+        effect.style = .automatic
+      case "soft":
+        effect.isHidden = false
+        effect.style = .soft
+      case "hard":
+        effect.isHidden = false
+        effect.style = .hard
+      default:
+        effect.isHidden = false
+        effect.style = .automatic
+      }
     }
   }
 

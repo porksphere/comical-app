@@ -2,7 +2,7 @@ import { createContext, use, type ComponentProps, type ReactNode } from 'react';
 import { Platform, ScrollView, StyleSheet } from 'react-native';
 import { ScrollViewMarker } from 'react-native-screens';
 
-import { BAR_SCROLLED_AT, useBarManaged, useReportBarScrolled } from '@/components/bar-scrolled';
+import { BAR_SCROLLED_AT, useBarManaged, useBarScrolled, useReportBarScrolled } from '@/components/bar-scrolled';
 import { HIDDEN_TOP_EDGE, useFoldedBarEdge } from '@/lib/native-bar';
 
 import { ContentScrollAnchor } from '../../modules/content-scroll-view';
@@ -57,9 +57,12 @@ export function ScreenScrollMarker({
   const foldedEdge = useFoldedBarEdge();
   const report = useReportBarScrolled();
   const managed = useBarManaged();
+  const scrolled = useBarScrolled();
   if (Platform.OS !== 'ios') return children;
+  // Where the bar switches its own backing the marker's edge is off, and the anchor below sets it;
+  // elsewhere the marker leaves the folded Duo its hard edge, as the stack's options do.
   const list = tabRoot ? (
-    <ScrollViewMarker key={markerKey} style={styles.fill} scrollEdgeEffects={foldedEdge ?? HIDDEN_TOP_EDGE}>
+    <ScrollViewMarker key={markerKey} style={styles.fill} scrollEdgeEffects={managed ? HIDDEN_TOP_EDGE : foldedEdge}>
       {children}
     </ScrollViewMarker>
   ) : (
@@ -73,9 +76,11 @@ export function ScreenScrollMarker({
       style={styles.fill}
       scrolledPast={report ? BAR_SCROLLED_AT : undefined}
       onScrolledPast={report ? (e) => report(e.nativeEvent.past) : undefined}
-      // Where the bar switches its own material, the list's edge goes: the screen's own edge option
-      // reaches a list first in line, one under wrappers gets it here.
-      topEdge={managed ? (foldedEdge ? 'hard' : 'hidden') : undefined}>
+      // Where the bar switches its own backing, the list's edge is its: hidden, so the system's soft
+      // edge never half-backs the bar; on the folded Duo, where the hard edge IS the backing, that
+      // edge comes and goes with the scroll as the material does elsewhere. The screen's own edge
+      // option reaches a list first in line; one under wrappers gets it here.
+      topEdge={managed ? (foldedEdge && scrolled ? 'hard' : 'hidden') : undefined}>
       {list}
     </ContentScrollAnchor>
   );

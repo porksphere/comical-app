@@ -76,7 +76,7 @@ export function NativeTabHeader({
   const fade = useAnimatedStyle(() => ({ opacity: arrival.value }));
   return (
     <>
-      <Stack.Screen options={{ headerBlurEffect: scrolled ? material : 'none', scrollEdgeEffects: foldedEdge ?? HIDDEN_TOP_EDGE }} />
+      <Stack.Screen options={{ headerBlurEffect: scrolled ? material : 'none', scrollEdgeEffects: HIDDEN_TOP_EDGE }} />
       {NavBarFade ? (
         <NavBarFade
           style={styles.probe}

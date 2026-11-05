@@ -105,7 +105,7 @@ export function TopBar({
     // the probe registers the view there.
     return (
       <>
-        <Stack.Screen options={{ title, headerBlurEffect: scrolled ? material : 'none', scrollEdgeEffects: foldedEdge ?? HIDDEN_TOP_EDGE }} />
+        <Stack.Screen options={{ title, headerBlurEffect: scrolled ? material : 'none', scrollEdgeEffects: HIDDEN_TOP_EDGE }} />
         <Stack.Title asChild>
           <ThemedText numberOfLines={1} style={barTitleStyle}>
             {title}

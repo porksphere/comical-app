@@ -56,7 +56,7 @@ import { useMemo, useRef, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ChipRow } from '@/components/chip';
-import { BAR_SCROLLED_AT, useBarManaged, useReportBarScrolled } from '@/components/bar-scrolled';
+import { BAR_SCROLLED_AT, useBarManaged, useBarScrolled, useReportBarScrolled } from '@/components/bar-scrolled';
 import { useOverlay } from '@/components/overlay/overlay';
 import { MultiSelectPicker, multiSummary } from '@/components/settings/multi-select-row';
 import {
@@ -104,6 +104,7 @@ export function SettingsList({ sections, reselectRoute, refresh }: SettingsListP
   const anchor = useRef<ContentScrollAnchorRef>(null);
   const report = useReportBarScrolled();
   const managed = useBarManaged();
+  const scrolled = useBarScrolled();
   const foldedEdge = useFoldedBarEdge();
   useReselectScrollToTop(reselectRoute, () => void anchor.current?.scrollToTop());
   const form = (
@@ -143,8 +144,8 @@ export function SettingsList({ sections, reselectRoute, refresh }: SettingsListP
       scrolledPast={report ? BAR_SCROLLED_AT : undefined}
       onScrolledPast={report ? (e) => report(e.nativeEvent.past) : undefined}
       // The screen's own edge option never reaches a SwiftUI list: set on the list itself, where
-      // the bar switches its own material.
-      topEdge={managed ? (foldedEdge ? 'hard' : 'hidden') : undefined}>
+      // the bar switches its own backing — see ScreenScrollMarker.
+      topEdge={managed ? (foldedEdge && scrolled ? 'hard' : 'hidden') : undefined}>
       {form}
     </ContentScrollAnchor>
   );
