@@ -12,9 +12,8 @@ import { createContext, use, useEffect, useMemo, useState, type ReactNode } from
  * its SwiftUI one — through the content-scroll-view anchor, which watches the list's offset
  * natively and reports only the crossings. Read by `NativeTabHeader` and `TopBar`, which also
  * say they switch the bar (`useManagesBar`): only then is the list's own edge hidden, so a screen
- * with a bar of its own — a search — keeps the system's edge. The series page's bar switches at
- * its own line, the page's title, and reports that itself (`useManagesBar(true, 'bar')`): the
- * list's edge then follows it, and the anchor reports nothing.
+ * with a bar of its own — a search — keeps the system's edge. The series page's bar backs itself
+ * (`useManagesBar(true, 'bar')`): the list's edge is hidden for it, and the anchor reports nothing.
  */
 export const BAR_SCROLLED_AT = 8;
 
@@ -39,7 +38,7 @@ export function BarScrolledProvider({ children }: { children: ReactNode }) {
 
 /**
  * Said by the bar that switches its backing from `useBarScrolled`, while it is mounted: switched
- * at the list's crossings by default, or at the bar's own line (`'bar'`), which it then reports.
+ * at the list's crossings by default, or a bar that backs itself (`'bar'`), which reports nothing.
  */
 export function useManagesBar(enabled = true, by: Exclude<BarManager, null> = 'list'): void {
   const manage = use(BarScrolledContext)?.manage;

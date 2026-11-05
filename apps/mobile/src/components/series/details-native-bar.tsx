@@ -1,6 +1,7 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { Stack } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { StyleSheet, useWindowDimensions } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   interpolate,
   runOnJS,
@@ -10,7 +11,8 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { useManagesBar, useReportBarScrolled } from '@/components/bar-scrolled';
+import { useManagesBar } from '@/components/bar-scrolled';
+import { useNativeBarOffset } from '@/components/native-bar-edge';
 import { BarContentGap } from '@/constants/theme';
 import { useNativeHeaderHeight } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
@@ -33,12 +35,13 @@ import { NavBarFade } from '../../../modules/nav-bar-fade';
  * The frosted material still switches as an option, once the page's title is past, and only on the
  * way back up (scrolling down the bar is sliding away anyway); `nav-bar-fade` crossfades it. UIKit's
  * own crossfade, a transparent scroll-edge appearance over the frosted standard one, never ran on a
- * device. On the folded Duo there is no material: the backing is the scroll view's hard top edge, as
- * on every page there, but UIKit draws an edge only behind what the bar registers, and a custom
- * title view isn't, so `nav-bar-fade` registers it, folded. The edge itself comes and goes with
- * the title (`bar-scrolled`, the list's anchor crossfading the switch): at rest over the
- * strip a hard edge drew a band behind the bar's empty items, which went as the bar slid away,
- * and a registration dropped at the title cut the backing in one frame, so it stays registered.
+ * device. On the folded Duo there is no material, and the backing is this bar's own view under
+ * the system bar, faded by the scroll exactly as the title is and sliding away with the bar
+ * (`nav-bar-edge`). The hard scroll edge every other page takes there doesn't fit this one: UIKit
+ * ramps an edge at the list's top, and this bar's line is the page's title, deep in the list,
+ * where the edge is at full strength and a switch of it is a cut (`isHidden` doesn't animate;
+ * a crossfade from a snapshot froze the content under it). The list's edge stays hidden here
+ * (`useManagesBar` with no reports).
  *
  * The title is an option change like any other, so it is its own component and a crossing
  * re-renders this much and no more. Options go through react-native-screens' whole header update,
@@ -75,12 +78,9 @@ export function SeriesDetailsNativeBar({
   const foldedEdge = useFoldedBarEdge();
   const barBottom = useNativeHeaderHeight();
   const [pastTitle, setPastTitle] = useState(false);
-  // Folded, the list's edge is this bar's to switch, at the page's title, not at the list's top.
+  // Folded, the list's edge is this bar's, and it keeps it hidden: the backing is its own, below.
   useManagesBar(foldedEdge != null, 'bar');
-  const report = useReportBarScrolled();
-  useEffect(() => {
-    if (foldedEdge) report?.(pastTitle);
-  }, [foldedEdge, pastTitle, report]);
+  const { offset: barOffset, probe: barProbe } = useNativeBarOffset();
   const titled = useSharedValue(false);
   const titleTop = contentTop + BarContentGap - barBottom;
   useAnimatedReaction(
@@ -104,6 +104,16 @@ export function SeriesDetailsNativeBar({
       [0, 1],
       'clamp',
     ),
+  }));
+  // The folded backing: the title's fade, under a bar that may be sliding away.
+  const backingStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollOffset.value,
+      [titleTop, titleTop + Math.max(inlineTitleHeight.value, 1)],
+      [0, 1],
+      'clamp',
+    ),
+    transform: [{ translateY: barOffset.value }],
   }));
   return (
     <>
@@ -130,13 +140,21 @@ export function SeriesDetailsNativeBar({
           {title}
         </Animated.Text>
       </Stack.Title>
-      {NavBarFade ? (
-        <NavBarFade
-          style={styles.probe}
-          pointerEvents="none"
-          edgeBacked={foldedEdge != null}
-          onTrace={traceBar}
-        />
+      {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" onTrace={traceBar} /> : null}
+      {foldedEdge ? (
+        <>
+          {barProbe}
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.backing, { height: barBottom + BACKING_FEATHER }, backingStyle]}>
+            <View style={[styles.backingFill, { height: barBottom, backgroundColor: theme.background }]} />
+            {/* theme.background is 6-digit hex, so an alpha suffix composes. */}
+            <LinearGradient
+              colors={[theme.background, `${theme.background}00`]}
+              style={[styles.backingFeather, { top: barBottom, height: BACKING_FEATHER }]}
+            />
+          </Animated.View>
+        </>
       ) : null}
       {!nativePush ? (
         <Stack.Toolbar placement="left">
@@ -149,6 +167,8 @@ export function SeriesDetailsNativeBar({
 
 // What the bar leaves the title between its leading and trailing items.
 const TITLE_MAX_WIDTH = 0.6;
+// The backing's soft bottom, the hard scroll edge's.
+const BACKING_FEATHER = 16;
 
 // TEMPORARY: the bar's first pop in, traced to Settings > Diagnostics (docs/NATIVE-HACKS.md, item 22).
 function traceBar(e: { nativeEvent: { message: string } }) {
@@ -157,6 +177,10 @@ function traceBar(e: { nativeEvent: { message: string } }) {
 
 const styles = StyleSheet.create({
   probe: { position: 'absolute', width: 0, height: 0 },
+  // Over the details layer (zIndex 2), under the system bar, which is UIKit's above the page.
+  backing: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3 },
+  backingFill: { position: 'absolute', top: 0, left: 0, right: 0 },
+  backingFeather: { position: 'absolute', left: 0, right: 0 },
   // UIKit's inline navigation title: 17pt semibold in the system font.
   title: { fontSize: 17, fontWeight: '600' },
 });

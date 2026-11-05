@@ -224,15 +224,14 @@ the end of this doc is the only guard.
   Confirmed on a device, unfolded.
 - **Folded edge backing:** the folded Duo's bar has no material (`useBarMaterial`); its backing is
   the scroll view's hard top edge. UIKit draws a scroll edge only behind what the bar registers, a
-  text title but not a custom view, so the series bar was bare there. The view adds a
-  `UIScrollEdgeElementContainerInteraction` (iOS 26) to the navigation item's title view, for the
-  page's list (the nearest scroll view at least half the window tall), while `edgeBacked` is on:
-  folded, following the title view as the bar sets it. The edge itself is switched by the list's anchor
-  (`bar-scrolled`: the series bar manages its screen's edge, `'bar'`): react-native-screens' walk
-  never reaches the series list, which mounts after the series loads, and a hard edge at rest drew
-  a band behind the bar's empty items over the strip. The registration stays through the switch:
-  one dropped at the title took the backing with it in a frame. The edge's own switch is a cut too
-  (`isHidden` doesn't animate), so the anchor crossfades it from a snapshot of the band.
+  text title but not a custom view, so the view adds a `UIScrollEdgeElementContainerInteraction`
+  (iOS 26) to the navigation item's title view, for the page's list (the nearest scroll view at
+  least half the window tall), while `edgeBacked` is on: the tabs and the pushed pages, folded,
+  following the title view as the bar sets it. Not the series page: its bar's line is the page's
+  title, deep in the list, where the edge is at full strength and a switch of it is a cut
+  (`isHidden` doesn't animate; a crossfade from a snapshot of the band froze the content under
+  it), so that bar draws a backing of its own, faded by the scroll as its title is and sliding
+  away with the bar through `nav-bar-edge`, with the list's edge hidden.
 - **Temporary trace (Blocker):** the view also reports each switch to Settings > Diagnostics
   (`bar-fade` entries): the bar's height, where its content sits and what's on screen, and the
   animations running, at the switch and 50ms and 350ms after. Remove the `onTrace` event, and the
@@ -253,8 +252,9 @@ the end of this doc is the only guard.
   title sits on screen, through its presentation layer. It reports how far that is above the lowest
   it has been (the rest, forgotten when the bar changes height), and the screen hands that to the
   sticky section header as its `barOffset` (`useNativeBarOffset`, `components/native-bar-edge.tsx`).
-- **Where:** `apps/mobile/modules/nav-bar-edge/`, and the probe in `app/(tabs)/(home)/index.tsx` and
-  `app/(tabs)/library/index.tsx`.
+- **Where:** `apps/mobile/modules/nav-bar-edge/`, and the probe in `app/(tabs)/(home)/index.tsx`,
+  `app/(tabs)/library/index.tsx` and, folded, the series bar (`details-native-bar.tsx`), whose own
+  backing slides away with the bar by it.
 - **Why:** the section label in a tab's bar changed as a heading passed the line where the bar rests.
   The bar slides away with the scroll, so the swap landed under a bar half slid away. iOS bar
   minimization moves the bar's content, not the bar, and reports nothing, so its edge has to be read.

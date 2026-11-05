@@ -31,8 +31,8 @@ final class NavBarFadeView: ExpoView {
   /// Whether the scroll view's top edge effect shows behind the custom title view. UIKit draws a
   /// scroll edge only behind what a bar registers, and it registers a text title but not a custom
   /// view, so the title is registered by hand while this is on. Whether the edge shows at all is
-  /// the edge's own (`content-scroll-view`'s `topEdge`), switched in an animation: a registration
-  /// going takes the backing with it in one frame, so it stays while the edge fades.
+  /// the edge's own (`content-scroll-view`'s `topEdge`); a registration going takes the backing
+  /// with it in one frame, so it stays on for as long as the page may need it.
   var edgeBacked = false {
     didSet {
       if edgeBacked != oldValue {

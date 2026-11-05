@@ -77,10 +77,11 @@ past, on the way back up only, crossfaded by the local module `modules/nav-bar-f
 (`components/series/details-native-bar.tsx`). And the
 folded iPhone Duo, where no bar background reaches the top of the panel: there it has none, and a
 tab's stack and every settings screen take the hard scroll edge instead, a tab root on its list's
-marker too (`useFoldedBarEdge`), and the series details, whose custom title UIKit doesn't back, so
-`nav-bar-fade` registers it with the edge once the page's title is past, and whose edge comes and
-goes with that title (its bar is the screen's `'bar'` manager in `bar-scrolled`): at rest a hard
-edge drew a band behind the bar's empty items. The soft
+marker too (`useFoldedBarEdge`). Not the series details: UIKit ramps an edge at a list's top, and
+that bar's line is the page's title, deep in the list, where a switch of the edge is a cut, so the
+series bar draws a backing of its own under the system bar, faded by the scroll as its title is and
+sliding away with the bar (`nav-bar-edge`), with the list's edge hidden (its bar is the screen's
+`'bar'` manager in `bar-scrolled`). The soft
 edge stays on under the material, which hides it while the bar is there; it backs the status bar
 once the bar has slid away. Nothing
 may be laid in ahead of the list there, so on iOS

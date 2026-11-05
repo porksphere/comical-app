@@ -34,9 +34,6 @@ final class ContentScrollAnchorView: ExpoView {
   private var offsetObservation: NSKeyValueObservation?
   private var past: Bool?
   private var lastOffset: CGFloat?
-  private var appliedTopEdge: String?
-  /// Past the bar's bottom, where the edge feathers out.
-  private static let edgeFeather: CGFloat = 24
   let onScrolledPast = EventDispatcher()
 
   /// Layers on one screen share its controller: only the top one's list is named, and it is named
@@ -133,23 +130,14 @@ final class ContentScrollAnchorView: ExpoView {
   }
 
   /// A switch of the edge is a cut: `isHidden` and `style` don't animate, in an animation block or
-  /// not, and nothing public fades an edge. The folded Duo's hard edge is the bar's backing there,
-  /// and comes and goes with the scroll as the material does elsewhere, so the switch is crossfaded
-  /// by hand: a snapshot of the band the edge draws in, the top of the list down past the bar, is
-  /// laid over the list, the edge switches under it, and the snapshot fades out. The first state
-  /// set is not a switch.
+  /// not, and nothing public fades an edge. It passes where it is made, at a list's top, where
+  /// UIKit ramps the edge from nothing anyway; a bar whose line is deep in its list (the series
+  /// page's) backs itself instead.
   private func applyTopEdge(_ scrollView: UIScrollView) {
     guard #available(iOS 26.0, *), let topEdge else {
       return
     }
     let effect = scrollView.topEdgeEffect
-    let fades = appliedTopEdge != nil && appliedTopEdge != topEdge && scrollView.window != nil
-    let band = CGRect(
-      x: scrollView.bounds.minX, y: scrollView.bounds.minY,
-      width: scrollView.bounds.width, height: edgeBandHeight(of: scrollView))
-    let snapshot = fades
-      ? scrollView.resizableSnapshotView(from: band, afterScreenUpdates: false, withCapInsets: .zero)
-      : nil
     switch topEdge {
     case "hidden":
       effect.isHidden = true
@@ -164,26 +152,6 @@ final class ContentScrollAnchorView: ExpoView {
       effect.isHidden = false
       effect.style = .automatic
     }
-    appliedTopEdge = topEdge
-    guard let snapshot, let host = scrollView.superview else {
-      return
-    }
-    snapshot.frame = host.convert(band, from: scrollView)
-    snapshot.isUserInteractionEnabled = false
-    host.addSubview(snapshot)
-    UIView.animate(withDuration: 0.3, delay: 0, options: [.curveEaseInOut]) {
-      snapshot.alpha = 0
-    } completion: { _ in
-      snapshot.removeFromSuperview()
-    }
-  }
-
-  private func edgeBandHeight(of scrollView: UIScrollView) -> CGFloat {
-    if let bar = owningController()?.navigationController?.navigationBar {
-      let barInList = scrollView.convert(bar.bounds, from: bar)
-      return max(barInList.maxY - scrollView.bounds.minY, 0) + Self.edgeFeather
-    }
-    return scrollView.adjustedContentInset.top + Self.edgeFeather
   }
 
   private func watch(_ scrollView: UIScrollView) {
