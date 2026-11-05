@@ -36,7 +36,7 @@ import { NavBarFade } from '../../../modules/nav-bar-fade';
  * device. On the folded Duo there is no material: the backing is the scroll view's hard top edge, as
  * on every page there, but UIKit draws an edge only behind what the bar registers, and a custom
  * title view isn't, so `nav-bar-fade` registers it, folded. The edge itself comes and goes with
- * the title (`bar-scrolled`, the list's anchor switching it in an animation): at rest over the
+ * the title (`bar-scrolled`, the list's anchor crossfading the switch): at rest over the
  * strip a hard edge drew a band behind the bar's empty items, which went as the bar slid away,
  * and a registration dropped at the title cut the backing in one frame, so it stays registered.
  *

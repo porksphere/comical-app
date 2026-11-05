@@ -231,7 +231,8 @@ the end of this doc is the only guard.
   (`bar-scrolled`: the series bar manages its screen's edge, `'bar'`): react-native-screens' walk
   never reaches the series list, which mounts after the series loads, and a hard edge at rest drew
   a band behind the bar's empty items over the strip. The registration stays through the switch:
-  one dropped at the title took the backing with it in a frame, where the edge's switch animates.
+  one dropped at the title took the backing with it in a frame. The edge's own switch is a cut too
+  (`isHidden` doesn't animate), so the anchor crossfades it from a snapshot of the band.
 - **Temporary trace (Blocker):** the view also reports each switch to Settings > Diagnostics
   (`bar-fade` entries): the bar's height, where its content sits and what's on screen, and the
   animations running, at the switch and 50ms and 350ms after. Remove the `onTrace` event, and the
