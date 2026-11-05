@@ -18,6 +18,7 @@ import { useNativeHeaderHeight } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { HIDDEN_TOP_EDGE, SLIDE_AWAY_BAR, useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
+import { useSeriesFoldedBacking } from '@/lib/series-bar-backing-flag';
 
 import { NavBarFade } from '../../../modules/nav-bar-fade';
 
@@ -41,7 +42,9 @@ import { NavBarFade } from '../../../modules/nav-bar-fade';
  * ramps an edge at the list's top, and this bar's line is the page's title, deep in the list,
  * where the edge is at full strength and a switch of it is a cut (`isHidden` doesn't animate;
  * a crossfade from a snapshot froze the content under it). The list's edge stays hidden here
- * (`useManagesBar` with no reports).
+ * (`useManagesBar` with no reports). THROWAWAY: Settings > Developer switches it back to the
+ * scroll edge, the title registered to it once the page's title is past, for a comparison on a
+ * device (`series-bar-backing-flag`).
  *
  * The title is an option change like any other, so it is its own component and a crossing
  * re-renders this much and no more. Options go through react-native-screens' whole header update,
@@ -78,8 +81,9 @@ export function SeriesDetailsNativeBar({
   const foldedEdge = useFoldedBarEdge();
   const barBottom = useNativeHeaderHeight();
   const [pastTitle, setPastTitle] = useState(false);
+  const ownBacking = useSeriesFoldedBacking() === 'own';
   // Folded, the list's edge is this bar's, and it keeps it hidden: the backing is its own, below.
-  useManagesBar(foldedEdge != null, 'bar');
+  useManagesBar(foldedEdge != null && ownBacking, 'bar');
   const { offset: barOffset, probe: barProbe } = useNativeBarOffset();
   const titled = useSharedValue(false);
   const titleTop = contentTop + BarContentGap - barBottom;
@@ -128,9 +132,9 @@ export function SeriesDetailsNativeBar({
           gestureEnabled: nativePush,
           title,
           unstable_nativeProps: SLIDE_AWAY_BAR,
-          // Folded, the edge is the anchor's to switch (above); a tab's stack would set the hard
+          // Folded, the edge is the anchor's (above), hidden; a tab's stack would set the hard
           // edge on every screen, and the root's series stack sets none.
-          ...(foldedEdge && { scrollEdgeEffects: HIDDEN_TOP_EDGE }),
+          ...(foldedEdge && { scrollEdgeEffects: ownBacking ? HIDDEN_TOP_EDGE : foldedEdge }),
         }}
       />
       <Stack.Title asChild>
@@ -140,8 +144,15 @@ export function SeriesDetailsNativeBar({
           {title}
         </Animated.Text>
       </Stack.Title>
-      {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" onTrace={traceBar} /> : null}
-      {foldedEdge ? (
+      {NavBarFade ? (
+        <NavBarFade
+          style={styles.probe}
+          pointerEvents="none"
+          edgeBacked={foldedEdge != null && !ownBacking && pastTitle}
+          onTrace={traceBar}
+        />
+      ) : null}
+      {foldedEdge && ownBacking ? (
         <>
           {barProbe}
           <Animated.View

@@ -71,6 +71,9 @@ the end of this doc is the only guard.
   `app/bar-test-upstream.tsx`, `app/(tabs)/settings/in-tab/bar-test.tsx`, their registrations in
   `app/_layout.tsx`, and the rows in `app/settings-developer.tsx` and `app/(tabs)/settings/index.tsx`.
 - **Removed by:** deleting them once the slide-away is confirmed on a device.
+- **Also throwaway:** the series bar's folded backing switch in Settings > Developer
+  (`lib/series-bar-backing-flag.ts`, read in `details-native-bar.tsx`): the bar's own view against
+  the scroll edge, for a comparison on a device. The decision retires the flag and the losing path.
 
 ### 3. iOS 27 SDK on a preview runner
 
