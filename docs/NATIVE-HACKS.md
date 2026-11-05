@@ -308,6 +308,13 @@ These use public APIs, but the shape exists only because of a gap somewhere.
 - **Where:** `src/components/bar-extent.tsx`, `src/hooks/use-native-header.ts`.
 - **Why:** the height the stack reports follows the bar out frame by frame, and content padded by it
   rides along under the finger. It relies on UIKit counting a transparent bar in the view's safe area.
+- **The store:** the measure is kept per window size (`comical:barExtents`, persisted), and every
+  screen reads it from its first frame: the tabs all mount at launch, before any bar is measured,
+  and a screen padded by the stack's default (the 44pt bar; the iOS 27 bar is taller) popped down
+  when its own measure landed. A shown screen's measure stands; a hidden one's only if larger.
+- **Temporary trace (Blocker):** each measure goes to Settings > Diagnostics (`bar-extent` entries:
+  window size, shown or hidden, the measure, what was known). Remove once the tabs' first frame is
+  confirmed on a device.
 
 ### 15. Browse backdrop inside the list
 

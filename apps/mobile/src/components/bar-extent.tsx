@@ -1,7 +1,11 @@
+import { use$ } from '@legendapp/state/react';
+import { useIsFocused } from 'expo-router';
 import { createContext, useState, type ReactElement } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaListener } from 'react-native-safe-area-context';
 import { BarScrolledProvider } from '@/components/bar-scrolled';
+import { logDiagnostic } from '@/lib/diagnostics';
+import { persisted$ } from '@/lib/observable';
 
 /**
  * How far down the screen its native bar reaches, status bar included, while the bar slides away
@@ -36,21 +40,24 @@ export function barExtentLayout({ options, children }: LayoutArgs): ReactElement
 }
 
 /**
- * The extent last measured at each window size, to seed the next screen's. Until its own measure
- * lands, a frame or two after it mounts, a screen pads by the stack's default height, the standard
- * 44pt bar, and the iOS 27 bar is taller: the content popped down by the difference on every
- * first visit to a tab, and a list that holds its rows in place over a padding change was left
- * scrolled by that much. Only the first screen after launch waits on the measure now.
+ * The bar's extent at each window size, measured once and kept: a screen is padded by it from its
+ * first frame. Until its own measure lands, a frame or two after it is shown, a screen has only the
+ * stack's default height, the standard 44pt bar, and the iOS 27 bar is taller: the content popped
+ * down by the difference on every first visit to a tab, and a list that holds its rows in place
+ * over a padding change was left scrolled by that much. The tabs all mount at launch, before any
+ * bar is measured, so the store is what a hidden tab takes the measure from. The shown screen's
+ * measure stands; one from a screen that isn't (a tab not yet laid out under its bar) only if it is
+ * larger, since a bar not laid out measures short. Kept across launches for the first screen's sake.
  */
-const measuredExtents = new Map<string, number>();
+const barExtents$ = persisted$<Record<string, number>>('comical:barExtents', {});
 
 function BarExtent({ slides, children }: { slides: boolean; children: ReactElement }) {
   const [measured] = useState(slides);
   const { width, height } = useWindowDimensions();
   const pose = `${width}x${height}`;
-  const [extent, setExtent] = useState<{ pose: string; top: number } | null>(null);
+  const top = use$(barExtents$[pose]) ?? null;
+  const focused = useIsFocused();
   if (!measured) return children;
-  const top = extent?.pose === pose ? extent.top : (measuredExtents.get(pose) ?? null);
   // Beside the page, never around it: UIKit finds the list the bar follows by itself, and on a
   // device one wrapper more around the list was enough to stop the bar sliding.
   return (
@@ -60,8 +67,10 @@ function BarExtent({ slides, children }: { slides: boolean; children: ReactEleme
         pointerEvents="none"
         style={StyleSheet.absoluteFill}
         onChange={({ insets }) => {
-          measuredExtents.set(pose, insets.top);
-          setExtent({ pose, top: insets.top });
+          const known = barExtents$[pose].peek();
+          // TEMPORARY: each measure to Settings > Diagnostics, until the tabs' first frame is confirmed.
+          logDiagnostic('bar-extent', `${pose} ${focused ? 'shown' : 'hidden'}: ${insets.top} (had ${known ?? 'none'})`);
+          if (focused || known == null || insets.top > known) barExtents$[pose].set(insets.top);
         }}
       />
     </BarExtentContext.Provider>
