@@ -35,9 +35,10 @@ import { NavBarFade } from '../../../modules/nav-bar-fade';
  * own crossfade, a transparent scroll-edge appearance over the frosted standard one, never ran on a
  * device. On the folded Duo there is no material: the backing is the scroll view's hard top edge, as
  * on every page there, but UIKit draws an edge only behind what the bar registers, and a custom
- * title view isn't, so `nav-bar-fade` registers it once the page's title is past. The edge itself
- * comes and goes with the title too (`bar-scrolled`, the list's anchor applying it): at rest over
- * the strip a hard edge drew a band behind the bar's empty items, which went as the bar slid away.
+ * title view isn't, so `nav-bar-fade` registers it, folded. The edge itself comes and goes with
+ * the title (`bar-scrolled`, the list's anchor switching it in an animation): at rest over the
+ * strip a hard edge drew a band behind the bar's empty items, which went as the bar slid away,
+ * and a registration dropped at the title cut the backing in one frame, so it stays registered.
  *
  * The title is an option change like any other, so it is its own component and a crossing
  * re-renders this much and no more. Options go through react-native-screens' whole header update,
@@ -133,7 +134,7 @@ export function SeriesDetailsNativeBar({
         <NavBarFade
           style={styles.probe}
           pointerEvents="none"
-          edgeBacked={foldedEdge != null && pastTitle}
+          edgeBacked={foldedEdge != null}
           onTrace={traceBar}
         />
       ) : null}

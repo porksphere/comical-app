@@ -227,10 +227,11 @@ the end of this doc is the only guard.
   text title but not a custom view, so the series bar was bare there. The view adds a
   `UIScrollEdgeElementContainerInteraction` (iOS 26) to the navigation item's title view, for the
   page's list (the nearest scroll view at least half the window tall), while `edgeBacked` is on:
-  folded, once the page's title is past. The edge itself is switched with it, by the list's anchor
+  folded, following the title view as the bar sets it. The edge itself is switched by the list's anchor
   (`bar-scrolled`: the series bar manages its screen's edge, `'bar'`): react-native-screens' walk
   never reaches the series list, which mounts after the series loads, and a hard edge at rest drew
-  a band behind the bar's empty items over the strip.
+  a band behind the bar's empty items over the strip. The registration stays through the switch:
+  one dropped at the title took the backing with it in a frame, where the edge's switch animates.
 - **Temporary trace (Blocker):** the view also reports each switch to Settings > Diagnostics
   (`bar-fade` entries): the bar's height, where its content sits and what's on screen, and the
   animations running, at the switch and 50ms and 350ms after. Remove the `onTrace` event, and the

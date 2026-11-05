@@ -81,7 +81,7 @@ export function NativeTabHeader({
         <NavBarFade
           style={styles.probe}
           pointerEvents="none"
-          edgeBacked={foldedEdge != null && scrolled}
+          edgeBacked={foldedEdge != null}
           // TEMPORARY: each switch to Settings > Diagnostics, until the fade is confirmed on a device.
           onTrace={(e) => logDiagnostic('bar-fade', `${title}: ${e.nativeEvent.message}`)}
         />

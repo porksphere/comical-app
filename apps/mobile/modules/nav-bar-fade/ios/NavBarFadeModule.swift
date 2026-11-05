@@ -30,7 +30,9 @@ final class NavBarFadeView: ExpoView {
 
   /// Whether the scroll view's top edge effect shows behind the custom title view. UIKit draws a
   /// scroll edge only behind what a bar registers, and it registers a text title but not a custom
-  /// view, so the title is registered by hand while this is on.
+  /// view, so the title is registered by hand while this is on. Whether the edge shows at all is
+  /// the edge's own (`content-scroll-view`'s `topEdge`), switched in an animation: a registration
+  /// going takes the backing with it in one frame, so it stays while the edge fades.
   var edgeBacked = false {
     didSet {
       if edgeBacked != oldValue {
@@ -71,6 +73,11 @@ final class NavBarFadeView: ExpoView {
           self?.fade(because: "material \(old) -> \(new)")
         }
       },
+      // The title view arrives with the bar's first update, after this is on the window, and a
+      // header update can set a new one: the registration follows it.
+      item.observe(\.titleView, options: [.new]) { [weak self] _, _ in
+        self?.applyEdgeBacking()
+      },
     ]
   }
 
@@ -94,7 +101,7 @@ final class NavBarFadeView: ExpoView {
       return
     }
     guard let titleView = controller?.navigationItem.titleView else {
-      trace("edge: no title view")
+      // Registered once it is set (the observation above).
       return
     }
     if let current = edgeInteraction, current.view === titleView {
