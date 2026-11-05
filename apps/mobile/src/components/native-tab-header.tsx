@@ -115,7 +115,12 @@ export const barTitleStyle = StyleSheet.create({
 }).title;
 
 const styles = StyleSheet.create({
-  title: barTitleStyle,
+  // Larger than the system's inline title (`barTitleStyle`, which the pushed pages keep): a tab's
+  // title names the view beside rail headings of its own, and read small against them.
+  title: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
   probe: {
     width: 0,
     height: 0,
