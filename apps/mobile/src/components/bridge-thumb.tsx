@@ -41,9 +41,14 @@ export function BridgeThumb({
   fill?: boolean;
   style?: StyleProp<ImageStyle>;
 }) {
-  const [failed, setFailed] = useState(false);
+  // Keyed to the image that failed, not a bare flag: the browse top bar keeps ONE of these and swaps
+  // the bridge under it, and a flag would let one bridge's broken icon turn every bridge after it —
+  // even the aggregate's bundled art — into a letter.
+  const [failedFor, setFailedFor] = useState<unknown>(undefined);
   const boxStyle = fill ? StyleSheet.absoluteFill : { width: size, height: size };
   const imgSource = source ?? (uri ? { uri } : undefined);
+  const imgKey = source ?? uri;
+  const failed = imgKey !== undefined && failedFor === imgKey;
   if (!imgSource || failed) {
     const letter = label.trim().charAt(0).toUpperCase() || '?';
     return (
@@ -57,7 +62,7 @@ export function BridgeThumb({
   // The corner CURVE, not the radius — every caller sets its own radius and keeps it; this only
   // says how that corner is drawn (see `ContinuousCorner`). Here rather than at the six call sites
   // because a bridge's tile should be the same shape wherever it appears.
-  return <Image source={imgSource} style={[boxStyle, ContinuousCorner, style]} onError={() => setFailed(true)} />;
+  return <Image source={imgSource} style={[boxStyle, ContinuousCorner, style]} onError={() => setFailedFor(imgKey)} />;
 }
 
 /** The fallback letter's size against its tile. The letter is the whole of the tile's content, so
