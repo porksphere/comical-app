@@ -1,5 +1,5 @@
 import { createContext, useState, type ReactElement } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaListener } from 'react-native-safe-area-context';
 import { BarScrolledProvider } from '@/components/bar-scrolled';
 
@@ -35,10 +35,22 @@ export function barExtentLayout({ options, children }: LayoutArgs): ReactElement
   );
 }
 
+/**
+ * The extent last measured at each window size, to seed the next screen's. Until its own measure
+ * lands, a frame or two after it mounts, a screen pads by the stack's default height, the standard
+ * 44pt bar, and the iOS 27 bar is taller: the content popped down by the difference on every
+ * first visit to a tab, and a list that holds its rows in place over a padding change was left
+ * scrolled by that much. Only the first screen after launch waits on the measure now.
+ */
+const measuredExtents = new Map<string, number>();
+
 function BarExtent({ slides, children }: { slides: boolean; children: ReactElement }) {
   const [measured] = useState(slides);
-  const [top, setTop] = useState<number | null>(null);
+  const { width, height } = useWindowDimensions();
+  const pose = `${width}x${height}`;
+  const [extent, setExtent] = useState<{ pose: string; top: number } | null>(null);
   if (!measured) return children;
+  const top = extent?.pose === pose ? extent.top : (measuredExtents.get(pose) ?? null);
   // Beside the page, never around it: UIKit finds the list the bar follows by itself, and on a
   // device one wrapper more around the list was enough to stop the bar sliding.
   return (
@@ -47,7 +59,10 @@ function BarExtent({ slides, children }: { slides: boolean; children: ReactEleme
       <SafeAreaListener
         pointerEvents="none"
         style={StyleSheet.absoluteFill}
-        onChange={({ insets }) => setTop(insets.top)}
+        onChange={({ insets }) => {
+          measuredExtents.set(pose, insets.top);
+          setExtent({ pose, top: insets.top });
+        }}
       />
     </BarExtentContext.Provider>
   );
