@@ -1,5 +1,5 @@
 import { use, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Platform, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, type StyleProp, type ViewStyle, View } from 'react-native';
 // Internal (see below): expo-router keeps a zoom source's id in this context and exports neither.
 import { ZoomTransitionSourceContext } from 'expo-router/build/link/zoom/zoom-transition-context.js';
 
@@ -35,7 +35,9 @@ export function ZoomSource({
   return (
     <Link push href={href} asChild testID="zoom-source">
       <LinkTrigger withAppleZoom>
-        <SourceView onId={onId} style={style} />
+        {/* One style object: expo-router's Slot, which `asChild` clones through, rejects an array
+            in development. */}
+        <SourceView onId={onId} style={StyleSheet.flatten(style)} />
       </LinkTrigger>
     </Link>
   );

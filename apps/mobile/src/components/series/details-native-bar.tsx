@@ -101,7 +101,12 @@ export function SeriesDetailsNativeBar({
   );
   const theme = useTheme();
   const { width } = useWindowDimensions();
+  // One style object, the title's own in it: expo-router's Slot, which `Stack.Title asChild`
+  // clones through, rejects an array in development.
   const titleFade = useAnimatedStyle(() => ({
+    ...TITLE_STYLE,
+    color: theme.text,
+    maxWidth: width * TITLE_MAX_WIDTH,
     opacity: interpolate(
       scrollOffset.value,
       [titleTop, titleTop + Math.max(inlineTitleHeight.value, 1)],
@@ -138,9 +143,7 @@ export function SeriesDetailsNativeBar({
         }}
       />
       <Stack.Title asChild>
-        <Animated.Text
-          numberOfLines={1}
-          style={[styles.title, { color: theme.text, maxWidth: width * TITLE_MAX_WIDTH }, titleFade]}>
+        <Animated.Text numberOfLines={1} style={titleFade}>
           {title}
         </Animated.Text>
       </Stack.Title>
@@ -178,6 +181,8 @@ export function SeriesDetailsNativeBar({
 
 // What the bar leaves the title between its leading and trailing items.
 const TITLE_MAX_WIDTH = 0.6;
+// UIKit's inline navigation title: 17pt semibold in the system font.
+const TITLE_STYLE = { fontSize: 17, fontWeight: '600' } as const;
 // The backing's soft bottom, the hard scroll edge's.
 const BACKING_FEATHER = 16;
 
@@ -192,6 +197,4 @@ const styles = StyleSheet.create({
   backing: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3 },
   backingFill: { position: 'absolute', top: 0, left: 0, right: 0 },
   backingFeather: { position: 'absolute', left: 0, right: 0 },
-  // UIKit's inline navigation title: 17pt semibold in the system font.
-  title: { fontSize: 17, fontWeight: '600' },
 });
