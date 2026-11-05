@@ -22,7 +22,7 @@ export type ContentScrollAnchorProps = ViewProps & {
   active?: boolean;
   tabBar?: boolean;
   scrolledPast?: number;
-  onScrolledPast?: (event: { nativeEvent: { past: boolean } }) => void;
+  onScrolledPast?: (event: { nativeEvent: { past: boolean; offset: number } }) => void;
   topEdge?: 'hidden' | 'soft' | 'hard' | 'automatic';
   ref?: Ref<ContentScrollAnchorRef>;
 };

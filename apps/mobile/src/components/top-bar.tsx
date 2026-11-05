@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { type ComponentProps, type ReactNode } from 'react';
+import { useEffect, type ComponentProps, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -75,6 +75,10 @@ export function TopBar({
   const inPane = useInSettingsPane();
   const scrolled = useBarScrolled();
   useManagesBar(NATIVE_HEADER && !inPane);
+  // TEMPORARY: each change to Settings > Diagnostics, until the bar's rest state is confirmed.
+  useEffect(() => {
+    if (NATIVE_HEADER && !inPane) logDiagnostic('bar-fade', `${title}: scrolled ${scrolled}`);
+  }, [title, scrolled, inPane]);
   const material = useBarMaterial();
   const foldedEdge = useFoldedBarEdge();
   // Inside the settings modal the pane has no bar of its own: the modal supplies the header, and a

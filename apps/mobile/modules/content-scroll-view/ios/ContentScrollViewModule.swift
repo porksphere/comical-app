@@ -67,8 +67,9 @@ final class ContentScrollAnchorView: ExpoView {
   }
 
   /// Report whether the list has scrolled past this many points from its rest at the top
-  /// (`onScrolledPast`), for a bar that takes its material only once content is under it. Nil: no
-  /// reports.
+  /// (`onScrolledPast`), for a bar that takes its material only once content is under it, and back
+  /// only once it is within a quarter of that: a crossing is a switch, and a list resting on the
+  /// line would switch on every point. Nil: no reports.
   var threshold: CGFloat? {
     didSet {
       past = nil
@@ -154,12 +155,13 @@ final class ContentScrollAnchorView: ExpoView {
       guard let self else {
         return
       }
-      let next = scrollView.contentOffset.y + scrollView.adjustedContentInset.top > threshold
+      let offset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+      let next = self.past == true ? offset > threshold / 4 : offset > threshold
       if next == self.past {
         return
       }
       self.past = next
-      self.onScrolledPast(["past": next])
+      self.onScrolledPast(["past": next, "offset": offset])
     }
   }
 

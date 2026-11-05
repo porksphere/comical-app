@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -58,6 +58,10 @@ export function NativeTabHeader({
   // the series page's way, with `nav-bar-fade` crossfading the switch — see `bar-scrolled.tsx`.
   const scrolled = useBarScrolled();
   useManagesBar();
+  // TEMPORARY: each change to Settings > Diagnostics, until the bar's rest state is confirmed.
+  useEffect(() => {
+    logDiagnostic('bar-fade', `${title}: scrolled ${scrolled}`);
+  }, [title, scrolled]);
   const material = useBarMaterial();
   const foldedEdge = useFoldedBarEdge();
   const shown = section ?? title;
