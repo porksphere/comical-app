@@ -110,7 +110,17 @@ final class NavBarFadeView: ExpoView {
     interaction.edge = .top
     titleView.addInteraction(interaction)
     edgeInteraction = interaction
-    trace("edge: on")
+    // TEMPORARY: which list, and the state of its top edge, since a hidden edge draws nothing.
+    let edge = scrollView.topEdgeEffect
+    let style: String
+    switch edge.style {
+    case .hard: style = "hard"
+    case .soft: style = "soft"
+    default: style = "automatic"
+    }
+    trace(
+      "edge: on | list \(type(of: scrollView)) h\(Int(scrollView.bounds.height)) edge \(edge.isHidden ? "hidden" : style)"
+        + " offset \(Int(scrollView.contentOffset.y)) inset \(Int(scrollView.adjustedContentInset.top))")
   }
 
   private func removeEdgeInteraction() {
