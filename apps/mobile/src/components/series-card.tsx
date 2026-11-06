@@ -14,6 +14,7 @@ import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
 import { useBookCover } from '@/hooks/use-book-covers';
+import { useCoverShelf } from '@/hooks/use-cover-shelf';
 import { useSavedInLibrary } from '@/hooks/use-library-marker';
 import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
@@ -345,7 +346,17 @@ type ShrinkApi = {
 
 const NOOP_SHRINK: ShrinkApi = {};
 
-function CoverShrink({ entryId, children }: { entryId: string; children: (api: ShrinkApi) => React.ReactNode }) {
+function CoverShrink({
+  entryId,
+  shelf,
+  children,
+}: {
+  entryId: string;
+  /** Covers stand on the row's bottom line (see `SeriesCard`): a cover settling shorter keeps its
+   *  foot and its title where they are, and only its top comes down. */
+  shelf: boolean;
+  children: (api: ShrinkApi) => React.ReactNode;
+}) {
   const coverBoxWidthSV = useSharedValue(0);
   const shrinkProgressSV = useSharedValue(1); // 1 = settled; animates 0 -> 1 per transition
   const shrinkFromScaleSV = useSharedValue(1); // picture's scaleY at progress 0
@@ -377,12 +388,12 @@ function CoverShrink({ entryId, children }: { entryId: string; children: (api: S
         const oldHeight = width / oldAspect;
         const newHeight = width / newAspect;
         shrinkFromScaleSV.set(newHeight > 0 ? oldHeight / newHeight : 1);
-        shrinkFromOffsetSV.set(oldHeight - newHeight);
+        shrinkFromOffsetSV.set(shelf ? 0 : oldHeight - newHeight);
         shrinkProgressSV.set(0);
         shrinkProgressSV.set(withTiming(1, { duration: ASPECT_TRANSITION_MS, easing: Easing.out(Easing.cubic) }));
       }
     },
-    [coverBoxWidthSV, shrinkFromScaleSV, shrinkFromOffsetSV, shrinkProgressSV],
+    [shelf, coverBoxWidthSV, shrinkFromScaleSV, shrinkFromOffsetSV, shrinkProgressSV],
   );
   return <>{children({ pictureStyle, trailingStyle, onCoverLayout, runShrink })}</>;
 }
@@ -437,6 +448,7 @@ export function SeriesCard({
 }) {
   // Perf toggle (Settings → "Lightweight cards") — see lib/perf-flags.
   const lightCards = useLightCards();
+  const shelf = useCoverShelf();
   // Inside the series page's OWN stack (related rails, its nested search results), the card
   // drills the series in as an ordinary pushed card instead of stacking a second transparent
   // modal — see useDrillRelatedSeries. Context + navigation reads only — cards don't re-render
@@ -629,7 +641,9 @@ export function SeriesCard({
   // measuring it (works for both the flex grid and the fixed-width rails). The
   // cover shrinks and this grows by the same amount, so the total never jumps
   // when the cover's real aspect lands from onLoad. The maximum is the ROW's (`rowAspect`) — 2:3
-  // unless the grid sized this row to shorter covers.
+  // unless the grid sized this row to shorter covers. On a shelf (`useCoverShelf`) the same spacer
+  // goes ABOVE the cover instead, so every cover in the row stands on one line with its title in
+  // line under it.
   const fillFactor = 1 / rowAspect - 1 / coverAspect;
 
   // Full-title peek. Web only — on native the full title is shown by the long-press context menu
@@ -749,7 +763,7 @@ export function SeriesCard({
           </ThemedText>
         ) : null}
         {/* Bottom filler — reserves the height a shorter-than-2:3 cover leaves unused (see fillFactor). */}
-        {fillFactor > 0.001 && <View style={[styles.coverFill, { aspectRatio: 1 / fillFactor }]} />}
+        {!shelf && fillFactor > 0.001 && <View style={[styles.coverFill, { aspectRatio: 1 / fillFactor }]} />}
       </>
     );
 
@@ -761,7 +775,7 @@ export function SeriesCard({
             siblings so they never get stretched. Lightweight path (no scaling) skips the wrapper and
             renders the image/skeleton straight into the clip. */}
         {shrink.pictureStyle ? (
-          <Animated.View style={[StyleSheet.absoluteFill, styles.picture, shrink.pictureStyle]}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.picture, shelf && styles.pictureOnShelf, shrink.pictureStyle]}>
             {pictureInner}
           </Animated.View>
         ) : (
@@ -779,7 +793,7 @@ export function SeriesCard({
       </>
     );
 
-    return (
+    const cover = (
       <>
         {book && !coverHidden && <BookShadow aspect={coverAspect} sheets={book.form === 'sheets'} cover={resolvedCover} />}
         {book?.form === 'sheets' && !coverHidden && <BehindPrint aspect={coverAspect} cover={resolvedCover} recyclingKey={entry.id} />}
@@ -795,6 +809,21 @@ export function SeriesCard({
             {coverContents}
           </CoverFrame>,
           coverRadius,
+        )}
+      </>
+    );
+
+    return (
+      <>
+        {shelf ? (
+          <>
+            {fillFactor > 0.001 && <View style={[styles.coverFill, styles.coverFillAbove, { aspectRatio: 1 / fillFactor }]} />}
+            {/* The shadow and the print behind are laid over the cover's own box, which no longer
+                starts at the card's top. */}
+            <View style={styles.coverOnShelf}>{cover}</View>
+          </>
+        ) : (
+          cover
         )}
 
         {/* Trailing group is an Animated.View only when the shrink illusion drives its translateY;
@@ -892,7 +921,7 @@ export function SeriesCard({
             {lightCards ? (
               renderCardBody(NOOP_SHRINK, hidden || zoomFlying, menuOpen)
             ) : (
-              <CoverShrink entryId={entry.id}>
+              <CoverShrink entryId={entry.id} shelf={shelf}>
                 {(shrink) => renderCardBody(shrink, hidden || zoomFlying, menuOpen)}
               </CoverShrink>
             )}
@@ -1014,6 +1043,15 @@ const styles = StyleSheet.create({
     marginTop: -Spacing.two,
     pointerEvents: 'none',
   },
+  // On a shelf the filler is the card's first child, so it is the gap AFTER it that it cancels.
+  coverFillAbove: {
+    marginTop: 0,
+    marginBottom: -Spacing.two,
+  },
+  coverOnShelf: {
+    width: '100%',
+    position: 'relative',
+  },
   coverClip: {
     // Fixed (never transformed) clipping ancestor — the scaled `picture` layer
     // sits inside this, since clipping the SAME element being scaled wouldn't
@@ -1026,6 +1064,10 @@ const styles = StyleSheet.create({
     // Top-aligned scale origin so the shrink illusion (`pictureStyle`) settles
     // toward the bottom, matching `coverBox`'s own top-aligned layout.
     transformOrigin: 'top',
+  },
+  // On a shelf a cover settling shorter keeps its foot, so it settles toward its top.
+  pictureOnShelf: {
+    transformOrigin: 'bottom',
   },
   hiddenCover: {
     alignItems: 'center',

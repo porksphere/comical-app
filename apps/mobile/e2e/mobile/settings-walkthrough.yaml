@@ -68,6 +68,11 @@ appId: com.porksphere.comical
     id: "settings.toggle.book-covers"
 - tapOn:
     id: "settings.toggle.book-covers"
+# Shelf alignment: on and back off, the same way.
+- tapOn:
+    id: "settings.toggle.shelf-alignment"
+- tapOn:
+    id: "settings.toggle.shelf-alignment"
 # Auto-download: per-kind toggles under their own heading. Flipped on and back off, so the
 # walkthrough leaves no download policy behind for the flows after it.
 - scrollUntilVisible:

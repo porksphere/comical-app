@@ -62,6 +62,11 @@ url: http://localhost:4000/comical-app
     id: "settings.toggle.book-covers"
 - tapOn:
     id: "settings.toggle.book-covers"
+# Shelf alignment — see the mobile copy.
+- tapOn:
+    id: "settings.toggle.shelf-alignment"
+- tapOn:
+    id: "settings.toggle.shelf-alignment"
 # Auto-download — see the mobile copy.
 - scrollUntilVisible:
     element:
