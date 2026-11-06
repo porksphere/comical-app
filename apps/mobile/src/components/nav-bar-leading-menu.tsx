@@ -16,10 +16,22 @@ export type LeadingMenuRow = {
 
 export type LeadingMenuSection = { title: string; rows: LeadingMenuRow[] };
 
+/** A tab's menu button: `image` is its `file://` picture, drawn as it is; `symbol` stands in
+ *  without one. */
+export type LeadingMenuProps = {
+  image?: string | undefined;
+  symbol: SystemSymbol;
+  label: string;
+  sections: LeadingMenuSection[];
+};
+
 /**
- * A tab's ONE leading bar button on iOS and its flat menu of inline sections: Browse's bridges and
- * pages, Library's collections and kinds. `image` is the button's `file://` picture, drawn as it
- * is; `symbol` stands in without one.
+ * A tab's ONE menu button in the iOS bar, at the trailing edge beside the search, and its flat
+ * menu of inline sections: Browse's bridges and pages, Library's collections and kinds. Two
+ * parts, since a screen's trailing items all go in ONE `Stack.Toolbar`: expo-router keeps each
+ * toolbar's items as one option, and the last toolbar rendered replaces the others' outright.
+ * `navBarLeadingMenuItem` is the item for that toolbar, a direct child, as the toolbar reads the
+ * element tree and sees nothing through a component; `NavBarLeadingMenu` is the view beside it.
  *
  * react-native-screens replaces every bar item, unanimated, whenever the header config changes at
  * all, so a menu kept in the config, whose pick changes the button's picture and the rows'
@@ -28,42 +40,37 @@ export type LeadingMenuSection = { title: string; rows: LeadingMenuRow[] };
  * where it can reach the screen) sets the live picture, label and menu on that item in place.
  * Without the module the menu lives in the config, as it did.
  */
-export function NavBarLeadingMenu({
-  image,
-  symbol,
-  label,
-  sections,
-}: {
-  image?: string | undefined;
-  symbol: SystemSymbol;
-  label: string;
-  sections: LeadingMenuSection[];
-}) {
-  if (!NavBarLeading) {
-    return (
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu
-          icon={image ? fileIcon(image) : symbol}
-          iconRenderingMode={image ? 'original' : 'template'}
-          accessibilityLabel={label}>
-          {sections.map((section) => (
-            <Stack.Toolbar.Menu key={section.title} inline title={section.title}>
-              {section.rows.map((row) => (
-                <Stack.Toolbar.MenuAction
-                  key={row.id}
-                  isOn={row.on ?? false}
-                  {...(row.image ? { icon: fileIcon(row.image), iconRenderingMode: 'original' as const } : {})}
-                  {...(!row.image && row.symbol ? { icon: row.symbol } : {})}
-                  onPress={row.onPress}>
-                  {row.title}
-                </Stack.Toolbar.MenuAction>
-              ))}
-            </Stack.Toolbar.Menu>
+export function navBarLeadingMenuItem({ image, symbol, label, sections }: LeadingMenuProps) {
+  if (NavBarLeading) {
+    return <Stack.Toolbar.Menu icon="circle" accessibilityLabel={PLACEHOLDER_LABEL} />;
+  }
+  return (
+    <Stack.Toolbar.Menu
+      icon={image ? fileIcon(image) : symbol}
+      iconRenderingMode={image ? 'original' : 'template'}
+      accessibilityLabel={label}>
+      {sections.map((section) => (
+        <Stack.Toolbar.Menu key={section.title} inline title={section.title}>
+          {section.rows.map((row) => (
+            <Stack.Toolbar.MenuAction
+              key={row.id}
+              isOn={row.on ?? false}
+              {...(row.image ? { icon: fileIcon(row.image), iconRenderingMode: 'original' as const } : {})}
+              {...(!row.image && row.symbol ? { icon: row.symbol } : {})}
+              onPress={row.onPress}>
+              {row.title}
+            </Stack.Toolbar.MenuAction>
           ))}
         </Stack.Toolbar.Menu>
-      </Stack.Toolbar>
-    );
-  }
+      ))}
+    </Stack.Toolbar.Menu>
+  );
+}
+
+/** The module's view for the item `navBarLeadingMenuItem` put in the toolbar; nothing without
+ *  the module, where the item holds the menu itself. */
+export function NavBarLeadingMenu({ image, symbol, label, sections }: LeadingMenuProps) {
+  if (!NavBarLeading) return null;
   const native: NavBarLeadingSection[] = sections.map((section, i) => ({
     title: section.title,
     rows: section.rows.map((row) => ({
@@ -81,22 +88,22 @@ export function NavBarLeadingMenu({
     sections[Number(id.slice(0, cut))]?.rows.find((row) => row.id === id.slice(cut + 1))?.onPress();
   };
   return (
-    <>
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon="circle" accessibilityLabel="Menu" />
-      </Stack.Toolbar>
-      <NavBarLeading
-        {...(image ? { image } : {})}
-        symbol={symbol}
-        label={label}
-        sections={native}
-        onSelect={onSelect}
-        style={styles.pin}
-        pointerEvents="none"
-      />
-    </>
+    <NavBarLeading
+      placeholder={PLACEHOLDER_LABEL}
+      {...(image ? { image } : {})}
+      symbol={symbol}
+      label={label}
+      sections={native}
+      onSelect={onSelect}
+      style={styles.pin}
+      pointerEvents="none"
+    />
   );
 }
+
+// What the module finds its item by among the trailing ones, until it has claimed it; the sort
+// menu and the search sit there too.
+const PLACEHOLDER_LABEL = 'Menu';
 
 /** A thumb file as a bar image at the screen's scale, so the bitmap rendered for its point size
  *  draws at that size. */

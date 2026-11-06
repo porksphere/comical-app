@@ -35,6 +35,8 @@ export type NavBarLeadingSection = { title: string; rows: NavBarLeadingRow[] };
 export type NavBarLeadingProps = ViewProps & {
   /** The `file://` picture of the button, drawn as it is; `symbol` stands in without one. */
   image?: string;
+  /** The placeholder item's accessibility label, which the module finds it by among the trailing items. */
+  placeholder: string;
   symbol: string;
   /** The button's name for assistive tech. */
   label: string;

@@ -162,7 +162,7 @@ rows' checks popped the whole bar. Both render `NavBarLeadingMenu`
 (`components/nav-bar-leading-menu.tsx`), which gives the config a placeholder that never
 changes and hands the live picture, label and menu (inline sections of rows) to the local
 module `apps/mobile/modules/nav-bar-leading`, a zero-size view in the page that sets them on
-that item in place (the first of the trailing items), and again whenever the items are rebuilt,
+that item in place (found among the trailing items by the placeholder's label), and again whenever the items are rebuilt,
 as they are on every return to the screen. It decodes the files itself: through React Native's loader the bar reads one off
 the main thread, uncached, so the button was blank for the first part of every pop back, and a
 menu row's never showed, landing after the menu was built (a bar item keeps a copy of its
@@ -263,7 +263,10 @@ Secondary controls leave the title: Library's filter/sort share one trailing `�
 the floating tab bar. The native toolbar
 only reads `Stack.Toolbar.*` elements that are its DIRECT children — a component wrapping one is
 invisible to it — so shared menus are builder FUNCTIONS returning the element (`libraryFilterMenu`,
-`librarySortMenu`, `collectedSortMenu`), one toolbar component per kind. `useNativeHeaderHeight()`
+`librarySortMenu`, `collectedSortMenu`), one toolbar component per kind, and a screen's trailing
+items all go in ONE `Stack.Toolbar`: expo-router keeps each toolbar's items as one option, and a
+second trailing toolbar replaces the first's items outright (`navBarLeadingMenuItem` is the tab
+menu's item for that toolbar, `NavBarLeadingMenu` the module's view beside it). `useNativeHeaderHeight()`
 reports the RESTING height — the stack reports the sliding bar's height as it goes, but the content
 pads once, by how far the bar reaches at rest. Each screen whose bar slides measures that itself
 (`components/bar-extent.tsx`, the stacks' `screenLayout`: the screen's own safe area, which holds

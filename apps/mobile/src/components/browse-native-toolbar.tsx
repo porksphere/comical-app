@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 
-import { NavBarLeadingMenu } from '@/components/nav-bar-leading-menu';
+import { type LeadingMenuProps, NavBarLeadingMenu, navBarLeadingMenuItem } from '@/components/nav-bar-leading-menu';
 import type { PageOption } from '@/data/browse-page';
 import type { Bridge } from '@/data/types';
 import { initialSymbol } from '@/lib/initial-symbol';
@@ -73,17 +73,24 @@ export function BrowseNativeToolbar({
       onPress: () => onSelectBridge(b.id),
     })),
   };
+  const menu: LeadingMenuProps = {
+    image: bridgeId ? circles[bridgeId] : undefined,
+    symbol: initialSymbol(current?.name ?? '', 'circle'),
+    label: current ? `${current.name}, bridge and page` : 'Bridge and page',
+    sections: withBridges ? [bridgeSection, pageSection] : [pageSection],
+  };
+  // One toolbar: a second trailing toolbar replaces the first's items. The bar lists its trailing
+  // items from the edge in, so the last here is at the edge: the search, with the menu inward of
+  // it. The fixed space, even of no width, is where UIKit splits one placement's shared glass
+  // into two groups: the menu in its own capsule, as an account button is in Apple's bars.
   return (
     <>
-      <NavBarLeadingMenu
-        image={bridgeId ? circles[bridgeId] : undefined}
-        symbol={initialSymbol(current?.name ?? '', 'circle')}
-        label={current ? `${current.name}, bridge and page` : 'Bridge and page'}
-        sections={withBridges ? [bridgeSection, pageSection] : [pageSection]}
-      />
       <Stack.Toolbar placement="right">
+        {navBarLeadingMenuItem(menu)}
+        <Stack.Toolbar.Spacer width={0} />
         <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={onSearch} />
       </Stack.Toolbar>
+      <NavBarLeadingMenu {...menu} />
     </>
   );
 }

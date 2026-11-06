@@ -23,6 +23,9 @@ public class NavBarLeadingModule: Module {
       Prop("image") { (view: NavBarLeadingView, uri: String?) in
         view.imageURI = uri
       }
+      Prop("placeholder") { (view: NavBarLeadingView, placeholder: String) in
+        view.placeholder = placeholder
+      }
       Prop("symbol") { (view: NavBarLeadingView, symbol: String) in
         view.symbol = symbol
       }
@@ -144,10 +147,17 @@ final class NavBarLeadingView: ExpoView {
     }
   }
 
+  /// The placeholder's label, which finds it among the trailing items (the search and a screen's
+  /// own menus sit there too) until it is claimed and relabelled; a header update rebuilds them.
+  var placeholder = ""
+  private weak var claimed: UIBarButtonItem?
+
   private func apply() {
-    guard let leading = navigationItem?.rightBarButtonItems?.first else {
+    guard let items = navigationItem?.rightBarButtonItems,
+          let leading = items.first(where: { $0 === claimed || $0.accessibilityLabel == placeholder }) else {
       return
     }
+    claimed = leading
     if let image, leading.image !== image {
       leading.image = image
     }

@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LibraryCollectionSelector, LibraryKindSelector } from '@/components/library-collection-selector';
 import type { LibraryGridChrome } from '@/components/library/library-listing';
-import { LibraryCollectionMenu, LibraryNativeToolbar } from '@/components/library/library-native-toolbar';
+import { LibraryNativeToolbar } from '@/components/library/library-native-toolbar';
 import { LibrarySavedControls, LibrarySavedView } from '@/components/library/library-saved-view';
 import { LibrarySeriesControls, LibrarySeriesView } from '@/components/library/library-series-view';
 import { type TabFilter, TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
@@ -214,8 +214,7 @@ function LibraryNativeHeader({
   return (
     <>
       <NativeTabHeader filter={filter} placeholder="Filter library…" />
-      <LibraryCollectionMenu collection={collection} collections={collections} kind={kind} kinds={kinds} railNav={railNav} />
-      <LibraryNativeToolbar collection={collection} kind={kind} />
+      <LibraryNativeToolbar collection={collection} collections={collections} kind={kind} kinds={kinds} railNav={railNav} />
     </>
   );
 }
