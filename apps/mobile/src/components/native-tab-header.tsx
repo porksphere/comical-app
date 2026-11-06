@@ -1,25 +1,42 @@
 import { Stack } from 'expo-router';
 import { StyleSheet } from 'react-native';
 
+import { useHoldAction } from '@/components/hold-action-target';
 import type { TabFilter } from '@/components/tab-filter';
 import { HIDDEN_TOP_EDGE } from '@/lib/native-bar';
+import { NavBarHold } from '../../modules/nav-bar-hold';
+import { NavBarLargeTitle } from '../../modules/nav-bar-large-title';
 
 /**
- * The iOS native navigation bar for a tab screen: no title and no material, only its items, the
- * leading menu and the filter as the system search item, floating over the page the way an iOS 26
- * bar does. The tab's title is at the top of its list (`TabLargeTitle`), scrolling away with the
- * content. The bar slides away as the list scrolls down and back as it scrolls up (iOS 27 bar
- * minimization, `SLIDE_AWAY_BAR` in lib/native-bar). Rendered INSTEAD of TabTitleBar when
- * NATIVE_HEADER — it draws nothing itself, it only sets the screen's header options.
+ * The iOS native navigation bar for a tab screen, Photos' tab bar: the system large title on
+ * the bar's own row at the leading edge, its items at the trailing edge, bare over the top of
+ * the page and over the frosted material once content is under it (the bar's scroll-edge
+ * appearance against its standard one, switched by UIKit on the list the screen hands it). The
+ * whole bar slides away as the list scrolls down and comes back, title and material together, as
+ * soon as it scrolls up (iOS 27 bar minimization, `SLIDE_AWAY_BAR`). Rendered INSTEAD of
+ * TabTitleBar when NATIVE_HEADER — it draws nothing itself, it only sets the screen's header
+ * options and places two zero-size views.
+ *
+ * The title is UIKit's large title in its `inline` mode (the local `nav-bar-large-title` module;
+ * react-native-screens only knows `always`, a row of its own under the items that collapses into
+ * the inline title on scroll), so it never collapses and the bar keeps one height. The system's
+ * own soft scroll edge is hidden: the material is the backing.
+ *
+ * The title is the screen's NSFW hold target as well: UIKit's text, with nothing of ours to take
+ * the gesture, so the local `nav-bar-hold` module reads the bar's touches on it and reports the
+ * press and its end to the same ramped hold the custom bars' marks run.
  *
  * The search bar is the integrated-button placement: a magnifier among the trailing items that
  * expands into the field on tap (iOS 26; an inline field under the title before that). Cancel
  * clears the query, which is what closing the custom field does too.
  */
-export function NativeTabHeader({ filter, placeholder }: { filter?: TabFilter; placeholder?: string }) {
+export function NativeTabHeader({ title, filter, placeholder }: { title: string; filter?: TabFilter; placeholder?: string }) {
+  const hold = useHoldAction();
   return (
     <>
-      <Stack.Screen options={{ title: '', headerBlurEffect: 'none', scrollEdgeEffects: HIDDEN_TOP_EDGE }} />
+      <Stack.Screen
+        options={{ title, headerLargeTitleEnabled: true, headerLargeStyle: BARE_AT_TOP, scrollEdgeEffects: HIDDEN_TOP_EDGE }}
+      />
       {filter ? (
         <Stack.SearchBar
           placeholder={placeholder}
@@ -28,9 +45,21 @@ export function NativeTabHeader({ filter, placeholder }: { filter?: TabFilter; p
           onCancelButtonPress={filter.close}
         />
       ) : null}
+      {NavBarLargeTitle ? <NavBarLargeTitle mode="inline" style={styles.pin} pointerEvents="none" /> : null}
+      {NavBarHold && hold.enabled ? (
+        <NavBarHold
+          style={styles.pin}
+          pointerEvents="none"
+          onHold={(e) => (e.nativeEvent.phase === 'begin' ? hold.onPressIn() : hold.onPressOut())}
+        />
+      ) : null}
     </>
   );
 }
+
+// A transparent large-title background is the bar's scroll-edge appearance with no backing at
+// all: bare at the top of the list, the standard appearance's material once scrolled.
+const BARE_AT_TOP = { backgroundColor: 'transparent' } as const;
 
 /** UIKit's inline navigation title: 17pt semibold in the system font, for a custom title view
  *  that is to be indistinguishable from the system's at rest. */
@@ -40,3 +69,7 @@ export const barTitleStyle = StyleSheet.create({
     fontWeight: '600',
   },
 }).title;
+
+const styles = StyleSheet.create({
+  pin: { position: 'absolute', width: 0, height: 0 },
+});

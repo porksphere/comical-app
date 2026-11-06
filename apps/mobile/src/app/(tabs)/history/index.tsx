@@ -10,7 +10,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TrashIcon } from '@/components/icons/ui-icons';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { NativeTabHeader } from '@/components/native-tab-header';
-import { TabLargeTitle } from '@/components/tab-large-title';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
@@ -254,9 +253,8 @@ export default function HistoryScreen() {
         </ScreenScrollMarker>
       )}
 
-      <TabLargeTitle title="History" holdTestID="history.nsfw-hold" />
       {NATIVE_HEADER ? (
-        <NativeTabHeader filter={filter} placeholder="Filter history…" />
+        <NativeTabHeader title="History" filter={filter} placeholder="Filter history…" />
       ) : (
         <TabTitleBar
           title="History"

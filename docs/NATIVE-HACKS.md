@@ -30,6 +30,8 @@ the end of this doc is the only guard.
 | 7 | `system-context-menu` | Custom module, touch handler reach | Decide | [ ] |
 | 8 | `content-scroll-view` and `ScreenScrollMarker` | Public API, undocumented reason | Decide | [ ] |
 | 9 | `HeaderHeightContext` deep import | Package internals | Keep | [ ] |
+| 24 | `nav-bar-large-title` | Sets a library-owned navigation item's property | Decide | [ ] |
+| 25 | `nav-bar-hold` | Reads the bar's touches, finds the title's label by its text | Decide | [ ] |
 | 10 | `unstable_nativeProps` | Unstable API | Keep | [ ] |
 | 11 | `menu-anchor` | Invisible control over a React Native row | Keep | [ ] |
 | 12 | `shaped-image` and `menu-thumb-files` | Bitmaps baked to shape | Keep | [ ] |
@@ -114,7 +116,8 @@ the end of this doc is the only guard.
 
 - **What:** a zero-size view that finds the screen's `UINavigationItem` by walking the responder chain,
   observes `rightBarButtonItems` with KVO, and sets the picture, label and menu directly on an item
-  react-native-screens created (the first trailing item, beside the search).
+  react-native-screens created (a placeholder among the trailing items, found by its accessibility
+  label).
 - **Where:** `apps/mobile/modules/nav-bar-leading/ios/NavBarLeadingModule.swift`,
   `src/components/nav-bar-leading-menu.tsx`.
 - **Why:** three react-native-screens behaviours together.
@@ -122,8 +125,8 @@ the end of this doc is the only guard.
     bar.
   - Its image load is asynchronous and uncached, so the button was blank through a pop.
   - A bar item copies its menu, so async menu images never arrive.
-- **Risk:** this mutates an object a library owns. It relies on the library putting a placeholder at
-  `leftBarButtonItems.first` and on KVO firing when it rebuilds.
+- **Risk:** this mutates an object a library owns. It relies on the library keeping the
+  placeholder's accessibility label on the item it builds and on KVO firing when it rebuilds.
 - **How it fails:** silent. A blank or wrong leading button, or a menu with no rows.
 - **Removed by:** react-native-screens updating items in place and loading images synchronously. Worth
   filing. Not filed.
@@ -251,9 +254,36 @@ the end of this doc is the only guard.
 ### 23. `nav-bar-edge`
 
 - **Removed.** It read the bar's slide off its layers once a frame so a section's label could take
-  the bar's title at the bar's edge. The tabs' bars hold no title now, and the label is gone with it.
-  The tab's title is `components/tab-large-title.tsx`, on the bar's row, whose extent the
-  content-scroll-view anchor reports (item 8).
+  the bar's title at the bar's edge. The label is gone; the tab's title is UIKit's large title in
+  the bar (item 24).
+
+### 24. `nav-bar-large-title`
+
+- **What:** a zero-size view that finds the screen's `UINavigationItem` by walking the responder
+  chain and sets `largeTitleDisplayMode = .inline` (the large title on the bar's row beside the
+  items, never collapsing: Photos' tab bars), observing the property with KVO so the mode holds
+  when react-native-screens sets `.always` back on each header update.
+- **Where:** `apps/mobile/modules/nav-bar-large-title/ios/NavBarLargeTitleModule.swift`,
+  `src/components/native-tab-header.tsx`.
+- **Why:** react-native-screens maps `largeTitle` to `.always` or `.never` only.
+- **Risk:** it mutates an object the library owns, inside the library's own update.
+- **How it fails:** silent. If the KVO stops firing the tabs show the library's `.always` large
+  title, a row under the items that collapses on scroll, and the content's padding is measured
+  from that bar instead.
+- **Removed by:** react-native-screens exposing the display mode.
+
+### 25. `nav-bar-hold`
+
+- **What:** a zero-size view that attaches a non-cancelling press recognizer to the navigation
+  controller's view and takes only touches on the bar's largest label showing the screen's title,
+  reporting the press and its end for the NSFW hold.
+- **Where:** `apps/mobile/modules/nav-bar-hold/ios/NavBarHoldModule.swift`,
+  `src/components/native-tab-header.tsx`.
+- **Why:** the large title is UIKit's text; nothing of the app's is under the touch.
+- **Risk:** it finds the title by walking the bar's subviews for a `UILabel` with the title's
+  text, which is public API resting on the bar's internal structure.
+- **How it fails:** silent: the hold on the title does nothing.
+- **Removed by:** a hold target of our own in the bar, which iOS 26 bars don't take bare.
 
 ## Shaped workarounds
 

@@ -17,7 +17,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { logDiagnostic } from '@/lib/diagnostics';
-import { HIDDEN_TOP_EDGE, useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
+import { HIDDEN_TOP_EDGE, useBarMaterial } from '@/lib/native-bar';
 import { useWindowControlsClearance } from '@/lib/window-controls';
 
 import { NavBarFade } from '../../modules/nav-bar-fade';
@@ -80,7 +80,6 @@ export function TopBar({
     if (NATIVE_HEADER && !inPane) logDiagnostic('bar-fade', `${title}: scrolled ${scrolled}`);
   }, [title, scrolled, inPane]);
   const material = useBarMaterial();
-  const foldedEdge = useFoldedBarEdge();
   // Inside the settings modal the pane has no bar of its own: the modal supplies the header, and a
   // back button here would point at a stack this pane isn't on. The trailing actions still have to
   // land somewhere, so they go into that header.
@@ -115,7 +114,6 @@ export function TopBar({
           <NavBarFade
             style={styles.probe}
             pointerEvents="none"
-            edgeBacked={foldedEdge != null}
             // TEMPORARY: each switch to Settings > Diagnostics, until the fade is confirmed on a device.
             onTrace={(e) => logDiagnostic('bar-fade', `${title}: ${e.nativeEvent.message}`)}
           />

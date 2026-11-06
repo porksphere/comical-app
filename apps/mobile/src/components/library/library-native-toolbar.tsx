@@ -103,9 +103,10 @@ const KIND_SYMBOLS: Record<ItemKind, 'books.vertical' | 'book' | 'photo'> = {
 
 /**
  * The Library's items in the iOS navigation bar, ONE trailing toolbar (a second trailing toolbar
- * replaces the first's items outright): the collection menu in its own capsule, then the
- * arranging controls as one `⋯` menu at the edge beside the search (the bar lists its trailing
- * items from the edge in, so the menu comes FIRST here), as
+ * replaces the first's items outright): the collection menu and the arranging controls, one `⋯`
+ * menu, in one glass group, what the tab shows and how it is arranged, with the system search
+ * item in a group of its own at the edge (the bar lists its trailing items from the edge in, so
+ * the menu comes FIRST here), as
  * Files and Notes keep theirs: Filter and Sort as submenus (each keeping its own icon), the same
  * axes the custom bar keeps beside its title.
  *
@@ -136,9 +137,7 @@ function SeriesToolbar({ collection, menu }: { collection: string | null; menu: 
   return (
     <>
       <Stack.Toolbar placement="right">
-        {/* The fixed space splits the shared glass: the menu in its own capsule (browse-native-toolbar). */}
         {menu ? navBarLeadingMenuItem(menu) : null}
-        {menu ? <Stack.Toolbar.Spacer width={0} /> : null}
         <Stack.Toolbar.Menu {...arrangeMenu(libraryFilterNarrowing({ withShow: true, ...filterState }))}>
           {libraryFilterMenu({ withShow: true, ...filterState })}
           {librarySortMenu({ value: sort, onChange: setSort, grouping, onGroupingChange: setGrouping })}
@@ -165,7 +164,6 @@ function SavedToolbar({
     <>
       <Stack.Toolbar placement="right">
         {menu ? navBarLeadingMenuItem(menu) : null}
-        {menu ? <Stack.Toolbar.Spacer width={0} /> : null}
         <Stack.Toolbar.Menu {...arrangeMenu(libraryFilterNarrowing({ withShow: false, ...filterState }))}>
           {libraryFilterMenu({ withShow: false, ...filterState })}
           {collectedSortMenu({ value: view, onChange: setView })}

@@ -56,7 +56,7 @@ import { useMemo, useRef, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ChipRow } from '@/components/chip';
-import { BAR_SCROLLED_AT, useBarManaged, useBarScrolled, useReportBarRow, useReportBarScrolled } from '@/components/bar-scrolled';
+import { BAR_SCROLLED_AT, useBarManaged, useReportBarScrolled } from '@/components/bar-scrolled';
 import { useOverlay } from '@/components/overlay/overlay';
 import { MultiSelectPicker, multiSummary } from '@/components/settings/multi-select-row';
 import {
@@ -73,7 +73,6 @@ import { useReselectScrollToTop } from '@/hooks/use-scroll-to-top-on-reselect';
 import { SettingsCardInset, Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { MENU_THUMB_RADIUS, useMenuThumbFiles } from '@/lib/menu-thumb-files';
-import { useFoldedBarEdge } from '@/lib/native-bar';
 import { testId } from '@/lib/test-id';
 
 import { ContentScrollAnchor, type ContentScrollAnchorRef } from '../../../modules/content-scroll-view';
@@ -103,10 +102,7 @@ export function SettingsList({ sections, reselectRoute, refresh }: SettingsListP
   const theme = useTheme();
   const anchor = useRef<ContentScrollAnchorRef>(null);
   const report = useReportBarScrolled();
-  const reportRow = useReportBarRow();
   const managed = useBarManaged();
-  const scrolled = useBarScrolled();
-  const foldedEdge = useFoldedBarEdge();
   useReselectScrollToTop(reselectRoute, () => void anchor.current?.scrollToTop());
   const form = (
     <Host style={styles.fill} colorScheme={scheme} seedColor={theme.accent} useViewportSizeMeasurement>
@@ -128,7 +124,7 @@ export function SettingsList({ sections, reselectRoute, refresh }: SettingsListP
                 key={section.title ?? i}
                 title={section.title}
                 footer={section.footer ? <Text>{section.footer}</Text> : undefined}
-                modifiers={[listRowBackground(section.plain ? 'transparent' : theme.backgroundElement)]}>
+                modifiers={[listRowBackground(theme.backgroundElement)]}>
                 <Rows section={section} />
               </Section>
             ),
@@ -142,13 +138,11 @@ export function SettingsList({ sections, reselectRoute, refresh }: SettingsListP
       ref={anchor}
       style={styles.fill}
       tabBar={!!reselectRoute}
-      scrolledPast={report && (managed === 'list' || managed === 'heading') ? BAR_SCROLLED_AT : undefined}
-      scrolledUpOnly={managed !== 'heading'}
-      onScrolledPast={report && (managed === 'list' || managed === 'heading') ? (e) => report(e.nativeEvent.past) : undefined}
-      onBarFrame={reportRow ? (e) => reportRow(e.nativeEvent) : undefined}
+      scrolledPast={report && managed === 'list' ? BAR_SCROLLED_AT : undefined}
+      onScrolledPast={report && managed === 'list' ? (e) => report(e.nativeEvent.past) : undefined}
       // The screen's own edge option never reaches a SwiftUI list: set on the list itself, where
       // the bar switches its own backing — see ScreenScrollMarker.
-      topEdge={managed ? (foldedEdge && scrolled ? 'hard' : 'hidden') : undefined}>
+      topEdge={managed ? 'hidden' : undefined}>
       {form}
     </ContentScrollAnchor>
   );

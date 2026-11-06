@@ -23,10 +23,6 @@ export type ContentScrollAnchorProps = ViewProps & {
   tabBar?: boolean;
   scrolledPast?: number;
   onScrolledPast?: (event: { nativeEvent: { past: boolean; offset: number } }) => void;
-  /** Whether the crossing counts only on the way back up (the default) or either way. */
-  scrolledUpOnly?: boolean;
-  /** The navigation bar's frame in the window, when the list is named and as the bar's height changes. */
-  onBarFrame?: (event: { nativeEvent: { top: number; height: number } }) => void;
   topEdge?: 'hidden' | 'soft' | 'hard' | 'automatic';
   ref?: Ref<ContentScrollAnchorRef>;
 };

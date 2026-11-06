@@ -67,13 +67,16 @@ is hidden on those screens (`HIDDEN_TOP_EDGE`): UIKit fades it in behind the bar
 content slides under, a half-backed bar for the first points, and cuts it the instant the list is
 back at the top. A pushed page's title is a custom title view (`barTitleStyle`), centred by UIKit,
 where a plain-text title sat at the leading edge; a text title is also what UIKit registers with
-that edge, which drew it behind the title. The tabs' bars hold no title and never take material:
-their items float over the page, as an iOS 26 bar's do, and the tab's title is one component laid
-over the screen on the bar's row (`components/tab-large-title.tsx`), 28pt at the leading edge,
-centred on the row by its measured line metrics, rising, fading and blurring away on a timer at the
-list's crossing, either way (`'heading'` in `bar-scrolled`), back at the top; that row is the
-bar's content extent, which the anchor reports (`useBarRow`), since the window's top inset is 0
-on the folded Duo while the bar's content reaches the top. The series details' bar: bare over the
+that edge, which drew it behind the title. The tabs' bars are Photos' tab bars: UIKit's
+large title on the bar's own row at the leading edge, in its `inline` display mode (the local
+module `modules/nav-bar-large-title`, since react-native-screens sets only `always`, a row of its
+own under the items that collapses into the inline title on scroll), never collapsing; the items
+at the trailing edge; bare over the top of the page (a transparent large-title background, the
+bar's scroll-edge appearance) and the material once content is under it (the standard
+appearance), switched by UIKit on the list the screen hands it; and the whole bar, title and
+material, sliding away on a scroll down and back on a scroll up (`NativeTabHeader`). The system
+soft edge is hidden there; the material is the backing. The content pads by the bar's resting
+extent as before (`bar-extent`), the title's row included. The series details' bar: bare over the
 strip, the series' title a custom title view always in the bar that fades in, centred, with the
 scroll as the page's own title (the tabs' heading metrics) goes under it (never an option: UIKit
 draws a blank or whitespace text title as quotation marks, and where the back button sits in the
@@ -123,7 +126,7 @@ the root stack and react-native-screens looks no further than the tab bar contro
 that is not full screen. Elsewhere it is expo-status-bar's.
 
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds the
-tab's menu and the search; the title is the page's (`TabLargeTitle`, above). The BAR slides away
+tab's large title, its menu and the search (`NativeTabHeader`, above). The BAR slides away
 as the content scrolls down and back as it scrolls up: iOS 27's bar
 minimization, the way Settings' own pages behave, asked for on every tab and pushed bar
 `SLIDE_AWAY_BAR` in `lib/native-bar.ts`, react-native-screens' header config through
@@ -132,10 +135,14 @@ here until it ships, and so do the tsconfig line pointing its `reanimated` types
 its build writes them to and the `metro.config.js` redirect that sends web to its TurboModule
 stub (without it web crashes at load). The reader's bar never slides (`never`): it follows the chrome. The title names the view on Browse ("<bridge> <page>") and
 Library ("<view> <kind>", the kind only while the view holds more than one), and is the tab's
-name elsewhere; on every tab it is also the NSFW hold target (`TabLargeTitle holdTestID`,
-required), because the bars hold only SYSTEM items and a `UIBarButtonItem` has no long-press of
-its own (holding one opens its menu). Each has ONE `Stack.Toolbar.Menu` at the trailing edge
-beside the search, the TV app's profile-picture position,
+name elsewhere; on every tab it is also the NSFW hold target, because the bars hold only SYSTEM
+items and a `UIBarButtonItem` has no long-press of its own (holding one opens its menu): the
+title is UIKit's text, so the local module `modules/nav-bar-hold` reads the bar's touches on its
+label and reports the press and its end to the same ramped hold (`useHoldAction`). Each has ONE
+`Stack.Toolbar.Menu` among the trailing items: Browse's in a glass group of its own, a zero-width
+`Stack.Toolbar.Spacer` splitting it from the search (UIKit splits one placement's shared glass at
+a fixed space), the Library's in one group with the arranging `⋯` menu, what the tab shows and
+how it is arranged, with the system search item in its own group at the edge,
 flat — inline sections, never submenus, so every pick is open and tap — Browse the current
 bridge's thumbnail as a circle over the bridges and then the pages as checkmarked rows
 (`components/browse-native-toolbar.tsx`), Library the view's mark (the

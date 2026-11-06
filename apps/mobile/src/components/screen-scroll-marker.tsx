@@ -2,8 +2,8 @@ import { createContext, use, type ComponentProps, type ReactNode } from 'react';
 import { Platform, ScrollView, StyleSheet } from 'react-native';
 import { ScrollViewMarker } from 'react-native-screens';
 
-import { BAR_SCROLLED_AT, useBarManaged, useBarScrolled, useReportBarRow, useReportBarScrolled } from '@/components/bar-scrolled';
-import { HIDDEN_TOP_EDGE, useFoldedBarEdge } from '@/lib/native-bar';
+import { BAR_SCROLLED_AT, useBarManaged, useReportBarScrolled } from '@/components/bar-scrolled';
+import { HIDDEN_TOP_EDGE } from '@/lib/native-bar';
 
 import { ContentScrollAnchor } from '../../modules/content-scroll-view';
 
@@ -41,7 +41,7 @@ export const ScreenScrollActiveContext = createContext(true);
  * may be laid in ahead of the list there: Browse draws its colour backdrop inside the list's content
  * on iOS for that reason (see `ContentFeed`). The marker sets an edge effect too, its default
  * (`automatic`, soft under a bar with a custom title), and the last one set on the scroll view wins,
- * so every tab root leaves it there, except on the folded Duo (`useFoldedBarEdge`).
+ * so every tab root sets it hidden there: its bar's material is the backing.
  *
  * On Android and web it renders the child alone.
  */
@@ -54,16 +54,13 @@ export function ScreenScrollMarker({
 }) {
   const tabRoot = use(TabRootScrollContext);
   const active = use(ScreenScrollActiveContext);
-  const foldedEdge = useFoldedBarEdge();
   const report = useReportBarScrolled();
-  const reportRow = useReportBarRow();
   const managed = useBarManaged();
-  const scrolled = useBarScrolled();
   if (Platform.OS !== 'ios') return children;
-  // Where the bar switches its own backing the marker's edge is off, and the anchor below sets it;
-  // elsewhere the marker leaves the folded Duo its hard edge, as the stack's options do.
+  // A tab root's edge is off: its bar's material is the backing, switched by UIKit on the large
+  // title's scroll edge, and the system's soft edge fading in under it would half-back the bar.
   const list = tabRoot ? (
-    <ScrollViewMarker key={markerKey} style={styles.fill} scrollEdgeEffects={managed ? HIDDEN_TOP_EDGE : foldedEdge}>
+    <ScrollViewMarker key={markerKey} style={styles.fill} scrollEdgeEffects={HIDDEN_TOP_EDGE}>
       {children}
     </ScrollViewMarker>
   ) : (
@@ -75,15 +72,12 @@ export function ScreenScrollMarker({
       key={markerKey}
       active={active}
       style={styles.fill}
-      scrolledPast={report && (managed === 'list' || managed === 'heading') ? BAR_SCROLLED_AT : undefined}
-      scrolledUpOnly={managed !== 'heading'}
-      onScrolledPast={report && (managed === 'list' || managed === 'heading') ? (e) => report(e.nativeEvent.past) : undefined}
-      onBarFrame={reportRow ? (e) => reportRow(e.nativeEvent) : undefined}
+      scrolledPast={report && managed === 'list' ? BAR_SCROLLED_AT : undefined}
+      onScrolledPast={report && managed === 'list' ? (e) => report(e.nativeEvent.past) : undefined}
       // Where the bar switches its own backing, the list's edge is its: hidden, so the system's soft
-      // edge never half-backs the bar; on the folded Duo, where the hard edge IS the backing, that
-      // edge comes and goes with the scroll as the material does elsewhere. The screen's own edge
-      // option reaches a list first in line; one under wrappers gets it here.
-      topEdge={managed ? (foldedEdge && scrolled ? 'hard' : 'hidden') : undefined}>
+      // edge never half-backs the bar. The screen's own edge option reaches a list first in line;
+      // one under wrappers gets it here.
+      topEdge={managed ? 'hidden' : undefined}>
       {list}
     </ContentScrollAnchor>
   );

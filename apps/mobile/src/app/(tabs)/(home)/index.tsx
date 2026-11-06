@@ -27,7 +27,6 @@ import { PullIndicator } from '@/components/pull-indicator';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import { BrowseNativeToolbar } from '@/components/browse-native-toolbar';
 import { NativeTabHeader } from '@/components/native-tab-header';
-import { TabLargeTitle } from '@/components/tab-large-title';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import {
   bridgePageOptions,
@@ -756,7 +755,7 @@ export default function BrowseScreen() {
   // button's hold is its menu, so the gesture moves to the one thing in the bar that is ours.
   const nativeHeader = (
     <>
-      <NativeTabHeader />
+      <NativeTabHeader title={[currentBridge?.name, pageLabels[pageKey(page)]].filter(Boolean).join(' ')} />
       <BrowseNativeToolbar
         bridges={visibleBridges}
         thumbnails={bridgeThumbnails}
@@ -942,10 +941,6 @@ export default function BrowseScreen() {
         />
       )}
       {NATIVE_HEADER ? nativeHeader : topBar}
-      <TabLargeTitle
-        title={[currentBridge?.name, pageLabels[pageKey(page)]].filter(Boolean).join(' ')}
-        holdTestID="browse.nsfw-hold"
-      />
       <PullIndicator {...pull.indicator} top={headerHeight} />
     </ThemedView>
   );

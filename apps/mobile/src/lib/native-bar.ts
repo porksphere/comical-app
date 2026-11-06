@@ -1,7 +1,5 @@
 import type { Stack } from 'expo-router';
-import { useVerticalBarEdgeIOS } from 'expo-status-bar';
 import type { ComponentProps } from 'react';
-import { useWindowDimensions } from 'react-native';
 
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 
@@ -22,52 +20,26 @@ export const SLIDE_AWAY_BAR = {
 } as const;
 
 /**
- * The frosted material behind a bar, UIKit's own: a `UIBlurEffect` in the bar's appearance, the
- * lightest of the system's. Always on, at the top of a list too: UIKit never switched these bars
- * from a bare scroll-edge appearance to this one on a device, and the bar is out of the way once
- * the content scrolls anyway.
- *
- * None on the folded iPhone Duo. UIKit starts the bar below a strip at the top of that panel, and
- * no bar background reaches into it: a material stops short and leaves a gap, in a bare UIKit app
- * too (FB24859353). The frost there is the scroll edge's, which does run to the top of the screen
- * (`useFoldedBarEdge`).
+ * The frosted material behind a bar, UIKit's own: a `UIBlurEffect` in the bar's standard
+ * appearance, the lightest of the system's. A tab root's scroll-edge appearance is bare instead
+ * (`NativeTabHeader`), so UIKit shows the material once content is under the bar; a pushed page
+ * switches it as an option at its list's crossing (`TopBar`), and the series details at its own
+ * line. It reaches the top of the folded iPhone Duo's panel too: the gap a bar background once
+ * left there (FB24859353) is gone on the current iOS, checked on a device.
  *
  * It goes in a stack's `screenOptions` and on the series details, the pages that set their own bar.
  */
 export function useBarMaterial() {
-  // The folded Duo's gap (FB24859353) is gone on the current iOS: the material reaches the top
-  // there too, checked on a device. The folded edge path it needed comes out next.
   if (!NATIVE_HEADER) return undefined;
   return 'systemUltraThinMaterial' as const;
 }
 
 /**
- * The hard scroll edge on the folded iPhone Duo, the system's near-opaque backing under the bar once
- * content scrolls beneath it, where the bar can have no material. Undefined elsewhere: leave the edge
- * as it was. For a tab's stack, a settings screen and a tab root list's marker, since the last one set
- * on the scroll view wins.
- */
-export function useFoldedBarEdge(): typeof HARD_TOP_EDGE | undefined {
-  // Never, since the material reaches the top folded (see useBarMaterial); on its way out.
-  return undefined;
-}
-
-const HARD_TOP_EDGE = { top: 'hard' } as const;
-
-/**
  * No system scroll edge under the bar: on a screen whose bar switches its own material with the
  * scroll (`bar-scrolled.tsx`), where the soft edge fading in behind the bar's buttons was a
- * half-backed bar for the first points. The folded Duo keeps its hard edge: it is the backing there.
+ * half-backed bar for the first points, and on the tab roots, whose material is their backing.
  */
 export const HIDDEN_TOP_EDGE = { top: 'hidden' } as const;
-
-// A vertical bar in a tall window: open in portrait there is no vertical bar, and open in landscape
-// the window is wide and the bar's background does reach the top.
-function useIsFoldedDuo() {
-  const verticalBarEdge = useVerticalBarEdgeIOS();
-  const { width, height } = useWindowDimensions();
-  return NATIVE_HEADER && verticalBarEdge != null && height > width;
-}
 
 /**
  * The system navigation bar on an iOS screen: title, back chevron, over a soft scroll edge that
@@ -97,9 +69,5 @@ export const pushedScreen: ScreenOptions = NATIVE_HEADER ? NATIVE_BAR : { header
  * `useSettingsScrollPadding`.
  */
 export function useSettingsScreen() {
-  const foldedEdge = useFoldedBarEdge();
-  return (title: string): ScreenOptions =>
-    NATIVE_HEADER
-      ? { title, ...NATIVE_BAR, ...(foldedEdge && { scrollEdgeEffects: foldedEdge }) }
-      : { headerShown: false };
+  return (title: string): ScreenOptions => (NATIVE_HEADER ? { title, ...NATIVE_BAR } : { headerShown: false });
 }

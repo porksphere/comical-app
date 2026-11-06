@@ -24,6 +24,6 @@ export function InlineSeriesTitle({ style, ...props }: ComponentProps<typeof The
 }
 
 const styles = StyleSheet.create({
-  // The tabs' heading metrics (TabLargeTitle).
+  // The page's own heading, a step under UIKit's 34pt large title the tabs carry in their bars.
   large: { fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: 0.3 },
 });

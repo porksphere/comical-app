@@ -25,7 +25,6 @@ import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
 import { NativeTabHeader } from '@/components/native-tab-header';
-import { TabLargeTitle } from '@/components/tab-large-title';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
@@ -374,9 +373,8 @@ export default function ActivityScreen() {
       )}
 
       <PullIndicator {...pull.indicator} top={headerHeight} />
-      <TabLargeTitle title="Activity" holdTestID="activity.nsfw-hold" />
       {NATIVE_HEADER ? (
-        <NativeTabHeader filter={filter} placeholder="Filter activity…" />
+        <NativeTabHeader title="Activity" filter={filter} placeholder="Filter activity…" />
       ) : (
         <TabTitleBar
           title="Activity"

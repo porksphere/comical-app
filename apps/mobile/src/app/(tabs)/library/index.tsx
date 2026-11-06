@@ -14,7 +14,6 @@ import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import { NativeTabHeader } from '@/components/native-tab-header';
-import { TabLargeTitle } from '@/components/tab-large-title';
 import { BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -82,7 +81,6 @@ export default function LibraryScreen() {
     [theme.barHairline],
   );
 
-  const kinds = itemKindOptions(kindsPresent, selectedKind);
   const chrome: LibraryGridChrome = {
     listRef,
     paddingTop: headerHeight + BarContentGap,
@@ -173,12 +171,6 @@ export default function LibraryScreen() {
           }
         />
       )}
-      {NATIVE_HEADER ? (
-        <TabLargeTitle
-          title={kinds.length > 1 ? `${viewName} ${ITEM_KIND_LABELS[kind]}` : viewName}
-          holdTestID="library.nsfw-hold"
-        />
-      ) : null}
     </ThemedView>
   );
 }
@@ -213,7 +205,11 @@ function LibraryNativeHeader({
   const kinds = itemKindOptions(kindsPresent, selectedKind);
   return (
     <>
-      <NativeTabHeader filter={filter} placeholder="Filter library…" />
+      <NativeTabHeader
+        title={kinds.length > 1 ? `${viewName} ${ITEM_KIND_LABELS[kind]}` : viewName}
+        filter={filter}
+        placeholder="Filter library…"
+      />
       <LibraryNativeToolbar collection={collection} collections={collections} kind={kind} kinds={kinds} railNav={railNav} />
     </>
   );
