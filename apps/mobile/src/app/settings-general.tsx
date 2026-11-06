@@ -32,6 +32,8 @@ import { requestOverlay$, useRequestOverlayEnabled } from '@/data/request-monito
 import { useBrowseHoldAction, useBrowseHoldSound, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useDataSource, useMockActive, useNsfwMode, type NsfwMode } from '@/data/source';
 import { connectServer } from '@/data/switch-server';
+import { setBookCovers, useBookCoversEnabled } from '@/hooks/use-book-covers';
+import { setCoverShelf, useCoverShelf } from '@/hooks/use-cover-shelf';
 import { setFeedTint, useFeedTint } from '@/hooks/use-feed-tint';
 import { setLibraryMarker, useLibraryMarker } from '@/hooks/use-library-marker';
 import { setKeepTabPanes, useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
@@ -86,6 +88,8 @@ export default function GeneralSettingsScreen() {
   const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase] = useApiBase();
+  const bookCovers = useBookCoversEnabled();
+  const coverShelf = useCoverShelf();
   const lightCards = useLightCards();
   const feedTint = useFeedTint();
   const libraryMarker = useLibraryMarker();
@@ -145,9 +149,11 @@ export default function GeneralSettingsScreen() {
     {
       title: 'Display',
       footer:
-        'Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.',
+        'Book covers draws each series as the thing it is: a bound volume (spine on the right when you read right to left), a stapled issue, a set of loose sheets, or an unbound webtoon. Shelf alignment stands the covers in a row on one line, so covers of different shapes sit like books on a shelf, with their titles in line beneath them. Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.',
       fields: [
         select({ label: 'Appearance', value: themePref, options: THEME_OPTIONS, onChange: setThemePref }),
+        { kind: 'toggle', label: 'Book covers', value: bookCovers, onChange: setBookCovers },
+        { kind: 'toggle', label: 'Shelf alignment', value: coverShelf, onChange: setCoverShelf },
         { kind: 'toggle', label: 'Lightweight cards', value: lightCards, onChange: (v) => lightCards$.light.set(v) },
         { kind: 'toggle', label: 'Tinted backgrounds', value: feedTint, onChange: setFeedTint },
         { kind: 'toggle', label: 'Mark saved series', value: libraryMarker, onChange: setLibraryMarker },

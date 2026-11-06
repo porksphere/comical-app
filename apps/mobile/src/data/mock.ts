@@ -118,6 +118,8 @@ export const cover = (seed: string | number) => MOCK_COVERS[hash(String(seed)) %
  *  `assets/mock/covers-varied/` at those sizes. Matches `slugify('Nightshelf')` in
  *  `MOCK_BRIDGE_NAMES`. */
 const VARIED_ASPECT_BRIDGE = 'nightshelf';
+/** Matches `slugify('Coldspine')`: the direct bridge, a gallery whose CG sets are marked per series. */
+const GALLERY_BRIDGE = 'coldspine';
 
 function coverForBridge(seed: string, bridgeId?: string): string {
   if (bridgeId !== VARIED_ASPECT_BRIDGE) return cover(seed);
@@ -292,6 +294,7 @@ function entry(
   if (opts.badges && i % 4 === 1)
     e.badges = [{ text: 'HOT', position: 'top-left', tone: 'warn' }];
   if (opts.unread && i % 3 === 1) e.unread = 1 + (h % 9);
+  if (opts.bridgeId === GALLERY_BRIDGE && i % 3 === 0) e.coverForm = 'sheets';
   return e;
 }
 
@@ -312,6 +315,14 @@ function items(
     // Salted separately from the title so a given title isn't always paired with the same drawing.
     cover: walkCovers(covers, `${prefix}:cover`, i),
   }));
+}
+
+/** The cover `items` gave the card whose id this is (`${prefix}-${i}`), so a demo series opens onto
+ *  the picture its card showed, at the card's shape. */
+function cardCover(seed: string, bridgeId: string): string {
+  const card = /^(.*)-(\d+)$/.exec(seed);
+  if (!card) return coverForBridge(seed, bridgeId);
+  return walkCovers(bridgeId === VARIED_ASPECT_BRIDGE ? MOCK_COVERS_VARIED : MOCK_COVERS, `${card[1]}:cover`, Number(card[2]));
 }
 
 /**
@@ -584,7 +595,7 @@ export function mockSeries(
   const base: SeriesDetail = {
     id: seed,
     title: title || TITLES[h % TITLES.length],
-    cover: cover(seed),
+    cover: cardCover(seed, slugify(bridge)),
     bridge,
     description: DESCRIPTION,
     meta: META,
@@ -667,8 +678,18 @@ const delay = (ms: number): Promise<void> =>
 export const RAIL_STRESS_BRIDGE_ID = 'rail-stress';
 const RAIL_STRESS_COUNT = 18;
 
+// What each demo bridge declares about its series (the contract's cover hints), so the demo has one
+// source of each kind: right-to-left manga, a webtoon platform, and a gallery of right-to-left
+// doujinshi whose CG sets say so per series (see `entry`).
+const MOCK_COVER_HINTS: Record<string, Pick<Bridge, 'coverForm' | 'readingDirection'>> = {
+  Inkwell: { readingDirection: 'rtl' },
+  Driftpage: { coverForm: 'scroll', readingDirection: 'vertical' },
+  Coldspine: { coverForm: 'issue', readingDirection: 'rtl' },
+};
+
 export async function mockGetBridges(): Promise<Bridge[]> {
   const bridges: Bridge[] = MOCK_BRIDGE_NAMES.map((name) => ({
+    ...MOCK_COVER_HINTS[name],
     id: slugify(name),
     name,
     nsfw: false,

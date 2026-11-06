@@ -2,11 +2,13 @@ import { Image } from 'expo-image';
 import type { RefObject } from 'react';
 import { Pressable, StyleSheet, View, type ViewInstance } from 'react-native';
 
+import { ThumbLift } from '@/components/book-chrome';
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useZoomHref, ZoomSource } from '@/components/zoom-source';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
+import { useBookCoversEnabled } from '@/hooks/use-book-covers';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -95,6 +97,9 @@ export function HistoryRow({
   const base = testID ?? testId('history-row', title);
   const thumbStyle = [styles.thumb, desktop && styles.thumbDesktop];
   const zoomHref = useZoomHref('/series');
+  // Lifted off the page as the cards are while they're drawn as books, but no book: a row's cover is
+  // a pointer to the series, not the object.
+  const lifted = useBookCoversEnabled();
   return (
     <View style={[styles.row, desktop && styles.rowDesktop, dimmed && styles.dimmed]}>
       <Pressable
@@ -107,6 +112,7 @@ export function HistoryRow({
           ref={thumbRef}
           collapsable={false}
           style={[styles.thumbWrap, desktop && styles.thumbWrapDesktop, coverHidden && styles.thumbHidden]}>
+          {lifted && <ThumbLift width={desktop ? THUMB_W_DESKTOP : THUMB_W} radius={THUMB_RADIUS} cover={resolvedThumb} />}
           {zoomHref && onZoomId ? (
             <View pointerEvents="none" style={styles.thumbZoom}>
               <ZoomSource href={zoomHref} onId={onZoomId} style={[styles.thumbZoomBox, desktop && styles.thumbDesktop]} />
@@ -195,6 +201,7 @@ export function HistoryRow({
 const THUMB_W = 46;
 /** Desktop: the row has the width for a cover one can actually recognise. */
 const THUMB_W_DESKTOP = 72;
+const THUMB_RADIUS = 6;
 
 const styles = StyleSheet.create({
   row: {
@@ -237,7 +244,7 @@ const styles = StyleSheet.create({
     width: THUMB_W,
     aspectRatio: 2 / 3,
     ...ContinuousCorner,
-    borderRadius: 6,
+    borderRadius: THUMB_RADIUS,
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
   thumbDesktop: {
@@ -253,7 +260,7 @@ const styles = StyleSheet.create({
     width: THUMB_W,
     aspectRatio: 2 / 3,
     ...ContinuousCorner,
-    borderRadius: 6,
+    borderRadius: THUMB_RADIUS,
   },
   // Inset from the cover's rounded edge rather than clipped by it, so the fill never has to agree
   // with the corner's curve — and the track reads over any cover, light or dark.

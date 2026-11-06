@@ -408,6 +408,8 @@ function toSeriesEntry(e: api.ApiSeriesEntry): SeriesEntry {
     sub: e.subtitle,
     cover: e.thumbnailUrl ?? '',
     ...(e.thumbnailAspect !== undefined && { coverAspect: e.thumbnailAspect }),
+    ...(e.coverForm !== undefined && { coverForm: e.coverForm }),
+    ...(e.readingDirection !== undefined && { readingDirection: e.readingDirection }),
     badges: e.badges,
     excluded: e.excluded,
   };

@@ -6,6 +6,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { useApiBase } from '@/data/api';
 import { useMockDataToggle } from '@/data/source';
+import { setBookCoverShuffle, useBookCoverShuffle } from '@/hooks/use-book-covers';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 
 /** Dev-build-only: lets local development iterate against mock data without a running backend, and
@@ -16,6 +17,7 @@ export default function DeveloperSettingsScreen() {
   const [mockEnabled, setMockEnabled] = useMockDataToggle();
   const [apiBase] = useApiBase();
   const profilerOn = useDevProfilerEnabled();
+  const shuffleCovers = useBookCoverShuffle();
 
   const sections: SettingsFormSection[] = [
     {
@@ -34,6 +36,14 @@ export default function DeveloperSettingsScreen() {
             'Shows a floating on-device Hermes profiler that captures a JS sampling profile and uploads it to the dev server.',
           value: profilerOn,
           onChange: (v) => devProfiler$.enabled.set(v),
+        },
+        {
+          kind: 'toggle',
+          label: 'Shuffle book covers',
+          description:
+            'Draws every series as a random kind of book — volume, issue, webtoon or CG set, bound on either side — the same one each time, so each style shows on real covers.',
+          value: shuffleCovers,
+          onChange: setBookCoverShuffle,
         },
         { kind: 'value', label: 'Server', description: apiBase, selectable: true },
       ],
