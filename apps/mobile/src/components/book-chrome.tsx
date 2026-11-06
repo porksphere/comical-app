@@ -1,11 +1,26 @@
+import { Image as Picture } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import type { ReactNode } from 'react';
 import { Image, Platform, StyleSheet, View, type ImageStyle, type StyleProp, type ViewStyle } from 'react-native';
 
 import { ContinuousCorner } from '@/constants/theme';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { useCoverGlow } from '@/hooks/use-cover-glow';
-import { EDGES, FOLD, SHADOW_BOX, SHEET_OFFSET, SPINE, STAPLE, STAPLES, ribbonSize, type BookCover } from '@/lib/book-cover';
+import {
+  BOOK_COVERS,
+  EDGES,
+  FOLD,
+  PRINT,
+  SHADOW_BOX,
+  SPINE,
+  STAPLE,
+  STAPLES,
+  bookRadius,
+  printWindow,
+  ribbonSize,
+  type BookCover,
+} from '@/lib/book-cover';
 
 const FROM_SPINE = {
   left: { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } },
@@ -18,6 +33,8 @@ const ACROSS = { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } } as const;
  *  form's top and bottom edge, and an issue's staples. Light and shade only — no outline, which on a page of the cover's
  *  own colour reads as an app tile's border rather than a book's edge. Never takes a touch. */
 export function BookChrome({ cover }: { cover: BookCover }) {
+  // A print's edge is its paper (`PrintPaper`); nothing is drawn over its picture.
+  if (cover.form === 'sheets') return null;
   const across = cover.form === 'volume' ? SPINE : cover.form === 'issue' ? FOLD : null;
   return (
     <>
@@ -70,15 +87,15 @@ const { side, top, foot, coverHeight } = SHADOW_BOX;
 export function BookShadow({ aspect, sheets, cover }: { aspect: number; sheets: boolean; cover: string | undefined }) {
   const dark = useActiveColorScheme() === 'dark';
   const glow = useCoverGlow(dark ? cover : undefined);
-  // In card widths. A CG set casts it from its front sheet alone: shadowing the whole box left the
-  // corner neither sheet covers as a square cut out of it.
-  const width = sheets ? 1 - SHEET_OFFSET.right : 1;
-  const down = sheets ? SHEET_OFFSET.top / aspect : 0;
-  const height = (1 - (sheets ? SHEET_OFFSET.top : 0)) / aspect;
+  // In card widths. A CG set casts it from its front print.
+  const across = sheets ? PRINT.left : 0;
+  const width = sheets ? PRINT.width : 1;
+  const down = sheets ? PRINT.top / aspect : 0;
+  const height = (sheets ? PRINT.height : 1) / aspect;
   const tall = height / (coverHeight * width);
   // The box is 1/aspect card widths tall, so a length in card widths is `aspect` of its height.
   const picture: ImageStyle = {
-    left: `${-side * width * 100}%`,
+    left: `${(across - side * width) * 100}%`,
     width: `${(1 + 2 * side) * width * 100}%`,
     top: `${(down - top * tall * width) * aspect * 100}%`,
     height: `${(top + coverHeight + foot) * tall * width * aspect * 100}%`,
@@ -99,11 +116,57 @@ export function BookShadow({ aspect, sheets, cover }: { aspect: number; sheets: 
   );
 }
 
-/** The sheet behind a CG set's front picture: the same size, offset up and to the right, so it shows
- *  along the top and the far edge. Drawn under the front sheet, outside its clip. */
-export function LooseSheet({ radius }: { radius: number }) {
+/**
+ * A CG set's print: white paper, its picture in a window with a border the same width all round.
+ * `children` is the picture. `tipped` turns it to lie behind the front one.
+ */
+export function PrintPaper({
+  aspect,
+  tipped,
+  windowStyle,
+  children,
+}: {
+  aspect: number;
+  tipped?: boolean;
+  windowStyle?: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
   const theme = useTheme();
-  return <View style={[styles.sheetBehind, ContinuousCorner, { borderRadius: radius, backgroundColor: theme.coverSheet }]} />;
+  const radius = bookRadius(BOOK_COVERS.sheets.left, useIsDesktop());
+  const w = printWindow(aspect);
+  return (
+    <View
+      style={[
+        styles.print,
+        ContinuousCorner,
+        tipped && styles.tipped,
+        { borderRadius: radius, backgroundColor: theme.coverPaper, borderColor: theme.coverPaperEdge },
+      ]}>
+      <View
+        style={[
+          styles.printWindow,
+          { left: `${w.left * 100}%`, right: `${w.right * 100}%`, top: `${w.top * 100}%`, bottom: `${w.bottom * 100}%` },
+          windowStyle,
+        ]}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+/** The print tipped behind a CG set's front one: the set's own picture, dimmed. The card draws it,
+ *  under its cover, since the card is what has the picture. */
+export function BehindPrint({ aspect, cover, recyclingKey }: { aspect: number; cover: string | undefined; recyclingKey: string }) {
+  return (
+    <View style={[styles.shadowBox, { aspectRatio: aspect }]}>
+      <PrintPaper aspect={aspect} tipped>
+        {cover !== undefined && (
+          <Picture source={{ uri: cover }} style={styles.fill} contentFit="cover" cachePolicy="memory-disk" recyclingKey={recyclingKey} />
+        )}
+        <View style={[styles.fill, styles.dim]} />
+      </PrintPaper>
+    </View>
+  );
 }
 
 /** "In your library", as the bookmark it already was in icon form, hanging from the head of the
@@ -152,13 +215,25 @@ const styles = StyleSheet.create({
   shadow: {
     position: 'absolute',
   },
-  sheetBehind: {
+  print: {
     position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: `${SHEET_OFFSET.top * 100}%`,
-    left: `${SHEET_OFFSET.right * 100}%`,
-    pointerEvents: 'none',
+    left: `${PRINT.left * 100}%`,
+    top: `${PRINT.top * 100}%`,
+    width: `${PRINT.width * 100}%`,
+    height: `${PRINT.height * 100}%`,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  tipped: {
+    transform: [{ rotate: `${PRINT.tilt}deg` }],
+  },
+  printWindow: {
+    position: 'absolute',
+    overflow: 'hidden',
+    borderRadius: 1,
+    backgroundColor: 'rgba(128,128,128,0.15)',
+  },
+  dim: {
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   ribbon: {
     position: 'absolute',

@@ -7,7 +7,7 @@
  *  - `volume` — a bound book: a spine on the binding side.
  *  - `issue` — a saddle-stitched booklet (doujinshi, oneshots): a crease and two staples on the fold.
  *  - `scroll` — nothing bound (webtoons): rounder corners, no spine.
- *  - `sheets` — loose pictures (CG sets): the front one with another sheet showing behind it.
+ *  - `sheets` — loose pictures (CG sets): a print in a white paper border, another tipped behind it.
  */
 import type { CoverForm, ReadingDirection } from '@comical/contract';
 
@@ -85,10 +85,20 @@ export const BOOK_COVERS: Readonly<Record<CoverForm, Readonly<Record<CoverBindin
   sheets: { left: { form: 'sheets', binding: 'left' }, right: { form: 'sheets', binding: 'right' } },
 };
 
-/** Where a CG set's front sheet sits in the cover box, as fractions: down from the top and in from the
- *  right, leaving the sheet behind it showing above and beside. About the same in points both ways
- *  on a 2:3 box. */
-export const SHEET_OFFSET = { top: 0.04, right: 0.06 } as const;
+/**
+ * A CG set is a print: its picture in a white paper border, with a second print tipped behind it.
+ * Fractions of the cover box for the front print's place, of the print's width for its border, and
+ * degrees for the one behind. Nearly the whole box: a fan of prints with clear space beside it gave a
+ * twelfth of the card's width to nothing.
+ */
+export const PRINT = { left: 0.015, top: 0.02, width: 0.97, height: 0.96, border: 0.025, tilt: -3.5 } as const;
+
+/** A print's picture inside its border, as fractions of the print: the border is the same width all
+ *  round, so its top and bottom are the side border scaled by the print's own shape. */
+export function printWindow(aspect: number): { left: number; right: number; top: number; bottom: number } {
+  const ends = PRINT.border * ((PRINT.width * aspect) / PRINT.height);
+  return { left: PRINT.border, right: PRINT.border, top: ends, bottom: ends };
+}
 
 /** A bound book's corner: Apple Books' own, measured on an iPhone at about 1.2 pt whatever the book's
  *  size. A rounder corner is the quickest way to make a book read as an app tile. (These were once
@@ -96,9 +106,12 @@ export const SHEET_OFFSET = { top: 0.04, right: 0.06 } as const;
  *  out two and a half times rounder on a device.) */
 export const BOUND_CORNER = { phone: 1.5, desktop: 2 } as const;
 
-/** Loose pages — a webtoon pane, a CG set's sheets — round further, as Apple Books rounds a square
- *  audiobook cover (about 3 pt) against its books. */
+/** An unbound webtoon pane rounds further, as Apple Books rounds a square audiobook cover (about 3 pt)
+ *  against its books. */
 export const LOOSE_CORNER = { phone: 3, desktop: 5 } as const;
+
+/** A photo print's corner: barely rounded, as paper is. */
+export const PRINT_CORNER = { phone: 2, desktop: 3 } as const;
 
 /**
  * One radius for all four corners. A book is squarer at the spine than at the fore-edge, but on iOS a
@@ -106,7 +119,7 @@ export const LOOSE_CORNER = { phone: 3, desktop: 5 } as const;
  * offscreen pass on every card in every frame of a scroll. The hinge already says which side is bound.
  */
 export function bookRadius(cover: BookCover, desktop: boolean): number {
-  const corner = cover.form === 'volume' || cover.form === 'issue' ? BOUND_CORNER : LOOSE_CORNER;
+  const corner = cover.form === 'sheets' ? PRINT_CORNER : cover.form === 'scroll' ? LOOSE_CORNER : BOUND_CORNER;
   return desktop ? corner.desktop : corner.phone;
 }
 

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { BookChrome, BookShadow, LooseSheet } from '@/components/book-chrome';
+import { BehindPrint, BookChrome, BookShadow, PrintPaper } from '@/components/book-chrome';
 import { CardOverlays } from '@/components/card-badge';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -19,7 +19,7 @@ import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { SHEET_OFFSET, bookRadius, type BookCover } from '@/lib/book-cover';
+import { PRINT, bookRadius, type BookCover } from '@/lib/book-cover';
 import { useTabRoute } from '@/lib/focused-tab';
 import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, LinkTrigger, router, tabHref } from '@/lib/nav';
@@ -165,15 +165,16 @@ export function CoverFrame({
   const theme = useTheme();
   const corners = book ? [ContinuousCorner, { borderRadius: bookRadius(book, desktop) }] : null;
   if (book?.form === 'sheets') {
-    // A CG set: the front sheet holds the picture, and the sheet behind it shows above and beside it.
-    // The behind sheet is outside the clip, so the box itself can't clip; this is the one form that
-    // pays for a second view on native.
+    // A CG set: a print, the picture in its paper's window. The print tipped behind it is the card's
+    // (`BehindPrint`), since the card is what has the picture. The paper is outside the window's clip,
+    // so the box itself can't clip; this is the one form that pays for extra views on native.
     return (
       <View ref={coverRef} style={[styles.coverBox, { aspectRatio: aspect }, hidden && styles.coverHidden]} onLayout={onLayout}>
-        <LooseSheet radius={bookRadius(book, desktop)} />
-        <View style={[styles.coverClip, styles.frontSheet, corners, contentStyle]}>{children}</View>
+        <PrintPaper aspect={aspect} windowStyle={contentStyle}>
+          {children}
+        </PrintPaper>
         {ring && Platform.OS === 'web' && (
-          <View style={[coverStyles.ring, styles.frontSheet, corners, { borderColor: coverRingColor(theme), pointerEvents: 'none' }]} />
+          <View style={[coverStyles.ring, styles.printRing, corners, { borderColor: coverRingColor(theme), pointerEvents: 'none' }]} />
         )}
       </View>
     );
@@ -778,6 +779,7 @@ export function SeriesCard({
     return (
       <>
         {book && !coverHidden && <BookShadow aspect={coverAspect} sheets={book.form === 'sheets'} cover={resolvedCover} />}
+        {book?.form === 'sheets' && !coverHidden && <BehindPrint aspect={coverAspect} cover={resolvedCover} recyclingKey={entry.id} />}
         {/* What the iOS system menu lifts: the cover, not the card with its title. */}
         {liftTarget(
           <CoverFrame
@@ -1032,12 +1034,11 @@ const styles = StyleSheet.create({
   coverHidden: {
     opacity: 0,
   },
-  frontSheet: {
-    position: 'absolute',
-    top: `${SHEET_OFFSET.top * 100}%`,
-    right: `${SHEET_OFFSET.right * 100}%`,
-    bottom: 0,
-    left: 0,
+  printRing: {
+    left: `${PRINT.left * 100}%`,
+    top: `${PRINT.top * 100}%`,
+    right: `${(1 - PRINT.left - PRINT.width) * 100}%`,
+    bottom: `${(1 - PRINT.top - PRINT.height) * 100}%`,
   },
   trailingGroup: {
     // Replaces the spacing `card`'s own `gap` used to provide between the cover

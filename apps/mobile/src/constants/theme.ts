@@ -70,8 +70,10 @@ export const Colors = {
     chipBg: '#F0F0F3',
     chipBorder: '#B9CEF5',
     chipText: '#2257C7',
-    // The sheet showing behind a CG set's front picture.
-    coverSheet: '#E9E7E2',
+    // A CG set's prints: the paper their pictures sit in, and the hairline that keeps a white print off
+    // a white page (on black the paper holds its own edge).
+    coverPaper: '#FBFAF7',
+    coverPaperEdge: 'rgba(0,0,0,0.12)',
     // Destructive actions/errors (uninstall, remove registry, save failures) —
     // was hardcoded per-callsite as '#E5484D'; centralized here so it reads from
     // the theme like every other color and stays in sync across screens.
@@ -133,7 +135,8 @@ export const Colors = {
     chipBg: '#212225',
     chipBorder: '#2c4060',
     chipText: '#8ab4f8',
-    coverSheet: '#3A3A3D',
+    coverPaper: '#F2F0EC',
+    coverPaperEdge: 'rgba(0,0,0,0)',
     danger: '#E5484D',
   },
 } as const;
