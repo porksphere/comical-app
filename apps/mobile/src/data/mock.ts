@@ -317,6 +317,14 @@ function items(
   }));
 }
 
+/** The cover `items` gave the card whose id this is (`${prefix}-${i}`), so a demo series opens onto
+ *  the picture its card showed, at the card's shape. */
+function cardCover(seed: string, bridgeId: string): string {
+  const card = /^(.*)-(\d+)$/.exec(seed);
+  if (!card) return coverForBridge(seed, bridgeId);
+  return walkCovers(bridgeId === VARIED_ASPECT_BRIDGE ? MOCK_COVERS_VARIED : MOCK_COVERS, `${card[1]}:cover`, Number(card[2]));
+}
+
 /**
  * A page's stack of rails (hero / ranked / regular). Every top-level page
  * (home, popular, favorites, …) is its own full page, so the seed is salted
@@ -587,8 +595,7 @@ export function mockSeries(
   const base: SeriesDetail = {
     id: seed,
     title: title || TITLES[h % TITLES.length],
-    // The card's own cover, so a varied-shape card opens onto the same shape.
-    cover: coverForBridge(seed, slugify(bridge)),
+    cover: cardCover(seed, slugify(bridge)),
     bridge,
     description: DESCRIPTION,
     meta: META,
