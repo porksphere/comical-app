@@ -29,6 +29,7 @@ import { focusSkip } from '@/lib/focus-nav';
 import { RetryBlock } from '@/components/retry-block';
 import { ScreenScrollActiveContext } from '@/components/screen-scroll-marker';
 import { SeriesDetailsNativeBar } from '@/components/series/details-native-bar';
+import { InlineTitleHeightContext } from '@/components/series/inline-title';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
@@ -180,6 +181,7 @@ export function SeriesDetailsPage({
   // the same `sharedValues` wiring pull-to-refresh uses) — drives the strip occlusion, the top
   // bar's scroll crossfade, and the pull-past-top reveal.
   const detailsScrollOffset = useSharedValue(0);
+  const inlineTitleHeight = useSharedValue(0);
   const sharedValues = useMemo(() => ({ scrollOffset: detailsScrollOffset }), [detailsScrollOffset]);
   // Whether the details are the page at rest: false from the moment a drag or a pull commits to
   // the reader page until the page is put back behind it (`paneHandoffs`, or the strip hand-off's
@@ -1186,7 +1188,14 @@ export function SeriesDetailsPage({
 
   const nativeBar =
     NATIVE_HEADER && isTop ? (
-      <SeriesDetailsNativeBar title={headerBarTitle} nativePush={nativePush} onClose={closeLayer} />
+      <SeriesDetailsNativeBar
+        title={headerBarTitle}
+        nativePush={nativePush}
+        onClose={closeLayer}
+        scrollOffset={detailsScrollOffset}
+        contentTop={headerTopInset}
+        inlineTitleHeight={inlineTitleHeight}
+      />
     ) : null;
   // Elsewhere: the shared TopBar (back-less: transparent over the strip, opaque once scrolled)
   // under a persistent chevron above the band overlay, so its taps win.
@@ -1268,6 +1277,7 @@ export function SeriesDetailsPage({
             {/* Everything below can yield the back-swipe to a horizontal scroller of its own. */}
             <BackSwipeGestureContext.Provider value={detailsBackSwipe}>
             <ScreenScrollActiveContext.Provider value={isTop}>
+            <InlineTitleHeightContext.Provider value={inlineTitleHeight}>
             <SeriesDetailsHost
               bridgeId={bridgeId}
               id={id}
@@ -1288,6 +1298,7 @@ export function SeriesDetailsPage({
               coverAspectSeed={heroAspectSeed}
               saveKeyEnabled={IS_WEB && !!isTop}
             />
+            </InlineTitleHeightContext.Provider>
             </ScreenScrollActiveContext.Provider>
             </BackSwipeGestureContext.Provider>
           </Animated.View>

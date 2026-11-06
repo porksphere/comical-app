@@ -1,25 +1,38 @@
 import { Stack } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { StyleSheet, useWindowDimensions } from 'react-native';
+import Animated, {
+  interpolate,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 
-import { useBarScrolled, useManagesBar } from '@/components/bar-scrolled';
-import { barTitleStyle } from '@/components/native-tab-header';
-import { ThemedText } from '@/components/themed-text';
+import { useManagesBar } from '@/components/bar-scrolled';
+import { BarContentGap } from '@/constants/theme';
+import { useNativeHeaderHeight } from '@/hooks/use-native-header';
+import { useTheme } from '@/hooks/use-theme';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { HIDDEN_TOP_EDGE, SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
 
 import { NavBarFade } from '../../../modules/nav-bar-fade';
 
 /**
- * The series details' system bar on iOS, through the route's options: every pushed page's, the
- * series' title in it from the start, bare over the top of the page and frosted once the list is
- * under it (`bar-scrolled`), the switch crossfaded by `nav-bar-fade`, sliding away as the content
- * scrolls down (SLIDE_AWAY_BAR). The title is the pushed pages' (`TopBar`): the system's text in
- * the system's slot, as a view, since UIKit registers a text title with the list's scroll edge
- * and draws that edge behind it over the strip, where every page here keeps that edge hidden.
- * A title that waited for the page's own to scroll under the bar was tried and taken out: the bar
- * has to hold something meanwhile, UIKit draws a blank or whitespace title as quotation marks,
- * and a bar with nothing collapses to no height where the back button sits in the Duo's vertical
- * bar.
+ * The series details' system bar on iOS, through the route's options. The content scrolls under it,
+ * and it slides away while that happens, like every pushed page's (SLIDE_AWAY_BAR).
+ *
+ * Over the strip it is bare, with the page's own title below it (InlineSeriesTitle). The series'
+ * title fades in, centred, as the page's own goes under the bar, following the scroll, the way
+ * UIKit brings in an inline title under a large one. It is a custom title view that is always
+ * there at some opacity, never an option: UIKit draws a blank or whitespace title as quotation
+ * marks, a bar with nothing collapses to no height where the back button sits in the Duo's
+ * vertical bar, and a text title is registered with the list's scroll edge, which every page
+ * here keeps hidden. The frosted material still switches as an option, once the page's title is
+ * past, and only on the way back up (scrolling down the bar is sliding away anyway);
+ * `nav-bar-fade` crossfades it. The list's edge is this bar's to keep hidden (`useManagesBar`
+ * with no reports), since the bar switches at its own line, not the list's top.
  *
  * Only the top instance mounts this (the options are the route's, shared by every layer), so a
  * layer that becomes top again re-applies them: Stack.Screen's effect runs on mount, and the toolbar
@@ -34,14 +47,55 @@ export function SeriesDetailsNativeBar({
   title,
   nativePush,
   onClose,
+  scrollOffset,
+  contentTop,
+  inlineTitleHeight,
 }: {
   title: string;
   nativePush: boolean;
   onClose: () => void;
+  scrollOffset: SharedValue<number>;
+  /** Where the list's content starts, before its own gap: the height of the strip above it. */
+  contentTop: number;
+  inlineTitleHeight: SharedValue<number>;
 }) {
   const material = useBarMaterial();
-  const scrolled = useBarScrolled();
-  useManagesBar();
+  const barBottom = useNativeHeaderHeight();
+  const [pastTitle, setPastTitle] = useState(false);
+  useManagesBar(true, 'bar');
+  const titled = useSharedValue(false);
+  const titleTop = contentTop + BarContentGap - barBottom;
+  useAnimatedReaction(
+    () => scrollOffset.value,
+    (offset, prev) => {
+      const past = offset > titleTop + inlineTitleHeight.value;
+      // A page that opens already scrolled past its title has a bar in view: title it straight away.
+      const next = past ? titled.value || prev == null || offset < prev : false;
+      if (next === titled.value) return;
+      titled.value = next;
+      runOnJS(setPastTitle)(next);
+    },
+    [titleTop],
+  );
+  const theme = useTheme();
+  const { width } = useWindowDimensions();
+  // One style object: expo-router's Slot, which `Stack.Title asChild` clones through, rejects an
+  // array in development.
+  const titleFade = useAnimatedStyle(() => ({
+    ...TITLE_STYLE,
+    color: theme.text,
+    maxWidth: width * TITLE_MAX_WIDTH,
+    opacity: interpolate(
+      scrollOffset.value,
+      [titleTop, titleTop + Math.max(inlineTitleHeight.value, 1)],
+      [0, 1],
+      'clamp',
+    ),
+  }));
+  // TEMPORARY: the bar's switches, traced to Settings > Diagnostics (docs/NATIVE-HACKS.md, item 22).
+  useEffect(() => {
+    logDiagnostic('bar-fade', `series: past title ${pastTitle}`);
+  }, [pastTitle]);
   return (
     <>
       <Stack.Screen
@@ -49,7 +103,7 @@ export function SeriesDetailsNativeBar({
           headerShown: true,
           headerTransparent: true,
           headerShadowVisible: false,
-          headerBlurEffect: scrolled ? material : 'none',
+          headerBlurEffect: pastTitle ? material : 'none',
           headerBackVisible: nativePush,
           // Not a pushed card, nothing for UIKit to pop: the edge is the page's own back-swipe.
           gestureEnabled: nativePush,
@@ -59,9 +113,9 @@ export function SeriesDetailsNativeBar({
         }}
       />
       <Stack.Title asChild>
-        <ThemedText numberOfLines={1} style={barTitleStyle}>
+        <Animated.Text numberOfLines={1} style={titleFade}>
           {title}
-        </ThemedText>
+        </Animated.Text>
       </Stack.Title>
       {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" onTrace={traceBar} /> : null}
       {!nativePush ? (
@@ -72,6 +126,11 @@ export function SeriesDetailsNativeBar({
     </>
   );
 }
+
+// What the bar leaves the title between its leading and trailing items.
+const TITLE_MAX_WIDTH = 0.6;
+// UIKit's inline navigation title: 17pt semibold in the system font.
+const TITLE_STYLE = { fontSize: 17, fontWeight: '600' } as const;
 
 // TEMPORARY: the bar's switches, traced to Settings > Diagnostics (docs/NATIVE-HACKS.md, item 22).
 function traceBar(e: { nativeEvent: { message: string } }) {
