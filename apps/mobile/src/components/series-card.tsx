@@ -701,8 +701,9 @@ export function SeriesCard({
               // Light path: the clip's own grey backing IS the placeholder, and expo-image paints the
               // decoded cover over it natively — so no `loaded` state flip (hence no per-cover commit)
               // is needed just to hide a skeleton. Non-light shows the pulsing Skeleton, which must be
-              // hidden via state. Either way, an active stale-swap mask (rare) still needs clearing.
-              if (!lightCards) setLoaded(true);
+              // hidden via state, and a book's shadow waits for its cover either way. An active
+              // stale-swap mask (rare) still needs clearing.
+              if (!lightCards || book) setLoaded(true);
               if (maskStale) setMaskStale(false);
             }}
           />
@@ -795,7 +796,9 @@ export function SeriesCard({
 
     const cover = (
       <>
-        {book && !coverHidden && <BookShadow aspect={coverAspect} sheets={book.form === 'sheets'} cover={resolvedCover} />}
+        {/* Only under a cover that has loaded: a shadow under a blank or pulsing placeholder is a
+            shadow of nothing. */}
+        {book && !coverHidden && coverReady && <BookShadow aspect={coverAspect} sheets={book.form === 'sheets'} cover={resolvedCover} />}
         {book?.form === 'sheets' && !coverHidden && <BehindPrint aspect={coverAspect} cover={resolvedCover} recyclingKey={entry.id} />}
         {/* What the iOS system menu lifts: the cover, not the card with its title. */}
         {liftTarget(
