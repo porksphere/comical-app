@@ -2,7 +2,7 @@ import { createContext, use, type ComponentProps, type ReactNode } from 'react';
 import { Platform, ScrollView, StyleSheet } from 'react-native';
 import { ScrollViewMarker } from 'react-native-screens';
 
-import { BAR_SCROLLED_AT, useBarManaged, useBarScrolled, useReportBarScrolled } from '@/components/bar-scrolled';
+import { BAR_SCROLLED_AT, useBarManaged, useBarScrolled, useReportBarRow, useReportBarScrolled } from '@/components/bar-scrolled';
 import { HIDDEN_TOP_EDGE, useFoldedBarEdge } from '@/lib/native-bar';
 
 import { ContentScrollAnchor } from '../../modules/content-scroll-view';
@@ -56,6 +56,7 @@ export function ScreenScrollMarker({
   const active = use(ScreenScrollActiveContext);
   const foldedEdge = useFoldedBarEdge();
   const report = useReportBarScrolled();
+  const reportRow = useReportBarRow();
   const managed = useBarManaged();
   const scrolled = useBarScrolled();
   if (Platform.OS !== 'ios') return children;
@@ -74,8 +75,10 @@ export function ScreenScrollMarker({
       key={markerKey}
       active={active}
       style={styles.fill}
-      scrolledPast={report && managed === 'list' ? BAR_SCROLLED_AT : undefined}
-      onScrolledPast={report && managed === 'list' ? (e) => report(e.nativeEvent.past) : undefined}
+      scrolledPast={report && (managed === 'list' || managed === 'heading') ? BAR_SCROLLED_AT : undefined}
+      scrolledUpOnly={managed !== 'heading'}
+      onScrolledPast={report && (managed === 'list' || managed === 'heading') ? (e) => report(e.nativeEvent.past) : undefined}
+      onBarFrame={reportRow ? (e) => reportRow(e.nativeEvent) : undefined}
       // Where the bar switches its own backing, the list's edge is its: hidden, so the system's soft
       // edge never half-backs the bar; on the folded Duo, where the hard edge IS the backing, that
       // edge comes and goes with the scroll as the material does elsewhere. The screen's own edge

@@ -5,7 +5,7 @@ public class ContentScrollViewModule: Module {
     Name("ContentScrollView")
 
     View(ContentScrollAnchorView.self) {
-      Events("onScrolledPast")
+      Events("onScrolledPast", "onBarFrame")
       Prop("active") { (view: ContentScrollAnchorView, active: Bool?) in
         view.active = active ?? true
       }
@@ -14,6 +14,9 @@ public class ContentScrollViewModule: Module {
       }
       Prop("scrolledPast") { (view: ContentScrollAnchorView, threshold: Double?) in
         view.threshold = threshold.map { CGFloat($0) }
+      }
+      Prop("scrolledUpOnly") { (view: ContentScrollAnchorView, upOnly: Bool?) in
+        view.upOnly = upOnly ?? true
       }
       Prop("topEdge") { (view: ContentScrollAnchorView, edge: String?) in
         view.topEdge = edge
@@ -35,6 +38,12 @@ final class ContentScrollAnchorView: ExpoView {
   private var past: Bool?
   private var lastOffset: CGFloat?
   let onScrolledPast = EventDispatcher()
+  /// The navigation bar's content extent in the window, for what lays itself out on the bar's row
+  /// (a tab's title): the bar's frame with its subviews', since on the folded Duo the frame starts
+  /// under a strip at the top of the panel while the content view reaches the top, and the items
+  /// centre on that. Nothing in JavaScript knows it.
+  let onBarFrame = EventDispatcher()
+  private var barObservation: NSKeyValueObservation?
 
   /// Layers on one screen share its controller: only the top one's list is named, and it is named
   /// again when the layer over it goes.
@@ -73,6 +82,10 @@ final class ContentScrollAnchorView: ExpoView {
   /// away, and a backing switched under the slide flickers (the series page's rule). Back only once
   /// within a quarter of the threshold: a crossing is a switch, and a list resting on the line
   /// would switch on every point. Nil: no reports.
+  /// Whether a crossing counts only as the list comes back up (a bar's material, switched as the
+  /// bar returns, never under its slide), or either way (a title that goes as the list goes).
+  var upOnly = true
+
   var threshold: CGFloat? {
     didSet {
       past = nil
@@ -85,6 +98,7 @@ final class ContentScrollAnchorView: ExpoView {
     super.didMoveToWindow()
     if window == nil {
       offsetObservation = nil
+      barObservation = nil
     }
     retries = 0
     schedule()
@@ -125,6 +139,7 @@ final class ContentScrollAnchorView: ExpoView {
     }
     retries = 0
     controller.setContentScrollView(scrollView, for: tabBar ? .all : .top)
+    watchBar(controller)
     applyTopEdge(scrollView)
     watch(scrollView)
   }
@@ -154,6 +169,29 @@ final class ContentScrollAnchorView: ExpoView {
     }
   }
 
+  private func watchBar(_ controller: UIViewController) {
+    guard let bar = controller.navigationController?.navigationBar else {
+      return
+    }
+    reportBarFrame(bar)
+    // The bar's height changes as its items come and go (a folded display takes them into its
+    // vertical bar), not as it slides away: minimization moves its content.
+    barObservation = bar.observe(\.bounds, options: [.new]) { [weak self] bar, _ in
+      self?.reportBarFrame(bar)
+    }
+  }
+
+  private func reportBarFrame(_ bar: UINavigationBar) {
+    guard let window else {
+      return
+    }
+    let extent = bar.subviews
+      .filter { !$0.isHidden && !$0.frame.isEmpty }
+      .reduce(bar.bounds) { $0.union($1.frame) }
+    let frame = bar.convert(extent, to: window)
+    onBarFrame(["top": frame.minY, "height": frame.height])
+  }
+
   private func watch(_ scrollView: UIScrollView) {
     offsetObservation = nil
     guard let threshold else {
@@ -166,7 +204,7 @@ final class ContentScrollAnchorView: ExpoView {
       let offset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
       let up = self.lastOffset.map { offset < $0 } ?? true
       self.lastOffset = offset
-      let next = self.past == true ? offset > threshold / 4 : offset > threshold && up
+      let next = self.past == true ? offset > threshold / 4 : offset > threshold && (up || !self.upOnly)
       if next == self.past {
         return
       }

@@ -26,8 +26,8 @@ import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import { BrowseNativeToolbar } from '@/components/browse-native-toolbar';
-import { useNativeBarOffset } from '@/components/native-bar-edge';
 import { NativeTabHeader } from '@/components/native-tab-header';
+import { TabLargeTitle } from '@/components/tab-large-title';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import {
   bridgePageOptions,
@@ -654,10 +654,6 @@ export default function BrowseScreen() {
     () => ({ borderBottomColor: stickyPinned.value ? 'transparent' : theme.barHairline }),
     [theme.barHairline],
   );
-  // The pinned section's label, which the iOS bar shows as its title — see NativeTabHeader.
-  const [section, setSection] = useState<string | null>(null);
-  // Where the system bar has slid to, so that label changes at the bar's edge — see the hook.
-  const nativeBar = useNativeBarOffset();
 
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
@@ -760,11 +756,7 @@ export default function BrowseScreen() {
   // button's hold is its menu, so the gesture moves to the one thing in the bar that is ours.
   const nativeHeader = (
     <>
-      <NativeTabHeader
-        title={[currentBridge?.name, pageLabels[pageKey(page)]].filter(Boolean).join(' ')}
-        section={section}
-        holdTestID="browse.nsfw-hold"
-      />
+      <NativeTabHeader />
       <BrowseNativeToolbar
         bridges={visibleBridges}
         thumbnails={bridgeThumbnails}
@@ -914,9 +906,8 @@ export default function BrowseScreen() {
           // edge whether the bar is expanded or docked under the status bar. (Under the native bar
           // it is the heading alone, fading at the same edge — StickySectionHeader's own split.)
           stickyHeaderTop={headerHeight}
-          stickyBarOffset={NATIVE_HEADER ? nativeBar.offset : barOffset}
+          stickyBarOffset={barOffset}
           stickyPinned={stickyPinned}
-          {...(NATIVE_HEADER ? { onSectionChange: setSection } : {})}
           ambient={feedTint}
           sharedValues={sharedValues}
           onScroll={onListScroll}
@@ -951,7 +942,10 @@ export default function BrowseScreen() {
         />
       )}
       {NATIVE_HEADER ? nativeHeader : topBar}
-      {nativeBar.probe}
+      <TabLargeTitle
+        title={[currentBridge?.name, pageLabels[pageKey(page)]].filter(Boolean).join(' ')}
+        holdTestID="browse.nsfw-hold"
+      />
       <PullIndicator {...pull.indicator} top={headerHeight} />
     </ThemedView>
   );

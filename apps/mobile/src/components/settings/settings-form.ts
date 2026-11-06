@@ -214,6 +214,8 @@ export type SettingsFormSection = {
   title?: string;
   /** The group's explanation, under the card, so its rows stay one line each. */
   footer?: string;
+  /** No card: the rows sit on the page (iOS; the app's own renderer draws every section as a card). */
+  plain?: boolean;
   /** Empty, the section is not drawn: a screen leaves a section out by emptying it. */
   fields: readonly SettingsField[];
   /** The rows are an ordered set the user drags into order: called with every row's key in the

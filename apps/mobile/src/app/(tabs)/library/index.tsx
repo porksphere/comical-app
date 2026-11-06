@@ -1,5 +1,5 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { StyleSheet } from 'react-native';
 import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,8 +13,8 @@ import { type TabFilter, TabFilterField, TabFilterTrigger, useTabFilter } from '
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { HoldActionTarget } from '@/components/hold-action-target';
-import { useNativeBarOffset } from '@/components/native-bar-edge';
 import { NativeTabHeader } from '@/components/native-tab-header';
+import { TabLargeTitle } from '@/components/tab-large-title';
 import { BridgeThumbRadius, BridgeThumbSize, useSubtitleSelectorStyle } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -81,11 +81,8 @@ export default function LibraryScreen() {
     () => ({ borderBottomColor: stickyPinned.value ? 'transparent' : theme.barHairline }),
     [theme.barHairline],
   );
-  // The pinned section's label, which the iOS bar shows as its title — see NativeTabHeader.
-  const [section, setSection] = useState<string | null>(null);
-  // Where the system bar has slid to, so that label changes at the bar's edge — see the hook.
-  const nativeBar = useNativeBarOffset();
 
+  const kinds = itemKindOptions(kindsPresent, selectedKind);
   const chrome: LibraryGridChrome = {
     listRef,
     paddingTop: headerHeight + BarContentGap,
@@ -94,7 +91,6 @@ export default function LibraryScreen() {
     // (content scrolls under it).
     stickyHeaderTop: headerHeight,
     stickyPinned,
-    ...(NATIVE_HEADER ? { onSectionChange: setSection, stickyBarOffset: nativeBar.offset } : {}),
     sharedValues,
     onScroll,
   };
@@ -120,7 +116,6 @@ export default function LibraryScreen() {
           selectedKind={selectedKind}
           railNav={railNav}
           filter={filter}
-          section={section}
         />
       ) : (
         <TabTitleBar
@@ -178,7 +173,12 @@ export default function LibraryScreen() {
           }
         />
       )}
-      {nativeBar.probe}
+      {NATIVE_HEADER ? (
+        <TabLargeTitle
+          title={kinds.length > 1 ? `${viewName} ${ITEM_KIND_LABELS[kind]}` : viewName}
+          holdTestID="library.nsfw-hold"
+        />
+      ) : null}
     </ThemedView>
   );
 }
@@ -200,7 +200,6 @@ function LibraryNativeHeader({
   selectedKind,
   railNav,
   filter,
-  section,
 }: {
   collection: string | null;
   collections: Collection[];
@@ -210,18 +209,11 @@ function LibraryNativeHeader({
   selectedKind: ItemKind;
   railNav: boolean;
   filter: TabFilter;
-  section: string | null;
 }) {
   const kinds = itemKindOptions(kindsPresent, selectedKind);
   return (
     <>
-      <NativeTabHeader
-        title={kinds.length > 1 ? `${viewName} ${ITEM_KIND_LABELS[kind]}` : viewName}
-        section={section}
-        filter={filter}
-        placeholder="Filter library…"
-        holdTestID="library.nsfw-hold"
-      />
+      <NativeTabHeader filter={filter} placeholder="Filter library…" />
       <LibraryCollectionMenu collection={collection} collections={collections} kind={kind} kinds={kinds} railNav={railNav} />
       <LibraryNativeToolbar collection={collection} kind={kind} />
     </>

@@ -19,6 +19,7 @@ import {
 import { fields, type SettingsFormSection, type SettingsIcon } from '@/components/settings/settings-form';
 import { SettingsList } from '@/components/settings/settings-list';
 import { NativeTabHeader } from '@/components/native-tab-header';
+import { TabLargeTitle } from '@/components/tab-large-title';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedView } from '@/components/themed-view';
 
@@ -86,6 +87,10 @@ export default function SettingsScreen() {
   const customPageCount = useCustomPages().length;
 
   const sections: SettingsFormSection[] = [
+    // Under the system bar the form starts at UIKit's inset, flush under the bar's row where the
+    // tab's title sits (TabLargeTitle); a first section with nothing in it gives the gap the other
+    // tabs' lists pad themselves.
+    ...(NATIVE_HEADER ? [{ plain: true, fields: [{ kind: 'custom' as const, testID: 'settings.title-gap', render: () => null }] }] : []),
     {
       fields: fields(
         { kind: 'link', testID: 'settings.category.general', icon: ICONS.general, label: 'General', onPress: () => router.push('/settings-general') },
@@ -200,7 +205,10 @@ export default function SettingsScreen() {
     <ThemedView style={styles.container}>
       <SettingsList sections={sections} column={MaxTopLevelWidth} reselectRoute="settings" />
       {NATIVE_HEADER ? (
-        <NativeTabHeader title="Settings" holdTestID="settings.nsfw-hold" />
+        <>
+          <NativeTabHeader />
+          <TabLargeTitle title="Settings" holdTestID="settings.nsfw-hold" />
+        </>
       ) : (
         <TabTitleBar title="Settings" />
       )}

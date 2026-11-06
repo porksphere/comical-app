@@ -1,7 +1,6 @@
 import { useSelector } from '@legendapp/state/react';
-import { useIsFocused } from 'expo-router';
 import { createContext, useState, type ReactElement } from 'react';
-import { StyleSheet, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaListener } from 'react-native-safe-area-context';
 import { BarScrolledProvider } from '@/components/bar-scrolled';
 import { logDiagnostic } from '@/lib/diagnostics';
@@ -45,21 +44,22 @@ export function barExtentLayout({ options, children }: LayoutArgs): ReactElement
  * stack's default height, the standard 44pt bar, and the iOS 27 bar is taller: the content popped
  * down by the difference on every first visit to a tab, and a list that holds its rows in place
  * over a padding change was left scrolled by that much. The tabs all mount at launch, before any
- * bar is measured, so the store is what a hidden tab takes the measure from. The shown screen's
- * measure stands; one from a screen that isn't (a tab not yet laid out under its bar) only if it is
- * larger, since a bar not laid out measures short. Kept across launches for the first screen's sake.
+ * bar is measured, so the store is what a hidden tab takes the measure from. A bar is one height
+ * at one window size, so only a larger measure stands: a screen not yet laid out under its bar
+ * measures short, and a shown one dips for a frame as the bar moves, which shrank a list's padding
+ * and left it scrolled by the difference. The iOS version is in the key, so a bar that changes
+ * height with an update starts the store over. Kept across launches for the first screen's sake.
  */
 const barExtents$ = persisted$<Record<string, number>>('comical:barExtents', {});
 
 function BarExtent({ slides, children }: { slides: boolean; children: ReactElement }) {
   const [measured] = useState(slides);
   const { width, height } = useWindowDimensions();
-  const pose = `${width}x${height}`;
+  const pose = `${Platform.Version}:${width}x${height}`;
   // `useSelector`, not `use$`: the React Compiler knows a hook by its name and `use$` isn't one to
   // it, so it memoized the read on the window size and skipped it on the next render, which React
   // throws on (fewer hooks than expected), and the app never left its splash.
   const top = useSelector(barExtents$[pose]) ?? null;
-  const focused = useIsFocused();
   if (!measured) return children;
   // Beside the page, never around it: UIKit finds the list the bar follows by itself, and on a
   // device one wrapper more around the list was enough to stop the bar sliding.
@@ -72,8 +72,8 @@ function BarExtent({ slides, children }: { slides: boolean; children: ReactEleme
         onChange={({ insets }) => {
           const known = barExtents$[pose].peek();
           // TEMPORARY: each measure to Settings > Diagnostics, until the tabs' first frame is confirmed.
-          logDiagnostic('bar-extent', `${pose} ${focused ? 'shown' : 'hidden'}: ${insets.top} (had ${known ?? 'none'})`);
-          if (focused || known == null || insets.top > known) barExtents$[pose].set(insets.top);
+          logDiagnostic('bar-extent', `${pose}: ${insets.top} (had ${known ?? 'none'})`);
+          if (known == null || insets.top > known) barExtents$[pose].set(insets.top);
         }}
       />
     </BarExtentContext.Provider>
