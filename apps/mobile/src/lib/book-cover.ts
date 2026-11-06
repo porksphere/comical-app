@@ -59,7 +59,7 @@ export function resolveCover({
  * How much of the cover's width the spine-side treatment covers, as a fraction. Anything laid over
  * the cover on that side (badges, the library ribbon) starts past it rather than on the crease.
  */
-export const SPINE_FRACTION: Record<CoverForm, number> = { volume: 0.1, issue: 0.05, scroll: 0, sheets: 0 };
+export const SPINE_FRACTION: Record<CoverForm, number> = { volume: 0.065, issue: 0.04, scroll: 0, sheets: 0 };
 
 /** One object per form and binding, so a card's `book` prop is the same object from render to render
  *  and nothing below it re-renders for a new-but-equal value while a list recycles. */
@@ -75,13 +75,15 @@ export const BOOK_COVERS: Readonly<Record<CoverForm, Readonly<Record<CoverBindin
  *  on a 2:3 box. */
 export const SHEET_OFFSET = { top: 0.04, right: 0.06 } as const;
 
-/** A bound book's corner, fitted to Apple Books' book covers: about 3.5% of the cover's width drawn as
- *  a squircle, which is a phone card at 4 pt and the middle of the desktop's widths at 8. */
-export const BOUND_CORNER = { phone: 4, desktop: 8 } as const;
+/** A bound book's corner: Apple Books' own, measured on an iPhone at about 1.2 pt whatever the book's
+ *  size. A rounder corner is the quickest way to make a book read as an app tile. (These were once
+ *  fitted against the web build, whose squircle cuts far less than iOS's continuous corner, and came
+ *  out two and a half times rounder on a device.) */
+export const BOUND_CORNER = { phone: 1.5, desktop: 2 } as const;
 
 /** Loose pages — a webtoon pane, a CG set's sheets — round further, as Apple Books rounds a square
- *  audiobook cover against its books: fitted to that cover, which is still squarer than a flat card. */
-export const LOOSE_CORNER = { phone: 7, desktop: 14 } as const;
+ *  audiobook cover (about 3 pt) against its books. */
+export const LOOSE_CORNER = { phone: 3, desktop: 5 } as const;
 
 /**
  * One radius for all four corners. A book is squarer at the spine than at the fore-edge, but on iOS a
@@ -96,43 +98,52 @@ export function bookRadius(cover: BookCover, desktop: boolean): number {
 export type Shade = { colors: readonly [string, string, ...string[]]; locations: readonly [number, number, ...number[]] };
 
 /**
- * The spine-side shading, read from the spine inward: a faint shade at the binding edge, a soft
- * highlight where the board folds, then a gentle crease. Kept soft on purpose: at card size a crisp
- * dark band or bright line reads as a second edge — dark on a light cover, gone on a dark one — so the
- * same 3 pt gap between cards looks a different width beside every cover, and a cover still loading
- * looks like an empty frame.
+ * A bound book's shading across its width, read from the spine to the fore-edge. Measured off Apple
+ * Books, whose books read as books on any art because every cue is narrow and crisp and kept to the
+ * edges: the board rolling away at the spine, a highlight, one groove and a lip, all inside the first
+ * 6.5% of the width, then nothing until a catch of light on the fore-edge. A wide, soft hinge (which
+ * this was) loses to busy cover art: on manga it was simply gone.
+ *
+ * Each colour fades to transparent in its own hue before the next begins, so no stop interpolates
+ * through grey.
  */
-export const HINGE: Shade = {
-  colors: ['rgba(0,0,0,0.10)', 'rgba(0,0,0,0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0.07)', 'rgba(0,0,0,0)'],
-  locations: [0, 0.04, 0.06, 0.09, 0.105, 0.16],
+export const SPINE: Shade = {
+  colors: [
+    'rgba(0,0,0,0.28)', 'rgba(0,0,0,0.22)', 'rgba(0,0,0,0)',
+    'rgba(255,255,255,0)', 'rgba(255,255,255,0.12)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0)',
+    'rgba(0,0,0,0)', 'rgba(0,0,0,0.13)', 'rgba(0,0,0,0)',
+    'rgba(255,255,255,0)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0)',
+    'rgba(255,255,255,0)', 'rgba(255,255,255,0.08)',
+  ],
+  locations: [0, 0.01, 0.011, 0.011, 0.012, 0.016, 0.023, 0.026, 0.037, 0.048, 0.048, 0.054, 0.065, 0.988, 1],
 };
 
-/** A saddle-stitched issue's fold: the hinge's shape at about half the width, since there is no board. */
+/** A saddle-stitched issue: no board, so one crease where the staples are, inside 4% of the width,
+ *  and the same lip at the fore-edge. */
 export const FOLD: Shade = {
-  colors: ['rgba(0,0,0,0.08)', 'rgba(0,0,0,0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0.05)', 'rgba(0,0,0,0)'],
-  locations: [0, 0.025, 0.035, 0.05, 0.06, 0.09],
+  colors: [
+    'rgba(0,0,0,0.18)', 'rgba(0,0,0,0)',
+    'rgba(255,255,255,0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0)',
+    'rgba(0,0,0,0)', 'rgba(0,0,0,0.10)', 'rgba(0,0,0,0)',
+    'rgba(255,255,255,0)', 'rgba(255,255,255,0.08)',
+  ],
+  locations: [0, 0.008, 0.008, 0.012, 0.02, 0.022, 0.028, 0.038, 0.988, 1],
 };
 
-/** An unbound pane's light, read top to bottom: a catch of light along the top edge and a little
- *  shade at the foot, both kept to the edges. Nothing here crosses the picture — a band laid over the
- *  art (an issue's gloss, a pane's top fifth washed white) reads as glare on a busy or dark cover. */
-export const PANE: Shade = {
-  colors: ['rgba(255,255,255,0.10)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.07)'],
-  locations: [0, 0.05, 0.88, 1],
+/** Every form's top and bottom, read downward: the top edge catches the light and the bottom edge
+ *  turns away from it, each inside the last 1.5–2% — Apple's +13% and −28%. These, not an outline,
+ *  are what hold a cover's edge on a page of its own colour. */
+export const EDGES: Shade = {
+  colors: ['rgba(255,255,255,0.13)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.28)'],
+  locations: [0, 0.014, 0.98, 1],
 };
 
 /**
- * The shadow under a cover, as a gradient strip in the gap above the title rather than a `boxShadow`.
- * It only ever falls straight down — a virtualized list paint-contains each item to its slot, so any
- * sideways reach is cut off at the grid's edges — and a shadow that only falls down IS a gradient.
- * A `boxShadow` would blur for it: a masked shadow layer per card on iOS, a `BlurMaskFilter` paint on
- * Android, both rebuilt whenever a recycled card's size changes.
+ * The shadow's picture (`assets/images/book-shadow-*.png`, drawn by `scripts/generate-book-shadow.py`)
+ * is laid out for a 2:3 cover with this much margin around it, in units of the cover's width. It must
+ * match the script's SIDE / TOP / FOOT.
  */
-export const SHADOW: Shade = {
-  colors: ['rgba(18,22,30,0.24)', 'rgba(18,22,30,0.08)', 'rgba(18,22,30,0)'],
-  locations: [0, 0.35, 1],
-};
-export const SHADOW_DEPTH = 5;
+export const SHADOW_BOX = { side: 0.15, top: 0.12, foot: 0.32, coverHeight: 1.5 } as const;
 
 /** The library ribbon: hangs from the head of the spine, just past the hinge. */
 export function ribbonSize(desktop: boolean): { width: number; height: number } {

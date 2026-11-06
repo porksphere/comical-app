@@ -1,10 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Image, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { ContinuousCorner, Spacing } from '@/constants/theme';
+import { ContinuousCorner } from '@/constants/theme';
 import { useIsDesktop } from '@/hooks/use-responsive';
-import { useTheme } from '@/hooks/use-theme';
-import { FOLD, HINGE, PANE, SHADOW, SHADOW_DEPTH, SHEET_OFFSET, bookRadius, ribbonSize, type BookCover } from '@/lib/book-cover';
+import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { EDGES, FOLD, SHADOW_BOX, SHEET_OFFSET, SPINE, ribbonSize, type BookCover } from '@/lib/book-cover';
 
 const FROM_SPINE = {
   left: { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } },
@@ -12,41 +12,59 @@ const FROM_SPINE = {
 } as const;
 const DOWN = { start: { x: 0, y: 0 }, end: { x: 0, y: 1 } } as const;
 
-/** The book drawn over a cover's picture, inside its clip: the spine-side shading for its form, then
- *  the rim and top-edge light. Never takes a touch. The rim's corner is the clip's own shape, not just
- *  its radius: a circular arc inside a continuous corner draws a second edge across the picture. */
+/** The book drawn over a cover's picture, inside its clip: a bound form's spine and fore-edge, then
+ *  every form's top and bottom edge. Light and shade only — no outline, which on a page of the cover's
+ *  own colour reads as an app tile's border rather than a book's edge. Never takes a touch. */
 export function BookChrome({ cover }: { cover: BookCover }) {
-  const theme = useTheme();
-  const radius = bookRadius(cover, useIsDesktop());
+  const across = cover.form === 'volume' ? SPINE : cover.form === 'issue' ? FOLD : null;
   return (
     <>
-      {cover.form === 'scroll' || cover.form === 'sheets' ? (
-        <LinearGradient style={styles.fill} colors={PANE.colors} locations={PANE.locations} {...DOWN} />
-      ) : (
-        <LinearGradient
-          style={styles.fill}
-          colors={cover.form === 'volume' ? HINGE.colors : FOLD.colors}
-          locations={cover.form === 'volume' ? HINGE.locations : FOLD.locations}
-          {...FROM_SPINE[cover.binding]}
-        />
+      {across && (
+        <LinearGradient style={styles.fill} colors={across.colors} locations={across.locations} {...FROM_SPINE[cover.binding]} />
       )}
-      <View style={[styles.fill, styles.rim, ContinuousCorner, { borderRadius: radius, borderColor: theme.coverRim }]} />
+      <LinearGradient style={styles.fill} colors={EDGES.colors} locations={EDGES.locations} {...DOWN} />
     </>
   );
 }
 
-/** The shadow under a cover — see `SHADOW`. Lives in the card's trailing group, which starts one gap
- *  below the cover and moves with it while the cover's aspect settles. It spans only the cover's flat
- *  bottom edge, since a straight strip under a rounded corner shows as a bar poking out past it; under
- *  a CG set it also stops where the front sheet does. */
-export function CoverShadow({ cover }: { cover: BookCover }) {
-  const inset = bookRadius(cover, useIsDesktop());
+const SHADOW_PICTURES = {
+  light: require('@/assets/images/book-shadow-light.png'),
+  dark: require('@/assets/images/book-shadow-dark.png'),
+} as const;
+const { side, top, foot, coverHeight } = SHADOW_BOX;
+
+/**
+ * The soft shadow under a cover, and in dark mode the glow Apple Books draws instead (a shadow on
+ * black is no shadow). One pre-blurred picture per theme, stretched under each card: a live blur is a
+ * masked layer per card on iOS and a BlurMaskFilter paint on Android. Its margins are percentages of
+ * the CARD's width (as percentage margins are), scaled by how tall this cover is against the 2:3 the
+ * picture was drawn for, so the picture's cover lands exactly on the real one at any shape.
+ *
+ * The card's first child, so it draws under the cover. On the web a list paint-contains each item to
+ * its slot, so the faint side falloff is cut at the grid's outer edges; the foot, which is most of it,
+ * sits in the card's own title space.
+ */
+export function BookShadow({ aspect, sheets }: { aspect: number; sheets: boolean }) {
+  const scheme = useActiveColorScheme();
+  // Everything in card widths. A CG set casts it from its front sheet alone: shadowing the whole box
+  // left the corner neither sheet covers as a square cut out of it.
+  const width = sheets ? 1 - SHEET_OFFSET.right : 1;
+  const down = sheets ? SHEET_OFFSET.top / aspect : 0;
+  const height = (1 - (sheets ? SHEET_OFFSET.top : 0)) / aspect;
+  const tall = height / (coverHeight * width);
   return (
-    <LinearGradient
-      style={[styles.shadow, { left: inset, right: inset }, cover.form === 'sheets' && styles.shadowUnderFrontSheet]}
-      colors={SHADOW.colors}
-      locations={SHADOW.locations}
-      {...DOWN}
+    <Image
+      source={SHADOW_PICTURES[scheme]}
+      resizeMode="stretch"
+      style={[
+        styles.shadow,
+        {
+          width: `${(1 + 2 * side) * width * 100}%`,
+          marginLeft: `${-side * width * 100}%`,
+          marginTop: `${(down - top * tall * width) * 100}%`,
+          aspectRatio: (1 + 2 * side) / ((top + coverHeight + foot) * tall),
+        },
+      ]}
     />
   );
 }
@@ -55,7 +73,7 @@ export function CoverShadow({ cover }: { cover: BookCover }) {
  *  along the top and the far edge. Drawn under the front sheet, outside its clip. */
 export function LooseSheet({ radius }: { radius: number }) {
   const theme = useTheme();
-  return <View style={[styles.sheetBehind, ContinuousCorner, { borderRadius: radius, backgroundColor: theme.coverSheet, borderColor: theme.coverRim }]} />;
+  return <View style={[styles.sheetBehind, ContinuousCorner, { borderRadius: radius, backgroundColor: theme.coverSheet }]} />;
 }
 
 /** "In your library", as the bookmark it already was in icon form, hanging from the head of the
@@ -87,18 +105,13 @@ const styles = StyleSheet.create({
     left: 0,
     pointerEvents: 'none',
   },
-  rim: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.28)',
-  },
   shadow: {
     position: 'absolute',
-    top: -Spacing.two,
-    height: SHADOW_DEPTH,
+    top: 0,
+    left: 0,
+    // `Image` defaults its size to the picture's own, which would win over `aspectRatio`.
+    height: 'auto',
     pointerEvents: 'none',
-  },
-  shadowUnderFrontSheet: {
-    right: `${SHEET_OFFSET.right * 100}%`,
   },
   sheetBehind: {
     position: 'absolute',
@@ -106,7 +119,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: `${SHEET_OFFSET.top * 100}%`,
     left: `${SHEET_OFFSET.right * 100}%`,
-    borderWidth: StyleSheet.hairlineWidth,
     pointerEvents: 'none',
   },
   ribbon: {
