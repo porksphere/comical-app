@@ -5,7 +5,7 @@
  *
  * Four forms, each the quietest take of its kind — the contract's `coverForm`:
  *  - `volume` — a bound book: a spine on the binding side.
- *  - `issue` — a saddle-stitched booklet (doujinshi, oneshots): one crease where the staples are.
+ *  - `issue` — a saddle-stitched booklet (doujinshi, oneshots): a crease and two staples on the fold.
  *  - `scroll` — nothing bound (webtoons): rounder corners, no spine.
  *  - `sheets` — loose pictures (CG sets): the front one with another sheet showing behind it.
  */
@@ -143,6 +143,22 @@ export const FOLD: Shade = {
     'rgba(255,255,255,0)', 'rgba(255,255,255,0.08)',
   ],
   locations: [0, 0.008, 0.008, 0.012, 0.02, 0.022, 0.028, 0.038, 0.988, 1],
+};
+
+/**
+ * An issue's two saddle staples, on the fold a quarter of the way in from each end, as fractions: `at`
+ * and `length` of the cover's height, `inset` from the binding edge and `width` of its width. The
+ * crease alone made an issue a slightly thinner volume, which real cover art erased; a staple is the
+ * one thing a book never has. Drawn bigger than a real staple (whose wire is about 0.3% of a B5's
+ * width) or it vanishes at card size.
+ */
+export const STAPLES = { at: [0.21, 0.725], length: 0.065, inset: 0.009, width: 0.012 } as const;
+
+/** A staple's wire, lit from the left: bright where it catches the light, falling to a dark trailing
+ *  edge that stands in for its shadow on the paper (a `boxShadow` would be a layer per card). */
+export const STAPLE: Shade = {
+  colors: ['#F5F7FA', '#A3AAB4', '#5D636B'],
+  locations: [0, 0.55, 1],
 };
 
 /** Every form's top and bottom, read downward: the top edge catches the light and the bottom edge

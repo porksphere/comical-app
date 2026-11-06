@@ -5,16 +5,17 @@ import { ContinuousCorner } from '@/constants/theme';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { useCoverGlow } from '@/hooks/use-cover-glow';
-import { EDGES, FOLD, SHADOW_BOX, SHEET_OFFSET, SPINE, ribbonSize, type BookCover } from '@/lib/book-cover';
+import { EDGES, FOLD, SHADOW_BOX, SHEET_OFFSET, SPINE, STAPLE, STAPLES, ribbonSize, type BookCover } from '@/lib/book-cover';
 
 const FROM_SPINE = {
   left: { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } },
   right: { start: { x: 1, y: 0 }, end: { x: 0, y: 0 } },
 } as const;
 const DOWN = { start: { x: 0, y: 0 }, end: { x: 0, y: 1 } } as const;
+const ACROSS = { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } } as const;
 
-/** The book drawn over a cover's picture, inside its clip: a bound form's spine and fore-edge, then
- *  every form's top and bottom edge. Light and shade only — no outline, which on a page of the cover's
+/** The book drawn over a cover's picture, inside its clip: a bound form's spine and fore-edge, every
+ *  form's top and bottom edge, and an issue's staples. Light and shade only — no outline, which on a page of the cover's
  *  own colour reads as an app tile's border rather than a book's edge. Never takes a touch. */
 export function BookChrome({ cover }: { cover: BookCover }) {
   const across = cover.form === 'volume' ? SPINE : cover.form === 'issue' ? FOLD : null;
@@ -24,6 +25,16 @@ export function BookChrome({ cover }: { cover: BookCover }) {
         <LinearGradient style={styles.fill} colors={across.colors} locations={across.locations} {...FROM_SPINE[cover.binding]} />
       )}
       <LinearGradient style={styles.fill} colors={EDGES.colors} locations={EDGES.locations} {...DOWN} />
+      {cover.form === 'issue' &&
+        STAPLES.at.map((at) => (
+          <LinearGradient
+            key={at}
+            style={[styles.staple, { top: `${at * 100}%`, [cover.binding]: `${STAPLES.inset * 100}%` }]}
+            colors={STAPLE.colors}
+            locations={STAPLE.locations}
+            {...ACROSS}
+          />
+        ))}
     </>
   );
 }
@@ -122,6 +133,13 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
+    pointerEvents: 'none',
+  },
+  staple: {
+    position: 'absolute',
+    width: `${STAPLES.width * 100}%`,
+    height: `${STAPLES.length * 100}%`,
+    borderRadius: 1,
     pointerEvents: 'none',
   },
   shadowBox: {
