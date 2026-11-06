@@ -41,9 +41,9 @@ the end of this doc is the only guard.
 | 18 | Tab badge rendered only above zero | Library bug | Keep | [ ] |
 | 19 | Type casts at library seams | Typing | Keep | [ ] |
 | 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
-| 21 | No bar material on the folded Duo | Pose inferred around a UIKit limit | Keep | [ ] |
+| 21 | No bar material on the folded Duo | Resolved: the gap is gone on the current iOS | Done | [x] |
 | 22 | `nav-bar-fade`, with a temporary trace | Animates a library-owned bar | Blocker (the trace), then Decide | [ ] |
-| 23 | `nav-bar-edge` | Reads a library-owned bar's layers every frame | Decide | [ ] |
+| 23 | `nav-bar-edge` | Removed with the section label it served | Done | [x] |
 
 ## Blockers
 
@@ -113,8 +113,8 @@ the end of this doc is the only guard.
 ### 5. `nav-bar-leading`
 
 - **What:** a zero-size view that finds the screen's `UINavigationItem` by walking the responder chain,
-  observes `leftBarButtonItems` with KVO, and sets the picture, label and menu directly on an item
-  react-native-screens created.
+  observes `rightBarButtonItems` with KVO, and sets the picture, label and menu directly on an item
+  react-native-screens created (the first trailing item, beside the search).
 - **Where:** `apps/mobile/modules/nav-bar-leading/ios/NavBarLeadingModule.swift`,
   `src/components/nav-bar-leading-menu.tsx`.
 - **Why:** three react-native-screens behaviours together.
@@ -250,23 +250,10 @@ the end of this doc is the only guard.
 
 ### 23. `nav-bar-edge`
 
-- **What:** a zero-size view on Browse and Library finds the screen's navigation bar through the
-  responder chain and, once a frame on a `CADisplayLink`, reads where the bar subview holding the
-  title sits on screen, through its presentation layer. It reports how far that is above the lowest
-  it has been (the rest, forgotten when the bar changes height), and the screen hands that to the
-  sticky section header as its `barOffset` (`useNativeBarOffset`, `components/native-bar-edge.tsx`).
-- **Where:** `apps/mobile/modules/nav-bar-edge/`, and the probe in `app/(tabs)/(home)/index.tsx`,
-  `app/(tabs)/library/index.tsx` and, folded, the series bar (`details-native-bar.tsx`), whose own
-  backing slides away with the bar by it.
-- **Why:** the section label in a tab's bar changed as a heading passed the line where the bar rests.
-  The bar slides away with the scroll, so the swap landed under a bar half slid away. iOS bar
-  minimization moves the bar's content, not the bar, and reports nothing, so its edge has to be read.
-- **Risk:** it leans on the minimization moving the subview that holds the title view, and on a
-  display link running while the tab is on screen.
-- **How it fails:** silent. If the content stops moving where this looks, the offset stays 0 and the
-  label changes at the bar's rest again, as before. A bar already slid away when the screen appears
-  reads as at rest until it comes back once.
-- **Removed by:** UIKit or react-native-screens reporting the bar's minimization progress.
+- **Removed.** It read the bar's slide off its layers once a frame so a section's label could take
+  the bar's title at the bar's edge. The tabs' bars hold no title now, and the label is gone with it.
+  The tab's title is `components/tab-large-title.tsx`, on the bar's row, whose extent the
+  content-scroll-view anchor reports (item 8).
 
 ## Shaped workarounds
 
@@ -387,17 +374,10 @@ Already on `main`, so not from this work: `ZOOM_BOUND_WAIT_MS`, `ZOOM_THUMB_PAIN
 
 ### 21. No bar material on the folded Duo
 
-- **What:** the bar has no frosted material on the Duo's folded panel. A tab's stack and every settings
-  screen take the system's hard scroll edge in its place, which shows only once content is under the bar.
-- **Where:** `useBarMaterial`, `useFoldedBarEdge` and `useSettingsScreen` in `src/lib/native-bar.ts`, used
-  by `tab-stack.ios.tsx`, `screen-scroll-marker.tsx` and the two root layouts.
-- **Why:** UIKit starts the bar below a strip at the top of that panel, and no bar background reaches
-  into it, in a bare UIKit app too. FB24859353 on Apple's side, closed as a platform limit by
-  react-native-screens (#4956). The other way out is a view of our own above the bar, which would not
-  slide with it.
-- **How it fails:** the pose is inferred, a vertical bar in a tall window. A folded pose it misses shows
-  the gap; a pose it wrongly catches loses the frost.
-- **Removed by:** Apple extending the bar's background.
+- **Resolved.** The gap above the bar on the Duo's folded panel (FB24859353) is gone on the current
+  iOS: with the material on, the frost reaches the top, checked on a device on the tabs, a settings
+  page and the series page. `useBarMaterial` gives every bar the material; `useFoldedBarEdge` and
+  the hard-edge switching built on it are unreachable and come out.
 
 ## Looked at, not hacks
 

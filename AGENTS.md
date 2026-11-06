@@ -60,28 +60,28 @@ the list handed to it, so there is no "bare until scrolled" to be had natively. 
 the pushed pages make their own (`components/bar-scrolled.tsx`): each stack's `screenLayout`
 provides a screen's `scrolled`, the content-scroll-view anchor under the screen's list reports it
 natively (a few points past the top, crossings only; `ScreenScrollMarker` for a React Native
-list, the settings form for its SwiftUI one), and `NativeTabHeader` and `TopBar` set the material
-as an option — `none` over the top of the page, the material once content is under the bar —
+list, the settings form for its SwiftUI one), and `TopBar` sets the material as an option on a
+pushed page — `none` over the top of the page, the material once content is under the bar —
 with `nav-bar-fade` crossfading the switch, as on the series page. The system's soft scroll edge
 is hidden on those screens (`HIDDEN_TOP_EDGE`): UIKit fades it in behind the bar's buttons as
 content slides under, a half-backed bar for the first points, and cuts it the instant the list is
-back at the top. The folded Duo keeps its hard edge, which is the backing there; UIKit draws an
-edge only behind what the bar registers — a plain-text title, never a custom view — so
-`nav-bar-fade` registers a pushed page's title view, which is a custom one (`barTitleStyle`),
-centred by UIKit as the tabs' is, where a plain-text title sat at the leading edge. Two exceptions. The
-series details' bar: bare over the strip, the series' title a custom title view always in the bar
-that fades in with the scroll as the page's own title goes under it (never an option: a plain-text
-title is backed by the scroll edge, and where the back button sits in the Duo's vertical bar an
-untitled bar collapses to no height), and the material switched as an option once that title is
-past, on the way back up only, crossfaded by the local module `modules/nav-bar-fade`
-(`components/series/details-native-bar.tsx`). And the
-folded iPhone Duo, where no bar background reaches the top of the panel: there it has none, and a
-tab's stack and every settings screen take the hard scroll edge instead, a tab root on its list's
-marker too (`useFoldedBarEdge`). Not the series details: UIKit ramps an edge at a list's top, and
-that bar's line is the page's title, deep in the list, where a switch of the edge is a cut, so the
-series bar draws a backing of its own under the system bar, faded by the scroll as its title is and
-sliding away with the bar (`nav-bar-edge`), with the list's edge hidden (its bar is the screen's
-`'bar'` manager in `bar-scrolled`). The soft
+back at the top. A pushed page's title is a custom title view (`barTitleStyle`), centred by UIKit,
+where a plain-text title sat at the leading edge; a text title is also what UIKit registers with
+that edge, which drew it behind the title. The tabs' bars hold no title and never take material:
+their items float over the page, as an iOS 26 bar's do, and the tab's title is one component laid
+over the screen on the bar's row (`components/tab-large-title.tsx`), 28pt at the leading edge,
+centred on the row by its measured line metrics, rising, fading and blurring away on a timer at the
+list's crossing, either way (`'heading'` in `bar-scrolled`), back at the top; that row is the
+bar's content extent, which the anchor reports (`useBarRow`), since the window's top inset is 0
+on the folded Duo while the bar's content reaches the top. The series details' bar: bare over the
+strip, the series' title a custom title view always in the bar that fades in, centred, with the
+scroll as the page's own title (the tabs' heading metrics) goes under it (never an option: UIKit
+draws a blank or whitespace text title as quotation marks, and where the back button sits in the
+Duo's vertical bar an untitled bar collapses to no height), and the material switched as an option
+once that title is past, on the way back up only, crossfaded by the local module
+`modules/nav-bar-fade` (`components/series/details-native-bar.tsx`); its bar keeps the list's
+edge hidden (`'bar'` in `bar-scrolled`). The folded iPhone Duo's bar takes the material like any
+other: the gap above it (FB24859353) is gone on the current iOS, checked on a device. The soft
 edge stays on under the material, which hides it while the bar is there; it backs the status bar
 once the bar has slid away. Nothing
 may be laid in ahead of the list there, so on iOS
@@ -122,28 +122,28 @@ error on every update. A screen sets its glyphs or hides the bar with `ScreenSta
 the root stack and react-native-screens looks no further than the tab bar controller or a modal
 that is not full screen. Elsewhere it is expo-status-bar's.
 
-What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds what
-names the screen and the search: every tab uses an inline title (`components/native-tab-header.tsx`,
-`Stack.Title asChild`; large titles looked foreign beside the custom clusters) that stays put
-while the BAR slides away as the content scrolls down and back as it scrolls up: iOS 27's bar
+What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds the
+tab's menu and the search; the title is the page's (`TabLargeTitle`, above). The BAR slides away
+as the content scrolls down and back as it scrolls up: iOS 27's bar
 minimization, the way Settings' own pages behave, asked for on every tab and pushed bar
-(`SLIDE_AWAY_BAR` in `lib/native-bar.ts`, react-native-screens' header config through
+`SLIDE_AWAY_BAR` in `lib/native-bar.ts`, react-native-screens' header config through
 expo-router's `unstable_nativeProps`). The props arrive in react-native-screens 4.31, a NIGHTLY
 here until it ships, and so do the tsconfig line pointing its `reanimated` types at the folder
 its build writes them to and the `metro.config.js` redirect that sends web to its TurboModule
 stub (without it web crashes at load). The reader's bar never slides (`never`): it follows the chrome. The title names the view on Browse ("<bridge> <page>") and
 Library ("<view> <kind>", the kind only while the view holds more than one), and is the tab's
-name elsewhere; on every tab it is also the NSFW hold target (`NativeTabHeader holdTestID`,
+name elsewhere; on every tab it is also the NSFW hold target (`TabLargeTitle holdTestID`,
 required), because the bars hold only SYSTEM items and a `UIBarButtonItem` has no long-press of
-its own (holding one opens its menu). Each has ONE leading `Stack.Toolbar.Menu`,
+its own (holding one opens its menu). Each has ONE `Stack.Toolbar.Menu` at the trailing edge
+beside the search, the TV app's profile-picture position,
 flat — inline sections, never submenus, so every pick is open and tap — Browse the current
 bridge's thumbnail as a circle over the bridges and then the pages as checkmarked rows
 (`components/browse-native-toolbar.tsx`), Library the view's mark (the
 collection's initial, All's asterisk) with the views and "Manage collections…" and then the
 kind, Series / Chapters / Pages, as a second section while the view holds more than one
-(`LibraryCollectionMenu` in `components/library/library-native-toolbar.tsx`) — and the search
-trailing, so UIKit lays the bar out itself (an image item joins the vertical bar of a folded or
-landscape display). The leading image button keeps its Liquid Glass capsule: a bare circle
+(`LibraryCollectionMenu` in `components/library/library-native-toolbar.tsx`) — so UIKit lays
+the bar out itself (an image item joins the vertical bar of a folded or landscape display). The
+image button keeps its Liquid Glass capsule: a bare circle
 (`hidesSharedBackground`, the way a round account picture is itself the button in Apple's bars)
 was tried and dropped, because the capsule is what morphs into the pushed series page's back
 button, and a bare circle left that button growing out of nothing. (The capsule comes off a
@@ -155,15 +155,15 @@ thumbnail (or the bundled Comical asset) down to a 28pt PNG at the screen's scal
 session; the navigation bar's items and menus read it through React Native's loader as a plain
 image, so the SHAPE is in the file: the local Expo module `apps/mobile/modules/shaped-image`
 (Swift, iOS only, `null` elsewhere) clips a rendered tile to a corner or a circle and
-`menuThumbFile(source, radius)` keeps one file per shape. Neither tab's leading button
+`menuThumbFile(source, radius)` keeps one file per shape. Neither tab's menu button
 or menu is in the header config, though: react-native-screens replaces EVERY bar item,
 unanimated, on any change to the config, so a pick that changed the button's picture and the
 rows' checks popped the whole bar. Both render `NavBarLeadingMenu`
 (`components/nav-bar-leading-menu.tsx`), which gives the config a placeholder that never
 changes and hands the live picture, label and menu (inline sections of rows) to the local
 module `apps/mobile/modules/nav-bar-leading`, a zero-size view in the page that sets them on
-that item in place, and again whenever the items are rebuilt, as they are on every return to
-the screen. It decodes the files itself: through React Native's loader the bar reads one off
+that item in place (the first of the trailing items), and again whenever the items are rebuilt,
+as they are on every return to the screen. It decodes the files itself: through React Native's loader the bar reads one off
 the main thread, uncached, so the button was blank for the first part of every pop back, and a
 menu row's never showed, landing after the menu was built (a bar item keeps a copy of its
 menu). Without the module the menu goes back into the config. A row without art shows its initial
@@ -173,13 +173,9 @@ sticky-header primitive (no title menu, palette or scope bar in react-native-scr
 the page picker is a menu in the bar, not a strip under it. Nothing pins under the bar at all:
 every surface tried there failed (a band floated, a scrim running up to the bar read as a second
 bar, a glass capsule hugging the heading was a badge drifting over the covers), so on iOS
-`StickySectionHeader` draws nothing (`IN_BAR`) and only reports which section is under the bar
-(`onSectionChange` on the grids and feed), and the screen hands that label to `NativeTabHeader
-section` — measured against the bar's edge where it has slid to, which the local module
-`modules/nav-bar-edge` reads off the bar (`useNativeBarOffset`), so the label never swaps under a
-bar half gone: it takes the title's place in the bar, the way Photos names the month there and
-Music the album, cross-fading as the next heading arrives. The inline headings scroll away like
-any other row. A series opened from a tab is a real pushed card of that tab's stack (route
+`StickySectionHeader` draws nothing (`IN_BAR`); the inline headings scroll away like any other
+row. (A section's label taking the bar's title, measured against the bar's slide by a module
+reading the bar's layers, was built and dropped with the title itself.) A series opened from a tab is a real pushed card of that tab's stack (route
 `in-tab/series/index` — the tab's `in-tab/series/` directory has no layout on purpose, so the
 page IS the pushed screen and its `Stack.Screen` addresses it), so the tab's leading item morphs into its
 back button and the slide and edge-pop are the system's; `useNativePush` in
