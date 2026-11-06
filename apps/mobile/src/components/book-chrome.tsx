@@ -43,9 +43,14 @@ const { side, top, foot, coverHeight } = SHADOW_BOX;
  * The soft shadow under a cover in light mode, and in dark mode the glow Apple Books draws instead —
  * in the cover's own colours (`useCoverGlow`), since a shadow on black is no shadow. Pre-blurred
  * pictures stretched under each card: a live blur is a masked layer per card on iOS and a
- * BlurMaskFilter paint on Android. Their margins are percentages of the CARD's width (as percentage
- * margins are), scaled by how tall this cover is against the 2:3 the pictures were drawn for, so each
- * picture's cover lands exactly on the real one at any shape.
+ * BlurMaskFilter paint on Android.
+ *
+ * Placed inside a box the cover's own size, by percentages OF THAT BOX: left and width of its width,
+ * top and height of its height, which every platform agrees on. (Offsetting by a percentage margin of
+ * the card instead was right on the web and wrong on iOS, whose layout measures a vertical margin
+ * against the card's height — title and all — and drew the glow a cover's-worth of margin too high.)
+ * Scaled by how tall this cover is against the 2:3 the pictures were drawn for, so each picture's
+ * cover lands exactly on the real one at any shape.
  *
  * The card's first child, so it draws under the cover. On the web a list paint-contains each item to
  * its slot, so the faint side falloff is cut at the grid's outer edges; the foot, which is most of it,
@@ -54,25 +59,32 @@ const { side, top, foot, coverHeight } = SHADOW_BOX;
 export function BookShadow({ aspect, sheets, cover }: { aspect: number; sheets: boolean; cover: string | undefined }) {
   const dark = useActiveColorScheme() === 'dark';
   const glow = useCoverGlow(dark ? cover : undefined);
-  // Everything in card widths. A CG set casts it from its front sheet alone: shadowing the whole box
-  // left the corner neither sheet covers as a square cut out of it.
+  // In card widths. A CG set casts it from its front sheet alone: shadowing the whole box left the
+  // corner neither sheet covers as a square cut out of it.
   const width = sheets ? 1 - SHEET_OFFSET.right : 1;
   const down = sheets ? SHEET_OFFSET.top / aspect : 0;
   const height = (1 - (sheets ? SHEET_OFFSET.top : 0)) / aspect;
   const tall = height / (coverHeight * width);
-  const box: ImageStyle = {
+  // The box is 1/aspect card widths tall, so a length in card widths is `aspect` of its height.
+  const picture: ImageStyle = {
+    left: `${-side * width * 100}%`,
     width: `${(1 + 2 * side) * width * 100}%`,
-    marginLeft: `${-side * width * 100}%`,
-    marginTop: `${(down - top * tall * width) * 100}%`,
-    aspectRatio: (1 + 2 * side) / ((top + coverHeight + foot) * tall),
+    top: `${(down - top * tall * width) * aspect * 100}%`,
+    height: `${(top + coverHeight + foot) * tall * width * aspect * 100}%`,
   };
-  if (!dark) return <Image source={SHADOW} resizeMode="stretch" style={[styles.shadow, box]} />;
-  if (glow?.picture) return <Image source={{ uri: glow.picture }} resizeMode="stretch" style={[styles.shadow, box]} />;
   return (
-    <>
-      <Image source={GLOW_RIM} resizeMode="stretch" style={[styles.shadow, box, glow ? { tintColor: glow.rim } : NEUTRAL_GLOW.rim]} />
-      <Image source={GLOW_FOOT} resizeMode="stretch" style={[styles.shadow, box, glow ? { tintColor: glow.foot } : NEUTRAL_GLOW.foot]} />
-    </>
+    <View style={[styles.shadowBox, { aspectRatio: aspect }]}>
+      {!dark ? (
+        <Image source={SHADOW} resizeMode="stretch" style={[styles.shadow, picture]} />
+      ) : glow?.picture ? (
+        <Image source={{ uri: glow.picture }} resizeMode="stretch" style={[styles.shadow, picture]} />
+      ) : (
+        <>
+          <Image source={GLOW_RIM} resizeMode="stretch" style={[styles.shadow, picture, glow ? { tintColor: glow.rim } : NEUTRAL_GLOW.rim]} />
+          <Image source={GLOW_FOOT} resizeMode="stretch" style={[styles.shadow, picture, glow ? { tintColor: glow.foot } : NEUTRAL_GLOW.foot]} />
+        </>
+      )}
+    </View>
   );
 }
 
@@ -112,13 +124,15 @@ const styles = StyleSheet.create({
     left: 0,
     pointerEvents: 'none',
   },
-  shadow: {
+  shadowBox: {
     position: 'absolute',
     top: 0,
     left: 0,
-    // `Image` defaults its size to the picture's own, which would win over `aspectRatio`.
-    height: 'auto',
+    width: '100%',
     pointerEvents: 'none',
+  },
+  shadow: {
+    position: 'absolute',
   },
   sheetBehind: {
     position: 'absolute',
