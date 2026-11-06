@@ -248,9 +248,6 @@ function RootNavigation() {
           <Stack.Screen name="add-registry" options={settingsScreen('Add registry')} />
           <Stack.Screen name="diagnostics" options={settingsScreen('Diagnostics')} />
           <Stack.Screen name="gesture-trace" options={settingsScreen('Gesture trace')} />
-          {/* THROWAWAY: the bar slide-away test (components/bar-test). */}
-          <Stack.Screen name="bar-test" options={settingsScreen('Bar test')} />
-          <Stack.Screen name="bar-test-upstream" options={{ headerShown: false }} />
           <Stack.Screen name="downloads" options={settingsScreen('Downloads')} />
           <Stack.Screen name="series-downloads" options={settingsScreen('Downloads')} />
           <Stack.Screen name="storage" options={settingsScreen('Storage')} />

@@ -1,13 +1,12 @@
-import { Platform, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 
-import { fields, type SettingsFormSection } from '@/components/settings/settings-form';
+import type { SettingsFormSection } from '@/components/settings/settings-form';
 import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { useApiBase } from '@/data/api';
 import { useMockDataToggle } from '@/data/source';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
-import { router } from '@/lib/nav';
 
 /** Dev-build-only: lets local development iterate against mock data without a running backend, and
  *  shows which server real requests target. The Settings screen only links here when
@@ -38,19 +37,6 @@ export default function DeveloperSettingsScreen() {
         },
         { kind: 'value', label: 'Server', description: apiBase, selectable: true },
       ],
-    },
-    // THROWAWAY: the bar slide-away test (components/bar-test); its in-tab copy is on the Settings tab.
-    {
-      title: 'Bar test',
-      fields: fields(
-        Platform.OS === 'ios' && { kind: 'link', testID: 'developer.bar-test', label: 'Root stack', onPress: () => router.push('/bar-test') },
-        Platform.OS === 'ios' && {
-          kind: 'link',
-          testID: 'developer.bar-test-upstream',
-          label: 'Upstream copy',
-          onPress: () => router.push('/bar-test-upstream'),
-        },
-      ),
     },
   ];
 

@@ -169,7 +169,6 @@ const SETTINGS_PATHS = new Set([
   '/add-registry',
   '/diagnostics',
   '/gesture-trace',
-  '/bar-test',
   '/downloads',
   '/series-downloads',
   '/storage',

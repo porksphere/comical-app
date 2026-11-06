@@ -183,15 +183,6 @@ export default function SettingsScreen() {
           label: 'Developer',
           onPress: () => router.push('/settings-developer'),
         },
-        // THROWAWAY: the bar slide-away test inside this tab's stack (components/bar-test).
-        PROFILING_ENABLED &&
-          Platform.OS === 'ios' && {
-            kind: 'link',
-            testID: 'settings.category.bar-test',
-            icon: ICONS.developer,
-            label: 'Bar test (in tab)',
-            onPress: () => router.push('/bar-test'),
-          },
       ),
     },
   ];
