@@ -6,8 +6,6 @@ public class NavBarFadeModule: Module {
     Name("NavBarFade")
 
     View(NavBarFadeView.self) {
-      Events("onTrace")
-
       Prop("edgeBacked") { (view: NavBarFadeView, backed: Bool) in
         view.edgeBacked = backed
       }
@@ -25,8 +23,6 @@ final class NavBarFadeView: ExpoView {
 
   private weak var controller: UIViewController?
   private var observations: [NSKeyValueObservation] = []
-  /// TEMPORARY: what the bar was doing at each switch, for the Diagnostics screen.
-  let onTrace = EventDispatcher()
 
   /// Whether the scroll view's top edge effect shows behind the custom title view. UIKit draws a
   /// scroll edge only behind what a bar registers, and it registers a text title but not a custom
@@ -62,7 +58,7 @@ final class NavBarFadeView: ExpoView {
     observations = [
       item.observe(\.title, options: [.old, .new]) { [weak self] _, change in
         if change.oldValue != change.newValue {
-          self?.fade(because: "title '\((change.oldValue ?? nil) ?? "")' -> '\((change.newValue ?? nil) ?? "")'")
+          self?.fade()
         }
       },
       item.observe(\.standardAppearance, options: [.old, .new]) { [weak self] _, change in
@@ -70,7 +66,7 @@ final class NavBarFadeView: ExpoView {
         let old = (change.oldValue ?? nil)?.backgroundEffect != nil
         let new = (change.newValue ?? nil)?.backgroundEffect != nil
         if old != new {
-          self?.fade(because: "material \(old) -> \(new)")
+          self?.fade()
         }
       },
       // The title view arrives with the bar's first update, after this is on the window, and a
@@ -108,7 +104,6 @@ final class NavBarFadeView: ExpoView {
       return
     }
     guard let scrollView = nearestPageScrollView() else {
-      trace("edge: no scroll view")
       return
     }
     removeEdgeInteraction()
@@ -117,17 +112,6 @@ final class NavBarFadeView: ExpoView {
     interaction.edge = .top
     titleView.addInteraction(interaction)
     edgeInteraction = interaction
-    // TEMPORARY: which list, and the state of its top edge, since a hidden edge draws nothing.
-    let edge = scrollView.topEdgeEffect
-    let style: String
-    switch edge.style {
-    case .hard: style = "hard"
-    case .soft: style = "soft"
-    default: style = "automatic"
-    }
-    trace(
-      "edge: on | list \(type(of: scrollView)) h\(Int(scrollView.bounds.height)) edge \(edge.isHidden ? "hidden" : style)"
-        + " offset \(Int(scrollView.contentOffset.y)) inset \(Int(scrollView.adjustedContentInset.top))")
   }
 
   private func removeEdgeInteraction() {
@@ -136,7 +120,6 @@ final class NavBarFadeView: ExpoView {
     }
     interaction.view?.removeInteraction(interaction)
     edgeInteraction = nil
-    trace("edge: off")
   }
 
   /// The page's list: the scroll view nearest to this view that fills most of the screen (a rail is
@@ -162,44 +145,17 @@ final class NavBarFadeView: ExpoView {
     return nil
   }
 
-  private func fade(because reason: String) {
+  private func fade() {
     guard let navigation = controller?.navigationController,
           navigation.transitionCoordinator == nil,
           window != nil else {
-      trace("\(reason): no fade (nav \(controller?.navigationController != nil), "
-        + "transition \(controller?.navigationController?.transitionCoordinator != nil), window \(window != nil))")
       return
-    }
-    trace("\(reason): fade")
-    for delay in [0.05, 0.35] {
-      DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-        self?.trace("  +\(Int(delay * 1000))ms")
-      }
     }
     let transition = CATransition()
     transition.type = .fade
     transition.duration = Self.duration
     transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
     navigation.navigationBar.layer.add(transition, forKey: "comical.navBarFade")
-  }
-}
-
-extension NavBarFadeView {
-  /// Where the bar's content sits (minimization shifts the bar's subviews, not the bar), and how many
-  /// animations are running on the bar and on its subviews.
-  fileprivate func trace(_ event: String) {
-    guard let bar = controller?.navigationController?.navigationBar else {
-      onTrace(["message": "\(event) | no bar"])
-      return
-    }
-    let shown = bar.subviews.filter { !$0.isHidden && !$0.frame.isEmpty }
-    let top = shown.map { Int($0.frame.minY) }.min() ?? -1
-    let bottom = shown.map { Int($0.frame.maxY) }.max() ?? -1
-    let barAnimations = bar.layer.animationKeys()?.count ?? 0
-    let subviewAnimations = shown.reduce(0) { $0 + ($1.layer.animationKeys()?.count ?? 0) }
-    let presented = bar.subviews.compactMap { $0.layer.presentation()?.frame.maxY }.max().map { Int($0) } ?? -1
-    onTrace(["message": "\(event) | bar h\(Int(bar.bounds.height)) alpha \(bar.alpha) "
-      + "content \(top)..\(bottom) on-screen \(presented) | anims bar \(barAnimations) sub \(subviewAnimations)"])
   }
 }
 

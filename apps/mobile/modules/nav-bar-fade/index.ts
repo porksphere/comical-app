@@ -15,8 +15,6 @@ export type NavBarFadeProps = ViewProps & {
    * a text title, doesn't back on its own. iOS 26 and later.
    */
   edgeBacked?: boolean;
-  /** TEMPORARY: the bar's state at each switch, for the Diagnostics screen. */
-  onTrace?: (event: { nativeEvent: { message: string } }) => void;
 };
 
 export const NavBarFade: ComponentType<NavBarFadeProps> | null = requireOptionalNativeModule('NavBarFade')

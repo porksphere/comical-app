@@ -3,7 +3,6 @@ import { createContext, useEffect, useRef, useState, type ReactElement } from 'r
 import { Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaListener } from 'react-native-safe-area-context';
 import { BarScrolledProvider } from '@/components/bar-scrolled';
-import { logDiagnostic } from '@/lib/diagnostics';
 import { persisted$ } from '@/lib/observable';
 
 /**
@@ -82,8 +81,6 @@ function BarExtent({ slides, root, children }: { slides: boolean; root: boolean;
   const measure = (next: number) => {
     if (settling.current) clearTimeout(settling.current);
     settling.current = null;
-    // TEMPORARY: each measure to Settings > Diagnostics, until the tabs' first frame is confirmed.
-    logDiagnostic('bar-extent', `${pose}${root ? ' root' : ''}: ${next} (own ${own?.pose === pose ? own.top : 'none'}, seed ${seed ?? 'none'})`);
     if (next <= 0) return;
     if (own?.pose !== pose || next > own.top) setOwn({ pose, top: next });
     if (root) {

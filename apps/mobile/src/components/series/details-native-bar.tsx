@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import Animated, {
   interpolate,
@@ -14,7 +14,6 @@ import { useManagesBar } from '@/components/bar-scrolled';
 import { BarContentGap } from '@/constants/theme';
 import { useNativeHeaderHeight } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
-import { logDiagnostic } from '@/lib/diagnostics';
 import { HIDDEN_TOP_EDGE, SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
 
 import { NavBarFade } from '../../../modules/nav-bar-fade';
@@ -92,10 +91,6 @@ export function SeriesDetailsNativeBar({
       'clamp',
     ),
   }));
-  // TEMPORARY: the bar's switches, traced to Settings > Diagnostics (docs/NATIVE-HACKS.md, item 22).
-  useEffect(() => {
-    logDiagnostic('bar-fade', `series: past title ${pastTitle}`);
-  }, [pastTitle]);
   return (
     <>
       <Stack.Screen
@@ -117,7 +112,7 @@ export function SeriesDetailsNativeBar({
           {title}
         </Animated.Text>
       </Stack.Title>
-      {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" onTrace={traceBar} /> : null}
+      {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" /> : null}
       {!nativePush ? (
         <Stack.Toolbar placement="left">
           <Stack.Toolbar.Button icon="chevron.left" accessibilityLabel="Go back" onPress={onClose} />
@@ -131,11 +126,6 @@ export function SeriesDetailsNativeBar({
 const TITLE_MAX_WIDTH = 0.6;
 // UIKit's inline navigation title: 17pt semibold in the system font.
 const TITLE_STYLE = { fontSize: 17, fontWeight: '600' } as const;
-
-// TEMPORARY: the bar's switches, traced to Settings > Diagnostics (docs/NATIVE-HACKS.md, item 22).
-function traceBar(e: { nativeEvent: { message: string } }) {
-  logDiagnostic('bar-fade', e.nativeEvent.message);
-}
 
 const styles = StyleSheet.create({
   probe: { position: 'absolute', width: 0, height: 0 },

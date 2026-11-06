@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { useEffect, type ComponentProps, type ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,7 +16,6 @@ import { useInSettingsPane } from '@/lib/settings-pane';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
-import { logDiagnostic } from '@/lib/diagnostics';
 import { HIDDEN_TOP_EDGE, useBarMaterial } from '@/lib/native-bar';
 import { useWindowControlsClearance } from '@/lib/window-controls';
 
@@ -75,10 +74,6 @@ export function TopBar({
   const inPane = useInSettingsPane();
   const scrolled = useBarScrolled();
   useManagesBar(NATIVE_HEADER && !inPane);
-  // TEMPORARY: each change to Settings > Diagnostics, until the bar's rest state is confirmed.
-  useEffect(() => {
-    if (NATIVE_HEADER && !inPane) logDiagnostic('bar-fade', `${title}: scrolled ${scrolled}`);
-  }, [title, scrolled, inPane]);
   const material = useBarMaterial();
   // Inside the settings modal the pane has no bar of its own: the modal supplies the header, and a
   // back button here would point at a stack this pane isn't on. The trailing actions still have to
@@ -110,14 +105,7 @@ export function TopBar({
             {title}
           </ThemedText>
         </Stack.Title>
-        {NavBarFade ? (
-          <NavBarFade
-            style={styles.probe}
-            pointerEvents="none"
-            // TEMPORARY: each switch to Settings > Diagnostics, until the fade is confirmed on a device.
-            onTrace={(e) => logDiagnostic('bar-fade', `${title}: ${e.nativeEvent.message}`)}
-          />
-        ) : null}
+        {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" /> : null}
         {items.length > 0 ? (
           <Stack.Toolbar placement="right">
             {items.map((action) =>
