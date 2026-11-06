@@ -1,0 +1,116 @@
+# The page curl (components/reader/use-page-curl.tsx): the settings sheet's Page turn row, tap turns
+# played as the page curling over, and a drag that turns the page under the finger, in single-page
+# and two-page reading.
+#
+# Mobile-only: the curl is drawn by Skia from pictures of the native pager's cells, the web has no
+# Page turn row, and the prev/next taps go through the NATIVE tap-zone markers (see
+# reader-navigation.yaml).
+#
+# Selectors (confirmed against source):
+#   - reader.settings.page-turn.slide / .curl   settings-panel.tsx's Page turn row (reader-settings-
+#                                               form.ts). Slide is the default.
+#   - reader.settings.page-layout.double / .auto  See reader-double-page.yaml.
+#   - reader.control.prev / .next               The tap-zone markers. Under the curl a tap plays the
+#                                               turn and the counter names the landing page at once.
+#   - reader.navigator.page                     The current page alone (see reader-navigation.yaml).
+#
+# A drag lands the page when it is released past a quarter of the turn; the swipes below run most of
+# the page's width, so each one turns exactly one page (or spread). Under Reduce Motion the curl is
+# the slide, which turns the same pages, so the flow holds either way.
+#
+# Ends on the defaults (Slide, Auto) — both persist across a plain `launchApp`.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.cover"
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^1$"
+
+- tapOn:
+    id: "reader.settings.open"
+- tapOn:
+    id: "reader.settings.page-turn.curl"
+- tapOn:
+    point: "50%, 8%"
+
+# Taps turn a page at a time, forward and back.
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^2$"
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^3$"
+- tapOn:
+    id: "reader.control.prev"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^2$"
+
+# A drag turns the page under the finger: right to left is forward in the default direction.
+- swipe:
+    start: 85%, 60%
+    end: 10%, 55%
+    duration: 400
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^3$"
+- swipe:
+    start: 10%, 60%
+    end: 85%, 55%
+    duration: 400
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^2$"
+
+# Two pages: the leaf is the right-hand page, carried over the spine.
+- tapOn:
+    id: "reader.settings.open"
+- tapOn:
+    id: "reader.settings.page-layout.double"
+- tapOn:
+    point: "50%, 8%"
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^4-5$"
+- swipe:
+    start: 10%, 60%
+    end: 85%, 55%
+    duration: 400
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^2-3$"
+
+# Back to the defaults.
+- tapOn:
+    id: "reader.settings.open"
+- tapOn:
+    id: "reader.settings.page-layout.auto"
+- tapOn:
+    id: "reader.settings.page-turn.slide"
+- tapOn:
+    point: "50%, 8%"
+
+# Maestro's back, not the toolbar's — see reader-navigation.yaml.
+- back

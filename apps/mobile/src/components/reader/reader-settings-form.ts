@@ -10,6 +10,7 @@ import {
   type DoubleTapMode,
   type PageFit,
   type PageLayout,
+  type PageTurn,
   type ReaderDirection,
 } from '@/hooks/use-reader-settings';
 import { useIsDesktop } from '@/hooks/use-responsive';
@@ -130,6 +131,22 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
             : 'Two pages side by side in landscape'
           : undefined,
     }),
+    // The curl is drawn by Skia from pictures of the pages on screen, which the web build can't take.
+    ...(Platform.OS !== 'web'
+      ? [
+          choice<PageTurn>({
+            key: 'page-turn',
+            label: 'Page turn',
+            value: settings.pageTurn,
+            options: [
+              { value: 'slide', label: 'Slide' },
+              { value: 'curl', label: 'Curl' },
+            ],
+            onChange: (v) => set({ pageTurn: v }),
+            disabled: !paged,
+          }),
+        ]
+      : []),
     {
       kind: 'toggle',
       key: 'spread-shift',

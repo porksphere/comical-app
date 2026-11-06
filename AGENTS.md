@@ -777,6 +777,31 @@ leaving page reported `false`, would race the arriving spread's `true` in the sa
 order rather than reading order. A page under the pager's `standby` (the entrance, the collapsed
 strip) rests at 1×, to match the poster over it, and zooms to its rest once primary.
 
+# Page curl: a picture of the pager, turned over it
+
+`pageTurn: 'curl'` (Reader settings → Page turn, native only) turns pages as paper curling over,
+in single and two-page reading. The pager itself never animates a curl: scrolling is OFF under it,
+and a turn is drawn by Skia over a list standing still (`components/reader/use-page-curl.tsx`),
+from pictures of the two cells the turn runs between (`makeImageFromView` on each cell's wrapper),
+so it turns exactly what was on screen — zoom, fit and all. When the turn lands the list JUMPS to
+the spread turned to, under a curl that by then shows exactly that spread, and the curl goes two
+frames later. Taps and keys come in through `PagedReaderHandle.turnTo`; a drag is the curl's own
+pan, beside the edge pan and blocked by a zoomed page's pan exactly as the scroll is. Under Reduce
+Motion, and in the standby strip, it is the slide.
+
+All the geometry (`page-curl-geometry.ts`) is in TURN space, where the leaf lies right of the spine
+and goes left; a turn the other way across the screen is the same turn mirrored, and the effect
+(`page-curl-shader.ts`, SkSL, checked pixel for pixel through CanvasKit in its test) samples the
+pictures through the same flip. A two-page leaf is the page on the side the turn starts from, both
+sides printed; a lone page is paper, and turning BACK brings the previous page over the current one
+(the forward turn played in reverse). The leaf is bound at its spine — the pull is held inside the
+discs that keep the spine's ends down — and its corners are the screen's own wherever the page
+reaches into them (`concentric`, the rule iOS 26 rounds nested shapes by), read per corner by the
+local module `modules/screen-corners` (iOS 26's concentric corners, else the screen's one radius;
+Android's rounded-corner insets), so a folding phone's hard edge stays square. Pages that don't
+fill their halves meet at the spine as they always have: padding the middle would leave the leaf
+hinging in empty space, and a drawing across both pages split by a band.
+
 # Press-in warms the destination
 
 Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is

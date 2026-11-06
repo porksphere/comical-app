@@ -23,6 +23,7 @@ executionOrder:
     - history-activity
     - reader-navigation
     - reader-double-page
+    - reader-page-curl
     - collect-page
     - series-trackers
     - trackers-uninstall

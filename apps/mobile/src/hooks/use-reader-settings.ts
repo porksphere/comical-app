@@ -25,6 +25,9 @@ export type DoubleTapMode = 'magnify' | 'switch-fit' | 'off';
 /** How many pages share the paged reader's screen: one, two (a spread), or two exactly when the
  *  reading frame is landscape. See `components/reader/spreads`. */
 export type PageLayout = 'single' | 'double' | 'auto';
+/** How the paged reader turns a page: the list sliding sideways, or the page curling over like
+ *  paper (`components/reader/page-curl`). */
+export type PageTurn = 'slide' | 'curl';
 /** Pages warmed ahead of the one being read — any whole number from none to PREFETCH_AHEAD_MAX. */
 export type PrefetchAhead = number;
 export const PREFETCH_AHEAD_MIN = 0;
@@ -35,6 +38,7 @@ export type ReaderSettings = {
   pageFit: PageFit;
   doubleTap: DoubleTapMode;
   pageLayout: PageLayout;
+  pageTurn: PageTurn;
   /** Hold the screen awake while a page is on screen. */
   keepAwake: boolean;
   /** Keep the page count faintly on screen after the rest of the chrome has hidden. */
@@ -58,6 +62,7 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   // Like other readers: a phone held upright reads one page, turned sideways (or a tablet, or a
   // desktop window) two.
   pageLayout: 'auto',
+  pageTurn: 'slide',
   keepAwake: true,
   pageCountWhenHidden: true,
   respectSafeArea: false,

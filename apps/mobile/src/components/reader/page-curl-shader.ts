@@ -1,0 +1,113 @@
+// The page curl as a Skia runtime effect (SkSL). Kept free of React Native so a test can compile it
+// with CanvasKit and check what it draws (`page-curl-shader.test.ts`).
+//
+// Two pictures go in, the spread being left (`cur`) and the one being turned to (`next`), both as
+// the screen draws them. The geometry comes from `page-curl-geometry`, in TURN space: the leaf to
+// the right of the spine, carried over to the left. `mirrored` flips turn space onto the screen for
+// a turn that runs the other way, and the pictures are sampled through the same flip.
+//
+// The paper rolls over a cylinder of radius `r` whose axis is the fold line `dot(p, n) = c`; `n`
+// points toward the free edge. A screen point a distance `d` past the fold sees the paper whose
+// distance from the fold, measured along the paper, puts it there: flat behind the fold (d < 0, the
+// page itself, and the part turned back over it), around the cylinder (0 ≤ d ≤ r, the underside and
+// the top of the roll), and nothing beyond it (the page underneath, in the curl's shadow).
+
+import type { CurlFrame, Leaf } from '@/components/reader/page-curl-geometry';
+
+/** The effect's uniforms, by name, for one frame of a turn. */
+export function curlUniforms(
+  size: { width: number; height: number },
+  mirrored: boolean,
+  leaf: Leaf,
+  frame: CurlFrame,
+  density: number,
+) {
+  'worklet';
+  const { box, radii } = leaf;
+  return {
+    size: [size.width, size.height],
+    mirrored: mirrored ? 1 : 0,
+    leaf: [box.x, box.y, box.width, box.height],
+    leafR: [radii[0], radii[1], radii[2], radii[3]],
+    spine: leaf.spine,
+    dual: leaf.dual ? 1 : 0,
+    n: [frame.nx, frame.ny],
+    c: frame.c,
+    r: frame.r,
+    shade: frame.shade,
+    density,
+  };
+}
+
+/** The same, flat, in the order the effect declares them — what `makeShaderWithChildren` takes. */
+export function curlUniformArray(uniforms: ReturnType<typeof curlUniforms>): number[] {
+  const u = uniforms;
+  return [...u.size, u.mirrored, ...u.leaf, ...u.leafR, u.spine, u.dual, ...u.n, u.c, u.r, u.shade, u.density];
+}
+
+export const CURL_SKSL = `
+uniform shader cur;
+uniform shader next;
+uniform float2 size;
+uniform float mirrored;
+uniform float4 leaf;
+uniform float4 leafR;
+uniform float spine;
+uniform float dual;
+uniform float2 n;
+uniform float c;
+uniform float r;
+uniform float shade;
+uniform float density;
+
+const float PI = 3.14159265;
+
+float2 screen(float2 q) { return mirrored > 0.5 ? float2(size.x - q.x, q.y) : q; }
+float3 pageA(float2 q) { return cur.eval(screen(q)).rgb; }
+float3 pageB(float2 q) { return next.eval(screen(q)).rgb; }
+
+float leafDistance(float2 p) {
+  float2 b = leaf.zw * 0.5;
+  float2 q0 = p - (leaf.xy + b);
+  float rad = q0.x < 0.0 ? (q0.y < 0.0 ? leafR.x : leafR.w) : (q0.y < 0.0 ? leafR.y : leafR.z);
+  float2 q = abs(q0) - b + rad;
+  return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rad;
+}
+float onLeaf(float2 p) { return clamp(0.5 - leafDistance(p) * density, 0.0, 1.0); }
+
+// The leaf's back. Two-sided, it is the facing page of the spread being turned to, printed where it
+// lands once the leaf lies flat across the spine. One-sided, it is paper, the page showing through.
+float3 back(float2 q) {
+  if (dual > 0.5) return pageB(float2(2.0 * spine - q.x, q.y));
+  return mix(float3(0.96, 0.95, 0.92), pageA(q), 0.16);
+}
+
+half4 main(float2 at) {
+  float2 p = screen(at);
+  float3 col = (dual > 0.5 && p.x < spine) ? pageA(p) : pageB(p);
+  float R = max(r, 0.75);
+  float d = dot(p, n) - c;
+  if (d > R) {
+    col *= 1.0 - shade * 0.55 * exp(-(d - R) / (R * 1.4 + 6.0));
+  } else if (d >= 0.0) {
+    float a = asin(d / R);
+    float2 under = p + n * (R * a - d);
+    float2 over = p + n * (R * (PI - a) - d);
+    float underC = onLeaf(under);
+    float overC = onLeaf(over);
+    col *= 1.0 - shade * 0.55 * (1.0 - underC);
+    col = mix(col, pageA(under) * (0.5 + 0.5 * cos(a)), underC);
+    float glint = (a - 0.45) / 0.2;
+    float lit = 0.6 + 0.4 * cos(a) + 0.16 * exp(-glint * glint);
+    col = mix(col, back(over) * lit, overC);
+  } else {
+    float2 flap = p + n * (PI * R - 2.0 * d);
+    float flapD = leafDistance(flap);
+    float flapC = clamp(0.5 - flapD * density, 0.0, 1.0);
+    col = mix(col, pageA(p), onLeaf(p));
+    col *= 1.0 - shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.45 + 4.0));
+    col = mix(col, back(flap) * mix(1.0, 0.97, shade), flapC);
+  }
+  return half4(half3(col), 1.0);
+}
+`;
