@@ -31,13 +31,13 @@ the end of this doc is the only guard.
 | 6 | `ZoomSource` | expo-router internals | Decide | [ ] |
 | 7 | `system-context-menu` | Custom module, touch handler reach | Decide | [ ] |
 | 8 | `content-scroll-view` and `ScreenScrollMarker` | Public API, undocumented reason | Decide | [ ] |
-| 22 | `nav-bar-fade` | Animates a library-owned bar; a dead folded-edge path to delete | Decide | [ ] |
+| 22 | `nav-bar-fade` | Animates a library-owned bar | Decide | [ ] |
 | 24 | `nav-bar-large-title` | Sets a library-owned navigation item's property | Decide | [ ] |
 | 25 | `nav-bar-hold` | Reads the bar's touches, finds the title's label by its text | Decide | [ ] |
 | 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
 | 9 | `HeaderHeightContext` deep import | Package internals | Keep | [ ] |
 | 10 | `unstable_nativeProps` | Unstable API | Keep | [ ] |
-| 11 | `menu-anchor` | Unreached on iOS since the SwiftUI form | Delete | [ ] |
+| 11 | `menu-anchor` | Deleted: unreached on iOS since the SwiftUI form | Done | [x] |
 | 12 | `shaped-image` and `menu-thumb-files` | Bitmaps baked to shape | Keep | [ ] |
 | 13 | `in-tab/` route copies | 51 duplicate route files | Keep | [ ] |
 | 14 | `BarExtent` | Measuring through the safe area | Keep | [ ] |
@@ -241,10 +241,9 @@ the end of this doc is the only guard.
   device: 0pt at the switch, 58pt a frame later). A blank plain-text title kept the height but got
   the system's backing, a visibly empty bar. Only the unfolded material switch is faded now.
   Confirmed on a device, unfolded.
-- **Dead path to delete:** the `edgeBacked` prop and the `UIScrollEdgeElementContainerInteraction`
-  it added to the title view were the folded Duo's hard-edge backing (item 21). Nothing sets the
-  prop now; the Swift stays. Delete the prop, the interaction and the list search behind it.
-- **Temporary trace:** the `onTrace` event and its handlers, item 26.
+- **Gone with item 21:** the `edgeBacked` prop and the `UIScrollEdgeElementContainerInteraction`
+  it added to the title view, the folded Duo's hard-edge backing, are deleted; the module is the
+  fade alone now. Its trace event went with item 26.
 - **Risk:** it animates a layer UIKit owns, and relies on KVO firing inside the library's update.
 - **How it fails:** silent. If the KVO stops firing, the switch is instant again. If UIKit starts
   backing a custom title view, the bare bar shows a band over the strip. If the title view or list
@@ -299,9 +298,8 @@ These use public APIs, but the shape exists only because of a gap somewhere.
 - **Status:** unreached on iOS since the settings screens became the SwiftUI form
   (`settings-list.ios.tsx`), whose enum rows are the form's own menu pickers. The row file and the
   module are only resolved by the app's own renderer, on Android and web, where the module is null.
-- **Removed by:** deleting `select-row.ios.tsx` and the module once no iOS screen draws the app's
-  own rows, or `@expo/ui` decoding at screen scale.
-- **Delete:** that condition holds. The module compiles into every iOS build for nothing.
+- **Done:** deleted, with `select-row.ios.tsx` and its platform-contract line; iOS resolves the
+  overlay row, which nothing there renders.
 
 ### 12. `shaped-image` and `menu-thumb-files`
 
@@ -411,8 +409,8 @@ Already on `main`, so not from this work: `ZOOM_BOUND_WAIT_MS`, `ZOOM_THUMB_PAIN
 - **Resolved.** The gap above the bar on the Duo's folded panel (FB24859353) is gone on the current
   iOS: with the material on, the frost reaches the top, checked on a device on the tabs, a settings
   page and the series page. `useBarMaterial` gives every bar the material; `useFoldedBarEdge` and
-  the hard-edge switching built on it are deleted. What remains of that path is `nav-bar-fade`'s
-  `edgeBacked` interaction (item 22), which nothing sets any more.
+  the hard-edge switching built on it are deleted, `nav-bar-fade`'s `edgeBacked` registration of
+  the title view (item 22) with them.
 
 ## Looked at, not hacks
 

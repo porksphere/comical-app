@@ -1,4 +1,5 @@
-/** `SettingsSelectRow`'s contract, shared by its platform files (`select-row.tsx`, `select-row.ios.tsx`). */
+/** `SettingsSelectRow`'s contract (`select-row.tsx`, the overlay picker; iOS draws its enum rows as
+ *  the settings form's own menu pickers and never reaches it). */
 
 /** One choice in a `SettingsSelectRow`. `description` shows in the picker (not on the row); an optional
  *  `thumbnail` URL renders a leading image (e.g. a bridge icon). */

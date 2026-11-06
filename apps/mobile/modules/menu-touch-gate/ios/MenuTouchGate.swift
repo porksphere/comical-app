@@ -7,7 +7,8 @@ import UIKit.UIGestureRecognizerSubclass
 /// Expo ships the same gate (`SystemMenuTouchGate` in expo-modules-core) but only installs it from
 /// its SwiftUI host view, so it is missing from a window until some SwiftUI content has been on
 /// screen. The menus here are UIKit's — the navigation bar's items (react-native-screens) and the
-/// `menu-anchor` row — which host no SwiftUI, so the gate goes in at launch instead.
+/// context menus (`system-context-menu`) — which host no SwiftUI, so the gate goes in at launch
+/// instead.
 public class MenuTouchGateAppDelegateSubscriber: ExpoAppDelegateSubscriber {
   private var observers: [NSObjectProtocol] = []
 

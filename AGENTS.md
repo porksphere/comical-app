@@ -217,16 +217,12 @@ A bridge's or tracker's descriptors become fields through `useDescriptorFields`
 acts is tinted (an action's `verb` where it has one, else its label; red when destructive) and
 nothing else, which the iOS renderer names explicitly since a SwiftUI button tints its label and a
 hierarchical style inside one resolves against that tint. On iOS the enum rows are the form's menu
-pickers, so the menu-anchor select row (`SettingsSelectRow`, below) is reached only through the
-app's own renderer, on Android and web:
-it is platform-split (`components/settings/select-row.ios.tsx` — the row drawn in RN in iOS Settings'
-popup-row shape, `label … value ⌃⌄`, with the local Expo module `apps/mobile/modules/menu-anchor`
-laid over it: an invisible UIButton whose tap opens a UIMenu of checkmarked options with the
-bridge thumbnails from the same thumb files; `select-row-overlay.tsx` is the anchored overlay
-picker for Android/web, and the iOS row's fallback where the module isn't linked). The module
-decodes the pictures itself at the screen's scale — `@expo/ui`'s SwiftUI `Menu` was tried first
-and needed a vendored patch to do that, which is why it went: a missing native behaviour gets a
-local Expo module, never a patch, and the repo carries none. On iOS 26 the tap that closes any
+pickers, so the select row (`SettingsSelectRow`, `select-row-overlay.tsx`, the anchored overlay
+picker) is reached only through the app's own renderer, on Android and web. (An iOS row of the
+app's own, with a local `menu-anchor` module laying an invisible UIButton's UIMenu over it, was
+built for the days before the form and deleted with them; `@expo/ui`'s SwiftUI `Menu` before that
+needed a vendored patch to decode pictures at the screen's scale, which is why it went: a missing
+native behaviour gets a local Expo module, never a patch, and the repo carries none.) On iOS 26 the tap that closes any
 of these UIKit menus is hit-tested through to the view beneath, and React Native's touch handler
 (a gesture recognizer, which UIKit does not suppress) would press it: the local module
 `apps/mobile/modules/menu-touch-gate` (an app-delegate subscriber, no JS) puts a window-level

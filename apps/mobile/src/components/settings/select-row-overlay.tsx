@@ -18,7 +18,8 @@ import { testId } from '@/lib/test-id';
 /**
  * An enum settings row where there is no system menu: label + current value on the row, an
  * anchored option-list picker (each option with an optional description) on tap — the picker
- * style the app standardizes on. iOS renders `select-row.ios.tsx` instead.
+ * style the app standardizes on. On iOS the settings form's own menu pickers stand in
+ * (`settings-list.ios.tsx`), so this is Android's and the web's.
  *
  * Where the row's current value goes when the row is too narrow to seat it beside the label:
  *
