@@ -92,7 +92,14 @@ export function ReaderSettingsBody({ seriesKey }: { seriesKey: string | null }) 
   const scheme = useActiveColorScheme();
   const theme = useTheme();
   return (
-    <Host style={styles.host} colorScheme={scheme} seedColor={theme.accent} useViewportSizeMeasurement>
+    // The sheet lies over the Duo's vertical bar, so the form runs the sheet's whole width rather
+    // than insetting by the bar's safe area as the window's content does.
+    <Host
+      style={styles.host}
+      colorScheme={scheme}
+      seedColor={theme.accent}
+      useViewportSizeMeasurement
+      ignoreSafeArea="container">
       <Form modifiers={SHEET_GLASS ? [scrollContentBackground('hidden')] : undefined}>
         {sections(fields).map((section) => {
           const [head] = section;

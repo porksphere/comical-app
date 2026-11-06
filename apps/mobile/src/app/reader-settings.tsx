@@ -16,9 +16,7 @@ export default function ReaderSettingsSheet() {
   return (
     <View style={styles.fill}>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button variant="done" accessibilityLabel="Done" onPress={() => router.back()}>
-          Done
-        </Stack.Toolbar.Button>
+        <Stack.Toolbar.Button icon="checkmark" variant="done" accessibilityLabel="Done" onPress={() => router.back()} />
       </Stack.Toolbar>
       <ReaderSettingsBody seriesKey={seriesKey ?? null} />
     </View>
