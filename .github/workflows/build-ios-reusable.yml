@@ -109,15 +109,14 @@ on:
         required: false
       runner:
         # The macOS image the build runs on, which is what picks the Xcode and so the iOS SDK the
-        # app is compiled against. Only build-ios.yml's PR lane moves off the default: `xcode-27`
-        # (a public-preview image, Xcode 27.1 by default) links the iOS 27 SDK, without which
-        # every iOS 27 behaviour the app asks for compiles away — the tab bar's preferred sidebar
-        # placement, the reader's horizontal-bars opt-out, the vertical bar of a folded display.
-        # Nightly and release stay on the stable image until that one leaves preview. Its builds
-        # start with a cold ccache: only main writes the cache, and it compiles with another clang.
+        # app is compiled against. Every lane builds on `xcode-27` (a public-preview image, Xcode
+        # 27.1 by default), which links the iOS 27 SDK: without it every iOS 27 behaviour the app
+        # asks for compiles away — the bar's slide-away, the tab bar's preferred sidebar placement,
+        # the reader's horizontal-bars opt-out, the vertical bar of a folded display — so a build on
+        # the stable image would not be the app that was tested.
         description: The runs-on label of the macOS image to build on.
         type: string
-        default: macos-26
+        default: xcode-27
         required: false
       channel:
         # Bakes EXPO_PUBLIC_COMICAL_BUILD_CHANNEL into the JS bundle — read by src/lib/sentry.ts
