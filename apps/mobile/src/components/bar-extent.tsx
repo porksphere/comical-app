@@ -49,14 +49,13 @@ export function barExtentLayout({ route, options, children }: LayoutArgs): React
  * changes height with an update starts over; across launches for the first screen's sake), and a
  * screen without a measure of its own takes that: the tabs all mount at launch, before any bar is
  * measured. Only the roots feed it, since a pushed page's bar can be taller (a search page's, with
- * the field under it), and only their largest: a root's bar measures full for a frame and then
- * the strip alone once its items are taken into a folded or landscape display's vertical bar,
- * and its title sits on the full row either way, so a root pads by the larger of its own and
- * the store's. A pushed page's own measure stands over the seed once it has one: a larger one
- * at once (the bar arriving), a smaller one once settled, held for a moment (a dip as the bar
- * moves), and a bar not laid out, measuring nothing, never.
+ * the field under it), and only settled: the last measure of a root to hold for a moment, never
+ * one from a frame as the bar moves, and never the largest ever seen, which a taller bar of an
+ * earlier build would have left behind for good. A screen's own measure stands over the seed
+ * once it has one: a larger one at once (the bar arriving), a smaller one once settled (a dip
+ * as the bar moves), and a bar not laid out, measuring nothing, never.
  */
-const barExtents$ = persisted$<Record<string, number>>('comical:barExtents2', {});
+const barExtents$ = persisted$<Record<string, number>>('comical:barExtents3', {});
 const SETTLE_MS = 250;
 
 function BarExtent({ slides, root, children }: { slides: boolean; root: boolean; children: ReactElement }) {
@@ -77,19 +76,16 @@ function BarExtent({ slides, root, children }: { slides: boolean; root: boolean;
   );
   if (!measured) return children;
   const ownTop = own?.pose === pose ? own.top : null;
-  const top = root ? (ownTop == null && seed == null ? null : Math.max(ownTop ?? 0, seed ?? 0)) : (ownTop ?? seed);
+  const top = ownTop ?? seed;
   const measure = (next: number) => {
     if (settling.current) clearTimeout(settling.current);
     settling.current = null;
     if (next <= 0) return;
     if (own?.pose !== pose || next > own.top) setOwn({ pose, top: next });
-    if (root) {
-      // A root's largest, at once: its bar collapses to the strip once its items are taken into a
-      // vertical bar, and its title needs the full row either way.
-      if ((barExtents$[pose].peek() ?? 0) < next) barExtents$[pose].set(next);
-      return;
-    }
-    settling.current = setTimeout(() => setOwn({ pose, top: next }), SETTLE_MS);
+    settling.current = setTimeout(() => {
+      setOwn({ pose, top: next });
+      if (root) barExtents$[pose].set(next);
+    }, SETTLE_MS);
   };
   // Beside the page, never around it: UIKit finds the list the bar follows by itself, and on a
   // device one wrapper more around the list was enough to stop the bar sliding.
