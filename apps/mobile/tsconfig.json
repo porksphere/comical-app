@@ -58,9 +58,9 @@
       "@comical/registry/url": [
         "../../external/comical/packages/registry/src/url.ts"
       ],
-      // The react-native-screens 4.31 nightly's `reanimated` entry still names lib/*/reanimated, which its
-      // build now writes to lib/*/legacy/reanimated. Bundles are fine (iOS, the one importer, reads the
-      // entry's react-native field); this points the types at the same place. Drop with the stable release.
+      // The react-native-screens 5.0 beta's `reanimated` entry names lib/*/reanimated, which its build
+      // writes to lib/*/legacy/reanimated. Bundles are fine (iOS, the one importer, reads the entry's
+      // react-native field); this points the types at the same place. Drop once a release matches.
       "react-native-screens/reanimated": [
         "../../node_modules/react-native-screens/lib/typescript/legacy/reanimated/index.d.ts"
       ]
