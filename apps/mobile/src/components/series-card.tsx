@@ -777,7 +777,7 @@ export function SeriesCard({
 
     return (
       <>
-        {book && !coverHidden && <BookShadow aspect={coverAspect} sheets={book.form === 'sheets'} />}
+        {book && !coverHidden && <BookShadow aspect={coverAspect} sheets={book.form === 'sheets'} cover={resolvedCover} />}
         {/* What the iOS system menu lifts: the cover, not the card with its title. */}
         {liftTarget(
           <CoverFrame

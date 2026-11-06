@@ -1,9 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Image, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Image, Platform, StyleSheet, View, type ImageStyle, type StyleProp, type ViewStyle } from 'react-native';
 
 import { ContinuousCorner } from '@/constants/theme';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useCoverGlow } from '@/hooks/use-cover-glow';
 import { EDGES, FOLD, SHADOW_BOX, SHEET_OFFSET, SPINE, ribbonSize, type BookCover } from '@/lib/book-cover';
 
 const FROM_SPINE = {
@@ -27,45 +28,51 @@ export function BookChrome({ cover }: { cover: BookCover }) {
   );
 }
 
-const SHADOW_PICTURES = {
-  light: require('@/assets/images/book-shadow-light.png'),
-  dark: require('@/assets/images/book-shadow-dark.png'),
-} as const;
+const SHADOW = require('@/assets/images/book-shadow-light.png');
+const GLOW_RIM = require('@/assets/images/book-glow-rim.png');
+const GLOW_FOOT = require('@/assets/images/book-glow-foot.png');
+/** The glow before a cover's own tints are read, and for good where they can't be. The web draws it
+ *  with opacity rather than a tint: a tint there is an SVG filter per picture (see `CoverGlow`). */
+const NEUTRAL_GLOW = Platform.select<{ rim: ImageStyle; foot: ImageStyle }>({
+  web: { rim: { opacity: 200 / 255 }, foot: { opacity: 138 / 255 } },
+  default: { rim: { tintColor: 'rgb(200,200,200)' }, foot: { tintColor: 'rgb(138,138,138)' } },
+});
 const { side, top, foot, coverHeight } = SHADOW_BOX;
 
 /**
- * The soft shadow under a cover, and in dark mode the glow Apple Books draws instead (a shadow on
- * black is no shadow). One pre-blurred picture per theme, stretched under each card: a live blur is a
- * masked layer per card on iOS and a BlurMaskFilter paint on Android. Its margins are percentages of
- * the CARD's width (as percentage margins are), scaled by how tall this cover is against the 2:3 the
- * picture was drawn for, so the picture's cover lands exactly on the real one at any shape.
+ * The soft shadow under a cover in light mode, and in dark mode the glow Apple Books draws instead —
+ * in the cover's own colours (`useCoverGlow`), since a shadow on black is no shadow. Pre-blurred
+ * pictures stretched under each card: a live blur is a masked layer per card on iOS and a
+ * BlurMaskFilter paint on Android. Their margins are percentages of the CARD's width (as percentage
+ * margins are), scaled by how tall this cover is against the 2:3 the pictures were drawn for, so each
+ * picture's cover lands exactly on the real one at any shape.
  *
  * The card's first child, so it draws under the cover. On the web a list paint-contains each item to
  * its slot, so the faint side falloff is cut at the grid's outer edges; the foot, which is most of it,
  * sits in the card's own title space.
  */
-export function BookShadow({ aspect, sheets }: { aspect: number; sheets: boolean }) {
-  const scheme = useActiveColorScheme();
+export function BookShadow({ aspect, sheets, cover }: { aspect: number; sheets: boolean; cover: string | undefined }) {
+  const dark = useActiveColorScheme() === 'dark';
+  const glow = useCoverGlow(dark ? cover : undefined);
   // Everything in card widths. A CG set casts it from its front sheet alone: shadowing the whole box
   // left the corner neither sheet covers as a square cut out of it.
   const width = sheets ? 1 - SHEET_OFFSET.right : 1;
   const down = sheets ? SHEET_OFFSET.top / aspect : 0;
   const height = (1 - (sheets ? SHEET_OFFSET.top : 0)) / aspect;
   const tall = height / (coverHeight * width);
+  const box: ImageStyle = {
+    width: `${(1 + 2 * side) * width * 100}%`,
+    marginLeft: `${-side * width * 100}%`,
+    marginTop: `${(down - top * tall * width) * 100}%`,
+    aspectRatio: (1 + 2 * side) / ((top + coverHeight + foot) * tall),
+  };
+  if (!dark) return <Image source={SHADOW} resizeMode="stretch" style={[styles.shadow, box]} />;
+  if (glow?.picture) return <Image source={{ uri: glow.picture }} resizeMode="stretch" style={[styles.shadow, box]} />;
   return (
-    <Image
-      source={SHADOW_PICTURES[scheme]}
-      resizeMode="stretch"
-      style={[
-        styles.shadow,
-        {
-          width: `${(1 + 2 * side) * width * 100}%`,
-          marginLeft: `${-side * width * 100}%`,
-          marginTop: `${(down - top * tall * width) * 100}%`,
-          aspectRatio: (1 + 2 * side) / ((top + coverHeight + foot) * tall),
-        },
-      ]}
-    />
+    <>
+      <Image source={GLOW_RIM} resizeMode="stretch" style={[styles.shadow, box, glow ? { tintColor: glow.rim } : NEUTRAL_GLOW.rim]} />
+      <Image source={GLOW_FOOT} resizeMode="stretch" style={[styles.shadow, box, glow ? { tintColor: glow.foot } : NEUTRAL_GLOW.foot]} />
+    </>
   );
 }
 

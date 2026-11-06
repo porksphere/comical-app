@@ -62,6 +62,9 @@ export type BrowseScope =
   | { kind: 'homeGrid'; listId: string };
 
 export const queryKeys = {
+  /** A cover's dark-mode glow tints, read off the picture itself (`useCoverGlow`). Keyed by the
+   *  picture, not the series: two series can share a cover, and a cover can change under one. */
+  coverGlow: (uri: string) => ['coverGlow', uri] as const,
   seriesDetail: (mock: boolean, bridgeId: string, seriesId: string, direct: boolean) =>
     ['seriesDetail', mock, bridgeId, seriesId, direct] as const,
   seriesList: (mock: boolean, bridgeId: string, seriesId: string, direct: boolean) =>

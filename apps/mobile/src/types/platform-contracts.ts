@@ -48,6 +48,8 @@ import type * as UseColorScheme from '@/hooks/use-color-scheme';
 import type * as UseColorSchemeWeb from '@/hooks/use-color-scheme.web';
 import type * as UseKeyboardLift from '@/hooks/use-keyboard-lift';
 import type * as UseKeyboardLiftWeb from '@/hooks/use-keyboard-lift.web';
+import type * as CoverGlowReader from '@/lib/cover-glow-reader';
+import type * as CoverGlowReaderWeb from '@/lib/cover-glow-reader.web';
 import type * as ScrubHaptics from '@/lib/scrub-haptics';
 import type * as ScrubHapticsWeb from '@/lib/scrub-haptics.web';
 
@@ -161,4 +163,5 @@ export type PlatformContracts = [
   Conforms<Drift<typeof UseColorScheme, typeof UseColorSchemeWeb>>,
   Conforms<Drift<typeof UseKeyboardLift, typeof UseKeyboardLiftWeb>>,
   Conforms<Drift<typeof ScrubHaptics, typeof ScrubHapticsWeb>>,
+  Conforms<Drift<typeof CoverGlowReader, typeof CoverGlowReaderWeb>>,
 ];
