@@ -1,40 +1,76 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
-import Animated from 'react-native-reanimated';
+import { Pressable, StyleSheet, type ViewStyle } from 'react-native';
+import Animated, { type useAnimatedStyle } from 'react-native-reanimated';
 
 import { BridgeThumbRadius } from '@/components/selector';
 import { showToast } from '@/components/toast';
 import { runBrowseHoldAction, useBrowseHoldAction, useBrowseHoldSound } from '@/data/browse-hold-action';
 import { useRampedHold } from '@/hooks/use-ramped-hold';
 
+const HOLD_HINT = 'Hold to show NSFW content until the app is closed';
+
 /**
- * A top-bar identity tile — Browse's bridge icon, Library's collection icon — that runs whatever
- * Settings has the hold gesture bound to: three haptic beats ramp up while holding, then it commits
- * (see useRampedHold) and a toast says what happened. A plain tap does nothing.
- *
- * Bound to 'none' the gesture is GONE, not merely inert: the handlers come off entirely, so a long
- * press never even starts the haptic ramp. Arming it and dropping the result would still buzz three
- * times at someone who turned it off.
+ * The hold gesture Settings binds (`useBrowseHoldAction`) as press handlers: the ramp of haptic
+ * beats from `useRampedHold`, committing the bound action and a toast at the top. `enabled` is
+ * false while the gesture is bound to 'none', when the handlers must not be attached at all (see
+ * HoldActionTarget). Shared by the mark that takes the press itself and the native bar's title
+ * (`NativeTabHeader`), which gets its phases from UIKit and hands each beat's swell back to it
+ * through `onPulse`, the title being UIKit's to draw.
  */
-export function HoldActionTarget({ size, testID, children }: { size: number; testID?: string; children: ReactNode }) {
+export function useHoldAction(onPulse?: (amount: number) => void): {
+  enabled: boolean;
+  onPressIn: () => void;
+  onPressOut: () => void;
+  pulseStyle: ReturnType<typeof useAnimatedStyle<ViewStyle>>;
+} {
   const [holdAction] = useBrowseHoldAction();
   const [sound] = useBrowseHoldSound();
+  const enabled = holdAction !== 'none';
   const hold = useRampedHold(
     () => {
       const message = runBrowseHoldAction();
       if (message) showToast(message);
     },
-    { sound: holdAction !== 'none' && sound },
+    { sound: enabled && sound, ...(onPulse ? { onPulse } : {}) },
   );
+  return { enabled, ...hold };
+}
+
+/**
+ * A top-bar identity mark — Browse's bridge icon or its title, Library's collection icon — that
+ * runs whatever Settings has the hold gesture bound to: three haptic beats ramp up while holding,
+ * then it commits (see useRampedHold) and a toast says what happened. A plain tap does nothing.
+ *
+ * With `size` it is a square tile clipping its pulse to the tile's corner; without, it hugs its
+ * content (a title) and the pulse swells the text as it is. `label` names the content for
+ * assistive tech, the gesture then being the hint, where the mark isn't only the gesture.
+ *
+ * Bound to 'none' the gesture is GONE, not merely inert: the handlers come off entirely, so a long
+ * press never even starts the haptic ramp. Arming it and dropping the result would still buzz three
+ * times at someone who turned it off.
+ */
+export function HoldActionTarget({
+  size,
+  label,
+  testID,
+  children,
+}: {
+  size?: number;
+  label?: string;
+  testID?: string;
+  children: ReactNode;
+}) {
+  const hold = useHoldAction();
   return (
     <Pressable
       testID={testID}
-      {...(holdAction !== 'none' && { onPressIn: hold.onPressIn, onPressOut: hold.onPressOut })}
+      {...(hold.enabled && { onPressIn: hold.onPressIn, onPressOut: hold.onPressOut })}
       accessibilityRole="button"
-      accessibilityLabel="Hold to show NSFW content until the app is closed"
-      style={[styles.target, { width: size, height: size }]}>
+      accessibilityLabel={label ?? HOLD_HINT}
+      accessibilityHint={label ? HOLD_HINT : undefined}
+      style={[styles.target, size !== undefined && { width: size, height: size }]}>
       {/* The ramp's beats swell the tile in step with the haptics. */}
-      <Animated.View style={[styles.pulse, hold.pulseStyle]}>{children}</Animated.View>
+      <Animated.View style={[size !== undefined ? styles.pulse : styles.text, hold.pulseStyle]}>{children}</Animated.View>
     </Pressable>
   );
 }
@@ -49,5 +85,9 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: BridgeThumbRadius,
     overflow: 'hidden',
+  },
+  text: {
+    flexShrink: 1,
+    minWidth: 0,
   },
 });

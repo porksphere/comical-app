@@ -1,4 +1,4 @@
-import { ScrollViewStyleReset } from 'expo-router/html';
+import { ScrollViewStyleReset, useServerDocumentContext } from 'expo-router/html';
 import { type PropsWithChildren } from 'react';
 
 /**
@@ -21,10 +21,15 @@ import { type PropsWithChildren } from 'react';
  * so the rest of the app keeps normal scrolling and accessibility zoom. The
  * viewport's `viewport-fit=cover` just makes the app full-bleed under the
  * notch / home indicator.
+ *
+ * The renderer hands the document its own nodes through the server document context — the
+ * client bundle `<script>`s, injected CSS, fonts, route metadata. A custom root that doesn't place
+ * them ships a page that never hydrates (expo-router 58).
  */
 export default function Root({ children }: PropsWithChildren) {
+  const { htmlAttributes, bodyAttributes, headNodes, bodyNodes } = useServerDocumentContext();
   return (
-    <html lang="en">
+    <html lang="en" {...htmlAttributes}>
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
@@ -41,8 +46,12 @@ export default function Root({ children }: PropsWithChildren) {
             prefers dark. Matches Colors.light/​dark.background. */}
         <style dangerouslySetInnerHTML={{ __html: rootStyle }} />
         <script dangerouslySetInnerHTML={{ __html: inputModeScript }} />
+        {headNodes}
       </head>
-      <body>{children}</body>
+      <body {...bodyAttributes}>
+        {children}
+        {bodyNodes}
+      </body>
     </html>
   );
 }
@@ -59,6 +68,13 @@ body { background-color: #ffffff; }
    which the browser lets you pick up and drag as a ghost image. Nothing here is meant to be
    dragged out of the app; a pointer drag means scroll, swipe or select. */
 img, a { -webkit-user-drag: none; }
+/* A desktop app, not a web page: a drag over dead space, a label or a card is a scroll, a swipe or a
+   marquee, never a text selection, and a double-click selects nothing. Text that is worth copying
+   opts back in with Text's \`selectable\` (a series' title and description, an error, a server
+   address, a path); fields stay editable. Chromium derives the cursor from this too, so labels get
+   the arrow and only selectable text the I-beam. */
+body { -webkit-user-select: none; user-select: none; }
+input, textarea { -webkit-user-select: text; user-select: text; }
 /* Never the browser's focus ring. The keyboard's focus (lib/focus-nav) wears each control's own hover
    look instead, and the browser's own heuristics ring things nobody navigated to — whatever a mouse
    press left focused once a key is pressed, whatever a menu or dialog focuses on opening. */

@@ -1,5 +1,5 @@
 import { type MouseEvent, type ReactNode, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View, type ViewProps } from 'react-native';
+import { Pressable, StyleSheet, View, type ViewInstance, type ViewProps } from 'react-native';
 
 import { openContextMenu, type ContextMenuRequest } from '@/components/context-menu-host';
 import { MENU_WIDTH } from '@/components/context-menu-material';
@@ -30,7 +30,7 @@ export function CardMenuTrigger({
   children: (menuOpen: boolean) => ReactNode;
 }) {
   const theme = useTheme();
-  const ref = useRef<View>(null);
+  const ref = useRef<ViewInstance>(null);
   const [isOpen, setIsOpen] = useState(false);
   // Track hover on the wrapper (not the card or the button individually): moving the pointer from
   // the card onto the 3-dot button stays *inside* the wrapper, so the button doesn't flicker out

@@ -1,7 +1,7 @@
 /**
  * A hold-to-arm gesture: press and KEEP holding, and three haptic beats ramp up in intensity
  * (soft → light → medium) as a countdown; keep holding through all three and the hold ARMS —
- * `onArm` fires once, on the ramp's ONE strong closing beat. The felt shape is
+ * `onArm` fires once, just after the ramp's ONE strong closing beat. The felt shape is
  * "bip. bip.. bip… BIP": three escalating small beats — each arriving after a LONGER pause than
  * the last — then a single heavy thump as the commit, after the longest pause of all.
  * Releasing (or the press being cancelled) at any point before that aborts silently. Deliberate
@@ -11,7 +11,8 @@
  * Returns `onPressIn`/`onPressOut` to spread onto a `Pressable`, plus `pulseStyle` for an
  * `Animated.View` around the held thing: it swells once per beat, by as much as the beat is felt,
  * so the countdown is seen as well as felt (and seen at all on desktop, where there is no
- * haptic). With `sound`, each beat also clicks (`lib/hold-sounds`). Timer-driven off the press events, so it works anywhere a Pressable does — including
+ * haptic); `onPulse` gets each beat's swell as well, for a held thing drawn by something else
+ * (the native bar's title). With `sound`, each beat also clicks (`lib/hold-sounds`). Timer-driven off the press events, so it works anywhere a Pressable does — including
  * web, where RNGH long-press gestures don't. (Don't use it on rows inside native scroll views:
  * press-in there is unreliable, same reason `Holdable` exists.)
  */
@@ -37,7 +38,7 @@ const PULSE_DOWN_MS = 120;
 
 export function useRampedHold(
   onArm: () => void,
-  { sound = false }: { sound?: boolean } = {},
+  { sound = false, onPulse }: { sound?: boolean; onPulse?: (amount: number) => void } = {},
 ): {
   onPressIn: () => void;
   onPressOut: () => void;
@@ -57,7 +58,15 @@ export function useRampedHold(
 
   const scale = useSharedValue(1);
   const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  // Read at fire time, as `onArm` is.
+  const pulseRef = useRef(onPulse);
+  useEffect(() => {
+    pulseRef.current = onPulse;
+  });
   const pulse = (amount: number) => {
+    // For a held thing that is not ours to style — UIKit's title — the beat is handed on, by as
+    // much as the swell would be, for whatever draws it there.
+    pulseRef.current?.(amount);
     scale.set(
       withSequence(
         withTiming(1 + amount, { duration: PULSE_UP_MS, easing: Easing.out(Easing.quad) }),
@@ -93,7 +102,11 @@ export function useRampedHold(
           hapticImpactHeavy();
           if (sound) playHoldSound(3);
           pulse(BEAT_SCALE[3]);
-          armRef.current();
+          // The arm waits out the swell. Run in this tick, it held the swell back behind its own
+          // work (the pulse only leaves for the UI thread once this callback returns) and landed
+          // its re-render on top of it: on iOS a new header rebuilds the bar, title view and all.
+          // Not a tracked timer: letting go now can't take back a commit already felt.
+          setTimeout(() => armRef.current(), PULSE_UP_MS + PULSE_DOWN_MS);
         }, BEAT_AT_MS[3]),
       );
     },

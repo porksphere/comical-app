@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
@@ -97,7 +98,7 @@ import {
  *                                     has been committed.
  */
 export default function GestureTraceScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const theme = useTheme();
   const enabled = useGestureTraceEnabled();
   const lines = useGestureTrace();
@@ -113,7 +114,7 @@ export default function GestureTraceScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Gesture trace" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
+      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <ThemedText type="small" themeColor="textSecondary">
           Records what the swipe recognizers on the series page and the search layer did — whether
           they saw the touches, whether they began, whether they activated, and what state they saw
@@ -196,7 +197,7 @@ export default function GestureTraceScreen() {
             </ScrollView>
           </ThemedView>
         )}
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

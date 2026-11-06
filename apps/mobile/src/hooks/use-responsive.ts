@@ -1,7 +1,10 @@
 import { useSyncExternalStore } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
 
+import { RegularWidthBreakpoint, sizeClassFor, type SizeClass } from '@/constants/size-class';
 import { DesktopTopBarHeight, TopBarHeight } from '@/constants/theme';
+
+export { RegularWidthBreakpoint, sizeClassFor, type SizeClass };
 
 /**
  * "The real viewport width is safe to use." True on the FIRST render on native, and only after mount
@@ -59,10 +62,11 @@ export function usePointerFine(): boolean {
 // card titles and bridge/page selectors track the website at both sizes.
 export const COMPACT_BREAKPOINT = 560;
 
-/** Viewport width at which the series detail (and browse grid / rail) switch to
- *  a large-screen desktop layout. Matches the breakpoint used in rail.tsx,
- *  (tabs)/index.tsx, and app-tabs.tsx. */
-export const LARGE_SCREEN_BREAKPOINT = 768;
+/** Viewport width at which the series detail (and browse grid / rail) switch to the REGULAR
+ *  size class. Kept under its old name for the existing call sites; the number lives in
+ *  `constants/size-class`, and new code should ask `sizeClassFor` / `useSizeClass` rather than
+ *  compare against it. */
+export const LARGE_SCREEN_BREAKPOINT = RegularWidthBreakpoint;
 
 /**
  * True when the viewport is at the reference's mobile width.
@@ -78,15 +82,24 @@ export function useIsCompact(): boolean {
 }
 
 /**
- * True when the viewport is at the large-screen (desktop) width (≥768px).
+ * The WINDOW's horizontal size class — Apple's two-way split, applied to every platform: `compact`
+ * on a phone and the iPhone Duo's outer display, `regular` on the Duo's inner display, a foldable's
+ * inner panel, a tablet and a desktop window. The nav (`navModeFor`), the grid, the rails and the
+ * series layout all key off this rather than off the platform or the device.
  *
- * Hydration-safe on web like `useIsCompact`; on native the real width applies from
- * the first render (see `useHydrated`).
+ * Hydration-safe on web like `useIsCompact` — the prerender's assumption is compact; on native the
+ * real width applies from the first render (see `useHydrated`).
  */
-export function useIsLargeScreen(): boolean {
+export function useSizeClass(): SizeClass {
   const { width } = useWindowDimensions();
   const hydrated = useHydrated();
-  return hydrated ? width >= LARGE_SCREEN_BREAKPOINT : false;
+  return hydrated ? sizeClassFor(width) : 'compact';
+}
+
+/** True when the viewport is REGULAR width (≥768px) — `useSizeClass() === 'regular'`, under the name
+ *  the existing call sites use. */
+export function useIsLargeScreen(): boolean {
+  return useSizeClass() === 'regular';
 }
 
 /**
@@ -110,5 +123,5 @@ export function useIsDesktop(): boolean {
 export function useTopBarHeight(): number {
   const { width } = useWindowDimensions();
   const hydrated = useHydrated();
-  return hydrated && width >= LARGE_SCREEN_BREAKPOINT ? DesktopTopBarHeight : TopBarHeight;
+  return hydrated && sizeClassFor(width) === 'regular' ? DesktopTopBarHeight : TopBarHeight;
 }

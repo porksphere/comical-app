@@ -4,6 +4,7 @@ import {
   ANY_TARGET_WINDOW_MS,
   BACK_TARGET,
   claimNavigation,
+  msUntilClaimable,
   navTargetKey,
   resetNavigationGuard,
   SAME_TARGET_WINDOW_MS,
@@ -90,5 +91,27 @@ describe('claimNavigation', () => {
     expect(claimNavigation('/search', 1000)).toBe(true);
     expect(claimNavigation(BACK_TARGET, 1001)).toBe(true);
     expect(claimNavigation(BACK_TARGET, 1002)).toBe(false);
+  });
+});
+
+describe('msUntilClaimable', () => {
+  test('is the rest of the window, and agrees with claimNavigation', () => {
+    expect(msUntilClaimable(BACK_TARGET, 1000)).toBe(0);
+    expect(claimNavigation(BACK_TARGET, 1000)).toBe(true);
+    expect(msUntilClaimable(BACK_TARGET, 1200)).toBe(SAME_TARGET_WINDOW_MS - 200);
+    expect(claimNavigation(BACK_TARGET, 1200)).toBe(false);
+    expect(msUntilClaimable(BACK_TARGET, 1000 + SAME_TARGET_WINDOW_MS)).toBe(0);
+    expect(claimNavigation(BACK_TARGET, 1000 + SAME_TARGET_WINDOW_MS)).toBe(true);
+  });
+
+  test('never holds a navigation the other way', () => {
+    expect(claimNavigation(BACK_TARGET, 1000)).toBe(true);
+    expect(msUntilClaimable('/search', 1001)).toBe(0);
+  });
+
+  test('asking does not claim', () => {
+    expect(msUntilClaimable('/search', 1000)).toBe(0);
+    expect(msUntilClaimable('/search', 1000)).toBe(0);
+    expect(claimNavigation('/search', 1000)).toBe(true);
   });
 });

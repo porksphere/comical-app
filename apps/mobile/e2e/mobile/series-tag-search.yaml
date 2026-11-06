@@ -1,0 +1,26 @@
+# A genre chip on the series page opens the search layer with that tag, and back returns to the
+# details. Guards the drill/search handler registration in app/series/index.tsx: a series copy
+# left open in another tab's stack must not hold the top handler.
+appId: com.porksphere.comical
+---
+- launchApp
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card[.].*"
+- assertVisible:
+    id: "series-page.details-card"
+- scrollUntilVisible:
+    element:
+      id: "series.tag.*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series.tag.*"
+- extendedWaitUntil:
+    visible:
+      id: "search.field.input"
+    timeout: 10000
+- back
+- assertVisible:
+    id: "series-page.details-card"

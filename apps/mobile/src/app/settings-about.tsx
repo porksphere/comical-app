@@ -13,22 +13,16 @@
 import { CONTRACT_VERSION } from '@comical/contract';
 import * as Device from 'expo-device';
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Platform, Share, StyleSheet } from 'react-native';
 
-import { ChevronRightIcon } from '@/components/icons/ui-icons';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
-import { UpdateDot } from '@/components/tab-badge';
-import { ThemedText } from '@/components/themed-text';
+import { fields, type SettingsField, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useApiBase } from '@/data/api';
 import { getResolvedModeSync } from '@/data/embedded/preference';
 import { IS_DEMO_MODE, useMockActive } from '@/data/source';
 import { useAppUpdateAction, useAppUpdateCheck, useAppUpdateRecheck } from '@/data/use-app-update';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
-import { useTheme } from '@/hooks/use-theme';
 import { deviceLabel } from '@/lib/device-name';
 import { router } from '@/lib/nav';
 import {
@@ -63,7 +57,6 @@ function osLabel(): string {
 }
 
 export default function AboutScreen() {
-  const contentPadding = useSettingsScrollPadding();
   // Confirmation for the clipboard path, which is otherwise completely silent — no share sheet
   // appears, so without this the row looks broken. Clears itself, so it can't sit there claiming a
   // copy from several minutes ago.
@@ -73,7 +66,6 @@ export default function AboutScreen() {
     const timer = setTimeout(() => setCopied(false), 2000);
     return () => clearTimeout(timer);
   }, [copied]);
-  const theme = useTheme();
   const [apiBase] = useApiBase();
   const mockActive = useMockActive();
   const appUpdate = useAppUpdateCheck();
@@ -111,14 +103,14 @@ export default function AboutScreen() {
     ['Data', mockActive ? (IS_DEMO_MODE ? 'Mock (demo build)' : 'Mock (dev toggle)') : ''],
   ];
 
-  const sections: [title: string, rows: InfoRow[]][] = [
+  const info: [title: string, rows: InfoRow[]][] = [
     ['Build', build],
     ['Runtime', runtime],
     ['Data source', data],
   ];
 
   // Every visible row, in the order they're rendered, as one pasteable block.
-  const report = sections
+  const report = info
     .flatMap(([, rows]) => rows)
     .filter(([, value]) => value)
     .map(([label, value]) => `${label}: ${value}`)
@@ -142,128 +134,70 @@ export default function AboutScreen() {
     await Share.share({ message: report }).catch(() => {});
   };
 
+  // Version is the only fact that leads anywhere: the notes belong to a version, so the version is
+  // what you tap to read them. Every other row is a fact, selectable so a commit SHA or server URL
+  // can be picked out by hand where Share isn't available (desktop web).
+  const infoField = ([label, value]: InfoRow): SettingsField =>
+    label === 'Version'
+      ? { kind: 'link', testID: 'about.version', label, value, onPress: () => router.push('/settings-whats-new') }
+      : { kind: 'value', label, value, selectable: true };
+
+  const sections: SettingsFormSection[] = [
+    // No blurb above the list: the section headings and row labels already say what every value
+    // is, and a paragraph explaining a table of facts only pushed the facts down the screen.
+    ...info.map(
+      ([title, rows]): SettingsFormSection => ({
+        title,
+        fields: fields(
+          ...rows.filter(([, value]) => value).map(infoField),
+          title === 'Build' &&
+            appUpdate.status !== 'unsupported' && {
+              kind: 'action',
+              testID: 'about.checkForUpdates',
+              label: updateAction?.run ? (updateAction.step === 'restart' ? 'Restart to update' : 'Update') : 'Check for updates',
+              description:
+                updateAction?.step === 'restart'
+                  ? `Version ${updateVersion} is ready — restart to install`
+                  : updateAction?.step === 'downloading'
+                    ? `Downloading version ${updateVersion}…`
+                    : updateAction
+                      ? `Version ${updateVersion} available`
+                      : checking || appUpdate.status === 'checking'
+                        ? 'Checking…'
+                        : appUpdate.status === 'error'
+                          ? "Couldn't check"
+                          : 'Up to date',
+              marked: !!updateAction,
+              disabled: !!updateAction && !updateAction.run,
+              onPress: updateAction ? updateAction.run ?? (() => {}) : recheck,
+            },
+        ),
+      }),
+    ),
+    {
+      fields: [
+        {
+          kind: 'action',
+          testID: 'about.share',
+          // Named for what actually happens on this platform — see `exportReport`.
+          label: Platform.OS === 'web' ? 'Copy build info' : 'Share build info',
+          detail: copied ? 'Copied' : undefined,
+          onPress: () => void exportReport(),
+        },
+      ],
+    },
+  ];
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title="About" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
-        {/* No blurb above the list: the section headings and row labels already say what every value
-            is, and a paragraph explaining a table of facts only pushed the facts down the screen. */}
-        {sections.map(([title, rows]) => (
-          <SettingsSection key={title} title={title}>
-            {rows
-              .filter(([, value]) => value)
-              .map(([label, value]) =>
-                // Version is the only row here that leads anywhere: the notes belong to a version,
-                // so the version is what you tap to read them. Every other row is a fact.
-                label === 'Version' ? (
-                  <SettingsRow
-                    key={label}
-                    testID="about.version"
-                    label={label}
-                    right={<InfoValueLink value={value} />}
-                    onPress={() => router.push('/settings-whats-new')}
-                  />
-                ) : (
-                  <SettingsRow key={label} label={label} right={<InfoValue value={value} />} />
-                ),
-              )}
-            {title === 'Build' && appUpdate.status !== 'unsupported' && (
-              <SettingsRow
-                key="check-for-updates"
-                testID="about.checkForUpdates"
-                label="Check for updates"
-                description={
-                  updateAction?.step === 'restart'
-                    ? `Version ${updateVersion} is ready — restart to install`
-                    : updateAction?.step === 'downloading'
-                      ? `Downloading version ${updateVersion}…`
-                      : updateAction
-                        ? `Version ${updateVersion} available`
-                        : checking || appUpdate.status === 'checking'
-                          ? 'Checking…'
-                          : appUpdate.status === 'error'
-                            ? "Couldn't check"
-                            : 'Up to date'
-                }
-                leading={updateAction ? <UpdateDot /> : undefined}
-                right={
-                  updateAction?.run ? (
-                    <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                      {updateAction.step === 'restart' ? 'Restart' : 'Update'}
-                    </ThemedText>
-                  ) : updateAction ? undefined : (
-                    <ThemedText type="smallBold" style={{ color: checking ? theme.textSecondary : theme.accent }}>
-                      Check
-                    </ThemedText>
-                  )
-                }
-                onPress={updateAction ? updateAction.run : recheck}
-              />
-            )}
-          </SettingsSection>
-        ))}
-
-        <SettingsSection>
-          <SettingsRow
-            testID="about.share"
-            // Named for what actually happens on this platform — see `exportReport`.
-            label={Platform.OS === 'web' ? 'Copy build info' : 'Share build info'}
-            // Always occupied, even when empty: `right` is what suppresses `SettingsRow`'s trailing
-            // chevron, which would promise a screen this row doesn't push.
-            right={
-              <ThemedText type="small" themeColor="textSecondary">
-                {copied ? 'Copied' : ''}
-              </ThemedText>
-            }
-            onPress={exportReport}
-          />
-        </SettingsSection>
-      </ScrollView>
+      <SettingsList sections={sections} />
     </ThemedView>
-  );
-}
-
-/** A row's value. Selectable so a commit SHA or server URL can be picked out by hand where Share
- *  isn't available (desktop web), and clamped to one line so no row outgrows `SettingsRowHeight` —
- *  it shrinks against the label rather than pushing it off. */
-function InfoValue({ value }: { value: string }) {
-  return (
-    <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} selectable style={styles.value}>
-      {value}
-    </ThemedText>
-  );
-}
-
-/** The same value with the chevron a pressable row would have grown on its own. `SettingsRow`
- *  suppresses that chevron whenever `right` is occupied (so a Switch doesn't also get one), so a row
- *  that shows a value AND leads somewhere has to put both there itself — otherwise the one row on
- *  this screen you can tap looks exactly like the eight you can't. Not `selectable`: a row whose
- *  press opens a screen shouldn't also start a text selection under the finger. */
-function InfoValueLink({ value }: { value: string }) {
-  const theme = useTheme();
-  return (
-    <View style={styles.valueLink}>
-      <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.value}>
-        {value}
-      </ThemedText>
-      <ChevronRightIcon color={theme.textSecondary} size={18} />
-    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  content: {
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
-    gap: Spacing.five,
-  },
-  valueLink: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flexShrink: 1 },
-  value: {
-    flexShrink: 1,
-    textAlign: 'right',
   },
 });

@@ -13,20 +13,16 @@ import { PlusIcon } from '@/components/icons/ui-icons';
 import { PILL_HEIGHT } from '@/components/multi-select/select-mode';
 import { useTheme } from '@/hooks/use-theme';
 
-export function AddFab({
-  onPress,
-  testID,
-  label = 'Add',
-  right,
-  bottom,
-}: {
+export type AddFabProps = {
   onPress: () => void;
   testID: string;
   /** Accessible label, e.g. "Add page". */
   label?: string;
   right: number;
   bottom: number;
-}) {
+};
+
+export function AddFab({ onPress, testID, label = 'Add', right, bottom }: AddFabProps) {
   const theme = useTheme();
   return (
     // box-none so taps between the FAB and the rest of the screen pass through to the list.

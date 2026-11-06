@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  ChevronsUpDown,
   Clock,
   Database,
   Download,
@@ -109,6 +110,7 @@ export const CaretDownIcon = ({ color, size = 16 }: IconProps) => (
   </View>
 );
 export const ChevronUpIcon = ({ color, size = 16 }: IconProps) => <ChevronUp color={color} size={size} />;
+export const ChevronsUpDownIcon = ({ color, size = 16 }: IconProps) => <ChevronsUpDown color={color} size={size} />;
 export const ArrowUpIcon = ({ color, size = 16 }: IconProps) => <ArrowUp color={color} size={size} />;
 export const ArrowDownIcon = ({ color, size = 16 }: IconProps) => <ArrowDown color={color} size={size} />;
 export const ArrowRightIcon = ({ color, size = 16 }: IconProps) => <ArrowRight color={color} size={size} />;

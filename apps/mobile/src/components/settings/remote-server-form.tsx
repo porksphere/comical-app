@@ -6,7 +6,7 @@
  * Mirrors `AddRegistryForm`'s text-input-plus-save shape in `registries.tsx`.
  */
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 
 import { OverlayHeading, useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
@@ -35,7 +35,7 @@ export function RemoteServerForm({
   const theme = useTheme();
   const { closeTop } = useOverlay();
   const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [url, setUrl] = useState(currentUrl);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

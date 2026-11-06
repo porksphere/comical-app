@@ -1,9 +1,12 @@
 import { createContext, useContext, useMemo } from 'react';
-import { Gesture, type GestureType, type NativeGesture, type PanGesture } from 'react-native-gesture-handler';
+import { Gesture, type GestureType, type LegacyPanGesture as PanGesture } from 'react-native-gesture-handler';
 import { makeMutable, type SharedValue } from 'react-native-reanimated';
 
 import { projectRelease } from '@/lib/gesture-release';
 import { isGestureTraceEnabled, trace, traceGate, traceThrottled } from '@/lib/gesture-trace';
+
+// Gesture Handler 3 exports the builder API's types under `Legacy*` names, except this one.
+type NativeGesture = ReturnType<typeof Gesture.Native>;
 
 /**
  * The app's hand-rolled back-swipe: what counts as one, in one place.

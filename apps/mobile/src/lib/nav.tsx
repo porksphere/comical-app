@@ -5,10 +5,12 @@ import {
   router as expoRouter,
   useLocalSearchParams as useExpoLocalSearchParams,
   useRouter as useExpoRouter,
+  type Href,
 } from 'expo-router';
 import { useMemo, type ComponentProps } from 'react';
 
 import { openBridgeSearchPane } from '@/lib/bridge-search-pane';
+import { focusedTabRoute } from '@/lib/focused-tab';
 import { usePaneNav, usePaneParams, type PaneParams } from '@/lib/pane';
 import { openResultsPane } from '@/lib/results-pane';
 import { openSeriesPane } from '@/lib/series-pane';
@@ -50,12 +52,12 @@ function guard(base: Router): Router {
     push: (href, options) => {
       if (!claimNavigation(navTargetKey(href))) return;
       if (takeContentPane(href)) return;
-      base.push(href, options);
+      base.push(destinationHref(href), options);
     },
     navigate: (href, options) => {
       if (!claimNavigation(navTargetKey(href))) return;
       if (takeContentPane(href)) return;
-      base.navigate(href, options);
+      base.navigate(destinationHref(href), options);
     },
     replace: (href, options) => {
       if (claimNavigation(navTargetKey(href))) base.replace(href, options);
@@ -124,6 +126,77 @@ function takeContentPane(href: unknown): boolean {
   return false;
 }
 
+/**
+ * Where a push actually lands. Here, with the pane hand-off, because the push sites are many and
+ * context-free.
+ *
+ * A reader-first `/series` open, a collection's sequence among them, is the READER page,
+ * `/series/read`: the details and the reader are two pages (SeriesSplit in components/series/split-handoff).
+ *
+ * iOS: a series, search or results page pushed from inside a tab opens INSIDE that tab's native
+ * stack — the twin routes under `app/(tabs)/<tab>/in-tab/` — so the tab bar stays up over it as it does in
+ * every system app, instead of on the root stack over the whole tab shell. From outside the tabs
+ * the page goes to the root route — see `focusedTabRoute`. Android and web keep their single root
+ * copies.
+ */
+type PushHref = Parameters<Router['push']>[0];
+const IN_TAB_PATHS = new Set(['/series', '/search', '/results']);
+/**
+ * The settings pages, which the Settings tab pushes into its OWN stack (their copies under
+ * `app/(tabs)/settings/in-tab/`): a page pushed on the root stack pops back to the tabs screen,
+ * whose root bar is hidden, and the bar's title drifted as UIKit hid it under the swipe; popped
+ * inside the tab, the bar stays and nothing moves. From any other tab (a bridge's settings from
+ * Browse) they stay root pages.
+ */
+const SETTINGS_PATHS = new Set([
+  '/settings-general',
+  '/settings-notifications',
+  '/settings-shortcuts',
+  '/settings-sync',
+  '/settings-developer',
+  '/settings-about',
+  '/settings-whats-new',
+  '/scan-sync-server',
+  '/bridges',
+  '/trackers',
+  '/bridge-settings',
+  '/tracker-settings',
+  '/registries',
+  '/custom-pages',
+  '/custom-page-editor',
+  '/custom-section-editor',
+  '/registry-browse',
+  '/add-registry',
+  '/diagnostics',
+  '/gesture-trace',
+  '/downloads',
+  '/series-downloads',
+  '/storage',
+  '/favorites-import',
+  '/tracker-import',
+]);
+function destinationHref(href: PushHref): PushHref {
+  const { pathname, params } = splitHref(href);
+  if (pathname && SETTINGS_PATHS.has(pathname) && Platform.OS === 'ios' && focusedTabRoute() === 'settings') {
+    return tabHref('settings', pathname, params);
+  }
+  if (!pathname || !IN_TAB_PATHS.has(pathname)) return href;
+  const page = pathname === '/series' && (params.reader === '1' || params.seq === '1') ? '/series/read' : pathname;
+  const tab = Platform.OS === 'ios' ? focusedTabRoute() : null;
+  if (tab) return tabHref(tab, page, params);
+  return page === pathname ? href : ({ pathname: page, params } as unknown as PushHref);
+}
+
+/**
+ * A tab's own copy of a root page: `/series` inside `library` is `/(tabs)/library/in-tab/series`. For a
+ * `<Link>` rendered under a tab (series-card's zoom link), which names its stack itself — the
+ * imperative push above does this for every call site, but an href is built at render time, when
+ * the focused tab is not necessarily the one the card is in (see `TabRouteContext`).
+ */
+export function tabHref(tab: string, pathname: string, params: PaneParams): PushHref {
+  return { pathname: `/(tabs)/${tab}/in-tab${pathname}`, params } as unknown as PushHref;
+}
+
 /** Both shapes expo-router accepts, reduced to the pathname and params the pane needs to render. */
 function splitHref(href: unknown): { pathname: string | null; params: PaneParams } {
   if (typeof href === 'string') {
@@ -156,6 +229,23 @@ export function useLocalSearchParams<T extends PaneParams = PaneParams>(): T {
 
 /** Guarded drop-in for expo-router's `router` singleton (for call sites outside a component). */
 export const router: Router = guard(expoRouter);
+
+/**
+ * Presents overlay item `id` as a system sheet (see lib/native-overlay-sheets), PAST the guard. Each
+ * open is a route of its own, so a repeat has no destination to be recognised by, and a trigger
+ * pressed twice already toggles its overlay shut. What the guard would add is a push dropped inside
+ * its window after some other navigation, leaving the item in the overlay stack with nothing shown.
+ */
+export function presentOverlaySheet(id: number): void {
+  // Cast: typed routes are generated by `expo start`, and a route is only in them once it has run.
+  expoRouter.push(`/overlay-sheet?id=${id}` as Href);
+}
+
+/** Presents the reader's settings sheet (app/reader-settings), past the guard for the same reasons:
+ *  the gear that opens it is under the sheet while it is up. */
+export function presentReaderSettings(seriesKey: string | null): void {
+  expoRouter.push({ pathname: '/reader-settings', params: seriesKey ? { seriesKey } : {} } as Href);
+}
 
 type LinkProps = ComponentProps<typeof ExpoLink>;
 type LinkPressEvent = Parameters<NonNullable<LinkProps['onPress']>>[0];
@@ -190,10 +280,20 @@ export function Link({ onPress, ...rest }: LinkProps) {
     if (Platform.OS !== 'web') return;
     event.preventDefault();
     if (takeContentPane(rest.href)) return;
-    if (rest.replace) expoRouter.replace(rest.href);
-    else if (rest.push) expoRouter.push(rest.href);
-    else expoRouter.navigate(rest.href);
+    const to = destinationHref(rest.href);
+    if (rest.replace) expoRouter.replace(to);
+    else if (rest.push) expoRouter.push(to);
+    else expoRouter.navigate(to);
   };
   // eslint-disable-next-line comical/require-test-id -- pass-through wrapper: the testID comes from the call site's props.
   return <ExpoLink {...rest} onPress={handlePress} />;
 }
+
+/**
+ * The parts of expo-router's `Link` the iOS zoom transition is built from, for a `<Link asChild>`
+ * from this module: `<LinkTrigger withAppleZoom>` around the pressed element makes it the zoom's
+ * source, and `<LinkAppleZoomTarget>` on the destination screen marks what it grows into. Both are
+ * a plain pass-through off iOS 18. Here because the lint keeps `Link` itself out of reach.
+ */
+export const LinkTrigger = ExpoLink.Trigger;
+export const LinkAppleZoomTarget = ExpoLink.AppleZoomTarget;

@@ -1,24 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
-import { Holdable } from '@/components/context-menu';
 import { CheckIcon, ClearIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { SelectLead, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
+import { useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
-import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
-import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
+import { type SettingsField, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { TopBar, TopBarButton } from '@/components/top-bar';
-import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
+import { TopBar, type TopBarAction } from '@/components/top-bar';
+import { Spacing } from '@/constants/theme';
 import type { SavedRegistry } from '@/data/api';
 import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
@@ -27,7 +27,6 @@ import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
-import { hapticSelection } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
@@ -97,11 +96,13 @@ export default function RegistriesScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'registries.select-toggle');
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
   const stagingRows = [
     {
       label: allSelected ? 'Deselect all' : 'Select all',
       Icon: allSelected ? ClearIcon : CheckIcon,
+      symbol: allSelected ? ('xmark.circle' as const) : ('checkmark.circle' as const),
       loading: false,
       disabled: allKeys.length === 0,
       onPress: allSelected ? ms.clear : ms.selectAll,
@@ -187,72 +188,55 @@ export default function RegistriesScreen() {
       },
     });
 
-  const renderRow = (r: SavedRegistry) => (
-    // In select mode the row toggles (tap) / range-fills (hold, via the shared Holdable) instead of
-    // opening the registry, and its swipe action is parked. Same pattern as the Downloads screen.
-    <Holdable
-      key={r.url}
-      enabled={selecting}
-      onHold={() => {
-        hapticSelection();
-        ms.rangeFill(r.url);
-      }}>
-      {({ onLongPress }) => (
-        <SwipeableSettingsRow
-          // Operator-set label (e.g. "SFW") shown next to the derived owner/repo name, so one publisher's
-          // several registries are distinguishable. Falls back to just the name.
-          label={r.displayName ? `${r.displayName} — ${r.name}` : r.name}
-          // A held move takes over the description line: it's the one thing about this registry the
-          // user has to act on, and browsing it meanwhile reads the address that's going away.
-          description={r.pendingMove ? `Moved — tap to review the new address` : r.url}
-          descriptionColor={r.pendingMove ? theme.accent : undefined}
-          swipeEnabled={!selecting}
-          leading={
-            <SelectLead progress={mode.progress} selected={ms.isSelected(r.url)} itemKey={r.url} edgeOffset={SettingsCardInset} />
-          }
-          onPress={
-            selecting
-              ? () => ms.toggle(r.url)
-              : r.pendingMove
-                ? () => reviewMove(r)
-                : () => router.push({ pathname: '/registry-browse', params: { url: r.url } })
-          }
-          onLongPress={selecting ? onLongPress : undefined}
-          actions={[
-            ...(r.pendingMove
-              ? [{ label: 'Ignore', icon: ClearIcon, onPress: () => ignoreMove(r) }]
-              : []),
-            { label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => confirmRemoveOne(r) },
-          ]}
-        />
-      )}
-    </Holdable>
-  );
+  const row = (r: SavedRegistry): SettingsField => ({
+    kind: 'link',
+    key: r.url,
+    testID: testId('registries.row', r.url),
+    // Operator-set label (e.g. "SFW") shown next to the derived owner/repo name, so one publisher's
+    // several registries are distinguishable. Falls back to just the name.
+    label: r.displayName ? `${r.displayName} — ${r.name}` : r.name,
+    // A held move takes over the description line: it's the one thing about this registry the
+    // user has to act on, and browsing it meanwhile reads the address that's going away.
+    description: r.pendingMove ? `Moved — tap to review the new address` : r.url,
+    tone: r.pendingMove ? 'info' : undefined,
+    onPress: r.pendingMove ? () => reviewMove(r) : () => router.push({ pathname: '/registry-browse', params: { url: r.url } }),
+    actions: [
+      ...(r.pendingMove ? [{ label: 'Ignore', symbol: 'xmark' as const, glyph: ClearIcon, onPress: () => ignoreMove(r) }] : []),
+      { label: 'Remove', symbol: 'trash' as const, glyph: TrashIcon, destructive: true, onPress: () => confirmRemoveOne(r) },
+    ],
+  });
+  const sections: SettingsFormSection[] = [
+    {
+      fields: Array.isArray(ordered) ? ordered.map(row) : [],
+      onReorder: (urls) => setRegistryOrder(urls),
+      selection: { selecting, progress: mode.progress, selected: ms.selected, toggle: ms.toggle, rangeFill: ms.rangeFill },
+    },
+  ];
+
+  // Web has no pull-to-refresh on this list, so the check gets a button there.
+  const refresh: TopBarAction = {
+    label: 'Refresh registries',
+    testID: 'registries.refresh',
+    onPress: () => void refreshLabels(),
+    icon: refreshing ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />,
+    native: null,
+  };
 
   return (
     <ThemedView style={styles.container}>
       <TopBar
         title={selecting ? `${ms.count} selected` : 'Registries'}
-        right={
+        actions={
           // `null` = this server has no registry support at all, so there's nothing to add to.
-          registries !== null &&
-          (selecting ? (
-            <SelectToggle selecting onToggle={toggleSelecting} testID="registries.select-toggle" />
-          ) : (
-            // The + add button now lives in the floating FAB below (hidden in select mode); the
-            // top-right holds the select toggle where the + used to be.
-            <View style={styles.topActions}>
-              {IS_WEB && (ordered?.length ?? 0) > 0 && (
-                <TopBarButton
-                  testID="registries.refresh"
-                  icon={refreshing ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />}
-                  label="Refresh registries"
-                  onPress={() => void refreshLabels()}
-                />
-              )}
-              {allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="registries.select-toggle" />}
-            </View>
-          ))
+          registries === null
+            ? undefined
+            : selecting
+              ? [selectToggle]
+              : [
+                  ...(IS_WEB && (ordered?.length ?? 0) > 0 ? [refresh] : []),
+                  // The + add button lives in the floating FAB below (hidden in select mode).
+                  ...(allKeys.length > 0 ? [selectToggle] : []),
+                ]
         }
       />
       {error ? (
@@ -277,7 +261,8 @@ export default function RegistriesScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ReorderableList data={ordered} keyOf={(r) => r.url} renderRow={renderRow} onReorder={(urls) => setRegistryOrder(urls)} dragEnabled={!selecting} refresh={reconcileLabels} />
+        // The live list is the draggable list; a pull reconciles the labels.
+        <SettingsList sections={sections} refresh={reconcileLabels} />
       )}
 
       {/* The + add affordance: a floating FAB in normal mode, hidden while selecting. */}
@@ -286,7 +271,7 @@ export default function RegistriesScreen() {
           onPress={() => openDialog(() => <AddRegistryForm />, { accessibilityLabel: 'Add registry' })}
           testID="registries.add"
           label="Add registry"
-          right={SettingsGutter}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
         />
       )}
@@ -294,8 +279,8 @@ export default function RegistriesScreen() {
       {/* The floating select-mode chrome: staging "…" bottom-left, the Remove verb bottom-right. */}
       {selecting && (
         <SelectPillBar
-          left={SettingsGutter}
-          right={SettingsGutter}
+          left={contentPadding.paddingLeft}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="registries.select-options"
@@ -305,6 +290,7 @@ export default function RegistriesScreen() {
                   {
                     key: 'remove',
                     label: `Remove ${ms.count} registries`,
+                    symbol: 'trash' as const,
                     Icon: TrashIcon,
                     color: theme.danger,
                     onPress: confirmRemoveSelected,
@@ -363,7 +349,7 @@ function AddRegistryForm() {
   const { closeTop } = useOverlay();
   const keyboardAvoiding = useKeyboardAvoidingInput();
   const isLargeScreen = useIsLargeScreen();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [url, setUrl] = useState('');
   const [requireSignature, setRequireSignature] = useState(false);
 
@@ -429,10 +415,6 @@ function AddRegistryForm() {
 }
 
 const styles = StyleSheet.create({
-  topActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   container: {
     flex: 1,
   },

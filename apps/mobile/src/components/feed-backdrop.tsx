@@ -92,6 +92,10 @@ function gradientStyle(image: string): ViewStyle {
  * The feed's ambient colour: each section tints the page behind its own covers. Drawn BEHIND the
  * list (which paints no background of its own) and moved by the list's own scroll offset, so
  * nothing here is in the list's rows or its recycling.
+ *
+ * Or drawn inside the list's content, behind the rows (`inList`, iOS; see ContentFeed): the colour
+ * then scrolls with the rows natively, and only what holds still on screen (the side fades and the
+ * fade under the chrome) is moved, by the offset, back to where it stays.
  */
 export function FeedBackdrop({
   bands,
@@ -100,6 +104,7 @@ export function FeedBackdrop({
   chromeBottom,
   barOffset,
   style,
+  inList = false,
 }: {
   bands: FeedBand[];
   /** The feed's own width, which is not the window's beside a sidebar. */
@@ -110,12 +115,16 @@ export function FeedBackdrop({
   chromeBottom: number;
   barOffset?: SharedValue<number>;
   style?: Parameters<typeof Animated.View>[0]['style'];
+  /** Drawn inside the list's own content instead of behind the list. `style` then places it at
+   *  the content's origin. */
+  inList?: boolean;
 }) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
   const { height: viewport } = useWindowDimensions();
 
   const scroll = useAnimatedStyle(() => ({ transform: [{ translateY: -scrollOffset.value }] }));
+  const unscroll = useAnimatedStyle(() => ({ transform: [{ translateY: scrollOffset.value }] }));
   const swayRight = useAnimatedStyle(() => ({ transform: [{ translateX: scrollOffset.value * GLOW_SWAY }] }));
   const swayLeft = useAnimatedStyle(() => ({ transform: [{ translateX: -scrollOffset.value * GLOW_SWAY }] }));
   const fade = useAnimatedStyle(() => ({ transform: [{ translateY: barOffset?.value ?? 0 }] }));
@@ -175,8 +184,8 @@ export function FeedBackdrop({
     });
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.clip, style]}>
-      <Animated.View style={[styles.sheet, scroll]}>
+    <Animated.View pointerEvents="none" style={[inList ? [styles.inList, { width }] : styles.clip, style]}>
+      <Animated.View style={[styles.sheet, inList ? null : scroll]}>
         {bands.map((b, i) => {
           if (b.bottom <= b.top) return null;
           const height = b.bottom - b.top + BAND_SPILL * 2;
@@ -189,30 +198,33 @@ export function FeedBackdrop({
         <Animated.View style={[styles.sheet, swayRight]}>{glows(0)}</Animated.View>
         <Animated.View style={[styles.sheet, swayLeft]}>{glows(1)}</Animated.View>
       </Animated.View>
-      {/* The page's own colour laid back over the sides: the same as fading the colour out, and it
-          needs no mask, which native doesn't have. */}
-      <LinearGradient
-        colors={[theme.background, `${theme.background}66`, clear]}
-        locations={[0, 0.45, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={[styles.side, styles.left, { width: sideFade }]}
-      />
-      <LinearGradient
-        colors={[clear, `${theme.background}66`, theme.background]}
-        locations={[0, 0.55, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={[styles.side, styles.right, { width: sideFade }]}
-      />
-      {/* Solid down to the chrome's edge, not just from it: at rest no heading is pinned yet, and
-          the strip its band will cover would otherwise show colour that the fade then cuts off. */}
-      <Animated.View style={[styles.fade, { height: chromeBottom + CHROME_FADE }, fade]}>
+      {/* What holds still on screen. In the list that is the offset taken back out again. */}
+      <Animated.View style={inList ? [styles.screen, { height: viewport }, unscroll] : StyleSheet.absoluteFill}>
+        {/* The page's own colour laid back over the sides: the same as fading the colour out, and it
+            needs no mask, which native doesn't have. */}
         <LinearGradient
-          colors={[theme.background, theme.background, clear]}
-          locations={[0, chromeBottom / (chromeBottom + CHROME_FADE), 1]}
-          style={styles.fill}
+          colors={[theme.background, `${theme.background}66`, clear]}
+          locations={[0, 0.45, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[styles.side, styles.left, { width: sideFade }]}
         />
+        <LinearGradient
+          colors={[clear, `${theme.background}66`, theme.background]}
+          locations={[0, 0.55, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[styles.side, styles.right, { width: sideFade }]}
+        />
+        {/* Solid down to the chrome's edge, not just from it: at rest no heading is pinned yet, and
+            the strip its band will cover would otherwise show colour that the fade then cuts off. */}
+        <Animated.View style={[styles.fade, { height: chromeBottom + CHROME_FADE }, fade]}>
+          <LinearGradient
+            colors={[theme.background, theme.background, clear]}
+            locations={[0, chromeBottom / (chromeBottom + CHROME_FADE), 1]}
+            style={styles.fill}
+          />
+        </Animated.View>
       </Animated.View>
     </Animated.View>
   );
@@ -222,6 +234,19 @@ const styles = StyleSheet.create({
   clip: {
     ...StyleSheet.absoluteFill,
     overflow: 'hidden',
+  },
+  // Zero-height: the list's scroll view is what clips it.
+  inList: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    height: 0,
+  },
+  screen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   sheet: {
     position: 'absolute',

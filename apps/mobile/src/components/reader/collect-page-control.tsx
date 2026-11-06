@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, type ViewInstance } from 'react-native';
 
 import { openCollectionPicker } from '@/components/collection-picker';
 import { BookmarkIcon } from '@/components/icons/reader-icons';
@@ -11,7 +11,7 @@ import { hapticImpactLight } from '@/lib/haptics';
 import { isTypingTarget } from '@/lib/key-hold';
 import { isKey } from '@/lib/keybindings';
 
-type CollectPageProps = {
+export type CollectPageProps = {
   bridgeId?: string;
   seriesId?: string;
   seriesTitle: string;
@@ -30,9 +30,9 @@ type CollectPageProps = {
 
 type OnScreen = { pages: number[]; rtl: boolean };
 
-const MENU_GAP = 6;
+export const MENU_GAP = 6;
 
-function useCollectPage({
+export function useCollectPage({
   bridgeId,
   seriesId,
   seriesTitle,
@@ -141,7 +141,7 @@ export function CollectPageControl({
   onPress?: () => void;
 }) {
   const { collected, save, openPicker, spread, spreadMenu } = useCollectPage(page);
-  const ref = useRef<View>(null);
+  const ref = useRef<ViewInstance>(null);
   const { width: winW } = useWindowDimensions();
 
   // Hung from the button like a dropdown, right edge to the button's.

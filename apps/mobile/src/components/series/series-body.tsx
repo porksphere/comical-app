@@ -15,9 +15,10 @@ import {
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ViewInstance,
   type ViewStyle,
 } from 'react-native';
-import type { ComposedGesture } from 'react-native-gesture-handler';
+import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { BridgeMissingNotice } from '@/components/bridge-missing';
@@ -30,6 +31,7 @@ import { SeriesDownloadButton } from '@/components/series/download-button';
 import { SeriesRemovedNotice } from '@/components/series/series-removed';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
+import { InlineSeriesTitle } from '@/components/series/inline-title';
 import { ThemedText } from '@/components/themed-text';
 import { showToast } from '@/components/toast';
 import { useTopBarInset } from '@/components/top-bar';
@@ -39,6 +41,7 @@ import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
 import { type Chapter, type MetaCredit, type SeriesDetail, type TagGroup } from '@/data/types';
 import { useBridgeMap, useMissingBridge } from '@/hooks/use-bridges';
+import { useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useHovered } from '@/hooks/use-hovered';
@@ -50,9 +53,9 @@ import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
 import { focusMarks, focusSkip } from '@/lib/focus-nav';
 import { isTypingTarget } from '@/lib/key-hold';
 import { isKey } from '@/lib/keybindings';
-import { useOpenSearchLayer } from '@/lib/series-nav';
+import { useOpenSeriesSearch } from '@/lib/series-nav';
 import { measureZoomRect } from '@/lib/series-zoom';
-import { useRouter } from '@/lib/nav';
+import { LinkAppleZoomTarget, useRouter } from '@/lib/nav';
 import { formatScore, formatVotes } from '@/lib/rating';
 import { tagPaletteFor } from '@/lib/tag-colors';
 import { testId } from '@/lib/test-id';
@@ -79,7 +82,7 @@ function SeriesCoverBox({
     aspectSV.set(withTiming(aspect, { duration: ASPECT_TRANSITION_MS }));
   }, [aspect, aspectSV]);
   const boxStyle = useAnimatedStyle(() => ({ aspectRatio: aspectSV.value }));
-  const boxRef = useRef<View>(null);
+  const boxRef = useRef<ViewInstance>(null);
   // `onRect` is a stable callback at its one call site, so depending on it directly (rather than
   // latching it in a ref during render) costs nothing and keeps the ref rules happy.
   const reportRect = useCallback(() => {
@@ -97,16 +100,6 @@ function SeriesCoverBox({
       {children}
     </Animated.View>
   );
-}
-
-// Conservative cap on the top bar's "<Bridge> / <Title>" title portion — some
-// series titles run extremely long, and letting the bar's own `numberOfLines={1}`
-// truncate the combined string could clip the bridge name off the front entirely.
-const TOP_BAR_TITLE_MAX_CHARS = 40;
-
-/** Exported for the series page, whose details top bar and its reader toolbar share one title. */
-export function truncateTopBarTitle(t: string): string {
-  return t.length > TOP_BAR_TITLE_MAX_CHARS ? `${t.slice(0, TOP_BAR_TITLE_MAX_CHARS).trimEnd()}…` : t;
 }
 
 /** Meta cells whose value should open a matching search, keyed by the
@@ -306,8 +299,8 @@ function AltTitles({ titles }: { titles: string[] }) {
  *
  *  This is the whole body of the series page, and it lives in components/ rather than app/ because
  *  the screen that renders it is a route and this is not. It used to sit alongside a second,
- *  standalone `/series` screen and be exported for the combined page to embed; that screen is gone
- *  and the combined page is the series page now, so the `topInset` / `onStartReading` /
+ *  standalone `/series` screen and be exported for another page to embed; that screen is gone
+ *  and this is the series details page now, so the `topInset` / `onStartReading` /
  *  `onOpenChapter` / `onOpenPage` props are simply how the page drives its own body rather than
  *  overrides of some other screen's defaults. */
 export function SeriesBody({
@@ -368,7 +361,7 @@ export function SeriesBody({
   /** See ChapterScrollList / PageThumbList: hand a tapped chapter version / page thumbnail to that
    *  same in-place reader. */
   onOpenChapter: (version: Chapter) => void;
-  onOpenPage: (pageIndex: number) => void;
+  onOpenPage: (pageIndex: number, zoomId: string | null) => void;
   /** Pull-to-refresh wiring owned by SeriesScreen, threaded to whichever list owns the scroll. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -388,6 +381,7 @@ export function SeriesBody({
   const theme = useTheme();
   const scheme = useActiveColorScheme();
   const mock = useMockActive();
+  const sides = useSideInsets();
 
   // Trackers are bridge-agnostic (unlike `hasSources`, which the bridge itself reports per
   // series), so whether the Trackers button renders comes from the same `/trackers` query the
@@ -544,28 +538,32 @@ export function SeriesBody({
       onPress={startReading}
       accessibilityRole="button"
       accessibilityLabel={primaryLabel}>
-      <SeriesCoverBox aspect={coverAspect} onRect={onHeroCoverRect}>
-        {resolvedCover ? (
-          <Image
-            source={{ uri: resolvedCover }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            // The skeleton already painted this exact cover — fading it in again on the
-            // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
-            // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
-            // differs from the browse thumbnail). Raw comparison: resolution is
-            // deterministic and its cache is warm from the skeleton, so equal raw values
-            // still mean "same cover already painted".
-            transition={initialCover && initialCover === series.cover ? 0 : 200}
-            onLoad={onCoverLoad}
-          />
-        ) : (
-          // Brief window while a server-relative cover resolves (absolute covers seed
-          // synchronously and never hit this).
-          <Skeleton style={StyleSheet.absoluteFill} />
-        )}
-      </SeriesCoverBox>
+      {/* iOS zoom: the box the tapped card's cover grows into and shrinks back to (series-card's
+          zoom link). A layout-neutral wrapper there, the box itself everywhere else. */}
+      <LinkAppleZoomTarget>
+        <SeriesCoverBox aspect={coverAspect} onRect={onHeroCoverRect}>
+          {resolvedCover ? (
+            <Image
+              source={{ uri: resolvedCover }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              // The skeleton already painted this exact cover — fading it in again on the
+              // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
+              // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
+              // differs from the browse thumbnail). Raw comparison: resolution is
+              // deterministic and its cache is warm from the skeleton, so equal raw values
+              // still mean "same cover already painted".
+              transition={initialCover && initialCover === series.cover ? 0 : 200}
+              onLoad={onCoverLoad}
+            />
+          ) : (
+            // Brief window while a server-relative cover resolves (absolute covers seed
+            // synchronously and never hit this).
+            <Skeleton style={StyleSheet.absoluteFill} />
+          )}
+        </SeriesCoverBox>
+      </LinkAppleZoomTarget>
       {chapterCount != null && (
         <View style={styles.coverBadge}>
           <ThemedText style={styles.coverBadgeText}>{chapterCount}</ThemedText>
@@ -701,11 +699,11 @@ export function SeriesBody({
   // `push('/search')` overlays the Search screen on top of this pushed Series
   // screen, so its back arrow returns here. Search consumes the stashed intent on
   // mount (see search.tsx) and applies it against the intent's bridge. Inside the
-  // series page the same intent opens as an in-screen LAYER instead — sliding in
-  // over this page with the shared chevron statically stuck (see useOpenSearchLayer).
-  const openSearchLayer = useOpenSearchLayer();
+  // series page the same intent opens over this page instead — a card in the page's
+  // own stack on iOS, an in-screen LAYER elsewhere (see useOpenSeriesSearch).
+  const openSeriesSearch = useOpenSeriesSearch();
   const openSearch = () => {
-    if (openSearchLayer) openSearchLayer();
+    if (openSeriesSearch) openSeriesSearch();
     else router.push('/search');
   };
   const onTagPress = (group: TagGroup, index: number) => {
@@ -822,7 +820,7 @@ export function SeriesBody({
       ) : null}
 
       {series.description ? (
-        <ThemedText themeColor="textSecondary" style={styles.description}>
+        <ThemedText themeColor="textSecondary" style={styles.description} selectable>
           {series.description}
         </ThemedText>
       ) : null}
@@ -846,9 +844,9 @@ export function SeriesBody({
   // header.
   const heroBlock = (
     <>
-      <ThemedText type="subtitle" style={styles.title}>
+      <InlineSeriesTitle type="subtitle" style={styles.title} selectable>
         {series.title}
-      </ThemedText>
+      </InlineSeriesTitle>
 
       {isLarge ? (
         /* Large screen: two-column layout — cover+actions left, content right. */
@@ -873,7 +871,9 @@ export function SeriesBody({
   );
 
   // Related rails (per-bridge): a bridge may surface any number of labeled
-  // groups (sequels, similar, …). Full-bleed to the capped column.
+  // groups (sequels, similar, …). Full-bleed to the capped column; their cards lay out inside the
+  // safe area's sides, which the strips scroll under.
+  const railWidth = width - sides.left - sides.right;
   const relatedRailsEl = relatedGroups?.length ? (
     <View style={styles.related}>
       {relatedGroups.map(
@@ -882,7 +882,7 @@ export function SeriesBody({
             <Rail
               key={`${group.label}-${i}`}
               section={{ id: `related-${i}`, title: group.label, kind: 'regular', items: group.items }}
-              viewportWidth={width}
+              viewportWidth={railWidth}
               bridge={series.bridge}
               bridgeId={bridgeId}
               direct={direct}
@@ -892,7 +892,7 @@ export function SeriesBody({
     </View>
   ) : needsRelatedFetch && relatedLoading ? (
     <View style={styles.related}>
-      <RailSkeleton viewportWidth={width} />
+      <RailSkeleton viewportWidth={railWidth} />
     </View>
   ) : null;
 

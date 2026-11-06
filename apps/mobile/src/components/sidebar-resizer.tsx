@@ -15,6 +15,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
+import { RegularWidthBreakpoint } from '@/constants/size-class';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { setSidebarWidth, SidebarMaxWidth, SidebarMinWidth } from '@/hooks/use-sidebar-width';
@@ -35,7 +36,7 @@ const COMMIT_SLACK = 48;
  *  moments rather than merely being untidy. */
 function columnsFor(contentWidth: number): number {
   'worklet';
-  return contentWidth < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(contentWidth / 200)));
+  return contentWidth < RegularWidthBreakpoint ? 3 : Math.min(6, Math.max(3, Math.floor(contentWidth / 200)));
 }
 
 export function SidebarResizer({ width, viewport }: { width: number; viewport: number }) {

@@ -55,6 +55,10 @@ version_at() {
 # that edited app.json for something else (still on the old version) can be newer than main's
 # release bump. Stopping at the first non-base commit there minted `<base>.1` on every push.
 # (An empty parent read — the commit that first added app.json — counts as a change too.)
+# First parents only: a branch that merges main in carries main's bump through that merge, and the
+# merge's first parent is still on the old version, so walking every commit took the branch's own
+# merge for the bump and restarted the PR lane's count there (0.8.0.144, then 0.8.0.2). Along the
+# first parents of a PR build's merge ref, of main, and of a merged PR alike, the bump is main's.
 BUMP=""
 while read -r sha; do
   [ -n "$sha" ] || continue
@@ -62,7 +66,7 @@ while read -r sha; do
   [ "$(version_at "${sha}^")" = "$BASE" ] && continue
   BUMP="$sha"
   break
-done < <(git log --format=%H -- "$APP_JSON")
+done < <(git log --first-parent --format=%H -- "$APP_JSON")
 
 if [ -n "$BUMP" ]; then
   COUNT="$(git rev-list --count "${BUMP}..HEAD")"

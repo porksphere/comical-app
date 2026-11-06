@@ -1,38 +1,39 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet } from 'react-native';
 
 import {
-  BridgeMetaInfo,
-  BridgeAutoDownloadToggles,
-  BridgeDownloadLibraryRow,
-  BridgePrefsToggles,
-  ComicalHomeToggle,
-  MaxContentRatingControl,
-  TagExclusionsControl,
+  bridgeMetaSections,
+  TagExclusionsEditor,
+  useBridgeAutoDownloadSection,
+  useBridgeDownloadLibrarySection,
+  useBridgePrefsSection,
+  useComicalHomeSection,
+  useMaxContentRatingSection,
 } from '@/components/settings/bridge-extras';
 import { openConfirm } from '@/components/confirm-popup';
-import { RefreshableScrollView } from '@/components/settings/refreshable-scroll';
-import { SettingFieldEditor } from '@/components/settings/setting-field';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
-import { ThemedText } from '@/components/themed-text';
+import { RetryBlock } from '@/components/retry-block';
+import { useDescriptorFields } from '@/components/settings/setting-field';
+import { fields, type SettingsField, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
-import type { BridgeSettingsInfo, SettingDescriptor, SettingsFormSection, SettingValue } from '@/data/api';
+import type {
+  BridgeSettingsInfo,
+  SettingDescriptor,
+  SettingsFormItem,
+  SettingsFormSection as DescriptorSection,
+  SettingValue,
+} from '@/data/api';
 import { isSecretSetting } from '@comical/contract';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { usePackageUpdate, useUpdatingIds } from '@/data/use-package-update';
 import { useBridgeUpdateMap, useRecheckRegistryUpdates } from '@/data/use-settings-badge';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { UNINSTALL_ONE_MESSAGE } from '@/lib/bridge-uninstall';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
-import { useTheme } from '@/hooks/use-theme';
-import {useLocalSearchParams, useRouter} from '@/lib/nav';
+import { useLocalSearchParams, useRouter } from '@/lib/nav';
 
 /** The PUT body for a settings save: every non-secret value (edited or existing, so the server gets a
  *  full set) plus only the secrets the user actually changed (an untouched secret is omitted, which
@@ -56,7 +57,7 @@ function buildSettingsBody(
 
 /** The login fields a favorites bridge still needs, named for the user, or null once any is set —
  *  the same "which secrets hold a value" rule the star button gates on (see favorites-status.ts). A
- *  required field is already announced by the banner above, so only the OPTIONAL-login case is
+ *  required field is already announced by the note above, so only the OPTIONAL-login case is
  *  spoken to here. */
 function favoritesLoginPending(data: BridgeSettingsInfo): string | null {
   if (data.missingRequired.length > 0) return null;
@@ -71,8 +72,6 @@ export default function BridgeSettingsScreen() {
     source?: string;
   }>();
   const ds = useDataSource();
-  const theme = useTheme();
-  const contentPadding = useSettingsScrollPadding();
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -137,7 +136,7 @@ export default function BridgeSettingsScreen() {
     retry: false,
   });
   const formFailed = !!data?.settingsForm && form.isError && !form.data;
-  const sections: SettingsFormSection[] =
+  const descriptorSections: DescriptorSection[] =
     data?.settingsForm && form.data
       ? form.data.sections
       : data && data.settings.length > 0
@@ -167,6 +166,28 @@ export default function BridgeSettingsScreen() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettingsForm(bridgeId!) }),
   });
 
+  const { fieldsFor, extras } = useDescriptorFields({
+    valueOf: (key) => (key in edits ? edits[key] : data?.values[key]),
+    secretSet: (key) => !!data?.secretsSet.includes(key),
+    onChange: setField,
+    onCommit: commitField,
+  });
+  /** A bridge's own action (`Test login`): its last result on the row, the spinner while it runs. */
+  const actionField = (item: Extract<SettingsFormItem, { type: 'action' }>): SettingsField => {
+    const running = actionMutation.isPending && actionMutation.variables === item.key;
+    const result = running ? undefined : actionResults[item.key];
+    return {
+      kind: 'action',
+      testID: `settings.bridge.action.${item.key}`,
+      label: item.label,
+      description: result?.message ?? item.description,
+      tone: result && !result.ok ? 'danger' : undefined,
+      busy: running,
+      disabled: actionMutation.isPending,
+      onPress: () => actionMutation.mutate(item.key),
+    };
+  };
+
   const uninstallMutation = useMutation({
     mutationFn: () => ds.uninstallBridge(bridgeId!),
     onSuccess: async () => {
@@ -193,7 +214,7 @@ export default function BridgeSettingsScreen() {
   };
 
   // The same two sources the Bridges list reads (live check, then the summary's annotation), so the
-  // banner shows however this page was reached and clears once the update lands.
+  // update row shows however this page was reached and clears once the update lands.
   const updateMap = useBridgeUpdateMap();
   const { data: summaries } = useQuery({
     queryKey: queryKeys.bridgeSummaries(),
@@ -221,157 +242,119 @@ export default function BridgeSettingsScreen() {
     if (bridgeId && !updates.bridges.some((u) => u.id === bridgeId)) showToast(`${data?.info.name ?? 'Bridge'} is up to date`);
   };
 
-  return (
-    <ThemedView style={styles.container}>
-      <TopBar title={data?.info.name ?? 'Bridge settings'} />
-      <RefreshableScrollView
-        refresh={refresh}
-        style={scrollbarInset(contentPadding.paddingTop)}
-        contentContainerStyle={contentPadding}
-        contentStyle={styles.content}>
-        {isLoading ? (
-          <ActivityIndicator />
-        ) : error ? (
-          <View style={styles.center}>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.centerText}>
-              {(error as Error).message || 'Failed to load bridge settings'}
-            </ThemedText>
-            <Pressable testID="settings.bridge.retry" onPress={() => refetch()}>
-              <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                Retry
-              </ThemedText>
-            </Pressable>
-          </View>
-        ) : data ? (
-          <>
-            {(availableVersion || updating) && (
-              <ThemedView type="backgroundElement" style={[styles.banner, styles.updateBanner, { borderColor: theme.hairline }]}>
-                <ThemedText type="small" style={styles.updateBannerText}>
-                  {updating ? (availableVersion ? `Updating to v${availableVersion}…` : 'Updating…') : `Update available — v${availableVersion}`}
-                </ThemedText>
-                {updating ? (
-                  <ActivityIndicator size="small" testID="settings.bridge.updating" />
-                ) : (
-                  <Pressable testID="settings.bridge.update" onPress={performUpdate} hitSlop={8}>
-                    <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                      Update
-                    </ThemedText>
-                  </Pressable>
-                )}
-              </ThemedView>
-            )}
-            {updateError && (
-              <ThemedText type="small" style={{ color: theme.danger }}>
-                {updateError}
-              </ThemedText>
-            )}
+  // Every per-bridge section, whether or not it is shown: hooks run on every render.
+  const id = bridgeId ?? '';
+  const capabilities = data?.info.capabilities ?? [];
+  const contentRating = useMaxContentRatingSection(id, data?.maxContentRating ?? null);
+  const prefs = useBridgePrefsSection(id);
+  const autoDownload = useBridgeAutoDownloadSection(id, capabilities.includes('direct'));
+  const downloadLibrary = useBridgeDownloadLibrarySection(id);
+  const comicalHome = useComicalHomeSection(id);
 
-            {!data.configured && (
-              <ThemedView type="backgroundElement" style={[styles.banner, { borderColor: theme.hairline }]}>
-                <ThemedText type="small">
-                  This bridge still needs {data.missingRequired.length === 1 ? 'a required setting' : 'required settings'}{' '}
-                  before it can serve content.
-                </ThemedText>
-              </ThemedView>
-            )}
-
-            <BridgeMetaInfo info={data.info} />
-
-            {data.settingsForm && form.isLoading ? (
-              <ActivityIndicator />
-            ) : sections.length === 0 ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                This bridge has no configurable settings.
-              </ThemedText>
-            ) : (
-              sections.map((section, i) => (
-                <SettingsSection
-                  key={i}
-                  title={section.title}
-                  footer={formFailed ? "Couldn't load this bridge's latest options, so these are its basics." : section.footer}>
-                  {section.items.map((item) => {
-                    if (item.type !== 'action') {
-                      return (
-                        <SettingFieldEditor
-                          key={item.key}
-                          descriptor={item}
-                          value={item.key in edits ? edits[item.key] : data.values[item.key]}
-                          secretSet={data.secretsSet.includes(item.key)}
-                          onChange={(v) => setField(item.key, v)}
-                          onCommit={(v) => commitField(item.key, v)}
-                        />
-                      );
-                    }
-                    const running = actionMutation.isPending && actionMutation.variables === item.key;
-                    const result = running ? undefined : actionResults[item.key];
-                    return (
-                      <SettingsRow
-                        key={item.key}
-                        testID={`settings.bridge.action.${item.key}`}
-                        label={item.label}
-                        labelBold
-                        description={result?.message ?? item.description}
-                        descriptionColor={result && !result.ok ? theme.danger : undefined}
-                        right={running ? <ActivityIndicator /> : undefined}
-                        disabled={actionMutation.isPending}
-                        onPress={() => actionMutation.mutate(item.key)}
-                      />
-                    );
-                  })}
-                </SettingsSection>
-              ))
-            )}
-
-            {/* Gated on the CAPABILITY alone, not on whether credentials are set: every favorites
-                bridge declares its login as OPTIONAL settings, so a logged-out one still looks
-                configured (see use-favorites-available.ts). The import screen's own error — the
-                bridge's "favorites require a username + password" — is the better signal, and it
-                names the fields sitting right above this row. */}
-            {data.info.capabilities?.includes('favorites') && (
-              <SettingsSection
-                title="Favorites"
-                footer={
-                  favoritesLoginPending(data) ? `Favorites need an account — fill in ${favoritesLoginPending(data)} above.` : undefined
-                }>
-                <SettingsRow
-                  testID="settings.bridge.import-favorites"
-                  label="Import favorites into library"
-                  description="Pick which of this account's favorites to add"
-                  onPress={() =>
+  const sections: SettingsFormSection[] = isLoading
+    ? [{ fields: [{ kind: 'custom', testID: 'settings.bridge.loading', render: () => <ActivityIndicator /> }] }]
+    : error
+      ? [
+          {
+            fields: [
+              {
+                kind: 'custom',
+                testID: 'settings.bridge.retry',
+                render: () => <RetryBlock message={(error as Error).message || 'Failed to load bridge settings'} onRetry={() => refetch()} />,
+              },
+            ],
+          },
+        ]
+      : data
+        ? [
+            {
+              fields: fields(
+                (!!availableVersion || updating) && {
+                  kind: 'action',
+                  testID: 'settings.bridge.update',
+                  label: updating ? (availableVersion ? `Updating to v${availableVersion}…` : 'Updating…') : `Update to v${availableVersion}`,
+                  description: updateError ?? undefined,
+                  tone: updateError ? 'danger' : undefined,
+                  busy: updating,
+                  disabled: updating,
+                  onPress: performUpdate,
+                },
+                !data.configured && {
+                  kind: 'note',
+                  testID: 'settings.bridge.needs-setup',
+                  title: `This bridge still needs ${data.missingRequired.length === 1 ? 'a required setting' : 'required settings'} before it can serve content.`,
+                },
+              ),
+            },
+            ...bridgeMetaSections(data.info),
+            ...(data.settingsForm && form.isLoading
+              ? [{ fields: [{ kind: 'custom' as const, testID: 'settings.bridge.form-loading', render: () => <ActivityIndicator /> }] }]
+              : descriptorSections.length === 0
+                ? [{ fields: [{ kind: 'note' as const, testID: 'settings.bridge.no-settings', title: 'This bridge has no configurable settings.' }] }]
+                : descriptorSections.map(
+                    (section): SettingsFormSection => ({
+                      title: section.title,
+                      footer: formFailed ? "Couldn't load this bridge's latest options, so these are its basics." : section.footer,
+                      fields: section.items.flatMap((item) => (item.type === 'action' ? [actionField(item)] : fieldsFor(item))),
+                    }),
+                  )),
+            // Gated on the CAPABILITY alone, not on whether credentials are set: every favorites
+            // bridge declares its login as OPTIONAL settings, so a logged-out one still looks
+            // configured (see use-favorites-available.ts). The import screen's own error — the
+            // bridge's "favorites require a username + password" — is the better signal, and it
+            // names the fields sitting right above this row.
+            {
+              title: 'Favorites',
+              footer: favoritesLoginPending(data) ? `Favorites need an account — fill in ${favoritesLoginPending(data)} above.` : undefined,
+              fields: fields(
+                capabilities.includes('favorites') && {
+                  kind: 'link',
+                  testID: 'settings.bridge.import-favorites',
+                  label: 'Import favorites into library',
+                  description: "Pick which of this account's favorites to add",
+                  onPress: () =>
                     router.push({
                       pathname: '/favorites-import',
                       params: { bridgeId: bridgeId!, bridgeName: data.info.name },
-                    })
-                  }
-                />
-              </SettingsSection>
-            )}
+                    }),
+                },
+              ),
+            },
+            {
+              title: 'Excluded tags',
+              footer: "Series carrying these tags are hidden from this bridge's lists and search.",
+              fields: fields(
+                capabilities.includes('exclude-tags') && {
+                  kind: 'custom',
+                  testID: 'settings.bridge.excluded-tags',
+                  render: () => <TagExclusionsEditor bridgeId={bridgeId!} initialTags={data.excludedTags} initialLabels={data.excludedTagLabels} />,
+                },
+              ),
+            },
+            { ...contentRating, fields: capabilities.includes('content-rating') ? contentRating.fields : [] },
+            prefs,
+            autoDownload,
+            downloadLibrary,
+            comicalHome,
+            {
+              fields: fields(
+                source === 'registry' && {
+                  kind: 'action',
+                  testID: 'settings.bridge.uninstall',
+                  label: 'Uninstall this bridge',
+                  role: 'destructive',
+                  onPress: uninstall,
+                },
+              ),
+            },
+          ]
+        : [];
 
-            {data.info.capabilities?.includes('exclude-tags') && (
-              <TagExclusionsControl
-                bridgeId={bridgeId!}
-                initialTags={data.excludedTags}
-                initialLabels={data.excludedTagLabels}
-              />
-            )}
-            {data.info.capabilities?.includes('content-rating') && (
-              <MaxContentRatingControl bridgeId={bridgeId!} initialRating={data.maxContentRating} />
-            )}
-            <BridgePrefsToggles bridgeId={bridgeId!} />
-            <BridgeAutoDownloadToggles bridgeId={bridgeId!} direct={!!data.info.capabilities?.includes('direct')} />
-            <BridgeDownloadLibraryRow bridgeId={bridgeId!} />
-            <ComicalHomeToggle bridgeId={bridgeId!} />
-
-            {source === 'registry' && (
-              <Pressable testID="settings.bridge.uninstall" onPress={uninstall} style={styles.uninstallRow}>
-                <ThemedText type="small" style={{ color: theme.danger }}>
-                  Uninstall this bridge
-                </ThemedText>
-              </Pressable>
-            )}
-          </>
-        ) : null}
-      </RefreshableScrollView>
+  return (
+    <ThemedView style={styles.container}>
+      <TopBar title={data?.info.name ?? 'Bridge settings'} />
+      <SettingsList sections={sections} refresh={refresh} />
+      {extras}
     </ThemedView>
   );
 }
@@ -379,38 +362,5 @@ export default function BridgeSettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  content: {
-    // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
-    gap: Spacing.five,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
-  },
-  center: {
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.five,
-  },
-  centerText: {
-    textAlign: 'center',
-  },
-  banner: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  updateBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.three,
-  },
-  updateBannerText: {
-    flex: 1,
-  },
-  uninstallRow: {
-    alignItems: 'center',
-    paddingVertical: Spacing.two,
   },
 });

@@ -1,18 +1,15 @@
 import { useState } from 'react';
-import { Platform, ScrollView, StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
 import { useOverlay } from '@/components/overlay/overlay';
 import { DataLocationSheet } from '@/components/settings/data-location-sheet';
 import { RemoteServerForm } from '@/components/settings/remote-server-form';
-import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { fields, select, type SettingsFormSection, type SettingsOption } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { exportLibraryBackup, getBridges, getTrackers, restoreLibraryBackup, useApiBase } from '@/data/api';
 import { pickBackupFile, saveBackupFile } from '@/data/backup-file';
 import {
@@ -83,7 +80,6 @@ const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
 ];
 
 export default function GeneralSettingsScreen() {
-  const contentPadding = useSettingsScrollPadding();
   const [nsfwMode, setNsfwMode] = useNsfwMode();
   const [holdAction, setHoldAction] = useBrowseHoldAction();
   const [holdSound, setHoldSound] = useBrowseHoldSound();
@@ -114,6 +110,7 @@ export default function GeneralSettingsScreen() {
   // see getResolvedModeSync in embedded/preference.ts). The remote-server row is meaningless while
   // this is true, so it's hidden rather than just disabled.
   const embeddedActive = onDevice && embeddedAvailable;
+  const backup = useLibraryBackupSection();
 
   // The toggle only covers saves from here on, so turning it on asks about what's already saved.
   const toggleAutoSeries = (enabled: boolean) => {
@@ -142,141 +139,152 @@ export default function GeneralSettingsScreen() {
     swapDataSourceMode(enabled); // transport swap + the cache/downloads flushes (see apply-mode.ts)
   };
 
+  // Section titles name the GROUP, never a row in it: "APPEARANCE" over a row called Appearance
+  // said nothing the row didn't.
+  const sections: SettingsFormSection[] = [
+    {
+      title: 'Display',
+      footer:
+        'Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.',
+      fields: [
+        select({ label: 'Appearance', value: themePref, options: THEME_OPTIONS, onChange: setThemePref }),
+        { kind: 'toggle', label: 'Lightweight cards', value: lightCards, onChange: (v) => lightCards$.light.set(v) },
+        { kind: 'toggle', label: 'Tinted backgrounds', value: feedTint, onChange: setFeedTint },
+        { kind: 'toggle', label: 'Mark saved series', value: libraryMarker, onChange: setLibraryMarker },
+      ],
+    },
+    // The hold row sits with NSFW because that is what it acts on, and its footer is the gesture's
+    // only documentation — nothing on Browse or Library says the icon is holdable.
+    {
+      title: 'Browsing',
+      footer: `NSFW content decides whether NSFW-flagged bridges are visible. Holding the bridge icon at the top of Browse or Library runs the chosen action; Hold sound clicks along with its countdown.${
+        Platform.OS === 'web'
+          ? ' Keep pages open per tab leaves a series or search you opened beside the sidebar open on its tab — and on its bridge or collection — while you visit another.'
+          : ''
+      }`,
+      fields: fields(
+        select({ label: 'NSFW content', value: nsfwMode, options: NSFW_MODE_OPTIONS, onChange: setNsfwMode }),
+        select({ label: 'Hold bridge icon', value: holdAction, options: HOLD_ACTION_OPTIONS, onChange: setHoldAction }),
+        { kind: 'toggle', label: 'Hold sound', value: holdSound, onChange: setHoldSound, disabled: holdAction === 'none' },
+        // Web only, like the panes themselves: a phone's series page covers the tab bar. Greyed out
+        // below the sidebar's width, where there are no panes to keep.
+        Platform.OS === 'web' && {
+          kind: 'toggle',
+          label: 'Keep pages open per tab',
+          value: keepTabPanes,
+          onChange: setKeepTabPanes,
+          disabled: !panesAvailable,
+        },
+      ),
+    },
+    {
+      title: 'Connection',
+      footer: `${embeddedAvailable ? 'Running bridges on this device fetches and reads with no server. ' : ''}Request errors flash as a red toast with the error.`,
+      fields: fields(
+        embeddedAvailable && { kind: 'toggle', label: 'Run bridges on this device', value: onDevice, onChange: toggleOnDevice },
+        // Which server runs the bridges. While they run on the device this is the sync hub instead,
+        // and lives on the Sync screen.
+        !embeddedActive && {
+          kind: 'link',
+          testID: 'settings.general.remote-server',
+          label: 'Remote server',
+          description: apiBase,
+          onPress: () =>
+            openDialog(
+              () => (
+                <RemoteServerForm
+                  title="Remote server"
+                  description="The Comical server this app talks to when not running bridges on this device."
+                  currentUrl={apiBase}
+                  onSave={connectServer}
+                />
+              ),
+              { accessibilityLabel: 'Remote server' },
+            ),
+        },
+        { kind: 'toggle', label: 'Show request errors', value: errorToasts, onChange: (v) => errorToasts$.on.set(v) },
+        {
+          kind: 'toggle',
+          label: 'Show request activity',
+          description: 'A small corner readout of requests in flight, how long each has waited, and recent timeouts or rate-limit holds.',
+          value: requestOverlay,
+          onChange: (v) => requestOverlay$.on.set(v),
+        },
+      ),
+    },
+    {
+      title: 'Desktop',
+      footer: `Closing the window leaves Comical running in the ${trayName()}, so downloads carry on. ${
+        !desktopShell()?.loginItems
+          ? 'Open at login takes effect in an installed build.'
+          : runInTray
+            ? `Open at login starts Comical in the ${trayName()} when you sign in.`
+            : 'Open at login starts Comical when you sign in.'
+      }`,
+      fields: fields(
+        desktop && { kind: 'toggle', label: `Keep running in the ${trayName()}`, value: runInTray, onChange: setRunInTray },
+        desktop && { kind: 'toggle', label: 'Open at login', value: openAtLogin, onChange: setOpenAtLogin },
+        !!dataDir && {
+          kind: 'link',
+          testID: 'settings.general.data-location',
+          label: 'Data location',
+          description: dataDir.dir,
+          onPress: () => openDialog(() => <DataLocationSheet current={dataDir} />, { accessibilityLabel: 'Data location' }),
+        },
+      ),
+    },
+    // The download policies gate the DEVICE engine — meaningless when a remote server owns the
+    // downloads (it paces itself), so they only appear while running on-device. They used to live
+    // on the Downloads page but cluttered the queue.
+    {
+      title: 'Downloads',
+      footer: 'Held downloads wait for Wi-Fi. In the background they continue in the windows the system grants after you leave the app.',
+      fields: fields(
+        embeddedActive && {
+          kind: 'toggle',
+          label: 'Download over Wi-Fi only',
+          value: wifiOnly,
+          onChange: (v) => {
+            downloadPrefs$.wifiOnly.set(v);
+            // Turning the gate off (or changing it) should resume held-back downloads right away.
+            kickDownloads();
+          },
+        },
+        embeddedActive && {
+          kind: 'toggle',
+          label: 'Download in background',
+          value: background,
+          onChange: (v) => {
+            downloadPrefs$.background.set(v);
+            applyBackgroundDownloads(v);
+          },
+        },
+      ),
+    },
+    {
+      title: 'Auto-download',
+      footer:
+        "Saved series download every chapter of a series you add to your library; new chapters are downloaded as they're found. Saved chapters and pages download when you save one. Each bridge can opt out of any of these in its own settings.",
+      fields: [
+        { kind: 'toggle', label: 'Saved series', value: autoSeries, onChange: toggleAutoSeries },
+        { kind: 'toggle', label: 'New chapters', value: autoNew, onChange: setAutoNewChapters },
+        { kind: 'toggle', label: 'Saved chapters', value: autoChapters, onChange: (v) => downloadPrefs$.autoChapters.set(v) },
+        { kind: 'toggle', label: 'Saved pages', value: autoPages, onChange: (v) => downloadPrefs$.autoPages.set(v) },
+      ],
+    },
+    backup,
+  ];
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title="General" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
-        {/* Section titles name the GROUP, never a row in it: "APPEARANCE" over a row called
-            Appearance said nothing the row didn't. */}
-        <SettingsSection
-          title="Display"
-          footer="Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.">
-          <SettingsSelectRow label="Appearance" value={themePref} options={THEME_OPTIONS} onChange={setThemePref} />
-          <SettingsToggleRow label="Lightweight cards" value={lightCards} onChange={(v) => lightCards$.light.set(v)} />
-          <SettingsToggleRow label="Tinted backgrounds" value={feedTint} onChange={setFeedTint} />
-          <SettingsToggleRow label="Mark saved series" value={libraryMarker} onChange={setLibraryMarker} />
-        </SettingsSection>
-        {/* The hold row sits with NSFW because that is what it acts on, and its footer is the
-            gesture's only documentation — nothing on Browse or Library says the icon is holdable. */}
-        <SettingsSection
-          title="Browsing"
-          footer={`NSFW content decides whether NSFW-flagged bridges are visible. Holding the bridge icon at the top of Browse or Library runs the chosen action; Hold sound clicks along with its countdown.${
-            Platform.OS === 'web'
-              ? ' Keep pages open per tab leaves a series or search you opened beside the sidebar open on its tab — and on its bridge or collection — while you visit another.'
-              : ''
-          }`}>
-          <SettingsSelectRow label="NSFW content" value={nsfwMode} options={NSFW_MODE_OPTIONS} onChange={setNsfwMode} />
-          <SettingsSelectRow label="Hold bridge icon" value={holdAction} options={HOLD_ACTION_OPTIONS} onChange={setHoldAction} />
-          <SettingsToggleRow label="Hold sound" value={holdSound} onChange={setHoldSound} disabled={holdAction === 'none'} />
-          {/* Web only, like the panes themselves: a phone's series page covers the tab bar. Greyed
-              out below the sidebar's width, where there are no panes to keep. */}
-          {Platform.OS === 'web' && (
-            <SettingsToggleRow
-              label="Keep pages open per tab"
-              value={keepTabPanes}
-              onChange={setKeepTabPanes}
-              disabled={!panesAvailable}
-            />
-          )}
-        </SettingsSection>
-        <SettingsSection
-          title="Connection"
-          footer={`${embeddedAvailable ? 'Running bridges on this device fetches and reads with no server. ' : ''}Request errors flash as a red toast with the error.`}>
-          {embeddedAvailable && <SettingsToggleRow label="Run bridges on this device" value={onDevice} onChange={toggleOnDevice} />}
-          {/* Which server runs the bridges. While they run on the device this is the sync hub
-              instead, and lives on the Sync screen. */}
-          {!embeddedActive && (
-            <SettingsRow
-              testID="settings.general.remote-server"
-              label="Remote server"
-              description={apiBase}
-              onPress={() =>
-                openDialog(
-                  () => (
-                    <RemoteServerForm
-                      title="Remote server"
-                      description="The Comical server this app talks to when not running bridges on this device."
-                      currentUrl={apiBase}
-                      onSave={connectServer}
-                    />
-                  ),
-                  { accessibilityLabel: 'Remote server' },
-                )
-              }
-            />
-          )}
-          <SettingsToggleRow label="Show request errors" value={errorToasts} onChange={(v) => errorToasts$.on.set(v)} />
-          <SettingsToggleRow
-            label="Show request activity"
-            description="A small corner readout of requests in flight, how long each has waited, and recent timeouts or rate-limit holds."
-            value={requestOverlay}
-            onChange={(v) => requestOverlay$.on.set(v)}
-          />
-        </SettingsSection>
-        {desktop && (
-          <SettingsSection
-            title="Desktop"
-            footer={`Closing the window leaves Comical running in the ${trayName()}, so downloads carry on. ${
-              !desktopShell()?.loginItems
-                ? 'Open at login takes effect in an installed build.'
-                : runInTray
-                  ? `Open at login starts Comical in the ${trayName()} when you sign in.`
-                  : 'Open at login starts Comical when you sign in.'
-            }`}>
-            <SettingsToggleRow label={`Keep running in the ${trayName()}`} value={runInTray} onChange={setRunInTray} />
-            <SettingsToggleRow label="Open at login" value={openAtLogin} onChange={setOpenAtLogin} />
-            {dataDir && (
-              <SettingsRow
-                testID="settings.general.data-location"
-                label="Data location"
-                description={dataDir.dir}
-                onPress={() => openDialog(() => <DataLocationSheet current={dataDir} />, { accessibilityLabel: 'Data location' })}
-              />
-            )}
-          </SettingsSection>
-        )}
-        {/* The download policies gate the DEVICE engine — meaningless when a remote server owns
-            the downloads (it paces itself), so they only appear while running on-device. They used
-            to live on the Downloads page but cluttered the queue. */}
-        {embeddedActive && (
-          <SettingsSection
-            title="Downloads"
-            footer="Held downloads wait for Wi-Fi. In the background they continue in the windows the system grants after you leave the app.">
-            <SettingsToggleRow
-              label="Download over Wi-Fi only"
-              value={wifiOnly}
-              onChange={(v) => {
-                downloadPrefs$.wifiOnly.set(v);
-                // Turning the gate off (or changing it) should resume held-back downloads right away.
-                kickDownloads();
-              }}
-            />
-            <SettingsToggleRow
-              label="Download in background"
-              value={background}
-              onChange={(v) => {
-                downloadPrefs$.background.set(v);
-                applyBackgroundDownloads(v);
-              }}
-            />
-          </SettingsSection>
-        )}
-        <SettingsSection
-          title="Auto-download"
-          footer="Saved series download every chapter of a series you add to your library; new chapters are downloaded as they're found. Saved chapters and pages download when you save one. Each bridge can opt out of any of these in its own settings.">
-          <SettingsToggleRow label="Saved series" value={autoSeries} onChange={toggleAutoSeries} />
-          <SettingsToggleRow label="New chapters" value={autoNew} onChange={setAutoNewChapters} />
-          <SettingsToggleRow label="Saved chapters" value={autoChapters} onChange={(v) => downloadPrefs$.autoChapters.set(v)} />
-          <SettingsToggleRow label="Saved pages" value={autoPages} onChange={(v) => downloadPrefs$.autoPages.set(v)} />
-        </SettingsSection>
-        <LibraryBackupSection />
-      </ScrollView>
+      <SettingsList sections={sections} />
     </ThemedView>
   );
 }
 
 /** Headered, unlike the list above: these two are things to do, not settings to leave on. */
-function LibraryBackupSection() {
+function useLibraryBackupSection(): SettingsFormSection {
   const [exporting, setExporting] = useState(false);
 
   const exportLibrary = async () => {
@@ -338,30 +346,25 @@ function LibraryBackupSection() {
     });
   };
 
-  return (
-    <SettingsSection
-      title="Library backup"
-      footer="A backup is a file holding your collections, history and reading progress. Restoring adds back what the file holds and removes nothing.">
-      <SettingsRow
-        testID="settings.general.backup-export"
-        label="Export library"
-        {...(exporting ? { description: 'Exporting…' } : {})}
-        onPress={() => void exportLibrary()}
-      />
-      <SettingsRow testID="settings.general.backup-restore" label="Restore from a backup" onPress={() => void restoreLibrary()} />
-    </SettingsSection>
-  );
+  return {
+    title: 'Library backup',
+    footer:
+      'A backup is a file holding your collections, history and reading progress. Restoring adds back what the file holds and removes nothing.',
+    fields: [
+      {
+        kind: 'action',
+        testID: 'settings.general.backup-export',
+        label: 'Export library',
+        detail: exporting ? 'Exporting…' : undefined,
+        onPress: () => void exportLibrary(),
+      },
+      { kind: 'action', testID: 'settings.general.backup-restore', label: 'Restore from a backup', onPress: () => void restoreLibrary() },
+    ],
+  };
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  content: {
-    // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
-    gap: Spacing.five,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
   },
 });

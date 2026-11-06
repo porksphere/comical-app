@@ -6,7 +6,7 @@
  */
 import { Image } from 'expo-image';
 import { useRef, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
@@ -112,7 +112,7 @@ export function CatalogSearchField({
 }) {
   const theme = useTheme();
   const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [focused, setFocused] = useState(false);
   return (
     <ThemedView type="backgroundElement" style={[catalogSearchStyles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>

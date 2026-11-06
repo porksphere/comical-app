@@ -50,7 +50,7 @@ import { CheckIcon, DownloadsIcon, LogInIcon, PlayIcon, PlusIcon, RetryIcon, Sta
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import type { TagGroup } from '@/data/mock';
 import { seriesDetailQuery, seriesListQuery } from '@/data/queries';
@@ -84,6 +84,7 @@ import {
   useSeriesCardMenu,
   type SeriesCardMenuRequest,
 } from '@/lib/series-card-menu';
+import { useTabBarClearance } from '@/lib/tab-bar-clearance';
 import { getTabBarHideOffset, getTabBarProgress } from '@/lib/tab-bar-slide';
 import { getTopBarHidden } from '@/lib/top-bar-visibility';
 import { windowModalLayer } from '@/lib/window-controls';
@@ -406,7 +407,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // stores rather than constants. The band also bounds the panel + menu below, so the RESTING cover is
   // always inside it (a popup that reached into the top bar would clip its own cover).
   const chromeTop = Math.max(0, insets.top + useTopBarHeight() - getTopBarHidden());
-  const tabBarH = BottomTabInset + insets.bottom;
+  const tabBarH = useTabBarClearance();
   const hasTabBar = !useIsLargeScreen() && TAB_ROUTES.has(pathname);
   const tabBarShown = hasTabBar ? Math.max(0, tabBarH - getTabBarHideOffset() * getTabBarProgress()) : 0;
   const chromeBottom = winH - tabBarShown;
@@ -431,10 +432,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   // The PANEL still opens against the left edge — it's near enough the full width of a phone that
   // centring it would move it by a few pixels and buy nothing.
-  const panelW = Math.min(winW - EDGE_PAD * 2, PANEL_MAX_WIDTH);
-  const panelLeft = EDGE_PAD;
+  const minLeft = insets.left + EDGE_PAD;
+  const maxRight = winW - insets.right - EDGE_PAD;
+  const panelW = Math.min(maxRight - minLeft, PANEL_MAX_WIDTH);
+  const panelLeft = minLeft;
 
-  const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
+  const menuW = Math.min(MENU_WIDTH, maxRight - minLeft);
   const menuRowCount = MENU_ROWS - (favoriteStatus === 'unsupported' ? 1 : 0) + DEBUG_EXTRA_MENU_ROWS;
   const rowCount = menuRowCount;
   const menuH = ROW_HEIGHT * menuRowCount + MENU_PAD_V * 2;
@@ -444,7 +447,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // not where the layout finds convenient). Clamped, so a card at either edge still gets a menu fully
   // on screen rather than one hanging off it.
   const cardCenterX = rect.x + rect.width / 2;
-  const menuLeft = clamp(cardCenterX - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
+  const menuLeft = clamp(cardCenterX - menuW / 2, minLeft, maxRight - menuW);
 
   const coverH = COVER_W / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
 
@@ -1122,6 +1125,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       {
         label: 'Remove from Library',
         loading: membershipsLoading,
+        destructive: true,
         onPress: () => act(removeSeries),
         testID: 'series.card-menu.collections.remove',
       },
@@ -1203,6 +1207,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       label: 'Reset read progress',
       Icon: RetryIcon,
       loading: false,
+      destructive: true,
       testID: 'series.card-menu.reset-progress',
       onPress: () => act(resetProgress),
     },
@@ -1694,7 +1699,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 }
 
 /** A single line summarizing the series — author · type · status, plus a chapter/page count. */
-function buildMetaLine(
+export function buildMetaLine(
   meta: { label: string; value: string }[] | undefined,
   chapterCount: number | undefined,
   direct: boolean | undefined,

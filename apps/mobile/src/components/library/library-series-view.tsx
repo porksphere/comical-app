@@ -25,6 +25,7 @@ import {
   onlyRemoved,
   serverSort,
   shuffleLibrary,
+  type LibraryViewSort,
   useLibraryBridges,
   useLibraryGrouping,
   useLibraryRemovedOnly,
@@ -123,17 +124,24 @@ export function LibrarySeriesView({ collection, term, ready, chrome }: LibraryVi
   );
 }
 
-export function LibrarySeriesControls({ collection }: { collection: string | null }) {
-  const [sort, setSort] = useLibrarySort(collection);
-  const [grouping, setGrouping] = useLibraryGrouping();
-  // The view's own listing minus its search and Show filter, so the sources on offer are the shelf's
-  // and don't shift as you type. Unfiltered, it is the very query the grid itself runs.
+/**
+ * The view's own listing minus its search and Show filter, so the filter's sources on offer are the
+ * shelf's and don't shift as you type. Unfiltered, it is the very query the grid itself runs.
+ */
+export function useLibrarySeriesPresent(collection: string | null, sort: LibraryViewSort) {
   const ds = useDataSource();
   const mock = useMockActive();
   const { data: present } = useQuery(libraryQuery(ds, mock, '', serverSort(sort), collection, null));
+  return present ?? undefined;
+}
+
+export function LibrarySeriesControls({ collection }: { collection: string | null }) {
+  const [sort, setSort] = useLibrarySort(collection);
+  const [grouping, setGrouping] = useLibraryGrouping();
+  const present = useLibrarySeriesPresent(collection, sort);
   return (
     <>
-      <LibraryFilterButton withShow present={present ?? undefined} />
+      <LibraryFilterButton withShow present={present} />
       <LibrarySortButton value={sort} onChange={setSort} grouping={grouping} onGroupingChange={setGrouping} />
     </>
   );

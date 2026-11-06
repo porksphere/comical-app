@@ -18,14 +18,14 @@ import { drillSeriesFromOverlay, encodeSeriesParam } from '@/lib/series-nav';
  * the chapter list (it needs it for next/prev anyway), so nothing has to fetch a chapter list just to
  * render a "Read" row on a card you long-pressed.
  *
- * Read opens `/series` READER-FIRST — the combined page, showing the reader with the details a swipe
- * away below it, exactly how a History row enters. There is no separate reader route to push: the
- * details and the pages are one screen now, and arriving on the reader side of it is the difference
- * between "carry on reading" and "show me this series".
+ * Read opens `/series` READER-FIRST, exactly how a History row enters: `lib/nav` sends that push
+ * to the reader page, `series/read`, rather than to the details (see SeriesSplit), and the reader's
+ * Details button brings the details up in its place. That is the difference between "carry on
+ * reading" and "show me this series".
  *
- * Used by the card long-press menu's Read row. The series page's own primary button doesn't push
- * anything (it's already there — it expands its in-place reader), but it reads the `label` and
- * `resume` from here so the two can't name, or resume at, different places.
+ * Used by the card long-press menu's Read row. The series page's own primary button pushes the
+ * same reader page itself, but it reads the `label` and `resume` from here so the two can't name,
+ * or resume at, different places.
  */
 export type StartReading = {
   /** Undecorated label: "Resume Ch. 12", the bridge's own read label, or plain "Read". */

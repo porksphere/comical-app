@@ -38,15 +38,10 @@ import {
   PlayIcon,
   TrashIcon,
 } from '@/components/icons/ui-icons';
-import {
-  PILL_HEIGHT,
-  SelectLead,
-  SelectPillBar,
-  SelectToggle,
-  useDragSelect,
-  useSelectMode,
-} from '@/components/multi-select/select-mode';
+import { PILL_HEIGHT, SelectLead, useDragSelect, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -74,6 +69,7 @@ import { usePreferredGroup } from '@/lib/preferred-group';
 import { testId } from '@/lib/test-id';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useContentWidth } from '@/hooks/use-content-width';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import type { ChapterGroup } from '@/lib/chapter-order';
@@ -273,6 +269,7 @@ export default function SeriesDownloadsScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'series.dl.select-toggle');
 
   // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
   const listRef = useRef<LegendListRef>(null);
@@ -393,6 +390,7 @@ export default function SeriesDownloadsScreen() {
   // Full-width scroller centered within the settings column (same treatment as the Downloads page).
   const sidePad = useSettingsSidePad(width);
   const listPad = useSettingsListPad(width);
+  const rowsExtra = useListLayout(listRef, sidePad.left, listExtra);
 
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
 
@@ -448,7 +446,7 @@ export default function SeriesDownloadsScreen() {
                   progress={mode.progress}
                   selected={ms.selected.has(item.key)}
                   itemKey={item.key}
-                  edgeOffset={sidePad}
+                  edgeOffset={sidePad.left}
                   // Always mounted (built disabled off select mode) so entering select mode flips
                   // `enabled` rather than mounting a GestureDetector per visible row at once.
                   gesture={dragSelect.gestureFor(index)}
@@ -504,52 +502,51 @@ export default function SeriesDownloadsScreen() {
       {/* The back button always shows (the staging "…" lives in the bottom-left pill now); select
           mode just swaps the title for the live count. The mode toggle is hidden on the forced
           series-download entry — there the back button is the only way out. */}
-      <TopBar
-        title={selecting ? `${ms.count} selected` : title}
-        right={forcedSelect ? undefined : <SelectToggle selecting={selecting} onToggle={toggleSelecting} testID="series.dl.select-toggle" />}
-      />
+      <TopBar title={selecting ? `${ms.count} selected` : title} actions={forcedSelect ? undefined : [selectToggle]} />
 
-      <LegendList
-        ref={listRef}
-        onScroll={(e) => {
-          scrollYRef.current = e.nativeEvent.contentOffset.y;
-        }}
-        // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
-        // tracking manual scrolling accurately without spamming.
-        scrollEventThrottle={16}
-        style={[styles.list, scrollbarInset(paddingTop)]}
-        data={rows}
-        keyExtractor={(r) => r.key}
-        recycleItems
-        estimatedItemSize={SettingsRowHeight}
-        getFixedItemSize={() => SettingsRowHeight}
-        maintainVisibleContentPosition={{ data: false, size: false }}
-        // Selection lives OUTSIDE the row objects (identity-cached — see `rows`); this tells the
-        // list to repaint visible rows when the selection set or the mode changes.
-        extraData={listExtra}
-        renderItem={renderItem}
-        ListEmptyComponent={
-          <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-            {showAll && !chapters ? 'Loading chapters…' : 'Nothing downloaded for this series.'}
-          </ThemedText>
-        }
-        contentContainerStyle={{
-          flexGrow: 1,
-          paddingTop,
-          paddingLeft: listPad,
-          paddingRight: listPad,
-          // Room for the floating pills, so the last rows can scroll clear of them.
-          paddingBottom: selecting ? PILL_HEIGHT + Spacing.six : Spacing.three,
-        }}
-        showsVerticalScrollIndicator={Platform.OS === 'web'}
-      />
+      <ScreenScrollMarker>
+        <LegendList
+          ref={listRef}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+          }}
+          // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
+          // tracking manual scrolling accurately without spamming.
+          scrollEventThrottle={16}
+          style={[styles.list, scrollbarInset(paddingTop)]}
+          data={rows}
+          keyExtractor={(r) => r.key}
+          recycleItems
+          estimatedItemSize={SettingsRowHeight}
+          getFixedItemSize={() => SettingsRowHeight}
+          maintainVisibleContentPosition={{ data: false, size: false }}
+          // Selection lives OUTSIDE the row objects (identity-cached — see `rows`); this tells the
+          // list to repaint visible rows when the selection set or the mode changes.
+          extraData={rowsExtra}
+          renderItem={renderItem}
+          ListEmptyComponent={
+            <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
+              {showAll && !chapters ? 'Loading chapters…' : 'Nothing downloaded for this series.'}
+            </ThemedText>
+          }
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingTop,
+            paddingLeft: listPad.left,
+            paddingRight: listPad.right,
+            // Room for the floating pills, so the last rows can scroll clear of them.
+            paddingBottom: selecting ? PILL_HEIGHT + Spacing.six : Spacing.three,
+          }}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+        />
+      </ScreenScrollMarker>
 
       {/* The floating select-mode chrome: staging "…" bottom-left, all valid verbs in ONE pill
           bottom-right (download tinted blue, cancel/delete danger). */}
       {selecting && (
         <SelectPillBar
-          left={sidePad}
-          right={sidePad}
+          left={sidePad.left}
+          right={sidePad.right}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="series.dl.select-options"

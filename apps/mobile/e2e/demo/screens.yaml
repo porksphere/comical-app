@@ -68,7 +68,7 @@ appId: com.porksphere.comical
     id: "reader.control.next"
 - waitForAnimationToEnd:
     timeout: 8000
-# The reader's chrome auto-hides 3s after entry (app/series/index.tsx CHROME_HIDE_MS). Waiting past
+# The reader's chrome auto-hides 3s after entry (components/series/reader-page.tsx CHROME_HIDE_MS). Waiting past
 # that photographs the page full-bleed, which is what the reader actually looks like in use.
 - runFlow:
     file: pause.yaml

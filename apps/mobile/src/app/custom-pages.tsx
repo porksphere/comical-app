@@ -1,33 +1,32 @@
 import { useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
-import { Holdable } from '@/components/context-menu';
 import { CheckIcon, ClearIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { SelectLead, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
+import { useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
-import { ReorderableList } from '@/components/settings/reorderable-list';
-import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
+import { type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { SettingsCardInset, SettingsGutter, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { showToast } from '@/components/toast';
 import { addPage, deletePage, renamePage, reorderPages, useCustomPages, type CustomPage } from '@/data/custom-pages';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
-import { hapticSelection } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
 /**
  * The top-level custom-pages editor: a reorderable list of the pages the user has composed for the
  * "Comical" aggregate bridge. Tapping a page opens its section editor (`/custom-page-editor`). Mirrors
- * `registries.tsx` — same TopBar + ReorderableList + SwipeableSettingsRow shape — but the data is the
- * local Legend State store (`custom-pages.ts`), not a server query.
+ * `registries.tsx` — one section of draggable rows with swipe actions and a select mode — but the
+ * data is the local Legend State store (`custom-pages.ts`), not a server query.
  */
 export default function CustomPagesScreen() {
   const router = useRouter();
@@ -47,11 +46,13 @@ export default function CustomPagesScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'custom-pages.select-toggle');
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
   const stagingRows = [
     {
       label: allSelected ? 'Deselect all' : 'Select all',
       Icon: allSelected ? ClearIcon : CheckIcon,
+      symbol: allSelected ? ('xmark.circle' as const) : ('checkmark.circle' as const),
       loading: false,
       disabled: allKeys.length === 0,
       onPress: allSelected ? ms.clear : ms.selectAll,
@@ -74,65 +75,45 @@ export default function CustomPagesScreen() {
       onConfirm: deleteSelected,
     });
 
-  const renderRow = (p: CustomPage) => (
-    // In select mode the row toggles (tap) / range-fills (hold, via the shared Holdable) instead of
-    // opening the page, and its swipe action is parked — same pattern as registries.tsx.
-    <Holdable
-      key={p.id}
-      enabled={selecting}
-      onHold={() => {
-        hapticSelection();
-        ms.rangeFill(p.id);
-      }}>
-      {({ onLongPress }) => (
-        <SwipeableSettingsRow
-          label={p.name}
-          description={`${p.sections.length} ${p.sections.length === 1 ? 'section' : 'sections'}`}
-          swipeEnabled={!selecting}
-          leading={
-            <SelectLead progress={mode.progress} selected={ms.isSelected(p.id)} itemKey={p.id} edgeOffset={SettingsCardInset} />
-          }
-          onPress={
-            selecting
-              ? () => ms.toggle(p.id)
-              : () => router.push({ pathname: '/custom-page-editor', params: { pageId: p.id } })
-          }
-          onLongPress={selecting ? onLongPress : undefined}
-          actions={[
-            {
-              label: 'Rename',
-              icon: PencilIcon,
-              onPress: () =>
-                openDialog(
-                  () => (
-                    <NamePromptForm
-                      title="Rename page"
-                      placeholder="Page name"
-                      submitLabel="Rename"
-                      initialValue={p.name}
-                      onSubmit={(name) => renamePage(p.id, name)}
-                    />
-                  ),
-                  { accessibilityLabel: 'Rename page' },
-                ),
-            },
-            {
-              label: 'Delete',
-              icon: TrashIcon,
-              destructive: true,
-              onPress: () =>
-                openConfirm({
-                  title: 'Delete page?',
-                  message: `“${p.name}” and its sections will be removed. This can't be undone.`,
-                  confirmLabel: 'Delete Page',
-                  onConfirm: () => deletePage(p.id),
-                }),
-            },
-          ]}
+  const rename = (p: CustomPage) =>
+    openDialog(
+      () => (
+        <NamePromptForm
+          title="Rename page"
+          placeholder="Page name"
+          submitLabel="Rename"
+          initialValue={p.name}
+          onSubmit={(name) => renamePage(p.id, name)}
         />
-      )}
-    </Holdable>
-  );
+      ),
+      { accessibilityLabel: 'Rename page' },
+    );
+  const confirmDelete = (p: CustomPage) =>
+    openConfirm({
+      title: 'Delete page?',
+      message: `“${p.name}” and its sections will be removed. This can't be undone.`,
+      confirmLabel: 'Delete Page',
+      onConfirm: () => deletePage(p.id),
+    });
+
+  const sections: SettingsFormSection[] = [
+    {
+      fields: pages.map((p) => ({
+        kind: 'link',
+        key: p.id,
+        testID: testId('custom-pages.row', p.id),
+        label: p.name,
+        description: `${p.sections.length} ${p.sections.length === 1 ? 'section' : 'sections'}`,
+        onPress: () => router.push({ pathname: '/custom-page-editor', params: { pageId: p.id } }),
+        actions: [
+          { label: 'Rename', symbol: 'pencil', glyph: PencilIcon, onPress: () => rename(p) },
+          { label: 'Delete', symbol: 'trash', glyph: TrashIcon, destructive: true, onPress: () => confirmDelete(p) },
+        ],
+      })),
+      onReorder: reorderPages,
+      selection: { selecting, progress: mode.progress, selected: ms.selected, toggle: ms.toggle, rangeFill: ms.rangeFill },
+    },
+  ];
 
   const openAddPage = () =>
     openDialog(
@@ -149,18 +130,8 @@ export default function CustomPagesScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar
-        title={selecting ? `${ms.count} selected` : 'Custom Pages'}
-        right={
-          selecting ? (
-            <SelectToggle selecting onToggle={toggleSelecting} testID="custom-pages.select-toggle" />
-          ) : (
-            // The + add button now lives in the floating FAB below (hidden in select mode); the
-            // top-right holds the select toggle where the + used to be.
-            allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="custom-pages.select-toggle" />
-          )
-        }
-      />
+      {/* The + add button lives in the floating FAB below (hidden in select mode). */}
+      <TopBar title={selecting ? `${ms.count} selected` : 'Custom Pages'} actions={selecting || allKeys.length > 0 ? [selectToggle] : undefined} />
       {pages.length === 0 ? (
         <View style={[styles.stateHost, styles.empty, contentPadding]}>
           <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
@@ -169,7 +140,7 @@ export default function CustomPagesScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ReorderableList data={pages} keyOf={(p) => p.id} renderRow={renderRow} onReorder={reorderPages} dragEnabled={!selecting} />
+        <SettingsList sections={sections} />
       )}
 
       {/* The + add affordance: a floating FAB in normal mode, hidden while selecting. */}
@@ -178,7 +149,7 @@ export default function CustomPagesScreen() {
           onPress={openAddPage}
           testID="custom-pages.add"
           label="Add page"
-          right={SettingsGutter}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
         />
       )}
@@ -186,8 +157,8 @@ export default function CustomPagesScreen() {
       {/* The floating select-mode chrome: staging "…" bottom-left, the Delete verb bottom-right. */}
       {selecting && (
         <SelectPillBar
-          left={SettingsGutter}
-          right={SettingsGutter}
+          left={contentPadding.paddingLeft}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="custom-pages.select-options"
@@ -197,6 +168,7 @@ export default function CustomPagesScreen() {
                   {
                     key: 'delete',
                     label: `Delete ${ms.count} pages`,
+                    symbol: 'trash' as const,
                     Icon: TrashIcon,
                     color: theme.danger,
                     onPress: confirmDeleteSelected,
@@ -232,7 +204,7 @@ export function NamePromptForm({
   const theme = useTheme();
   const { closeTop } = useOverlay();
   const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [name, setName] = useState(initialValue);
   const trimmed = name.trim();
 

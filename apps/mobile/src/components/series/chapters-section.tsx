@@ -1,6 +1,7 @@
+import type { LegendListRef } from '@legendapp/list/react-native';
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
-import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
+import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
@@ -30,7 +31,6 @@ import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
 import { SavedBadge } from '@/components/card-badge';
 import { openCollectionPicker } from '@/components/collection-picker';
-import { ContextMenuHold, openContextMenu, type ContextMenuPoint } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
 import {
@@ -43,15 +43,22 @@ import {
   PlusIcon,
   TrashIcon,
 } from '@/components/icons/ui-icons';
+import { OVERFLOW_MENU, OverflowMenu } from '@/components/overflow-menu';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { coverRingColor, coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
+import { HoldMenu, liftTarget } from '@/components/system-context-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
+import { useZoomHref, useZoomId, ZoomSource } from '@/components/zoom-source';
+import { InlineSeriesTitle } from '@/components/series/inline-title';
 import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
+import { useSideInsets } from '@/hooks/use-content-width';
 import { useHovered } from '@/hooks/use-hovered';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
-import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
+import { sizeClassFor } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
 import {
@@ -109,6 +116,12 @@ const FLAT_ROWS = CHAPTER_ROWS === 'flat';
 // A filled row keeps its greyed title for read state, since a dimmed plate reads as disabled rather
 // than as read; the unfilled forms dim as a whole instead.
 const PLATED_ROWS = CHAPTER_ROWS === 'bubble' || CHAPTER_ROWS === 'plate';
+
+function NoHold({ children }: Parameters<typeof HoldMenu>[0]) {
+  return children({});
+}
+// Where a chapter's actions sit behind its ⋮, holding the row opens nothing.
+const RowHold = OVERFLOW_MENU ? NoHold : HoldMenu;
 const BORDERED_ROWS = CHAPTER_ROWS === 'bubble' || CHAPTER_ROWS === 'outline';
 // A long tab collapses to a configurable number of chapters from the start and the
 // end, with an expand button between them for the hidden middle.
@@ -149,10 +162,17 @@ const seriesSidePad = (width: number) => Math.max(0, (width - MaxTopLevelWidth) 
 /** Columns in the direct-series page grid. */
 const pageGridCols = (width: number) => (width >= 900 ? 5 : width >= 600 ? 3 : 2);
 
+/** The page's width inside the safe area's sides: what the rows and the grid lay out in, while
+ *  the list and the related rails run under the sides. */
+function useSeriesContentWidth() {
+  const sides = useSideInsets();
+  return useSeriesPageWidth() - sides.left - sides.right;
+}
+
 /** Page-grid placeholder shown while the deferred page fetch is in flight — one
  *  row of tiles at the grid's column count, matching the thumbnail aspect. */
 function PageGridSkeleton() {
-  const cols = pageGridCols(useSeriesPageWidth());
+  const cols = pageGridCols(useSeriesContentWidth());
   return (
     <View style={styles.section}>
       <ThemedText type="subtitle" style={styles.headTitle}>
@@ -446,6 +466,9 @@ const pullScrollProps = {
   renderScrollComponent:
     Platform.OS === 'web' ? (scrollProps: object) => <Animated.ScrollView {...scrollProps} /> : undefined,
   overScrollMode: Platform.OS === 'android' ? ('never' as const) : undefined,
+  // As RecyclerList: no correcting the offset from measurements. Chapter rows are measured as they
+  // first scroll in, so the corrections land on the first swipe, under the finger.
+  maintainVisibleContentPosition: { data: false, size: false },
 };
 
 /**
@@ -514,7 +537,8 @@ export function ChapterScrollList({
 } & PullListWiring) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const width = useSeriesPageWidth();
+  const sides = useSideInsets();
+  const width = useSeriesContentWidth();
   const largeSidePad = seriesSidePad(width);
   const [tab, setTab] = useState<Tab>('all');
   const [asc, setAsc] = useState(false);
@@ -526,7 +550,7 @@ export function ChapterScrollList({
   // (the strip overflowed ~34pt past the right edge). There, the strip fills the row and its tabs
   // share the width equally; large screens (chapters live in a roomy right column) keep the
   // content-sized tabs.
-  const fillTabs = width < LARGE_SCREEN_BREAKPOINT;
+  const fillTabs = sizeClassFor(width) === 'compact';
 
   // Per-chapter download state for the trailing indicators. Same query key the series Download
   // button subscribes to, so it's already fetched on this page AND live-patched page-by-page by the
@@ -553,7 +577,7 @@ export function ChapterScrollList({
   // series, and the menu is built fresh on every open, so it reads a set that is already warm.
   const rosterQuery = collectionItemsQuery(ds, mock, { type: 'chapter', series: `${bridgeId}:${seed}` });
   useQuery({ ...rosterQuery, enabled: !!bridgeId && !!seed });
-  // Read from the cache at open time, not from render: the list keeps a row's first `onMenu`
+  // Read from the cache at open time, not from render: the list keeps a row's first `menu`
   // closure, so a captured roster would still say "unsaved" after the row's own save.
   const collectedChapterIds = () =>
     new Set(
@@ -619,31 +643,33 @@ export function ChapterScrollList({
     return out;
   }, [loading, hasChapters, groups, collapsible, hiddenCount]);
 
-  // Long-press (or, on web, right-click) a row → the per-chapter menu, in the series card popup's
-  // menu system (frosted point-anchored menu, peek-and-commit) on every platform.
+  // Long-press (or, on web, right-click) a row → the per-chapter menu: the system's on iOS, the
+  // series card popup's menu system (frosted point-anchored menu, peek-and-commit) elsewhere. No
+  // title line — the held row is right there naming the chapter.
   const manifest = useMemo(() => wholeChapters(dl?.chapters ?? []), [dl]);
-  const openChapterMenu = (g: ChapterGroup, at: ContextMenuPoint) => {
-    if (!bridgeId) return;
+  // What the rows read besides their group (see AGENTS.md on list rows): without it a download
+  // finishing, or a page of one landing, never reached a row already on screen.
+  const rowsExtra = useMemo(
+    () => [dl, preferredGroup, offline, missingBridgeName, removed, theme, expandMiddleHover.hovered],
+    [dl, preferredGroup, offline, missingBridgeName, removed, theme, expandMiddleHover.hovered],
+  );
+  const chapterMenu = (g: ChapterGroup): MenuRowSpec[] => {
+    if (!bridgeId) return [];
     // Built per open, so the "Mark as read/unread" label reflects current state.
     const readArgs = { ds, bridgeId, seriesId: seed, chapters, group: g, onChanged: invalidateReadState };
-    openContextMenu({
-      // No title line — the pressed row is right there naming the chapter; rows only, like the
-      // series popup's own menu.
-      ...at,
-      rows: chapterMenuRows({
-        ds,
-        mock,
-        bridgeId,
-        seriesId: seed,
-        title,
-        chapters,
-        manifest,
-        group: g,
-        preferredGroup,
-        collected: collectedChapterIds(),
-        read: readArgs,
-        canDownload: missingBridgeName === undefined && !removed,
-      }),
+    return chapterMenuRows({
+      ds,
+      mock,
+      bridgeId,
+      seriesId: seed,
+      title,
+      chapters,
+      manifest,
+      group: g,
+      preferredGroup,
+      collected: collectedChapterIds(),
+      read: readArgs,
+      canDownload: missingBridgeName === undefined && !removed,
     });
   };
 
@@ -655,7 +681,7 @@ export function ChapterScrollList({
         group={g}
         preferredGroup={preferredGroup}
         onOpen={openVersion}
-        onMenu={bridgeId ? openChapterMenu : undefined}
+        menu={bridgeId ? chapterMenu : undefined}
         dlState={dlState}
         {...(readable
           ? {}
@@ -670,9 +696,9 @@ export function ChapterScrollList({
   // Series title — full-width above the two-column hero. series.tsx no longer bundles it into
   // `header`, so every layout below renders it from the `title` prop here.
   const titleEl = (
-    <ThemedText type="subtitle" style={styles.seriesTitle}>
+    <InlineSeriesTitle type="subtitle" style={styles.seriesTitle} selectable>
       {title}
-    </ThemedText>
+    </InlineSeriesTitle>
   );
 
   // The "Chapters" heading + tab/sort controls — or the loading skeleton where the rows will land
@@ -762,6 +788,7 @@ export function ChapterScrollList({
       onScrollEndDrag={onScrollEndDrag}
       {...pullScrollProps}
       data={data}
+      extraData={rowsExtra}
       keyExtractor={(item) =>
         item.type === 'chapter' ? `c:${item.group.key}` : item.type
       }
@@ -786,10 +813,9 @@ export function ChapterScrollList({
         paddingTop: topInset + BarContentGap,
         paddingBottom: insets.bottom + Spacing.five,
         // Large screens cap + centre the whole list at MaxTopLevelWidth (via largeSidePad); small
-        // screens just inset by Spacing.four.
-        ...(isLarge
-          ? { paddingLeft: largeSidePad, paddingRight: largeSidePad }
-          : { paddingHorizontal: Spacing.four }),
+        // screens just inset by Spacing.four. Either way inside the safe area's sides.
+        paddingLeft: (isLarge ? largeSidePad : Spacing.four) + sides.left,
+        paddingRight: (isLarge ? largeSidePad : Spacing.four) + sides.right,
       }}
       renderItem={({ item }) => renderListItem(item)}
     />
@@ -806,7 +832,9 @@ export function ChapterScrollList({
   // handlers; this scroller only feeds its scroll offset up and rides the shift.
   return (
     <Animated.View style={[styles.chapterList, wrapperStyle]}>
-      {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+      <ScreenScrollMarker>
+        {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+      </ScreenScrollMarker>
     </Animated.View>
   );
 }
@@ -849,7 +877,7 @@ function ChapterRow({
   group,
   preferredGroup,
   onOpen,
-  onMenu,
+  menu,
   dlState,
   dimmed,
   unavailable,
@@ -857,8 +885,9 @@ function ChapterRow({
   group: ChapterGroup;
   preferredGroup?: string;
   onOpen: (v: Chapter) => void;
-  /** Long-press / right-click: the per-chapter menu (read state, collections, downloads). */
-  onMenu?: (group: ChapterGroup, at: ContextMenuPoint) => void;
+  /** The per-chapter menu's rows (read state, collections, downloads): behind the row's ⋮ on
+   *  Android, held or right-clicked elsewhere. */
+  menu?: (group: ChapterGroup) => MenuRowSpec[];
   /** Download indicator for this logical chapter (best state across versions), if any. */
   dlState?: { state: DownloadState; fraction: number } | null;
   /** Rendering offline and not downloaded — unreadable, so the row dims and its press disables. */
@@ -878,66 +907,76 @@ function ChapterRow({
   const open = (v: Chapter) => (unavailable ? showToast(unavailable) : onOpen(v));
 
   return (
-    <ContextMenuHold
-      enabled={!!onMenu && !dimmed}
-      onOpen={(pt) => onMenu?.(group, pt)}>
+    <RowHold enabled={!!menu && !dimmed} rows={() => menu?.(group) ?? []}>
       {({ onLongPress, onContextMenu }) => (
     // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
     // list you still have to get through, so they are the ones drawn at full strength.
     <View style={dimmed || unavailable ? styles.rowDimmed : read && !PLATED_ROWS ? styles.rowRead : undefined}>
-      <Pressable
-        testID={testId('series.chapter', group.key)}
-        onPress={() => open(def)}
-        onLongPress={onLongPress}
-        {...({ onContextMenu } as ViewProps)}
-        disabled={dimmed}
-        onHoverIn={rowHover.onHoverIn}
-        onHoverOut={rowHover.onHoverOut}
-        style={({ pressed }) => pressed && styles.rowPressed}>
-        <ThemedView
-          type={PLATED_ROWS ? 'backgroundElement' : 'background'}
-          style={[
-            styles.row,
-            FLAT_ROWS ? styles.rowFlat : BORDERED_ROWS ? { borderColor: theme.hairline } : styles.rowUnbordered,
-            // Brighten (not dim) on hover — same treatment as the chapter tab strip.
-            rowHover.hovered && { backgroundColor: theme.backgroundSelected },
-          ]}>
-          <ThemedText
-            type="small"
-            numberOfLines={1}
-            style={[styles.rowName, read && PLATED_ROWS && { color: theme.textSecondary }]}>
-            {group.name}
-          </ThemedText>
-          {dlState && (
-            <View style={styles.rowDownload} testID={testId('series.chapter', group.key, 'download-state')}>
-              <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
-            </View>
-          )}
-          <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
-            {relativeTime(def.date)}
-          </ThemedText>
-          {/* The slot is reserved on every row, chevron or not, so the dates stay in one column. */}
-          <View style={styles.versionsSlot}>
-            {multi && (
-              <Pressable
-                testID={testId('series.chapter', group.key, 'versions')}
-                onPress={() => setExpanded((v) => !v)}
-                onHoverIn={versionsHover.onHoverIn}
-                onHoverOut={versionsHover.onHoverOut}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel={`${group.versions.length} versions`}
-                accessibilityState={{ expanded }}
-                style={[
-                  styles.versionsBtn,
-                  versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
-                ]}>
-                <TurningChevron open={expanded} color={theme.textSecondary} />
-              </Pressable>
+      {/* Only the row itself lifts on iOS, not the versions list open under it. */}
+      {liftTarget(
+        <Pressable
+          testID={testId('series.chapter', group.key)}
+          onPress={() => open(def)}
+          onLongPress={onLongPress}
+          {...({ onContextMenu } as ViewProps)}
+          disabled={dimmed}
+          onHoverIn={rowHover.onHoverIn}
+          onHoverOut={rowHover.onHoverOut}
+          style={({ pressed }) => pressed && styles.rowPressed}>
+          <ThemedView
+            type={PLATED_ROWS ? 'backgroundElement' : 'background'}
+            style={[
+              styles.row,
+              FLAT_ROWS ? styles.rowFlat : BORDERED_ROWS ? { borderColor: theme.hairline } : styles.rowUnbordered,
+              // Brighten (not dim) on hover — same treatment as the chapter tab strip.
+              rowHover.hovered && { backgroundColor: theme.backgroundSelected },
+            ]}>
+            <ThemedText
+              type="small"
+              numberOfLines={1}
+              style={[styles.rowName, read && PLATED_ROWS && { color: theme.textSecondary }]}>
+              {group.name}
+            </ThemedText>
+            {dlState && (
+              <View style={styles.rowDownload} testID={testId('series.chapter', group.key, 'download-state')}>
+                <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
+              </View>
             )}
-          </View>
-        </ThemedView>
-      </Pressable>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
+              {relativeTime(def.date)}
+            </ThemedText>
+            {/* The slot is reserved on every row, chevron or not, so the dates stay in one column. */}
+            <View style={styles.versionsSlot}>
+              {multi && (
+                <Pressable
+                  testID={testId('series.chapter', group.key, 'versions')}
+                  onPress={() => setExpanded((v) => !v)}
+                  onHoverIn={versionsHover.onHoverIn}
+                  onHoverOut={versionsHover.onHoverOut}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${group.versions.length} versions`}
+                  accessibilityState={{ expanded }}
+                  style={[
+                    styles.versionsBtn,
+                    versionsHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 6 },
+                  ]}>
+                  <TurningChevron open={expanded} color={theme.textSecondary} />
+                </Pressable>
+              )}
+            </View>
+            {menu && (
+              <OverflowMenu
+                rows={() => menu(group)}
+                testID={testId('series.chapter', group.key, 'more')}
+                label="More options"
+                disabled={dimmed}
+              />
+            )}
+          </ThemedView>
+        </Pressable>,
+        FLAT_ROWS ? 10 : 8,
+      )}
       {multi && (
         <Disclosure open={expanded}>
           <View style={styles.versionList}>
@@ -950,7 +989,7 @@ function ChapterRow({
       {FLAT_ROWS && <View style={[styles.rowDivider, { backgroundColor: theme.hairline }]} />}
     </View>
       )}
-    </ContextMenuHold>
+    </RowHold>
   );
 }
 
@@ -1077,8 +1116,7 @@ function chapterMenuActions(args: {
  * The long-press chapter menu: quick per-chapter read + download actions without leaving the list.
  * "Mark read up to here" and "Download from here" are the two one-gesture range answers (everything
  * below this chapter in reading order / this chapter through the end, skipping what's already
- * done); a fully-downloaded chapter offers Delete too. Counts ride in the labels; per the shared
- * menu's rule, nothing is coloured.
+ * done); a fully-downloaded chapter offers Delete too, in red. Counts ride in the labels.
  */
 function chapterMenuRows(
   args: Parameters<typeof chapterMenuActions>[0] & {
@@ -1094,6 +1132,7 @@ function chapterMenuRows(
     {
       label: read ? 'Mark as unread' : 'Mark as read',
       Icon: read ? EyeOffIcon : CheckIcon,
+      symbol: read ? 'eye.slash' : 'checkmark.circle',
       loading: false,
       testID: testId('series.chapter-menu', 'read'),
       onPress: () => void setRead(!read),
@@ -1101,6 +1140,7 @@ function chapterMenuRows(
     {
       label: pending > 1 ? `Mark read up to here (${pending})` : 'Mark read up to here',
       Icon: CheckAllIcon,
+      symbol: 'checklist',
       loading: false,
       // Nothing left below this chapter to mark — the row above already covers this one alone.
       disabled: pending <= 1,
@@ -1112,6 +1152,7 @@ function chapterMenuRows(
     {
       label: collected ? 'Collections…' : 'Save chapter',
       Icon: collected ? CheckIcon : PlusIcon,
+      symbol: collected ? 'folder' : 'plus',
       active: collected,
       loading: false,
       testID: testId('series.chapter-menu', 'collect'),
@@ -1123,6 +1164,7 @@ function chapterMenuRows(
     {
       label: entry?.settled ? 'Already saved' : 'Download chapter',
       Icon: DownloadsIcon,
+      symbol: 'arrow.down.circle',
       loading: false,
       disabled: !args.canDownload || !entry || entry.settled,
       testID: testId('series.chapter-menu', 'this'),
@@ -1131,6 +1173,7 @@ function chapterMenuRows(
     {
       label: span.length > 0 && args.canDownload ? `Download from here (${span.length})` : 'Download from here',
       Icon: ArrowDownIcon,
+      symbol: 'arrow.down.to.line',
       loading: false,
       disabled: !args.canDownload || span.length === 0,
       testID: testId('series.chapter-menu', 'from-here'),
@@ -1141,7 +1184,9 @@ function chapterMenuRows(
     rows.push({
       label: 'Delete download',
       Icon: TrashIcon,
+      symbol: 'trash',
       loading: false,
+      destructive: true,
       testID: testId('series.chapter-menu', 'delete'),
       onPress: () => void deleteDownload(),
     });
@@ -1215,11 +1260,14 @@ export function PageThumbList({
    *  button (while collapsed). */
   footer?: ReactElement | null;
   /** Tapping a page thumbnail is handed HERE — same in-place-reader hand-off as
-   *  ChapterScrollList's `onOpenChapter`. */
-  onOpenPage: (pageIndex: number) => void;
+   *  ChapterScrollList's `onOpenChapter`. On iOS with the tile's zoom source, for the reader to grow
+   *  out of. */
+  onOpenPage: (pageIndex: number, zoomId: string | null) => void;
 } & PullListWiring) {
   const theme = useTheme();
-  const screenW = useSeriesPageWidth();
+  const zoomHref = useZoomHref('/series/read');
+  const sides = useSideInsets();
+  const screenW = useSeriesContentWidth();
   const insets = useSafeAreaInsets();
   const rtl = useReadsRightToLeft();
   const [expanded, setExpanded] = useState(false);
@@ -1248,6 +1296,10 @@ export function PageThumbList({
   // wider than 2:3 is SHORTER than its slot and top-aligns in it, keeping its own shape; that space
   // below it is by design, not the grey strip (which was the crop, see SpriteCrop).
   const slotHeightPx = tileW / DEFAULT_THUMB_ASPECT;
+  // A save changes no row's data, so without the set in here the recycled cells keep their old badge
+  // state.
+  const listRef = useRef<LegendListRef>(null);
+  const listExtra = useListLayout(listRef, `${tileW}:${rtl}`, collected);
   // The collapsed fade height mirrors the reference's `.page-thumbs-more`: ~0.6 of
   // a tile's height, so the last row reads as fading out under the button.
   const fadeHeight = Math.round(slotHeightPx * 0.6);
@@ -1283,9 +1335,9 @@ export function PageThumbList({
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
       {...pullScrollProps}
+      ref={listRef}
       data={data}
-      // A save changes no row's data, so without this the recycled cells keep their old badge state.
-      extraData={collected}
+      extraData={listExtra}
       keyExtractor={(_, i) => String(i)}
       recycleItems
       // Every row's real height is this, exactly, regardless of content — the slot never resizes
@@ -1301,8 +1353,8 @@ export function PageThumbList({
       contentContainerStyle={{
         paddingTop: BarContentGap + topInset,
         paddingBottom: insets.bottom + Spacing.five,
-        paddingLeft: sidePad,
-        paddingRight: sidePad,
+        paddingLeft: sidePad + sides.left,
+        paddingRight: sidePad + sides.right,
       }}
       ListHeaderComponent={
         <View style={styles.pageHeader}>
@@ -1367,7 +1419,8 @@ export function PageThumbList({
                 page={cell.pageIndex + 1}
                 width={tileW}
                 collected={collected.has(cell.pageIndex)}
-                onPress={() => onOpenPage(cell.pageIndex)}
+                zoomHref={zoomHref}
+                onPress={(zoomId) => onOpenPage(cell.pageIndex, zoomId)}
               />
             </View>
           ))}
@@ -1377,7 +1430,9 @@ export function PageThumbList({
   );
   return (
     <Animated.View style={[styles.pageList, wrapperStyle]}>
-      {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+      <ScreenScrollMarker>
+        {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+      </ScreenScrollMarker>
     </Animated.View>
   );
 }
@@ -1467,6 +1522,7 @@ export function PageThumb({
   showPageNumber = true,
   collected = false,
   slotHeight,
+  zoomHref = null,
 }: {
   thumb: PageThumbSource | null;
   index: number;
@@ -1474,7 +1530,8 @@ export function PageThumb({
   bridgeId?: string;
   page: number;
   width: number;
-  onPress?: () => void;
+  /** With the tile's zoom source id when it has one (`zoomHref`). */
+  onPress?: (zoomId: string | null) => void;
   /** The page-number badge — on for the series page grid, off for the compact card-preview rail. */
   showPageNumber?: boolean;
   /** The page is in a collection — the same mark a saved series carries on its cover. */
@@ -1483,11 +1540,14 @@ export function PageThumb({
    *  (variable-width, for the card-preview rail) instead of the grid's default width-driven, constant
    *  2:3 slot. `width` is then ignored for layout — the sprite crop scales to `slotHeight * aspect`. */
   slotHeight?: number;
+  /** iOS: makes the tile a zoom source for the page `onPress` pushes (see ZoomSource). */
+  zoomHref?: ReturnType<typeof useZoomHref>;
 }) {
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
+  const [zoomId, onZoomId] = useZoomId();
   const [loaded, setLoaded] = useState(() => resolvedThumbIds.has(thumbDelayKey(thumb)));
   // Real aspect of a plain `image` tile, learned from its own onLoad (see the
   // note on the derivation below) rather than an off-screen prefetch. A plain,
@@ -1695,7 +1755,7 @@ export function PageThumb({
     <Pressable
       testID={testId('series.page', seed, page)}
       style={slotHeight != null ? { height: slotHeight, aspectRatio } : styles.thumbShell}
-      onPress={onPress}
+      onPress={onPress && (() => onPress(zoomId.current))}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}>
       <View
@@ -1707,6 +1767,11 @@ export function PageThumb({
             setBoxSize({ w: laidOutW, h: laidOutH });
           }
         }}>
+        {zoomHref ? (
+          <View pointerEvents="none" style={styles.tileZoom}>
+            <ZoomSource href={zoomHref} onId={onZoomId} style={{ width: boxWidth, height: boxHeight }} />
+          </View>
+        ) : null}
         <View style={[styles.thumbClip, styles.thumbCorner]}>
           {/* Picture layer, scaled by `pictureStyle` to fake the shrink illusion; `pageNum` is a
               sibling so it never gets stretched. The Lightweight path skips the wrapper VIEW entirely
@@ -2221,6 +2286,11 @@ const styles = StyleSheet.create({
     // constant 2:3 slot this top-aligns within.
     width: '100%',
     position: 'relative',
+  },
+  tileZoom: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
   thumbClip: {
     // Fixed (never transformed) clipping ancestor — the scaled `thumbPicture`

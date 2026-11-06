@@ -28,15 +28,10 @@ import { DownloadStatusIndicator } from '@/components/downloads/download-status-
 import { seriesActions, seriesCan } from '@/components/downloads/row-actions';
 import { SeriesStorageBar } from '@/components/downloads/series-storage-bar';
 import { CheckIcon, ClearIcon, PauseIcon, PlayIcon, TrashIcon } from '@/components/icons/ui-icons';
-import {
-  PILL_HEIGHT,
-  SelectLead,
-  SelectPillBar,
-  SelectToggle,
-  useDragSelect,
-  useSelectMode,
-} from '@/components/multi-select/select-mode';
+import { PILL_HEIGHT, SelectLead, useDragSelect, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -54,6 +49,7 @@ import { hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 import { useContentWidth } from '@/hooks/use-content-width';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { useSeriesSubPath } from '@/lib/series-nav';
@@ -187,9 +183,11 @@ export default function DownloadsScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'downloads.select-toggle');
 
   // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
   const listRef = useRef<LegendListRef>(null);
+  const rowsExtra = useListLayout(listRef, sidePad.left, listExtra);
   const scrollYRef = useRef(0);
   const dragSelect = useDragSelect({
     keys: allKeys,
@@ -320,7 +318,7 @@ export default function DownloadsScreen() {
                     progress={mode.progress}
                     selected={ms.selected.has(item.key)}
                     itemKey={item.key}
-                    edgeOffset={sidePad}
+                    edgeOffset={sidePad.left}
                     // Always mounted (built disabled off select mode) so entering select mode flips
                     // `enabled` rather than mounting a GestureDetector per visible row at once.
                     gesture={dragSelect.gestureFor(index)}
@@ -364,74 +362,73 @@ export default function DownloadsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar
-        title={selecting ? `${ms.count} selected` : 'Downloads'}
-        right={<SelectToggle selecting={selecting} onToggle={toggleSelecting} testID="downloads.select-toggle" />}
-      />
-      <LegendList
-        ref={listRef}
-        onScroll={(e) => {
-          scrollYRef.current = e.nativeEvent.contentOffset.y;
-        }}
-        // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
-        // tracking manual scrolling accurately without spamming.
-        scrollEventThrottle={16}
-        style={[styles.list, scrollbarInset(paddingTop)]}
-        data={rows}
-        keyExtractor={(r) => r.key}
-        // Recycle row views instead of mounting/unmounting a fresh gesture+reanimated swipe stack for
-        // every row that scrolls into view (the heavy part); the swipe row resets its gesture state on
-        // recycle via `recycleKey`.
-        recycleItems
-        estimatedItemSize={SettingsRowHeight}
-        // Every row is exactly one settings-row tall, so declare it KNOWN — LegendList then skips
-        // measuring each row after render (the main source of this list's lag vs. the grid pages, which
-        // are fixed-size too). With sizes known, also stop retro-correcting scroll offset from
-        // measurements, which otherwise adds a flinging jitter. Mirrors `RecyclerList`.
-        getFixedItemSize={() => SettingsRowHeight}
-        maintainVisibleContentPosition={{ data: false, size: false }}
-        // Selection lives OUTSIDE the row objects (identity-cached — see `buildRows`); this tells
-        // the list to repaint visible rows when the selection set or the mode changes.
-        extraData={listExtra}
-        renderItem={renderItem}
-        ListHeaderComponent={header}
-        ListEmptyComponent={
-          <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-            No downloads yet. Open a series and tap Download to keep chapters for offline reading.
-          </ThemedText>
-        }
-        contentContainerStyle={{
-          flexGrow: 1,
-          paddingTop,
-          // Room for the floating pills while selecting, so the last rows can scroll clear of them.
-          paddingBottom: paddingBottom + (selecting ? PILL_HEIGHT + Spacing.six : 0),
-          paddingLeft: listPad,
-          paddingRight: listPad,
-        }}
-        showsVerticalScrollIndicator={Platform.OS === 'web'}
-      />
+      <TopBar title={selecting ? `${ms.count} selected` : 'Downloads'} actions={[selectToggle]} />
+      <ScreenScrollMarker>
+        <LegendList
+          ref={listRef}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+          }}
+          // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
+          // tracking manual scrolling accurately without spamming.
+          scrollEventThrottle={16}
+          style={[styles.list, scrollbarInset(paddingTop)]}
+          data={rows}
+          keyExtractor={(r) => r.key}
+          // Recycle row views instead of mounting/unmounting a fresh gesture+reanimated swipe stack for
+          // every row that scrolls into view (the heavy part); the swipe row resets its gesture state on
+          // recycle via `recycleKey`.
+          recycleItems
+          estimatedItemSize={SettingsRowHeight}
+          // Every row is exactly one settings-row tall, so declare it KNOWN — LegendList then skips
+          // measuring each row after render (the main source of this list's lag vs. the grid pages, which
+          // are fixed-size too). With sizes known, also stop retro-correcting scroll offset from
+          // measurements, which otherwise adds a flinging jitter. Mirrors `RecyclerList`.
+          getFixedItemSize={() => SettingsRowHeight}
+          maintainVisibleContentPosition={{ data: false, size: false }}
+          // Selection lives OUTSIDE the row objects (identity-cached — see `buildRows`); this tells
+          // the list to repaint visible rows when the selection set or the mode changes.
+          extraData={rowsExtra}
+          renderItem={renderItem}
+          ListHeaderComponent={header}
+          ListEmptyComponent={
+            <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
+              No downloads yet. Open a series and tap Download to keep chapters for offline reading.
+            </ThemedText>
+          }
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingTop,
+            // Room for the floating pills while selecting, so the last rows can scroll clear of them.
+            paddingBottom: paddingBottom + (selecting ? PILL_HEIGHT + Spacing.six : 0),
+            paddingLeft: listPad.left,
+            paddingRight: listPad.right,
+          }}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+        />
+      </ScreenScrollMarker>
 
       {/* The floating select-mode chrome, over the selected SERIES: staging "…" bottom-left, all
           valid verbs in ONE pill bottom-right. */}
       {selecting && (
         <SelectPillBar
-          left={sidePad}
-          right={sidePad}
+          left={sidePad.left}
+          right={sidePad.right}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="downloads.select-options"
           verbs={[
             ...(toPause.length > 0
-              ? [{ key: 'pause', label: `Pause ${toPause.length} series`, Icon: PauseIcon, onPress: pauseSelected, testID: 'downloads.pause' }]
+              ? [{ key: 'pause', symbol: 'pause' as const, label: `Pause ${toPause.length} series`, Icon: PauseIcon, onPress: pauseSelected, testID: 'downloads.pause' }]
               : []),
             ...(toResume.length > 0
-              ? [{ key: 'resume', label: `Resume ${toResume.length} series`, Icon: PlayIcon, onPress: resumeSelected, testID: 'downloads.resume' }]
+              ? [{ key: 'resume', symbol: 'play' as const, label: `Resume ${toResume.length} series`, Icon: PlayIcon, onPress: resumeSelected, testID: 'downloads.resume' }]
               : []),
             ...(toCancel.length > 0
-              ? [{ key: 'cancel', label: `Cancel ${toCancel.length} in-flight series`, Icon: ClearIcon, color: theme.danger, onPress: () => void cancelSelected(), testID: 'downloads.cancel' }]
+              ? [{ key: 'cancel', symbol: 'xmark' as const, label: `Cancel ${toCancel.length} in-flight series`, Icon: ClearIcon, color: theme.danger, onPress: () => void cancelSelected(), testID: 'downloads.cancel' }]
               : []),
             ...(toDelete.length > 0
-              ? [{ key: 'delete', label: `Delete ${toDelete.length} series`, Icon: TrashIcon, color: theme.danger, onPress: confirmDeleteSelected, testID: 'downloads.delete' }]
+              ? [{ key: 'delete', symbol: 'trash' as const, label: `Delete ${toDelete.length} series`, Icon: TrashIcon, color: theme.danger, onPress: confirmDeleteSelected, testID: 'downloads.delete' }]
               : []),
           ]}
         />

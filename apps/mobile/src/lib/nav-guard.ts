@@ -90,13 +90,22 @@ export function navTargetKey(href: unknown): string {
  * `now` is injectable for tests only; production callers pass nothing.
  */
 export function claimNavigation(target: string, now: number = Date.now()): boolean {
-  if (lastTarget !== null && !opposedDirections(lastTarget, target)) {
-    const window = target === lastTarget ? SAME_TARGET_WINDOW_MS : ANY_TARGET_WINDOW_MS;
-    if (now - lastAcceptedAt < window) return false;
-  }
+  if (msUntilClaimable(target, now) > 0) return false;
   lastTarget = target;
   lastAcceptedAt = now;
   return true;
+}
+
+/**
+ * How long until a claim on `target` would win, without claiming: 0 when it would now. For an
+ * exit that animates before it navigates (the series page's collapse), which has to ask before it
+ * moves anything — a claim dropped once the page had finished leaving stranded it, gone from view
+ * but still on top.
+ */
+export function msUntilClaimable(target: string, now: number = Date.now()): number {
+  if (lastTarget === null || opposedDirections(lastTarget, target)) return 0;
+  const window = target === lastTarget ? SAME_TARGET_WINDOW_MS : ANY_TARGET_WINDOW_MS;
+  return Math.max(0, lastAcceptedAt + window - now);
 }
 
 /** Forget the last accepted navigation. Tests only — there's no reason to reset this at runtime. */

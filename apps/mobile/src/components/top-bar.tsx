@@ -1,33 +1,61 @@
-import { type ReactNode } from 'react';
+import { Stack } from 'expo-router';
+import type { ComponentProps, ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarSurface } from '@/components/bar-surface';
+import { useBarScrolled, useManagesBar } from '@/components/bar-scrolled';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
+import { barTitleStyle } from '@/components/native-tab-header';
 import { PaneActions } from '@/components/settings/pane-actions';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useInSettingsPane } from '@/lib/settings-pane';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
+import { HIDDEN_TOP_EDGE, useBarMaterial } from '@/lib/native-bar';
 import { useWindowControlsClearance } from '@/lib/window-controls';
 
+import { NavBarFade } from '../../modules/nav-bar-fade';
+
 /**
- * Static top bar (back button + centered title) shared by every pushed detail
- * screen. Originally built inline in series.tsx; extracted so every screen
- * pushed on top of the tabs (bridge/tracker settings, registries, …) gets the
- * same back-button style and the same `useTopBarHeight()` sizing instead of
- * falling back to the native stack header, which looks different per platform.
- * Pair with `<Stack.Screen name="..." options={{ headerShown: false }} />` in
- * `_layout.tsx` and use `useTopBarInset()` to pad the screen's own content.
+ * A bar action, drawn by whichever bar is up: the custom bar as a `TopBarButton` with its
+ * `icon`, the system bar as a `Stack.Toolbar.Button` — an SF Symbol, or a word at the weight
+ * the system gives it ("Select", "Done"). Every action says what it is there: `null` means
+ * the system bar goes without it (a refresh that stands in for pull-to-refresh on the web).
+ */
+export type TopBarAction = {
+  label: string;
+  /** Automation selector — required so every top-bar action is reachable (see src/lib/test-id.ts). */
+  testID: string;
+  onPress: () => void;
+  icon: ReactNode;
+  native: { symbol: BarSymbol } | { text: string; variant?: 'done' | 'prominent' } | null;
+};
+
+/** An SF Symbol name the system bar draws. */
+export type BarSymbol = NonNullable<ComponentProps<typeof Stack.Toolbar.Button>['icon']>;
+
+/**
+ * The top bar of every pushed screen (bridge/tracker settings, registries, the download pages, …).
+ *
+ * On iOS it IS the system navigation bar: the screen is registered with `useSettingsScreen()` /
+ * `pushedScreen` (`lib/native-bar.ts`), and this retitles that bar as the screen goes (a
+ * selection's count) and puts the `actions` in it as trailing toolbar items — the back chevron
+ * is the stack's own, so `onBack`, `left` and `right` have no say there. Elsewhere it is the
+ * custom overlay (back button + centered title + the actions), the same on every screen
+ * instead of the native header's per-platform look, and the content pads past it by
+ * `useTopChromeHeight()` / `useSettingsScrollPadding()`.
  */
 export function TopBar({
   title,
   onBack,
   left,
   right,
+  actions,
 }: {
   title: string;
   onBack?: () => void;
@@ -35,6 +63,8 @@ export function TopBar({
    *  own way out of whatever state hides the back affordance. */
   left?: ReactNode;
   right?: ReactNode;
+  /** Trailing actions; wins over `right`, which stays for one-off trailing content. */
+  actions?: TopBarAction[];
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -42,10 +72,56 @@ export function TopBar({
   const barHeight = useTopBarHeight();
   const clearance = useWindowControlsClearance();
   const inPane = useInSettingsPane();
+  const scrolled = useBarScrolled();
+  useManagesBar(NATIVE_HEADER && !inPane);
+  const material = useBarMaterial();
   // Inside the settings modal the pane has no bar of its own: the modal supplies the header, and a
   // back button here would point at a stack this pane isn't on. The trailing actions still have to
   // land somewhere, so they go into that header.
-  if (inPane) return <PaneActions>{right}</PaneActions>;
+  const trailing = actions ? (
+    <View style={styles.actions}>
+      {actions.map((action) => (
+        <TopBarButton key={action.testID} testID={action.testID} icon={action.icon} label={action.label} onPress={action.onPress} />
+      ))}
+    </View>
+  ) : (
+    right
+  );
+  if (inPane) return <PaneActions>{trailing}</PaneActions>;
+  if (NATIVE_HEADER) {
+    const items = actions?.filter((action) => action.native) ?? [];
+    // The title as a custom title view, as the tabs' is: centred by UIKit between the items, where
+    // the plain-text title sat at the leading edge and moved with the bar's minimization. The option
+    // still names the screen (the back button, accessibility). The bar is bare over the top of the
+    // page and takes its material once the list is under it, as the tabs' are (`bar-scrolled.tsx`),
+    // with `nav-bar-fade` crossfading the switch; the folded Duo's backing is its hard edge, which
+    // UIKit draws only behind what the bar registers — a plain-text title, not a custom view — so
+    // the probe registers the view there.
+    return (
+      <>
+        <Stack.Screen options={{ title, headerBlurEffect: scrolled ? material : 'none', scrollEdgeEffects: HIDDEN_TOP_EDGE }} />
+        <Stack.Title asChild>
+          <ThemedText numberOfLines={1} style={barTitleStyle}>
+            {title}
+          </ThemedText>
+        </Stack.Title>
+        {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" /> : null}
+        {items.length > 0 ? (
+          <Stack.Toolbar placement="right">
+            {items.map((action) =>
+              action.native && 'symbol' in action.native ? (
+                <Stack.Toolbar.Button key={action.testID} icon={action.native.symbol} accessibilityLabel={action.label} onPress={action.onPress} />
+              ) : (
+                <Stack.Toolbar.Button key={action.testID} variant={action.native?.variant} accessibilityLabel={action.label} onPress={action.onPress}>
+                  {action.native?.text}
+                </Stack.Toolbar.Button>
+              ),
+            )}
+          </Stack.Toolbar>
+        ) : null}
+      </>
+    );
+  }
   return (
     <BarSurface style={[styles.topBar, { height: insets.top + barHeight }]}>
       {left ? (
@@ -70,7 +146,7 @@ export function TopBar({
       </ThemedText>
       {/* Trailing action (e.g. the "+" that adds a registry / installs a bridge). Absolute, like the
           back button, so it can't push the centered title off-center. */}
-      {right && <View style={[styles.rightAction, { height: barHeight, right: Spacing.three + clearance }]}>{right}</View>}
+      {trailing && <View style={[styles.rightAction, { height: barHeight, right: Spacing.three + clearance }]}>{trailing}</View>}
     </BarSurface>
   );
 }
@@ -120,6 +196,10 @@ export function useTopBarInset(): number {
 }
 
 const styles = StyleSheet.create({
+  probe: {
+    width: 0,
+    height: 0,
+  },
   // OVERLAYS the screen's content (which pads itself by `useTopBarInset`) rather than sitting above
   // it in flow, so content passes underneath rather than stopping at a dead strip. It used to matter
   // for a second reason too: the bar was frosted, and a blur with nothing behind it rendered as a
@@ -155,6 +235,10 @@ const styles = StyleSheet.create({
     right: Spacing.three,
     bottom: 0,
     justifyContent: 'center',
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   barButton: {
     padding: Spacing.one,

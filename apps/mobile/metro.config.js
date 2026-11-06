@@ -55,6 +55,10 @@ config.resolver.nodeModulesPaths = [
 // (@comical/host-server/router, @comical/registry/fetcher) without pulling the node:fs barrels.
 config.resolver.unstable_enablePackageExports = true;
 
+// Android's Compose menus draw Material Symbols from vector drawables
+// (src/components/icons/material-symbols.ts), which Metro has to serve as assets.
+config.resolver.assetExts = [...config.resolver.assetExts, 'xml'];
+
 // Resolve the @comical/* specifiers to the submodule packages (they aren't installed as npm deps —
 // only their transitive leaf deps live in the submodule's node_modules, above). The embedded
 // transport imports only the Node-free entry points; web never imports them (startup.web.ts no-op).
@@ -110,6 +114,22 @@ config.server.enhanceMiddleware = (metroMiddleware, server) => {
     }
     return base(req, res, next);
   };
+};
+
+// react-native-screens 5.0 beta: its web stub for the TurboModule sits in fabric/legacy while the index
+// still imports fabric/NativeScreensModule, which calls TurboModuleRegistry (absent on web) at load.
+// Point web at the stub until a release ships with the two back together.
+const priorResolve = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  const resolve = priorResolve ?? context.resolveRequest;
+  if (
+    platform === 'web' &&
+    moduleName === './fabric/NativeScreensModule' &&
+    /[\\/]react-native-screens[\\/]/.test(context.originModulePath)
+  ) {
+    return resolve(context, './fabric/legacy/NativeScreensModule', platform);
+  }
+  return resolve(context, moduleName, platform);
 };
 
 module.exports = config;

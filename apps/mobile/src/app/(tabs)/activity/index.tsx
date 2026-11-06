@@ -1,0 +1,546 @@
+import { AnimatedLegendList } from '@legendapp/list/reanimated';
+import type { LegendListRef } from '@legendapp/list/react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
+import Animated, { useSharedValue } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { HistoryRow } from '@/components/history-row';
+import {
+  useIsZoomingSeries,
+  useZoomOriginSource,
+  useZoomSourceKey,
+  useZoomSurfaceKey,
+  ZoomSurfaceContext,
+} from '@/lib/series-zoom';
+import { encodeSeriesParam } from '@/lib/series-nav';
+import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
+import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { PullIndicator } from '@/components/pull-indicator';
+import { RetryBlock } from '@/components/retry-block';
+import { RowHairline } from '@/components/row-hairline';
+import { SeriesCardMenu } from '@/components/series-card-menu';
+import { SwipeableRow } from '@/components/settings/swipeable-row';
+import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
+import { NativeTabHeader } from '@/components/native-tab-header';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
+import { TabTitleBar } from '@/components/tab-title-bar';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { showToast } from '@/components/toast';
+import { useZoomId, withZoomSource } from '@/components/zoom-source';
+import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { autoDownloadNewChapters } from '@/data/downloads/auto';
+import { activityQuery, queryKeys } from '@/data/queries';
+import { useDataSource, useMockActive } from '@/data/source';
+import type { ActivityEntry } from '@/data/types';
+import { useBridgeMap } from '@/hooks/use-bridges';
+import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
+import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
+import { useDeferredMount } from '@/hooks/use-deferred-mount';
+import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
+import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
+import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
+import { useIsDesktop } from '@/hooks/use-responsive';
+import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
+import { useRouter } from '@/lib/nav';
+import { relTime } from '@/lib/rel-time';
+import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
+import { ROW_REORDER_TRANSITION, useRowTransition } from '@/lib/row-motion';
+import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
+import { scrollbarInset } from '@/lib/scrollbar-inset';
+
+/**
+ * One coalesced feed row: a single library series with its newly-detected chapters folded together
+ * (so three new chapters read as one "3 new chapters" row, not three), sorted by the most recent of
+ * those detections. Mirrors a History row's shape and interactions — tap reads, 3-dot opens the
+ * series, long-press opens the quick-actions popup, swipe-left clears the series from the feed.
+ */
+type SeriesActivity = {
+  bridgeId: string;
+  seriesId: string;
+  title: string;
+  thumbnailUrl?: string;
+  /** When the group last had news — the sort key and the row's "when". */
+  latestAt: number;
+  /** How many of the group's new chapters are still unread — the "N new chapters" count. */
+  newCount: number;
+  /** Any unread chapter in the group (drives the accent dot; all-read rows dim). */
+  hasUnread: boolean;
+  /** The chapter a tap reads: the newest unread one, else the newest overall. None when the row is
+   *  only a removal, and a tap opens the series instead. */
+  chapterId?: string;
+  chapterName?: string;
+  number?: number;
+  /** The source confirmed the series is gone. News, but never unread. */
+  removed: boolean;
+};
+
+/** Stable, so the zoom surface registers once rather than every render — see useZoomSurfaceList. */
+const activitySeriesId = (item: SeriesActivity) => item.seriesId;
+
+export default function ActivityScreen() {
+  const ds = useDataSource();
+  const mock = useMockActive();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  // The content column, not the window — the sidebar's inset is already out of it.
+  const width = useContentWidth();
+  const filter = useTabFilter();
+  const query = filter.query;
+  const queryClient = useQueryClient();
+  const { nameOf, directOf } = useBridgeMap();
+  const listRef = useRef<LegendListRef>(null);
+  const rowTransition = useRowTransition(ROW_REORDER_TRANSITION);
+  useScrollToTopOnReselect('activity', listRef);
+
+  // This list as a zoom surface — see AGENTS.md → Zoom transitions.
+  const zoomSurface = useZoomSurfaceKey('activity');
+  // Let the tab swap paint before mounting the row list (see use-deferred-mount).
+  const ready = useDeferredMount();
+
+  const { data: items = undefined, error, isLoading, refetch } = useQuery(activityQuery(ds, mock));
+
+  const [focusedOnce, setFocusedOnce] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      // Refresh the feed on re-focus so read-state changes made elsewhere (the reader, another
+      // device) show up. Deliberately does NOT touch the badge count — merely looking at the tab
+      // clears nothing; only reading, the row's "Mark read" swipe, or clearing the row drains it.
+      if (focusedOnce) void refetch();
+      else setFocusedOnce(true);
+    }, [focusedOnce, refetch]),
+  );
+
+  const invalidateFeed = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
+  }, [queryClient, mock]);
+
+  // Pull-to-refresh = a forced re-scan of the whole library, then a feed refresh. The app's shared
+  // custom overlay spinner (no native RefreshControl — see usePullToRefresh) sources the gesture; the
+  // list's live scroll offset feeds it via `sharedValues` below.
+  const scrollY = useSharedValue(0);
+  // The tab bar's slide runs off that same offset, on the UI thread — this screen already feeds it
+  // to the list via `sharedValues` below, so the bar reads one value rather than a second that could
+  // disagree with it. `onScroll` only keeps the bottom-bounce measurement in sync.
+  const { onScroll } = useHideTabBarOnScroll({ scrollY });
+  const refresh = useCallback(async () => {
+    try {
+      const res = await ds.checkForUpdates({ force: true });
+      invalidateFeed();
+      void autoDownloadNewChapters(mock);
+      showToast(
+        res.newChapters > 0
+          ? `${res.newChapters} new chapter${res.newChapters === 1 ? '' : 's'} found`
+          : "You're up to date",
+      );
+    } catch {
+      showToast('Update check failed');
+    }
+  }, [ds, invalidateFeed, mock]);
+  const pull = usePullToRefresh(scrollY, refresh);
+
+  // Swipe-away clears a whole series' feed entries at once (they're coalesced into one row). Optimistic:
+  // drop the row immediately, roll back on error, refresh the badge count when settled.
+  const removeMutation = useMutation({
+    mutationFn: (g: SeriesActivity) => ds.removeActivityEntry(g.bridgeId, g.seriesId),
+    onMutate: async (g: SeriesActivity) => {
+      const key = queryKeys.activity(mock);
+      await queryClient.cancelQueries({ queryKey: key });
+      const prev = queryClient.getQueryData<ActivityEntry[]>(key);
+      queryClient.setQueryData<ActivityEntry[]>(key, (cur) =>
+        (cur ?? []).filter((x) => !(x.bridgeId === g.bridgeId && x.seriesId === g.seriesId)),
+      );
+      return { prev };
+    },
+    onError: (_e, _g, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(queryKeys.activity(mock), ctx.prev);
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) }),
+  });
+
+  // Swipe "Mark read" acknowledges a series' new chapters without opening them — with the badge no
+  // longer clearing on tab focus, this (or actually reading) is how a row's count is dismissed.
+  // Optimistic like the clear: flip the group's entries to read at once, roll back on error.
+  const markReadMutation = useMutation({
+    mutationFn: (g: SeriesActivity) => ds.markActivityRead(g.bridgeId, g.seriesId),
+    onMutate: async (g: SeriesActivity) => {
+      const key = queryKeys.activity(mock);
+      await queryClient.cancelQueries({ queryKey: key });
+      const prev = queryClient.getQueryData<ActivityEntry[]>(key);
+      queryClient.setQueryData<ActivityEntry[]>(key, (cur) =>
+        (cur ?? []).map((x) => (x.bridgeId === g.bridgeId && x.seriesId === g.seriesId ? { ...x, read: true } : x)),
+      );
+      return { prev };
+    },
+    onError: (_e, _g, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(queryKeys.activity(mock), ctx.prev);
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) }),
+  });
+
+  // Memoized so the identity only changes when the ORDER can have: a fresh array every render
+  // would tell every collapse in flight that the list moved (see the notice below).
+  const safe = useVisibleByBridge(items);
+  const visible = items ? safe : undefined;
+
+
+  // Coalesce the flat per-chapter feed into one row per series. `visible` is already newest-first, so a
+  // series' first appearance is its newest detection (the row's snapshot + sort position), and the
+  // first unread entry we see is its newest unread (the tap's read target).
+  const rows = useMemo<SeriesActivity[]>(() => {
+    if (!visible) return [];
+    const groups = new Map<string, { head: ActivityEntry; entries: ActivityEntry[] }>();
+    for (const a of visible) {
+      const key = `${a.bridgeId}:${a.seriesId}`;
+      const g = groups.get(key);
+      if (g) g.entries.push(a);
+      else groups.set(key, { head: a, entries: [a] });
+    }
+    const out: SeriesActivity[] = [];
+    for (const { head, entries } of groups.values()) {
+      const chapters = entries.filter((e) => !e.removed);
+      const unread = chapters.filter((e) => !e.read);
+      const rep = unread[0] ?? chapters[0]; // newest unread, else newest
+      out.push({
+        bridgeId: head.bridgeId,
+        seriesId: head.seriesId,
+        title: head.title,
+        thumbnailUrl: head.thumbnailUrl,
+        latestAt: (entries.find((e) => !e.quiet) ?? head).detectedAt,
+        newCount: unread.length,
+        hasUnread: unread.length > 0,
+        chapterId: rep?.chapterId,
+        chapterName: rep?.chapterName,
+        number: rep?.number,
+        removed: chapters.length < entries.length,
+      });
+    }
+    // Everything still unread first, newest update first within each half — so what's left to read
+    // is one block at the top and the dimmed rows a trail beneath it, rather than the two mixed in
+    // date order where an unread row could sit under a page of finished ones. (Insertion order is
+    // already close to the date order, but ties/interleaving make the explicit sort the source of
+    // truth.) A removal has no read state to drain, so it stays up in the live block until cleared.
+    const live = (r: SeriesActivity) => Number(r.hasUnread || r.removed);
+    out.sort((a, b) => live(b) - live(a) || b.latestAt - a.latestAt);
+    // A filter over rows already grouped, not a query: applied after coalescing so a match keeps the
+    // whole series' row rather than splitting its entries.
+    const q = query.trim().toLowerCase();
+    return q ? out.filter((r) => r.title.toLowerCase().includes(q)) : out;
+  }, [visible, query]);
+
+  // Reading reorders this list, so a series opened from partway down can end up above the viewport
+  // by the time the page closes — see useZoomSurfaceList.
+  useZoomSurfaceList(zoomSurface, rows, activitySeriesId, listRef);
+
+  const headerHeight = useTopChromeHeight();
+  // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
+  // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
+  // explicit paddingLeft/Right is the reliable lever. Only the centring inset (web); the row owns its
+  // own horizontal gutter so the swipe-to-clear reaches the edge (see history-row / history), but
+  // inside the safe area's sides.
+  const sides = useSideInsets();
+  const sidePad = topLevelCenterInset(width - sides.left - sides.right);
+
+  // See history.tsx's `openDetail` — the same control, opening the same series on its details
+  // page.
+  const openDetail = (g: SeriesActivity, zoomId: string | null) => {
+    router.push({
+      pathname: '/series',
+      params: withZoomSource(
+        {
+          id: g.seriesId,
+          title: g.title,
+          bridge: encodeSeriesParam(nameOf(g.bridgeId)),
+          bridgeId: g.bridgeId,
+          ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
+          ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
+        },
+        zoomId,
+      ),
+    });
+  };
+
+  const read = (g: SeriesActivity, zoomId: string | null) => {
+    if (g.chapterId === undefined) return openDetail(g, zoomId);
+    // See history.tsx's `resume` — same experiment, same reasoning.
+    router.push({
+      pathname: '/series',
+      params: withZoomSource(
+        {
+          id: g.seriesId,
+          title: g.title,
+          bridge: encodeSeriesParam(nameOf(g.bridgeId)),
+          bridgeId: g.bridgeId,
+          reader: '1',
+          chapterId: g.chapterId,
+          chapterName: g.chapterName ?? '',
+          start: '0',
+          picked: '1',
+          ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
+          ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
+          ...(zoomId && g.thumbnailUrl ? { zoomFrom: 'cover' } : {}),
+        },
+        zoomId,
+      ),
+    });
+  };
+
+  const body = () => {
+    if (error) return <RetryBlock message={(error as Error).message || 'Failed to load activity'} onRetry={refetch} />;
+    if (!ready || isLoading || items === undefined) return <ThemedText themeColor="textSecondary">Loading…</ThemedText>;
+    if (!visible || visible.length === 0) {
+      return (
+        <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+          New chapters in your library appear here automatically.
+        </ThemedText>
+      );
+    }
+    if (rows.length === 0) return <ThemedText themeColor="textSecondary">No matches</ThemedText>;
+    return null;
+  };
+
+  const emptyBody = body();
+
+  return (
+    // Rows and list must share one surface key, or each row falls back to a key of its own.
+    <ZoomSurfaceContext.Provider value={zoomSurface}>
+      <ThemedView style={styles.container} {...pull.touchHandlers}>
+      {emptyBody ? (
+        <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
+          <View style={styles.centerFill}>{emptyBody}</View>
+        </View>
+      ) : (
+        <Animated.View style={[styles.list, pull.listStyle]}>
+          <ScreenScrollMarker>
+            <AnimatedLegendList
+              ref={listRef}
+              // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
+              style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
+              data={rows}
+              keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
+              recycleItems={false}
+              itemLayoutAnimation={rowTransition}
+              // Don't retro-correct offsets from measurements — a visible jitter while flinging otherwise.
+              maintainVisibleContentPosition={{ data: false, size: false }}
+              // Live UI-thread scroll offset the pull-to-refresh reads (top-of-list check + iOS bounce).
+              sharedValues={{ scrollOffset: scrollY }}
+              // WEB ONLY: routes the reanimated scroll bridge through scrollEventThrottle:1 so onScroll
+              // fires mid-drag (see recycler-list.tsx for the full root-cause note).
+              renderScrollComponent={Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined}
+              contentContainerStyle={{
+                // Fill the viewport even with few rows, so the empty space below them is still part of
+                // the scroller and a drag (pull-to-refresh) can be started there.
+                flexGrow: 1,
+                // Start flush under the top bar (like History / a settings list): the first row begins at
+                // the bar's bottom edge and its own top padding is all the separation it needs.
+                paddingTop: listPaddingTop(headerHeight),
+                paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+                paddingLeft: sidePad + sides.left,
+                paddingRight: sidePad + sides.right,
+              }}
+              renderItem={({ item }) => (
+                <ActivityItem
+                  item={item}
+                  onRead={(zoomId) => read(item, zoomId)}
+                  onOpenDetail={(zoomId) => openDetail(item, zoomId)}
+                  onMarkRead={() => markReadMutation.mutate(item)}
+                  onRemove={() => removeMutation.mutate(item)}
+                  bridge={nameOf(item.bridgeId)}
+                  direct={directOf(item.bridgeId)}
+                />
+              )}
+              showsVerticalScrollIndicator={Platform.OS === 'web'}
+              // Suppress Android's edge glow so it doesn't fight the custom pull; iOS keeps its bounce
+              // (that's what sources the pull there) and fires the refresh via onScrollEndDrag.
+              overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
+              onScroll={onScroll}
+              // Gesture phases for the tab bar (it commits to shown/hidden on release). Composed by
+              // hand rather than spreading `scrollPhaseHandlers`: pull-to-refresh already owns
+              // `onScrollEndDrag`, and that's the release signal.
+              onScrollBeginDrag={notifyScrollBeginDrag}
+              onMomentumScrollEnd={notifyScrollRest}
+              onScrollEndDrag={() => {
+                notifyScrollEndDrag();
+                pull.onScrollEndDrag?.();
+              }}
+            />
+          </ScreenScrollMarker>
+        </Animated.View>
+      )}
+
+      <PullIndicator {...pull.indicator} top={headerHeight} />
+      {NATIVE_HEADER ? (
+        <NativeTabHeader title="Activity" filter={filter} placeholder="Filter activity…" />
+      ) : (
+        <TabTitleBar
+          title="Activity"
+          titleSlot={
+            filter.open ? (
+              <TabFilterField filter={filter} testID="activity.search" placeholder="Filter activity…" />
+            ) : undefined
+          }
+          right={<TabFilterTrigger filter={filter} testID="activity.search" placeholder="Filter activity…" />}
+        />
+      )}
+    </ThemedView>
+    </ZoomSurfaceContext.Provider>
+  );
+}
+
+/**
+ * One coalesced activity row. A component (not inline in `renderItem`) so it can own the thumbnail ref
+ * the native long-press preview lifts FROM — the small portrait rect makes the flying cover match
+ * Browse/Library/History rather than starting huge from the wide row. Tap reads; 3-dot opens the
+ * series page; long-press (native) opens the shared quick-actions popup; swipe-left offers
+ * "Mark read" (while the row has unread chapters) and "Clear" (removes the series from the feed).
+ */
+function ActivityItem({
+  item,
+  onRead,
+  onOpenDetail,
+  onMarkRead,
+  onRemove,
+  bridge,
+  direct,
+}: {
+  item: SeriesActivity;
+  /** With the thumbnail's zoom source id, on iOS. */
+  onRead: (zoomId: string | null) => void;
+  onOpenDetail: (zoomId: string | null) => void;
+  onMarkRead: () => void;
+  onRemove: () => void;
+  bridge: string;
+  direct: boolean;
+}) {
+  const thumbRef = useRef<ViewInstance>(null);
+  // On desktop the time is the row's own column (`when`), so the secondary line drops it.
+  const desktop = useIsDesktop();
+  // The row's thumbnail is the zoom transition's source rect,
+  // captured on press-IN because measuring answers asynchronously — measuring at press
+  // would put a native round trip in front of the navigation. And while its copy is in the air the
+  // original blanks, reusing `coverHidden` — the same slot, and the same reason, as the long-press
+  // preview's lifted copy.
+  // Keyed to this row's LIST, not to the series — see useZoomSourceKey (another copy of the same
+  // series elsewhere on screen is not what the page collapses into, and must keep its thumbnail;
+  // per list rather than per row because the list recycles row instances).
+  const zoomSource = useZoomSourceKey();
+  const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
+  // Radius 6 — the row thumbnail's corner, not the grid card's 10.
+  const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomSource, thumbRef, 6);
+  // iOS has the system's zoom instead, out of the thumbnail's source.
+  const [thumbZoomId, onThumbZoomId] = useZoomId();
+  // See History's copy: press-in warms what the tap will need, and the row (reads) and the 3-dot
+  // (details) need different things. `read` always forwards the chapter id, so this always does.
+  const warmPages = useWarmChapterPages();
+  const warmDetail = useWarmSeriesDetail();
+  const warmSeries = () =>
+    warmDetail(item.bridgeId, item.seriesId, {
+      direct,
+      bridgeName: bridge,
+      title: item.title,
+      cover: item.thumbnailUrl,
+    });
+  const onRowPressIn = () => {
+    captureZoomOrigin();
+    if (item.chapterId === undefined) warmSeries();
+    else warmPages(item.bridgeId, item.seriesId, item.chapterId);
+  };
+  const onMorePressIn = () => {
+    captureZoomOrigin();
+    warmSeries();
+  };
+  const renderRow = (coverHidden: boolean) => (
+    <HistoryRow
+      thumbnailUrl={item.thumbnailUrl}
+      title={item.title}
+      sub={activitySub(item, bridge, !desktop)}
+      dimmed={!item.hasUnread && !item.removed}
+      unread={item.hasUnread}
+      onPress={() => onRead(thumbZoomId.current)}
+      onPressIn={onRowPressIn}
+      onMore={() => onOpenDetail(thumbZoomId.current)}
+      onMorePressIn={onMorePressIn}
+      actions={[]}
+      when={item.latestAt}
+      thumbRef={thumbRef}
+      coverHidden={coverHidden || zoomFlying}
+      onZoomId={onThumbZoomId}
+    />
+  );
+  return (
+    <>
+      <SwipeableRow
+        name={item.title}
+        lanes={2}
+        // Actions lay out left→right, so the LAST sits at the screen edge — revealed by the
+        // smallest swipe and the easiest to tap. Put the destructive Clear FIRST (the inner
+        // slot, reached only by swiping further) and Mark read at the edge, so the safe action
+        // is the easy one and a delete takes a deliberate, longer swipe. All-read rows have
+        // nothing to mark, so they offer Clear alone (which then becomes full-swipeable).
+        actions={[
+          // `collapses`: the clear is optimistic, so fold the row shut before the data drops it.
+          { label: 'Clear', icon: TrashIcon, destructive: true, collapses: true, onPress: onRemove },
+          ...(item.hasUnread ? [{ label: 'Mark read', icon: CheckIcon, onPress: onMarkRead }] : []),
+        ]}>
+        {Platform.OS === 'web' ? (
+          renderRow(false)
+        ) : (
+          <SeriesCardMenu
+            enabled={!!item.bridgeId}
+            bridgeId={item.bridgeId}
+            bridge={bridge}
+            entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
+            direct={direct}
+            coverAspect={2 / 3}
+            startRadius={6} // matches HistoryRow's thumbnail corner
+            zoomSource={zoomSource}
+            measureRef={thumbRef}
+            onOpen={() => onRead(null)}>
+            {({ hidden }) => renderRow(hidden)}
+          </SeriesCardMenu>
+        )}
+      </SwipeableRow>
+      <RowHairline />
+    </>
+  );
+}
+
+/** Row secondary line: `N new chapters · when` when several coalesce, else `chapter · when`; a
+ *  removal says so instead. */
+function activitySub(g: SeriesActivity, bridge: string, withTime: boolean): string {
+  const chapter = g.removed
+    ? `Removed from ${bridge}`
+    : g.newCount > 1
+      ? `${g.newCount} new chapters`
+      : (g.chapterName ?? (g.number !== undefined ? `Chapter ${g.number}` : 'New chapter'));
+  return withTime ? `${chapter}  ·  ${relTime(g.latestAt)}` : chapter;
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  centeredColumn: {
+    flex: 1,
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
+  },
+  centerFill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  emptyText: {
+    textAlign: 'center',
+    maxWidth: 340,
+  },
+  list: {
+    flex: 1,
+  },
+});

@@ -35,7 +35,7 @@ function SheetBody({ login, onDone }: { login: WebLoginSetting; onDone: (cookies
   const finished = useRef(false);
   const urls = [login.url, ...(login.cookieUrls ?? [])];
 
-  const check = async () => {
+  const check = async (): Promise<void> => {
     if (!webCookies || finished.current) return;
     const jar = new Map<string, string>();
     for (const url of urls) {
@@ -85,7 +85,9 @@ function SheetBody({ login, onDone }: { login: WebLoginSetting; onDone: (cookies
       {cleared ? (
         <WebView
           source={{ uri: login.url }}
-          onNavigationStateChange={() => void check()}
+          onNavigationStateChange={() => {
+            void check();
+          }}
           setSupportMultipleWindows={false}
           thirdPartyCookiesEnabled
           style={styles.web}

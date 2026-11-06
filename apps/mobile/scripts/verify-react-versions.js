@@ -7,7 +7,11 @@
 // declares a caret peer dependency on react (e.g. "^19.2.3"), which is too loose
 // to catch this: the actual constraint is exact-version equality with whatever
 // react the bundled renderer was built against, and a perfectly semver-valid
-// bump (19.2.3 -> 19.2.7) silently breaks it. The mismatch doesn't surface until
+// bump (19.2.3 -> 19.2.7) silently breaks it. The app runs the new architecture,
+// so the renderer that matters is ReactFabric-*.js — the legacy Paper renderer
+// (ReactNativeRenderer-*.js) can lag a React minor behind it in the same
+// react-native release (0.88.0 ships Fabric 19.3.0 / Paper 19.2.3) and must not
+// be the one compared. The mismatch doesn't surface until
 // the app's very first render, where it crashes immediately and fatally — on
 // iOS, in production, with no redbox and no on-screen message, just a hard
 // process abort. That cost a full evening chasing it as an app bug across nine
@@ -35,17 +39,19 @@ try {
 
 let rendererPath;
 try {
-  rendererPath = require.resolve(
-    'react-native/Libraries/Renderer/implementations/ReactNativeRenderer-prod.js',
-  );
+  rendererPath = require.resolve('react-native/Libraries/Renderer/implementations/ReactFabric-prod.js');
 } catch {
   process.exit(0);
 }
 
 const rendererSrc = fs.readFileSync(rendererPath, 'utf8');
-// Matches the renderer's own internal version-mismatch check:
+// Matches the renderer's own internal version-mismatch check where it has one:
 //   if ("X.Y.Z" !== isomorphicReactPackageVersion) ... throw "Incompatible React versions..."
-const match = rendererSrc.match(/if \("([\d.]+(?:-[\w.]+)?)" !== isomorphicReactPackageVersion\)/);
+// and otherwise the version it registers with React DevTools, which is the same build constant:
+//   internals = { bundleType: 0, version: "X.Y.Z", rendererPackageName: "react-native-renderer", ...
+const match =
+  rendererSrc.match(/if \("([\d.]+(?:-[\w.]+)?)" !== isomorphicReactPackageVersion\)/) ??
+  rendererSrc.match(/bundleType: \d,\s*version: "([\d.]+(?:-[\w.]+)?)",\s*rendererPackageName: "react-native-renderer"/);
 
 if (!match) {
   console.warn(

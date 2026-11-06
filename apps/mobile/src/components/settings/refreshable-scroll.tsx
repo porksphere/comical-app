@@ -4,6 +4,7 @@ import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PullIndicator } from '@/components/pull-indicator';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 
@@ -35,15 +36,17 @@ export function RefreshableScrollView({
 
   return (
     <View style={styles.host} {...pull.touchHandlers}>
-      <Animated.ScrollView
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        onScrollEndDrag={pull.onScrollEndDrag}
-        alwaysBounceVertical
-        style={style}
-        contentContainerStyle={[contentContainerStyle, styles.grow]}>
-        <Animated.View style={[contentStyle, pull.listStyle]}>{children}</Animated.View>
-      </Animated.ScrollView>
+      <ScreenScrollMarker>
+        <Animated.ScrollView
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          onScrollEndDrag={pull.onScrollEndDrag}
+          alwaysBounceVertical
+          style={style}
+          contentContainerStyle={[contentContainerStyle, styles.grow]}>
+          <Animated.View style={[contentStyle, pull.listStyle]}>{children}</Animated.View>
+        </Animated.ScrollView>
+      </ScreenScrollMarker>
       <PullIndicator {...pull.indicator} top={insets.top + barHeight} />
     </View>
   );

@@ -22,7 +22,7 @@ import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, useWindowDimensions, View, type ViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Holdable } from '@/components/context-menu';
@@ -31,9 +31,11 @@ import type { MenuRowSpec } from '@/components/context-menu-material';
 import { BridgesIcon, CheckIcon, ClearIcon, ListPlusIcon, ReadingIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { BridgeMatchSheet } from '@/components/import/bridge-match-sheet';
 import { CoverRoute, importStyles as styles } from '@/components/import/import-list';
-import { PILL_HEIGHT, SelectLead, SelectLeadGap, SelectPillBar, useDragSelect, useSelectMode } from '@/components/multi-select/select-mode';
+import { PILL_HEIGHT, SelectLead, SelectLeadGap, useDragSelect, useSelectMode } from '@/components/multi-select/select-mode';
+import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useOverlay } from '@/components/overlay/overlay';
+import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { RowIcon } from '@/components/settings/row-icon';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsRow } from '@/components/settings/settings-row';
@@ -48,6 +50,7 @@ import { applyOrder, useBridgeOrder } from '@/data/list-order';
 import { libraryQuery, queryKeys, trackerImportPreviewQuery } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
@@ -150,6 +153,7 @@ export default function TrackerImportScreen() {
   }, [ms.selected]);
 
   const listRef = useRef<LegendListRef>(null);
+  const rowsExtra = useListLayout(listRef, sidePad.left, listExtra);
   const scrollYRef = useRef(0);
   const dragSelect = useDragSelect({
     keys: allKeys,
@@ -237,7 +241,7 @@ export default function TrackerImportScreen() {
   }, [data, lookupBridges]);
 
   // The header row: one more bridge over everything still unmatched.
-  const findRowRef = useRef<View>(null);
+  const findRowRef = useRef<ViewInstance>(null);
   const openFindAllMenu = () => {
     if (matchBridges.length === 0) {
       setBanner('No bridge can search — add one first.');
@@ -438,7 +442,7 @@ export default function TrackerImportScreen() {
                       selected={ms.selected.has(row.key)}
                       done={row.kind === 'linked'}
                       itemKey={row.key}
-                      edgeOffset={sidePad}
+                      edgeOffset={sidePad.left}
                       {...(selectable ? { gesture: dragSelect.gestureFor(index) } : {})}
                       // A found row's own tap opens its search, so the circle is what checks it.
                       {...(row.kind === 'resolved' ? { onPress: toggle, pressTestID: testId('tracker-import.check', row.key), accessibilityLabel: `Import ${row.item.title}` } : {})}
@@ -477,74 +481,76 @@ export default function TrackerImportScreen() {
       <TopBar title={title} />
 
       {banner && (
-        <ThemedText type="small" style={[styles.banner, { color: theme.danger, paddingHorizontal: sidePad }]}>
+        <ThemedText type="small" style={[styles.banner, { color: theme.danger, paddingLeft: sidePad.left, paddingRight: sidePad.right }]}>
           {banner}
         </ThemedText>
       )}
 
-      <LegendList
-        ref={listRef}
-        onScroll={(e) => {
-          scrollYRef.current = e.nativeEvent.contentOffset.y;
-        }}
-        scrollEventThrottle={16}
-        style={[styles.list, scrollbarInset(paddingTop)]}
-        data={rows}
-        keyExtractor={(r) => r.key}
-        recycleItems
-        estimatedItemSize={SettingsRowHeight}
-        getFixedItemSize={() => SettingsRowHeight}
-        maintainVisibleContentPosition={{ data: false, size: false }}
-        extraData={listExtra}
-        renderItem={renderItem}
-        ListHeaderComponent={header}
-        ListFooterComponent={
-          data?.truncated ? (
-            <ThemedText type="small" themeColor="textSecondary" style={styles.footerNote}>
-              Showing the first {rows.length} — this list is longer than one import can walk.
-            </ThemedText>
-          ) : null
-        }
-        ListEmptyComponent={
-          isLoading ? (
-            <View style={styles.state}>
-              <ActivityIndicator size="small" />
-              <ThemedText type="small" themeColor="textSecondary">
-                Loading your list…
+      <ScreenScrollMarker>
+        <LegendList
+          ref={listRef}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
+          style={[styles.list, scrollbarInset(paddingTop)]}
+          data={rows}
+          keyExtractor={(r) => r.key}
+          recycleItems
+          estimatedItemSize={SettingsRowHeight}
+          getFixedItemSize={() => SettingsRowHeight}
+          maintainVisibleContentPosition={{ data: false, size: false }}
+          extraData={rowsExtra}
+          renderItem={renderItem}
+          ListHeaderComponent={header}
+          ListFooterComponent={
+            data?.truncated ? (
+              <ThemedText type="small" themeColor="textSecondary" style={styles.footerNote}>
+                Showing the first {rows.length} — this list is longer than one import can walk.
               </ThemedText>
-            </View>
-          ) : error ? (
-            <View style={styles.state}>
-              <ThemedText type="small" style={[styles.stateText, { color: theme.danger }]}>
-                {friendlyError(error, 'Could not load the list')}
-              </ThemedText>
-              <Pressable testID="tracker-import.retry" onPress={() => void refetch()} hitSlop={8} accessibilityRole="button">
-                <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                  {isFetching ? 'Retrying…' : 'Retry'}
+            ) : null
+          }
+          ListEmptyComponent={
+            isLoading ? (
+              <View style={styles.state}>
+                <ActivityIndicator size="small" />
+                <ThemedText type="small" themeColor="textSecondary">
+                  Loading your list…
                 </ThemedText>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.state}>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.stateText}>
-                Your {trackerName} list is empty.
-              </ThemedText>
-            </View>
-          )
-        }
-        contentContainerStyle={{
-          flexGrow: 1,
-          paddingTop,
-          paddingLeft: listPad,
-          paddingRight: listPad,
-          paddingBottom: PILL_HEIGHT + Spacing.six,
-        }}
-        showsVerticalScrollIndicator={Platform.OS === 'web'}
-      />
+              </View>
+            ) : error ? (
+              <View style={styles.state}>
+                <ThemedText type="small" style={[styles.stateText, { color: theme.danger }]}>
+                  {friendlyError(error, 'Could not load the list')}
+                </ThemedText>
+                <Pressable testID="tracker-import.retry" onPress={() => void refetch()} hitSlop={8} accessibilityRole="button">
+                  <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                    {isFetching ? 'Retrying…' : 'Retry'}
+                  </ThemedText>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.state}>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.stateText}>
+                  Your {trackerName} list is empty.
+                </ThemedText>
+              </View>
+            )
+          }
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingTop,
+            paddingLeft: listPad.left,
+            paddingRight: listPad.right,
+            paddingBottom: PILL_HEIGHT + Spacing.six,
+          }}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+        />
+      </ScreenScrollMarker>
 
       <SelectPillBar
-        left={sidePad}
-        right={sidePad}
+        left={sidePad.left}
+        right={sidePad.right}
         bottom={Math.max(insets.bottom, Spacing.three)}
         options={stagingRows}
         optionsTestID="tracker-import.select-options"

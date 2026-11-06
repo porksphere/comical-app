@@ -1,27 +1,23 @@
 import { useQueryClient } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
-import { Platform, ScrollView, StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
-import { SettingsToggleRow } from '@/components/settings/settings-fields';
-import { SettingsSection } from '@/components/settings/settings-row';
+import { fields, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { showToast } from '@/components/toast';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { syncAppBadge } from '@/data/activity/app-badge';
 import { applyChapterCheck } from '@/data/activity/background';
 import { notifyPrefs$, useNotifyPrefs } from '@/data/activity/prefs';
 import { queryKeys } from '@/data/queries';
 import { useMockActive } from '@/data/source';
 import { useHydrated } from '@/hooks/use-responsive';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { desktopShell, trayName } from '@/lib/desktop-shell';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 const isNative = Platform.OS !== 'web';
 
 export default function NotificationsSettingsScreen() {
-  const contentPadding = useSettingsScrollPadding();
   const queryClient = useQueryClient();
   const mock = useMockActive();
   const { autoCheck, backgroundCheck, wifiOnly, notifications, appBadge, caughtUpOnly } = useNotifyPrefs();
@@ -92,46 +88,54 @@ export default function NotificationsSettingsScreen() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
   };
 
+  const sections: SettingsFormSection[] = [
+    {
+      title: 'Checking',
+      footer: `Your library is scanned for new chapters when you open the app${
+        desktop
+          ? `, and every hour while Comical is running, from the ${trayName()} too.`
+          : isNative
+            ? ', and periodically in the background when the system allows.'
+            : '.'
+      }`,
+      fields: fields(
+        { kind: 'toggle', label: 'Check for new chapters', value: autoCheck, onChange: (v) => notifyPrefs$.autoCheck.set(v) },
+        (isNative || desktop) && {
+          kind: 'toggle',
+          label: 'Check in background',
+          value: backgroundCheck,
+          onChange: (v) => {
+            notifyPrefs$.backgroundCheck.set(v);
+            applyChapterCheck(v);
+          },
+        },
+        isNative && backgroundCheck && { kind: 'toggle', label: 'Wi-Fi only', value: wifiOnly, onChange: (v) => notifyPrefs$.wifiOnly.set(v) },
+      ),
+    },
+    {
+      title: 'Alerts',
+      footer: `A notification when a background check finds releases${isNative ? ', and the unread count on the app icon' : ''}.`,
+      fields: fields(
+        (isNative || desktop) && {
+          kind: 'toggle',
+          label: 'Notify about new chapters',
+          value: notifications,
+          onChange: (v) => void toggleNotifications(v),
+        },
+        isNative && { kind: 'toggle', label: 'App icon badge', value: appBadge, onChange: (v) => void toggleAppBadge(v) },
+      ),
+    },
+    {
+      title: 'New chapters',
+      footer: "Series you're behind on stay out of Activity until you catch up.",
+      fields: [{ kind: 'toggle', label: "Only for series I'm caught up on", value: caughtUpOnly, onChange: toggleCaughtUpOnly }],
+    },
+  ];
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Notifications" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
-        <SettingsSection
-          title="Checking"
-          footer={`Your library is scanned for new chapters when you open the app${
-            desktop
-              ? `, and every hour while Comical is running, from the ${trayName()} too.`
-              : isNative
-                ? ', and periodically in the background when the system allows.'
-                : '.'
-          }`}>
-          <SettingsToggleRow label="Check for new chapters" value={autoCheck} onChange={(v) => notifyPrefs$.autoCheck.set(v)} />
-          {(isNative || desktop) && (
-            <SettingsToggleRow
-              label="Check in background"
-              value={backgroundCheck}
-              onChange={(v) => {
-                notifyPrefs$.backgroundCheck.set(v);
-                applyChapterCheck(v);
-              }}
-            />
-          )}
-          {isNative && backgroundCheck && (
-            <SettingsToggleRow label="Wi-Fi only" value={wifiOnly} onChange={(v) => notifyPrefs$.wifiOnly.set(v)} />
-          )}
-        </SettingsSection>
-        <SettingsSection
-          title="Alerts"
-          footer={`A notification when a background check finds releases${isNative ? ', and the unread count on the app icon' : ''}.`}>
-          {(isNative || desktop) && (
-            <SettingsToggleRow label="Notify about new chapters" value={notifications} onChange={(v) => void toggleNotifications(v)} />
-          )}
-          {isNative && <SettingsToggleRow label="App icon badge" value={appBadge} onChange={(v) => void toggleAppBadge(v)} />}
-        </SettingsSection>
-        <SettingsSection title="New chapters" footer="Series you're behind on stay out of Activity until you catch up.">
-          <SettingsToggleRow label="Only for series I'm caught up on" value={caughtUpOnly} onChange={toggleCaughtUpOnly} />
-        </SettingsSection>
-      </ScrollView>
+      <SettingsList sections={sections} />
     </ThemedView>
   );
 }
@@ -139,11 +143,5 @@ export default function NotificationsSettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  content: {
-    gap: Spacing.five,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
   },
 });

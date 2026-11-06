@@ -1,19 +1,19 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { AddFab } from '@/components/add-fab';
 
 import { openConfirm } from '@/components/confirm-popup';
-import { ArrowUpIcon, PlusIcon, RefreshIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { ReorderableList } from '@/components/settings/reorderable-list';
+import { ArrowUpIcon, RefreshIcon, TrackersIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { RetryBlock } from '@/components/retry-block';
 import { useBrowseRegistry } from '@/components/settings/browse-registry';
-import { SettingsRow } from '@/components/settings/settings-row';
-import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
-import type { SwipeRowAction } from '@/components/settings/swipeable-row';
-import { UpdateDot } from '@/components/tab-badge';
+import { type SettingsField, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { TopBar, TopBarButton } from '@/components/top-bar';
+import { TopBar, type TopBarAction } from '@/components/top-bar';
 import { Spacing } from '@/constants/theme';
 import type { TrackerSummary } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
@@ -42,6 +42,7 @@ export default function TrackersScreen() {
   const router = useRouter();
   const theme = useTheme();
   const contentPadding = useSettingsScrollPadding();
+  const insets = useSafeAreaInsets();
   const browseRegistry = useBrowseRegistry();
   const queryClient = useQueryClient();
   // Live registry update check (id → newer version) — the authoritative signal for a row's update
@@ -94,75 +95,60 @@ export default function TrackersScreen() {
     }
   };
 
-  const renderRow = (t: TrackerSummary) => {
+  const row = (t: TrackerSummary): SettingsField => {
     const availableVersion = updateMap.get(t.info.id);
     const updating = updatingIds.has(t.info.id);
     const hasUpdate = !!availableVersion && !updating;
-    const spinner = updating ? <ActivityIndicator size="small" testID={testId('trackers.updating', t.info.id)} /> : undefined;
     const status = updating
-      ? { text: availableVersion ? `Updating to v${availableVersion}…` : 'Updating…', color: theme.badgeInfo }
+      ? { text: availableVersion ? `Updating to v${availableVersion}…` : 'Updating…', tone: 'info' as const }
       : hasUpdate
-        ? { text: `Update available — v${availableVersion}`, color: theme.badgeInfo }
+        ? { text: `Update available — v${availableVersion}`, tone: 'info' as const }
         : t.configured
-        ? undefined
-        : { text: 'Needs setup', color: theme.badgeWarn };
-    const openTracker = () => router.push({ pathname: '/tracker-settings', params: { trackerId: t.info.id } });
-
-    // A server-built (local) tracker can't be uninstalled — plain, non-swipeable row.
-    if (t.source !== 'registry') {
-      return (
-        <SettingsRow
-          key={t.info.id}
-          label={t.info.name}
-          description={status?.text}
-          descriptionColor={status?.color}
-          right={spinner}
-          onPress={openTracker}
-          testID={testId('trackers.row', t.info.id)}
-        />
-      );
-    }
-    // "Update" (accent) sits left of the destructive "Uninstall" (edge slot). Update only when one's
-    // available — the direct way to pull a new tracker version from the list.
-    const rowActions: SwipeRowAction[] = [
-      ...(hasUpdate ? [{ key: 'update', label: 'Update', icon: ArrowUpIcon, onPress: () => void updateOne(t) }] : []),
-      { key: 'uninstall', label: 'Uninstall', icon: TrashIcon, destructive: true, onPress: () => confirmUninstallOne(t) },
-    ];
-    return (
-      <SwipeableSettingsRow
-        key={t.info.id}
-        label={t.info.name}
-        description={status?.text}
-        descriptionColor={status?.color}
-        right={spinner ?? (hasUpdate ? <UpdateDot /> : undefined)}
-        onPress={openTracker}
-        actions={rowActions}
-        testID={testId('trackers.row', t.info.id)}
-      />
-    );
+          ? undefined
+          : { text: 'Needs setup', tone: 'warn' as const };
+    return {
+      kind: 'link',
+      key: t.info.id,
+      testID: testId('trackers.row', t.info.id),
+      label: t.info.name,
+      description: status?.text,
+      tone: status?.tone,
+      icon: { symbol: 'arrow.clockwise', glyph: (color, size) => <TrackersIcon color={color} size={size} />, uri: t.info.iconUrl },
+      marked: hasUpdate,
+      busy: updating,
+      onPress: () => router.push({ pathname: '/tracker-settings', params: { trackerId: t.info.id } }),
+      // A server-built (local) tracker can't be uninstalled — a plain row. "Update" sits left of
+      // the destructive "Uninstall" (edge slot), only when one's available.
+      actions:
+        t.source === 'registry'
+          ? [
+              ...(hasUpdate ? [{ key: 'update', label: 'Update', symbol: 'arrow.up' as const, glyph: ArrowUpIcon, onPress: () => void updateOne(t) }] : []),
+              { key: 'uninstall', label: 'Uninstall', symbol: 'trash' as const, glyph: TrashIcon, destructive: true, onPress: () => confirmUninstallOne(t) },
+            ]
+          : undefined,
+    };
   };
+  const sections: SettingsFormSection[] = [{ fields: Array.isArray(ordered) ? ordered.map(row) : [], onReorder: (keys) => setTrackerOrder(keys) }];
 
+  const checkUpdates: TopBarAction = {
+    label: 'Check for tracker updates',
+    testID: 'trackers.check-updates',
+    onPress: () => void checkForUpdates(),
+    icon: checking ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />,
+    native: null,
+  };
   return (
     <ThemedView style={styles.container}>
       <TopBar
         title="Trackers"
-        right={
-          trackers !== null && (
-            <View style={styles.topActions}>
-              {/* Web has no pull-to-refresh on this list, so the check gets a button there. */}
-              {IS_WEB && Array.isArray(ordered) && ordered.length > 0 && (
-                <TopBarButton
-                  testID="trackers.check-updates"
-                  icon={checking ? <ActivityIndicator size="small" /> : <RefreshIcon color={theme.text} size={20} />}
-                  label="Check for tracker updates"
-                  onPress={() => void checkForUpdates()}
-                />
-              )}
-              {browseRegistry && (
-                <TopBarButton testID="trackers.install" icon={<PlusIcon color={theme.text} size={22} />} label="Install a tracker" onPress={browseRegistry} />
-              )}
-            </View>
-          )
+        actions={
+          trackers === null
+            ? undefined
+            : [
+                // Web has no pull-to-refresh on this list, so the check gets a button there. The
+                // + install button is the add button below, as on Bridges.
+                ...(IS_WEB && Array.isArray(ordered) && ordered.length > 0 ? [checkUpdates] : []),
+              ]
         }
       />
       {isError ? (
@@ -187,7 +173,19 @@ export default function TrackersScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ReorderableList data={ordered} keyOf={(t) => t.info.id} renderRow={renderRow} onReorder={(keys) => setTrackerOrder(keys)} refresh={checkForUpdates} />
+        // The live list is the draggable list; a pull runs the update check.
+        <SettingsList sections={sections} refresh={checkForUpdates} />
+      )}
+
+      {/* The + install affordance, where every other list keeps its add button. */}
+      {browseRegistry && trackers !== null && (
+        <AddFab
+          onPress={browseRegistry}
+          testID="trackers.install"
+          label="Install a tracker"
+          right={contentPadding.paddingRight}
+          bottom={Math.max(insets.bottom, Spacing.three)}
+        />
       )}
     </ThemedView>
   );
@@ -196,10 +194,6 @@ export default function TrackersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  topActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   stateHost: {
     flex: 1,

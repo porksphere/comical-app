@@ -2,18 +2,15 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { ChipRow } from '@/components/chip';
 import { openConfirm } from '@/components/confirm-popup';
-import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
-import { showToast } from '@/components/toast';
-import { autoDownloadLibrary, describeBackfill, librarySize } from '@/data/downloads/auto';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
-import { ThemedSwitch } from '@/components/themed-switch';
-import { useComicalExcluded } from '@/data/comical-home';
-import { useBridgeAutoDownload, useDownloadPrefs, type AutoDownloadKind } from '@/data/downloads/prefs';
+import { fields, select, type SettingsFormSection, type SettingsOption } from '@/components/settings/settings-form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { showToast } from '@/components/toast';
+import { SettingsCardInset, Spacing } from '@/constants/theme';
+import { useComicalExcluded } from '@/data/comical-home';
+import { autoDownloadLibrary, describeBackfill, librarySize } from '@/data/downloads/auto';
+import { useBridgeAutoDownload, useDownloadPrefs, type AutoDownloadKind } from '@/data/downloads/prefs';
 import type { ApiBridgeInfo, ContentRating } from '@/data/api';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -35,56 +32,43 @@ const capabilityLabel = (id: string): string => {
 
 /** Capabilities + self-reported facts from `GET /bridges/{id}`'s `info` — everything the bridge
  *  declares about itself (version, contract version, languages, content rating, rate limit),
- *  matching comical-web's `buildBridgeMetadata` in `comical-web/client/app.ts`. */
-export function BridgeMetaInfo({ info }: { info: ApiBridgeInfo }) {
+ *  matching comical-web's `buildBridgeMetadata` in `comical-web/client/app.ts`. Untitled: this is
+ *  the top of the bridge's own screen, whose bar already carries its name. */
+export function bridgeMetaSections(info: ApiBridgeInfo): SettingsFormSection[] {
   // On-device, `info` is the bridge's raw self-reported metadata (never re-validated by the contract
   // schema the remote server enforces), so these arrays can be absent — guard like every other
-  // consumer does (host-rn's `capabilities.ts`, host-server's `router.ts`), or the settings screen
-  // crashes with "undefined is not a function" on the first `.join`/`.length`.
+  // consumer does (host-rn's `capabilities.ts`, host-server's `router.ts`).
   const capabilities = info.capabilities ?? [];
   const languages = info.languages ?? [];
-  return (
-    <>
-      {/* Untitled: this is the top of the bridge's own settings screen, whose TopBar already carries
-          the bridge's name — a heading restating it just pushed the facts down a row. */}
-      <SettingsSection>
-        <SettingsRow label="Version" right={<ThemedText type="small">{info.version}</ThemedText>} />
-        <SettingsRow label="Contract" right={<ThemedText type="small">{info.contractVersion}</ThemedText>} />
-        <SettingsRow label="Languages" right={<ThemedText type="small">{languages.join(', ')}</ThemedText>} />
-        <SettingsRow label="Content" right={<ThemedText type="small">{info.nsfw ? 'NSFW' : 'SFW'}</ThemedText>} />
-        {info.rateLimit && (info.rateLimit.maxConcurrent !== undefined || info.rateLimit.minIntervalMs !== undefined) && (
-          <SettingsRow
-            label="Rate limit"
-            right={
-              <ThemedText type="small">
-                {[
-                  info.rateLimit.maxConcurrent !== undefined ? `${info.rateLimit.maxConcurrent} concurrent` : null,
-                  info.rateLimit.minIntervalMs !== undefined ? `${info.rateLimit.minIntervalMs}ms interval` : null,
-                ]
-                  .filter(Boolean)
-                  .join(', ')}
-              </ThemedText>
-            }
-          />
-        )}
-      </SettingsSection>
-      {/* Its own section rather than a hand-rolled label above a chip row INSIDE the facts list. That
-          label was `small`/sentence-case where every other heading on the screen is the section
-          title's `smallBold`/uppercase, and its chips — a section child, so no row gutter escape and
-          no row height — wrapped straight onto the divider beneath them. As a section it inherits
-          both, and being last it has no divider to crowd. */}
-      {capabilities.length > 0 && (
-        <SettingsSection title="Capabilities" plain>
-          <ChipRow labels={capabilities.map(capabilityLabel)} accent />
-        </SettingsSection>
-      )}
-    </>
-  );
+  const rateLimit =
+    info.rateLimit && (info.rateLimit.maxConcurrent !== undefined || info.rateLimit.minIntervalMs !== undefined)
+      ? [
+          info.rateLimit.maxConcurrent !== undefined ? `${info.rateLimit.maxConcurrent} concurrent` : null,
+          info.rateLimit.minIntervalMs !== undefined ? `${info.rateLimit.minIntervalMs}ms interval` : null,
+        ]
+          .filter(Boolean)
+          .join(', ')
+      : undefined;
+  return [
+    {
+      fields: fields(
+        { kind: 'value', label: 'Version', value: info.version },
+        { kind: 'value', label: 'Contract', value: info.contractVersion },
+        { kind: 'value', label: 'Languages', value: languages.join(', ') },
+        { kind: 'value', label: 'Content', value: info.nsfw ? 'NSFW' : 'SFW' },
+        rateLimit !== undefined && { kind: 'value', label: 'Rate limit', value: rateLimit },
+      ),
+    },
+    {
+      title: 'Capabilities',
+      fields: capabilities.length > 0 ? [{ kind: 'chips', testID: 'settings.bridge.capabilities', items: capabilities.map(capabilityLabel) }] : [],
+    },
+  ];
 }
 
 /** Free-form excluded-tag editor with live autocomplete (capability "exclude-tags"), mirroring
- *  comical-web's `buildExcludedTagsControl`. */
-export function TagExclusionsControl({
+ *  comical-web's `buildExcludedTagsControl`. The block of its section: the screen frames it. */
+export function TagExclusionsEditor({
   bridgeId,
   initialTags,
   initialLabels,
@@ -135,8 +119,7 @@ export function TagExclusionsControl({
       setDirty(false);
       // Matches the parent screen's own settings save: the bridge-settings screen's
       // `data.excludedTags`/`excludedTagLabels` came from this same query, so without this it
-      // goes stale until the screen is torn down and remounted (e.g. leaving and re-entering
-      // Bridge Settings).
+      // goes stale until the screen is torn down and remounted.
       await queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(bridgeId) });
     },
   });
@@ -144,10 +127,7 @@ export function TagExclusionsControl({
   const save = () => saveMutation.mutate();
 
   return (
-    <SettingsSection title="Excluded tags" plain>
-      <ThemedText type="small" themeColor="textSecondary">
-        Series carrying these tags are hidden from this bridge&apos;s lists and search.
-      </ThemedText>
+    <View style={styles.editor}>
       {tags.length > 0 && (
         <View style={styles.tagRow}>
           {tags.map((t) => (
@@ -191,7 +171,7 @@ export function TagExclusionsControl({
           </ThemedView>
         </Pressable>
       )}
-    </SettingsSection>
+    </View>
   );
 }
 
@@ -203,15 +183,9 @@ const CONTENT_RATING_OPTIONS: SettingsOption<string>[] = [
 ];
 
 /** Max content-rating ceiling picker (capability "content-rating") — series rated above the chosen
- *  tier are hidden the same way `TagExclusionsControl`'s exclusions are, but the redaction itself is
- *  entirely host-side (the rating already travels on the item). */
-export function MaxContentRatingControl({
-  bridgeId,
-  initialRating,
-}: {
-  bridgeId: string;
-  initialRating: ContentRating | null;
-}) {
+ *  tier are hidden the same way the tag exclusions are, but the redaction itself is entirely
+ *  host-side (the rating already travels on the item). */
+export function useMaxContentRatingSection(bridgeId: string, initialRating: ContentRating | null): SettingsFormSection {
   const ds = useDataSource();
   const queryClient = useQueryClient();
   const saveMutation = useMutation({
@@ -220,25 +194,24 @@ export function MaxContentRatingControl({
       await queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(bridgeId) });
     },
   });
-
-  return (
-    <SettingsSection title="Content rating">
-      <SettingsSelectRow
-        label="Maximum content rating"
-        description="Series rated above this are hidden from this bridge's lists and search."
-        value={initialRating ?? ''}
-        options={CONTENT_RATING_OPTIONS}
-        onChange={(v) => saveMutation.mutate(v === '' ? null : (v as ContentRating))}
-        heading="Maximum content rating"
-      />
-    </SettingsSection>
-  );
+  return {
+    title: 'Content rating',
+    fields: [
+      select({
+        label: 'Maximum content rating',
+        description: "Series rated above this are hidden from this bridge's lists and search.",
+        value: initialRating ?? '',
+        options: CONTENT_RATING_OPTIONS,
+        onChange: (v) => saveMutation.mutate(v === '' ? null : (v as ContentRating)),
+      }),
+    ],
+  };
 }
 
 /** "Disable tracker sync" / "Don't track reading history" toggles from
- *  `GET|PUT /library/bridges/{id}/prefs` — renders nothing when the server has no library store
- *  mounted (`getBridgePrefs` resolves `null`). */
-export function BridgePrefsToggles({ bridgeId }: { bridgeId: string }) {
+ *  `GET|PUT /library/bridges/{id}/prefs` — empty when the server has no library store mounted
+ *  (`getBridgePrefs` resolves `null`). */
+export function useBridgePrefsSection(bridgeId: string): SettingsFormSection {
   const ds = useDataSource();
   const queryClient = useQueryClient();
   const { data } = useQuery({
@@ -254,20 +227,15 @@ export function BridgePrefsToggles({ bridgeId }: { bridgeId: string }) {
   });
   const set = (update: { trackersDisabled?: boolean; historyDisabled?: boolean }) => setMutation.mutate(update);
 
-  if (!data) return null;
-
-  return (
-    <SettingsSection title="Library">
-      <SettingsRow
-        label="Disable tracker sync for this bridge"
-        right={<ThemedSwitch value={data.trackersDisabled} onValueChange={(v) => set({ trackersDisabled: v })} />}
-      />
-      <SettingsRow
-        label="Don't track reading history for this bridge"
-        right={<ThemedSwitch value={data.historyDisabled} onValueChange={(v) => set({ historyDisabled: v })} />}
-      />
-    </SettingsSection>
-  );
+  return {
+    title: 'Library',
+    fields: data
+      ? [
+          { kind: 'toggle', label: 'Disable tracker sync for this bridge', value: data.trackersDisabled, onChange: (v) => set({ trackersDisabled: v }) },
+          { kind: 'toggle', label: "Don't track reading history for this bridge", value: data.historyDisabled, onChange: (v) => set({ historyDisabled: v }) },
+        ]
+      : [],
+  };
 }
 
 const AUTO_DOWNLOAD_ROWS: { kind: AutoDownloadKind; label: string; description: string; chapters?: boolean }[] = [
@@ -280,35 +248,31 @@ const AUTO_DOWNLOAD_ROWS: { kind: AutoDownloadKind; label: string; description: 
 /** This bridge's opt-outs from auto-download, one per kind. A kind that is off in Settings → General
  *  is greyed out rather than hidden (its stored opt-in still shows, ready for when it comes back on),
  *  and so are the chapter kinds on a direct bridge, whose series have no chapters. */
-export function BridgeAutoDownloadToggles({ bridgeId, direct }: { bridgeId: string; direct: boolean }) {
+export function useBridgeAutoDownloadSection(bridgeId: string, direct: boolean): SettingsFormSection {
   const prefs = useDownloadPrefs();
   const [optedIn, set] = useBridgeAutoDownload(bridgeId);
   const offGlobally = AUTO_DOWNLOAD_ROWS.some((r) => !prefs[r.kind] && !(direct && r.chapters));
-  return (
-    <SettingsSection
-      title="Auto-download"
-      footer={offGlobally ? 'Greyed-out kinds are off for every bridge in Settings → General.' : undefined}>
-      {AUTO_DOWNLOAD_ROWS.map((r) => {
-        const noChapters = direct && !!r.chapters;
-        return (
-          <SettingsToggleRow
-            key={r.kind}
-            label={r.label}
-            description={noChapters ? "This bridge's series have no chapters." : r.description}
-            value={!noChapters && optedIn(r.kind)}
-            onChange={(on) => set(r.kind, on)}
-            disabled={noChapters || !prefs[r.kind]}
-          />
-        );
-      })}
-    </SettingsSection>
-  );
+  return {
+    title: 'Auto-download',
+    footer: offGlobally ? 'Greyed-out kinds are off for every bridge in Settings → General.' : undefined,
+    fields: AUTO_DOWNLOAD_ROWS.map((r) => {
+      const noChapters = direct && !!r.chapters;
+      return {
+        kind: 'toggle',
+        label: r.label,
+        description: noChapters ? "This bridge's series have no chapters." : r.description,
+        value: !noChapters && optedIn(r.kind),
+        onChange: (on) => set(r.kind, on),
+        disabled: noChapters || !prefs[r.kind],
+      };
+    }),
+  };
 }
 
 /** A one-off backfill of this bridge's saved series, for a library that predates auto-download or a
  *  bridge that opted out of it. Not gated on the Settings → General toggle: it is an action, not a
  *  preference, and the toggle's own offer only ever runs the moment it is switched on. */
-export function BridgeDownloadLibraryRow({ bridgeId }: { bridgeId: string }) {
+export function useBridgeDownloadLibrarySection(bridgeId: string): SettingsFormSection {
   const ds = useDataSource();
   const mock = useMockActive();
   const offer = () => {
@@ -333,34 +297,44 @@ export function BridgeDownloadLibraryRow({ bridgeId }: { bridgeId: string }) {
       })
       .catch(() => {});
   };
-  return (
-    <SettingsSection title="Downloads">
-      <SettingsRow
-        testID="settings.bridge.download-library"
-        label="Download saved series"
-        description="Queue every chapter of this bridge's series in your library."
-        onPress={offer}
-      />
-    </SettingsSection>
-  );
+  return {
+    title: 'Downloads',
+    fields: [
+      {
+        kind: 'action',
+        testID: 'settings.bridge.download-library',
+        label: 'Download saved series',
+        description: "Queue every chapter of this bridge's series in your library.",
+        onPress: offer,
+      },
+    ],
+  };
 }
 
 /** App-local toggle: whether this bridge takes part in the synthetic "Comical" aggregate — its home
  *  rails and its cross-bridge search. Persisted via `useComicalExcluded`. */
-export function ComicalHomeToggle({ bridgeId }: { bridgeId: string }) {
+export function useComicalHomeSection(bridgeId: string): SettingsFormSection {
   const [excluded, setExcluded] = useComicalExcluded(bridgeId);
-  return (
-    <SettingsSection title="Comical">
-      <SettingsRow
-        label="Include in Comical"
-        description="Show this bridge on the cross-bridge home and in its search."
-        right={<ThemedSwitch value={!excluded} onValueChange={(show) => setExcluded(!show)} />}
-      />
-    </SettingsSection>
-  );
+  return {
+    title: 'Comical',
+    fields: [
+      {
+        kind: 'toggle',
+        label: 'Include in Comical',
+        description: 'Show this bridge on the cross-bridge home and in its search.',
+        value: !excluded,
+        onChange: (show) => setExcluded(!show),
+      },
+    ],
+  };
 }
 
 const styles = StyleSheet.create({
+  editor: {
+    gap: Spacing.two,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: SettingsCardInset,
+  },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -397,45 +371,5 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: {
     opacity: 0.6,
-  },
-  enumRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.two,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-    // Reserves the hover border's space up front so it doesn't shift layout by a
-    // pixel when it appears — only the color changes.
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  enumSummary: {
-    flex: 1,
-  },
-  // No `flex: 1` (see `sheetBody` in overlay.tsx for why) — this just hugs
-  // its `MeasuredHeader`/`OptionList` content, both of which already size
-  // themselves to a real number.
-  body: {
-    gap: Spacing.three,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  check: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: 'rgba(128,128,128,0.5)',
-  },
-  pressableCursor: {
-    cursor: 'pointer',
   },
 });

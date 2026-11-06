@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { openConfirm } from '@/components/confirm-popup';
 import { UndoIcon } from '@/components/icons/ui-icons';
 import { setKeyZoomSpeed, useKeyZoomSpeed } from '@/components/reader/desktop-zoom';
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { RangeSlider } from '@/components/settings/range-slider';
 import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
@@ -73,7 +74,7 @@ function rebind(action: KeyAction, chord: KeyChord, overrides: KeyOverrides): vo
 }
 
 export default function KeyboardShortcutsScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const overrides = useKeyOverrides();
   const panSpeed = useKeyPanSpeed();
   const zoomSpeed = useKeyZoomSpeed();
@@ -92,7 +93,7 @@ export default function KeyboardShortcutsScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Keyboard shortcuts" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
+      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection
           title="Layout"
           footer="Every key sits under one hand, so the other is free. Press a shortcut below to give it a different key; Esc cancels.">
@@ -136,7 +137,7 @@ export default function KeyboardShortcutsScreen() {
             ) : null}
           </SettingsSection>
         ))}
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

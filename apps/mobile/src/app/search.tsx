@@ -1,11 +1,12 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useFocusEffect } from 'expo-router';
+import { Stack, useFocusEffect, useNavigation } from 'expo-router';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import type { ComposedGesture } from 'react-native-gesture-handler';
+import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { SearchBarCommands } from 'react-native-screens';
 
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
 import { resolveMetaIntent, resolveTagIntent, type MetaIntent, type TagIntent } from '@/components/filters/filter-intents';
@@ -27,6 +28,7 @@ import type { ContentRow } from '@/data/content-rows';
 import { useDedupedPages } from '@/data/grid-pages';
 import { toLibraryCard } from '@/data/library-card';
 import { fetchBrowseScope, libraryQuery, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
+import { closeFilterSheetSession, openFilterSheetSession, updateFilterSheetSession } from '@/data/filter-sheet';
 import { clearSearchIntent, peekSearchIntent, subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
 import { COMICAL_BRIDGE_ID, isComicalBridge, useInheritedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -39,6 +41,7 @@ import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useGridLayout } from '@/hooks/use-grid-layout';
+import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useOpenLink } from '@/hooks/use-open-link';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
@@ -69,6 +72,14 @@ const SUBMIT_HINT =
  * bridge (`useInheritedBridge`) — filters are per-bridge — and owns the free-text
  * query + filter/sort state (`useBridgeFilters`). A Series→Search tag/meta intent
  * (see search-intent.ts) is consumed on mount and applied against the intent's bridge.
+ *
+ * On iOS the top bar is the system's (`nativeBar`): the field is the bar's own search field,
+ * centred between the back chevron and the filters button + sort menu, and the filters open from
+ * that button as a system form sheet (`/search-filters`, fed through data/filter-sheet.ts) instead
+ * of hanging under the bar as the shutter. The field there is UNCONTROLLED — told the committed
+ * query when it changes under it,
+ * asked to focus on the same terms the custom field focuses itself on — where the custom field is
+ * driven by `query` directly.
  */
 /** EXPERIMENTAL series page embedding (see SearchLayer in app/series page/index.tsx): the
  *  same screen mounted as an in-screen LAYER instead of a pushed route — `onBack` replaces the
@@ -102,8 +113,14 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   const openLink = useOpenLink();
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
+  const topChrome = useTopChromeHeight();
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   const listRef = useRef<LegendListRef>(null);
+  const navigation = useNavigation();
+  // The system bar, for the pushed route only: the docked pane and the embedded layer sit inside
+  // another screen's bar.
+  const nativeBar = NATIVE_HEADER && !docked && !embedded;
+  const searchBarRef = useRef<SearchBarCommands>(null);
   // Paint the top/filter bars first, then mount the heavy grid `runAfterInteractions` so the push
   // transition plays immediately instead of stuttering behind the list's first render (native only).
   const ready = useDeferredMount();
@@ -281,6 +298,35 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // Null outside a pane. Inside one, its tab's — and another tab's pane is hidden, not gone.
   const paneTab = useContext(PaneTabContext);
   const [focusRequest, setFocusRequest] = useState(0);
+
+  // The native field's half of the custom field's contract (see SearchField): the committed query
+  // is put into it whenever that changes under it — an intent, a meta filter resolving to a query,
+  // a clear — and it focuses after the push settles, then on every open request. The transition
+  // event rather than a defer, for the reason SearchField gives: the native push runs natively,
+  // and a keyboard raised mid-push jitters it. The timeout covers a host that never emits it.
+  useEffect(() => {
+    if (nativeBar) searchBarRef.current?.setText(query);
+  }, [nativeBar, query]);
+  const autoFocus = !initialIntent || initialIntent.kind === 'open';
+  useEffect(() => {
+    if (!nativeBar || !autoFocus) return;
+    let done = false;
+    const focus = () => {
+      if (done) return;
+      done = true;
+      searchBarRef.current?.focus();
+    };
+    const unsubscribe = (navigation.addListener as (type: string, cb: () => void) => () => void)('transitionEnd', focus);
+    const fallback = setTimeout(focus, 800);
+    return () => {
+      done = true;
+      unsubscribe();
+      clearTimeout(fallback);
+    };
+  }, [nativeBar, autoFocus, navigation]);
+  useEffect(() => {
+    if (nativeBar && focusRequest > 0) searchBarRef.current?.focus();
+  }, [nativeBar, focusRequest]);
   useEffect(
     () =>
       subscribeSearchIntent(() => {
@@ -337,25 +383,53 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // filters keep their relative bridge order, then the untouched ones in bridge order — so the list
   // never shuffles unpredictably, and the filters you've set are the ones most likely to stay
   // visible before the "+N" overflow.
-  const orderedDefs = useMemo(() => {
+  const { orderedDefs, activeFilterCount } = useMemo(() => {
     const edited: typeof filterDefs = [];
     const rest: typeof filterDefs = [];
     for (const d of filterDefs) {
       (filterValueToApi(d, resolvedValues[d.id]) !== null ? edited : rest).push(d);
     }
-    return edited.length ? [...edited, ...rest] : filterDefs;
+    return { orderedDefs: edited.length ? [...edited, ...rest] : filterDefs, activeFilterCount: edited.length };
   }, [filterDefs, resolvedValues]);
 
-  const hasFilterBar = filterDefs.length > 0;
+  const hasFilters = filterDefs.length > 0;
+  // The shutter is the custom bars' home for the filters; under the system bar they live in the
+  // sheet instead, so the shutter's height drops out of every offset below.
+  const hasFilterBar = hasFilters && !nativeBar;
   // The filter bar is exactly the top bar's height, so the two read as one stacked unit. No floor is
   // needed here any more: `TopBarHeight` is itself derived as CONTROL_HEIGHT + BarVerticalPad * 2
   // (see constants/theme.ts), so the bar can never be too short to hold its own 44pt chips without
   // squashing them. Its horizontal insets match the top bar too, so the "+N" overflow chip lines up
   // with the sort button above.
   const filtersBarH = hasFilterBar ? barHeight : 0;
-  // Full height the (overlaid) top bar occupies — status bar + the bar itself. Everything below it
-  // positions from here: the filter bar's clip window, the grid's top padding, the pull spinner.
-  const topBarTotal = insets.top + barHeight;
+  // Full height the (overlaid) top bar occupies — status bar + the bar itself, or the system bar
+  // with its field. Everything below it positions from here: the filter bar's clip window, the
+  // grid's top padding, the pull spinner.
+  const topBarTotal = nativeBar ? topChrome : insets.top + barHeight;
+
+  // The filters sheet reads this screen's filters through data/filter-sheet.ts (it cannot reach
+  // them any other way — see there). Republished on every change while this screen owns the
+  // slot, so the sheet's rows follow edits made here (an intent applying a tag, a reset); the
+  // sheet shows the bridge's own order, not `orderedDefs`, so its rows never reshuffle under a tap.
+  const [sheetOwner] = useState(() => ({}));
+  const filterSession = useMemo(
+    () => ({
+      defs: filterDefs,
+      values: resolvedValues,
+      onChange: setFilterValue,
+      onReset: () => setFilterValues({}),
+    }),
+    [filterDefs, resolvedValues, setFilterValue, setFilterValues],
+  );
+  useEffect(() => {
+    if (nativeBar) updateFilterSheetSession(sheetOwner, filterSession);
+  }, [nativeBar, sheetOwner, filterSession]);
+  useEffect(() => () => closeFilterSheetSession(sheetOwner), [sheetOwner]);
+  const openFilters = () => {
+    hapticImpactLight();
+    openFilterSheetSession(sheetOwner, filterSession);
+    router.push('/search-filters');
+  };
 
   // A search runs once there's a query, or a committed filter/sort. Until then the page is a blank
   // landing (the desktop entry opens straight here). Both the query key and the fetch derive from
@@ -486,6 +560,60 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
     else router.back();
   };
 
+  const submit = (q: string) => {
+    if (!openLink(q)) setQuery(q.trim());
+  };
+  const currentSortKey = sortValue?.key ?? sortOptions[0]?.key;
+
+  // The system bar's items. The filters button and the sort menu share the bar's trailing slot,
+  // like the Library's bottom-toolbar menus; the chevron is the stack's own. The field is centred
+  // in the bar on iOS 26 (older systems fall back to the inline placement) and left in place by a
+  // scroll, with the system's search dimming off, since the results under the field are the thing
+  // being typed at. The route has no title: the field IS the bar's middle, on the chevron's row,
+  // and a "Search" over it only said what the field already shows.
+  const nativeItems = nativeBar ? (
+    <>
+      <Stack.Screen options={{ title: '' }} />
+      <Stack.SearchBar
+        ref={searchBarRef}
+        placeholder="Search…"
+        placement="integratedCentered"
+        hideWhenScrolling={false}
+        hideNavigationBar={false}
+        obscureBackground={false}
+        autoCapitalize="none"
+        onChangeText={(e) => setTyped(e.nativeEvent.text)}
+        onSearchButtonPress={(e) => submit(e.nativeEvent.text)}
+        onCancelButtonPress={goBack}
+      />
+      {(hasFilters || sortOptions.length > 0) && (
+        <Stack.Toolbar placement="right">
+          {hasFilters && (
+            <Stack.Toolbar.Button
+              icon={activeFilterCount > 0 ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle'}
+              accessibilityLabel={activeFilterCount > 0 ? `Filters, ${activeFilterCount} set` : 'Filters'}
+              onPress={openFilters}
+            />
+          )}
+          {sortOptions.length > 0 && (
+            <Stack.Toolbar.Menu icon="arrow.up.arrow.down" accessibilityLabel="Sort results">
+              <Stack.Toolbar.Menu inline title="Sort by">
+                {sortOptions.map((o) => (
+                  <Stack.Toolbar.MenuAction
+                    key={o.key}
+                    isOn={o.key === currentSortKey}
+                    onPress={() => setSortValue({ key: o.key, ascending: true })}>
+                    {o.label}
+                  </Stack.Toolbar.MenuAction>
+                ))}
+              </Stack.Toolbar.Menu>
+            </Stack.Toolbar.Menu>
+          )}
+        </Stack.Toolbar>
+      )}
+    </>
+  ) : null;
+
   // Empty-state body shown when the grid has no items: a retry on error, a first-load skeleton, or
   // "no results". The blank landing (no query/filter yet) shows nothing. Folded into the list header
   // to match the Browse/Library grids.
@@ -546,8 +674,10 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
     // Touch-driven pull-to-refresh for web + Android is caught here on the outer view, so it works
     // regardless of what's under the finger (iOS sources its pull from the native bounce instead).
     <ThemedView style={styles.container} {...pull.touchHandlers}>
+      {nativeItems}
       {/* Overlaid top bar: back button + search field (autofocused after the push settles) + sort.
           Opaque, like every other bar (BarSurface): the results scroll behind it. */}
+      {!nativeBar && (
       <BarSurface style={[styles.topBar, topBarRuleStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }, clearance > 0 && { paddingRight: Spacing.three + clearance }]}>
           {docked ? (
@@ -575,12 +705,10 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
               key={focusRequest}
               testID="search.field"
               value={query}
-              onSubmit={(q) => {
-                if (!openLink(q)) setQuery(q.trim());
-              }}
+              onSubmit={submit}
               onClear={() => setQuery('')}
               onChangeText={setTyped}
-              autoFocus={!initialIntent || initialIntent.kind === 'open'}
+              autoFocus={autoFocus}
               focusRequest={focusRequest}
             />
           </View>
@@ -605,6 +733,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
           </Pressable>
         )}
       </BarSurface>
+      )}
 
       {bridgesError && bridges.length === 0 ? (
         <View style={[styles.container, styles.centerFill]}>

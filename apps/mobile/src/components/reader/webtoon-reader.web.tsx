@@ -24,7 +24,7 @@ import {
   type Point,
   ZOOM_EPSILON,
 } from '@/components/reader/reader-zoom';
-import { webtoonFit } from '@/components/reader/settings-panel';
+import { webtoonFit } from '@/components/reader/reader-settings-form';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { createKeyHold, isControlTarget, isTypingTarget, keyPanSpeed, PAGE_KEY_SCROLL } from '@/lib/key-hold';
 import { keyActionOf, moveDirectionOf, readerScopeActive } from '@/lib/keybindings';

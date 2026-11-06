@@ -4,6 +4,7 @@
  */
 
 import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from 'react';
+import { Appearance, Platform } from 'react-native';
 
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -71,9 +72,8 @@ export function useThemePreference(): [ThemePreference, (preference: ThemePrefer
  * place — `ThemeSchemeProvider`, at the app root — so the preference/OS reads
  * (and their hydration transition) happen once, not in every themed component.
  */
-function useResolvedColorScheme(): ColorScheme {
+function useResolvedColorScheme(preference: ThemePreference): ColorScheme {
   const osScheme = useColorScheme();
-  const preference = useThemePreferenceValue();
   if (preference === 'light' || preference === 'dark') return preference;
   return osScheme === 'dark' ? 'dark' : 'light';
 }
@@ -91,9 +91,21 @@ const SchemeContext = createContext<ColorScheme>('light');
 /**
  * Resolves the active color scheme once and provides it to the whole tree. Mount
  * at the app root, above every `useTheme`/`useActiveColorScheme` consumer.
+ *
+ * On iOS the preference is also pushed down to the WINDOW (`Appearance.setColorScheme`
+ * = `overrideUserInterfaceStyle`). Everything the system draws for the app — the
+ * Liquid Glass tab and navigation bars, their toolbar capsules, menus, alerts, the
+ * keyboard — takes its light or dark from the window's style, not from what is
+ * drawn under it: a dark app on a light device got a white glass bar over its
+ * dark lists. `'unspecified'` hands the window back to the device for `'system'`.
  */
 export function ThemeSchemeProvider({ children }: { children: ReactNode }) {
-  const scheme = useResolvedColorScheme();
+  const preference = useThemePreferenceValue();
+  const scheme = useResolvedColorScheme(preference);
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    Appearance.setColorScheme(preference === 'system' ? 'unspecified' : preference);
+  }, [preference]);
   return createElement(SchemeContext.Provider, { value: scheme }, children);
 }
 

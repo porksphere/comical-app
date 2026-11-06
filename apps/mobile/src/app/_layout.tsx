@@ -28,10 +28,14 @@ Sentry.init({
    first thing to run. */
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { isLiquidGlassAvailable } from 'expo-glass-effect';
+import type { ComponentProps } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { SplashGate } from '@/components/splash-gate';
+import { barExtentLayout } from '@/components/bar-extent';
+import { pushedScreen, useBarMaterial, useSettingsScreen } from '@/lib/native-bar';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ConfirmPopupHost } from '@/components/confirm-popup';
@@ -41,6 +45,7 @@ import { CollectionPickerHost } from '@/components/collection-picker';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { RequestOverlay } from '@/components/request-overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
+import { SystemContextMenuHost } from '@/components/system-context-menu';
 import { ToastHost } from '@/components/toast';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
 import { installDesktopChapterCheck } from '@/data/activity/desktop-check';
@@ -51,7 +56,9 @@ import { installAppUpdateAutoCheck } from '@/data/use-app-update';
 import { installBrowserZoomToast } from '@/lib/browser-zoom-toast';
 import { useDesktopShellCommands, useNavigationKeys } from '@/lib/desktop-commands';
 import { installFocusNav } from '@/lib/focus-nav';
+import { FocusedTabTracker } from '@/lib/focused-tab';
 import { installKeyboardScroll } from '@/lib/keyboard-scroll';
+import { useRootStatusBarOptions } from '@/lib/status-bar';
 import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { useWindowThemeColor } from '@/lib/window-controls';
@@ -123,38 +130,82 @@ function FrameTrace() {
   return null;
 }
 
+const SYSTEM_SHEET_GLASS = Platform.OS === 'ios' && isLiquidGlassAvailable();
+
 function RootNavigation() {
   // Active scheme from context (resolved once by ThemeSchemeProvider above) so the
   // navigation theme + status bar match the app content and re-theme live when the
   // preference changes.
   const scheme = useActiveColorScheme();
+  const statusBar = useRootStatusBarOptions(scheme);
+  const barMaterial = useBarMaterial();
+  const settingsScreen = useSettingsScreen();
   useWindowThemeColor(Colors[scheme].background);
+  const filterSheet: ComponentProps<typeof Stack.Screen>['options'] = {
+    headerShown: false,
+    presentation: 'formSheet',
+    sheetAllowedDetents: [0.6, 1],
+    sheetGrabberVisible: true,
+    contentStyle: { backgroundColor: Colors[scheme].backgroundPanel },
+  };
+  const overlaySheet: ComponentProps<typeof Stack.Screen>['options'] = {
+    headerShown: false,
+    presentation: 'formSheet',
+    sheetAllowedDetents: 'fitToContents',
+    sheetGrabberVisible: true,
+    // Clear where the system draws a sheet's glass (iOS 26), so it shows; opaque where it doesn't.
+    contentStyle: { backgroundColor: SYSTEM_SHEET_GLASS ? 'transparent' : Colors[scheme].overlaySurface },
+  };
+  // The reader's settings as a system form sheet (iOS): a SwiftUI form that scrolls inside the
+  // sheet's detent, titled by the bar. Its content is cleared where the system draws the sheet's
+  // glass, like `overlaySheet`; the form drops its own background there (settings-panel.ios).
+  const readerSettingsSheet: ComponentProps<typeof Stack.Screen>['options'] = {
+    title: 'Reader Settings',
+    presentation: 'formSheet',
+    sheetAllowedDetents: [0.6, 1],
+    sheetGrabberVisible: true,
+    headerShadowVisible: false,
+    contentStyle: { backgroundColor: SYSTEM_SHEET_GLASS ? 'transparent' : Colors[scheme].backgroundPanel },
+  };
   useDesktopShellCommands();
   useNavigationKeys();
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       {/* Status-bar contents follow the active scheme (light glyphs on the dark
           theme, dark glyphs on light) so a forced theme reads right even when it
-          differs from the OS. */}
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+          differs from the OS. On iOS the root screens carry it (lib/status-bar). */}
+      {Platform.OS === 'ios' ? null : <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />}
       <SplashGate />
       <FrameTrace />
+      <FocusedTabTracker />
       {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
       <OverlayProvider>
         {/* Native stack: real UINavigationController on iOS (large titles, back
             gesture) and the native toolbar on Android. The tab group and every
-            pushed screen below hide the native header and render their own chrome. */}
-        <Stack>
+            pushed screen below hide the native header and render their own chrome,
+            except the settings categories, which take the system bar on iOS; those
+            measure the bar they pad past (barExtentLayout). */}
+        <Stack screenOptions={{ ...statusBar, headerBlurEffect: barMaterial }} screenLayout={barExtentLayout}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          {/* Search renders its own top bar (search field + back button), so hide the native one. */}
-          <Stack.Screen name="search" options={{ headerShown: false }} />
+          <Stack.Screen name="search" options={pushedScreen} />
+          {/* The search filters as a system form sheet (iOS; the custom bars keep their shutter).
+              A sheet is its own view controller, above the app-root overlay hosts, so it hosts a
+              stack of its own and pushes the editors as screens — see app/search-filters. */}
+          <Stack.Screen name="search-filters" options={filterSheet} />
+          {/* Each item of the overlay stack, as a system sheet sized to its content (iOS; the
+              provider draws its own sheets everywhere else) — see lib/native-overlay-sheets. */}
+          <Stack.Screen name="overlay-sheet" options={overlaySheet} />
+          {/* The reader's settings as a system form sheet (iOS; the custom panel keeps the overlay
+              elsewhere) — see components/reader/settings-panel.ios. */}
+          <Stack.Screen name="reader-settings" options={readerSettingsSheet} />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
-          <Stack.Screen name="manage-collections" options={{ headerShown: false }} />
-          <Stack.Screen name="results" options={{ headerShown: false }} />
-          {/* THE series page — and the only reader there is: details and pages are one screen,
-              either side one gesture from the other. Everything that used to push a standalone
-              /reader (a History row, the card menu's Read, a chapter row, a page thumbnail) opens
-              THIS, on whichever side it means.
+          <Stack.Screen name="manage-collections" options={settingsScreen('Manage Collections')} />
+          <Stack.Screen name="results" options={pushedScreen} />
+          {/* THE series page — and the only reader there is: the details and the reader are the
+              two pages of its nested stack, `index` and `read` (see SeriesSplit in
+              components/series/split-handoff). Everything that used to push a standalone /reader (a History row,
+              the card menu's Read, a chapter row, a page thumbnail) opens THIS, on whichever page
+              it means.
 
               A *contained* transparent modal, so the screen it was opened from stays rendered
               underneath — the reader's own dark backdrop covers it at rest and fades out under a
@@ -174,34 +225,34 @@ function RootNavigation() {
             name="series"
             options={{ headerShown: false, animation: 'none', presentation: 'containedTransparentModal' }}
           />
-          {/* These render their own <TopBar> (matching series.tsx), so the native
-              stack header is hidden here too. The Settings tab is only a table of
-              contents — every category below is a screen it pushes. */}
-          <Stack.Screen name="settings-general" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-notifications" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-shortcuts" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-sync" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-developer" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-about" options={{ headerShown: false }} />
-          <Stack.Screen name="settings-whats-new" options={{ headerShown: false }} />
-          <Stack.Screen name="scan-sync-server" options={{ headerShown: false }} />
-          <Stack.Screen name="bridges" options={{ headerShown: false }} />
-          <Stack.Screen name="trackers" options={{ headerShown: false }} />
-          <Stack.Screen name="bridge-settings" options={{ headerShown: false }} />
-          <Stack.Screen name="tracker-settings" options={{ headerShown: false }} />
-          <Stack.Screen name="registries" options={{ headerShown: false }} />
-          <Stack.Screen name="custom-pages" options={{ headerShown: false }} />
-          <Stack.Screen name="custom-page-editor" options={{ headerShown: false }} />
-          <Stack.Screen name="custom-section-editor" options={{ headerShown: false }} />
-          <Stack.Screen name="registry-browse" options={{ headerShown: false }} />
-          <Stack.Screen name="add-registry" options={{ headerShown: false }} />
-          <Stack.Screen name="diagnostics" options={{ headerShown: false }} />
-          <Stack.Screen name="gesture-trace" options={{ headerShown: false }} />
-          <Stack.Screen name="downloads" options={{ headerShown: false }} />
-          <Stack.Screen name="series-downloads" options={{ headerShown: false }} />
-          <Stack.Screen name="storage" options={{ headerShown: false }} />
-          <Stack.Screen name="favorites-import" options={{ headerShown: false }} />
-          <Stack.Screen name="tracker-import" options={{ headerShown: false }} />
+          {/* The Settings tab is only a table of contents — every screen below is one it pushes.
+              Each takes the system bar on iOS (its `TopBar` retitles it and adds its actions)
+              and draws that `TopBar` itself elsewhere. */}
+          <Stack.Screen name="settings-general" options={settingsScreen('General')} />
+          <Stack.Screen name="settings-notifications" options={settingsScreen('Notifications')} />
+          <Stack.Screen name="settings-shortcuts" options={settingsScreen('Keyboard shortcuts')} />
+          <Stack.Screen name="settings-sync" options={settingsScreen('Sync')} />
+          <Stack.Screen name="settings-developer" options={settingsScreen('Developer')} />
+          <Stack.Screen name="settings-about" options={settingsScreen('About')} />
+          <Stack.Screen name="settings-whats-new" options={settingsScreen("What's new")} />
+          <Stack.Screen name="scan-sync-server" options={settingsScreen('Scan a code')} />
+          <Stack.Screen name="bridges" options={settingsScreen('Bridges')} />
+          <Stack.Screen name="trackers" options={settingsScreen('Trackers')} />
+          <Stack.Screen name="bridge-settings" options={settingsScreen('Bridge settings')} />
+          <Stack.Screen name="tracker-settings" options={settingsScreen('Tracker settings')} />
+          <Stack.Screen name="registries" options={settingsScreen('Registries')} />
+          <Stack.Screen name="custom-pages" options={settingsScreen('Custom Pages')} />
+          <Stack.Screen name="custom-page-editor" options={settingsScreen('Custom Page')} />
+          <Stack.Screen name="custom-section-editor" options={settingsScreen('Section')} />
+          <Stack.Screen name="registry-browse" options={settingsScreen('Browse registry')} />
+          <Stack.Screen name="add-registry" options={settingsScreen('Add registry')} />
+          <Stack.Screen name="diagnostics" options={settingsScreen('Diagnostics')} />
+          <Stack.Screen name="gesture-trace" options={settingsScreen('Gesture trace')} />
+          <Stack.Screen name="downloads" options={settingsScreen('Downloads')} />
+          <Stack.Screen name="series-downloads" options={settingsScreen('Downloads')} />
+          <Stack.Screen name="storage" options={settingsScreen('Storage')} />
+          <Stack.Screen name="favorites-import" options={settingsScreen('Import favorites')} />
+          <Stack.Screen name="tracker-import" options={settingsScreen('Import')} />
         </Stack>
         <DemoBanner />
         {/* Root host for the native card long-press context menu (dim + lifted preview + menu). Only
@@ -210,6 +261,9 @@ function RootNavigation() {
         {/* Root host for the GENERIC hold menu — the card popup's menu system without its preview
             panel (chapter rows use it). Only renders while open, via openContextMenu. */}
         <ContextMenuHost />
+        {/* Publishes the rows of an open iOS system context menu (SystemContextMenu); renders
+            nothing, and only while one is up. */}
+        <SystemContextMenuHost />
         {/* Root host for the reader's which-page-of-the-spread picker (openSpreadPick). */}
         <SpreadPickHost />
         {/* Root host for the "Add to collection…" picker. Mounted AFTER the card menu host so it STACKS

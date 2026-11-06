@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 
 import { useLocalSearchParams } from '@/lib/nav';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { ScreenScrollView } from '@/components/screen-scroll-marker';
 import { SettingsSelectRow, SettingsTextRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
@@ -31,7 +32,7 @@ const DEFAULT_LAYOUT: CustomLayout = LAYOUT_OPTIONS.includes('carousel') ? 'caro
  */
 export default function CustomSectionEditorScreen() {
   const { pageId, sectionId } = useLocalSearchParams<{ pageId?: string; sectionId?: string }>();
-  const contentPadding = useSettingsScrollPadding();
+  const contentPadding = useSettingsScrollPadding(MaxContentWidth);
   const ds = useDataSource();
   const mock = useMockActive();
   const hideNsfw = useHideNsfw();
@@ -110,7 +111,7 @@ export default function CustomSectionEditorScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title={editing ? 'Edit section' : 'Add section'} />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
+      <ScreenScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
           <SettingsSelectRow
             label="Bridge"
@@ -142,7 +143,7 @@ export default function CustomSectionEditorScreen() {
             placeholder={lists?.find((l) => l.id === effectiveListId)?.name ?? 'List name'}
           />
         </SettingsSection>
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

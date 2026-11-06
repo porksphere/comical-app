@@ -154,11 +154,16 @@ export function SidebarItem({
 export function AppSidebar({
   top,
   collapsed,
+  collapsible = true,
   settingsButton,
   children,
 }: {
   top: number;
   collapsed: boolean;
+  /** Whether the user may expand/collapse the rail. False when the LAYOUT collapsed it (a regular
+   *  width below `SidebarBreakpoint` — see `navModeFor`): the toggle would offer an expansion the
+   *  window can't afford, so it isn't drawn. */
+  collapsible?: boolean;
   /** Web only: Settings leaves the destination list and becomes a button down here, because it
    *  opens a modal rather than going anywhere. Absent on native, where it is still a tab. */
   settingsButton?: { icon: React.ReactNode; badge?: React.ReactNode; label: string; onPress: () => void; testID: string };
@@ -201,7 +206,7 @@ export function AppSidebar({
           {settingsButton ? <FooterButton {...settingsButton} /> : null}
           {collapsed ? null : <SidebarUpdate compact={false} />}
         </View>
-        <CollapseToggle collapsed={collapsed} />
+        {collapsible ? <CollapseToggle collapsed={collapsed} /> : null}
       </View>
     </View>
   );

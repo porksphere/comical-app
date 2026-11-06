@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { InteractionManager, Platform } from 'react-native';
+import { Platform } from 'react-native';
 
 /**
  * Returns `false` on the first commit, then `true` once the current
@@ -12,8 +12,10 @@ import { InteractionManager, Platform } from 'react-native';
  * a `LegendList` + several `useQuery`s synchronously, the transition is stuck
  * behind it for the whole mount — reading as up to ~1s of dead time before the
  * screen even appears. Painting a cheap first frame (top bar + skeleton) and
- * mounting the heavy part `runAfterInteractions` lets the swap/push play
- * immediately, then fills in a beat later.
+ * mounting the heavy part in the next idle slot lets the swap/push play
+ * immediately, then fills in a beat later. (`InteractionManager` was the gate
+ * before RN 0.88 removed it; its `runAfterInteractions` resolved on the next
+ * idle frame anyway, so an idle callback is the same beat.)
  *
  * Web has no native commit gate to protect (the "transition" is a DOM swap on a
  * far faster engine), so it resolves synchronously — no needless skeleton flash.
@@ -23,8 +25,8 @@ export function useDeferredMount(): boolean {
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    const handle = InteractionManager.runAfterInteractions(() => setReady(true));
-    return () => handle.cancel();
+    const handle = requestIdleCallback(() => setReady(true));
+    return () => cancelIdleCallback(handle);
   }, []);
 
   return ready;

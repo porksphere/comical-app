@@ -13,7 +13,7 @@
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 import Animated, {
   interpolate,
   runOnJS,
@@ -108,7 +108,7 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
-  const newInputRef = useRef<TextInput>(null);
+  const newInputRef = useRef<TextInputInstance>(null);
   // Submitting the new-collection name fires TWICE on Enter: `onSubmitEditing` runs first, its
   // `setCreating(false)` unmounts the input, and the unmount blurs it — firing `onBlur` while the
   // first submit's `createCollection` await is still in flight and `newName` is still the stale

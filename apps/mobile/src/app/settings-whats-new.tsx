@@ -15,45 +15,19 @@
  * The toast deliberately doesn't carry any of this — it says an update exists and points here. A
  * changelog is something you read when you choose to, not something to put over the screen.
  */
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
-import { ThemedText } from '@/components/themed-text';
+import { fields, type SettingsField, type SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, SettingsCardInset, Spacing } from '@/constants/theme';
 import { noteLines, type ReleaseNote } from '@/data/release-notes';
 import { type AppUpdateAction, useAppUpdateAction, useAppUpdateCheck } from '@/data/use-app-update';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
-import { useTheme } from '@/hooks/use-theme';
 import { APP_VERSION } from '@/lib/build-info';
 
-function ReleaseNoteCard({ note }: { note: ReleaseNote }) {
-  const theme = useTheme();
-  const lines = noteLines(note.body);
-  return (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <ThemedText type="smallBold">{note.version}</ThemedText>
-        {note.date ? (
-          <ThemedText type="small" themeColor="textSecondary">
-            {note.date}
-          </ThemedText>
-        ) : null}
-      </View>
-      {lines.map((line, i) => (
-        <View key={`${i}-${line}`} style={styles.line}>
-          <ThemedText type="small" style={[styles.bullet, { color: theme.textSecondary }]}>
-            •
-          </ThemedText>
-          <ThemedText type="small" style={styles.lineText}>
-            {line}
-          </ThemedText>
-        </View>
-      ))}
-    </View>
-  );
+/** A release's notes as a block in the card: its version and date over its points. */
+function releaseNote(note: ReleaseNote): SettingsField {
+  return { kind: 'note', testID: `whatsNew.note.${note.version}`, title: note.version, caption: note.date ?? undefined, lines: noteLines(note.body) };
 }
 
 const UPDATE_LABEL: Record<AppUpdateAction['step'], string> = {
@@ -67,65 +41,51 @@ const UPDATE_LABEL: Record<AppUpdateAction['step'], string> = {
 
 export default function WhatsNewScreen() {
   const update = useAppUpdateCheck();
-  const contentPadding = useSettingsScrollPadding();
   const pending = update.pending ?? [];
   const updateAction = useAppUpdateAction();
+  const run = updateAction?.run;
 
-  return (
-    <ThemedView style={styles.container}>
-      <TopBar title="What's new" />
-      <ScrollView style={scrollbarInset(contentPadding.paddingTop)} contentContainerStyle={[styles.content, contentPadding]}>
-        {pending.length > 0 && (
-          <SettingsSection title={pending.length > 1 ? 'Available now' : 'Available'}>
-            {pending.map((note) => (
-              <ReleaseNoteCard key={note.version} note={note} />
-            ))}
-            {updateAction && (
-              <SettingsRow
-                testID="whatsNew.update"
-                label={UPDATE_LABEL[updateAction.step]}
-                onPress={updateAction.run}
-              />
-            )}
-          </SettingsSection>
-        )}
-
-        {/* Untitled, and that's the point: you got here by tapping the version, so a heading
-            restating "Installed" over its own notes is a label for something already named by the
-            row that opened the screen. The pending block above keeps its heading because it names
-            something you do NOT have. */}
-        {update.running ? (
-          <SettingsSection>
-            <ReleaseNoteCard note={update.running} />
-          </SettingsSection>
-        ) : (
-          <SettingsSection>
-            <SettingsRow
-              label={`Version ${APP_VERSION}`}
+  const sections: SettingsFormSection[] = [
+    {
+      title: pending.length > 1 ? 'Available now' : 'Available',
+      fields: fields(
+        ...pending.map(releaseNote),
+        !!updateAction && !!run && { kind: 'action', testID: 'whatsNew.update', label: UPDATE_LABEL[updateAction.step], onPress: run },
+      ),
+    },
+    // Untitled, and that's the point: you got here by tapping the version, so a heading restating
+    // "Installed" over its own notes is a label for something already named by the row that
+    // opened the screen. The pending block above keeps its heading because it names something you
+    // do NOT have.
+    {
+      fields: [
+        update.running
+          ? releaseNote(update.running)
+          : {
+              kind: 'value',
+              label: `Version ${APP_VERSION}`,
               // Three different reasons land here and none is an error worth a warning colour: a
               // build older than every version its channel still lists, a lane that publishes no
               // notes, or a check that hasn't come back yet.
-              description={
+              description:
                 update.status === 'checking'
                   ? 'Checking…'
                   : update.status === 'unsupported'
                     ? 'This build has no update channel to read notes from.'
-                    : "No release notes published for this build."
-              }
-            />
-          </SettingsSection>
-        )}
-      </ScrollView>
+                    : 'No release notes published for this build.',
+            },
+      ],
+    },
+  ];
+
+  return (
+    <ThemedView style={styles.container}>
+      <TopBar title="What's new" />
+      <SettingsList sections={sections} />
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: Spacing.four, gap: Spacing.four, maxWidth: MaxContentWidth, width: '100%', alignSelf: 'center' },
-  card: { paddingVertical: Spacing.three, paddingHorizontal: SettingsCardInset, gap: Spacing.two },
-  cardHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: Spacing.two },
-  line: { flexDirection: 'row', gap: Spacing.two },
-  bullet: { lineHeight: 20 },
-  lineText: { flex: 1, lineHeight: 20 },
 });

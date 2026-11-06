@@ -1,0 +1,1673 @@
+import { useQuery } from '@tanstack/react-query';
+import { Stack, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  BackHandler,
+  Platform,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  Easing,
+  Extrapolation,
+  interpolate,
+  interpolateColor,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePushSettled } from '@/components/reader/chapter-navigator';
+import { isDesktopPointer, keepZoomLevel } from '@/components/reader/desktop-zoom';
+import { isTypingTarget } from '@/lib/key-hold';
+import { claimReaderScope, isKey, keyActionOf } from '@/lib/keybindings';
+import { TAB_KEY_ACTIONS } from '@/lib/keymap';
+import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
+import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
+import { CollectPageControl, CollectPageShortcut } from '@/components/reader/collect-page-control';
+import { SettingsControl } from '@/components/reader/settings-panel';
+import { ReaderNativeToolbar } from '@/components/reader/reader-native-toolbar';
+import { RetryBlock } from '@/components/retry-block';
+import { BridgeMissingNotice } from '@/components/bridge-missing';
+import { ThemedText } from '@/components/themed-text';
+import { TopBarSwitch } from '@/components/top-bar-switch';
+import { openedByZoom } from '@/components/zoom-source';
+import { Spacing } from '@/constants/theme';
+import { warmPageImages } from '@/data/warm-pages';
+import { chapterPagesQuery } from '@/data/queries';
+import { useDataSource, useMockActive } from '@/data/source';
+import { DIRECT_CHAPTER_ID } from '@/data/types';
+import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
+import { useReaderSettings, useFitOverride } from '@/hooks/use-reader-settings';
+import { useResolvedAsset } from '@/hooks/use-resolved-asset';
+import { useIsDesktop } from '@/hooks/use-responsive';
+import { useActiveColorScheme } from '@/hooks/use-theme';
+import { getAdjacentChapter } from '@/lib/chapter-order';
+import { useHidesNativeTabBar } from '@/lib/native-tab-bar';
+import { ScreenStatusBar } from '@/lib/status-bar';
+import { LinkAppleZoomTarget, useRouter } from '@/lib/nav';
+import { useTabRoute } from '@/lib/focused-tab';
+import { getPreferredGroup } from '@/lib/preferred-group';
+import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
+import { desktopShell } from '@/lib/desktop-shell';
+import { trace, traceGate, traceJS, traceThrottled } from '@/lib/gesture-trace';
+import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
+import { useDrillRelatedSeries } from '@/lib/series-nav';
+import { useSeriesPaneShowsTop } from '@/lib/series-pane';
+import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
+import { useDimWindowControls, useWindowThemeColor, watchWindowTopEdge } from '@/lib/window-controls';
+import { DetailsHint } from '@/components/series/details-hint';
+import { PersistentBack } from '@/components/series/persistent-back';
+import {
+  COLLAPSE_ACTIVATE_PX,
+  DISMISS_COMMIT_FRACTION,
+  REVEAL_COMMIT_FRACTION,
+  SPRING_BACK,
+  ZOOM_BACKDROP_FADE_CLOSE,
+  ZOOM_BACKDROP_FADE_OPEN,
+  ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE,
+  ZOOM_CONTENT_FADE_CLOSE_READER,
+  ZOOM_CONTENT_FADE_OPEN,
+  ZOOM_DISMISS_DIR_MIN,
+  ZOOM_DRAG_FOLLOW_GRIP,
+  ZOOM_DRAG_FOLLOW_REACH,
+  ZOOM_DRAG_TRAVEL,
+  ZOOM_OUT_SPRING_READER,
+  ZOOM_THUMB_BIAS_RESTORE_MS,
+  ZOOM_THUMB_FADE_CLOSE_READER,
+  ZOOM_THUMB_FADE_OPEN,
+  computeZoomGeom,
+  zoomDragFollow,
+  zoomContentTransform,
+  zoomThumbFrame,
+  zoomThrowSpeed,
+} from '@/components/series/page-motion';
+import { ReaderPane, type ReaderPaneHandle, WARM_BEHIND } from '@/components/series/reader-pane';
+import {
+  NO_SEGMENTS,
+  type ReadTarget,
+  type ReaderSequenceRun,
+  type Segment,
+  type SeriesReaderParams,
+} from '@/components/series/reader-types';
+import { SplitClip } from '@/components/series/split-clip';
+import { StripDim } from '@/components/series/strip-dim';
+import {
+  HEADER_BAND,
+  READER_BACKDROP,
+  SHEET_FADE_H,
+  TITLE_MID,
+  handOffSplit,
+  takeSplitHandoff,
+} from '@/components/series/split-handoff';
+import { usePageLeave } from '@/components/series/use-page-leave';
+import { usePageZoom } from '@/components/series/use-page-zoom';
+import { decodeSeriesParams, useSeriesRead } from '@/components/series/use-series-read';
+import { useViewport } from '@/components/series/viewport';
+import { ZoomFrame } from '@/components/series/zoom-frame';
+import { ZoomCoverCopy } from '@/components/series/zoom-cover-copy';
+
+const CHROME_HIDE_MS = 3000;
+
+/** What Tab can land on in the reader's toolbar. */
+const FOCUSABLE = 'button, a[href], input, [tabindex]:not([tabindex="-1"])';
+
+// CI-speed override: Maestro steps can outlast the auto-hide, and hidden chrome drops out of the
+// accessibility tree.
+const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
+
+/** A mouse this close to the top of the reader brings the toolbar up, the way a video player's
+ *  controls come up under the pointer. A little deeper than the toolbar itself, so the reveal starts
+ *  on the way into it. */
+const CHROME_HOVER_EDGE = 80;
+
+/** How long a toolbar brought up by hovering outlasts the pointer leaving it. */
+const CHROME_HOVER_HIDE_MS = 500;
+
+const IS_WEB = Platform.OS === 'web';
+
+const IS_IOS = Platform.OS === 'ios';
+
+/**
+ * The reader page of a series, opened from its details, or straight from a reading link, a History
+ * row or a collection's saved pages, where it reads the whole album as one `sequence`. It grows out
+ * of whatever opened it, the details' strip or a card, and its way back goes to the details
+ * (`leaveReaderForDetails`).
+ */
+export function SeriesReaderPage({
+  params,
+  depth,
+  onPopLayer,
+  isTop,
+  nativePush,
+  sequence,
+}: {
+  params: SeriesReaderParams;
+  depth: number;
+  onPopLayer: () => void;
+  /** A pushed card whose transitions are the system's (see useNativePush). Never for a layer. */
+  nativePush: boolean;
+  /** Whether this instance is the top of the stack — the one keyboard back acts on (web). */
+  isTop: boolean;
+  /** Present = this instance reads a cross-series sequence instead of a chapter. */
+  sequence?: ReaderSequenceRun;
+}) {
+  const ds = useDataSource();
+  const router = useRouter();
+  const { width, height } = useViewport();
+  const inTabStack = useTabRoute() !== null;
+  const insets = useSafeAreaInsets();
+  const mock = useMockActive();
+  const fitOverride = useFitOverride();
+
+  const {
+    id,
+    title,
+    bridgeId,
+    chapterId: seedChapterId,
+    chapterName: seedChapterName,
+    start: seedStart,
+    picked: seedPicked,
+  } = params;
+  const { seriesKey, bridge, cover, isDirect } = decodeSeriesParams(params);
+  const [settings] = useReaderSettings(seriesKey);
+  // Off iOS this page draws the move from its details itself: it grows out of their strip and
+  // shrinks back into it, and details brought up in its place slide up over it (see SplitHandoff).
+  // On iOS each is a native push over the other (see useNativePush).
+  const splitDrawn = !IS_IOS;
+  const [splitHandoff] = useState(() => (splitDrawn && seriesKey ? takeSplitHandoff(seriesKey, 'strip') : null));
+  const stripFrom = splitHandoff?.kind === 'strip' ? splitHandoff : null;
+  const stripReader = stripFrom !== null;
+
+  // ── The visible page — and, in sequence mode, the visible ENTRY ────────────────────────────
+  // Lives at this level because the TOOLBAR is rendered here (the pane reports it up through
+  // `onVisiblePage`, already chapter-correct across a stitched crossing), and this high up in the
+  // component because the identity just below derives from it.
+  const [visiblePage, setVisiblePage] = useState<{ pageIndex: number; chapterId: string } | null>(null);
+  // The ENTRY the pager currently shows. The pane's flat index IS the sequence index, so this is
+  // what the chrome (title, save button, settings sheet) and its Details describe — the instance's
+  // own route params only name the entry the album OPENED on.
+  const visibleSequenceEntry = sequence
+    ? sequence.entries[Math.min(visiblePage?.pageIndex ?? sequence.index, sequence.entries.length - 1)]
+    : undefined;
+
+  // ── The series Details opens ───────────────────────────────────────────────────────────────
+  // Chapter mode: this instance's own. Sequence mode: the VISIBLE entry's, since the album pager
+  // never remounts: a series cross must be as seamless as a stitched chapter crossing, which is to
+  // say a plain page turn.
+  const detailBridgeId = sequence ? (visibleSequenceEntry?.bridgeId ?? bridgeId) : bridgeId;
+  const detailSeriesId = sequence ? (visibleSequenceEntry?.seriesId ?? id) : id;
+  const detailTitle = sequence ? visibleSequenceEntry?.seriesTitle : title;
+  const detailIsDirect = sequence ? visibleSequenceEntry?.chapterId === DIRECT_CHAPTER_ID : isDirect;
+
+  // Reader-first entries seed this from their params, which is what makes the pages query live on
+  // the very first commit — no waiting on history, and the request goes out ahead of detail.
+  const [override, setOverride] = useState<ReadTarget | null>(() => {
+    const parsed = Number(seedStart);
+    const at = Number.isFinite(parsed) ? parsed : 0;
+    const picked = seedPicked === '1';
+    if (seedChapterId) return { chapterId: seedChapterId, chapterName: seedChapterName, start: at, picked };
+    if (isDirect) return { start: at, picked };
+    return null;
+  });
+  // Sequence mode: the target is the sequence itself. `chapterId` is deliberately ABSENT — it
+  // would otherwise arm the chapter-pages query, the preferred-group effect, chapter adjacency and
+  // the pane's remount key, all of which are chapter machinery a sequence doesn't have. Per-entry
+  // chapter identity lives on the VISIBLE entry (see visibleSequenceEntry below), not the target.
+  const inSequence = !!sequence;
+  const sequenceTarget = useMemo<ReadTarget | null>(
+    () => (sequence ? { start: sequence.index } : null),
+    // The mount index seeds the pager once; later index changes ride the pager itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seeded once, see above
+    [inSequence],
+  );
+  const {
+    chapters,
+    inLibrary,
+    target,
+    targetChapterId,
+    pages: chapterPages,
+    refetch,
+    series,
+    error,
+    missingBridge,
+    pagesGone,
+  } = useSeriesRead(params, { pinned: sequenceTarget ?? override, off: !!sequence });
+  // In sequence mode the sequence IS the page list — the chapter query never runs.
+  const pages = sequence ? sequence.uris : chapterPages;
+
+  // ── Adjacent chapters (chaptered only; no stitching — see the header comment) ──
+  const currentChapter = useMemo(
+    () => (targetChapterId ? chapters?.find((c) => c.id === targetChapterId) : undefined),
+    [chapters, targetChapterId],
+  );
+  const nextChapter = useMemo(
+    () => (currentChapter && chapters ? getAdjacentChapter(chapters, currentChapter, 1, getPreferredGroup()) : null),
+    [chapters, currentChapter],
+  );
+  const prevChapter = useMemo(
+    () => (currentChapter && chapters ? getAdjacentChapter(chapters, currentChapter, -1, getPreferredGroup()) : null),
+    [chapters, currentChapter],
+  );
+  // `landing` defaults to whichever keeps PAGING continuous: forward
+  // lands on page 1, backward on the last page. The navigator's skip buttons pass 'first'.
+  // This is the EXPLICIT-jump path (skip buttons, webtoon advance, cold-window edge fallbacks) —
+  // it bumps `jumpNonce` so the pane remounts seeded at the landing page. Stitched paged
+  // crossings never come through here; they relabel in place (see relabelFromPager).
+  const [jumpNonce, setJumpNonce] = useState(0);
+  const goAdjacentChapter = useCallback(
+    (delta: 1 | -1, landing: 'first' | 'last' = delta === 1 ? 'first' : 'last') => {
+      const chapterTo = delta === 1 ? nextChapter : prevChapter;
+      if (!chapterTo) return;
+      setJumpNonce((n) => n + 1);
+      setOverride({ chapterId: chapterTo.id, chapterName: chapterTo.name, start: landing === 'last' ? 'last' : 0 });
+    },
+    [nextChapter, prevChapter],
+  );
+
+  // ── Stitching: the reader's window ───────────────────────────────────────
+  // Adjacent chapters' page lists, subscribed eagerly (cache-first; a list is just URLs) so the
+  // reader can stitch them into ONE flat list — crossing a chapter boundary is then an ordinary
+  // page turn with an in-place relabel, no remount.
+  // Every reader stitches now. It was native-paged-only for as long as the pager was the only list
+  // that could take a chapter joining in front of the reader without lurching — the others were
+  // left crossing chapters by jumping, which is why they never had the paged reader's peek of the
+  // page you are about to reach, and why they needed sentinels and buttons to do what scrolling
+  // should. The native readers are LegendLists that anchor on the item; the web ones hold the page
+  // on screen by key themselves.
+  const stitched = !isDirect && !sequence;
+  // The level the desktop zoom keeps lasts across page turns and chapters, but not out of the
+  // reader.
+  useEffect(() => () => keepZoomLevel(1), []);
+  // iOS: the system tab bar goes with the pages, which are full-bleed. This page stays mounted
+  // under details it pushes, so the bar goes only while it is the page on screen.
+  useHidesNativeTabBar();
+  useWindowThemeColor(READER_BACKDROP, 1);
+  // Whether the ENTRANCE animation has finished (the zoom spring's completion callback flips it —
+  // see startZoom). The zoom scales the WHOLE destination screen behind a growing mask, and a
+  // reader-first open whose pages are already cached (a sequence open, a History revisit) would
+  // otherwise mount the entire pager — list, cells, warm-ahead — in the very commit the spring
+  // starts, on the thread the spring is drawing on. So the pane rides `standby` until this flips:
+  // the visible page mounts and paints (it is what the entrance reveals), everything else waits
+  // out the flight.
+  // Starts SETTLED on web and on a pushed card: there is no entrance there to defer behind (see
+  // `startZoom`), so the page has nothing to wait out and the pager may mount in the first commit
+  // like anything else.
+  const [entranceSettled, setEntranceSettled] = useState(IS_WEB || nativePush);
+  const markEntranceSettled = useCallback(() => setEntranceSettled(true), []);
+  const pushSettled = usePushSettled();
+  // EAGER, deliberately — not deferred behind `standby` like the render window is.
+  //
+  // The window takes each neighbour as its list lands (see the run below), so how soon these
+  // resolve decides whether the first chapter boundary you read across is a page turn or a jump.
+  // Deferring them, as this did for a while, lost that race on every cold open.
+  //
+  // The cost is two page LISTS — cache-first, and a list is just URLs. It does not mount page cells
+  // or warm images: both of those key off `standby` in ReaderPane.
+  const { data: prevPages } = useQuery({
+    ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
+    enabled: stitched && !!id && !!prevChapter,
+  });
+  const { data: nextPages } = useQuery({
+    ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', nextChapter?.id ?? ''),
+    enabled: stitched && !!id && !!nextChapter,
+  });
+
+  const { goBack, routeBackHeld, leaveOnce, hasLeft } = usePageLeave({ depth, onPopLayer });
+  // ── The ZOOM: how this page arrives and leaves ───────────────────────────────────────────────
+  // Up here, though nothing moves it until much further down: the stitching underneath has to read
+  // `collapsing`. Where it lands is this page's own (`zoomGeom` below).
+  const {
+    edgeCommitting,
+    zoom,
+    zoomArmed,
+    zoomClosing,
+    zoomRadiusClosing,
+    dragX,
+    dragY,
+    homeAt,
+    zoomThumbAspect,
+    hero,
+    heroShiftX,
+    heroShiftY,
+    onZoomThumbPainted,
+    startZoom,
+    closeLayer: collapseIntoCard,
+    collapsing,
+    heroCentred,
+    zoomGeomNoSource,
+    zoomSourceAlive,
+    zoomMaskStyle,
+  } = usePageZoom({
+    id,
+    depth,
+    width,
+    height,
+    nativePush,
+    handedOff: !!splitHandoff,
+    markEntranceSettled,
+    leaveOnce,
+    routeBackHeld,
+    hasLeft,
+  });
+
+  // The stitched window — the RUN: a segment only joins once its pages are loaded (no holes); it
+  // only ever grows AT THE TAIL during one continuous run; landing outside the run starts a fresh
+  // one, bumping `runKey` so the pane remounts and seeds from `start` instead of re-anchoring.
+  //
+  // ── The HEAD of a live run, and why it may grow again ────────────────────────────────────────
+  // For a while nothing could ever be added in front of the current position, and the reason was
+  // the pager: a FlatList's position is a raw pixel offset and its render window is a range of
+  // indices derived from that offset, so putting a chapter in front of the current one moved every
+  // page after it by a whole chapter while the offset stayed put. The correction that followed —
+  // find the anchored key, scroll there — arrived at the right place with nothing mounted, because
+  // the window had been computed from the old position. THAT was the flash on this screen, chased
+  // twice from the wrong end (first blamed on the adjacent-chapter queries being deferred, then on
+  // their being eager; the arrival TIME was never the problem, the head insert was).
+  //
+  // The pager is a LegendList now, which holds item sizes BY KEY and anchors a data change on the
+  // item rather than on an offset or a view (`maintainVisibleContentPosition={{ data: true }}` —
+  // see paged-reader.tsx for the full why). A chapter arriving at the head is absorbed with the
+  // page under the reader's thumb left exactly where it is, so the head can grow again: reading
+  // backward stays a page turn chapter after chapter instead of turning into a jump at the second
+  // boundary.
+  //
+  // So the window is built the moment this chapter's own pages are in, with whichever neighbours
+  // are in hand, and a neighbour that lands later joins at its end of it (the merge below). Nothing
+  // waits for the head. Holding the window back for the previous chapter's list held the pane back
+  // with it, and a reader that zoomed open spent the whole flight on a black "Loading…", waiting on
+  // a chapter it wasn't showing.
+  const [run, setRun] = useState<{ key: number; segs: Segment[] }>({ key: 0, segs: [] });
+  const { segments, runKey } = useMemo(() => {
+    if (!pages || !stitched) return { segments: NO_SEGMENTS, runKey: run.key };
+    const currentId = targetChapterId ?? DIRECT_CHAPTER_ID;
+    const prevSeg: Segment | null =
+      targetChapterId && prevChapter && prevPages?.length
+        ? { id: prevChapter.id, name: prevChapter.name, pages: prevPages }
+        : null;
+    const nextSeg: Segment | null =
+      targetChapterId && nextChapter && nextPages?.length
+        ? { id: nextChapter.id, name: nextChapter.name, pages: nextPages }
+        : null;
+
+    const at = run.segs.findIndex((s) => s.id === currentId);
+    if (at === -1) {
+      const segs: Segment[] = [];
+      if (prevSeg) segs.push(prevSeg);
+      segs.push({ id: currentId, name: target?.chapterName, pages });
+      if (nextSeg) segs.push(nextSeg);
+      // Bump the key only when there was a real run to leave, so the very first window doesn't
+      // count as a remount.
+      return { segments: segs, runKey: run.key + (run.segs.length ? 1 : 0) };
+    }
+    // Extend at either end. The TAIL is free by construction (nothing before it moves). The HEAD is
+    // the list's job, and the reason this file can ask for it at all — see the note above.
+    //
+    // ── The wobble, and why it isn't a reason to stop asking ─────────────────────────────────────
+    // Growing the head of the CONTINUOUS strip visibly nudged the content: a trace caught the window
+    // gaining 13 rows, the content height gaining 7427, and the offset gaining 7400 — 27px of drift
+    // — then 78 against 36 on the next frame as those rows measured. The obvious reading was that
+    // variable row heights make this irreducible (a correction computed against an estimate that
+    // isn't true yet), and the obvious fix was to stop growing the head where sizes are unknown.
+    //
+    // That reading was wrong, and the version number is why. This app was pinned to legend-list
+    // 3.3.2; 3.3.3 fixes precisely these two things — "row measurements are applied together in a
+    // batch, so item positions don't sometimes move after rendering" and "prepending items with
+    // maintainVisibleContentPosition was sometimes flashing the wrong items for one frame". Holding
+    // a viewport still across a prepend of unmeasured rows is what the list is FOR; ours simply
+    // couldn't yet. So the head grows in both readers, and the fix lives at the version.
+    const stale = run.segs[at]!;
+    const refreshCurrent = stale.pages !== pages || stale.name !== target?.chapterName;
+    // Not while a dismiss is in flight. Growing the strip is the expensive edit in here — the head
+    // grow above measures a whole window of new rows and corrects the offset against them — and a
+    // neighbour's page list arriving happens to land mid-gesture often, because the same tap that
+    // opened the reader requested it. Traced at 187ms of stalled UI thread inside a held collapse,
+    // spent extending a reading window the reader is on its way out of. The current chapter still
+    // refreshes: that one is what's on screen.
+    const addPrev = !collapsing && !!prevSeg && at === 0;
+    const addNext = !collapsing && !!nextSeg && run.segs[run.segs.length - 1]!.id === currentId;
+    if (!refreshCurrent && !addPrev && !addNext) return { segments: run.segs, runKey: run.key };
+    const segs = run.segs.slice();
+    if (refreshCurrent) segs[at] = { id: currentId, name: target?.chapterName, pages };
+    if (addPrev) segs.unshift(prevSeg);
+    if (addNext) segs.push(nextSeg);
+    return { segments: segs, runKey: run.key };
+  }, [
+    run,
+    pages,
+    stitched,
+    targetChapterId,
+    target?.chapterName,
+    prevChapter,
+    prevPages,
+    nextChapter,
+    nextPages,
+    collapsing,
+  ]);
+  // Catch the run state up DURING render (React's adjust-state-on-render pattern — the merge
+  // above returns `run.segs` by identity when there's nothing to add, which is what stops this
+  // from looping). `!pages` (a chapter still loading) renders no window at all, but must not wipe
+  // the run — the pager is unmounted then and comes back to the same one.
+  if (pages && stitched && (segments !== run.segs || runKey !== run.key)) {
+    setRun({ key: runKey, segs: segments });
+  }
+
+  // Ready to read: the target's own pages (and, stitched, the window built from them in the same
+  // render).
+  const readerReady = !!target && !!pages && (!stitched || segments.length > 0);
+
+  // What the reader side has to render, and WHEN it got it. A flash on the first reveal is a
+  // question about ordering — whether the reader becomes the visible side before it has pages, and
+  // for how long — and that is only answerable against the reveal mark on the same clock. Both
+  // halves are traced rather than reasoned about because the difference between "300ms of Loading"
+  // and "one frame with nothing opaque behind it" is invisible in source and obvious in a
+  // recording.
+  useEffect(() => {
+    traceJS('reader', 'ready', {
+      ready: readerReady,
+      target: !!target,
+      pages: pages?.length ?? 0,
+      segs: segments.length,
+    });
+  }, [readerReady, target, pages, segments]);
+
+  // The backward jump's destination, warmed. Wherever the previous chapter is not in the reader's
+  // window — the window couldn't take it — going back lands on that chapter's LAST page, and the pane's own
+  // warm-ahead can't reach it: that walks the window, and this page is outside it by definition. So
+  // the screen warms the few pages the jump can land on, and the crossing arrives on an image like
+  // any other.
+  useEffect(() => {
+    if (!stitched || !prevChapter || !prevPages?.length) return;
+    if (segments.some((s) => s.id === prevChapter.id)) return;
+    warmPageImages(prevPages.slice(-1 - WARM_BEHIND));
+  }, [stitched, prevChapter, prevPages, segments]);
+
+  // A stitched crossing settled: flush of the OLD chapter's progress already happened in the pane;
+  // this just relabels which chapter is "current" WITHOUT remounting (the pane's key is the run,
+  // not the chapter, and the window merge above finds the new current already in `run.segs`).
+  const relabelFromPager = useCallback((chapterId: string, chapterName: string | undefined, page: number) => {
+    // Marked so a boundary adjustment can be told apart from the window growing around it — the
+    // two land within a frame or two of each other and want different fixes. See the vertical
+    // reader's `window`/`scroll` marks.
+    traceJS('reader', 'relabel', { page });
+    setOverride({ chapterId, chapterName, start: page });
+  }, []);
+
+  // ── Chrome auto-hide ───────────────────────────────────────────────────────
+  // A reader page growing out of the strip fades its chrome in as it opens (see SplitHandoff).
+  const [chromeVisible, setChromeVisible] = useState(!stripReader);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chromeHeldRef = useRef(false);
+  // Who is holding it up: a control in use, and the keyboard's focus — kept apart so one letting go
+  // doesn't drop the other's hold.
+  const chromeHolds = useRef(new Set<'control' | 'focus'>());
+  const scheduleHide = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    if (!CHROME_AUTO_HIDE || chromeHeldRef.current) return;
+    hideTimer.current = setTimeout(() => setChromeVisible(false), CHROME_HIDE_MS);
+  }, []);
+  useEffect(() => {
+    scheduleHide();
+    return () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, [scheduleHide]);
+  // Set while the toolbar is up only because a mouse is near it; anything that shows the toolbar
+  // on purpose clears it, and with it the quick hide.
+  const hoverShownRef = useRef(false);
+  const zoomControlShown = useZoomControlShown();
+  const showChrome = useCallback(() => {
+    hoverShownRef.current = false;
+    setChromeVisible(true);
+    scheduleHide();
+  }, [scheduleHide]);
+  const holdChromeFor = useCallback(
+    (holder: 'control' | 'focus', hold: boolean) => {
+      hoverShownRef.current = false;
+      if (hold) chromeHolds.current.add(holder);
+      else chromeHolds.current.delete(holder);
+      chromeHeldRef.current = chromeHolds.current.size > 0;
+      if (hold) {
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+      } else {
+        setChromeVisible(true);
+        scheduleHide();
+      }
+    },
+    [scheduleHide],
+  );
+  const holdChrome = useCallback((hold: boolean) => holdChromeFor('control', hold), [holdChromeFor]);
+  useDimWindowControls(!chromeVisible);
+  const toggleChrome = useCallback(() => {
+    hoverShownRef.current = false;
+    setChromeVisible((v) => {
+      const nextVisible = !v;
+      if (nextVisible) scheduleHide();
+      else if (hideTimer.current) clearTimeout(hideTimer.current);
+      return nextVisible;
+    });
+  }, [scheduleHide]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+    const cancelLeave = () => {
+      if (leaveTimer) clearTimeout(leaveTimer);
+      leaveTimer = null;
+    };
+    const near = () => {
+      cancelLeave();
+      setChromeVisible((visible) => {
+        if (visible && !hoverShownRef.current) return visible;
+        hoverShownRef.current = true;
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+        return true;
+      });
+    };
+    const away = () => {
+      if (!hoverShownRef.current || leaveTimer) return;
+      leaveTimer = setTimeout(() => {
+        leaveTimer = null;
+        if (!hoverShownRef.current) return;
+        hoverShownRef.current = false;
+        setChromeVisible(false);
+      }, CHROME_HOVER_HIDE_MS);
+    };
+    const onEdge = (inside: boolean) => (inside ? near() : away());
+    const unwatch = watchWindowTopEdge(CHROME_HOVER_EDGE, onEdge);
+    if (unwatch) {
+      return () => {
+        cancelLeave();
+        unwatch();
+      };
+    }
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.buttons === 0) onEdge(e.clientY < CHROME_HOVER_EDGE);
+    };
+    window.addEventListener('pointermove', onMove, true);
+    return () => {
+      cancelLeave();
+      window.removeEventListener('pointermove', onMove, true);
+    };
+  }, []);
+
+  // The keyboard's way into the toolbar (lib/keymap's `reader-controls`): Tab shows it and focuses
+  // its first control, it stays up while the focus is in it, Tab and Shift+Tab go round inside it,
+  // and Escape hands the keys back to the page. Becoming the reader of the top layer drops whatever
+  // focus was left behind on the screen it covers, or Space would press that again.
+  const chromeId = useId();
+  useEffect(() => {
+    if (!IS_WEB || !isTop || typeof document === 'undefined') return;
+    const parts = () =>
+      [`${chromeId}-back`, `${chromeId}-bar`]
+        .map((part) => document.getElementById(part))
+        .filter((el): el is HTMLElement => !!el);
+    const inside = (el: Element | null) => !!el && parts().some((part) => part.contains(el));
+    const controls = () =>
+      parts()
+        .flatMap((part) => [...(part.matches(FOCUSABLE) ? [part] : []), ...part.querySelectorAll<HTMLElement>(FOCUSABLE)])
+        .filter((el) => el.getClientRects().length > 0);
+    const stale = document.activeElement;
+    if (stale instanceof HTMLElement && stale !== document.body && !inside(stale)) stale.blur();
+    const releaseScope = claimReaderScope();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      // A digit must not throw away the chapter being read for another tab.
+      if (keyActionOf(e, TAB_KEY_ACTIONS)) return e.stopPropagation();
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && inside(active)) {
+        // Not the shell's mouse Back, which arrives as a synthetic Escape (lib/desktop-commands)
+        // and means back.
+        if (e.key === 'Escape' && e.isTrusted) {
+          e.preventDefault();
+          active.blur();
+        } else if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+          const ring = controls();
+          const at = ring.indexOf(active);
+          if (ring.length === 0) return;
+          e.preventDefault();
+          ring[(at + (e.shiftKey ? -1 : 1) + ring.length) % ring.length].focus();
+        }
+        return;
+      }
+      if (!isKey(e, 'reader-controls') || isTypingTarget(e.target)) return;
+      e.preventDefault();
+      showChrome();
+      requestAnimationFrame(() => controls()[0]?.focus());
+    };
+    let focusHeld = false;
+    const onFocusChange = () => {
+      const held = inside(document.activeElement);
+      if (held === focusHeld) return;
+      focusHeld = held;
+      holdChromeFor('focus', held);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('focusin', onFocusChange);
+    document.addEventListener('focusout', onFocusChange);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('focusin', onFocusChange);
+      document.removeEventListener('focusout', onFocusChange);
+      releaseScope();
+      if (focusHeld) holdChromeFor('focus', false);
+    };
+  }, [isTop, chromeId, showChrome, holdChromeFor]);
+
+  // Pinch-zoom / an active scrub both suspend the collapse/dismiss pan (a one-finger drag pans the zoomed
+  // page; a scrub owns the finger).
+  const [readerZoomed, setReaderZoomed] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
+  const onScrubActive = useCallback(
+    (active: boolean) => {
+      setScrubbing(active);
+      holdChrome(active);
+    },
+    [holdChrome],
+  );
+
+  // ── The strip handoff ──────────────────────────────────────────────────────────
+  // `progress` is how far the page has gone back into the details' strip: 0 is the reader, 1 the
+  // strip. Only a page grown out of the strip moves it (see SplitHandoff), starting where the
+  // details left the move.
+  const progress = useSharedValue(stripFrom ? stripFrom.progress : 0);
+  // Freezes the reader's own drags once an exit animation owns the page.
+  const dismissing = useSharedValue(false);
+  // The details' strip: what the reader grows out of and shrinks back into.
+  const bandH = insets.top + HEADER_BAND;
+  // The strip's resting height as SeriesDetailsPage draws it: the rect UIKit's zoom grows out of.
+  const stripZoomH = bandH - SHEET_FADE_H / 2 - TITLE_MID;
+  // The reader page going back into the strip it grew out of (see SplitHandoff): its bottom edge
+  // rises onto the details' strip, and the route pops once there is nothing of it left to see.
+  const shrinkToStrip = useCallback(() => {
+    if (hasLeft()) return;
+    setChromeVisible(false);
+    // Freezes the reader's own drags for the way out.
+    dismissing.set(true);
+    edgeCommitting.set(true);
+    progress.set(
+      withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }, () => {
+        runOnJS(leaveOnce)();
+      }),
+    );
+  }, [hasLeft, dismissing, edgeCommitting, progress, leaveOnce]);
+  const drillSeries = useDrillRelatedSeries();
+  const leaveReaderForDetails = useCallback(() => {
+    if (stripReader) {
+      shrinkToStrip();
+      return;
+    }
+    // A sequence's Details are the VISIBLE entry's, opened over the album, which waits underneath
+    // where it was: a drilled layer on the root route, a pushed card in a tab.
+    if (sequence) {
+      const entry: Record<string, string> = {
+        id: detailSeriesId ?? '',
+        bridgeId: detailBridgeId ?? '',
+        title: detailTitle ?? '',
+        ...(detailIsDirect && { direct: '1' }),
+      };
+      if (drillSeries) drillSeries(entry);
+      else router.push({ pathname: '/series', params: entry });
+      return;
+    }
+    // Back to the details that pushed it, when they are still there: a reloaded web page has
+    // nothing beneath it.
+    if (params.from === 'details' && router.canGoBack()) {
+      router.back();
+      return;
+    }
+    const next: Record<string, string> = {};
+    for (const k of ['id', 'title', 'bridge', 'bridgeId', 'cover', 'direct'] as const) {
+      const v = params[k];
+      if (typeof v === 'string') next[k] = v;
+    }
+    if (!splitDrawn) {
+      router.push({ pathname: '/series', params: next });
+      return;
+    }
+    // In its place: the details slide up over this reader (see SplitHandoff).
+    if (seriesKey) handOffSplit(seriesKey, { kind: 'reveal' });
+    router.replace({ pathname: '/series', params: next });
+  }, [
+    stripReader,
+    shrinkToStrip,
+    sequence,
+    detailSeriesId,
+    detailBridgeId,
+    detailTitle,
+    detailIsDirect,
+    drillSeries,
+    params,
+    router,
+    splitDrawn,
+    seriesKey,
+  ]);
+
+  // The split's move, drawn by the page that arrives (see SplitHandoff).
+  useEffect(() => {
+    if (stripFrom) {
+      const { covered } = stripFrom;
+      progress.set(
+        withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) }, () => {
+          runOnJS(markEntranceSettled)();
+          runOnJS(covered)();
+        }),
+      );
+      // A frame in, so the chrome fades in with the page rather than landing with its first paint.
+      const frame = requestAnimationFrame(() => setChromeVisible(true));
+      return () => cancelAnimationFrame(frame);
+    }
+    // Mount-only: an instance takes its hand-off once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // How far a drag back into the strip travels.
+  const headerSpan = Math.max(1, height - bandH);
+
+  // ── The reader's own zoom values (the rest are usePageZoom's) ─────────────────────────────
+  /** The reader dismiss's LAUNCH DIRECTION, as a unit vector, latched the first frame the drag has
+   *  enough distance to have one. (0, 0) until then, and cleared by every gesture. */
+  const dismissDirX = useSharedValue(0);
+  const dismissDirY = useSharedValue(0);
+  /** How much of the collapse the flying copy should treat as having happened, 0..1. 1 everywhere
+   *  except a reader dismiss dragged back the other way — see that gesture's onUpdate, and
+   *  `zoomThumbStyle`, which applies this to the copy's OPACITY alone. */
+  const zoomThumbBias = useSharedValue(1);
+
+  // Collapse/dismiss pan — wraps the reader, on the cross axis of its scroll: a paged reader grown
+  // out of the details' strip goes back into it on a drag up; anything else dismisses — and that
+  // dismissal runs THE SAME GALLERY COLLAPSE the chevron runs: mask closing onto the card, page
+  // cross-fading out, the thumbnail copy fading
+  // in and landing on it. The finger-follow is free and unclamped in 2D and the release decision
+  // reads the cross-axis offset alone — what a dismissal must NOT do is fling out along the
+  // gesture's own vector, which had nowhere to land. Built inside
+  // useMemo like chapter-navigator's pan (the React Compiler lint can't tell worklets from render
+  // code).
+  // Never under a mouse: a drag there is a PAN of the page, and a pan that set off the return or the
+  // dismiss took the reader away mid-read. The desktop has the Details button and Back for those.
+  const collapseEnabled = !readerZoomed && !scrubbing && !(IS_WEB && isDesktopPointer());
+  // The swipe away, paged, on iOS, of a reader page the details pushed or one that zoomed out of a
+  // History or Activity row: UIKit's zoom dismissal, on the swipe down it starts on (the screen's
+  // `gestureEnabled`), carrying the page and the bar back into what it zoomed out of. It is the
+  // only one, so this pan stays out of its way.
+  const swipeAway =
+    nativePush && (params.from === 'details' || openedByZoom(params)) && settings.mode === 'paged';
+  // Each GESTURE is one thing, decided at activation and locked: a drag up on a paged reader grown
+  // out of the details' strip is a return into it (progress only); anything else is a dismiss — a
+  // free 2D follow in BOTH directions, released on the |cross| decision below, driving the
+  // collapse. A new gesture that begins while the page hasn't settled from a previous dismiss drag
+  // is always a dismiss — only a settled page goes back into the strip on a swipe.
+  const gestureMode = useSharedValue<0 | 1 | 2>(0); // 0 undecided, 1 into the strip, 2 dismiss
+  // Where `progress` stood when the gesture locked — drags map RELATIVE to it, so a gesture that
+  // begins mid-animation continues the motion from where it is instead of snapping to the drag's
+  // absolute position (the "fast-forward" chop under quick successive swipes).
+  const progressStartSV = useSharedValue(0);
+  const collapsePan = useMemo(() => {
+    // Only a reader grown out of the details' strip drags back into it (see SplitHandoff); any other
+    // brings them up with its Details button.
+    const revealByDrag = settings.mode === 'paged' && stripReader;
+    const dismissSpan = settings.mode === 'paged' ? height : width;
+    const span = settings.mode === 'paged' ? headerSpan : width;
+    {
+      const collapseGate = traceGate();
+      const pan = Gesture.Pan()
+        .enabled(collapseEnabled && !swipeAway)
+        .onBegin(() => {
+          trace('reader.collapse', 'BEGAN');
+        })
+        .onUpdate((e) => {
+          traceThrottled(collapseGate, 60, 'reader.collapse', 'update', {
+            tx: e.translationX,
+            ty: e.translationY,
+            mode: gestureMode.value,
+          });
+          if (dismissing.value) return;
+          const cross = settings.mode === 'paged' ? e.translationY : -e.translationX;
+          // Lock the gesture's mode at the first REAL movement (web fires its opening updates
+          // with translation 0 — deciding on that frame mislabels every drag). A gesture
+          // beginning while the page hasn't settled from a previous dismiss drag is always a
+          // dismiss gesture.
+          if (gestureMode.value === 0) {
+            const settled = zoom.value > 0.999 && Math.hypot(dragX.value, dragY.value) <= 1;
+            if (!settled) gestureMode.set(2);
+            else if (Math.abs(cross) >= 2) {
+              // WEBTOON never goes back to the details by dragging — the Details button is the
+              // only way, so every drag here is a dismiss. Its cross axis is horizontal (vertical
+              // belongs to the scroll), and a horizontal drag that went to the details would be the
+              // one gesture on this screen going somewhere other than out.
+              gestureMode.set(revealByDrag && cross <= 0 ? 1 : 2);
+              progressStartSV.set(progress.value);
+            } else return; // no meaningful movement yet
+          }
+          if (gestureMode.value === 1) {
+            progress.set(Math.min(1, Math.max(0, progressStartSV.value + -cross / span)));
+            return;
+          }
+          // A pushed page's only swipe away is UIKit's (`swipeAway`). Anywhere else the drag is still
+          // claimed, so nothing beneath scrolls on it, but it moves nothing and releases to nothing.
+          if (nativePush) return;
+          // The follow: both axes, feeding the collapse instead of a fling. Distance in ANY
+          // direction drives it, since unlike an edge swipe this gesture has no single axis to
+          // measure along.
+          zoomClosing.set(true);
+          zoomRadiusClosing.set(true);
+          homeAt.set(-1);
+          const travel = dismissSpan * ZOOM_DRAG_TRAVEL;
+          const pull = Math.hypot(e.translationX, e.translationY);
+          // ONE resisted distance drives both the size and the position, so the spring is the only
+          // thing limiting either and they cannot stop at different moments.
+          const held = zoomDragFollow(pull, ZOOM_DRAG_FOLLOW_REACH * travel, ZOOM_DRAG_FOLLOW_GRIP);
+          zoom.set(1 - Math.min(1, held / travel));
+          // Scaling the vector by the resisted/raw ratio, rather than resisting each axis, keeps
+          // the page moving along the finger's own direction — this gesture has no primary axis to
+          // resist along.
+          const hold = pull > 0 ? held / pull : 0;
+          dragX.set(e.translationX * hold);
+          dragY.set(e.translationY * hold);
+
+          // The COPY follows the FORWARD progress, not the raw distance — because this gesture
+          // measures with a hypot, and a hypot cannot tell "further out" from "back through the
+          // start and out the other side". Swipe down, come back up past where you began, keep
+          // going up: the hypot rises again, so the page shrinks again, and the copy used to fade
+          // back in with it. Nothing about that second shrink is an approach to the card.
+          //
+          // Projecting onto the launch direction separates the two: the projection falls to zero as
+          // the finger returns and stays there past it, so the cover fades out on the way back and
+          // does not return. Continuous by construction — the bias reaches 0 exactly where the
+          // finger reaches its origin, where the copy is transparent anyway — so nothing blinks.
+          if (dismissDirX.value === 0 && dismissDirY.value === 0 && pull >= ZOOM_DISMISS_DIR_MIN) {
+            dismissDirX.set(e.translationX / pull);
+            dismissDirY.set(e.translationY / pull);
+          }
+          // Before a direction is latched there is nothing to be going the wrong way relative to, so
+          // all of the travel counts as forward. Without this the first few pixels of EVERY drag
+          // project onto (0, 0) and read as fully reversed — invisible in practice (the copy is at
+          // ~1% there) but a lie the moment anyone changes the fade ranges.
+          const aimed = dismissDirX.value !== 0 || dismissDirY.value !== 0;
+          const forward = aimed
+            ? Math.max(0, e.translationX * dismissDirX.value + e.translationY * dismissDirY.value)
+            : pull;
+          const heldForward = zoomDragFollow(forward, ZOOM_DRAG_FOLLOW_REACH * travel, ZOOM_DRAG_FOLLOW_GRIP);
+          zoomThumbBias.set(held > 0 ? heldForward / held : 1);
+        })
+        .onEnd((e) => {
+          trace('reader.collapse', 'END', {
+            mode: gestureMode.value,
+            vx: e.velocityX,
+            vy: e.velocityY,
+            dismissing: dismissing.value,
+          });
+          if (dismissing.value) return;
+          if (gestureMode.value === 1) {
+            const cross = settings.mode === 'paged' ? e.translationY : -e.translationX;
+            const crossVelocity = settings.mode === 'paged' ? e.velocityY : -e.velocityX;
+            // Same projected release as everywhere else, along the direction that OPENS the
+            // details (which is negative `cross`).
+            if (releaseCommitted(-cross, -crossVelocity, span * REVEAL_COMMIT_FRACTION)) {
+              runOnJS(leaveReaderForDetails)();
+            } else {
+              progress.set(withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+            }
+            return;
+          }
+          if (nativePush) return;
+          // The release decision — the shared projection (lib/gesture-release), judged along the
+          // direction the page actually travelled, since this one can be thrown off either side.
+          //
+          // The FINGER's travel, not `dragX/dragY`. Those were the same number until the follow
+          // gained its past-floor resistance, and reading them now would make the threshold
+          // unreachable: the follow tops out around 160px while DISMISS_COMMIT_FRACTION wants half
+          // the span (196px in webtoon, 426px in paged), so a deliberate slow swipe could never
+          // commit and only a flick's velocity would dismiss at all. What the user swiped is the
+          // question; how far the page was allowed to move in reply is not.
+          const crossOffset = settings.mode === 'paged' ? e.translationY : e.translationX;
+          const crossVelocityRaw = settings.mode === 'paged' ? e.velocityY : e.velocityX;
+          if (!releaseCommittedEitherWay(crossOffset, crossVelocityRaw, dismissSpan * DISMISS_COMMIT_FRACTION)) {
+            zoomClosing.set(false);
+            zoom.set(withSpring(1, SPRING_BACK));
+            dragX.set(withSpring(0, SPRING_BACK));
+            dragY.set(withSpring(0, SPRING_BACK));
+            return;
+          }
+          // …and the collapse finishes from wherever the drag left it, into the card. Same springs,
+          // same velocity handoff and the same one-way `edgeCommitting` latch as the details page's
+          // back-swipe — see there for why a committed collapse must never be settled back.
+          dismissing.set(true);
+          edgeCommitting.set(true);
+          // Whatever the drag did, the page is landing on the card now and must have a picture when
+          // it gets there. Timed rather than set: released mid-reversal the copy is at zero, and
+          // snapping the bias back would put the cover on screen in one frame.
+          zoomThumbBias.set(withTiming(1, { duration: ZOOM_THUMB_BIAS_RESTORE_MS }));
+          // Homing starts NOW, from where the finger left it (see `zoomHoming`). The drag values
+          // stay frozen at their release positions — `home` is what retires them, on the collapse's
+          // own clock, so nothing is still moving them when it lands.
+          homeAt.set(Math.max(0.001, zoom.value));
+          const throwSpeed = zoomThrowSpeed(Math.hypot(e.velocityX, e.velocityY), dismissSpan, zoom.value);
+          zoom.set(
+            // overshootClamping: there is nothing past "collapsed", so the spring must not travel
+            // through 0 and settle back up to it. No completion callback — leaving is driven by
+            // `zoom` actually reaching the card (see the leave reaction in usePageZoom).
+            withSpring(0, { ...ZOOM_OUT_SPRING_READER, overshootClamping: true, velocity: -throwSpeed }),
+          );
+        })
+        // Always fires once the gesture resolves (release OR cancel) — the next gesture decides
+        // its own mode fresh.
+        .onFinalize((_e, success) => {
+          // A cancelled dismiss drag never reaches onEnd — don't leave the page part-collapsed.
+          // Same `success` test as the details page's back-swipe, for the same reason.
+          if (gestureMode.value === 2 && !success) {
+            zoomClosing.set(false);
+            zoom.set(withSpring(1, SPRING_BACK));
+            dragX.set(withSpring(0, SPRING_BACK));
+            dragY.set(withSpring(0, SPRING_BACK));
+            zoomThumbBias.set(withTiming(1, { duration: ZOOM_THUMB_BIAS_RESTORE_MS }));
+          }
+          gestureMode.set(0);
+          // The next drag gets its own launch direction; a stale one would judge it against a
+          // gesture that is over.
+          dismissDirX.set(0);
+          dismissDirY.set(0);
+        });
+      // The back-swipe's ACTIVATION-side dominance (lib/back-swipe), applied to whichever axis this
+      // mode dismisses along: paged drags across the pages' axis (vertical), webtoon across the
+      // scroll's (horizontal). The activation half, not the strict release angle — this pan has no
+      // release-time second look, so its one gate has to stay generous enough to catch real drags.
+      // The DISTANCE stays this surface's own: nothing here is racing a scroller for the claim, so
+      // it can afford to ask for more travel before it takes the gesture.
+      const cross = Math.round(COLLAPSE_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
+      if (settings.mode === 'paged') {
+        pan.activeOffsetY([-COLLAPSE_ACTIVATE_PX, COLLAPSE_ACTIVATE_PX]).failOffsetX([-cross, cross]);
+      } else {
+        pan.activeOffsetX([-COLLAPSE_ACTIVATE_PX, COLLAPSE_ACTIVATE_PX]).failOffsetY([-cross, cross]);
+      }
+      return pan;
+    }
+  }, [
+    settings.mode,
+    collapseEnabled,
+    nativePush,
+    stripReader,
+    swipeAway,
+    leaveReaderForDetails,
+    width,
+    height,
+    zoomRadiusClosing,
+    dismissDirX,
+    dismissDirY,
+    zoomThumbBias,
+    headerSpan,
+    gestureMode,
+    progressStartSV,
+    progress,
+    dismissing,
+    homeAt,
+    zoom,
+    zoomClosing,
+    dragX,
+    dragY,
+    edgeCommitting,
+  ]);
+
+  // No destination to measure: the computed target, derived from the source rect alone, is where
+  // the page lands (see zoomGeom).
+  useEffect(() => {
+    startZoom();
+  }, [startZoom]);
+
+  // The chevron / hardware-back exit: back into the strip this page grew out of, or else into the
+  // card it came from.
+  const closeLayer = useCallback(() => {
+    if (stripReader) {
+      if (!routeBackHeld()) shrinkToStrip();
+      return;
+    }
+    collapseIntoCard();
+  }, [stripReader, routeBackHeld, shrinkToStrip, collapseIntoCard]);
+
+  // Android hardware back steps back HOME, to the details, before leaving. An album has no home
+  // but the collection it came from: its Details open over it, so stepping there would never
+  // leave. (Android-only API — react-native-web's BackHandler stub rejects addEventListener.)
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !isTop) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (sequence) closeLayer();
+      else leaveReaderForDetails();
+      return true;
+    });
+    return () => sub.remove();
+  }, [isTop, sequence, leaveReaderForDetails, closeLayer]);
+  // Desktop back steps home the same way — Escape, the chevron, and the shell's mouse back button
+  // (which arrives as Escape, see lib/desktop-commands). Not when the desktop pane beneath this
+  // reader already shows this series: its details are right there, so stepping home would show
+  // them twice, one over the other. A phone-width browser keeps the one-step exit.
+  const isDesktop = useIsDesktop();
+  const paneShowsThis = useSeriesPaneShowsTop(`${bridgeId ?? ''}:${id ?? ''}`) && depth === 0;
+  const backStepsHome = !sequence && (isDesktop || !!desktopShell()) && !paneShowsThis;
+  // Escape is the chevron. Only the TOP layer answers: every layer beneath is a whole series page
+  // with its own reader, and when each one listened, the reader's fallback popped the route — the
+  // whole stack, from three layers up.
+  useEffect(() => {
+    if (!IS_WEB || !isTop || typeof window === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      e.preventDefault();
+      if (backStepsHome) leaveReaderForDetails();
+      else closeLayer();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isTop, backStepsHome, leaveReaderForDetails, closeLayer]);
+  // ── The zoom: MASK + CONTENT TRANSFORM ───────────────────────────────────────────────────────
+  // The page grows out of the card behind a mask: see zoomContentTransform.
+  //
+  // The page has no cover of its own to land on: it grows out of the card at full size and shrinks
+  // back into it (`page`), or, once the card has gone, into the screen's centre (`no-source`).
+  const zoomGeom = useMemo(
+    () => (hero ? computeZoomGeom(hero, { kind: 'page' }, width, height) : null),
+    [hero, width, height],
+  );
+  // THE CONTENT (see zoomContentTransform). A dismissal's drag rides here too: its follow adds to
+  // the translate and its shrink multiplies the scale, so the drag and the collapse it hands into
+  // are one motion.
+  const zoomPageStyle = useAnimatedStyle(() => {
+    // Before arming: base layout.
+    if (!zoomArmed.value) {
+      return { transform: [{ translateX: 0 }, { translateY: 0 }, { scale: 1 }] };
+    }
+    // Latched at the collapse's first frame (see `zoomSourceAlive`); both are the same shape.
+    const geom = zoomSourceAlive.value ? zoomGeom : (zoomGeomNoSource ?? zoomGeom);
+    const h = (zoomSourceAlive.value ? hero : heroCentred) ?? hero;
+    return {
+      transform: zoomContentTransform(
+        geom,
+        h,
+        Math.max(0, zoom.value), // see zoomMaskStyle
+        { shiftX: heroShiftX.value, shiftY: heroShiftY.value, dragX: dragX.value, dragY: dragY.value, scrollShift: 0 },
+        width,
+        height,
+      ),
+    };
+  }, [zoomGeomNoSource, zoomGeom, hero, heroCentred]);
+
+  // The two halves of the cross-fade. The page's own opacity is separated from its transform so
+  // the thumbnail copy can ride that same transform (see zoomThumbFrame).
+  const zoomContentFadeStyle = useAnimatedStyle(() => {
+    if (!zoomArmed.value) return { opacity: 0 };
+    const q = Math.max(0, zoom.value);
+    // `no-source` draws no copy at all, so the page carries the whole collapse there; anywhere else
+    // a copy is arriving. Read off the same latched flag as the copy's own range, so the two halves
+    // of the cross-fade cannot describe different destinations.
+    const geom = zoomSourceAlive.value ? zoomGeom : (zoomGeomNoSource ?? zoomGeom);
+    const closing = geom?.kind === 'no-source' ? ZOOM_CONTENT_FADE_CLOSE_NO_SOURCE : ZOOM_CONTENT_FADE_CLOSE_READER;
+    const range = zoomClosing.value ? closing : ZOOM_CONTENT_FADE_OPEN;
+    return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
+  }, [zoomGeomNoSource, zoomGeom]);
+  // See ZOOM_BACKDROP_FADE_CLOSE / _OPEN — same shape as the content fade, its own ranges. Its
+  // colour fades, not its opacity: the backdrop holds the reader, which must not fade with it.
+  const zoomBackdropFadeStyle = useAnimatedStyle(() => {
+    if (!zoomArmed.value) return { backgroundColor: BACKDROP_CLEAR };
+    const q = Math.max(0, zoom.value);
+    const range = zoomClosing.value ? ZOOM_BACKDROP_FADE_CLOSE : ZOOM_BACKDROP_FADE_OPEN;
+    return { backgroundColor: interpolateColor(q, range, [BACKDROP_CLEAR, READER_BACKDROP]) };
+  });
+  // Sequence mode only: the copy IS the page's own image (not a series cover standing in for a
+  // card), so its rect MORPHS — from the tile-shaped `thumb` rect at q = 0, where cover-fit
+  // reproduces the tile's crop exactly, to the image's TRUE fit rect at q = 1, where cover-fit in
+  // an image-aspect rect ≡ contain, i.e. pixel-identical to the page rendered beneath it. Without
+  // the morph the copy stays tile-shaped for the whole flight, and through the cross-fade window
+  // the SAME image is drawn twice a few percent apart (a 2:3 cover-crop over an image-aspect
+  // contain) — a double exposure that reads as blur. Chapter-mode zooms keep the fixed rect: their
+  // copy is the series cover, deliberately a different picture from the page dissolving off it.
+  // Only where the page actually RENDERS at the contain rect, which is per image now that the fit
+  // is an axis: a picture whose contain-limiting axis is the fitted one sits at contain (a normal
+  // page under fit-width on a phone, a strip under fit-height); the other kind is scrolled or
+  // rested zoomed, and a copy morphing onto the contain rect would land beside it.
+  const morphFit = sequence ? (fitOverride ?? settings.pageFit) : null;
+  const zoomThumbStyle = useAnimatedStyle(() => {
+    // Latched at the collapse's first frame (see `zoomSourceAlive`).
+    const geom = zoomSourceAlive.value ? zoomGeom : (zoomGeomNoSource ?? zoomGeom);
+    const base = geom?.thumb ?? { x: 0, y: 0, width: 0, height: 0 };
+    const radius = hero ? hero.radius : 0;
+    // `no-source` draws no copy at all (see zoomThumbFrame).
+    if (!zoomArmed.value || geom?.kind === 'no-source') return zoomThumbFrame(base, 0, radius, 1, 0);
+    const q = Math.max(0, zoom.value);
+    const range = zoomClosing.value ? ZOOM_THUMB_FADE_CLOSE_READER : ZOOM_THUMB_FADE_OPEN;
+    const s = geom ? geom.s + (1 - geom.s) * q : 1;
+    let rect = base;
+
+    const ia = zoomThumbAspect.value;
+    if (
+      morphFit &&
+      ia > 0 &&
+      (morphFit === 'fit-width' ? ia >= width / height : morphFit === 'fit-height' ? ia <= width / height : ia <= 1)
+    ) {
+      // The image's contain rect, centred — in PAGE coordinates, which for a screen-sized page
+      // are screen coordinates.
+      const screenAspect = width / height;
+      const fw = ia >= screenAspect ? width : height * ia;
+      const fh = ia >= screenAspect ? width / ia : height;
+      const fx = (width - fw) / 2;
+      const fy = (height - fh) / 2;
+      rect = {
+        x: base.x + (fx - base.x) * q,
+        y: base.y + (fy - base.y) * q,
+        width: base.width + (fw - base.width) * q,
+        height: base.height + (fh - base.height) * q,
+      };
+    }
+    // The bias applies HERE and nowhere else: the copy keeps tracking the real collapse in size
+    // and position (it is still riding a page that is genuinely shrinking), it just doesn't claim
+    // to be arriving anywhere. Rewinding `q` for the fade alone is what says that. See
+    // `zoomThumbBias` — 1 for every gesture but a reversed reader dismiss, so this is the
+    // identity everywhere else.
+    const opacity = interpolate(1 - (1 - q) * zoomThumbBias.value, range, [1, 0], Extrapolation.CLAMP);
+    return zoomThumbFrame(rect, opacity, radius, s, 0);
+  }, [zoomGeomNoSource, zoomGeom, hero, morphFit, width, height]);
+  // What the flying copy DRAWS. A series open flies the series cover (the route's `cover` param is
+  // the tapped card's own URL). A SEQUENCE open grew out of a page TILE, so the copy is that
+  // page's image — the MOUNT entry's URI (already latched in sequenceTarget), which is the very
+  // URL the tile rendered from the same query cache, so the copy has pixels immediately. Mount,
+  // not visible: the collapse lands back on the tile that opened this, and the picture that lands
+  // there must be that tile's own.
+  const seqMountIndex = sequence && typeof sequenceTarget?.start === 'number' ? sequenceTarget.start : 0;
+  const zoomThumbUri = useResolvedAsset(
+    sequence ? sequence.uris[seqMountIndex] || sequence.entries[seqMountIndex]?.sourceUrl : cover,
+  );
+  // iOS: zoomed out of a History or Activity row's cover, under a tab's stack (whose provider
+  // ZoomCoverCopy reads the transition from).
+  const coverZoom = nativePush && inTabStack && params.zoomFrom === 'cover' && openedByZoom(params);
+  const zoomRect = zoomTargetRect(params.zoomFrom, width, height, bandH, stripZoomH);
+
+  // The back chevron follows the auto-hiding chrome (via the shared-value mirror), and on the way
+  // into the details' strip it stays up.
+  const chromeVisibleSV = useSharedValue(1);
+  useEffect(() => {
+    chromeVisibleSV.set(withTiming(chromeVisible ? 1 : 0, { duration: 200 }));
+  }, [chromeVisible, chromeVisibleSV]);
+  const backPersistStyle = useAnimatedStyle(() => {
+    // Solid once the page is most of the way into the strip, whatever the chrome is doing; max()
+    // keeps it from dipping on the way.
+    const detailsSide = interpolate(progress.value, [0.4, 0.8], [0, 1], Extrapolation.CLAMP);
+    return { opacity: Math.max(detailsSide, chromeVisibleSV.value) };
+  });
+
+  // The reader FRAME travels only into the strip: on the way it rises by half its hidden height,
+  // so the strip shows the page's vertical CENTRE, not its top edge. A dismissal does not move it
+  // either — the collapse moves the whole page, and the reader's dark surface stays put and fades.
+  const readerCardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: (-(height - bandH) / 2) * progress.value }],
+  }), [height, bandH]);
+
+  // ── The BACKDROP's dim (see lib/series-backdrop.ts) ───────────────────────────────────
+  // How much of the screen this page currently covers: `zoom`, which the dismiss drives too.
+  // Depth 0 ONLY: a drilled layer sits over its parent series inside this same modal, and the tabs
+  // behind the whole modal must not respond twice to what is, to them, one open page. Nor a pushed
+  // card: nothing shows behind one, and UIKit has taken the screen beneath away regardless. Nor a
+  // reader page over its details, which own the backdrop (see SplitHandoff).
+  useAnimatedReaction(
+    () => {
+      return zoom.value;
+    },
+    (covered) => {
+      if (depth === 0 && !nativePush && !stripReader) seriesReaderDim.set(covered);
+    },
+    [depth, nativePush, stripReader],
+  );
+  // Belt and braces: nothing may strand the backdrop dimmed if this screen goes away without its
+  // exit animation finishing (a deep link replacing the route, a dev reload). The hold's release
+  // does that reset, and ALSO tells the watchdog nobody owns the dim any more — the reset above is
+  // one JS-thread write against a value the reaction above writes every frame, and on its own it
+  // has no way to notice when it loses that race (see lib/pushback-watchdog).
+  useEffect(() => {
+    if (depth > 0 || nativePush || stripReader) return;
+    return holdSeriesBackdrop();
+  }, [depth, nativePush, stripReader]);
+
+  const paneRef = useRef<ReaderPaneHandle>(null);
+  // A reader page shows where it stands as its way back STARTS, not in its unmount flush after the
+  // pop: the details beneath move their strip while the zoom is still carrying the page down to it,
+  // instead of after it has landed on the old one.
+  const navigation = useNavigation<ClosingNavigation>();
+  useEffect(() => {
+    const show = () => paneRef.current?.showProgress();
+    const offs = [
+      navigation.addListener('transitionStart', (e) => {
+        if (e.data.closing) show();
+      }),
+      navigation.addListener('beforeRemove', show),
+    ];
+    return () => offs.forEach((off) => off());
+  }, [navigation]);
+  // Verify this chapter's collected pages against the page list we already fetched — repairs the
+  // ones the source shifted and seeds the indices the heart reads. See use-chapter-reconcile.
+  // Reconcile is chapter machinery — in sequence mode `pages` is the cross-series URI list, which
+  // must never be offered as a chapter's page list. (Each entry's chapter was reconciled when it
+  // was read normally; the sequence only displays.)
+  useChapterReconcile(bridgeId, id, sequence ? undefined : (visiblePage?.chapterId ?? target?.chapterId), pages);
+
+  const scheme = useActiveColorScheme();
+  // Sequence mode: the visible ENTRY names the series.
+  const seriesTitle = sequence
+    ? (visibleSequenceEntry?.seriesTitle ?? series?.title ?? 'Reader')
+    : (series?.title ?? title ?? id ?? 'Reader');
+
+  // What the toolbar's save button acts on. In sequence mode this is the visible ENTRY — its own
+  // series and chapter coordinates, not the instance's (they only match at rest, by the screen's
+  // re-keying); in chapter mode it is the visible page of the current chapter.
+  const pageAction = sequence
+    ? visibleSequenceEntry && {
+        bridgeId: visibleSequenceEntry.bridgeId,
+        seriesId: visibleSequenceEntry.seriesId,
+        seriesTitle: visibleSequenceEntry.seriesTitle,
+        chapterId: visibleSequenceEntry.chapterId,
+        ...(visibleSequenceEntry.chapterName !== undefined && {
+          chapterName: visibleSequenceEntry.chapterName,
+        }),
+        pageIndex: visibleSequenceEntry.pageIndex,
+        ...(visibleSequenceEntry.pageCount !== undefined && {
+          pageCount: visibleSequenceEntry.pageCount,
+        }),
+        ...((pages?.[visiblePage?.pageIndex ?? sequence.index] || visibleSequenceEntry.sourceUrl) !==
+          undefined && {
+          sourceUrl: pages?.[visiblePage?.pageIndex ?? sequence.index] || visibleSequenceEntry.sourceUrl,
+        }),
+      }
+    : visiblePage && {
+        bridgeId,
+        seriesId: id,
+        seriesTitle,
+        chapterId: visiblePage.chapterId,
+        ...(target?.chapterName !== undefined && { chapterName: target.chapterName }),
+        pageIndex: visiblePage.pageIndex,
+        ...(pages && { pageCount: pages.length }),
+        ...(pages?.[visiblePage.pageIndex] !== undefined && {
+          sourceUrl: pages[visiblePage.pageIndex],
+        }),
+      };
+
+  // A sequence entry's page stands alone; the chapter reader can be showing a spread.
+  const sourceUrlOf = (i: number) => (sequence ? pageAction?.sourceUrl : pages?.[i]);
+  const pagesOnScreen =
+    sequence || !visiblePage
+      ? undefined
+      : () =>
+          paneRef.current?.pagesOnScreen(visiblePage.chapterId, visiblePage.pageIndex) ?? {
+            pages: [visiblePage.pageIndex],
+            rtl: false,
+          };
+
+  const dimOverlays = <StripDim progress={progress} />;
+
+  // iOS: the system bar is the reader's top chrome, through the route's options: its glass items
+  // alone over the page, the back button and the save and settings buttons (ReaderNativeToolbar),
+  // with no title and nothing behind them, following the chrome's auto-hide through `headerShown`,
+  // so UIKit slides it away and back. A mounted Stack.Toolbar sets `headerShown: true` on top of
+  // these options (expo-router merges its items in over the page's own), so no toolbar renders its
+  // items while the bar is down. Only the top instance sets the options (they are the route's,
+  // shared by every layer), and the elements mount only while it is top, so a layer that becomes
+  // top again re-applies them. Pushed over the details the back button is the system's. A reader
+  // that is the root's first page reaches the `index` of the nested stack (app/series/_layout),
+  // never the contained transparent modal around it, whose content react-native-screens remounts
+  // when its `headerShown` flips; a nested root has no back of its own, hence the chevron.
+  // Off iOS, in sequence mode, the reader's own bar describes the VISIBLE entry — which series the
+  // page in front of you belongs to is the one thing that bar must answer there.
+  const readerBarTitle = sequence ? (visibleSequenceEntry?.seriesTitle ?? seriesTitle) : seriesTitle;
+  const readerBarSubtitle = sequence ? (visibleSequenceEntry?.chapterName ?? '') : (target?.chapterName ?? '');
+  const nativeBar =
+    NATIVE_HEADER && isTop ? (
+      <>
+        <Stack.Screen
+          options={{
+            headerShown: chromeVisible,
+            headerTransparent: true,
+            headerShadowVisible: false,
+            headerBackVisible: nativePush,
+            // UIKit's interactive dismissal only where it is the reader's swipe away (`swipeAway`);
+            // anywhere else the reader's own drags own the screen.
+            gestureEnabled: nativePush && swipeAway && !readerZoomed && !scrubbing,
+            // No title: plain text in the bar is what needs a backing behind it, and the system's
+            // automatic edge goes opaque for one. Liquid Glass items read over any page by themselves.
+            title: '',
+            headerTitle: '',
+            headerBlurEffect: 'none',
+            headerTintColor: '#fff',
+            // Nothing behind the items in either mode, so a webtoon scrolled under the bar matches
+            // a pager, which never is.
+            scrollEdgeEffects: { top: 'hidden' },
+            // The bar comes and goes with the chrome, never with the scroll (see SLIDE_AWAY_BAR).
+            unstable_nativeProps: { headerConfig: { minimizationBehavior: 'never' } },
+          }}
+        />
+        {!nativePush && chromeVisible ? (
+          <Stack.Toolbar placement="left">
+            <Stack.Toolbar.Button
+              icon="chevron.left"
+              accessibilityLabel="Go back"
+              onPress={backStepsHome ? leaveReaderForDetails : closeLayer}
+            />
+          </Stack.Toolbar>
+        ) : null}
+        <ReaderNativeToolbar
+          bridgeId={pageAction ? pageAction.bridgeId : bridgeId}
+          seriesId={pageAction ? pageAction.seriesId : id}
+          seriesTitle={pageAction ? pageAction.seriesTitle : seriesTitle}
+          chapterId={pageAction?.chapterId}
+          chapterName={pageAction?.chapterName}
+          pageIndex={pageAction?.pageIndex ?? 0}
+          pageCount={pageAction?.pageCount}
+          sourceUrlOf={sourceUrlOf}
+          pagesOnScreen={pagesOnScreen}
+          seriesKey={seriesKey}
+          barShown={chromeVisible}
+          onHoldChrome={holdChrome}
+          onPress={showChrome}
+        />
+      </>
+    ) : null;
+  const topChrome = (
+    <TopBarSwitch
+      mode="reader"
+      persistent={
+        NATIVE_HEADER ? null : (
+          <PersistentBack
+            nativeID={`${chromeId}-back`}
+            progress={progress}
+            style={backPersistStyle}
+            touchable={chromeVisible}
+            onPress={backStepsHome ? leaveReaderForDetails : closeLayer}
+          />
+        )
+      }
+      bars={{
+        // The bar is the system's on iOS (nativeBar), with nothing drawn behind it.
+        reader: NATIVE_HEADER ? null : (
+          // The reader's own fully transparent toolbar, with no back of its own: the persistent
+          // chevron above is the back button. Its auto-hide rides `visible`.
+          <View nativeID={`${chromeId}-bar`} pointerEvents="box-none">
+            <CollectPageShortcut
+              enabled={IS_WEB && isTop}
+              bridgeId={pageAction ? pageAction.bridgeId : bridgeId}
+              seriesId={pageAction ? pageAction.seriesId : id}
+              seriesTitle={pageAction ? pageAction.seriesTitle : seriesTitle}
+              chapterId={pageAction?.chapterId}
+              chapterName={pageAction?.chapterName}
+              pageIndex={pageAction?.pageIndex ?? 0}
+              pageCount={pageAction?.pageCount}
+              sourceUrlOf={sourceUrlOf}
+              pagesOnScreen={pagesOnScreen}
+            />
+            <ReaderToolbar
+              title={readerBarTitle}
+              subtitle={readerBarSubtitle}
+              visible={chromeVisible}
+              onBack={goBack}
+              hideBack
+              trailingWidth={zoomControlShown ? TRAILING_SLOT_W + Spacing.two + ZOOM_CONTROL_W : undefined}
+              right={
+                <>
+                  {zoomControlShown && <ZoomControl onPress={showChrome} />}
+                  <CollectPageControl
+                    bridgeId={pageAction ? pageAction.bridgeId : bridgeId}
+                    seriesId={pageAction ? pageAction.seriesId : id}
+                    seriesTitle={pageAction ? pageAction.seriesTitle : seriesTitle}
+                    chapterId={pageAction?.chapterId}
+                    chapterName={pageAction?.chapterName}
+                    pageIndex={pageAction?.pageIndex ?? 0}
+                    pageCount={pageAction?.pageCount}
+                    sourceUrlOf={sourceUrlOf}
+                    pagesOnScreen={pagesOnScreen}
+                    onPress={showChrome}
+                  />
+                  {/* Held up while the menu is open: it is anchored to the gear, and the
+                      toolbar fading out from under it would leave it pointing at nothing. */}
+                  <SettingsControl seriesKey={seriesKey} onOpenChange={holdChrome} />
+                </>
+              }
+            />
+          </View>
+        ),
+      }}
+    />
+  );
+
+  return (
+    // Plain (transparent) root — the route is a contained transparent modal, so a dismissal can
+    // fade the layers out over the screen beneath. The reader's surface supplies the opaque fill.
+    <View style={styles.container}>
+      {/* The status bar shows with the chrome and goes with it, in every mode. The bar's buttons
+          go to the vertical bar of a folded or landscape display like every other screen's, the
+          title staying on top. Not the opt-out (expo-status-bar's verticalBarBehaviorIOS): it has
+          iOS re-lay the bars out from the window's root controller only, so leaving a reader that
+          had opted out left the details on a horizontal bar until something else re-laid them out. */}
+      <ScreenStatusBar
+        style={settings.mode === 'paged' ? (scheme === 'dark' ? 'light' : 'dark') : 'light'}
+        hidden={!chromeVisible}
+      />
+
+      <SplitClip travel={stripFrom ? height - stripFrom.stripBottom : null} progress={progress}>
+      {/* THE READER'S BACKDROP: full screen, never moving, fading IN PLACE as the collapse carries
+          the page over it. Outside the mask on purpose — inside it, it travelled and scaled along
+          with everything else, which is a swipe-away dragging its own background off with it. It
+          holds the reader instead of sitting behind it as a sibling: the iOS bar finds the list whose
+          scroll edge it styles by walking each first subview down, and a backdrop laid in first was
+          all that walk ever reached. */}
+      <Animated.View
+        collapsable={false}
+        pointerEvents="box-none"
+        style={[styles.readerSurface, { width, height }, zoomBackdropFadeStyle]}>
+      <ZoomFrame
+        committing={edgeCommitting}
+        leave={leaveOnce}
+        maskStyle={zoomMaskStyle}
+        pageStyle={zoomPageStyle}
+        contentFadeStyle={zoomContentFadeStyle}
+        width={width}
+        height={height}
+        thumb={
+          hero && zoomGeom && zoomThumbUri
+            ? { uri: zoomThumbUri, rect: zoomGeom.thumb, style: zoomThumbStyle, onPainted: onZoomThumbPainted }
+            : null
+        }>
+
+      {/* The reader: full screen, in three layers — a static fading surface above, the traveling
+          page subtree, and the chrome that fades with it. The collapse/dismiss pan wraps the whole
+          cell (the scrubber and a zoomed page disable it). */}
+      <GestureDetector gesture={collapsePan}>
+        <Animated.View
+          testID="series-page.reader-card"
+          style={[styles.readerFrame, { top: 0, width, height }, readerCardStyle]}>
+          <View style={styles.readerClip}>
+          {error ? (
+            <>
+              {pagesGone && !missingBridge ? (
+                <View testID="series-page.reader.removed" style={[styles.centerFill, styles.readerNotice]}>
+                  <ThemedText type="small" style={styles.readerNoticeText}>
+                    {`${bridge || 'The source'} no longer has this series, and this chapter isn't downloaded, so it can't be opened.`}
+                  </ThemedText>
+                </View>
+              ) : !missingBridge ? (
+                <View style={styles.centerFill}>
+                  <RetryBlock message={error} onRetry={refetch} />
+                </View>
+              ) : (
+                <View style={styles.centerFill}>
+                  <BridgeMissingNotice
+                    bridge={missingBridge}
+                    message={`${missingBridge.name} isn't installed and this chapter isn't downloaded, so it can't be opened.`}
+                    testID="series-page.reader.bridgeMissing"
+                  />
+                </View>
+              )}
+              {dimOverlays}
+            </>
+          ) : !readerReady ? (
+            <>
+              <View style={styles.centerFill}>
+                <ThemedText style={styles.loadingText}>Loading…</ThemedText>
+              </View>
+              {dimOverlays}
+            </>
+          ) : (
+            <ReaderPane
+              onVisiblePage={setVisiblePage}
+              // Stitched, the pane is keyed by the RUN (plus the explicit-jump nonce), so a boundary
+              // crossing's relabel does NOT remount it — only leaving the run (chapter list tap,
+              // skip button, cold-window fallback) does. Direct and sequence reads stay keyed by
+              // chapter.
+              key={stitched ? `run:${runKey}:${jumpNonce}` : `${target.chapterId ?? DIRECT_CHAPTER_ID}:${jumpNonce}`}
+              ref={paneRef}
+              pages={pages}
+              segments={segments}
+              onRelabel={relabelFromPager}
+              start={target.start}
+              width={width}
+              height={height}
+              bridgeId={bridgeId}
+              seriesId={id}
+              seriesTitle={seriesTitle}
+              seriesCover={series?.cover}
+              chapterId={target.chapterId}
+              chapterName={target.chapterName}
+              picked={!!target.picked}
+              // A sequence has no chapter roster: no skip buttons, no cross-chapter paging, and —
+              // below — no progress writes (a sequence hop is browsing, not a read position, and
+              // recording it would clobber the real one).
+              chaptered={!isDirect && !sequence}
+              recordProgress={!sequence}
+              hasPrevChapter={!sequence && !!prevChapter}
+              hasNextChapter={!sequence && !!nextChapter}
+              nextChapterName={nextChapter?.name}
+              onCrossChapter={goAdjacentChapter}
+              onSkipChapter={(delta) => {
+                showChrome();
+                goAdjacentChapter(delta, 'first');
+              }}
+              chromeVisible={chromeVisible}
+              onToggleChrome={toggleChrome}
+              onShowChrome={showChrome}
+              onHoldChrome={holdChrome}
+              onZoomChange={setReaderZoomed}
+              onScrubActive={onScrubActive}
+              overlay={dimOverlays}
+              // Only the page on screen loads (no warm-ahead, render window of 1) until the
+              // entrance settles; the normal prefetch pipeline resumes after.
+              standby={!entranceSettled}
+              entering={!entranceSettled}
+              inLibrary={inLibrary}
+              keyboard={isTop}
+              glass={pushSettled}
+            />
+          )}
+            {/* The Details pill — the guaranteed way to the details (webtoon's reader owns vertical
+                drags, and never goes back to them by dragging). Not on a desktop: its details are
+                the pane's, or the chevron's (`backStepsHome`). Nor on a reader page opened from
+                the details, whose back goes to them. */}
+            <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+              <DetailsHint
+                visible={chromeVisible && !isDesktop && !desktopShell() && params.from !== 'details'}
+                onPress={leaveReaderForDetails}
+              />
+            </View>
+          </View>
+        </Animated.View>
+      </GestureDetector>
+
+      {/* UIKit's zoom out of the details' strip lands on the same stretch of this page: the strip's
+          resting rect, centred, as `readerCardStyle` centres the page in the strip on the way back.
+          Out of a thumbnail it lands on the whole screen, which expo-router narrows to the
+          thumbnail's shape, centred: about where a fitted page sits. Out of a row's cover that box
+          is spelled out, since the copy of the cover drawn over it has to sit exactly where the
+          thumbnail lands. */}
+      {nativePush ? (
+        <View pointerEvents="none" style={[styles.zoomTarget, zoomRect]}>
+          <LinkAppleZoomTarget>
+            <View collapsable={false} style={{ width: zoomRect.width, height: zoomRect.height }} />
+          </LinkAppleZoomTarget>
+          {coverZoom && zoomThumbUri ? <ZoomCoverCopy uri={zoomThumbUri} loading={!readerReady && !error} /> : null}
+        </View>
+      ) : null}
+
+      {/* The top bar (see `topChrome` above) rides the page's own motion, entrance and dismissal
+          alike. */}
+      {nativeBar}
+      {topChrome}
+      </ZoomFrame>
+      </Animated.View>
+      </SplitClip>
+    </View>
+  );
+}
+
+/** Where the system zoom lands on the reader page, for the `zoomFrom` it was pushed with. */
+function zoomTargetRect(zoomFrom: string | undefined, width: number, height: number, bandH: number, stripH: number) {
+  if (zoomFrom === 'strip') return { top: (height - bandH) / 2, left: 0, width, height: stripH };
+  if (zoomFrom === 'cover') {
+    // A 2:3 cover's contain box.
+    const w = Math.min(width, (height * 2) / 3);
+    const h = w * 1.5;
+    return { top: (height - h) / 2, left: (width - w) / 2, width: w, height: h };
+  }
+  return { top: 0, left: 0, width, height };
+}
+
+type ClosingNavigation = {
+  addListener(type: 'transitionStart', cb: (e: { data: { closing: boolean } }) => void): () => void;
+  addListener(type: 'beforeRemove', cb: () => void): () => void;
+};
+
+/** The backdrop's colour with none of it: the same black, so the fade in never passes through grey. */
+const BACKDROP_CLEAR = 'rgba(0,0,0,0)';
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    // Transparent: the route is a contained transparent modal, and a dismissal fades the page out
+    // over the screen beneath.
+    backgroundColor: 'transparent',
+  },
+  // The reader's frame + clip. No background on either: the dark reader surface is a static
+  // full-screen layer AROUND the frame (readerSurface), so it keeps covering the screen while the
+  // strip-centering translate moves the frame, and a dismissal can dissolve it in place while only
+  // the page travels.
+  readerFrame: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  readerClip: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  readerSurface: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  zoomTarget: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  centerFill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  readerNotice: {
+    paddingHorizontal: Spacing.five,
+  },
+  readerNoticeText: {
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
+  },
+  loadingText: {
+    color: '#fff',
+  },
+});

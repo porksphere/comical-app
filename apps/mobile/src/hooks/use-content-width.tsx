@@ -20,6 +20,7 @@
  */
 import { createContext, useContext, useMemo } from 'react';
 import { useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type NavLayout = {
   /** The width left for content after the rail. */
@@ -54,4 +55,19 @@ export function useContentWidth(): number {
 /** True only where the rail is actually rendered — false on every screen that covers it. */
 export function useHasSidebar(): boolean {
   return useContext(NavLayoutContext)?.sidebar ?? false;
+}
+
+export type SideInsets = { left: number; right: number };
+
+/**
+ * The safe area's left and right edges for content in this subtree: the sensor housing's side of a
+ * landscape iPhone, the vertical bar iOS 27 puts beside the content on the wide iPhones. Content
+ * lays out inside them while its backgrounds run under them, so a screen pads its CONTENT by these
+ * rather than its scroller or its root view. The left one is 0 where the rail is the nav: the rail
+ * already sits on that edge.
+ */
+export function useSideInsets(): SideInsets {
+  const { left, right } = useSafeAreaInsets();
+  const sidebar = useHasSidebar();
+  return { left: sidebar ? 0 : left, right };
 }

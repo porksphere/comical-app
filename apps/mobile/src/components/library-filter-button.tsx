@@ -1,3 +1,4 @@
+import { Stack } from 'expo-router';
 import { useMemo } from 'react';
 
 import { FilterIcon } from '@/components/icons/ui-icons';
@@ -64,19 +65,7 @@ export function LibraryFilterButton({ withShow, present }: { withShow?: boolean;
  * the ticks it opened with (see `ChoiceMenuButton`, which closes on every pick for that reason).
  */
 function LibraryFilterMenu({ withShow, present }: { withShow?: boolean; present: Present }) {
-  const show = useLibraryShow();
-  const bridges = useLibraryBridges();
-  const removedOnly = useLibraryRemovedOnly();
-  const { nameOf } = useBridgeMap();
-  const visible = useVisibleByBridge(present);
-
-  const sources = useMemo(() => {
-    const ids = new Set(visible.map((i) => i.bridgeId));
-    // A ticked source stays listed even once nothing from it is left, or the menu would hide what is
-    // emptying the grid along with the way to untick it.
-    for (const id of bridges) ids.add(id);
-    return [...ids].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-  }, [visible, bridges, nameOf]);
+  const { show, bridges, removedOnly, sources, nameOf } = useLibraryFilterState(present);
 
   return (
     <OptionMenu title="Filter">
@@ -127,5 +116,102 @@ function LibraryFilterMenu({ withShow, present }: { withShow?: boolean; present:
         ))}
       </OptionList>
     </OptionMenu>
+  );
+}
+
+export type LibraryFilterState = {
+  show: ReadState[];
+  bridges: string[];
+  removedOnly: boolean;
+  /** The sources on offer, the bridges `present` holds plus any ticked one, by name. */
+  sources: string[];
+  nameOf: (bridgeId: string) => string;
+};
+
+/** What the filter menu shows, for either rendering of it (the overlay here, the iOS bar menu). */
+export function useLibraryFilterState(present: Present): LibraryFilterState {
+  const show = useLibraryShow();
+  const bridges = useLibraryBridges();
+  const removedOnly = useLibraryRemovedOnly();
+  const { nameOf } = useBridgeMap();
+  const visible = useVisibleByBridge(present);
+
+  const sources = useMemo(() => {
+    const ids = new Set(visible.map((i) => i.bridgeId));
+    // A ticked source stays listed even once nothing from it is left, or the menu would hide what is
+    // emptying the grid along with the way to untick it.
+    for (const id of bridges) ids.add(id);
+    return [...ids].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  }, [visible, bridges, nameOf]);
+
+  return { show, bridges, removedOnly, sources, nameOf };
+}
+
+/** Whether anything is narrowing the listing — what fills the filter icon, here and on the menu
+ *  button holding it. */
+export function libraryFilterNarrowing({
+  withShow,
+  show,
+  bridges,
+  removedOnly,
+}: Pick<LibraryFilterState, 'show' | 'bridges' | 'removedOnly'> & { withShow: boolean }) {
+  return (withShow && (show.length > 0 || removedOnly)) || bridges.length > 0;
+}
+
+/**
+ * The same filter as a submenu of the Library's iOS bar menu (library-native-toolbar). A function
+ * returning the element rather than a component: the native menu only reads Stack.Toolbar.*
+ * elements that are its direct children, so a component wrapping one would be invisible to it.
+ * The icon fills while anything is narrowing, as the custom button's does. The system menu closes
+ * on every pick, so a multi-select here is one toggle per opening — the price of the bar drawing
+ * it.
+ */
+export function libraryFilterMenu({
+  withShow,
+  show,
+  bridges,
+  removedOnly,
+  sources,
+  nameOf,
+}: LibraryFilterState & { withShow: boolean }) {
+  const narrowing = libraryFilterNarrowing({ withShow, show, bridges, removedOnly });
+  return (
+    <Stack.Toolbar.Menu
+      title="Filter"
+      icon={narrowing ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle'}
+      accessibilityLabel={withShow ? 'Filter by reading state or source' : 'Filter by source'}>
+      {withShow && (
+        <Stack.Toolbar.Menu inline title="Show">
+          <Stack.Toolbar.MenuAction isOn={show.length === 0} onPress={clearLibraryShow}>
+            Everything
+          </Stack.Toolbar.MenuAction>
+          {READ_STATES.map((state) => (
+            <Stack.Toolbar.MenuAction key={state} isOn={show.includes(state)} onPress={() => toggleLibraryShow(state)}>
+              {SHOW_LABELS[state]}
+            </Stack.Toolbar.MenuAction>
+          ))}
+        </Stack.Toolbar.Menu>
+      )}
+      {withShow && (
+        <Stack.Toolbar.Menu inline title="Availability">
+          <Stack.Toolbar.MenuAction isOn={!removedOnly} onPress={() => setLibraryRemovedOnly(false)}>
+            Any
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction isOn={removedOnly} onPress={() => setLibraryRemovedOnly(true)}>
+            Removed from source
+          </Stack.Toolbar.MenuAction>
+        </Stack.Toolbar.Menu>
+      )}
+      <Stack.Toolbar.Menu inline title="Source">
+        <Stack.Toolbar.MenuAction isOn={bridges.length === 0} onPress={clearLibraryBridges}>
+          All sources
+        </Stack.Toolbar.MenuAction>
+        {sources.map((id) => (
+          <Stack.Toolbar.MenuAction key={id} isOn={bridges.includes(id)} onPress={() => toggleLibraryBridge(id)}>
+            {nameOf(id)}
+          </Stack.Toolbar.MenuAction>
+        ))}
+      </Stack.Toolbar.Menu>
+    </Stack.Toolbar.Menu>
   );
 }
