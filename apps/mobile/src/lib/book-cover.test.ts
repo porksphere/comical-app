@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { BOOK_COVERS, BOUND_CORNER, BOUND_MAX_ASPECT, LOOSE_CORNER, bookRadius, resolveCover } from './book-cover';
+import { BOOK_COVERS, BOUND_CORNER, BOUND_MAX_ASPECT, LOOSE_CORNER, bookRadius, resolveCover, shuffledHints } from './book-cover';
 
 const GUESS = { readsVertically: false, readerRightToLeft: false, direct: false, aspect: 0.7 };
 
@@ -69,5 +69,16 @@ describe('bookRadius', () => {
   });
   test('does not depend on the binding side', () => {
     expect(bookRadius(BOOK_COVERS.volume.right, false)).toBe(bookRadius(BOOK_COVERS.volume.left, false));
+  });
+});
+
+describe('shuffledHints', () => {
+  test('is the same for a series every time', () => {
+    expect(shuffledHints('mangadex:abc')).toEqual(shuffledHints('mangadex:abc'));
+  });
+  test('reaches every form and both bindings across a shelf of series', () => {
+    const picks = Array.from({ length: 200 }, (_, i) => shuffledHints(`bridge:${i}`));
+    expect(new Set(picks.map((p) => p.form))).toEqual(new Set(['volume', 'issue', 'scroll', 'sheets']));
+    expect(new Set(picks.map((p) => p.direction))).toEqual(new Set(['ltr', 'rtl']));
   });
 });

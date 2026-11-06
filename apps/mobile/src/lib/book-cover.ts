@@ -4,9 +4,9 @@
  * draws them and `hooks/use-book-covers.ts` decides which ones apply to a card.
  *
  * Four forms, each the quietest take of its kind — the contract's `coverForm`:
- *  - `volume` — a bound book: a hinge on the binding side.
- *  - `issue` — a saddle-stitched booklet (doujinshi, oneshots): a narrow fold and a band of gloss.
- *  - `scroll` — nothing bound (webtoons): even corners and a glass highlight, no spine.
+ *  - `volume` — a bound book: a spine on the binding side.
+ *  - `issue` — a saddle-stitched booklet (doujinshi, oneshots): one crease where the staples are.
+ *  - `scroll` — nothing bound (webtoons): rounder corners, no spine.
  *  - `sheets` — loose pictures (CG sets): the front one with another sheet showing behind it.
  */
 import type { CoverForm, ReadingDirection } from '@comical/contract';
@@ -53,6 +53,21 @@ export function resolveCover({
   if ((resolved === 'volume' || resolved === 'issue') && aspect > BOUND_MAX_ASPECT) resolved = 'scroll';
   const rightToLeft = direction === 'rtl' || (direction !== 'ltr' && readerRightToLeft);
   return BOOK_COVERS[resolved][rightToLeft ? 'right' : 'left'];
+}
+
+const FORMS: readonly CoverForm[] = ['volume', 'issue', 'scroll', 'sheets'];
+
+/**
+ * A form and a binding picked for a series out of nowhere but its key (Settings → Developer → Shuffle
+ * book covers), so every style shows up on real covers. Stable per series — a card keeps its book
+ * while a list scrolls and recycles — and handed to `resolveCover` as a bridge's hint would be, so a
+ * wide cover still drops its spine.
+ */
+export function shuffledHints(key: string): { form: CoverForm; direction: ReadingDirection } {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  h >>>= 0;
+  return { form: FORMS[h % FORMS.length], direction: (h >>> 8) & 1 ? 'rtl' : 'ltr' };
 }
 
 /**
