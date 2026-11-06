@@ -139,13 +139,13 @@ final class NavBarLeadingView: ExpoView {
       return
     }
     navigationItem = item
-    observation = item.observe(\.leftBarButtonItems, options: [.new]) { [weak self] _, _ in
+    observation = item.observe(\.rightBarButtonItems, options: [.new]) { [weak self] _, _ in
       self?.apply()
     }
   }
 
   private func apply() {
-    guard let leading = navigationItem?.leftBarButtonItems?.first else {
+    guard let leading = navigationItem?.rightBarButtonItems?.first else {
       return
     }
     if let image, leading.image !== image {

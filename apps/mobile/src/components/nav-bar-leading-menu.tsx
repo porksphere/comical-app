@@ -41,7 +41,7 @@ export function NavBarLeadingMenu({
 }) {
   if (!NavBarLeading) {
     return (
-      <Stack.Toolbar placement="left">
+      <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu
           icon={image ? fileIcon(image) : symbol}
           iconRenderingMode={image ? 'original' : 'template'}
@@ -82,7 +82,7 @@ export function NavBarLeadingMenu({
   };
   return (
     <>
-      <Stack.Toolbar placement="left">
+      <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon="circle" accessibilityLabel="Menu" />
       </Stack.Toolbar>
       <NavBarLeading
