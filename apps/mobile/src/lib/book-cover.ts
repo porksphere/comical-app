@@ -146,26 +146,26 @@ export const SPINE: Shade = {
   locations: [0, 0.01, 0.011, 0.011, 0.012, 0.016, 0.023, 0.026, 0.037, 0.048, 0.048, 0.054, 0.065, 0.988, 1],
 };
 
-/** A saddle-stitched issue: no board, so one crease where the staples are, inside 4% of the width,
- *  and the same lip at the fore-edge. */
+/** A saddle-stitched issue: no board, but its cover bent round the staples — a bright lip where the
+ *  fold catches the light and a crease behind it, inside 4.2% of the width — and the same lip at the
+ *  fore-edge. Deeper than a volume's cues, so the fold itself reads on busy art. */
 export const FOLD: Shade = {
   colors: [
-    'rgba(0,0,0,0.18)', 'rgba(0,0,0,0)',
-    'rgba(255,255,255,0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0)',
-    'rgba(0,0,0,0)', 'rgba(0,0,0,0.10)', 'rgba(0,0,0,0)',
+    'rgba(255,255,255,0.3)', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0)',
+    'rgba(0,0,0,0)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.08)', 'rgba(0,0,0,0)',
     'rgba(255,255,255,0)', 'rgba(255,255,255,0.08)',
   ],
-  locations: [0, 0.008, 0.008, 0.012, 0.02, 0.022, 0.028, 0.038, 0.988, 1],
+  locations: [0, 0.006, 0.0085, 0.0085, 0.011, 0.026, 0.042, 0.988, 1],
 };
 
 /**
- * An issue's two saddle staples, on the fold a quarter of the way in from each end, as fractions: `at`
- * and `length` of the cover's height, `inset` from the binding edge and `width` of its width. The
- * crease alone made an issue a slightly thinner volume, which real cover art erased; a staple is the
- * one thing a book never has. Drawn bigger than a real staple (whose wire is about 0.3% of a B5's
- * width) or it vanishes at card size.
+ * An issue's two saddle staples, a fifth of the way in from each end, as fractions: `at` and `length`
+ * of the cover's height, `width` of its width, and `overhang` past the binding edge — they cross the
+ * fold itself, so they stand just proud of the cover. The crease alone made an issue a slightly
+ * thinner volume, which real cover art erased; a staple is the one thing a book never has. Drawn far
+ * bigger than a real staple (whose wire is about 0.3% of a B5's width) or it vanishes at card size.
  */
-export const STAPLES = { at: [0.21, 0.725], length: 0.065, inset: 0.009, width: 0.012 } as const;
+export const STAPLES = { at: [0.195, 0.715], length: 0.09, overhang: 0.006, width: 0.026 } as const;
 
 /** A staple's wire, lit from the left: bright where it catches the light, falling to a dark trailing
  *  edge that stands in for its shadow on the paper (a `boxShadow` would be a layer per card). */

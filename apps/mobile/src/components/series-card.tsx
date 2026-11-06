@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { BehindPrint, BookChrome, BookShadow, PrintPaper } from '@/components/book-chrome';
+import { BehindPrint, BookChrome, BookShadow, BookStaples, PrintPaper } from '@/components/book-chrome';
 import { CardOverlays } from '@/components/card-badge';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -179,9 +179,10 @@ export function CoverFrame({
       </View>
     );
   }
-  if (Platform.OS !== 'web') {
+  if (Platform.OS !== 'web' && book?.form !== 'issue') {
     // Native has no ring, so the box IS the clip — one fewer host view means one fewer Fabric clone
-    // up the ancestor chain on every commit, on the platform that scrolls these grids.
+    // up the ancestor chain on every commit, on the platform that scrolls these grids. An issue's
+    // staples overhang its edge, so an issue keeps the box and the clip apart, as the web does.
     return (
       <View
         ref={coverRef}
@@ -193,6 +194,7 @@ export function CoverFrame({
   }
   return (
     // Web draws the ring as a sibling over the clip, so a scaled picture inside the clip can't cover it.
+    // An issue's staples sit beside the clip too, on every platform.
     <View
       ref={coverRef}
       style={[styles.coverBox, { aspectRatio: aspect }, hidden && styles.coverHidden]}
@@ -200,7 +202,8 @@ export function CoverFrame({
       <View style={[styles.coverClip, corners ?? [coverStyles.corner, desktop && coverStyles.cornerDesktop], contentStyle]}>
         {children}
       </View>
-      {ring && (
+      {book && <BookStaples cover={book} />}
+      {ring && Platform.OS === 'web' && (
         <View
           style={[
             coverStyles.ring,

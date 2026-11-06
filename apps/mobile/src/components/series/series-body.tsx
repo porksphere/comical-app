@@ -21,7 +21,7 @@ import {
 import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
-import { BehindPrint, BookChrome, BookShadow, PrintPaper } from '@/components/book-chrome';
+import { BehindPrint, BookChrome, BookShadow, BookStaples, PrintPaper } from '@/components/book-chrome';
 import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { TagGroupRow } from '@/components/chip';
 import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
@@ -594,6 +594,7 @@ export function SeriesBody({
           )}
         </SeriesCoverBox>
       </LinkAppleZoomTarget>
+      {book && <BookStaples cover={book} />}
       {chapterCount != null && (
         <View style={styles.coverBadge}>
           <ThemedText style={styles.coverBadgeText}>{chapterCount}</ThemedText>

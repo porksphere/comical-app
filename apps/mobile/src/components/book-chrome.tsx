@@ -1,6 +1,6 @@
 import { Image as Picture } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { Image, Platform, StyleSheet, View, type ImageStyle, type StyleProp, type ViewStyle } from 'react-native';
 
 import { ContinuousCorner } from '@/constants/theme';
@@ -33,9 +33,10 @@ const FROM_SPINE = {
 const DOWN = { start: { x: 0, y: 0 }, end: { x: 0, y: 1 } } as const;
 const ACROSS = { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } } as const;
 
-/** The book drawn over a cover's picture, inside its clip: a bound form's spine and fore-edge, every
- *  form's top and bottom edge, and an issue's staples. Light and shade only — no outline, which on a page of the cover's
- *  own colour reads as an app tile's border rather than a book's edge. Never takes a touch. */
+/** The book drawn over a cover's picture, inside its clip: a bound form's spine or an issue's fold, its
+ *  fore-edge, and every form's top and bottom edge. Light and shade only — no outline, which on a page
+ *  of the cover's own colour reads as an app tile's border rather than a book's edge. An issue's
+ *  staples are `BookStaples`, outside the clip. Never takes a touch. */
 export function BookChrome({ cover }: { cover: BookCover }) {
   // A print's edge is its paper (`PrintPaper`); nothing is drawn over its picture.
   if (cover.form === 'sheets') return null;
@@ -46,16 +47,26 @@ export function BookChrome({ cover }: { cover: BookCover }) {
         <LinearGradient style={styles.fill} colors={across.colors} locations={across.locations} {...FROM_SPINE[cover.binding]} />
       )}
       <LinearGradient style={styles.fill} colors={EDGES.colors} locations={EDGES.locations} {...DOWN} />
-      {cover.form === 'issue' &&
-        STAPLES.at.map((at) => (
-          <LinearGradient
-            key={at}
-            style={[styles.staple, { top: `${at * 100}%`, [cover.binding]: `${STAPLES.inset * 100}%` }]}
-            colors={STAPLE.colors}
-            locations={STAPLE.locations}
-            {...ACROSS}
-          />
-        ))}
+    </>
+  );
+}
+
+/** An issue's staples. They overhang the binding edge, so they are drawn beside the cover's clip, not
+ *  in it, by whatever holds the cover, in a box the cover's size. Each casts a hard shadow, offset as
+ *  the light falls, rather than a live one per card. */
+export function BookStaples({ cover }: { cover: BookCover }) {
+  if (cover.form !== 'issue') return null;
+  return (
+    <>
+      {STAPLES.at.map((at) => {
+        const place = { top: `${at * 100}%`, [cover.binding]: `${-STAPLES.overhang * 100}%` } as const;
+        return (
+          <Fragment key={at}>
+            <View style={[styles.staple, styles.stapleShadow, place]} />
+            <LinearGradient style={[styles.staple, place]} colors={STAPLE.colors} locations={STAPLE.locations} {...ACROSS} />
+          </Fragment>
+        );
+      })}
     </>
   );
 }
@@ -237,8 +248,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: `${STAPLES.width * 100}%`,
     height: `${STAPLES.length * 100}%`,
-    borderRadius: 1,
+    // A pill at any size: every platform clamps a radius to half the shorter side.
+    borderRadius: 99,
     pointerEvents: 'none',
+  },
+  stapleShadow: {
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    transform: [{ translateX: 0.6 }, { translateY: 0.5 }],
   },
   shadowBox: {
     position: 'absolute',
