@@ -26,6 +26,15 @@ export function glowFromTones(top: Rgb, bottom: Rgb): CoverGlow {
   return { rim: css(pale), foot: css(bottom) };
 }
 
+/** The glow pictures' alpha, which a live shadow carries in its colour instead. */
+const GLOW_ALPHA = 0.3;
+const translucent = (rgb: string) => rgb.replace(/^rgb\((.*)\)$/, `rgba($1,${GLOW_ALPHA})`);
+
+/** A cover's glow as the colours of a thumbnail's live lift (`liftShadows` in lib/book-cover). */
+export function liftGlow({ rim, foot }: CoverGlow): { rim: string; foot: string } {
+  return { rim: translucent(rim), foot: translucent(foot) };
+}
+
 const BASE83 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~';
 const decode83 = (s: string) => [...s].reduce((v, c) => v * 83 + BASE83.indexOf(c), 0);
 const toLinear = (v: number) => {

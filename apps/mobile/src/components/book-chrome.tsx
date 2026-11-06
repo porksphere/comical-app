@@ -11,16 +11,20 @@ import {
   BOOK_COVERS,
   EDGES,
   FOLD,
+  LIFT_SHADE,
+  NEUTRAL_LIFT_GLOW,
   PRINT,
-  SHADOW_BOX,
   SPINE,
   STAPLE,
   STAPLES,
   bookRadius,
+  liftShadows,
   printWindow,
   ribbonSize,
+  shadowPlacement,
   type BookCover,
 } from '@/lib/book-cover';
+import { liftGlow } from '@/lib/cover-glow';
 
 const FROM_SPINE = {
   left: { start: { x: 0, y: 0 }, end: { x: 1, y: 0 } },
@@ -65,7 +69,18 @@ const NEUTRAL_GLOW = Platform.select<{ rim: ImageStyle; foot: ImageStyle }>({
   web: { rim: { opacity: 200 / 255 }, foot: { opacity: 138 / 255 } },
   default: { rim: { tintColor: 'rgb(200,200,200)' }, foot: { tintColor: 'rgb(138,138,138)' } },
 });
-const { side, top, foot, coverHeight } = SHADOW_BOX;
+const percent = (p: { left: number; top: number; width: number; height: number }): ImageStyle => ({
+  left: `${p.left * 100}%`,
+  top: `${p.top * 100}%`,
+  width: `${p.width * 100}%`,
+  height: `${p.height * 100}%`,
+});
+const UNDER_COVER = percent(shadowPlacement(false));
+const UNDER_PRINT = percent(shadowPlacement(true));
+
+/** A box the cover's size: over the top of a card, `aspect` its shape, or filling a parent that is
+ *  the cover's own size (`fill`) — the series page's hero, whose shape eases as its picture lands. */
+const coverBox = (aspect: number, fill: boolean | undefined) => (fill ? styles.fill : [styles.shadowBox, { aspectRatio: aspect }]);
 
 /**
  * The soft shadow under a cover in light mode, and in dark mode the glow Apple Books draws instead —
@@ -77,31 +92,29 @@ const { side, top, foot, coverHeight } = SHADOW_BOX;
  * top and height of its height, which every platform agrees on. (Offsetting by a percentage margin of
  * the card instead was right on the web and wrong on iOS, whose layout measures a vertical margin
  * against the card's height — title and all — and drew the glow a cover's-worth of margin too high.)
- * Scaled by how tall this cover is against the 2:3 the pictures were drawn for, so each picture's
- * cover lands exactly on the real one at any shape.
+ * Stretched with the cover, so each picture's cover lands exactly on the real one at any shape.
  *
  * The card's first child, so it draws under the cover. On the web a list paint-contains each item to
  * its slot, so the faint side falloff is cut at the grid's outer edges; the foot, which is most of it,
  * sits in the card's own title space.
  */
-export function BookShadow({ aspect, sheets, cover }: { aspect: number; sheets: boolean; cover: string | undefined }) {
+export function BookShadow({
+  aspect,
+  fill,
+  sheets,
+  cover,
+}: {
+  aspect: number;
+  fill?: boolean;
+  sheets: boolean;
+  cover: string | undefined;
+}) {
   const dark = useActiveColorScheme() === 'dark';
   const glow = useCoverGlow(dark ? cover : undefined);
-  // In card widths. A CG set casts it from its front print.
-  const across = sheets ? PRINT.left : 0;
-  const width = sheets ? PRINT.width : 1;
-  const down = sheets ? PRINT.top / aspect : 0;
-  const height = (sheets ? PRINT.height : 1) / aspect;
-  const tall = height / (coverHeight * width);
-  // The box is 1/aspect card widths tall, so a length in card widths is `aspect` of its height.
-  const picture: ImageStyle = {
-    left: `${(across - side * width) * 100}%`,
-    width: `${(1 + 2 * side) * width * 100}%`,
-    top: `${(down - top * tall * width) * aspect * 100}%`,
-    height: `${(top + coverHeight + foot) * tall * width * aspect * 100}%`,
-  };
+  // A CG set casts it from its front print.
+  const picture = sheets ? UNDER_PRINT : UNDER_COVER;
   return (
-    <View style={[styles.shadowBox, { aspectRatio: aspect }]}>
+    <View style={coverBox(aspect, fill)}>
       {!dark ? (
         <Image source={SHADOW} resizeMode="stretch" style={[styles.shadow, picture]} />
       ) : glow?.picture ? (
@@ -156,9 +169,19 @@ export function PrintPaper({
 
 /** The print tipped behind a CG set's front one: the set's own picture, dimmed. The card draws it,
  *  under its cover, since the card is what has the picture. */
-export function BehindPrint({ aspect, cover, recyclingKey }: { aspect: number; cover: string | undefined; recyclingKey: string }) {
+export function BehindPrint({
+  aspect,
+  fill,
+  cover,
+  recyclingKey,
+}: {
+  aspect: number;
+  fill?: boolean;
+  cover: string | undefined;
+  recyclingKey: string;
+}) {
   return (
-    <View style={[styles.shadowBox, { aspectRatio: aspect }]}>
+    <View style={coverBox(aspect, fill)}>
       <PrintPaper aspect={aspect} tipped>
         {cover !== undefined && (
           <Picture source={{ uri: cover }} style={styles.fill} contentFit="cover" cachePolicy="memory-disk" recyclingKey={recyclingKey} />
@@ -167,6 +190,18 @@ export function BehindPrint({ aspect, cover, recyclingKey }: { aspect: number; c
       </PrintPaper>
     </View>
   );
+}
+
+/**
+ * The lift under a list row's thumbnail: the cards' shadow, or in dark mode their glow in the cover's
+ * colours, with no book drawn on the thumbnail. Live shadows (`liftShadows`), behind the thumbnail and
+ * filling its parent, which is the thumbnail's size, with its corners.
+ */
+export function ThumbLift({ width, radius, cover }: { width: number; radius: number; cover: string | undefined }) {
+  const dark = useActiveColorScheme() === 'dark';
+  const glow = useCoverGlow(dark ? cover : undefined);
+  const shade = !dark ? LIFT_SHADE : glow ? liftGlow(glow) : NEUTRAL_LIFT_GLOW;
+  return <View style={[styles.fill, ContinuousCorner, { borderRadius: radius, boxShadow: liftShadows(width, shade) }]} />;
 }
 
 /** "In your library", as the bookmark it already was in icon form, hanging from the head of the

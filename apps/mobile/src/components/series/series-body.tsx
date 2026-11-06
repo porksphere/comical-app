@@ -21,6 +21,7 @@ import {
 import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
+import { BehindPrint, BookChrome, BookShadow, PrintPaper } from '@/components/book-chrome';
 import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { TagGroupRow } from '@/components/chip';
 import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
@@ -40,6 +41,7 @@ import { librarySeriesQuery, queryKeys, relatedGroupsQuery, savedSeriesListQuery
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
 import { type Chapter, type MetaCredit, type SeriesDetail, type TagGroup } from '@/data/types';
+import { useBookCover } from '@/hooks/use-book-covers';
 import { useBridgeMap, useMissingBridge } from '@/hooks/use-bridges';
 import { useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
@@ -50,6 +52,7 @@ import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
+import { bookRadius, type BookCover } from '@/lib/book-cover';
 import { focusMarks, focusSkip } from '@/lib/focus-nav';
 import { isTypingTarget } from '@/lib/key-hold';
 import { isKey } from '@/lib/keybindings';
@@ -65,13 +68,16 @@ const LARGE_COVER_WIDTH = 300;
 /** The hero cover's box: width fills its wrap, height follows the animated aspect. Mounts AT the
  *  current aspect (no mount animation — the skeleton⇄body swap must not replay the resize) and
  *  eases to a new one over `ASPECT_TRANSITION_MS`, matching the cards' box-settle. The box clips
- *  and rounds; the child image/skeleton just fills it. */
+ *  and rounds; the child image/skeleton just fills it — except a CG set's, whose print does both
+ *  inside it (`PrintPaper`). Drawn as a book, it takes the book's corners at the largest size. */
 function SeriesCoverBox({
   aspect,
+  book,
   children,
   onRect
 }: {
   aspect: number;
+  book: BookCover | null;
   children: ReactNode;
   /** Reports this box's on-screen rect on layout. Only the series page passes it — it
    *  is the destination bound its zoom transition aligns the tapped card to (see there). */
@@ -96,7 +102,10 @@ function SeriesCoverBox({
     <Animated.View
       ref={boxRef}
       onLayout={onRect ? reportRect : undefined}
-      style={[styles.coverBox, boxStyle]}>
+      style={[
+        book?.form === 'sheets' ? styles.coverBoxBare : [styles.coverBox, book && { borderRadius: bookRadius(book, true) }],
+        boxStyle,
+      ]}>
       {children}
     </Animated.View>
   );
@@ -526,6 +535,36 @@ export function SeriesBody({
   // skeleton do (absolute CDN covers pass straight through, no async work). Without this
   // the detail hero rendered blank even though the browse thumbnail showed fine.
   const resolvedCover = useResolvedAsset(series.cover);
+  // The hero is the card's book, larger: the same form and binding, chrome and lift.
+  const book = useBookCover({
+    bridgeId,
+    seriesId: series.id,
+    direct,
+    aspect: coverAspect,
+    coverForm: series.coverForm,
+    readingDirection: series.readingDirection,
+  });
+  const sheets = book?.form === 'sheets';
+  const coverPicture = resolvedCover ? (
+    <Image
+      source={{ uri: resolvedCover }}
+      style={StyleSheet.absoluteFill}
+      contentFit="cover"
+      cachePolicy="memory-disk"
+      // The skeleton already painted this exact cover — fading it in again on the
+      // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
+      // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
+      // differs from the browse thumbnail). Raw comparison: resolution is
+      // deterministic and its cache is warm from the skeleton, so equal raw values
+      // still mean "same cover already painted".
+      transition={initialCover && initialCover === series.cover ? 0 : 200}
+      onLoad={onCoverLoad}
+    />
+  ) : (
+    // Brief window while a server-relative cover resolves (absolute covers seed
+    // synchronously and never hit this).
+    <Skeleton style={StyleSheet.absoluteFill} />
+  );
 
   // Cover image + optional chapter-count badge — shared between layouts. Tapping
   // it starts reading, same as the primary Read button.
@@ -538,29 +577,20 @@ export function SeriesBody({
       onPress={startReading}
       accessibilityRole="button"
       accessibilityLabel={primaryLabel}>
+      {/* The wrap is the cover's size, so these fill it and ease with the box's aspect. */}
+      {book && <BookShadow aspect={coverAspect} fill sheets={sheets} cover={resolvedCover} />}
+      {sheets && <BehindPrint aspect={coverAspect} fill cover={resolvedCover} recyclingKey={series.id} />}
       {/* iOS zoom: the box the tapped card's cover grows into and shrinks back to (series-card's
           zoom link). A layout-neutral wrapper there, the box itself everywhere else. */}
       <LinkAppleZoomTarget>
-        <SeriesCoverBox aspect={coverAspect} onRect={onHeroCoverRect}>
-          {resolvedCover ? (
-            <Image
-              source={{ uri: resolvedCover }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              // The skeleton already painted this exact cover — fading it in again on the
-              // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
-              // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
-              // differs from the browse thumbnail). Raw comparison: resolution is
-              // deterministic and its cache is warm from the skeleton, so equal raw values
-              // still mean "same cover already painted".
-              transition={initialCover && initialCover === series.cover ? 0 : 200}
-              onLoad={onCoverLoad}
-            />
+        <SeriesCoverBox aspect={coverAspect} book={book} onRect={onHeroCoverRect}>
+          {sheets ? (
+            <PrintPaper aspect={coverAspect}>{coverPicture}</PrintPaper>
           ) : (
-            // Brief window while a server-relative cover resolves (absolute covers seed
-            // synchronously and never hit this).
-            <Skeleton style={StyleSheet.absoluteFill} />
+            <>
+              {coverPicture}
+              {book && <BookChrome cover={book} />}
+            </>
           )}
         </SeriesCoverBox>
       </LinkAppleZoomTarget>
@@ -1040,6 +1070,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)'
+  },
+  coverBoxBare: {
+    width: '100%'
   },
   // ── Large-screen two-column ───────────────────────────────────────────────
   twoCol: {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { glowFromTones, oneOfAFew, tonesFromBlurhash } from './cover-glow';
+import { glowFromTones, liftGlow, oneOfAFew, tonesFromBlurhash } from './cover-glow';
 
 const BASE83 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~';
 const encode83 = (value: number, length: number) =>
@@ -48,6 +48,15 @@ describe('glowFromTones', () => {
     expect(g).toBeGreaterThan(40);
     expect(b).toBeGreaterThan(120);
     expect(r).toBeGreaterThan(g); // still pink
+  });
+});
+
+describe('liftGlow', () => {
+  test('carries the pictures\' alpha in each colour', () => {
+    expect(liftGlow({ rim: 'rgb(200,180,190)', foot: 'rgb(12,34,56)', picture: 'blob:x' })).toEqual({
+      rim: 'rgba(200,180,190,0.3)',
+      foot: 'rgba(12,34,56,0.3)',
+    });
   });
 });
 

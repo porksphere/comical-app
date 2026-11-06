@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 
-import { BOOK_COVERS, BOUND_CORNER, BOUND_MAX_ASPECT, LOOSE_CORNER, PRINT, PRINT_CORNER, bookRadius, printWindow, resolveCover, shuffledHints } from './book-cover';
+import {
+  BOOK_COVERS,
+  BOUND_CORNER,
+  BOUND_MAX_ASPECT,
+  LOOSE_CORNER,
+  PRINT,
+  PRINT_CORNER,
+  SHADOW_BOX,
+  bookRadius,
+  liftShadows,
+  printWindow,
+  resolveCover,
+  shadowPlacement,
+  shuffledHints,
+} from './book-cover';
 
 const GUESS = { readsVertically: false, readerRightToLeft: false, direct: false, aspect: 0.7 };
 
@@ -93,5 +107,38 @@ describe('printWindow', () => {
       expect(w.left * printW).toBeCloseTo(w.top * printH, 10);
       expect(w.right * printW).toBeCloseTo(w.bottom * printH, 10);
     }
+  });
+});
+
+describe('shadowPlacement', () => {
+  test("lands the picture's cover on the cover filling the box", () => {
+    const p = shadowPlacement(false);
+    const { side, top, foot, coverHeight } = SHADOW_BOX;
+    // The picture's cover starts `side` of its own width in, and `top` of its height down.
+    expect(p.left + (side / (1 + 2 * side)) * p.width).toBeCloseTo(0, 10);
+    expect(p.width / (1 + 2 * side)).toBeCloseTo(1, 10);
+    expect(p.top + (top / (top + coverHeight + foot)) * p.height).toBeCloseTo(0, 10);
+    expect((p.height * coverHeight) / (top + coverHeight + foot)).toBeCloseTo(1, 10);
+  });
+
+  test("lands it on a CG set's front print", () => {
+    const p = shadowPlacement(true);
+    const { side, top, foot, coverHeight } = SHADOW_BOX;
+    expect(p.left + (side / (1 + 2 * side)) * p.width).toBeCloseTo(PRINT.left, 10);
+    expect(p.width / (1 + 2 * side)).toBeCloseTo(PRINT.width, 10);
+    expect(p.top + (top / (top + coverHeight + foot)) * p.height).toBeCloseTo(PRINT.top, 10);
+    expect((p.height * coverHeight) / (top + coverHeight + foot)).toBeCloseTo(PRINT.height, 10);
+  });
+});
+
+describe('liftShadows', () => {
+  test('scales with the thumbnail and keeps the foot inside its sides', () => {
+    const shade = { rim: 'red', foot: 'blue' };
+    const [rim, footLayer] = liftShadows(50, shade);
+    expect(rim).toMatchObject({ offsetY: 1, color: 'red' });
+    expect(rim.blurRadius).toBeCloseTo(4.8, 10);
+    expect(footLayer).toMatchObject({ offsetY: 10, color: 'blue' });
+    expect(footLayer.spreadDistance).toBeLessThan(0);
+    expect(liftShadows(100, shade)[1].blurRadius).toBeCloseTo(2 * footLayer.blurRadius, 10);
   });
 });

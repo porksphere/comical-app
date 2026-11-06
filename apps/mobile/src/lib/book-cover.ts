@@ -189,6 +189,39 @@ export const EDGES: Shade = {
  */
 export const SHADOW_BOX = { side: 0.15, top: 0.12, foot: 0.32, coverHeight: 1.5 } as const;
 
+/** Where the shadow's picture lies, in fractions of the cover's box, under a cover filling it or a
+ *  print at `PRINT`. The pictures stretch with the cover, so this holds at any shape. */
+export function shadowPlacement(sheets: boolean): { left: number; top: number; width: number; height: number } {
+  const cast = sheets ? PRINT : { left: 0, top: 0, width: 1, height: 1 };
+  const { side, top, foot, coverHeight } = SHADOW_BOX;
+  return {
+    left: cast.left - side * cast.width,
+    top: cast.top - (top / coverHeight) * cast.height,
+    width: (1 + 2 * side) * cast.width,
+    height: ((top + coverHeight + foot) / coverHeight) * cast.height,
+  };
+}
+
+export type LiftShade = { rim: string; foot: string };
+
+/** The shadow's two layers in light mode, and the glow's before a cover's own tints are read — the
+ *  alphas of generate-book-shadow.py, the glow's neutral tints those of `NEUTRAL_GLOW`. */
+export const LIFT_SHADE: LiftShade = { rim: 'rgba(0,0,0,0.16)', foot: 'rgba(0,0,0,0.22)' };
+export const NEUTRAL_LIFT_GLOW: LiftShade = { rim: 'rgba(200,200,200,0.3)', foot: 'rgba(138,138,138,0.3)' };
+
+/**
+ * The shadow's picture as two live shadows, its rim and its foot, for a thumbnail `width` wide: a list
+ * row's rounded thumbnail, too round for the picture, whose cleared middle has square corners, and few
+ * enough on screen to afford a live shadow each. The script's rects and sigmas in the thumbnail's
+ * width; a CSS blur radius is twice the sigma.
+ */
+export function liftShadows(width: number, { rim, foot }: LiftShade) {
+  return [
+    { offsetX: 0, offsetY: 0.02 * width, blurRadius: 0.096 * width, color: rim },
+    { offsetX: 0, offsetY: 0.2 * width, blurRadius: 0.16 * width, spreadDistance: -0.12 * width, color: foot },
+  ];
+}
+
 /** The library ribbon: hangs from the head of the spine, just past the hinge. */
 export function ribbonSize(desktop: boolean): { width: number; height: number } {
   return desktop ? { width: 11, height: 28 } : { width: 8, height: 20 };
