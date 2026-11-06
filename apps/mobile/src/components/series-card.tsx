@@ -172,7 +172,7 @@ export function CoverFrame({
       <View ref={coverRef} style={[styles.coverBox, { aspectRatio: aspect }, hidden && styles.coverHidden]} onLayout={onLayout}>
         <LooseSheet radius={bookRadius(book, desktop)} />
         <View style={[styles.coverClip, styles.frontSheet, corners, contentStyle]}>{children}</View>
-        {ring && (
+        {ring && Platform.OS === 'web' && (
           <View style={[coverStyles.ring, styles.frontSheet, corners, { borderColor: coverRingColor(theme), pointerEvents: 'none' }]} />
         )}
       </View>
