@@ -1,13 +1,10 @@
-import { createContext, use, type ComponentProps } from 'react';
-import type { SharedValue } from 'react-native-reanimated';
+import type { ComponentProps } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
+import { NATIVE_HEADER } from '@/hooks/use-native-header';
 
-/** Where the series page wants to know how tall its title came out, wrapped lines included. */
-export const InlineTitleHeightContext = createContext<SharedValue<number> | null>(null);
-
-/** The series' title at the top of the page's list. */
+/** The series' title at the top of the page's list. Not under the system bar, which carries it. */
 export function InlineSeriesTitle(props: ComponentProps<typeof ThemedText>) {
-  const height = use(InlineTitleHeightContext);
-  return <ThemedText {...props} onLayout={height ? (e) => height.set(e.nativeEvent.layout.height) : undefined} />;
+  if (NATIVE_HEADER) return null;
+  return <ThemedText {...props} />;
 }

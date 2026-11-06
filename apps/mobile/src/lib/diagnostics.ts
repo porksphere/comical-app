@@ -48,6 +48,8 @@ let seq = 0;
 export function logDiagnostic(category: string, message: string, opts: { url?: string; context?: string } = {}): void {
   seq += 1;
   entries = [{ id: `${Date.now()}-${seq}`, time: Date.now(), category, message, ...opts }, ...entries].slice(0, MAX_ENTRIES);
+  // Under Metro the trace reads off the terminal, without the Diagnostics screen.
+  if (__DEV__) console.log(`[${category}] ${message}`);
   notify();
   AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(entries)).catch(() => {});
 }

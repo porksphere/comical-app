@@ -35,9 +35,10 @@ export const SLIDE_AWAY_BAR = {
  * It goes in a stack's `screenOptions` and on the series details, the pages that set their own bar.
  */
 export function useBarMaterial() {
-  const folded = useIsFoldedDuo();
+  // The folded Duo's gap (FB24859353) is gone on the current iOS: the material reaches the top
+  // there too, checked on a device. The folded edge path it needed comes out next.
   if (!NATIVE_HEADER) return undefined;
-  return folded ? ('none' as const) : ('systemUltraThinMaterial' as const);
+  return 'systemUltraThinMaterial' as const;
 }
 
 /**
@@ -46,8 +47,9 @@ export function useBarMaterial() {
  * as it was. For a tab's stack, a settings screen and a tab root list's marker, since the last one set
  * on the scroll view wins.
  */
-export function useFoldedBarEdge() {
-  return useIsFoldedDuo() ? HARD_TOP_EDGE : undefined;
+export function useFoldedBarEdge(): typeof HARD_TOP_EDGE | undefined {
+  // Never, since the material reaches the top folded (see useBarMaterial); on its way out.
+  return undefined;
 }
 
 const HARD_TOP_EDGE = { top: 'hard' } as const;

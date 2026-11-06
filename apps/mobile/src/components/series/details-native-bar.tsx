@@ -1,56 +1,25 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { Stack } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, {
-  interpolate,
-  runOnJS,
-  useAnimatedReaction,
-  useAnimatedStyle,
-  useSharedValue,
-  type SharedValue,
-} from 'react-native-reanimated';
+import { StyleSheet } from 'react-native';
 
-import { useManagesBar } from '@/components/bar-scrolled';
-import { useNativeBarOffset } from '@/components/native-bar-edge';
-import { BarContentGap } from '@/constants/theme';
-import { useNativeHeaderHeight } from '@/hooks/use-native-header';
-import { useTheme } from '@/hooks/use-theme';
+import { useBarScrolled, useManagesBar } from '@/components/bar-scrolled';
+import { barTitleStyle } from '@/components/native-tab-header';
+import { ThemedText } from '@/components/themed-text';
 import { logDiagnostic } from '@/lib/diagnostics';
-import { HIDDEN_TOP_EDGE, SLIDE_AWAY_BAR, useBarMaterial, useFoldedBarEdge } from '@/lib/native-bar';
-import { useSeriesFoldedBacking } from '@/lib/series-bar-backing-flag';
+import { HIDDEN_TOP_EDGE, SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
 
 import { NavBarFade } from '../../../modules/nav-bar-fade';
 
 /**
- * The series details' system bar on iOS, through the route's options. The content scrolls under it,
- * and it slides away while that happens, like every pushed page's (SLIDE_AWAY_BAR).
- *
- * Over the strip it is bare, with the page's own title below it. The series' title fades in as the
- * page's own goes under the bar, following the scroll, the way UIKit brings in an inline title under
- * a large one. It is a custom title view that is always there at some opacity, never an option:
- * - Options apply unanimated, through a whole header update.
- * - A plain-text title gets a backing from the system's scroll edge, a blank one included.
- * - Where the back button sits in the Duo's vertical bar, a bar with no title has nothing in it and
- *   collapses to no height, so a first title grew it from nothing in one frame.
- * The frosted material still switches as an option, once the page's title is past, and only on the
- * way back up (scrolling down the bar is sliding away anyway); `nav-bar-fade` crossfades it. UIKit's
- * own crossfade, a transparent scroll-edge appearance over the frosted standard one, never ran on a
- * device. On the folded Duo there is no material, and the backing is this bar's own view under
- * the system bar, faded by the scroll exactly as the title is and sliding away with the bar
- * (`nav-bar-edge`). The hard scroll edge every other page takes there doesn't fit this one: UIKit
- * ramps an edge at the list's top, and this bar's line is the page's title, deep in the list,
- * where the edge is at full strength and a switch of it is a cut (`isHidden` doesn't animate;
- * a crossfade from a snapshot froze the content under it). The list's edge stays hidden here
- * (`useManagesBar` with no reports). THROWAWAY: Settings > Developer switches it back to the
- * scroll edge, the title registered to it once the page's title is past, for a comparison on a
- * device (`series-bar-backing-flag`).
- *
- * The title is an option change like any other, so it is its own component and a crossing
- * re-renders this much and no more. Options go through react-native-screens' whole header update,
- * which also rebuilds the bar's items, unanimated. A pushed card's back button is the system's and
- * isn't one of them.
- *
+ * The series details' system bar on iOS, through the route's options: every pushed page's, the
+ * series' title in it from the start, bare over the top of the page and frosted once the list is
+ * under it (`bar-scrolled`), the switch crossfaded by `nav-bar-fade`, sliding away as the content
+ * scrolls down (SLIDE_AWAY_BAR). The title is the pushed pages' (`TopBar`): the system's text in
+ * the system's slot, as a view, since UIKit registers a text title with the list's scroll edge
+ * and draws that edge behind it over the strip, where every page here keeps that edge hidden.
+ * A title that waited for the page's own to scroll under the bar was tried and taken out: the bar
+ * has to hold something meanwhile, UIKit draws a blank or whitespace title as quotation marks,
+ * and a bar with nothing collapses to no height where the back button sits in the Duo's vertical
+ * bar.
  *
  * Only the top instance mounts this (the options are the route's, shared by every layer), so a
  * layer that becomes top again re-applies them: Stack.Screen's effect runs on mount, and the toolbar
@@ -65,65 +34,14 @@ export function SeriesDetailsNativeBar({
   title,
   nativePush,
   onClose,
-  scrollOffset,
-  contentTop,
-  inlineTitleHeight,
 }: {
   title: string;
   nativePush: boolean;
   onClose: () => void;
-  scrollOffset: SharedValue<number>;
-  /** Where the list's content starts, before its own gap: the height of the strip above it. */
-  contentTop: number;
-  inlineTitleHeight: SharedValue<number>;
 }) {
   const material = useBarMaterial();
-  const foldedEdge = useFoldedBarEdge();
-  const barBottom = useNativeHeaderHeight();
-  const [pastTitle, setPastTitle] = useState(false);
-  const ownBacking = useSeriesFoldedBacking() === 'own';
-  // Folded, the list's edge is this bar's, and it keeps it hidden: the backing is its own, below.
-  useManagesBar(foldedEdge != null && ownBacking, 'bar');
-  const { offset: barOffset, probe: barProbe } = useNativeBarOffset();
-  const titled = useSharedValue(false);
-  const titleTop = contentTop + BarContentGap - barBottom;
-  useAnimatedReaction(
-    () => scrollOffset.value,
-    (offset, prev) => {
-      const past = offset > titleTop + inlineTitleHeight.value;
-      // A page that opens already scrolled past its title has a bar in view: title it straight away.
-      const next = past ? titled.value || prev == null || offset < prev : false;
-      if (next === titled.value) return;
-      titled.value = next;
-      runOnJS(setPastTitle)(next);
-    },
-    [titleTop],
-  );
-  const theme = useTheme();
-  const { width } = useWindowDimensions();
-  // One style object, the title's own in it: expo-router's Slot, which `Stack.Title asChild`
-  // clones through, rejects an array in development.
-  const titleFade = useAnimatedStyle(() => ({
-    ...TITLE_STYLE,
-    color: theme.text,
-    maxWidth: width * TITLE_MAX_WIDTH,
-    opacity: interpolate(
-      scrollOffset.value,
-      [titleTop, titleTop + Math.max(inlineTitleHeight.value, 1)],
-      [0, 1],
-      'clamp',
-    ),
-  }));
-  // The folded backing: the title's fade, under a bar that may be sliding away.
-  const backingStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(
-      scrollOffset.value,
-      [titleTop, titleTop + Math.max(inlineTitleHeight.value, 1)],
-      [0, 1],
-      'clamp',
-    ),
-    transform: [{ translateY: barOffset.value }],
-  }));
+  const scrolled = useBarScrolled();
+  useManagesBar();
   return (
     <>
       <Stack.Screen
@@ -131,45 +49,21 @@ export function SeriesDetailsNativeBar({
           headerShown: true,
           headerTransparent: true,
           headerShadowVisible: false,
-          headerBlurEffect: pastTitle ? material : 'none',
+          headerBlurEffect: scrolled ? material : 'none',
           headerBackVisible: nativePush,
           // Not a pushed card, nothing for UIKit to pop: the edge is the page's own back-swipe.
           gestureEnabled: nativePush,
           title,
           unstable_nativeProps: SLIDE_AWAY_BAR,
-          // Folded, the edge is the anchor's (above), hidden; a tab's stack would set the hard
-          // edge on every screen, and the root's series stack sets none.
-          ...(foldedEdge && { scrollEdgeEffects: ownBacking ? HIDDEN_TOP_EDGE : foldedEdge }),
+          scrollEdgeEffects: HIDDEN_TOP_EDGE,
         }}
       />
       <Stack.Title asChild>
-        <Animated.Text numberOfLines={1} style={titleFade}>
+        <ThemedText numberOfLines={1} style={barTitleStyle}>
           {title}
-        </Animated.Text>
+        </ThemedText>
       </Stack.Title>
-      {NavBarFade ? (
-        <NavBarFade
-          style={styles.probe}
-          pointerEvents="none"
-          edgeBacked={foldedEdge != null && !ownBacking && pastTitle}
-          onTrace={traceBar}
-        />
-      ) : null}
-      {foldedEdge && ownBacking ? (
-        <>
-          {barProbe}
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.backing, { height: barBottom + BACKING_FEATHER }, backingStyle]}>
-            <View style={[styles.backingFill, { height: barBottom, backgroundColor: theme.background }]} />
-            {/* theme.background is 6-digit hex, so an alpha suffix composes. */}
-            <LinearGradient
-              colors={[theme.background, `${theme.background}00`]}
-              style={[styles.backingFeather, { top: barBottom, height: BACKING_FEATHER }]}
-            />
-          </Animated.View>
-        </>
-      ) : null}
+      {NavBarFade ? <NavBarFade style={styles.probe} pointerEvents="none" onTrace={traceBar} /> : null}
       {!nativePush ? (
         <Stack.Toolbar placement="left">
           <Stack.Toolbar.Button icon="chevron.left" accessibilityLabel="Go back" onPress={onClose} />
@@ -179,22 +73,11 @@ export function SeriesDetailsNativeBar({
   );
 }
 
-// What the bar leaves the title between its leading and trailing items.
-const TITLE_MAX_WIDTH = 0.6;
-// UIKit's inline navigation title: 17pt semibold in the system font.
-const TITLE_STYLE = { fontSize: 17, fontWeight: '600' } as const;
-// The backing's soft bottom, the hard scroll edge's.
-const BACKING_FEATHER = 16;
-
-// TEMPORARY: the bar's first pop in, traced to Settings > Diagnostics (docs/NATIVE-HACKS.md, item 22).
+// TEMPORARY: the bar's switches, traced to Settings > Diagnostics (docs/NATIVE-HACKS.md, item 22).
 function traceBar(e: { nativeEvent: { message: string } }) {
   logDiagnostic('bar-fade', e.nativeEvent.message);
 }
 
 const styles = StyleSheet.create({
   probe: { position: 'absolute', width: 0, height: 0 },
-  // Over the details layer (zIndex 2), under the system bar, which is UIKit's above the page.
-  backing: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3 },
-  backingFill: { position: 'absolute', top: 0, left: 0, right: 0 },
-  backingFeather: { position: 'absolute', left: 0, right: 0 },
 });
