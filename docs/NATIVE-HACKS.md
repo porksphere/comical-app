@@ -22,10 +22,10 @@ the end of this doc is the only guard.
 
 | # | Hack | Kind | Call | Done |
 |---|------|------|------|------|
-| 1 | react-native-screens nightly, with a Metro redirect and a tsconfig path | Pre-release dependency | Blocker | [ ] |
-| 2 | Bar test screens | Throwaway code | Blocker | [ ] |
-| 3 | iOS 27 SDK on a preview runner, PR lane only | Build | Blocker | [ ] |
-| 26 | Temporary traces | Diagnostics left in | Blocker | [ ] |
+| 1 | react-native-screens 5.0 beta, with a Metro redirect and a tsconfig path | Pre-release dependency | Decide | [ ] |
+| 2 | Bar test screens | Deleted | Done | [x] |
+| 3 | iOS 27 SDK image on every lane | Build | Done | [x] |
+| 26 | Temporary traces | Removed | Done | [x] |
 | 4 | `menu-touch-gate` | Private class name, runtime view walk | Decide | [ ] |
 | 5 | `nav-bar-leading` | Takes over a library-owned bar item | Decide | [ ] |
 | 6 | `ZoomSource` | expo-router internals | Decide | [ ] |
@@ -51,9 +51,12 @@ the end of this doc is the only guard.
 
 ## Blockers
 
-### 1. react-native-screens nightly
+### 1. react-native-screens 5.0 beta
 
-- **What:** `react-native-screens` is pinned to `4.31.0-nightly-20261030-ec16f25b7`.
+- **What:** `react-native-screens` is pinned to `5.0.0-beta.1`, a tagged pre-release inside
+  expo-router 58's declared range (`^4.30.0 || ^5.0.0-alpha.3`), in place of the
+  `4.31.0-nightly-20261030` it was on. The beta carries the same legacy-stack minimization props
+  and the same two packaging slips as the nightly, so the redirect and the path stay.
 - **Where:**
   - `apps/mobile/package.json` and the root `package.json` `overrides`.
   - `apps/mobile/metro.config.js`: on web, redirects `./fabric/NativeScreensModule` to
@@ -67,9 +70,9 @@ the end of this doc is the only guard.
 - **Removed by:** the stable 4.31. Then delete the redirect and the tsconfig path. If stable is not out
   by release, drop the slide-away and go back to the SDK's version.
 - **Status (2026-11-06):** no stable 4.31 on npm. `latest` is 4.30.1 and `next` is 5.0.0-beta.1, with
-  the nightlies still numbered 4.31.0; the minimization props were merged for "Stack v5". The
-  stable carrier may be 5.0, which SDK 58's expo-router has not adopted, so this decision is not
-  only "wait": it may be "pin a nightly knowingly" or "drop the slide-away".
+  the nightlies still numbered 4.31.0; the minimization props were merged for "Stack v5", so the
+  stable carrier is 5.0. The beta is the pin now; the decision left is whether a beta may ship, and
+  it is checked on a device like any bump (the update check below).
 - **Upstream:** the web stub and the `reanimated` entry are worth reporting. Neither has been filed.
 
 ### 2. Bar test screens
@@ -78,9 +81,8 @@ the end of this doc is the only guard.
 - **Where:** `apps/mobile/src/components/bar-test.tsx`, routes `app/bar-test.tsx`,
   `app/bar-test-upstream.tsx`, `app/(tabs)/settings/in-tab/bar-test.tsx`, their registrations in
   `app/_layout.tsx`, and the rows in `app/settings-developer.tsx` and `app/(tabs)/settings/index.tsx`.
-- **Removed by:** deleting them. The slide-away is confirmed on a device on every kind of screen,
-  so they have answered their question. The series bar's folded backing flag that went with them
-  is already gone.
+- **Done:** deleted, with their routes, registrations and rows. The slide-away is confirmed on a
+  device on every kind of screen, so they had answered their question.
 
 ### 3. iOS 27 SDK on a preview runner
 
@@ -90,23 +92,17 @@ the end of this doc is the only guard.
 - **Why it blocks:** every iOS 27 behaviour compiles away on `macos-26`. As this stands, what gets
   tested in PR builds is **not what a release would ship**: no bar slide-away, no preferred sidebar
   placement, no vertical bar on a folded display, no opt-out from the reader's horizontal bars.
-- **Removed by:** moving release to an image with the iOS 27 SDK. Choose that deliberately, either
-  releasing from the preview image or waiting until it leaves preview. Then make the runner the same
-  on every lane and drop the conditional.
+- **Done:** every lane builds on `xcode-27`: the reusable workflow's default is that image and the
+  PR lane's conditional is gone. Chosen deliberately: a build on the stable image would not be the
+  app that was tested. Re-check when the image leaves preview or Apple's SDK moves.
 
 ### 26. Temporary traces
 
 - **What:** diagnostics left in the code, each marked `TEMPORARY`, writing to Settings >
   Diagnostics and, in development, to Metro.
-- **Where:**
-  - `bar-extent` (`src/components/bar-extent.tsx`): each bar measure. Confirmed on a device; delete.
-  - `bar-fade` (`src/components/top-bar.tsx`, `src/components/series/details-native-bar.tsx`, and
-    the `onTrace` event in `modules/nav-bar-fade/`): each material switch. Confirmed on a device
-    (the series page is signed off); delete, with the event.
-  - `tab-width` (`src/components/app-tabs.ios.tsx`, `src/hooks/use-grid-layout.ts`,
-    `src/components/series-grid.tsx`, `src/components/recycler-list.tsx`): the open investigation
-    into the folded Duo's cards shifting on a tab's first open. Delete once that is found.
-- **Removed by:** deleting them. None may ship.
+- **Done:** all removed: the `bar-extent` measure trace, the `bar-fade` traces and the
+  `onTrace` event they rode on in `nav-bar-fade`, and the `tab-width` traces of the folded Duo's
+  first-open shift, which is still open and gets fresh traces when it is picked up again.
 
 ## Internals and private reach
 
