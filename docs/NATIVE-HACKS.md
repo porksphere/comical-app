@@ -1,7 +1,8 @@
 # Native hacks: the release checklist
 
 Every workaround the iOS native work (`feat/native-tabs-ios`, PR #157) needs, in one place, so each
-one gets a decision before this ships. Compared against `main` at `8137a856f8`.
+one gets a decision before this ships. Compared against `main` at `a1af10ca`, the branch's base;
+re-audited 2026-11-06.
 
 The repo carries **no dependency patches**: no `patches/` directory and no `patchedDependencies`.
 
@@ -24,27 +25,28 @@ the end of this doc is the only guard.
 | 1 | react-native-screens nightly, with a Metro redirect and a tsconfig path | Pre-release dependency | Blocker | [ ] |
 | 2 | Bar test screens | Throwaway code | Blocker | [ ] |
 | 3 | iOS 27 SDK on a preview runner, PR lane only | Build | Blocker | [ ] |
+| 26 | Temporary traces | Diagnostics left in | Blocker | [ ] |
 | 4 | `menu-touch-gate` | Private class name, runtime view walk | Decide | [ ] |
 | 5 | `nav-bar-leading` | Takes over a library-owned bar item | Decide | [ ] |
 | 6 | `ZoomSource` | expo-router internals | Decide | [ ] |
 | 7 | `system-context-menu` | Custom module, touch handler reach | Decide | [ ] |
 | 8 | `content-scroll-view` and `ScreenScrollMarker` | Public API, undocumented reason | Decide | [ ] |
-| 9 | `HeaderHeightContext` deep import | Package internals | Keep | [ ] |
+| 22 | `nav-bar-fade` | Animates a library-owned bar; a dead folded-edge path to delete | Decide | [ ] |
 | 24 | `nav-bar-large-title` | Sets a library-owned navigation item's property | Decide | [ ] |
 | 25 | `nav-bar-hold` | Reads the bar's touches, finds the title's label by its text | Decide | [ ] |
+| 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
+| 9 | `HeaderHeightContext` deep import | Package internals | Keep | [ ] |
 | 10 | `unstable_nativeProps` | Unstable API | Keep | [ ] |
-| 11 | `menu-anchor` | Invisible control over a React Native row | Keep | [ ] |
+| 11 | `menu-anchor` | Unreached on iOS since the SwiftUI form | Delete | [ ] |
 | 12 | `shaped-image` and `menu-thumb-files` | Bitmaps baked to shape | Keep | [ ] |
-| 13 | `in-tab/` route copies | 26 duplicate route files | Keep | [ ] |
+| 13 | `in-tab/` route copies | 51 duplicate route files | Keep | [ ] |
 | 14 | `BarExtent` | Measuring through the safe area | Keep | [ ] |
 | 15 | Browse backdrop inside the list | Layout bent around a library walk | Keep | [ ] |
 | 16 | Reader bar options in both modes | Avoids a library remount | Keep | [ ] |
 | 17 | Status bar through the root screen | Routing around React Native's StatusBar | Keep | [ ] |
 | 18 | Tab badge rendered only above zero | Library bug | Keep | [ ] |
 | 19 | Type casts at library seams | Typing | Keep | [ ] |
-| 20 | Timers standing in for a signal | Time-based guesses | Decide | [ ] |
-| 21 | No bar material on the folded Duo | Resolved: the gap is gone on the current iOS | Done | [x] |
-| 22 | `nav-bar-fade`, with a temporary trace | Animates a library-owned bar | Blocker (the trace), then Decide | [ ] |
+| 21 | No bar material on the folded Duo | Resolved and its code removed | Done | [x] |
 | 23 | `nav-bar-edge` | Removed with the section label it served | Done | [x] |
 
 ## Blockers
@@ -64,6 +66,10 @@ the end of this doc is the only guard.
   The risk in the nightly itself is unknown: it is not a release.
 - **Removed by:** the stable 4.31. Then delete the redirect and the tsconfig path. If stable is not out
   by release, drop the slide-away and go back to the SDK's version.
+- **Status (2026-11-06):** no stable 4.31 on npm. `latest` is 4.30.1 and `next` is 5.0.0-beta.1, with
+  the nightlies still numbered 4.31.0; the minimization props were merged for "Stack v5". The
+  stable carrier may be 5.0, which SDK 58's expo-router has not adopted, so this decision is not
+  only "wait": it may be "pin a nightly knowingly" or "drop the slide-away".
 - **Upstream:** the web stub and the `reanimated` entry are worth reporting. Neither has been filed.
 
 ### 2. Bar test screens
@@ -72,10 +78,9 @@ the end of this doc is the only guard.
 - **Where:** `apps/mobile/src/components/bar-test.tsx`, routes `app/bar-test.tsx`,
   `app/bar-test-upstream.tsx`, `app/(tabs)/settings/in-tab/bar-test.tsx`, their registrations in
   `app/_layout.tsx`, and the rows in `app/settings-developer.tsx` and `app/(tabs)/settings/index.tsx`.
-- **Removed by:** deleting them once the slide-away is confirmed on a device.
-- **Also throwaway:** the series bar's folded backing switch in Settings > Developer
-  (`lib/series-bar-backing-flag.ts`, read in `details-native-bar.tsx`): the bar's own view against
-  the scroll edge, for a comparison on a device. The decision retires the flag and the losing path.
+- **Removed by:** deleting them. The slide-away is confirmed on a device on every kind of screen,
+  so they have answered their question. The series bar's folded backing flag that went with them
+  is already gone.
 
 ### 3. iOS 27 SDK on a preview runner
 
@@ -88,6 +93,20 @@ the end of this doc is the only guard.
 - **Removed by:** moving release to an image with the iOS 27 SDK. Choose that deliberately, either
   releasing from the preview image or waiting until it leaves preview. Then make the runner the same
   on every lane and drop the conditional.
+
+### 26. Temporary traces
+
+- **What:** diagnostics left in the code, each marked `TEMPORARY`, writing to Settings >
+  Diagnostics and, in development, to Metro.
+- **Where:**
+  - `bar-extent` (`src/components/bar-extent.tsx`): each bar measure. Confirmed on a device; delete.
+  - `bar-fade` (`src/components/top-bar.tsx`, `src/components/series/details-native-bar.tsx`, and
+    the `onTrace` event in `modules/nav-bar-fade/`): each material switch. Confirmed on a device
+    (the series page is signed off); delete, with the event.
+  - `tab-width` (`src/components/app-tabs.ios.tsx`, `src/hooks/use-grid-layout.ts`,
+    `src/components/series-grid.tsx`, `src/components/recycler-list.tsx`): the open investigation
+    into the folded Duo's cards shifting on a tab's first open. Delete once that is found.
+- **Removed by:** deleting them. None may ship.
 
 ## Internals and private reach
 
@@ -181,10 +200,9 @@ the end of this doc is the only guard.
 - **Why:** react-native-screens' legacy stack, which expo-router uses, never names the list. Its newer
   stack does, with this same call. Left to itself, UIKit found the list under one wrapper and lost it
   under two, and the bar stopped sliding. That depth limit is **observed on one device, not documented**.
-- **Status: naming is unverified on a device.** The test that found this confirmed only the
-  one-wrapper case. If naming does not work, every wrapped screen stays put. The SwiftUI search,
-  `tabBar` and `scrollToTop` are unverified too: if the search fails, the settings screens' bars stay
-  put and the Settings tab's reselect scrolls nothing.
+- **Status: confirmed on a device.** The bar slides away and restores on the tab roots, the series
+  details, the search and the settings pages, the SwiftUI form's included, and the crossings it
+  reports drive the pushed pages' material.
 - **Risks:**
   - It is a convention. A new screen whose list has no marker silently keeps a fixed bar.
   - Series details has layers on one route, so `ScreenScrollActiveContext` makes only the top layer's
@@ -216,9 +234,8 @@ the end of this doc is the only guard.
   responder chain, watches its `title` and `standardAppearance` with KVO, and adds a `CATransition`
   fade to the navigation bar's layer from inside react-native-screens' setter.
 - **Where:** `apps/mobile/modules/nav-bar-fade/`, and its view in
-  `src/components/series/details-native-bar.tsx`, in every tab's `NativeTabHeader` (the material
-  switching on scroll) and in `TopBar` on iOS (the pushed pages' custom title, registered for the
-  folded Duo's edge).
+  `src/components/series/details-native-bar.tsx` and in `TopBar` on iOS (the pushed pages). The
+  tab roots no longer use it: UIKit switches their large-title bars itself.
 - **Why:** react-native-screens applies header options unanimated, so the bar's title and material
   switched in one frame. UIKit's own scroll-edge crossfade was tried instead and never ran.
 - **The title isn't part of it:** the series title is a custom title view that is always in the
@@ -228,23 +245,10 @@ the end of this doc is the only guard.
   device: 0pt at the switch, 58pt a frame later). A blank plain-text title kept the height but got
   the system's backing, a visibly empty bar. Only the unfolded material switch is faded now.
   Confirmed on a device, unfolded.
-- **Folded edge backing:** the folded Duo's bar has no material (`useBarMaterial`); its backing is
-  the scroll view's hard top edge. UIKit draws a scroll edge only behind what the bar registers, a
-  text title but not a custom view, so the view adds a `UIScrollEdgeElementContainerInteraction`
-  (iOS 26) to the navigation item's title view, for the page's list (the nearest scroll view at
-  least half the window tall), while `edgeBacked` is on: the tabs and the pushed pages, folded,
-  following the title view as the bar sets it. Not the series page: its bar's line is the page's
-  title, deep in the list, where the edge is at full strength and a switch of it is a cut
-  (`isHidden` doesn't animate; a crossfade from a snapshot of the band froze the content under
-  it), so that bar draws a backing of its own, faded by the scroll as its title is and sliding
-  away with the bar through `nav-bar-edge`, with the list's edge hidden.
-- **Temporary trace (Blocker):** the view also reports each switch to Settings > Diagnostics
-  (`bar-fade` entries): the bar's height, where its content sits and what's on screen, and the
-  animations running, at the switch and 50ms and 350ms after. Remove the `onTrace` event, and the
-  handlers in `details-native-bar.tsx`, `native-tab-header.tsx` and `top-bar.tsx`, once the folded
-  edge backing and the tabs' and pushed pages' crossfade are confirmed on a device (`material`
-  entries at each switch; `edge: on` / `edge: off` entries, or why it couldn't: no title view, no
-  scroll view).
+- **Dead path to delete:** the `edgeBacked` prop and the `UIScrollEdgeElementContainerInteraction`
+  it added to the title view were the folded Duo's hard-edge backing (item 21). Nothing sets the
+  prop now; the Swift stays. Delete the prop, the interaction and the list search behind it.
+- **Temporary trace:** the `onTrace` event and its handlers, item 26.
 - **Risk:** it animates a layer UIKit owns, and relies on KVO firing inside the library's update.
 - **How it fails:** silent. If the KVO stops firing, the switch is instant again. If UIKit starts
   backing a custom title view, the bare bar shows a band over the strip. If the title view or list
@@ -301,6 +305,7 @@ These use public APIs, but the shape exists only because of a gap somewhere.
   module are only resolved by the app's own renderer, on Android and web, where the module is null.
 - **Removed by:** deleting `select-row.ios.tsx` and the module once no iOS screen draws the app's
   own rows, or `@expo/ui` decoding at screen scale.
+- **Delete:** that condition holds. The module compiles into every iOS build for nothing.
 
 ### 12. `shaped-image` and `menu-thumb-files`
 
@@ -311,8 +316,8 @@ These use public APIs, but the shape exists only because of a gap somewhere.
 
 ### 13. `in-tab/` route copies
 
-- **What:** route files under `app/(tabs)/<tab>/in-tab/` — the series, search and results pages under
-  every tab, and every settings page under the Settings tab — plus a rewrite of pushes in
+- **What:** 51 route files under `app/(tabs)/<tab>/in-tab/` — the series, search and results pages
+  under every tab, and every settings page under the Settings tab — plus a rewrite of pushes in
   `lib/nav.tsx` (`destinationHref`, `tabHref`).
 - **Why:** a series page has to open inside the tab's own stack for the tab bar to stay up. A same-URL
   copy in a group captures plain pushes, so the copies need a real path segment. The settings pages
@@ -393,6 +398,8 @@ this branch, unless marked otherwise.
 | `MOUNT_BACKSTOP_MS` 2000 | `lib/native-overlay-sheets.ts:40` | Drops a sheet whose route never mounted | Fallback only |
 | `PENDING_DRILL_MS` 1500 | `lib/series-nav.ts:96` | Expires a drill held across a pop | Clear it on the pop's completion |
 | `SPLIT_HANDOFF_MAX_AGE_MS` 1500 | `components/series/split-handoff.ts:61` | Expires a details to reader hand-off | Key it to the push |
+| `SETTLE_MS` 250 | `components/bar-extent.tsx` | A pushed page's bar measure counts once it has held still | The bar's own settle, which nothing reports |
+| `RELAYOUT_HOLD_MS` 300 | `lib/row-motion.ts` | Holds the row transition off across a width change | A list's own layout-settled callback |
 
 **Decide:** `HELD_POPS` and `POSTER_SETTLE_MS` are the two worth replacing. The rest are fallbacks that
 should never run in normal use.
@@ -408,7 +415,8 @@ Already on `main`, so not from this work: `ZOOM_BOUND_WAIT_MS`, `ZOOM_THUMB_PAIN
 - **Resolved.** The gap above the bar on the Duo's folded panel (FB24859353) is gone on the current
   iOS: with the material on, the frost reaches the top, checked on a device on the tabs, a settings
   page and the series page. `useBarMaterial` gives every bar the material; `useFoldedBarEdge` and
-  the hard-edge switching built on it are unreachable and come out.
+  the hard-edge switching built on it are deleted. What remains of that path is `nav-bar-fade`'s
+  `edgeBacked` interaction (item 22), which nothing sets any more.
 
 ## Looked at, not hacks
 
@@ -435,7 +443,8 @@ fails silently and only shows here.
 - [ ] **Item 21:** folded, no gap above the bar, and Browse, Library and the settings pages back the bar once scrolled. Unfolded in both orientations, the frost reaches the top.
 - [ ] **Item 22:** on a series details page, scroll down until the bar slides away, then up once. The
       bar slides back in while its title and frost fade in, and fades back to bare at the page's title.
-      On the folded Duo the same, with the hard scroll edge behind the title in place of the frost.
-- [ ] **Item 23:** on Browse, scroll down slowly from the top. The bar's title becomes the first
-      section's name only once the bar has slid away, never while it is half gone; scroll back up and
-      it returns with the bar.
+- [ ] **Item 24:** on every tab, the title is large on the bar's own row beside the items and never
+      shrinks to a small one; scrolled down the bar goes, scrolled up it returns over frost, bare
+      again at the top. Folded, the title stays on the row while the items are in the vertical bar.
+- [ ] **Item 25:** with the hold gesture bound in Settings, hold a tab's title: the beats are felt
+      and the title swells with each; holding a bar button opens its menu instead.
