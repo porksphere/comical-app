@@ -587,7 +587,8 @@ export function mockSeries(
   const base: SeriesDetail = {
     id: seed,
     title: title || TITLES[h % TITLES.length],
-    cover: cover(seed),
+    // The card's own cover, so a varied-shape card opens onto the same shape.
+    cover: coverForBridge(seed, slugify(bridge)),
     bridge,
     description: DESCRIPTION,
     meta: META,
