@@ -6,6 +6,17 @@ public class NavBarHoldModule: Module {
 
     View(NavBarHoldView.self) {
       Events("onHold")
+
+      Prop("pulseSeq") { (view: NavBarHoldView, seq: Int) in
+        view.pulseSeq = seq
+      }
+      Prop("pulseAmount") { (view: NavBarHoldView, amount: Double) in
+        view.pulseAmount = CGFloat(amount)
+      }
+
+      OnViewDidUpdateProps { (view: NavBarHoldView) in
+        view.propsDidUpdate()
+      }
     }
   }
 }
@@ -13,6 +24,9 @@ public class NavBarHoldModule: Module {
 /// A touch that wanders further than this is a drag, not a hold; the title's label is taken this
 /// much larger, too.
 private let holdSlop: CGFloat = 10
+/// A beat's swell is quick and its settle slower, the custom marks' pulse (`use-ramped-hold`).
+private let pulseUp: TimeInterval = 0.07
+private let pulseDown: TimeInterval = 0.12
 
 /// A system large title is UIKit's own text with nothing of the app's in it, so a hold on it is
 /// read from the bar's touches instead: this view, placed in the page, attaches a recognizer to
@@ -23,13 +37,39 @@ private let holdSlop: CGFloat = 10
 /// label in the bar showing the screen's title, of the screen that owns it while that screen is
 /// the top one and while the bar is in place (minimized, the bar's content is moved above it),
 /// and never cancels or delays the bar's own handling. The recognizer leaves with the view.
+///
+/// The ramp's beats come back as `pulseSeq` (a count) and `pulseAmount`, and each swells the held
+/// label and lets it settle, the custom marks' pulse, since nothing of the app's draws the title.
 final class NavBarHoldView: ExpoView, UIGestureRecognizerDelegate {
   let onHold = EventDispatcher()
+
+  var pulseSeq = 0
+  var pulseAmount: CGFloat = 0
+  private var pulsedSeq = 0
 
   private weak var navigation: UINavigationController?
   private var recognizer: UILongPressGestureRecognizer?
   private var origin = CGPoint.zero
   private var holding = false
+  private weak var heldLabel: UILabel?
+
+  func propsDidUpdate() {
+    guard pulseSeq != pulsedSeq else {
+      return
+    }
+    pulsedSeq = pulseSeq
+    guard let label = heldLabel else {
+      return
+    }
+    let scale = 1 + pulseAmount
+    UIView.animate(withDuration: pulseUp, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
+      label.transform = CGAffineTransform(scaleX: scale, y: scale)
+    } completion: { _ in
+      UIView.animate(withDuration: pulseDown, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState]) {
+        label.transform = .identity
+      }
+    }
+  }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
@@ -75,6 +115,9 @@ final class NavBarHoldView: ExpoView, UIGestureRecognizerDelegate {
     case .began:
       origin = recognizer.location(in: nil)
       holding = true
+      if let navigation, let owner = owningController(of: self) {
+        heldLabel = titleLabel(in: navigation.navigationBar, titled: owner.navigationItem.title)
+      }
       onHold(["phase": "begin"])
     case .changed:
       let point = recognizer.location(in: nil)

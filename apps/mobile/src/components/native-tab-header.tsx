@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router';
+import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { useHoldAction } from '@/components/hold-action-target';
@@ -24,14 +25,14 @@ import { NavBarLargeTitle } from '../../modules/nav-bar-large-title';
  *
  * The title is the screen's NSFW hold target as well: UIKit's text, with nothing of ours to take
  * the gesture, so the local `nav-bar-hold` module reads the bar's touches on it and reports the
- * press and its end to the same ramped hold the custom bars' marks run.
+ * press and its end to the same ramped hold the custom bars' marks run, and swells the title's
+ * label with each of the ramp's beats, as the marks' pulse does.
  *
  * The search bar is the integrated-button placement: a magnifier among the trailing items that
  * expands into the field on tap (iOS 26; an inline field under the title before that). Cancel
  * clears the query, which is what closing the custom field does too.
  */
 export function NativeTabHeader({ title, filter, placeholder }: { title: string; filter?: TabFilter; placeholder?: string }) {
-  const hold = useHoldAction();
   return (
     <>
       <Stack.Screen
@@ -46,14 +47,27 @@ export function NativeTabHeader({ title, filter, placeholder }: { title: string;
         />
       ) : null}
       {NavBarLargeTitle ? <NavBarLargeTitle mode="inline" style={styles.pin} pointerEvents="none" /> : null}
-      {NavBarHold && hold.enabled ? (
-        <NavBarHold
-          style={styles.pin}
-          pointerEvents="none"
-          onHold={(e) => (e.nativeEvent.phase === 'begin' ? hold.onPressIn() : hold.onPressOut())}
-        />
-      ) : null}
+      {NavBarHold ? <TitleHold /> : null}
     </>
+  );
+}
+
+/**
+ * The hold on the title, its beats handed back to the bar as a swell of the title's label: its
+ * own component, so each beat's render stays off the screen options above it.
+ */
+function TitleHold() {
+  const [pulse, setPulse] = useState({ seq: 0, amount: 0 });
+  const hold = useHoldAction((amount) => setPulse((prev) => ({ seq: prev.seq + 1, amount })));
+  if (!NavBarHold || !hold.enabled) return null;
+  return (
+    <NavBarHold
+      style={styles.pin}
+      pointerEvents="none"
+      pulseSeq={pulse.seq}
+      pulseAmount={pulse.amount}
+      onHold={(e) => (e.nativeEvent.phase === 'begin' ? hold.onPressIn() : hold.onPressOut())}
+    />
   );
 }
 

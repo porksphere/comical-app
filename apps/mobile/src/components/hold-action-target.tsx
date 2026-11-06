@@ -14,9 +14,10 @@ const HOLD_HINT = 'Hold to show NSFW content until the app is closed';
  * beats from `useRampedHold`, committing the bound action and a toast at the top. `enabled` is
  * false while the gesture is bound to 'none', when the handlers must not be attached at all (see
  * HoldActionTarget). Shared by the mark that takes the press itself and the native bar's title
- * (`NativeTabHeader`), which gets its phases from UIKit.
+ * (`NativeTabHeader`), which gets its phases from UIKit and hands each beat's swell back to it
+ * through `onPulse`, the title being UIKit's to draw.
  */
-export function useHoldAction(): {
+export function useHoldAction(onPulse?: (amount: number) => void): {
   enabled: boolean;
   onPressIn: () => void;
   onPressOut: () => void;
@@ -30,7 +31,7 @@ export function useHoldAction(): {
       const message = runBrowseHoldAction();
       if (message) showToast(message);
     },
-    { sound: enabled && sound },
+    { sound: enabled && sound, ...(onPulse ? { onPulse } : {}) },
   );
   return { enabled, ...hold };
 }

@@ -276,7 +276,8 @@ the end of this doc is the only guard.
 
 - **What:** a zero-size view that attaches a non-cancelling press recognizer to the navigation
   controller's view and takes only touches on the bar's largest label showing the screen's title,
-  reporting the press and its end for the NSFW hold.
+  reporting the press and its end for the NSFW hold, and swelling that label on each of the
+  hold's beats (a transform animation on a view UIKit owns).
 - **Where:** `apps/mobile/modules/nav-bar-hold/ios/NavBarHoldModule.swift`,
   `src/components/native-tab-header.tsx`.
 - **Why:** the large title is UIKit's text; nothing of the app's is under the touch.

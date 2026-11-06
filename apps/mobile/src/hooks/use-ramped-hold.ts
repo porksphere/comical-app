@@ -11,7 +11,8 @@
  * Returns `onPressIn`/`onPressOut` to spread onto a `Pressable`, plus `pulseStyle` for an
  * `Animated.View` around the held thing: it swells once per beat, by as much as the beat is felt,
  * so the countdown is seen as well as felt (and seen at all on desktop, where there is no
- * haptic). With `sound`, each beat also clicks (`lib/hold-sounds`). Timer-driven off the press events, so it works anywhere a Pressable does — including
+ * haptic); `onPulse` gets each beat's swell as well, for a held thing drawn by something else
+ * (the native bar's title). With `sound`, each beat also clicks (`lib/hold-sounds`). Timer-driven off the press events, so it works anywhere a Pressable does — including
  * web, where RNGH long-press gestures don't. (Don't use it on rows inside native scroll views:
  * press-in there is unreliable, same reason `Holdable` exists.)
  */
@@ -37,7 +38,7 @@ const PULSE_DOWN_MS = 120;
 
 export function useRampedHold(
   onArm: () => void,
-  { sound = false }: { sound?: boolean } = {},
+  { sound = false, onPulse }: { sound?: boolean; onPulse?: (amount: number) => void } = {},
 ): {
   onPressIn: () => void;
   onPressOut: () => void;
@@ -57,7 +58,15 @@ export function useRampedHold(
 
   const scale = useSharedValue(1);
   const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  // Read at fire time, as `onArm` is.
+  const pulseRef = useRef(onPulse);
+  useEffect(() => {
+    pulseRef.current = onPulse;
+  });
   const pulse = (amount: number) => {
+    // For a held thing that is not ours to style — UIKit's title — the beat is handed on, by as
+    // much as the swell would be, for whatever draws it there.
+    pulseRef.current?.(amount);
     scale.set(
       withSequence(
         withTiming(1 + amount, { duration: PULSE_UP_MS, easing: Easing.out(Easing.quad) }),

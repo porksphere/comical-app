@@ -15,6 +15,10 @@ export type NavBarHoldPhase = 'begin' | 'end';
 
 export type NavBarHoldProps = ViewProps & {
   onHold?: (event: { nativeEvent: { phase: NavBarHoldPhase } }) => void;
+  /** A beat of the hold's ramp: each new `pulseSeq` swells the title's label by `pulseAmount`
+   *  (a scale above 1) and lets it settle, the way the custom marks pulse. */
+  pulseSeq?: number;
+  pulseAmount?: number;
 };
 
 export const NavBarHold: ComponentType<NavBarHoldProps> | null = requireOptionalNativeModule('NavBarHold')
