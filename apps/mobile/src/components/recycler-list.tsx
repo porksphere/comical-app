@@ -7,6 +7,7 @@ import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reani
 
 import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
 import { useListLayout } from '@/hooks/use-list-layout';
+import { useRowTransition } from '@/lib/row-motion';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 import { stableScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
@@ -148,6 +149,7 @@ export function RecyclerList<T>({
   const ref = listRef ?? ownListRef;
   const contentWidth = useContentWidth();
   const listExtra = useListLayout(ref, `${contentWidth}:${insets.left}:${insets.right}`, extraData);
+  const rowTransition = useRowTransition(itemLayoutAnimation);
 
   // The marker is keyed WITH the list: it registers the scroll view once per attach, so a list
   // remounting under a standing marker would leave UIKit following the old one.
@@ -173,7 +175,7 @@ export function RecyclerList<T>({
           columnWrapperStyle={columnWrapperStyle}
           // Recycle card/row instances rather than remounting per reuse (renderers must be recycle-safe).
           recycleItems={recycleItems}
-          itemLayoutAnimation={itemLayoutAnimation}
+          itemLayoutAnimation={rowTransition}
           drawDistance={drawDistance}
           // Don't retro-correct offsets from size measurements — a visible bounce/jitter while flinging
           // otherwise. Fixed/known sizes make this safe.

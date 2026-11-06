@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react';
 import { LinearTransition, ReduceMotion } from 'react-native-reanimated';
+
+import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
 
 /** The spring every list row moves on — the reorderable list's slide to its slot, and a swiped
  *  row's fold shut. One constant because a row leaving and the gap closing are one event.
@@ -21,3 +24,25 @@ export const ROW_REORDER_TRANSITION = LinearTransition.springify()
   .stiffness(ROW_SPRING.stiffness)
   .mass(ROW_SPRING.mass)
   .reduceMotion(ReduceMotion.System);
+
+/**
+ * `transition`, except across a change of the content width or the safe area's sides — a fold, a
+ * rotation — when every row moves at once and the transition would carry each from its old place
+ * to its new: nothing for that commit and the frames the list takes to reposition after it, as
+ * LegendList itself gives a recycled container no transition. A tab folded while hidden showed
+ * its grid laid out for the open display sliding left into the folded one when it was opened.
+ */
+export function useRowTransition<T>(transition: T): T | undefined {
+  const insets = useSideInsets();
+  const width = useContentWidth();
+  const key = `${width}:${insets.left}:${insets.right}`;
+  const [settled, setSettled] = useState(key);
+  useEffect(() => {
+    if (settled === key) return;
+    const timer = setTimeout(() => setSettled(key), RELAYOUT_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [key, settled]);
+  return settled === key ? transition : undefined;
+}
+
+const RELAYOUT_HOLD_MS = 300;

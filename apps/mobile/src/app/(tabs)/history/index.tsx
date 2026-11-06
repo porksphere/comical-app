@@ -45,7 +45,7 @@ import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect'
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
 import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
-import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
+import { ROW_REORDER_TRANSITION, useRowTransition } from '@/lib/row-motion';
 import { scrollPhaseHandlers } from '@/lib/scroll-release';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 
@@ -61,6 +61,7 @@ export default function HistoryScreen() {
   const queryClient = useQueryClient();
   const { nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
+  const rowTransition = useRowTransition(ROW_REORDER_TRANSITION);
   useScrollToTopOnReselect('history', listRef);
 
   // This list as a zoom surface — see AGENTS.md → Zoom transitions.
@@ -215,7 +216,7 @@ export default function HistoryScreen() {
             data={visible}
             keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
             recycleItems={false}
-            itemLayoutAnimation={ROW_REORDER_TRANSITION}
+            itemLayoutAnimation={rowTransition}
             // WEB ONLY: routes the reanimated scroll bridge through scrollEventThrottle:1 so onScroll
             // fires mid-drag (see recycler-list.tsx for the full root-cause note). Without it the list
             // only hears the wheel at gesture start and after it stops, so rows mount after a scroll,
