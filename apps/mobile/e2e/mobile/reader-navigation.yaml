@@ -136,14 +136,66 @@ appId: com.porksphere.comical
 # back to L -> R (paged).
 - tapOn:
     id: "reader.settings.open"
-- tapOn:
-    id: "reader.settings.page-fit.fit-height"
-- tapOn:
-    id: "reader.settings.page-fit.auto"
-- tapOn:
-    id: "reader.settings.double-tap.off"
-- tapOn:
-    id: "reader.settings.double-tap.magnify"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.page-fit"
+      - tapOn:
+          text: "Fit height"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.page-fit.fit-height"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.page-fit"
+      - tapOn:
+          text: "Auto"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.page-fit.auto"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.double-tap"
+      - tapOn:
+          text: "Off"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.double-tap.off"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.double-tap"
+      - tapOn:
+          text: "Magnify"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.double-tap.magnify"
 - tapOn:
     id: "reader.settings.keep-awake"
 - tapOn:
@@ -166,9 +218,22 @@ appId: com.porksphere.comical
     id: "reader.settings.preload-ahead.value"
     text: "4"
 - assertVisible:
-    id: "reader.settings.direction.vertical"
-- tapOn:
-    id: "reader.settings.direction.vertical"
+    id: "reader.settings.direction"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.direction"
+      - tapOn:
+          text: "Vertical"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.direction.vertical"
 - tapOn:
     point: "50%, 8%"
 
@@ -181,8 +246,21 @@ appId: com.porksphere.comical
 # Switch back to paged/ltr (the app default) before finishing.
 - tapOn:
     id: "reader.settings.open"
-- tapOn:
-    id: "reader.settings.direction.ltr"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.direction"
+      - tapOn:
+          text: "L → R"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.direction.ltr"
 - tapOn:
     point: "50%, 8%"
 - assertVisible:

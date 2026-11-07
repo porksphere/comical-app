@@ -38,8 +38,8 @@ type Scheme = 'light' | 'dark';
 export type TagColor = {
   /** Chip label + the group's own heading on the series page. */
   text: string;
-  /** Chip outline — the same hue, faint, over the neutral chip fill. */
-  border: string;
+  /** Chip fill — the same hue, faint: a chip is a tinted capsule, as iOS draws its tokens. */
+  fill: string;
 };
 
 /**
@@ -106,8 +106,8 @@ const RESERVED: Record<string, number> = {
   others: 9,
 };
 
-/** Border alpha, as an #RRGGBB**AA** suffix: the hue, present but not shouting, over `theme.chipBg`. */
-const BORDER_ALPHA = '66';
+/** Fill alpha, as an #RRGGBB**AA** suffix: the hue, present but not shouting, under its own text. */
+const FILL_ALPHA = '24';
 
 /** FNV-1a plus a murmur3 avalanche finalizer. The finalizer is the point: raw FNV over short, similar
  *  words clusters badly — measured, it put 7 of 15 real labels on one hue — and mixing the bits
@@ -129,7 +129,7 @@ function hash(s: string): number {
 function toColor(slot: number, scheme: Scheme): TagColor {
   const entry = PALETTE[slot % PALETTE.length]!;
   const base = scheme === 'dark' ? entry.dark : entry.light;
-  return { text: base, border: `${base}${BORDER_ALPHA}` };
+  return { text: base, fill: `${base}${FILL_ALPHA}` };
 }
 
 /**

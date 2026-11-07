@@ -5,7 +5,7 @@ import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/c
 import type { IconProps } from '@/components/icons/ui-icons';
 import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
 import { IntStepper } from '@/components/reader/int-stepper';
-import { useReaderSettingsForm, type ReaderSettingsField } from '@/components/reader/reader-settings-form';
+import { readerSettingsSections, useReaderSettingsForm, type ReaderSettingsField } from '@/components/reader/reader-settings-form';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
@@ -77,11 +77,18 @@ export function useReaderSettingsOverlay(seriesKey: string | null, onOpenChange?
  *  So every colour in here is the theme's: a hardcoded white was white on white. */
 export function ReaderSettingsBody({ seriesKey }: { seriesKey: string | null }) {
   const fields = useReaderSettingsForm(seriesKey);
+  const theme = useTheme();
   return (
     <View style={styles.content}>
       <OverlayHeading>Reader settings</OverlayHeading>
-      {fields.map((field) => (
-        <Field key={field.key} field={field} />
+      {/* The model's groups, as the iOS sheet draws them (`readerSettingsSections`). */}
+      {readerSettingsSections(fields).map((section) => (
+        <View key={section.id} style={styles.section}>
+          <ThemedText style={[styles.sectionTitle, { color: theme.textSecondary }]}>{section.title.toUpperCase()}</ThemedText>
+          {section.fields.map((field) => (
+            <Field key={field.key} field={field} />
+          ))}
+        </View>
       ))}
     </View>
   );
@@ -203,7 +210,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
+    gap: Spacing.four,
+  },
+  section: {
     gap: Spacing.three,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginBottom: -Spacing.one,
   },
   seg: {
     gap: Spacing.one,

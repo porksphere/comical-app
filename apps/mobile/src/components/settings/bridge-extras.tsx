@@ -132,7 +132,7 @@ export function TagExclusionsEditor({
         <View style={styles.tagRow}>
           {tags.map((t) => (
             <Pressable key={t.id} testID={testId('settings.bridge.excluded-tag', t.id)} onPress={() => removeTag(t.id)} hitSlop={4}>
-              <View style={[styles.tagChip, { borderColor: theme.chipBorder }]}>
+              <View style={[styles.tagChip, { backgroundColor: theme.chipFill }]}>
                 <ThemedText style={{ color: theme.chipText }} numberOfLines={1}>
                   {t.label}
                 </ThemedText>
@@ -343,10 +343,9 @@ const styles = StyleSheet.create({
   tagChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingVertical: 4,
   },
   input: {
     borderWidth: 1,

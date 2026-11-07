@@ -40,8 +40,21 @@ appId: com.porksphere.comical
 # Chrome is visible on entry — open the settings sheet and pick Vertical.
 - tapOn:
     id: "reader.settings.open"
-- tapOn:
-    id: "reader.settings.direction.vertical"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.direction"
+      - tapOn:
+          text: "Vertical"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.direction.vertical"
 # Close the sheet by tapping the dimmed backdrop above it.
 - tapOn:
     point: "50%, 8%"
@@ -88,8 +101,21 @@ appId: com.porksphere.comical
     index: 0
 - tapOn:
     id: "reader.settings.open"
-- tapOn:
-    id: "reader.settings.direction.ltr"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.direction"
+      - tapOn:
+          text: "L → R"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.direction.ltr"
 - tapOn:
     point: "50%, 8%"
 # Exit via Maestro's built-in back (not a tap on reader.toolbar.back): the toolbar is gated behind
