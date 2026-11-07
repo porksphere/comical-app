@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   FLAT,
+  MAX_TILT,
   concentric,
   curlFrame,
   dragGrabY,
@@ -146,11 +147,20 @@ describe('a drag', () => {
     expect(dragPull(leaf, corner, edge.x, 0, 0)).toEqual(edge);
   });
 
-  test('lets only a little of its vertical travel tilt the fold', () => {
+  test('lets its vertical travel lean the fold only slightly', () => {
     const edge = turnPull(leaf, corner, 0);
     const level = dragPull(leaf, corner, edge.x, -150, 0);
-    const climbing = dragPull(leaf, corner, edge.x, -150, -200);
-    expect(level.y - climbing.y).toBeCloseTo(200 * 0.3, 6);
+    // The lean a drag's vertical travel gives the line from the corner to the finger, which the fold
+    // lies across.
+    const lean = (tx: number, ty: number) => {
+      const p = dragPull(leaf, corner, edge.x, tx, ty);
+      const flat = dragPull(leaf, corner, edge.x, tx, 0);
+      return Math.atan2(p.y - flat.y, Math.abs(edge.x - p.x));
+    };
+    for (const tx of [-20, -150, -500]) expect(Math.abs(lean(tx, -3000))).toBeLessThanOrEqual(MAX_TILT + 1e-9);
+    // A thumb's arc leans it under two degrees, however little it has moved across.
+    expect(Math.abs(lean(-20, -40))).toBeLessThan((2 * Math.PI) / 180);
+    expect(lean(-150, -200)).toBeLessThan(0);
     // A level drag rises the way a tap's turn does.
     expect(level.y).toBeLessThan(edge.y);
   });

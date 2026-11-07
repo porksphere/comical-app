@@ -229,10 +229,16 @@ export const TAP_GRAB = 0.82;
 /** How much of where a drag starts, up or down the edge, moves the corner it takes from that one.
  *  All of it, and a drag begun high takes the top corner and swings the fold through a steep
  *  diagonal; none, and every drag is a tap. */
-export const GRAB_FOLLOW = 0.3;
-/** How much of a drag's vertical travel reaches the free edge. The turn is a sideways gesture: a
- *  thumb's natural arc should tilt the fold a little, never steer it. */
-export const VERTICAL_FOLLOW = 0.3;
+export const GRAB_FOLLOW = 0.15;
+/**
+ * The most a drag's vertical travel leans the fold, in radians, and the travel that takes it most
+ * of the way there. The turn is a sideways gesture: a thumb's arc should lean the fold a little,
+ * never steer it. An angle, not a share of the travel: a share moved the edge by points, and early
+ * in a drag, a few points from where it started, a few points up swung the fold through a steep
+ * diagonal.
+ */
+export const MAX_TILT = (6 * Math.PI) / 180;
+const TILT_TRAVEL = 160;
 
 /** The height a drag that starts at `y` takes the free edge from — mostly the tap's corner. */
 export function dragGrabY(leaf: Leaf, y: number): number {
@@ -243,11 +249,13 @@ export function dragGrabY(leaf: Leaf, y: number): number {
 
 /**
  * Where a drag puts the free edge: carried across by the finger's sideways travel `tx` (in turn
- * space) from where the turn starts (`fromX`), lifting as a tap's turn does, and moved by a damped
- * share of its vertical travel `ty`.
+ * space) from where the turn starts (`fromX`), lifting as a tap's turn does, and leaned by its
+ * vertical travel `ty` through at most `MAX_TILT`.
  */
 export function dragPull(leaf: Leaf, grabY: number, fromX: number, tx: number, ty: number): { x: number; y: number } {
   'worklet';
   const x = fromX + tx;
-  return { x, y: grabPoint(leaf, grabY).y - turnLift(leaf, turnProgress(leaf, x)) + ty * VERTICAL_FOLLOW };
+  const grab = grabPoint(leaf, grabY);
+  const lean = Math.tan(MAX_TILT * Math.tanh(ty / TILT_TRAVEL));
+  return { x, y: grab.y - turnLift(leaf, turnProgress(leaf, x)) + Math.abs(grab.x - x) * lean };
 }
