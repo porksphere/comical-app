@@ -373,7 +373,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     },
     onDragBegin,
   });
-  const { pageLoaded } = curl;
+  const { pageLoaded, viewMoving } = curl;
   const onPageSize = useCallback(
     (key: string, size: Size) => {
       onPairingSize(key, size);
@@ -762,6 +762,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       pageExternals,
       onPageSize,
       spreadFill,
+      viewMoving,
     }),
     [
       activeIndex,
@@ -779,6 +780,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       pageExternals,
       onPageSize,
       spreadFill,
+      viewMoving,
     ],
   );
 
@@ -911,6 +913,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               scrollGesture={pageExternals}
               onPageSize={onPageSize}
               spreadFill={spreadFill}
+              onViewMoving={viewMoving}
             />
             </View>
           )

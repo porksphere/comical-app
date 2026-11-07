@@ -85,7 +85,7 @@ export function StartPoster({
             <View key="blank" style={{ width: width / 2, height }} />
           ) : (
             <SpreadHalf
-              key={`${p.uri}:${pages.length}`}
+              key={`${p.uri}:${pages.length}${pageFit === 'auto' && rest.strip ? ':strip' : ''}`}
               fill={double ? spreadFill : 'off'}
               spine={spineOf(i, rtl)}
               color={fillColors[i] ?? null}

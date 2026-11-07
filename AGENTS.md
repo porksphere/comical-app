@@ -714,14 +714,18 @@ it. There is no "fit page": on any screen that is just whichever of the two is s
 fit-width already shows an ordinary page whole on a phone and fit-height shows it whole on a
 landscape tablet. `auto`, the default, is the device-independent one: every page whole, and a
 SPREAD alone — a picture wider than it is tall — lifted to fit-height and panned sideways, since
-it would otherwise lie as a strip. An ordinary page is never scrolled under it on any screen.
+it would otherwise lie as a strip; and its mirror, a stitched STRIP of panels (more than
+`STRIP_ASPECT` times as tall as wide), laid to the width and panned down from its top, since whole
+it is a sliver a few points wide (`stripsUnder`). An ordinary page is never scrolled under it on
+any screen.
 
 **A page that fits is drawn in the contain box, under either axis, and that box is the viewport's
 size and never changes.** That is the whole reason the reader doesn't shift: a box sized from the
 picture's aspect is sized from a GUESS until the picture arrives, and re-centring it then moves
 the page (that was built, as the fit-width default, and was the "page shifting around"). Only a
-page that overflows the height under fit-width — a strip — is drawn in a box its own height
-(`stripGeometry`), centred like every other box and panned DOWN by the same gesture that pans a
+strip — a page that overflows the height under fit-width, or a stitched strip under `auto` — is
+drawn in a box its own height (`stripGeometry`; under `auto` the page remounts once its shape says
+it is one, so its decode is made against the strip's box, not the screen's), centred like every other box and panned DOWN by the same gesture that pans a
 zoomed page, from its top, with the same momentum and the same hand-off to the pager for a
 sideways drag. (It used to have a gesture of its own, composed alongside the pager's swipe rather
 than blocking it and with no momentum: a thumb drag that started slightly diagonal turned the

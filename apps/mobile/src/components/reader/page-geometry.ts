@@ -1,3 +1,4 @@
+import { STRIP_ASPECT } from '@/components/reader/page-slicing';
 import { ZOOM_EPSILON } from '@/components/reader/reader-zoom';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
@@ -44,6 +45,11 @@ export function otherFit(pageFit: PageFit, image: Size | null, viewport: Size): 
   if (pageFit === 'fit-height') return 'fit-width';
   if (image == null || image.width <= 0 || image.height <= 0) return 'fit-height';
   if (image.width > image.height) return 'fit-width';
+  // A strip, which `auto` lays to the width (see `stripsUnder`), goes back to whole. Inlined, not
+  // `stripsUnder`: a worklet calls what was declared above it.
+  if (pageFit === 'auto' && image.height > image.width * STRIP_ASPECT && (viewport.width * image.height) / image.width > viewport.height) {
+    return 'fit-height';
+  }
   return image.width / image.height >= viewport.width / viewport.height ? 'fit-height' : 'fit-width';
 }
 
@@ -152,6 +158,18 @@ export function isStrip(image: Size | null, viewport: Size): boolean {
   );
 }
 
+/**
+ * Whether a page lies as a strip under `pageFit`: under fit-width, any page taller than the screen
+ * at its width; under `auto`, a stitched strip of panels (taller than `STRIP_ASPECT` times its
+ * width) — the mirror of the spread `auto` fits to the height, which is otherwise a sliver a few
+ * points wide, laid whole down the middle of the screen. Never under fit-height.
+ */
+export function stripsUnder(pageFit: PageFit, image: Size | null, viewport: Size): boolean {
+  'worklet';
+  if (pageFit === 'fit-width') return isStrip(image, viewport);
+  return pageFit === 'auto' && image != null && image.height > image.width * STRIP_ASPECT && isStrip(image, viewport);
+}
+
 /** A page's geometry from its picture's real dimensions (`null` until they load — a page whose
  *  shape is unknown is taken to fill the viewport, which is what its placeholder does).
  *
@@ -178,7 +196,7 @@ export function pageGeometry(image: Size | null, viewport: Size, fill: FillRule,
 
 /** Where a paged reader's page comes to rest under `pageFit`. Every page is drawn in the contain
  *  box, a box the viewport's size that never changes — which is what keeps a page from shifting as
- *  its picture arrives — at the fit's rest (see `fillRule`), except a STRIP under fit-width, which
+ *  its picture arrives — at the fit's rest (see `fillRule`), except a STRIP (`stripsUnder`), which
  *  gets a box its own height (see `stripGeometry`). A spread (`double`, two pages side by side)
  *  never lies as a strip, and under `auto` it rests whole: the "spreads fill the height" rule is
  *  about ONE picture that is a spread, not two pages shown as one. In `standby` every page rests at
@@ -197,6 +215,6 @@ export function pageRest(
   'worklet';
   const rule = standby ? 'none' : fillRule(pageFit);
   const fill = double && rule === 'wide' ? 'none' : rule;
-  const strip = !double && pageFit === 'fit-width' && isStrip(image, viewport);
+  const strip = !double && stripsUnder(pageFit, image, viewport);
   return { ...(strip && image ? stripGeometry(image, viewport) : pageGeometry(image, viewport, fill, rtl)), strip };
 }

@@ -74,6 +74,8 @@ type Props = {
   scrollGesture?: GestureType[];
   /** Every page's real size as it loads, in either layout — what spread pairing is decided from. */
   onPageSize?: (key: string, size: Size) => void;
+  /** The finger is moving this page's view, and has stopped, while it is the page being read. */
+  onViewMoving?: (moving: boolean) => void;
   /** What fills a spread's spare width (`SpreadFill`). */
   spreadFill?: SpreadFill;
 };
@@ -114,6 +116,7 @@ export function ZoomablePage({
   scrubbing,
   scrollGesture,
   onPageSize,
+  onViewMoving,
   spreadFill = 'off',
 }: Props) {
   const halves = useMemo(() => spreadHalves({ pages, pad }), [pages, pad]);
@@ -197,6 +200,7 @@ export function ZoomablePage({
     onZoomChange,
     onPinchChange,
     onSingleTap: onTapNav,
+    onMoving: active ? onViewMoving : undefined,
     singleTapEnabled: !pageFailed,
     doubleTapEnabled: doubleTap !== 'off',
     onDoubleTap: doubleTap === 'switch-fit' ? switchFit : undefined,
@@ -245,7 +249,10 @@ export function ZoomablePage({
               <View key="blank" style={{ width: width / 2, height }} />
             ) : (
               <SpreadHalf
-                key={`${p.uri}:${halves.length}`}
+                // Remounted, too, when `auto` finds a page is a strip: its box is the screen's until
+                // its shape is known, and a decode frozen against that box (`boxIsFinal`) would be a
+                // strip's sliver drawn across the whole width.
+                key={`${p.uri}:${halves.length}${pageFit === 'auto' && strip ? ':strip' : ''}`}
                 fill={double ? spreadFill : 'off'}
                 // The side of its half this page's spine is on: the half drawn on the left of the
                 // screen has the spine at its right.

@@ -10,6 +10,7 @@ import {
   isStrip,
   otherFit,
   pageGeometry,
+  pageRest,
   panLimits,
   stripGeometry,
 } from './page-geometry';
@@ -148,8 +149,8 @@ describe('otherFit', () => {
   test('from auto, a spread already fills the height, so it goes to the width', () => {
     expect(otherFit('auto', spread, phone)).toBe('fit-width');
   });
-  test('from auto, a strip is height-limited, so it goes to the width', () => {
-    expect(otherFit('auto', { width: 800, height: 8000 }, phone)).toBe('fit-width');
+  test('from auto, a strip already lies to the width, so it goes back to whole', () => {
+    expect(otherFit('auto', { width: 800, height: 8000 }, phone)).toBe('fit-height');
   });
   test('from auto, an ordinary page on a landscape tablet is height-limited, so it goes to the width', () => {
     expect(otherFit('auto', portrait, { width: 1200, height: 600 })).toBe('fit-width');
@@ -161,6 +162,21 @@ describe('otherFit', () => {
 
 describe('strips', () => {
   const strip = { width: 800, height: 8000 };
+  test('auto lays a stitched strip to the width, from its top, as fit-width does', () => {
+    const rest = pageRest(strip, phone, 'auto', false, false, false);
+    expect(rest.strip).toBe(true);
+    expect(rest).toEqual({ ...stripGeometry(strip, phone), strip: true });
+  });
+  test('auto keeps an ordinary tall page whole: only a strip of panels is laid to the width', () => {
+    // Taller than the phone at its width, but nowhere near three times as tall as wide.
+    expect(pageRest({ width: 800, height: 2000 }, phone, 'auto', false, false, false).strip).toBe(false);
+  });
+  test('fit-height keeps even a strip whole', () => {
+    expect(pageRest(strip, phone, 'fit-height', false, false, false).strip).toBe(false);
+  });
+  test('a strip never lies as one in a two-page spread', () => {
+    expect(pageRest(strip, phone, 'auto', true, false, false).strip).toBe(false);
+  });
   test('a strip is a page taller than the viewport at its width', () => {
     expect(isStrip(strip, phone)).toBe(true);
     expect(isStrip(portrait, phone)).toBe(false);

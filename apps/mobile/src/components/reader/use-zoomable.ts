@@ -66,6 +66,7 @@ export function useZoomable({
   onZoomChange,
   onPinchChange,
   onSingleTap,
+  onMoving,
   singleTapEnabled = true,
   singleTapAllowed,
   simultaneousExternal,
@@ -126,6 +127,10 @@ export function useZoomable({
    *  zones use it; a chrome toggle ignores it). Composed Exclusive with the
    *  double-tap so it waits out a possible second tap. Omit for no single tap. */
   onSingleTap?: (x: number) => void;
+  /** The finger is moving the view (`true`: a pinch or pan begun, a double-tap's zoom) and has
+   *  stopped (`false`: the pinch let go, the fling come to rest, the zoom arrived): what was on
+   *  screen before is not what is now, and until it stops, what is there is still changing. */
+  onMoving?: (moving: boolean) => void;
   /** Gate for the single tap, independent of `enabled` (e.g. a page's tap zones
    *  stay live on an overflowing fit-width page where pinch is off). */
   singleTapEnabled?: boolean;
@@ -209,6 +214,8 @@ export function useZoomable({
   const restTx = restOffset.x;
   const restTy = restOffset.y;
   const restZoomed = restScale > ZOOM_EPSILON;
+  // Whether the reader has moved this page off its rest since it was last put there.
+  const moved = useSharedValue(false);
   // A box that overflows the viewport at rest is panned without any zoom — a strip.
   const overflowsAtRest = restLimit.x > 0.5 || restLimit.y > 0.5;
 
@@ -218,12 +225,23 @@ export function useZoomable({
   // under your eyes grows into place — and instant for a neighbour being readied off screen.
   // `box`/`width`/`height` are deliberately not deps: they only matter through `restTx`, and a
   // page whose rest hasn't moved keeps whatever zoom the reader gave it.
+  // The rest scale this page was last put at rest under, for telling a rest that moved from one
+  // whose edge alone flipped (see `moved`).
+  const restScaleSeen = useRef(restScale);
   useEffect(() => {
     const settled =
       Math.abs(scale.value - restScale) < 0.001 &&
       Math.abs(tx.value - restTx) < 0.5 &&
       Math.abs(ty.value - restTy) < 0.5;
-    if (!settled) {
+    // A page the reader has panned at its rest scale — down a strip, across a wide page — keeps its
+    // place when it leaves and comes back: put at rest instead, a strip read half way down was back
+    // at its top (or, turned back to, at its bottom) on every return. A page zoomed in past its rest,
+    // or whose rest itself changed (its picture's shape, the fit, the screen), is put at rest still;
+    // the edge of the rest flipping as the page is passed is not that.
+    const keep = moved.value && overflowsAtRest && Math.abs(scale.value - restScale) < 0.001 && restScaleSeen.current === restScale;
+    restScaleSeen.current = restScale;
+    if (!settled && !keep) {
+      moved.set(false);
       // A rest asked for by a double-tap is aimed at the tap: the content point under the finger
       // is read back through the old transform and put back under it at the new scale, clamped
       // to the new rest's bounds. Anything else — a fit chosen in the sheet, the entrance
@@ -252,11 +270,13 @@ export function useZoomable({
     // The local `zoomed` flag is left alone off screen: it only gates gestures, and an inactive
     // page receives none. It is set again, with the report, the moment the page is active.
     if (active) reportZoomRef.current(restZoomed);
-  }, [active, restScale, restTx, restTy, restZoomed, scale, tx, ty, savedTx, savedTy, tapX, tapY, boxWidth, boxHeight, width, height]);
+  }, [active, restScale, restTx, restTy, restZoomed, scale, tx, ty, savedTx, savedTy, tapX, tapY, boxWidth, boxHeight, width, height, moved, overflowsAtRest]);
 
   const pinch = Gesture.Pinch()
     .enabled(enabled)
     .onStart((e) => {
+      moved.set(true);
+      if (onMoving) runOnJS(onMoving)(true);
       focalStartX.set(e.focalX);
       focalStartY.set(e.focalY);
       baseScale.set(scale.value);
@@ -282,6 +302,7 @@ export function useZoomable({
       scale.set(nextScale);
     })
     .onEnd(() => {
+      if (onMoving) runOnJS(onMoving)(false);
       // No animation on release: the scale is already exactly where the fingers left
       // it (the lift-frame guard above keeps it clean), so just keep it — or reset to
       // a clean 1× when it's within a hair of 1×, which is imperceptible since it's
@@ -307,6 +328,7 @@ export function useZoomable({
     // must still hand the scroller back, or it stays frozen until the next one.
     .onFinalize(() => {
       if (!pinching.value) return;
+      if (onMoving) runOnJS(onMoving)(false);
       pinching.set(false);
       if (onPinchChange) runOnJS(onPinchChange)(false);
     });
@@ -318,6 +340,12 @@ export function useZoomable({
     .maxDistance(DOUBLE_TAP_MAX_DIST)
     .onEnd((e) => {
       const s0 = scale.value;
+      moved.set(true);
+      // The zoom animates for a moment after this; the curl waits a while after a stop anyway.
+      if (onMoving) {
+        runOnJS(onMoving)(true);
+        runOnJS(onMoving)(false);
+      }
       // Anywhere but at rest — magnified, or pinched out below a spread's rest — goes back to rest.
       if (s0 > restScale * ZOOM_EPSILON || s0 < restScale / ZOOM_EPSILON) {
         scale.set(withTiming(restScale));
@@ -419,6 +447,8 @@ export function useZoomable({
     .onStart((e) => {
       // TEMPORARY: to Metro, for the page curl's drags that another gesture takes.
       if (__DEV__) console.log(`[page-curl] the page's own pan took a drag: ${Math.round(e.translationX)}, ${Math.round(e.translationY)}pt, scale ${scale.value.toFixed(2)}`);
+      moved.set(true);
+      if (onMoving) runOnJS(onMoving)(true);
       savedTx.set(tx.value);
       savedTy.set(ty.value);
       panOriginX.set(e.translationX);
@@ -434,7 +464,13 @@ export function useZoomable({
     // so grabbing mid-glide continues seamlessly from wherever it's coasted.
     .onEnd((e) => {
       const limit = panLimits(scale.value, box, viewport);
-      tx.set(withDecay({ velocity: e.velocityX, clamp: [-limit.x, limit.x], deceleration: 0.994 }));
+      tx.set(
+        withDecay({ velocity: e.velocityX, clamp: [-limit.x, limit.x], deceleration: 0.994 }, (finished) => {
+          'worklet';
+          // Not when a new pan has caught the fling: that one is moving it still.
+          if (finished && onMoving) runOnJS(onMoving)(false);
+        }),
+      );
       ty.set(withDecay({ velocity: e.velocityY, clamp: [-limit.y, limit.y], deceleration: 0.994 }));
     });
 

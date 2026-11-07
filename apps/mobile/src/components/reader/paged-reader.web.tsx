@@ -14,7 +14,7 @@ import {
   edgeOffset,
   fillRule,
   freePanLimits,
-  isStrip,
+  stripsUnder,
   pageGeometry,
   stripGeometry,
   panLimits,
@@ -295,7 +295,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     (cell: Spread<ReaderPageItem> | undefined) => {
       const img = imageOf(cell);
       if (cell && spreadHalves(cell).length > 1) return pageGeometry(img, { width, height }, fill === 'wide' ? 'none' : fill, rtl);
-      return pageFit === 'fit-width' && img && isStrip(img, { width, height })
+      return img && stripsUnder(pageFit, img, { width, height })
         ? stripGeometry(img, { width, height })
         : pageGeometry(img, { width, height }, fill, rtl);
     },
