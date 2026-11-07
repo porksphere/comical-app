@@ -31,7 +31,7 @@ import { useSpreadLayout } from '@/components/reader/use-spread-layout';
 import { usePageCurl } from '@/components/reader/use-page-curl';
 import { useViewportCorners } from '@/components/reader/viewport-corners';
 import { ZoomablePage, type CellPage } from '@/components/reader/zoomable-page';
-import type { DoubleTapMode, PageFit, PageTurn } from '@/hooks/use-reader-settings';
+import type { DoubleTapMode, PageFit, PageTurn, SpreadFill } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { trace, traceJS } from '@/lib/gesture-trace';
@@ -147,6 +147,8 @@ type Props = {
   /** How far down the window the pager is drawn — the curl rounds a page into the screen's corners
    *  only as far as it reaches them. */
   frameTop?: number;
+  /** What fills a two-page spread's spare width (`SpreadFill`). */
+  spreadFill?: SpreadFill;
 };
 
 /**
@@ -237,6 +239,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     onDragBegin,
     pageTurn = 'slide',
     frameTop = 0,
+    spreadFill = 'off',
   },
   ref,
 ) {
@@ -352,6 +355,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     rtl,
     double,
     pageFit,
+    spreadFill,
     zoomed,
     data,
     activeIndex,
@@ -739,6 +743,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       handleZoomChange,
       pageExternals,
       onPageSize,
+      spreadFill,
     }),
     [
       activeIndex,
@@ -755,6 +760,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       handleZoomChange,
       pageExternals,
       onPageSize,
+      spreadFill,
     ],
   );
 
@@ -879,6 +885,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               scrubbing={scrubTarget}
               scrollGesture={pageExternals}
               onPageSize={onPageSize}
+              spreadFill={spreadFill}
             />
             </View>
           )

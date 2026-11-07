@@ -88,13 +88,17 @@ export function singlePageBox(image: Size | null, viewport: Size, pageFit: PageF
   return { x: (viewport.width - width) / 2, y: (viewport.height - height) / 2, width, height };
 }
 
-/** One half of a two-page spread at rest: the page contained in its half, against the spine. */
-export function halfPageBox(image: Size | null, viewport: Size, side: 'left' | 'right'): Box {
+/** One half of a two-page spread at rest: the page contained in its half, against the spine — or,
+ *  with the spread's spare width filled (`whole`, `spreadFill`), the whole half, page and fill: the
+ *  fill is drawn in the half from the page's own edge and turns with it. */
+export function halfPageBox(image: Size | null, viewport: Size, side: 'left' | 'right', whole = false): Box {
   const half = viewport.width / 2;
   const frame = { x: side === 'left' ? 0 : half, y: 0, width: half, height: viewport.height };
   if (!image) return frame;
   const { width, height } = containedSize(image, { width: half, height: viewport.height });
-  return { x: side === 'left' ? half - width : half, y: (viewport.height - height) / 2, width, height };
+  const y = (viewport.height - height) / 2;
+  if (whole) return { x: frame.x, y, width: half, height };
+  return { x: side === 'left' ? half - width : half, y, width, height };
 }
 
 /**

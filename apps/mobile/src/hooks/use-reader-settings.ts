@@ -32,6 +32,11 @@ export type PageTurn = 'slide' | 'curl';
 export type PrefetchAhead = number;
 export const PREFETCH_AHEAD_MIN = 0;
 export const PREFETCH_AHEAD_MAX = 10;
+/** What fills a two-page spread's spare width: nothing (the pages meet at the spine, the reader's
+ *  background either side), the sides (the pages still meet at the spine, each side filled from
+ *  its page's outer edge), or the middle (each page against the screen's edge, the gutter between
+ *  them filled from their inner edges). See `components/reader/spread-gutter`. */
+export type SpreadFill = 'off' | 'sides' | 'middle';
 export type ReaderSettings = {
   mode: ReaderMode;
   direction: ReaderDirection;
@@ -51,6 +56,7 @@ export type ReaderSettings = {
    *  costs memory on every page whether or not you ever zoom one. On, like every other reader. */
   downsample: boolean;
   prefetchAhead: PrefetchAhead;
+  spreadFill: SpreadFill;
 };
 
 const STORAGE_KEY = 'comical:readerSettings';
@@ -68,6 +74,7 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   respectSafeArea: false,
   downsample: true,
   prefetchAhead: 4,
+  spreadFill: 'off',
 };
 
 // Starts at DEFAULT_SETTINGS (also the pre-hydration value the web static export

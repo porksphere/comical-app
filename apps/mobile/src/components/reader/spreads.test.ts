@@ -175,6 +175,12 @@ describe('spreadImage', () => {
     expect(spreadImage([undefined, tall], viewport)).toEqual(spreadImage([tall, tall], viewport));
   });
   test('null until the page loads', () => expect(spreadImage([undefined, null], viewport)).toBeNull());
+  test('laid out to the screen edges, it is the whole width, the gutter between the pages and all', () => {
+    const met = spreadImage([tall, tall], viewport)!;
+    const edges = spreadImage([tall, tall], viewport, true)!;
+    expect(met.width).toBeLessThan(viewport.width);
+    expect(edges).toEqual({ width: viewport.width, height: met.height });
+  });
 });
 
 describe('singleSpreads', () => {

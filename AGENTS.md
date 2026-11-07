@@ -799,8 +799,19 @@ discs that keep the spine's ends down — and its corners are the screen's own w
 reaches into them (`concentric`, the rule iOS 26 rounds nested shapes by), read per corner by the
 local module `modules/screen-corners` (iOS 26's concentric corners, else the screen's one radius;
 Android's rounded-corner insets), so a folding phone's hard edge stays square. Pages that don't
-fill their halves meet at the spine as they always have: padding the middle would leave the leaf
-hinging in empty space, and a drawing across both pages split by a band.
+fill their halves meet at the spine by default: a drawing across both pages stays whole. The
+`spreadFill` reader setting (native only) fills a spread's spare width from the pages themselves:
+`sides` keeps the pages at the spine and fills each outer side from its page's outer edge, `middle`
+moves each page against the screen's edge and fills the gutter from their inner edges
+(`components/reader/spread-gutter.tsx`, `halfLayout`). A fill is one solid colour, the most
+frequent along the edge it is beside (colours bucketed, so paper speckle counts as one): the gutter
+one colour across both pages' inner edges, each side its own page's outer edge. It is read off the
+page as published — expo-image's original on disk (`getCachePathAsync`), or a downloaded page's
+file — shrunk by the platform's decoder (expo-image-manipulator, off the main thread; Skia's own
+decoders don't read AVIF) and read with Skia on the JS thread, never the UI thread the turns are
+drawn on. It is drawn inside each page's half, so under the curl
+a filled spread's leaf is the whole half, page and fill (`halfPageBox`): the fill turns with its
+page, and the leaf never hinges in empty space.
 
 The scroller standing still under the curl is also what stops holding off iOS 26's swipe back from
 anywhere on a page: the slide's UIScrollView claimed every sideways drag first, so the reader never

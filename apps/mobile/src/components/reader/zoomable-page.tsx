@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { edgeOffset, farEdge, pageRest, panLimits, type RestEdge, type Size } from '@/components/reader/page-geometry';
 import { ReaderPage } from '@/components/reader/reader-page';
+import { halfLayout, SpreadGutter, useSpreadColors } from '@/components/reader/spread-gutter';
 import { spreadHalves, spreadImage, type SpreadPad } from '@/components/reader/spreads';
 import { useZoomable } from '@/components/reader/use-zoomable';
-import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
+import type { DoubleTapMode, PageFit, SpreadFill } from '@/hooks/use-reader-settings';
 
 // A single paged-reader page — or a two-page spread, which is the same thing to everything but
 // the layout inside it (NATIVE only — web has its own gesture pager in paged-reader.web.tsx and
@@ -73,6 +74,8 @@ type Props = {
   scrollGesture?: GestureType[];
   /** Every page's real size as it loads, in either layout — what spread pairing is decided from. */
   onPageSize?: (key: string, size: Size) => void;
+  /** What fills a spread's spare width (`SpreadFill`). */
+  spreadFill?: SpreadFill;
 };
 
 // Non-interactive markers only: navigation taps are handled by the GestureDetector
@@ -111,6 +114,7 @@ export function ZoomablePage({
   scrubbing,
   scrollGesture,
   onPageSize,
+  spreadFill = 'off',
 }: Props) {
   const halves = useMemo(() => spreadHalves({ pages, pad }), [pages, pad]);
   const double = halves.length > 1;
@@ -128,11 +132,21 @@ export function ZoomablePage({
         ? spreadImage(
             halves.map((p) => (p ? (known[p.uri] ?? null) : undefined)),
             viewport,
+            spreadFill === 'middle',
           )
         : (known[pages[0]!.uri] ?? null),
-    [double, halves, pages, viewport],
+    [double, halves, pages, viewport, spreadFill],
   );
   const image = useMemo(() => imageOf(sizes), [imageOf, sizes]);
+  // The spread's padding colours, from its pages once they have loaded: the side of each page
+  // filled is read, the gutter one colour across both.
+  const filled = (i: number) => (double ? halfLayout(spineOf(i, rtl), spreadFill).filled : null);
+  const fillPage = (i: number) => {
+    const p = halves[i];
+    const side = filled(i);
+    return p && side ? { uri: p.uri, ready: !!sizes[p.uri], side } : undefined;
+  };
+  const fillColors = useSpreadColors(fillPage(0), fillPage(1), spreadFill === 'middle');
 
   // The edge this page rests at, latched while active (see `restAtFarEdge`). React's own form of
   // the previous-prop pattern, so a discarded render re-runs the comparison.
@@ -230,34 +244,82 @@ export function ZoomablePage({
             !p ? (
               <View key="blank" style={{ width: width / 2, height }} />
             ) : (
-              <ReaderPage
-                // Remounted when the cell changes layout: a page's decode box is frozen at mount (see
-                // ReaderPage's `boxIsFinal`), and a half-width decode drawn full width is soft.
+              <SpreadHalf
                 key={`${p.uri}:${halves.length}`}
-                fadeMs={fadeMs}
-                uri={p.uri}
-                page={p.page}
-                fit="contain"
+                fill={double ? spreadFill : 'off'}
+                // The side of its half this page's spine is on: the half drawn on the left of the
+                // screen has the spine at its right.
+                spine={spineOf(i, rtl)}
+                color={fillColors[i] ?? null}
                 width={double ? width / 2 : width}
-                height={strip ? geometry.content.height : height}
-                // Both halves meet at the spine instead of each centring in its own half: the half
-                // drawn on the left hugs its right edge.
-                contentPosition={double ? ((i === 0) !== rtl ? 'right' : 'left') : undefined}
-                // Answered by the FIT, not by `strip` — see ReaderPage's `boxIsFinal`. Under any other
-                // fit the box is the viewport's and never moves; under fit-width a page that turns out
-                // to be a strip gets a box its own height, and nothing knows which pages those are
-                // until they have loaded, which is exactly too late. A spread's halves never strip.
-                boxIsFinal={double || pageFit !== 'fit-width'}
-                onLoadDims={(w, h) => onLoadDims(p.key, p.uri, w, h)}
-                onFailedChange={(failed) => onFailedChange(p.uri, failed)}
-                scrubbing={scrubbing}
-              />
+                height={height}
+                image={sizes[p.uri] ?? null}
+              >
+                <ReaderPage
+                  fadeMs={fadeMs}
+                  uri={p.uri}
+                  page={p.page}
+                  fit="contain"
+                  width={double ? width / 2 : width}
+                  height={strip ? geometry.content.height : height}
+                  // Both halves meet at the spine instead of each centring in its own half: the half
+                  // drawn on the left hugs its right edge. With the middle filled, each hugs its outer
+                  // edge instead, the gutter between them.
+                  contentPosition={double ? halfLayout(spineOf(i, rtl), spreadFill).hug : undefined}
+                  // Answered by the FIT, not by `strip` — see ReaderPage's `boxIsFinal`. Under any other
+                  // fit the box is the viewport's and never moves; under fit-width a page that turns out
+                  // to be a strip gets a box its own height, and nothing knows which pages those are
+                  // until they have loaded, which is exactly too late. A spread's halves never strip.
+                  boxIsFinal={double || pageFit !== 'fit-width'}
+                  onLoadDims={(w, h) => onLoadDims(p.key, p.uri, w, h)}
+                  onFailedChange={(failed) => onFailedChange(p.uri, failed)}
+                  scrubbing={scrubbing}
+                />
+              </SpreadHalf>
             ),
           )}
         </Animated.View>
         <TapZones />
       </View>
     </GestureDetector>
+  );
+}
+
+/** The side of its half a spread's page `i` (in reading order) has the spine on: the half drawn
+ *  on the left of the screen has it at its right. */
+export function spineOf(i: number, rtl: boolean): 'left' | 'right' {
+  return (i === 0) !== rtl ? 'right' : 'left';
+}
+
+/**
+ * One page of a cell, in its box — and in a spread with its spare width filled, the fill under it.
+ * Remounted (by its key) when the cell changes layout: a page's decode box is frozen at mount (see
+ * ReaderPage's `boxIsFinal`), and a half-width decode drawn full width is soft.
+ */
+export function SpreadHalf({
+  fill,
+  spine,
+  color,
+  width,
+  height,
+  image,
+  children,
+}: {
+  fill: SpreadFill;
+  spine: 'left' | 'right';
+  color: string | null;
+  width: number;
+  height: number;
+  image: Size | null;
+  children: ReactNode;
+}) {
+  const { filled } = halfLayout(spine, fill);
+  if (!filled) return children;
+  return (
+    <View style={{ width, height }}>
+      <SpreadGutter side={filled} width={width} height={height} image={image} color={color} />
+      {children}
+    </View>
   );
 }
 

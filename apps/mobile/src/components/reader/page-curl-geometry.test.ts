@@ -133,6 +133,23 @@ describe('the curl', () => {
   });
 });
 
+describe('a spread laid out to the screen edges', () => {
+  const page = { width: 458, height: 669 };
+  const screen = { width: 951, height: 669 };
+
+  test("turns the whole half, the page and its gutter, from the spine to the screen's edge", () => {
+    expect(halfPageBox(page, screen, 'right', true)).toEqual({ x: 475.5, y: 0, width: 475.5, height: 669 });
+    expect(halfPageBox(page, screen, 'left', true)).toEqual({ x: 0, y: 0, width: 475.5, height: 669 });
+    const leaf = makeLeaf(halfPageBox(page, screen, 'right', true), screen, [0, 0, 0, 0], true, false);
+    expect(leaf.box.x).toBe(leaf.spine);
+    expect(leaf.box.x + leaf.box.width).toBe(screen.width);
+  });
+
+  test('otherwise turns the page alone, against the spine', () => {
+    expect(halfPageBox(page, screen, 'right')).toEqual({ x: 475.5, y: 0, width: 458, height: 669 });
+  });
+});
+
 describe('a drag', () => {
   const leaf: Leaf = makeLeaf(singlePageBox(PAGE, PHONE, 'auto', false), PHONE, [55, 55, 55, 55], false, false);
   const corner = leaf.box.y + leaf.box.height * 0.82;

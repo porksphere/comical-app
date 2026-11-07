@@ -124,12 +124,13 @@ export type PlatformContracts = [
   // Web has no continuous scrubber (the progress pill jumps) and no poster for the list to end
   // (see reader-pane). It zooms the page itself and never says so, so on a touch browser the
   // reader's swipe-down stays armed while a page is zoomed. It has no page curl either (its
-  // pictures of the page can't be taken), so it always slides.
+  // pictures of the page can't be taken), so it always slides; nor a spread's padding, which is
+  // read from a disk cache the browser keeps to itself.
   Conforms<
     Drift<
       typeof PagedReader,
       typeof PagedReaderWeb,
-      'scrubTarget' | 'scrubbing' | 'onReady' | 'onDragBegin' | 'onZoomChange' | 'pageTurn' | 'frameTop'
+      'scrubTarget' | 'scrubbing' | 'onReady' | 'onDragBegin' | 'onZoomChange' | 'pageTurn' | 'frameTop' | 'spreadFill'
     >
   >,
   // As the pager, and web's list joins the next or previous chapter as it scrolls, so it has no

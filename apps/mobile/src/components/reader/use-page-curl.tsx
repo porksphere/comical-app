@@ -32,7 +32,7 @@ import {
   type Radii,
 } from '@/components/reader/page-curl-geometry';
 import { knownPageSize, spreadHalves, type SpreadPad } from '@/components/reader/spreads';
-import type { PageFit } from '@/hooks/use-reader-settings';
+import type { PageFit, SpreadFill } from '@/hooks/use-reader-settings';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { projectRelease } from '@/lib/gesture-release';
 
@@ -79,6 +79,8 @@ type Options = {
   rtl: boolean;
   double: boolean;
   pageFit: PageFit;
+  /** What fills a spread's spare width: filled, a leaf is the whole half, page and fill. */
+  spreadFill: SpreadFill;
   zoomed: boolean;
   /** The pager's cells in physical (screen) order. */
   data: readonly CurlCell[];
@@ -119,7 +121,7 @@ type InFlight = Plan & { token: number; fromDrag: boolean };
  * reverse.
  */
 function planTurn(o: Options, here: number, readingForward: boolean): Plan | null {
-  const { data, rtl, double, width, height, pageFit, zoomed, display } = o;
+  const { data, rtl, double, width, height, pageFit, spreadFill, zoomed, display } = o;
   if (here < 0 || here >= data.length || width <= 0 || height <= 0) return null;
   const viewport = { width, height };
   const logical = rtl ? data.length - 1 - here : here;
@@ -155,7 +157,7 @@ function planTurn(o: Options, here: number, readingForward: boolean): Plan | nul
   } else {
     const halves = spreadHalves(fromCell);
     const onScreen = rtl ? [...halves].reverse() : halves;
-    box = halfPageBox(sizeOf(onScreen[side === 'left' ? 0 : 1]?.uri), viewport, side);
+    box = halfPageBox(sizeOf(onScreen[side === 'left' ? 0 : 1]?.uri), viewport, side, spreadFill !== 'off');
   }
   return {
     target,
@@ -170,7 +172,7 @@ function planTurn(o: Options, here: number, readingForward: boolean): Plan | nul
 
 /** What a cell's picture depends on beyond the cell itself: one taken under another is not of it. */
 function layoutOf(o: Options): string {
-  return `${o.width}x${o.height} ${o.pageFit} ${o.double ? 2 : 1} ${o.rtl ? 'rtl' : 'ltr'}`;
+  return `${o.width}x${o.height} ${o.pageFit} ${o.double ? 2 : 1} ${o.rtl ? 'rtl' : 'ltr'} ${o.spreadFill}`;
 }
 
 /**

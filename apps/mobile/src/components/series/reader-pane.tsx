@@ -932,6 +932,7 @@ export const ReaderPane = forwardRef<
           onZoomChange={handleZoom}
           pageTurn={settings.pageTurn}
           frameTop={insetTop}
+          spreadFill={settings.spreadFill}
         />
       ) : (
         <WebtoonReader
@@ -988,6 +989,7 @@ export const ReaderPane = forwardRef<
           pageFit={settings.mode === 'paged' ? pageFit : settings.pageFit}
           rtl={settings.direction === 'rtl'}
           standby={!!standby}
+          spreadFill={settings.spreadFill}
         />
       )}
       </View>

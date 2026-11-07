@@ -12,6 +12,7 @@ import {
   type PageLayout,
   type PageTurn,
   type ReaderDirection,
+  type SpreadFill,
 } from '@/hooks/use-reader-settings';
 import { useIsDesktop } from '@/hooks/use-responsive';
 
@@ -157,6 +158,31 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
       },
       disabled: !pairing || !seriesKey,
     },
+    // Native only: the padding is filled from the pages as published, read from expo-image's disk
+    // cache, which the web build doesn't have.
+    ...(Platform.OS !== 'web'
+      ? [
+          choice<SpreadFill>({
+            key: 'spread-fill',
+            label: 'Spread padding',
+            value: settings.spreadFill,
+            options: [
+              { value: 'off', label: 'Off' },
+              { value: 'sides', label: 'Sides' },
+              { value: 'middle', label: 'Middle' },
+            ],
+            onChange: (v) => set({ spreadFill: v }),
+            disabled: !pairing,
+            hint: !pairing
+              ? undefined
+              : settings.spreadFill === 'sides'
+                ? 'The space either side filled from the pages’ outer edges'
+                : settings.spreadFill === 'middle'
+                  ? 'The pages at the screen’s edges, the gap between filled from their inner edges'
+                  : undefined,
+          }),
+        ]
+      : []),
     { kind: 'toggle', key: 'keep-awake', label: 'Keep screen on', value: settings.keepAwake, onChange: (v) => set({ keepAwake: v }) },
     {
       kind: 'toggle',
