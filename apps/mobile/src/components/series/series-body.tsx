@@ -474,6 +474,8 @@ export function SeriesBody({
       seriesTitle: series.title,
       ...(series.cover ? { thumbnailUrl: series.cover } : {}),
       ...(series.cover && series.coverAspect !== undefined ? { thumbnailAspect: series.coverAspect } : {}),
+      ...(series.coverForm !== undefined ? { coverForm: series.coverForm } : {}),
+      ...(series.readingDirection !== undefined ? { readingDirection: series.readingDirection } : {}),
       ...(author ? { author } : {}),
     }),
     series.title,

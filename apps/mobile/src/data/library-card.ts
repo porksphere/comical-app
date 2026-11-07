@@ -17,6 +17,8 @@ export function toLibraryCard(e: LibraryItem, bridge?: Bridge): LibraryGridItem 
     title: e.title,
     cover: e.thumbnailUrl ?? '',
     ...(e.thumbnailAspect !== undefined && { coverAspect: e.thumbnailAspect }),
+    ...(e.coverForm !== undefined && { coverForm: e.coverForm }),
+    ...(e.readingDirection !== undefined && { readingDirection: e.readingDirection }),
     sub: unavailable ? `${name} · Not installed` : e.removed ? `${name} · Removed` : name,
     ...(unavailable && { unavailable }),
     ...(e.removed && { removed: true, badges: [{ text: 'Removed', position: 'bottom-left', tone: 'warn' }] }),

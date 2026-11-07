@@ -129,6 +129,8 @@ export default function FavoritesImportScreen() {
           title: i.title,
           ...(i.thumbnailUrl !== undefined && { thumbnailUrl: i.thumbnailUrl }),
           ...(i.thumbnailAspect !== undefined && { thumbnailAspect: i.thumbnailAspect }),
+          ...(i.coverForm !== undefined && { coverForm: i.coverForm }),
+          ...(i.readingDirection !== undefined && { readingDirection: i.readingDirection }),
           // A checked duplicate is the user saying "same work" — link it to the entry that's already
           // here. The first match wins; a title matching several entries is rare enough that picking
           // among them isn't worth a second decision on this screen.

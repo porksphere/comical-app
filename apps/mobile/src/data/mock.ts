@@ -901,10 +901,12 @@ export async function mockRemoveFavorite(seriesId: string): Promise<void> {
 // The APP's `LibraryItem` shape, not the wire shape — the mock source hands these straight to the
 // UI without going through `toLibraryItem`. `collectedAt` is required for the same reason it is on
 // the real series item: a collected series always has one.
-type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; thumbnailAspect?: number; author?: string; unread: number; known: number; readState: ReadState; collectedAt: number; lastReadAt?: number };
+type MockLibEntry = Pick<SeriesEntry, 'coverForm' | 'readingDirection'> & { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; thumbnailAspect?: number; author?: string; unread: number; known: number; readState: ReadState; collectedAt: number; lastReadAt?: number };
 type MockCollection = { id: string; name: string; order: number };
 type MockHist = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; chapterId?: string; chapterName?: string; lastPage?: number; pageCount?: number; lastReadAt: number; hidden?: boolean };
 type MockActivity = { bridgeId: string; seriesId: string; chapterId: string; title: string; thumbnailUrl: string; chapterName?: string; number?: number; detectedAt: number; read: boolean };
+
+type MockSnapshot = Pick<SeriesEntry, 'coverForm' | 'readingDirection'> & { seriesTitle?: string; thumbnailUrl?: string; thumbnailAspect?: number; author?: string };
 
 const libKey = (bridgeId: string, seriesId: string) => `${bridgeId}:${seriesId}`;
 const MOCK_LIB_BRIDGES = MOCK_BRIDGE_NAMES.map(slugify);
@@ -1064,7 +1066,7 @@ export async function mockGetLibrarySeries(bridgeId: string, seriesId: string): 
 export async function mockAddToLibrary(
   bridgeId: string,
   seriesId: string,
-  snap: { seriesTitle?: string; thumbnailUrl?: string; thumbnailAspect?: number; author?: string },
+  snap: MockSnapshot,
   collectionId?: string,
 ): Promise<void> {
   const key = libKey(bridgeId, seriesId);
@@ -1077,6 +1079,8 @@ export async function mockAddToLibrary(
     title: snap.seriesTitle ?? mockSeries(seriesId).title,
     thumbnailUrl: snap.thumbnailUrl ?? cover(seriesId),
     ...(snap.thumbnailUrl !== undefined && snap.thumbnailAspect !== undefined && { thumbnailAspect: snap.thumbnailAspect }),
+    ...(snap.coverForm !== undefined && { coverForm: snap.coverForm }),
+    ...(snap.readingDirection !== undefined && { readingDirection: snap.readingDirection }),
     ...(snap.author !== undefined && { author: snap.author }),
     unread: 0,
     known: 0,
@@ -1358,7 +1362,7 @@ export async function mockSetSeriesCollections(
   bridgeId: string,
   seriesId: string,
   collectionIds: string[],
-  snap: { seriesTitle?: string; thumbnailUrl?: string; thumbnailAspect?: number; author?: string },
+  snap: MockSnapshot,
 ): Promise<void> {
   await mockAddToLibrary(bridgeId, seriesId, snap);
   mockSeriesCollections.set(libKey(bridgeId, seriesId), [...collectionIds]);

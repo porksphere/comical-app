@@ -328,6 +328,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     seriesTitle: entry.title,
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
     ...(entry.cover && entry.coverAspect !== undefined ? { thumbnailAspect: entry.coverAspect } : {}),
+    ...(entry.coverForm !== undefined ? { coverForm: entry.coverForm } : {}),
+    ...(entry.readingDirection !== undefined ? { readingDirection: entry.readingDirection } : {}),
   });
   const {
     collectionIds,

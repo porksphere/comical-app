@@ -148,7 +148,7 @@ export interface DataSource {
     bridgeId: string,
     seriesId: string,
     collectionIds: string[],
-    snap: { seriesTitle: string; thumbnailUrl?: string; thumbnailAspect?: number; author?: string },
+    snap: api.LibrarySnapshot & { seriesTitle: string },
     signal?: AbortSignal,
   ): Promise<void>;
   /** A series' collection memberships: `[]` when saved unfiled, `null` when not saved at all. */
@@ -433,6 +433,8 @@ function toLibraryItem(e: api.ApiCollectedSeries): LibraryItem {
     title: e.seriesTitle,
     ...(e.thumbnailUrl !== undefined && { thumbnailUrl: e.thumbnailUrl }),
     ...(e.thumbnailAspect !== undefined && { thumbnailAspect: e.thumbnailAspect }),
+    ...(e.coverForm !== undefined && { coverForm: e.coverForm }),
+    ...(e.readingDirection !== undefined && { readingDirection: e.readingDirection }),
     ...(e.author !== undefined && { author: e.author }),
     unread: e.unreadCount,
     known: e.knownCount,
@@ -805,6 +807,8 @@ const realDataSource: DataSource = {
       title: info.title,
       cover: info.thumbnailUrl ?? '',
       ...(info.thumbnailAspect !== undefined && { coverAspect: info.thumbnailAspect }),
+      ...(info.coverForm !== undefined && { coverForm: info.coverForm }),
+      ...(info.readingDirection !== undefined && { readingDirection: info.readingDirection }),
       bridge: opts.bridgeName ?? '',
       description: info.description,
       // Carry `kind` (so the genre group is identifiable — genres are just a `kind: "genre"` group)

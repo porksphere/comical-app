@@ -29,6 +29,8 @@ function seriesSnapshot(entry: SeriesEntry) {
     seriesTitle: entry.title,
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
     ...(entry.cover && entry.coverAspect !== undefined ? { thumbnailAspect: entry.coverAspect } : {}),
+    ...(entry.coverForm !== undefined ? { coverForm: entry.coverForm } : {}),
+    ...(entry.readingDirection !== undefined ? { readingDirection: entry.readingDirection } : {}),
   };
 }
 

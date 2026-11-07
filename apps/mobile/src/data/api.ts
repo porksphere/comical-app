@@ -1025,6 +1025,8 @@ export function dlDeleteAll(): Promise<{ files: string[] }> {
 import type {
   BridgeInfo as ApiBridgeInfo,
   ContentRating,
+  CoverForm,
+  ReadingDirection,
   SettingDescriptor,
   SettingOption,
   SettingValue,
@@ -1384,6 +1386,8 @@ export type LibrarySnapshot = {
   thumbnailUrl?: string;
   /** `thumbnailUrl`'s width / height, when the bridge sent it — only ever the bridge's own word. */
   thumbnailAspect?: number;
+  coverForm?: CoverForm;
+  readingDirection?: ReadingDirection;
   author?: string;
   externalIds?: Record<string, string | number>;
 };
@@ -1816,6 +1820,8 @@ export interface FavoritesImportCandidate {
   title: string;
   thumbnailUrl?: string;
   thumbnailAspect?: number;
+  coverForm?: CoverForm;
+  readingDirection?: ReadingDirection;
   /** `in-library`: already added FROM THIS BRIDGE, nothing to do. `duplicate`: the same title is
    *  already in the library from ANOTHER bridge, so importing adds a second source. `new`: neither. */
   status: 'new' | 'in-library' | 'duplicate';
@@ -1836,6 +1842,8 @@ export interface FavoritesImportItem {
   title: string;
   thumbnailUrl?: string;
   thumbnailAspect?: number;
+  coverForm?: CoverForm;
+  readingDirection?: ReadingDirection;
   linkTo?: string;
 }
 

@@ -217,6 +217,8 @@ export type LibraryItem = {
   thumbnailUrl?: string;
   /** `thumbnailUrl`'s width / height, when the bridge sent it. */
   thumbnailAspect?: number;
+  coverForm?: CoverForm;
+  readingDirection?: ReadingDirection;
   author?: string;
   /** Logical unread chapters — drives the card's unread pill. */
   unread: number;
