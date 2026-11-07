@@ -145,7 +145,7 @@ export function turnProgress(leaf: Leaf, x: number): number {
 }
 
 /** The radius the paper rolls over at its most, in the leaf's widths. */
-export const CURL_RADIUS = 0.065;
+export const CURL_RADIUS = 0.035;
 /** How far from either end of the turn the curl's shading has faded out, in the leaf's widths. */
 const SHADE_REACH = 0.15;
 
