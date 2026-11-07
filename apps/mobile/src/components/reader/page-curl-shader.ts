@@ -61,6 +61,8 @@ uniform float shade;
 uniform float density;
 
 const float PI = 3.14159265;
+const float SHADOW = 0.85;
+const float SHADOW_REACH = 1.7;
 
 float2 screen(float2 q) { return mirrored > 0.5 ? float2(size.x - q.x, q.y) : q; }
 float3 pageA(float2 q) { return cur.eval(screen(q)).rgb; }
@@ -99,23 +101,28 @@ half4 main(float2 at) {
   float3 col = (dual > 0.5 && p.x < spine) ? pageA(p) : pageB(p);
   float R = max(r, 0.75);
   float d = dot(p, n) - c;
-  if (d > R) {
-    col *= 1.0 - shade * 0.55 * exp(-(d - R) / (R * 1.4 + 6.0));
-  } else if (d >= 0.0) {
-    float a = asin(d / R);
-    float2 under = p + n * (R * a - d);
-    float2 over = p + n * (R * (PI - a) - d);
-    float underC = onLeaf(under);
-    float overC = onLeaf(over);
-    col *= 1.0 - shade * 0.55 * (1.0 - underC);
-    col = mix(col, pageA(under) * (0.5 + 0.5 * cos(a)), underC);
-    col = mix(col, back(over) * rollLight(a), overC);
+  if (d >= 0.0) {
+    // The lifted paper's shadow on the page beneath, laid down before the paper so the roll covers
+    // it: darkest at the crease and falling away from it, and only where the crease runs across the
+    // leaf. Measured from the roll's edge instead, it stood beside the paper as a band wherever the
+    // paper ran out short of the roll, near the corners and off the page.
+    float casting = 1.0 - smoothstep(0.0, R * 0.5 + 4.0, leafDistance(p - n * d));
+    col *= 1.0 - shade * SHADOW * casting * exp(-d / (R * SHADOW_REACH + 6.0));
+    if (d <= R) {
+      float a = asin(d / R);
+      float2 under = p + n * (R * a - d);
+      float2 over = p + n * (R * (PI - a) - d);
+      col = mix(col, pageA(under) * (0.5 + 0.5 * cos(a)), onLeaf(under));
+      col = mix(col, back(over) * rollLight(a), onLeaf(over));
+    }
   } else {
     float2 flap = p + n * (PI * R - 2.0 * d);
     float flapD = leafDistance(flap);
     float flapC = clamp(0.5 - flapD * density, 0.0, 1.0);
     col = mix(col, pageA(p), onBox(p));
-    col *= 1.0 - shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.45 + 4.0));
+    // The turned-over flap's shadow falls from its outer edge; at the crease, where the flap's edge
+    // meets the roll, it would draw a dark line down the flat page.
+    col *= 1.0 - shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.45 + 4.0)) * smoothstep(0.0, R * 0.6, -d);
     col = mix(col, back(flap) * rollLight(0.0), flapC);
   }
   return half4(half3(col), 1.0);
