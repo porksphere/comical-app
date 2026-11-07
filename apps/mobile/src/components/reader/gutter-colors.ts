@@ -51,7 +51,8 @@ async function drain(): Promise<void> {
   }
 }
 
-async function fileOf(uri: string): Promise<string | null> {
+/** The page as a file: a downloaded page's own, or the original expo-image keeps on disk. */
+export async function fileOf(uri: string): Promise<string | null> {
   if (uri.startsWith('file://')) return uri;
   const path = await Image.getCachePathAsync(uri);
   return path ? (path.startsWith('file://') ? path : `file://${path}`) : null;
@@ -134,6 +135,16 @@ export function useSpreadColors(
 ): [string | null, string | null] {
   const a = usePageEdges(first?.uri, !!first?.ready);
   const b = usePageEdges(second?.uri, !!second?.ready);
+  return combine(first, a, second, b, shared);
+}
+
+function combine(
+  first: { side: Side } | undefined,
+  a: PageEdges | null | undefined,
+  second: { side: Side } | undefined,
+  b: PageEdges | null | undefined,
+  shared: boolean,
+): [string | null, string | null] {
   const edgeA = first && a ? a[first.side] : null;
   const edgeB = second && b ? b[second.side] : null;
   if (shared) {
@@ -141,4 +152,14 @@ export function useSpreadColors(
     return [both, both];
   }
   return [spreadColor([edgeA]), spreadColor([edgeB])];
+}
+
+/** The same as `useSpreadColors`, outside React, from what has been read so far. */
+export function spreadColorsNow(
+  first: { uri: string; side: Side } | undefined,
+  second: { uri: string; side: Side } | undefined,
+  shared: boolean,
+): [string | null, string | null] {
+  const peek = (uri: string | undefined) => (uri ? (edges$[uri].peek() as PageEdges | null | undefined) : null);
+  return combine(first, peek(first?.uri), second, peek(second?.uri), shared);
 }

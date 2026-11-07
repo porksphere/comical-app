@@ -583,19 +583,35 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // chapter wide. `scrubOrigin` carries that adjustment, asked of the list itself and kept fresh by
   // the layout effect above — see `measureScrubOrigin` for why it is no longer derived here from
   // where the scroll happens to be.
+  // Under the curl the list stands on the whole spread under the scrub and the curl turns on to the
+  // next by the fraction (`usePageCurl`'s `scrub`); otherwise the list slides with the finger.
+  const curlScrub = curl.scrub;
+  const curlScrubs = useSharedValue(false);
+  useLayoutEffect(() => {
+    curlScrubs.set(curlOn && !standby);
+  }, [curlScrubs, curlOn, standby]);
   useAnimatedReaction(
     () => scrubTarget?.value ?? -1,
     (target, previous) => {
-      if (target < 0) return;
+      if (target < 0) {
+        if ((previous ?? -1) >= 0 && curlScrub.value >= 0) curlScrub.set(-1);
+        return;
+      }
       // The target is in pages; the list scrolls by spread (the identity outside double-page).
       const logical = Math.max(0, Math.min(n - 1, pageToSpreadPosition(positions, target)));
+      if (curlScrubs.value) {
+        curlScrub.set(logical);
+        const whole = Math.floor(logical);
+        scrollTo(scrollRef, scrubOrigin.value + (rtl ? n - 1 - whole : whole) * width, 0, false);
+        return;
+      }
       const to = scrubOrigin.value + (rtl ? n - 1 - logical : logical) * width;
       // Once per drag: what the first target mapped to, in pages. `to` against `target` is the
       // whole question — they should differ by nothing but the leading adjustment.
       if ((previous ?? -1) < 0) trace('scrub', 'map', { target, to: to / width, origin: scrubOrigin.value / width });
       scrollTo(scrollRef, to, 0, false);
     },
-    [scrubTarget, n, rtl, width, positions],
+    [scrubTarget, n, rtl, width, positions, curlScrub, curlScrubs],
   );
 
   // Tap-zone meaning flips with direction (RTL: left = next, right = prev),

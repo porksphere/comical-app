@@ -813,6 +813,25 @@ drawn on. It is drawn inside each page's half, so under the curl
 a filled spread's leaf is the whole half, page and fill (`halfPageBox`): the fill turns with its
 page, and the leaf never hinges in empty space.
 
+**What keeps the curl responsive — don't undo any of it.** Each of these was a stall, a freeze or a
+missing turn before it was a rule:
+
+- Everything a turn draws comes from the UI thread: the pictures are staged by cell in a shared
+  value, the armed turn names its cells by key, the landed turn is held there, and the next turns'
+  plans are handed over at the landing. A turn waiting on a React render was 40–120ms of nothing.
+- A derived value follows only the shared values read directly in it, never through a helper it
+  calls: through one, the curl kept drawing a replaced, disposed picture (black, or nothing).
+- A cell's picture (`makeImageFromView`) stops the main thread — the curl's own — for 30–100ms.
+  Never take one while anything moves: they are taken at a landing, while the landed spread lies
+  flat, or once nothing moves and no finger is down (`whenStill`), and kept until the cell changes,
+  not for a set time. A scrub draws its own pictures off the main thread (`scrub-pictures.ts`).
+- A picture goes only after the UI thread has drawn without it, and only a cell that has really
+  unmounted forgets that its pages have drawn (a new ref every render runs the old one's cleanup).
+- The JS side cleans up after a landing a frame and more late: what it clears, it clears on the UI
+  thread, and only the turn that landed (`putAway`).
+- A scrub's turns run on their own clock after the scrubber (`SCRUB_MAX_SPEED`), only into pairs
+  whose pictures are in, rather than straight under it.
+
 The scroller standing still under the curl is also what stops holding off iOS 26's swipe back from
 anywhere on a page: the slide's UIScrollView claimed every sideways drag first, so the reader never
 noticed it was on (react-native-screens turns it on by default there). The reader turns it off
