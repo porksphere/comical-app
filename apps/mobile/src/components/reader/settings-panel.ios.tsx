@@ -1,5 +1,5 @@
 import { Form, Host, Picker, Section, Stepper, Text, Toggle } from '@expo/ui/swift-ui';
-import { accessibilityIdentifier, disabled, pickerStyle, scrollContentBackground, tag } from '@expo/ui/swift-ui/modifiers';
+import { accessibilityIdentifier, disabled, ignoreSafeArea, pickerStyle, scrollContentBackground, tag } from '@expo/ui/swift-ui/modifiers';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { useNavigation } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -94,15 +94,16 @@ export function ReaderSettingsBody({ seriesKey }: { seriesKey: string | null }) 
   const scheme = useActiveColorScheme();
   const theme = useTheme();
   return (
-    // The sheet lies over the Duo's vertical bar, so the form runs the sheet's whole width rather
-    // than insetting by the bar's safe area as the window's content does.
-    <Host
-      style={styles.host}
-      colorScheme={scheme}
-      seedColor={theme.accent}
-      useViewportSizeMeasurement
-      ignoreSafeArea="container">
-      <Form modifiers={SHEET_GLASS ? [scrollContentBackground('hidden')] : undefined}>
+    <Host style={styles.host} colorScheme={scheme} seedColor={theme.accent} useViewportSizeMeasurement>
+      {/* The sheet lies over the Duo's vertical bar, so the form runs the sheet's whole width rather
+          than insetting by the bar's safe area as the window's content does — across only: the
+          host ignoring the safe area on every edge laid the form's first rows under the sheet's
+          header, where they couldn't be read. */}
+      <Form
+        modifiers={[
+          ignoreSafeArea({ regions: 'container', edges: 'horizontal' }),
+          ...(SHEET_GLASS ? [scrollContentBackground('hidden')] : []),
+        ]}>
         {readerSettingsSections(fields).map((section) => {
           const notes = section.fields.flatMap((field) => (field.kind === 'choice' && field.hint ? [field.hint] : []));
           return (
