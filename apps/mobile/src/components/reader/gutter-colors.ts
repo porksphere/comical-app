@@ -58,26 +58,15 @@ export async function fileOf(uri: string): Promise<string | null> {
   return path ? (path.startsWith('file://') ? path : `file://${path}`) : null;
 }
 
-// TEMPORARY: each page read, to Metro.
-const trace = (uri: string, what: string) => {
-  if (__DEV__) console.log(`[gutter] …${uri.slice(-28)}: ${what}`);
-};
-
 async function read(uri: string): Promise<PageEdges | null> {
   const file = await fileOf(uri);
-  if (!file) {
-    trace(uri, 'not on disk');
-    return null;
-  }
+  if (!file) return null;
   const small = await ImageManipulator.manipulate(file).resize({ width: SAMPLE_WIDTH }).renderAsync();
   const png = await small.saveAsync({ format: SaveFormat.PNG, base64: true });
   small.release();
   if (!png.base64) return null;
   const image = Skia.Image.MakeImageFromEncoded(Skia.Data.fromBase64(png.base64));
-  if (!image) {
-    trace(uri, 'the shrunk page did not decode');
-    return null;
-  }
+  if (!image) return null;
   try {
     const w = image.width();
     const h = image.height();
@@ -85,7 +74,6 @@ async function read(uri: string): Promise<PageEdges | null> {
     if (!px) return null;
     const left = edgeColors(px, w, h, INSET, DEPTH, 'left');
     const right = edgeColors(px, w, h, INSET, DEPTH, 'right');
-    trace(uri, `${w}x${h}, left edge mostly ${spreadColor([left])}, right ${spreadColor([right])}`);
     return { left, right };
   } finally {
     image.dispose();
@@ -105,8 +93,8 @@ function usePageEdges(uri: string | undefined, ready: boolean): PageEdges | null
         let result: PageEdges | null = null;
         try {
           result = await read(uri);
-        } catch (e) {
-          trace(uri, `threw ${String(e)}`);
+        } catch {
+          result = null;
         }
         // Drawn before its download was written to disk: looked for once more.
         if (!result && tries > 0) setTimeout(() => attempt(tries - 1), RETRY_MS);

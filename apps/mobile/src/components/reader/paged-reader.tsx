@@ -659,10 +659,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const fromEnd = useSharedValue(false);
   const fromAllowed = useSharedValue(false);
   const atAnEdge = activeIndex <= 0 || activeIndex >= n - 1;
-  // TEMPORARY: see the edge swipe's release below.
-  const traceEdge = useCallback((message: string) => {
-    if (__DEV__) console.log(`[page-curl] edge swipe ${message}`);
-  }, []);
   const edgeTurn = useMemo(
     () =>
       Gesture.Pan()
@@ -678,12 +674,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         })
         .onEnd((e) => {
           'worklet';
-          // TEMPORARY: each release of the edge swipe, to Metro, for the chapter crossing that doesn't.
-          runOnJS(traceEdge)(
-            `release at ${Math.round(e.translationX)}pt, ${Math.round(e.velocityX)}pt/s; allowed ${fromAllowed.value}, ` +
-              `at start ${fromStart.value}, at end ${fromEnd.value}, needs ${Math.round(width * EDGE_TURN_FRACTION)}pt headed, ` +
-              `committed ${releaseCommittedEitherWay(e.translationX, e.velocityX, width * EDGE_TURN_FRACTION)}`,
-          );
           if (!fromAllowed.value) return;
           // The shared projected release (lib/gesture-release), judged along whichever way the drag
           // went — a flick back at the moment of lifting is someone changing their mind.
@@ -697,7 +687,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
             runOnJS(rightAction)();
           }
         }),
-    [atAnEdge, width, leftAction, rightAction, atStart, atEnd, edgeAllowed, fromStart, fromEnd, fromAllowed, traceEdge],
+    [atAnEdge, width, leftAction, rightAction, atStart, atEnd, edgeAllowed, fromStart, fromEnd, fromAllowed],
   );
   // The list's own scroll, as a gesture RNGH can reason about — so the pan above runs ALONGSIDE it
   // rather than winning the touch off it.

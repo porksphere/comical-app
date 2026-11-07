@@ -419,34 +419,20 @@ export function useZoomable({
       if (Math.hypot(dx, dy) < PAN_DEADZONE) return;
       panDecided.set(true);
       const limit = panLimits(scale.value, box, viewport);
-      // TEMPORARY: the pan's verdict on each touch, to Metro, for the page curl's drags it blocks.
-      const verdict = (what: string) => {
-        if (__DEV__) {
-          console.log(
-            `[page-curl] page pan ${what}: ${Math.round(dx)}, ${Math.round(dy)}pt, limit ${limit.x.toFixed(1)}×${limit.y.toFixed(1)}, ` +
-              `at ${tx.value.toFixed(1)}, scale ${scale.value.toFixed(2)}, box ${Math.round(box.width)}×${Math.round(box.height)} in ${viewport.width}×${viewport.height}`,
-          );
-        }
-      };
       if (Math.abs(dx) >= Math.abs(dy)) {
         // Finger moving right shows what lies to the LEFT: nothing more, at the left edge.
         const outward = (dx > 0 && tx.value >= limit.x - 1) || (dx < 0 && tx.value <= 1 - limit.x);
         if (limit.x <= 0 || outward) {
-          verdict('fails');
           state.fail();
           return;
         }
       } else if (limit.y <= 0) {
-        verdict('fails');
         state.fail();
         return;
       }
-      verdict('activates');
       state.activate();
     })
     .onStart((e) => {
-      // TEMPORARY: to Metro, for the page curl's drags that another gesture takes.
-      if (__DEV__) console.log(`[page-curl] the page's own pan took a drag: ${Math.round(e.translationX)}, ${Math.round(e.translationY)}pt, scale ${scale.value.toFixed(2)}`);
       moved.set(true);
       if (onMoving) runOnJS(onMoving)(true);
       savedTx.set(tx.value);

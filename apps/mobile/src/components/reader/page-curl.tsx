@@ -1,6 +1,6 @@
 import { Canvas, Fill, Group, ImageShader, Shader, Skia, type SkImage } from '@shopify/react-native-skia';
 import { PixelRatio, StyleSheet } from 'react-native';
-import { runOnJS, useAnimatedReaction, useDerivedValue, type SharedValue } from 'react-native-reanimated';
+import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 
 import { FLAT, type CurlFrame, type Leaf } from '@/components/reader/page-curl-geometry';
 import { CURL_SKSL, curlUniforms } from '@/components/reader/page-curl-shader';
@@ -98,30 +98,6 @@ export function PageCurl({
     );
   });
   const shown = useDerivedValue(() => ((landed.value || armed.value !== '') && from.value && to.value ? 1 : 0));
-  // TEMPORARY: what the canvas sees when the curl comes up, to Metro.
-  const probe = (report: string) => {
-    if (__DEV__) console.log(`[page-curl] canvas: ${report}`);
-  };
-  useAnimatedReaction(
-    () => shown.value,
-    (s, prev) => {
-      if (s !== 1 || prev === 1) return;
-      const describe = (img: SkImage | null) => {
-        if (!img) return 'none';
-        try {
-          const proto = Object.getPrototypeOf(img) === Object.prototype ? 'plain' : 'classed';
-          return `${img.width()}x${img.height()} ${proto} shader:${typeof img.makeShaderOptions}`;
-        } catch (e) {
-          return `threw ${String(e)}`;
-        }
-      };
-      const u = uniforms.value;
-      runOnJS(probe)(
-        `from ${describe(from.value)}; to ${describe(to.value)}; leaf ${JSON.stringify(u.leaf)} n ${JSON.stringify(u.n)} c ${u.c} r ${u.r} shade ${u.shade}; ` +
-          `landed ${landed.value ? 'yes' : 'no'}; armed ${armed.value}; staged ${pictures.value.map((p) => p.key.slice(-8)).join(',')}`,
-      );
-    },
-  );
   if (!EFFECT || !BLANK) return null;
   const rect = { x: 0, y: 0, width, height };
   return (

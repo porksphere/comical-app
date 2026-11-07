@@ -205,28 +205,6 @@ function planTurn(o: Options, here: number, readingForward: boolean): Plan | nul
   };
 }
 
-// TEMPORARY: turns over pages still loading, to Metro. A cell's state for a turn: whether its
-// pages' sizes are known (the leaf is shaped from them), whether they have drawn and faded in, and
-// whether it has a view to picture.
-function loadTrace(message: string) {
-  if (__DEV__) console.log(`[curl-load] ${message}`);
-}
-function cellState(o: Options, key: string): string {
-  const cell = o.data.find((c) => c.key === key);
-  if (!cell) return `${key.slice(-6)}(gone)`;
-  const sizes = cell.pages.map((p) => {
-    const size = knownPageSize(p.uri);
-    return size ? `${size.width}x${size.height}${size.width > size.height ? ' WIDE' : ''}` : 'UNSIZED';
-  });
-  const shape = cell.pages.length > 1 ? 'pair' : cell.pad ? `lone, ${cell.pad} blank` : 'alone';
-  return `${key.slice(-6)}(${shape} [${sizes.join(' + ')}] ${o.cellReady(key) ? 'drawn' : 'UNDRAWN'} ${o.cellView(key) ? 'view' : 'NO VIEW'})`;
-}
-const keysAround = (o: Options, at: number) =>
-  o.data
-    .slice(Math.max(0, at - 2), at + 3)
-    .map((c, i) => `${Math.max(0, at - 2) + i}:${c.key.slice(-6)}${c.pages.length > 1 ? '+' : ''}`)
-    .join(' ');
-
 /** What a cell holds: its pages and the half a lone page leaves. A spread's key is its first
  *  page's, whatever pages it holds, and spreads pair again as pages load — the cell keyed by page 5
  *  can go from pages 5 and 6 to page 5 alone — so a picture is of the cell only while this is what
@@ -496,19 +474,7 @@ export function usePageCurl(options: Options): {
     planRight.set(o.mode ? planTurn(o, current.current, o.rtl) : null);
   }, [planLeft, planRight]);
 
-  // TEMPORARY: the pager's cells as last seen, for the load trace.
-  const seenKeys = useRef('');
   useLayoutEffect(() => {
-    const keys = options.data.map((c) => c.key).join(',');
-    if (__DEV__ && seenKeys.current && keys !== seenKeys.current) {
-      const flight = inFlight.current;
-      loadTrace(
-        `the cells changed (${seenKeys.current.split(',').length} → ${options.data.length}), at ${current.current} ` +
-          `(the pager says ${options.activeIndex}); ${flight ? `a ${flight.fromDrag ? 'drag' : 'tap'} turn ${flight.fromKey.slice(-6)}>${flight.toKey.slice(-6)} to ${flight.target} in flight` : 'nothing in flight'}; ` +
-          `before ${keysAround(latest.current, current.current)} | after ${keysAround(options, current.current)}`,
-      );
-    }
-    seenKeys.current = keys;
     latest.current = options;
     if (!inFlight.current) current.current = options.activeIndex;
     allowed.set(enabled);
@@ -603,18 +569,8 @@ export function usePageCurl(options: Options): {
 
   const picture = useCallback((key: string): Promise<SkImage | null> => {
     const view = latest.current.cellView(key);
-    if (!view) {
-      loadTrace(`no view to picture for ${key.slice(-6)}`);
-      return Promise.resolve(null);
-    }
-    // TEMPORARY: how long each snapshot takes, to Metro, for the fast turns' stalls.
-    const at = Date.now();
-    return makeImageFromView({ current: view as unknown as number })
-      .then((image) => {
-        if (__DEV__) console.log(`[page-curl] picture of ${key.slice(-24)} took ${Date.now() - at}ms`);
-        return image;
-      })
-      .catch(() => null);
+    if (!view) return Promise.resolve(null);
+    return makeImageFromView({ current: view as unknown as number }).catch(() => null);
   }, []);
 
   /** A picture of this cell, the one on hand where it still stands for the cell — taken under the
@@ -697,7 +653,6 @@ export function usePageCurl(options: Options): {
       whenStill(() => {
         // Loaded again (a retry, a page come back into the window), the picture is of what it was.
         const have = cells.current.get(key);
-        loadTrace(`${key.slice(-6)} loaded: ${!have ? 'no picture of it' : wantedKeys().has(key) ? 'pictured again' : 'its picture let go'}`);
         if (!have) return;
         if (wantedKeys().has(key)) {
           ensureOne(key);
@@ -818,27 +773,14 @@ export function usePageCurl(options: Options): {
    *  (not drawn yet) leaves nothing to show, and `failed` decides what then. */
   const capture = useCallback(
     (flight: InFlight, ready: () => void, failed: () => void) => {
-      const o = latest.current;
-      loadTrace(
-        `${flight.fromDrag ? 'drag' : 'tap'} turn to ${flight.target}: from ${cellState(o, flight.fromKey)} to ${cellState(o, flight.toKey)}, ` +
-          `leaf ${Math.round(flight.leaf.box.x)},${Math.round(flight.leaf.box.y)} ${Math.round(flight.leaf.box.width)}x${Math.round(flight.leaf.box.height)} ` +
-          `spine ${Math.round(flight.leaf.spine)}${flight.leaf.dual ? ' two-sided' : ''}${flight.mirrored ? ' mirrored' : ''}, t ${flight.startT}→${flight.endT}; ` +
-          `${o.double ? 'two pages' : 'one page'}, ${o.width}x${o.height}, fit ${o.pageFit}${o.zoomed ? ', the page on screen ZOOMED' : ''}`,
-      );
       const a = ensureOne(flight.fromKey);
       const b = ensureOne(flight.toKey);
-      const asked = Date.now();
       void Promise.all([a.shot, b.shot]).then(([from, to]) => {
-        if (inFlight.current?.token !== flight.token) {
-          loadTrace(`pictures for the turn to ${flight.target} came in after it had gone (${Date.now() - asked}ms)`);
-          return;
-        }
+        if (inFlight.current?.token !== flight.token) return;
         if (!from || !to) {
-          loadTrace(`the turn to ${flight.target} has no picture of ${!from ? 'where it turns from' : ''}${!from && !to ? ' or ' : ''}${!to ? 'where it turns to' : ''}: not drawn curling`);
           failed();
           return;
         }
-        if (!a.ahead || !b.ahead) loadTrace(`the turn to ${flight.target} waited ${Date.now() - asked}ms for its pictures`);
         const t = trace.current;
         if (flight.fromDrag && t?.token === flight.token) {
           t.ahead = (a.ahead ? 1 : 0) + (b.ahead ? 1 : 0);
@@ -868,29 +810,16 @@ export function usePageCurl(options: Options): {
     else if (__DEV__) console.log(`[page-curl] ${summary}`);
   }, []);
 
-  // TEMPORARY: see the decision in the pan.
-  const reportLate = useCallback((travel: number) => {
-    if (__DEV__) console.log(`[page-curl] a drag decided late, ${travel}pt in: the UI thread was held up`);
-  }, []);
-
   /** A touch that went far enough to decide and never turned a page. */
-  const reportMissed = useCallback((why: number, dx: number, dy: number, x: number, y: number, finalState: number) => {
+  const reportMissed = useCallback((why: number, dx: number, dy: number) => {
     const reason =
-      why === 0
-        ? 'the touch ended before it went far enough to decide'
-        : why === ASKED
+      why === ASKED
         ? 'another gesture took the touch before it could start'
         : why === OFF
           ? 'turning was off (the entrance strip, a pinch)'
-          : why === NO_PAGE
-            ? 'no page that way'
-            : 'steeper than 45°';
-    const { width: w, height: h, zoomed } = latest.current;
+          : 'steeper than 45°';
     logDiagnostic('page-curl', `A drag ${dx < 0 ? 'left' : 'right'} didn't turn: ${reason}.`, {
-      context:
-        `${Math.round(dx)}, ${Math.round(dy)}pt at the decision, from ${Math.round(x)}, ${Math.round(y)} of ${w}×${h}; ` +
-        `ended in state ${finalState}` +
-        (zoomed ? '; the page was zoomed' : ''),
+      context: `${Math.round(dx)}, ${Math.round(dy)}pt at the decision${latest.current.zoomed ? '; the page was zoomed' : ''}`,
     });
   }, []);
 
@@ -932,7 +861,6 @@ export function usePageCurl(options: Options): {
       // Where the cell turned to is now: the spreads may have paired again under the turn.
       const found = latest.current.data.findIndex((c) => c.key === flight.targetKey);
       const target = found >= 0 ? found : flight.target;
-      if (target !== flight.target) loadTrace(`the turn to ${flight.target} landed at ${target}: the cells moved under it`);
       // Which way the reader is going, for what is pictured ahead (`wantedKeys`).
       readingOn.current = latest.current.rtl ? target < current.current : target > current.current;
       current.current = target;
@@ -941,13 +869,7 @@ export function usePageCurl(options: Options): {
       // picture stops the main thread, and taken later, in a fast run, it fell inside the next
       // drag. Mostly one, the page beyond; the two the turn ran between are on hand.
       ensure(wantedKeys());
-      // TEMPORARY: how long the landing holds the JS thread, to Metro, for the fast turns' stalls.
-      const landedAt = Date.now();
       latest.current.land(target, flight.fromDrag);
-      if (__DEV__) {
-        const sync = Date.now() - landedAt;
-        setTimeout(() => console.log(`[page-curl] landing took ${sync}ms in hand, free again ${Date.now() - landedAt}ms after`), 0);
-      }
       requestAnimationFrame(() => requestAnimationFrame(clear));
       setTimeout(warm, WARM_MS);
     },
@@ -1170,13 +1092,10 @@ export function usePageCurl(options: Options): {
         scrubOffered.current.add(next);
         const plan = planTurn(o, at(next), true);
         if (!plan) continue;
-        const askedAt = Date.now();
         const fromKey = await scrubShot(plan.fromKey);
         const toKey = await scrubShot(plan.toKey);
         if (!scrubLive.current) return;
         if (!fromKey || !toKey) {
-          // TEMPORARY: to Metro.
-          loadTrace(`scrub pair ${next}: no pictures`);
           scrubOffered.current.delete(next);
           // Tried again in a moment (a page not yet sized or read), not in a loop.
           setTimeout(() => void pumpScrubRef.current(), 250);
@@ -1189,8 +1108,6 @@ export function usePageCurl(options: Options): {
         const hi = Math.max(start, from, goal + (way > 0 ? SCRUB_AHEAD : 0)) + 1;
         runOnUI(offerPair)({ ...plan, fromKey, toKey }, next, lo, hi);
         for (const b of scrubOffered.current) if (b < lo || b > hi) scrubOffered.current.delete(b);
-        // TEMPORARY: each pair a scrub drew, to Metro.
-        loadTrace(`scrub pair ${next} (scrubber at ${goal}): ${Date.now() - askedAt}ms${fromKey.startsWith('scrub|') || toKey.startsWith('scrub|') ? ', drawn' : ', the cells\' own'}`);
         // Only the pictures about the scrub are kept, and for each cell one: its own, or one drawn.
         const near = new Set<string>();
         for (let b = lo; b <= hi + 1; b++) {
@@ -1459,9 +1376,6 @@ export function usePageCurl(options: Options): {
           }
           if (Math.hypot(dx, dy) < ACTIVATE_PX) return;
           decided.set(true);
-          // TEMPORARY: a decision reached well past the line is a UI thread that stalled under the
-          // last turn; to Metro, for the drags dropped on fast turns.
-          if (Math.hypot(dx, dy) > ACTIVATE_PX * 3) runOnJS(reportLate)(Math.round(Math.hypot(dx, dy)));
           decidedLeft.set(dx < 0);
           verdictDx.set(dx);
           verdictDy.set(dy);
@@ -1541,7 +1455,7 @@ export function usePageCurl(options: Options): {
           );
         })
         // eslint-disable-next-line react-hooks/refs -- a worklet: it reaches the trace (via reportMissed) only once the touch is over, never during this render.
-        .onFinalize((e) => {
+        .onFinalize(() => {
           'worklet';
           fingerDown.set(false);
           touching.set(false);
@@ -1553,18 +1467,9 @@ export function usePageCurl(options: Options): {
           const why = verdict.value;
           const dx = verdictDx.value;
           const dy = verdictDy.value;
-          // TEMPORARY: the handler's final state rides along (1 failed, 3 cancelled, 5 ended).
           // A steep drag is only worth a line where it was nearly across: a swipe down is not a turn.
-          // TEMPORARY: a drag with no page that way, and a touch that never reached the decision, are
-          // reported too, for the drags that vanish.
-          if (
-            (why === ASKED && !started.value) ||
-            why === OFF ||
-            why === NO_PAGE ||
-            (why === STEEP && Math.abs(dx) * 2 >= Math.abs(dy)) ||
-            (why === 0 && !decided.value)
-          ) {
-            runOnJS(reportMissed)(why, dx, dy, downX.value, downY.value, e.state);
+          if ((why === ASKED && !started.value) || why === OFF || (why === STEEP && Math.abs(dx) * 2 >= Math.abs(dy))) {
+            runOnJS(reportMissed)(why, dx, dy);
           }
         }),
     [
@@ -1605,7 +1510,6 @@ export function usePageCurl(options: Options): {
       verdictDy,
       started,
       reportMissed,
-      reportLate,
       pathKind,
       pathCommitted,
       finishPath,
