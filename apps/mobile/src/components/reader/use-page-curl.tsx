@@ -70,13 +70,6 @@ const STILL_MAX_MS = 2000;
 const COMMIT_PROGRESS = 0.25;
 /** A tap's turn, start to finish. */
 const TAP_TURN_MS = 520;
-/** A turn still settling when the next finger comes down finishes in `HURRY_BASE_MS` and
- *  `HURRY_SPAN_MS` of the turn it has left, at an even pace, rather than landing under the finger
- *  in one frame: a fast run of turns is a run of quick turns, not of cuts. Scaled down to what was
- *  left alone, the last third of a turn — where a quick finger catches it — had two frames, eased
- *  into the first, and read as a stop and a pop. */
-const HURRY_BASE_MS = 60;
-const HURRY_SPAN_MS = 160;
 
 type Options = {
   /** Curl mode. Out of it the drag isn't there at all. */
@@ -270,7 +263,7 @@ export function usePageCurl(options: Options): {
   const armSeq = useSharedValue(0);
   // What the path animation running on `pathT` is finishing: nothing, a drag's release (and whether
   // it committed), or a tap's turn. Its completion is one worklet, `finishPath`, so a hurried path
-  // (see `HURRY_BASE_MS`) ends the same way as the one it cut short.
+  // (landed at once under a new finger) ends the same way as the one it cut short.
   const PATH_NONE = 0;
   const PATH_DRAG = 1;
   const PATH_TAP = 2;
@@ -754,13 +747,16 @@ export function usePageCurl(options: Options): {
     const committed = kind === PATH_TAP || pathCommitted.value;
     const leaf = turnLeaf.value;
     if (committed && leaf) {
+      // From the path's end, not `frame`: cut short under a finger, the frame is still where the
+      // path was, its derived value a frame behind the pull.
+      const end = pathArc.value ? turnPull(leaf, grabY.value, endT.value) : { x: pathToX.value, y: pathToY.value };
       landed.set({
         id: armedTurn.value,
         leaf,
         mirrored: mirroredSV.value,
         fromKey: armedFromKey.value,
         toKey: armedToKey.value,
-        frame: frame.value,
+        frame: curlFrame(leaf, grabY.value, end.x, end.y),
         seq: armSeq.value,
       });
       planLeft.set(nextPlanLeft.value);
@@ -777,7 +773,11 @@ export function usePageCurl(options: Options): {
     mirroredSV,
     armedFromKey,
     armedToKey,
-    frame,
+    pathArc,
+    grabY,
+    endT,
+    pathToX,
+    pathToY,
     armSeq,
     planLeft,
     planRight,
@@ -901,23 +901,13 @@ export function usePageCurl(options: Options): {
           started.set(false);
           waitDx.set(0);
           waitDy.set(0);
-          // A turn still finishing hurries to its end under the finger — the rest of its path in
-          // a moment, ending as it would have — and the next drag waits for it to land (below):
-          // landed in one frame instead, a fast run of turns was a run of cuts and jumps.
+          // A turn still finishing lands under the finger at once, and the drag starts from the
+          // page it was going to with no wait: a fast run of turns goes as fast as the finger.
           if (!dragging.value && pathKind.value !== PATH_NONE) {
-            // Stopped first: a timing to the end a running one is headed for keeps that one's start,
-            // so the shorter one was over before it began and the turn landed in a frame.
             cancelAnimation(pathT);
-            pathT.set(
-              withTiming(
-                1,
-                { duration: HURRY_BASE_MS + HURRY_SPAN_MS * (1 - pathT.value), easing: Easing.linear },
-                (done) => {
-                  'worklet';
-                  if (done) finishPath();
-                },
-              ),
-            );
+            // At its end, so one falling back lies flat rather than half-curled until it is put away.
+            pathT.set(1);
+            finishPath();
           }
         })
         // eslint-disable-next-line react-hooks/refs -- a worklet: it reaches the prepared pictures (via prepare) only as a finger moves, never during this render.
