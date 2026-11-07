@@ -107,6 +107,8 @@ type Plan = {
   /** The cells the pictures are taken from: the turn runs from the first to the second. */
   fromKey: string;
   toKey: string;
+  /** The cell turned to, by key: its index moves when the spreads pair again as pages load. */
+  targetKey: string;
 };
 
 type InFlight = Plan & { token: number; fromDrag: boolean };
@@ -144,6 +146,7 @@ function planTurn(o: Options, here: number, readingForward: boolean): Plan | nul
       endT: back ? 0 : 1,
       fromKey: fromCell.key,
       toKey: toCell.key,
+      targetKey: data[target]!.key,
     };
   }
   const fromCell = data[here]!;
@@ -167,8 +170,27 @@ function planTurn(o: Options, here: number, readingForward: boolean): Plan | nul
     endT: 1,
     fromKey: fromCell.key,
     toKey: data[target]!.key,
+    targetKey: data[target]!.key,
   };
 }
+
+// TEMPORARY: turns over pages still loading, to Metro. A cell's state for a turn: whether its
+// pages' sizes are known (the leaf is shaped from them), whether they have drawn and faded in, and
+// whether it has a view to picture.
+function loadTrace(message: string) {
+  if (__DEV__) console.log(`[curl-load] ${message}`);
+}
+function cellState(o: Options, key: string): string {
+  const cell = o.data.find((c) => c.key === key);
+  if (!cell) return `${key.slice(-6)}(gone)`;
+  const sized = cell.pages.every((p) => knownPageSize(p.uri));
+  return `${key.slice(-6)}(${sized ? 'sized' : 'UNSIZED'} ${o.cellReady(key) ? 'drawn' : 'UNDRAWN'} ${o.cellView(key) ? 'view' : 'NO VIEW'})`;
+}
+const keysAround = (o: Options, at: number) =>
+  o.data
+    .slice(Math.max(0, at - 2), at + 3)
+    .map((c, i) => `${Math.max(0, at - 2) + i}:${c.key.slice(-6)}${c.pages.length > 1 ? '+' : ''}`)
+    .join(' ');
 
 /** What a cell's picture depends on beyond the cell itself: one taken under another is not of it. */
 function layoutOf(o: Options): string {
@@ -389,7 +411,19 @@ export function usePageCurl(options: Options): {
     planRight.set(o.mode ? planTurn(o, current.current, o.rtl) : null);
   }, [planLeft, planRight]);
 
+  // TEMPORARY: the pager's cells as last seen, for the load trace.
+  const seenKeys = useRef('');
   useLayoutEffect(() => {
+    const keys = options.data.map((c) => c.key).join(',');
+    if (__DEV__ && seenKeys.current && keys !== seenKeys.current) {
+      const flight = inFlight.current;
+      loadTrace(
+        `the cells changed (${seenKeys.current.split(',').length} → ${options.data.length}), at ${current.current} ` +
+          `(the pager says ${options.activeIndex}); ${flight ? `a ${flight.fromDrag ? 'drag' : 'tap'} turn ${flight.fromKey.slice(-6)}>${flight.toKey.slice(-6)} to ${flight.target} in flight` : 'nothing in flight'}; ` +
+          `before ${keysAround(latest.current, current.current)} | after ${keysAround(options, current.current)}`,
+      );
+    }
+    seenKeys.current = keys;
     latest.current = options;
     if (!inFlight.current) current.current = options.activeIndex;
     allowed.set(enabled);
@@ -464,7 +498,10 @@ export function usePageCurl(options: Options): {
 
   const picture = useCallback((key: string): Promise<SkImage | null> => {
     const view = latest.current.cellView(key);
-    if (!view) return Promise.resolve(null);
+    if (!view) {
+      loadTrace(`no view to picture for ${key.slice(-6)}`);
+      return Promise.resolve(null);
+    }
     // TEMPORARY: how long each snapshot takes, to Metro, for the fast turns' stalls.
     const at = Date.now();
     return makeImageFromView({ current: view as unknown as number })
@@ -532,6 +569,7 @@ export function usePageCurl(options: Options): {
       whenStill(() => {
         // Loaded again (a retry, a page come back into the window), the picture is of what it was.
         const have = cells.current.get(key);
+        loadTrace(`${key.slice(-6)} loaded: ${!have ? 'no picture of it' : wantedKeys().has(key) ? 'pictured again' : 'its picture let go'}`);
         if (!have) return;
         if (wantedKeys().has(key)) {
           ensureOne(key);
@@ -597,14 +635,25 @@ export function usePageCurl(options: Options): {
    *  (not drawn yet) leaves nothing to show, and `failed` decides what then. */
   const capture = useCallback(
     (flight: InFlight, ready: () => void, failed: () => void) => {
+      const o = latest.current;
+      loadTrace(
+        `${flight.fromDrag ? 'drag' : 'tap'} turn to ${flight.target}: from ${cellState(o, flight.fromKey)} to ${cellState(o, flight.toKey)}, ` +
+          `leaf ${Math.round(flight.leaf.box.x)},${Math.round(flight.leaf.box.y)} ${Math.round(flight.leaf.box.width)}x${Math.round(flight.leaf.box.height)}`,
+      );
       const a = ensureOne(flight.fromKey);
       const b = ensureOne(flight.toKey);
+      const asked = Date.now();
       void Promise.all([a.shot, b.shot]).then(([from, to]) => {
-        if (inFlight.current?.token !== flight.token) return;
+        if (inFlight.current?.token !== flight.token) {
+          loadTrace(`pictures for the turn to ${flight.target} came in after it had gone (${Date.now() - asked}ms)`);
+          return;
+        }
         if (!from || !to) {
+          loadTrace(`the turn to ${flight.target} has no picture of ${!from ? 'where it turns from' : ''}${!from && !to ? ' or ' : ''}${!to ? 'where it turns to' : ''}: not drawn curling`);
           failed();
           return;
         }
+        if (!a.ahead || !b.ahead) loadTrace(`the turn to ${flight.target} waited ${Date.now() - asked}ms for its pictures`);
         const t = trace.current;
         if (flight.fromDrag && t?.token === flight.token) {
           t.ahead = (a.ahead ? 1 : 0) + (b.ahead ? 1 : 0);
@@ -695,7 +744,11 @@ export function usePageCurl(options: Options): {
         clear();
         return;
       }
-      current.current = flight.target;
+      // Where the cell turned to is now: the spreads may have paired again under the turn.
+      const found = latest.current.data.findIndex((c) => c.key === flight.targetKey);
+      const target = found >= 0 ? found : flight.target;
+      if (target !== flight.target) loadTrace(`the turn to ${flight.target} landed at ${target}: the cells moved under it`);
+      current.current = target;
       replan();
       // The next turns' pictures now, while the landed spread is held flat and nothing moves: a
       // picture stops the main thread, and taken later, in a fast run, it fell inside the next
@@ -703,7 +756,7 @@ export function usePageCurl(options: Options): {
       ensure(wantedKeys());
       // TEMPORARY: how long the landing holds the JS thread, to Metro, for the fast turns' stalls.
       const landedAt = Date.now();
-      latest.current.land(flight.target, flight.fromDrag);
+      latest.current.land(target, flight.fromDrag);
       if (__DEV__) {
         const sync = Date.now() - landedAt;
         setTimeout(() => console.log(`[page-curl] landing took ${sync}ms in hand, free again ${Date.now() - landedAt}ms after`), 0);

@@ -379,6 +379,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       onPairingSize(key, size);
       onPageSizeProp?.(key, size);
       const cell = data.find((c) => c.pages.some((p) => p.key === key));
+      // Loaded again (a cell come back into the window): rising out of its placeholder again.
+      loadedPages.current.delete(key);
       clearTimeout(settling.current.get(key));
       settling.current.set(
         key,
@@ -852,11 +854,18 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
                 if (view) cellViews.current.set(item.key, view);
                 return () => {
                   cellViews.current.delete(item.key);
-                  for (const p of item.pages) {
-                    loadedPages.current.delete(p.key);
-                    clearTimeout(settling.current.get(p.key));
-                    settling.current.delete(p.key);
-                  }
+                  // Only a cell that has gone forgets its pages. Every render hands the cell a new
+                  // ref, so React runs this and gives the view straight back in the same commit:
+                  // forgotten on each, a loaded page read as not drawn for good, and one that
+                  // re-rendered while fading in was never pictured again for the curl.
+                  queueMicrotask(() => {
+                    if (cellViews.current.has(item.key)) return;
+                    for (const p of item.pages) {
+                      loadedPages.current.delete(p.key);
+                      clearTimeout(settling.current.get(p.key));
+                      settling.current.delete(p.key);
+                    }
+                  });
                 };
               }}>
             <ZoomablePage
