@@ -38,24 +38,17 @@ export function Chip({
   /** The tag group's own colour (see lib/tag-colors) — overrides `accent`'s default chip blue, so a
    *  chip says which GROUP it belongs to without a row heading to sit under. */
   color?: TagColor;
-  /** Brightens the fill (hover) — set by `PressableChip`, never by a static chip. */
+  /** Brightens the chip (hover) — set by `PressableChip`, never by a static chip. */
   highlighted?: boolean;
 }) {
   const theme = useTheme();
-  // Matches the reference: every chip shares the neutral `chipBg` fill; a chip given a group
-  // `color` (or `accent`) carries a coloured border + coloured text, while a plain chip gets a
-  // subtle border and muted text — rather than a tinted fill.
-  const border = color ? color.border : accent ? theme.chipBorder : theme.hairline;
+  // A tinted capsule with no outline, as iOS draws its tokens: a chip given a group `color` (or
+  // `accent`) is that colour, faint, under coloured text; a plain chip the system's grey fill under
+  // muted text.
+  const fill = color ? color.fill : accent ? theme.chipFill : theme.chipBg;
   const text = color ? color.text : accent ? theme.chipText : theme.textSecondary;
   return (
-    <View
-      style={[
-        styles.chip,
-        {
-          backgroundColor: highlighted ? theme.backgroundSelected : theme.chipBg,
-          borderColor: border,
-        },
-      ]}>
+    <View style={[styles.chip, { backgroundColor: fill }, highlighted && styles.chipHighlighted]}>
       <ThemedText style={[styles.chipText, { color: text }]} numberOfLines={1}>
         {label}
       </ThemedText>
@@ -303,14 +296,17 @@ const styles = StyleSheet.create({
     marginRight: Spacing.half,
   },
   chip: {
-    borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingVertical: 4,
+  },
+  chipHighlighted: {
+    opacity: 0.8,
   },
   chipText: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '500',
   },
   chipPressed: {
     opacity: 0.65,

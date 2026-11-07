@@ -44,8 +44,21 @@ appId: com.porksphere.comical
 
 - tapOn:
     id: "reader.settings.open"
-- tapOn:
-    id: "reader.settings.page-turn.curl"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.page-turn"
+      - tapOn:
+          text: "Curl"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.page-turn.curl"
 - tapOn:
     point: "50%, 8%"
 
@@ -85,8 +98,21 @@ appId: com.porksphere.comical
 # Two pages: the leaf is the right-hand page, carried over the spine.
 - tapOn:
     id: "reader.settings.open"
-- tapOn:
-    id: "reader.settings.page-layout.double"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.page-layout"
+      - tapOn:
+          text: "Double"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.page-layout.double"
 - tapOn:
     point: "50%, 8%"
 - tapOn:
@@ -105,10 +131,38 @@ appId: com.porksphere.comical
 # Back to the defaults.
 - tapOn:
     id: "reader.settings.open"
-- tapOn:
-    id: "reader.settings.page-layout.auto"
-- tapOn:
-    id: "reader.settings.page-turn.slide"
+# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.page-layout"
+      - tapOn:
+          text: "Auto"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.page-layout.auto"
+# Back to the default, the curl, for the flows after this one (it is already on unless a run
+# before this one left it off). A choice is segments on Android, a menu on iOS: opened by its row,
+# its options named, not ided.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "reader.settings.page-turn"
+      - tapOn:
+          text: "Curl"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: "reader.settings.page-turn.curl"
 - tapOn:
     point: "50%, 8%"
 

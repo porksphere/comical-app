@@ -28,10 +28,22 @@ import { useIsDesktop } from '@/hooks/use-responsive';
  *
  * `key` names the field to tests, under `reader.settings.`: a choice's options append their value.
  */
+/** The sheet's sections, in the order they are drawn: what a page looks like, how pages turn, the
+ *  screen around them, and how they load. Each field names its own, so a setting can't be added
+ *  without a place in the sheet, and every renderer groups by the same thing. */
+export const READER_SETTINGS_SECTIONS = [
+  { id: 'pages', title: 'Pages' },
+  { id: 'turning', title: 'Turning' },
+  { id: 'screen', title: 'Screen' },
+  { id: 'loading', title: 'Loading' },
+] as const;
+export type ReaderSettingsSectionId = (typeof READER_SETTINGS_SECTIONS)[number]['id'];
+
 export type ReaderSettingsField =
   | {
       kind: 'choice';
       key: string;
+      section: ReaderSettingsSectionId;
       label: string;
       value: string;
       options: readonly { value: string; label: string }[];
@@ -43,6 +55,7 @@ export type ReaderSettingsField =
   | {
       kind: 'toggle';
       key: string;
+      section: ReaderSettingsSectionId;
       label: string;
       value: boolean;
       onChange: (value: boolean) => void;
@@ -51,6 +64,7 @@ export type ReaderSettingsField =
   | {
       kind: 'stepper';
       key: string;
+      section: ReaderSettingsSectionId;
       label: string;
       value: number;
       min: number;
@@ -75,6 +89,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
     // back (unread while webtoon).
     choice<'ltr' | 'vertical' | 'rtl'>({
       key: 'direction',
+      section: 'pages',
       label: 'Reading direction',
       value: webtoon ? 'vertical' : settings.direction,
       options: [
@@ -87,6 +102,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
     }),
     choice<PageFit>({
       key: 'page-fit',
+      section: 'pages',
       label: 'Page fit',
       // Webtoon has only the two layouts (one page per screen, or a continuous strip), so it shows
       // two and reads `auto` as the page — the same mapping WebtoonReader applies.
@@ -105,6 +121,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
     }),
     choice<DoubleTapMode>({
       key: 'double-tap',
+      section: 'turning',
       label: 'Double-tap',
       value: settings.doubleTap,
       options: [
@@ -116,6 +133,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
     }),
     choice<PageLayout>({
       key: 'page-layout',
+      section: 'pages',
       label: 'Page layout',
       value: settings.pageLayout,
       options: [
@@ -137,6 +155,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
       ? [
           choice<PageTurn>({
             key: 'page-turn',
+            section: 'turning',
             label: 'Page turn',
             value: settings.pageTurn,
             options: [
@@ -151,6 +170,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
     {
       kind: 'toggle',
       key: 'spread-shift',
+      section: 'pages',
       label: 'Shift spreads by a page',
       value: shift,
       onChange: (v) => {
@@ -164,6 +184,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
       ? [
           choice<SpreadFill>({
             key: 'spread-fill',
+            section: 'pages',
             label: 'Spread padding',
             value: settings.spreadFill,
             options: [
@@ -183,10 +204,18 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
           }),
         ]
       : []),
-    { kind: 'toggle', key: 'keep-awake', label: 'Keep screen on', value: settings.keepAwake, onChange: (v) => set({ keepAwake: v }) },
+    {
+      kind: 'toggle',
+      key: 'keep-awake',
+      section: 'screen',
+      label: 'Keep screen on',
+      value: settings.keepAwake,
+      onChange: (v) => set({ keepAwake: v }),
+    },
     {
       kind: 'toggle',
       key: 'page-count',
+      section: 'screen' as const,
       label: 'Show page count when hidden',
       value: settings.pageCountWhenHidden,
       onChange: (v) => set({ pageCountWhenHidden: v }),
@@ -194,6 +223,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
     {
       kind: 'toggle',
       key: 'safe-area',
+      section: 'screen' as const,
       label: 'Respect safe areas',
       value: settings.respectSafeArea,
       onChange: (v) => set({ respectSafeArea: v }),
@@ -204,6 +234,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
           {
             kind: 'toggle' as const,
             key: 'downsample',
+            section: 'loading' as const,
             label: 'Downsample images',
             value: settings.downsample,
             onChange: (v: boolean) => set({ downsample: v }),
@@ -213,6 +244,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
     {
       kind: 'stepper',
       key: 'preload-ahead',
+      section: 'loading' as const,
       label: 'Preload ahead',
       value: settings.prefetchAhead,
       min: PREFETCH_AHEAD_MIN,
@@ -222,9 +254,20 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
   ];
 }
 
+/** The fields under their sections' titles, in section order, the fields' own order within each;
+ *  a section with nothing in it now (the web build's) is left out. */
+export function readerSettingsSections(
+  fields: ReaderSettingsField[],
+): { id: ReaderSettingsSectionId; title: string; fields: ReaderSettingsField[] }[] {
+  return READER_SETTINGS_SECTIONS.map((section) => ({ ...section, fields: fields.filter((f) => f.section === section.id) })).filter(
+    (section) => section.fields.length > 0,
+  );
+}
+
 /** A choice over a closed set of values, typed at the field and widened for the renderers. */
 function choice<T extends string>(field: {
   key: string;
+  section: ReaderSettingsSectionId;
   label: string;
   value: T;
   options: readonly { value: T; label: string }[];

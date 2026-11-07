@@ -65,10 +65,10 @@ export const Colors = {
     barHairline: '#E0E1E6',
     tabIconActive: '#000000',
     tabIconInactive: '#8E8E93',
-    // Neutral chip fill (shared by genre + tag chips, like the reference); a
-    // dedicated token so chip fill can diverge from generic surfaces later.
-    chipBg: '#F0F0F3',
-    chipBorder: '#B9CEF5',
+    // Chips are tinted fills, the way iOS draws its tokens: a plain chip on the system's
+    // translucent grey fill, an accented one on its own colour, faint, with no outline.
+    chipBg: 'rgba(118,118,128,0.12)',
+    chipFill: 'rgba(34,87,199,0.12)',
     chipText: '#2257C7',
     // A CG set's prints: the paper their pictures sit in, and the hairline that keeps a white print off
     // a white page (on black the paper holds its own edge).
@@ -132,8 +132,8 @@ export const Colors = {
     barHairline: '#313436',
     tabIconActive: '#ffffff',
     tabIconInactive: '#8E8E93',
-    chipBg: '#212225',
-    chipBorder: '#2c4060',
+    chipBg: 'rgba(118,118,128,0.24)',
+    chipFill: 'rgba(138,180,248,0.16)',
     chipText: '#8ab4f8',
     coverPaper: '#F2F0EC',
     coverPaperEdge: 'rgba(0,0,0,0)',

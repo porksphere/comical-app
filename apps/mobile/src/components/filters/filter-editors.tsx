@@ -29,15 +29,10 @@ import {
   type TriState,
   type TriValue,
 } from './filter-types';
+import { CHIP_TONES } from './overflow-chips';
 
 const INCLUDE = '#3478F6';
 const EXCLUDE = '#E5484D';
-// Selected-tag chip colours matched to the reference's `.ms-sel-chip`: a blue
-// include / red exclude built from the same base hues (#2563eb / #dc2626) with
-// the lighter text the source uses on the tinted fill.
-const INCLUDE_CHIP = { text: '#60a5fa', border: 'rgba(37,99,235,0.5)', bg: 'rgba(37,99,235,0.13)' };
-const EXCLUDE_CHIP = { text: '#f87171', border: 'rgba(220,38,38,0.5)', bg: 'rgba(220,38,38,0.13)' };
-
 type EditorProps = { def: FilterDef; value: FilterValue; onChange: (v: FilterValue) => void };
 
 /** Dispatches to the right editor for a filter type. Rendered inside an overlay sheet.
@@ -337,14 +332,15 @@ function TagChip({
   onRemove: () => void;
   testID?: string;
 }) {
-  const c = tone === 'include' ? INCLUDE_CHIP : EXCLUDE_CHIP;
+  // The filter bar's own chip tones, so a tag reads the same picked here as it does in the bar.
+  const c = CHIP_TONES[tone === 'include' ? 'include' : 'exclude'];
   return (
-    <View style={[styles.tagChip, { borderColor: c.border, backgroundColor: c.bg }]}>
-      <Text style={[styles.tagChipText, { color: c.text }]} numberOfLines={1}>
+    <View style={[styles.tagChip, { backgroundColor: c.bg }]}>
+      <Text style={[styles.tagChipText, { color: c.fg }]} numberOfLines={1}>
         {label}
       </Text>
       <Pressable testID={testID} onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${label}`}>
-        <Text style={[styles.tagChipRemove, { color: c.text }]}>×</Text>
+        <Text style={[styles.tagChipRemove, { color: c.fg }]}>×</Text>
       </Pressable>
     </View>
   );
@@ -370,7 +366,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
-    borderWidth: 1,
     borderRadius: 999,
     paddingLeft: 12,
     paddingRight: 8,

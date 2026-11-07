@@ -298,9 +298,11 @@ which a sideways pager never is, and plain title text is what made a backing nec
 and hides the tab bar while the reader is expanded through
 `lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s. The reader's settings are ONE
 model and two renderers: `components/reader/reader-settings-form.ts` (`useReaderSettingsForm`) is
-the fields in order, each with its value, choices, note and what a change sets, and is the only
-place a setting is added; `settings-panel.tsx` draws it as the custom panel in the shared overlay
-(Android, web) and `settings-panel.ios.tsx` as a SwiftUI `Form` in a system form sheet route
+the fields in order, each with its value, choices, note, section and what a change sets, and is the
+only place a setting is added; both renderers group by the same sections (`readerSettingsSections`).
+`settings-panel.tsx` draws it as the custom panel in the shared overlay (Android, web), a choice as
+segments, and `settings-panel.ios.tsx` as a SwiftUI `Form` in a system form sheet route, a choice as a
+menu row the way Settings' own are, a section's notes under it
 (`app/reader-settings`), counted as a system sheet (`holdSystemSheet`) so the reader keeps its holds
 under it. Each renderer's switch over the field kinds is complete or the typecheck fails, so a new
 kind of field is drawn on both before it ships, and a new field of a known kind appears everywhere. The reader's bottom bar

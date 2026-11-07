@@ -9,7 +9,8 @@ import type { ChipItem, ChipTone } from './filter-types';
 const GAP = 6;
 const PLUS_RESERVE = 46; // room kept for the "+X" chip
 
-const TONES: Record<ChipTone, { bg: string; fg: string }> = {
+/** A filter chip's tinted fill and text, by tone — shared with the editors' selected-tag chips. */
+export const CHIP_TONES: Record<ChipTone, { bg: string; fg: string }> = {
   include: { bg: 'rgba(52,120,246,0.16)', fg: '#3478F6' },
   exclude: { bg: 'rgba(229,72,77,0.16)', fg: '#E5484D' },
   neutral: { bg: 'rgba(128,128,128,0.16)', fg: '#8E8E93' },
@@ -24,7 +25,7 @@ function Chip({
   tone: ChipTone;
   onMeasure?: (w: number) => void;
 }) {
-  const t = TONES[tone];
+  const t = CHIP_TONES[tone];
   return (
     <View
       onLayout={onMeasure ? (e: LayoutChangeEvent) => onMeasure(e.nativeEvent.layout.width) : undefined}

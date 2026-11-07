@@ -1,12 +1,12 @@
 import { Form, Host, Picker, Section, Stepper, Text, Toggle } from '@expo/ui/swift-ui';
-import { accessibilityIdentifier, disabled, pickerStyle, scrollContentBackground, tag } from '@expo/ui/swift-ui/modifiers';
+import { accessibilityIdentifier, disabled, ignoreSafeArea, pickerStyle, scrollContentBackground, tag } from '@expo/ui/swift-ui/modifiers';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { useNavigation } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, type ViewInstance } from 'react-native';
 
 import { SettingsIcon } from '@/components/icons/reader-icons';
-import { useReaderSettingsForm, type ReaderSettingsField } from '@/components/reader/reader-settings-form';
+import { readerSettingsSections, useReaderSettingsForm, type ReaderSettingsField } from '@/components/reader/reader-settings-form';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { holdSystemSheet } from '@/lib/native-overlay-sheets';
 import { presentReaderSettings } from '@/lib/nav';
@@ -82,34 +82,33 @@ const SHEET_GLASS = isLiquidGlassAvailable();
 
 /**
  * The reader's settings (`useReaderSettingsForm`) as a SwiftUI form, the shape of the system's own
- * settings: each choice a segmented control in a section of its own, headed by its label and
- * footed by its note; the switches and the stepper together in one. The form is a list, which
- * sizes itself to what it is offered rather than to its rows, so the host hands it the sheet's
- * viewport and the form scrolls inside the sheet's detent.
+ * settings: a section to each of the model's groups (`readerSettingsSections`), a row to each
+ * setting — a choice its label and its value, opening a menu, as Settings' own are — and under each
+ * section the notes its choices carry now. A segmented control to each choice, in a section of its
+ * own with a heading and a note, was three rows of height per setting and a card around a control
+ * that has its own. The form is a list, which sizes itself to what it is offered rather than to its
+ * rows, so the host hands it the sheet's viewport and the form scrolls inside the sheet's detent.
  */
 export function ReaderSettingsBody({ seriesKey }: { seriesKey: string | null }) {
   const fields = useReaderSettingsForm(seriesKey);
   const scheme = useActiveColorScheme();
   const theme = useTheme();
   return (
-    // The sheet lies over the Duo's vertical bar, so the form runs the sheet's whole width rather
-    // than insetting by the bar's safe area as the window's content does.
-    <Host
-      style={styles.host}
-      colorScheme={scheme}
-      seedColor={theme.accent}
-      useViewportSizeMeasurement
-      ignoreSafeArea="container">
-      <Form modifiers={SHEET_GLASS ? [scrollContentBackground('hidden')] : undefined}>
-        {sections(fields).map((section) => {
-          const [head] = section;
-          return head.kind === 'choice' ? (
-            <Section key={head.key} title={head.label} footer={head.hint ? <Text>{head.hint}</Text> : undefined}>
-              <Field field={head} />
-            </Section>
-          ) : (
-            <Section key={head.key}>
-              {section.map((field) => (
+    <Host style={styles.host} colorScheme={scheme} seedColor={theme.accent} useViewportSizeMeasurement>
+      {/* The sheet lies over the Duo's vertical bar, so the form runs the sheet's whole width rather
+          than insetting by the bar's safe area as the window's content does — across only: the
+          host ignoring the safe area on every edge laid the form's first rows under the sheet's
+          header, where they couldn't be read. */}
+      <Form
+        modifiers={[
+          ignoreSafeArea({ regions: 'container', edges: 'horizontal' }),
+          ...(SHEET_GLASS ? [scrollContentBackground('hidden')] : []),
+        ]}>
+        {readerSettingsSections(fields).map((section) => {
+          const notes = section.fields.flatMap((field) => (field.kind === 'choice' && field.hint ? [field.hint] : []));
+          return (
+            <Section key={section.id} title={section.title} footer={notes.length ? <Text>{notes.join('\n')}</Text> : undefined}>
+              {section.fields.map((field) => (
                 <Field key={field.key} field={field} />
               ))}
             </Section>
@@ -120,26 +119,16 @@ export function ReaderSettingsBody({ seriesKey }: { seriesKey: string | null }) 
   );
 }
 
-/** A choice stands alone, with its label as the section's title; the rest run together. */
-function sections(fields: ReaderSettingsField[]): ReaderSettingsField[][] {
-  const out: ReaderSettingsField[][] = [];
-  for (const field of fields) {
-    const last = out.at(-1);
-    if (field.kind !== 'choice' && last && last[0]!.kind !== 'choice') last.push(field);
-    else out.push([field]);
-  }
-  return out;
-}
-
 function Field({ field }: { field: ReaderSettingsField }) {
   const id = `reader.settings.${field.key}`;
   switch (field.kind) {
     case 'choice':
       return (
         <Picker
+          label={field.label}
           selection={field.value}
           onSelectionChange={(v) => field.onChange(String(v))}
-          modifiers={[pickerStyle('segmented'), accessibilityIdentifier(id), ...(field.disabled ? [disabled()] : [])]}>
+          modifiers={[pickerStyle('menu'), accessibilityIdentifier(id), ...(field.disabled ? [disabled()] : [])]}>
           {field.options.map((option) => (
             <Text key={option.value} modifiers={[tag(option.value), accessibilityIdentifier(testId(id, option.value))]}>
               {option.label}
