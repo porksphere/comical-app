@@ -150,8 +150,12 @@ export function turnProgress(leaf: Leaf, x: number): number {
 
 /** The radius the paper rolls over at its most, in the leaf's widths. */
 export const CURL_RADIUS = 0.035;
-/** How far from either end of the turn the curl's shading has faded out, in the leaf's widths. */
-const SHADE_REACH = 0.15;
+/** How far into a turn the curl's shading has faded in, and how far before it lands it starts to
+ *  fade out, in the leaf's widths. The fade out is the longer and eased: over the same short stretch
+ *  as the fade in, the shadow and the edge's line went in the same few frames the roll shrank away,
+ *  a harsh finish just where the page settles. */
+const SHADE_IN = 0.15;
+const SHADE_OUT = 0.5;
 
 /**
  * Where the curl lies for the leaf's free edge, taken at height `grabY`, pulled to (`x`, `y`).
@@ -204,8 +208,8 @@ export function curlFrame(leaf: Leaf, grabY: number, x: number, y: number): Curl
     spine * nx + top * ny,
     spine * nx + bottom * ny,
   );
-  const reach = SHADE_REACH * box.width;
-  const shade = Math.min(1, gap / reach) * Math.min(1, toLand / reach);
+  const out = Math.min(1, toLand / (SHADE_OUT * box.width));
+  const shade = Math.min(1, gap / (SHADE_IN * box.width)) * out * out * (3 - 2 * out);
   return { nx, ny, c, r, shade };
 }
 
