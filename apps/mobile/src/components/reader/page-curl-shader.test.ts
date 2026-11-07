@@ -83,6 +83,34 @@ describe('the curl effect', () => {
     expect(at(100, 40)).toEqual([200, 200, 0]);
   });
 
+  test('in a spread, the pixel on the spine is the spread on screen, not half the next one', () => {
+    // A spine that falls inside a pixel, as on a device (475.5pt is 1426.5 pixels at 3×): the leaf's
+    // edge there is bound, not cut, and nothing of the spread turned to may show along it.
+    const wide = { width: W + 1, height: H };
+    const leaf = makeLeaf(halfPageBox(halfShape, wide, 'right'), wide, SQUARE_SCREEN, true, false);
+    expect(leaf.spine % 1).toBe(0.5);
+    const at = draw(leaf, FLAT);
+    expect(at(Math.floor(leaf.spine), 40)).toEqual([0, 200, 0]);
+  });
+
+  test('landed in a spread, every column of the page turned to is where the pager draws it', () => {
+    // Each column of the picture turned to says which column it is, so a page drawn even a point
+    // off shows. The pages are narrower than their halves, as most are.
+    const coded = () => {
+      const px = new Uint8Array(W * H * 4);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) px.set([x * 2, 0, 200, 255], (y * W + x) * 4);
+      const info = { width: W, height: H, alphaType: CK.AlphaType.Unpremul, colorType: CK.ColorType.RGBA_8888, colorSpace: CK.ColorSpace.SRGB };
+      return CK.MakeImage(info, px, W * 4)!;
+    };
+    for (const mirrored of [false, true]) {
+      const leaf = makeLeaf(halfPageBox({ width: 50, height: H }, viewport, mirrored ? 'left' : 'right'), viewport, SQUARE_SCREEN, true, mirrored);
+      const end = landingPoint(leaf, 40);
+      const at = draw(leaf, curlFrame(leaf, 40, end.x, end.y), mirrored, picture([1, 2, 3], [4, 5, 6]), coded());
+      // Across both pages, 10 to 110; the margins beside them are the old spread's, as blank.
+      for (let x = 12; x < 108; x += 3) expect(at(x, 40)).toEqual([x * 2, 0, 200]);
+    }
+  });
+
   test('turning back runs the same turn mirrored', () => {
     const leaf = makeLeaf(halfPageBox(halfShape, viewport, 'left'), viewport, SQUARE_SCREEN, true, true);
     const end = landingPoint(leaf, 60);
@@ -137,10 +165,12 @@ describe('the curl effect', () => {
       for (let i = -6; i < 6; i++) for (let j = -6; j < 6; j++) sum += at(Math.round(x + i), Math.round(y + j))[2];
       return sum / 144;
     };
-    const near = meanBlue(...past(f.r + 6, 40));
-    const far = meanBlue(...past(f.r + 20, 40));
+    const near = meanBlue(...past(f.r + 4, 40));
+    const far = meanBlue(...past(f.r + 10, 40));
     expect(near).toBeLessThan(far);
     expect(far).toBeLessThan(200);
+    // And gone a little further on: it reaches only so far.
+    expect(meanBlue(...past(f.r + 20, 40))).toBe(200);
   });
 
   test('the turning paper is outlined in ink', () => {

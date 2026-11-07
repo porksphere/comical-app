@@ -206,10 +206,15 @@ export function curlFrame(leaf: Leaf, grabY: number, x: number, y: number): Curl
 }
 
 /** How far a turning edge rises at `t` through the turn, as a hand turning a page lifts it: none
- *  lying flat or landed, most half way over. */
+ *  lying flat or landed, most half way over — and rising from nothing, flat at the start. The fold
+ *  stands across the line from where the edge was taken to where it is, so a lift that rose as fast
+ *  as the edge went across tilted the fold from the first point: through the edge at the finger's
+ *  height, a tilt that cut a corner sixty points deep off the far end of the page on the drag's
+ *  first frame. */
 export function turnLift(leaf: Leaf, t: number): number {
   'worklet';
-  return Math.sin(Math.PI * t) * leaf.box.height * 0.08;
+  const s = Math.sin(Math.PI * t);
+  return s * s * leaf.box.height * 0.08;
 }
 
 /**
@@ -235,6 +240,23 @@ export const TAP_GRAB = 0.82;
  */
 export const MAX_TILT = (6 * Math.PI) / 180;
 const TILT_TRAVEL = 160;
+
+/** The finger travel over which a drag's turn eases in, the fold growing from nothing. */
+export const DRAG_EASE_PX = 24;
+
+/**
+ * How far a drag carries the page for `travel` of the finger the way the turn goes: eased in over
+ * the first `DRAG_EASE_PX` (quadratic, so the page starts at rest and moving with the finger's
+ * pace by the end of it), then one for one, half of that behind. The drag only activates once the
+ * finger is ten points in, and carried one for one from the first point, the page was drawn with a
+ * corner already ten points over on its first frame, a snap. Travel against the turn is left as it
+ * is: the page's own travel holds it flat (`dragPull`).
+ */
+export function dragTravel(travel: number): number {
+  'worklet';
+  if (travel <= 0) return travel;
+  return travel < DRAG_EASE_PX ? (travel * travel) / (2 * DRAG_EASE_PX) : travel - DRAG_EASE_PX / 2;
+}
 
 /** The height a drag that starts at `y` takes the free edge from: the finger's own, held to the
  *  page, as the page under a finger is the one it turns — low, the thumb's corner lifts; mid-way,

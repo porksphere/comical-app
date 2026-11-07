@@ -61,7 +61,7 @@ uniform float shade;
 uniform float density;
 
 const float PI = 3.14159265;
-const float SHADOW_REACH = 1.7;
+const float SHADOW_REACH = 0.85;
 // The shadows are screentone, not photographs: a dot where an ordered dither puts one for the
 // shadow's strength there, each dot DOT device pixels square and this dark.
 const float DOT = 3.0;
@@ -74,9 +74,18 @@ float2 screen(float2 q) { return mirrored > 0.5 ? float2(size.x - q.x, q.y) : q;
 float3 pageA(float2 q) { return cur.eval(screen(q)).rgb; }
 float3 pageB(float2 q) { return next.eval(screen(q)).rgb; }
 
+// The leaf as an edge is drawn by: a spread's leaf carried past the spine, for there it has no
+// edge — it is bound there, the facing page beside it. Softened there like an outer edge, the
+// pixel on the spine came out half the spread turned to, a hairline down the middle of the spread
+// from the turn's first frame to its last.
+float4 paper() {
+  return dual > 0.5 ? float4(leaf.x - 4.0, leaf.y, leaf.z + 4.0, leaf.w) : leaf;
+}
+
 float leafDistance(float2 p) {
-  float2 b = leaf.zw * 0.5;
-  float2 q0 = p - (leaf.xy + b);
+  float4 box = paper();
+  float2 b = box.zw * 0.5;
+  float2 q0 = p - (box.xy + b);
   float rad = q0.x < 0.0 ? (q0.y < 0.0 ? leafR.x : leafR.w) : (q0.y < 0.0 ? leafR.y : leafR.z);
   float2 q = abs(q0) - b + rad;
   return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rad;
@@ -85,7 +94,8 @@ float onLeaf(float2 p) { return clamp(0.5 - leafDistance(p) * density, 0.0, 1.0)
 // The leaf's box with its corners square. Outside a rounded corner is no paper, but it is still the
 // page as drawn there until that part has turned — the next page must not show in the corner.
 float onBox(float2 p) {
-  float2 q = abs(p - (leaf.xy + leaf.zw * 0.5)) - leaf.zw * 0.5;
+  float4 box = paper();
+  float2 q = abs(p - (box.xy + box.zw * 0.5)) - box.zw * 0.5;
   return clamp(0.5 - max(q.x, q.y) * density, 0.0, 1.0);
 }
 // Light on the roll's top, by how far round it the paper has come: full where it leaves the flap,
@@ -132,7 +142,10 @@ float3 back(float2 q) {
 half4 main(float2 at) {
   float2 p = screen(at);
   float3 col = (dual > 0.5 && p.x < spine) ? pageA(p) : pageB(p);
-  float R = max(r, 0.75);
+  // Floored only against a division by nothing: a turn landed has no roll, and a floor any wider
+  // left the turned page wrapped round one, set over by half its round — in a spread, the page
+  // turned to drawn two points off where the pager has it, a pop as the curl went.
+  float R = max(r, 0.001);
   float d = dot(p, n) - c;
   float outline = 0.0;
   if (d >= 0.0) {
@@ -146,7 +159,7 @@ half4 main(float2 at) {
     float2 crease = p - n * d;
     float2 cq = abs(crease - (leaf.xy + leaf.zw * 0.5)) - leaf.zw * 0.5;
     float casting = 1.0 - smoothstep(0.0, R * 0.5 + 4.0, max(cq.x, cq.y));
-    col *= 1.0 - SHADOW_INK * tone(shade * casting * exp(-d / (R * SHADOW_REACH + 6.0)), at);
+    col *= 1.0 - SHADOW_INK * tone(shade * casting * exp(-d / (R * SHADOW_REACH + 3.0)), at);
     if (d <= R) {
       float a = asin(d / R);
       float2 under = p + n * (R * a - d);
@@ -165,7 +178,7 @@ half4 main(float2 at) {
     col = mix(col, pageA(p), onBox(p));
     // The turned-over flap's shadow falls from its outer edge; at the crease, where the flap's edge
     // meets the roll, it would draw a dark line down the flat page.
-    col *= 1.0 - SHADOW_INK * tone(shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.45 + 4.0)) * smoothstep(0.0, R * 0.6, -d), at);
+    col *= 1.0 - SHADOW_INK * tone(shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.225 + 2.0)) * smoothstep(0.0, R * 0.6, -d), at);
     col = mix(col, back(flap) * rollLight(0.0), flapC);
     outline = ink(flapD);
   }

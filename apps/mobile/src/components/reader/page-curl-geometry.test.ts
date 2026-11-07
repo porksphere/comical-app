@@ -7,6 +7,8 @@ import {
   curlFrame,
   dragGrabY,
   dragPull,
+  dragTravel,
+  DRAG_EASE_PX,
   halfPageBox,
   landingPoint,
   leafRadii,
@@ -148,6 +150,32 @@ describe('a drag', () => {
     const pull = turnPull(leaf, mid, 0.5);
     const f = curlFrame(leaf, mid, pull.x, pull.y);
     expect(Math.abs(f.ny)).toBeLessThan(0.2);
+  });
+
+  test('eases the turn in from rest, then follows the finger one for one', () => {
+    expect(dragTravel(0)).toBe(0);
+    // Ten points in, where the drag activates, the page has barely moved.
+    expect(dragTravel(10)).toBeLessThan(2.5);
+    // Continuous where the ease ends, and one for one after it.
+    expect(dragTravel(DRAG_EASE_PX - 0.001)).toBeCloseTo(dragTravel(DRAG_EASE_PX + 0.001), 2);
+    expect(dragTravel(200) - dragTravel(100)).toBeCloseTo(100, 6);
+    // Against the turn, untouched.
+    expect(dragTravel(-15)).toBe(-15);
+  });
+
+  test('starts as an upright sliver at the edge, wherever up the edge it is taken', () => {
+    const from = leaf.box.x + leaf.box.width;
+    for (const at of [0.2, 0.5, 0.82]) {
+      const grabY = leaf.box.y + leaf.box.height * at;
+      const start = turnPull(leaf, grabY, 0);
+      const p = dragPull(leaf, grabY, start.x, -dragTravel(10), 0);
+      const f = curlFrame(leaf, grabY, p.x, p.y);
+      // Where the fold crosses the page's top and bottom, in from the free edge: a few points, not
+      // a corner.
+      for (const y of [leaf.box.y, leaf.box.y + leaf.box.height]) {
+        expect(from - (f.c - f.ny * y) / f.nx).toBeLessThan(5);
+      }
+    }
   });
 
   test('starts exactly where the edge lies', () => {

@@ -21,6 +21,7 @@ import {
   curlFrame,
   dragGrabY,
   dragPull,
+  dragTravel,
   halfPageBox,
   makeLeaf,
   singlePageBox,
@@ -58,9 +59,6 @@ const OFF = 3;
 const NO_PAGE = 4;
 /** A drag whose JS side or pictures lag the finger by more than this goes in the diagnostics log. */
 const SLOW_MS = 100;
-/** How long a picture taken ahead stands for its cell: a page still loading when it was taken has
- *  arrived by then, and a turn must never turn its placeholder. */
-const FRESH_MS = 1000;
 /** The quiet after a landing in which the neighbours' pictures are taken, for the next turn. */
 const WARM_MS = 120;
 /** How often a picture waiting for the curl to be still looks again, and the longest it waits. */
@@ -168,6 +166,11 @@ function planTurn(o: Options, here: number, readingForward: boolean): Plan | nul
     fromKey: fromCell.key,
     toKey: data[target]!.key,
   };
+}
+
+/** What a cell's picture depends on beyond the cell itself: one taken under another is not of it. */
+function layoutOf(o: Options): string {
+  return `${o.width}x${o.height} ${o.pageFit} ${o.double ? 2 : 1} ${o.rtl ? 'rtl' : 'ltr'}`;
 }
 
 /**
@@ -361,9 +364,10 @@ export function usePageCurl(options: Options): {
   // Where the pager is, as of the last turn this hook landed — a second tap in quick succession
   // turns from there, before the render that names it.
   const current = useRef(options.activeIndex);
-  // The pictures on hand, by cell, when each was taken and whether the cell had its pages by then
+  // The pictures on hand, by cell, with what they were taken under: whether the cell had its
+  // pages by then, the reader's layout (`layoutOf`), and whether it was the page on screen, zoomed
   // — what `staged` mirrors — and the snapshots on their way.
-  const cells = useRef(new Map<string, { image: SkImage; at: number; ready: boolean }>());
+  const cells = useRef(new Map<string, { image: SkImage; ready: boolean; layout: string; zoomed: boolean }>());
   const shots = useRef(new Map<string, Promise<SkImage | null>>());
   const alive = useRef(true);
   // The drag in flight, for the trace: when each thread took it up and when it was first drawn.
@@ -435,9 +439,9 @@ export function usePageCurl(options: Options): {
     [retire],
   );
   const stage = useCallback(
-    (key: string, image: SkImage, ready: boolean) => {
+    (key: string, image: SkImage, ready: boolean, layout: string, zoomed: boolean) => {
       const old = cells.current.get(key);
-      cells.current.set(key, { image, at: Date.now(), ready });
+      cells.current.set(key, { image, ready, layout, zoomed });
       publish();
       if (old) discard(old.image);
     },
@@ -469,16 +473,23 @@ export function usePageCurl(options: Options): {
       .catch(() => null);
   }, []);
 
-  /** A picture of this cell, the one on hand where it still stands for the cell — fresh, and not
-   *  taken before the cell's pages had arrived when they have since (a picture of a page still
-   *  loading is of nothing, and drawn for the page once it is in, the turn was a black page) —
-   *  otherwise taken. `ahead` where it was on hand or already on its way, i.e. not waited for from
+  /** A picture of this cell, the one on hand where it still stands for the cell — taken under the
+   *  same layout, not of the page on screen zoomed, and not before the cell's pages had arrived
+   *  when they have since (a picture of a page still loading is of nothing, and drawn for the page
+   *  once it is in, the turn was a black page) — otherwise taken. Kept for as long as that holds,
+   *  not for a second: retaken as each drag began, after any pause on a page, two pictures held the
+   *  main thread for a tenth of a second as the finger set off, and the curl came up well along. `ahead` where it was on hand or already on its way, i.e. not waited for from
    *  here. */
   const ensureOne = useCallback(
     (key: string): { ahead: boolean; shot: Promise<SkImage | null> } => {
+      const o = latest.current;
       const have = cells.current.get(key);
-      const ready = latest.current.cellReady(key);
-      if (have && Date.now() - have.at < FRESH_MS && (have.ready || !ready)) {
+      const ready = o.cellReady(key);
+      const layout = layoutOf(o);
+      // The page on screen, zoomed — or resting zoomed, and panned across — looks however the
+      // finger left it: pictured fresh every time, and that picture good for nothing after.
+      const zoomed = o.zoomed && key === o.data[current.current]?.key;
+      if (have && have.layout === layout && !have.zoomed && !zoomed && (have.ready || !ready)) {
         return { ahead: true, shot: Promise.resolve(have.image) };
       }
       // On its way is not ahead: it was most likely asked for as this drag began.
@@ -491,7 +502,7 @@ export function usePageCurl(options: Options): {
           image.dispose();
           return null;
         }
-        stage(key, image, ready);
+        stage(key, image, ready, layout, zoomed);
         return image;
       });
       shots.current.set(key, shot);
@@ -517,8 +528,9 @@ export function usePageCurl(options: Options): {
   const pageLoaded = useCallback(
     (key: string) =>
       whenStill(() => {
+        // Loaded again (a retry, a page come back into the window), the picture is of what it was.
         const have = cells.current.get(key);
-        if (!have || have.ready) return;
+        if (!have) return;
         if (wantedKeys().has(key)) {
           ensureOne(key);
           return;
@@ -960,8 +972,8 @@ export function usePageCurl(options: Options): {
           // The pull follows the finger from where it came DOWN, not from where the drag activated:
           // a manually activated pan's translation starts over at activation, ten points in, and
           // measured from there the page lay flat with the finger still ten points short of where
-          // it began, a stop before the end of every return. The ten points the page is in by at
-          // activation are the slide's own behaviour.
+          // it began, a stop before the end of every return. The ten points it is in by at
+          // activation are eased in (`dragTravel`), not drawn at once.
           originX.set(e.translationX - verdictDx.value);
           originY.set(e.translationY - verdictDy.value);
           if (plan) {
@@ -975,7 +987,10 @@ export function usePageCurl(options: Options): {
           'worklet';
           const leaf = turnLeaf.value;
           if (!dragging.value || !leaf) return;
-          const tx = (mirroredSV.value ? -1 : 1) * (e.translationX - originX.value);
+          const raw = (mirroredSV.value ? -1 : 1) * (e.translationX - originX.value);
+          // The way the turn goes from where it starts: over (left, in turn space), or back.
+          const way = startT.value === 0 ? -1 : 1;
+          const tx = way * dragTravel(way * raw);
           const pull = dragPull(leaf, grabY.value, dragFromX.value, tx, e.translationY - originY.value);
           pullX.set(pull.x);
           pullY.set(pull.y);
