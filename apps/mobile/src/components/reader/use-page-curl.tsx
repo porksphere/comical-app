@@ -31,6 +31,7 @@ import {
 } from '@/components/reader/page-curl-geometry';
 import { knownPageSize, spreadHalves, type SpreadPad } from '@/components/reader/spreads';
 import type { PageFit } from '@/hooks/use-reader-settings';
+import { logDiagnostic } from '@/lib/diagnostics';
 import { projectRelease } from '@/lib/gesture-release';
 
 /** What the curl needs of a pager cell: its pages, by picture, and the half a lone page leaves. */
@@ -45,6 +46,17 @@ export type CurlCell = { key: string; pages: { uri: string }[]; pad?: SpreadPad 
 const ACTIVATE_PX = 10;
 /** Sideways travel that starts taking the pictures, so they are in by the time the turn starts. */
 const PREPARE_PX = 3;
+/**
+ * What became of a touch once it had gone `ACTIVATE_PX`, for the trace: a turn asked for, given up as
+ * too steep, given up with turning off, or given up with no page that way. A turn asked for that
+ * never started is one another gesture took.
+ */
+const ASKED = 1;
+const STEEP = 2;
+const OFF = 3;
+const NO_PAGE = 4;
+/** A drag whose JS side or pictures lag the finger by more than this goes in the diagnostics log. */
+const SLOW_MS = 100;
 /** How far through the turn a release has to be headed to finish it rather than fall back. */
 const COMMIT_PROGRESS = 0.25;
 /** A tap's turn, start to finish. */
@@ -193,6 +205,10 @@ export function usePageCurl(options: Options): {
   const originX = useSharedValue(0);
   const originY = useSharedValue(0);
   const fingerDown = useSharedValue(false);
+  const verdict = useSharedValue(0);
+  const verdictDx = useSharedValue(0);
+  const verdictDy = useSharedValue(0);
+  const started = useSharedValue(false);
   const dragging = useSharedValue(false);
   const dragFromX = useSharedValue(0);
   // What a released drag decided, for a turn asked for before it finished falling into place.
@@ -258,6 +274,16 @@ export function usePageCurl(options: Options): {
   const current = useRef(options.activeIndex);
   // Pictures taken as a drag starts across, by cell, until a turn takes them.
   const prepared = useRef(new Map<string, Promise<SkImage | null>>());
+  // The drag in flight, for the trace: when each thread took it up and when it was first drawn.
+  const trace = useRef<{
+    token: number;
+    movingLeft: boolean;
+    startedAt: number;
+    caughtUpAt: number;
+    rearmed: boolean;
+    ahead: number;
+    drawnAt: number | null;
+  } | null>(null);
 
   const replan = useCallback(() => {
     const o = latest.current;
@@ -315,9 +341,11 @@ export function usePageCurl(options: Options): {
    *  show, and `failed` decides what then. */
   const capture = useCallback(
     (flight: InFlight, ready: () => void, failed: () => void) => {
+      let ahead = 0;
       const take = (key: string) => {
         const shot = prepared.current.get(key);
         prepared.current.delete(key);
+        if (shot) ahead += 1;
         return shot ?? picture(key);
       };
       void Promise.all([take(flight.fromKey), take(flight.toKey)]).then(([a, b]) => {
@@ -329,17 +357,54 @@ export function usePageCurl(options: Options): {
           return;
         }
         setTurn({ id: turnId(flight), leaf: flight.leaf, mirrored: flight.mirrored, from: a, to: b });
+        const t = trace.current;
+        if (flight.fromDrag && t?.token === flight.token) {
+          t.ahead = ahead;
+          t.drawnAt = Date.now();
+        }
         ready();
       });
     },
     [picture],
   );
 
+  /** One line on how a drag went: to the diagnostics log where it lagged, to Metro's console under
+   *  a development build either way. */
+  const reportDrag = useCallback((token: number, committed: boolean) => {
+    const t = trace.current;
+    if (t?.token !== token) return;
+    trace.current = null;
+    const behind = t.caughtUpAt - t.startedAt;
+    const drawn = t.drawnAt === null ? null : t.drawnAt - t.startedAt;
+    const summary =
+      `A drag ${t.movingLeft ? 'left' : 'right'} ${committed ? 'turned the page' : 'fell back'}: ` +
+      `the JS side caught up ${behind}ms in; ` +
+      (drawn === null ? 'never drawn, its pictures not in before it landed' : `drawn ${drawn}ms in, ${t.ahead} of 2 pictures taken ahead`) +
+      (t.rearmed ? '; re-armed, the pager had moved under it' : '') +
+      '.';
+    if (drawn === null || drawn > SLOW_MS || behind > SLOW_MS || t.rearmed) logDiagnostic('page-curl', summary);
+    else if (__DEV__) console.log(`[page-curl] ${summary}`);
+  }, []);
+
+  /** A touch that went far enough to decide and never turned a page. */
+  const reportMissed = useCallback((why: number, dx: number, dy: number) => {
+    const reason =
+      why === ASKED
+        ? 'another gesture took the touch before it could start'
+        : why === OFF
+          ? 'turning was off (the entrance strip, a pinch)'
+          : 'steeper than 45°';
+    logDiagnostic('page-curl', `A drag ${dx < 0 ? 'left' : 'right'} didn't turn: ${reason}.`, {
+      context: `${Math.round(dx)}, ${Math.round(dy)}pt at the decision${latest.current.zoomed ? '; the page was zoomed' : ''}`,
+    });
+  }, []);
+
   const finish = useCallback(
     (token: number, committed: boolean) => {
       const flight = inFlight.current;
       if (!flight || flight.token !== token) return;
       inFlight.current = null;
+      if (flight.fromDrag) reportDrag(token, committed);
       // Only if nothing has started since: a turn asked for straight after this one owns the curl.
       // The UI thread's numbers are left as they are: a drag may already have armed the next turn
       // over them.
@@ -356,7 +421,7 @@ export function usePageCurl(options: Options): {
       // The curl stands until the pager has drawn the spread under it, which it then shows exactly.
       requestAnimationFrame(() => requestAnimationFrame(clear));
     },
-    [replan],
+    [replan, reportDrag],
   );
 
   /** Land a turn still in flight at once: a finger came down on it, or a second turn was asked for
@@ -413,14 +478,18 @@ export function usePageCurl(options: Options): {
    * down — and then the drag is re-armed from where it is now, or dropped if it was already let go.
    */
   const beginDrag = useCallback(
-    (armed: Plan, movingLeft: boolean, y: number) => {
+    (armed: Plan, movingLeft: boolean, y: number, startedAt: number) => {
       settleNow(releasedCommitted.value);
       const o = latest.current;
       const fresh = planTurn(o, current.current, movingLeft !== o.rtl);
       let plan = armed;
-      if (!fresh || fresh.fromKey !== armed.fromKey || fresh.toKey !== armed.toKey) {
+      const rearmed = !fresh || fresh.fromKey !== armed.fromKey || fresh.toKey !== armed.toKey;
+      if (rearmed) {
         if (!fresh || !fingerDown.value) {
           dragging.set(false);
+          logDiagnostic('page-curl', `A drag ${movingLeft ? 'left' : 'right'} didn't turn: the pager moved under it.`, {
+            context: `the JS side caught up ${Date.now() - startedAt}ms in, ${fresh ? 'after the finger had lifted' : 'with no page that way any more'}`,
+          });
           return;
         }
         plan = fresh;
@@ -429,6 +498,7 @@ export function usePageCurl(options: Options): {
       const token = ++tokens.current;
       const flight: InFlight = { ...plan, token, fromDrag: true };
       inFlight.current = flight;
+      trace.current = { token, movingLeft, startedAt, caughtUpAt: Date.now(), rearmed, ahead: 0, drawnAt: null };
       o.onDragBegin?.();
       // Without pictures the drag still turns the page on release; it just isn't drawn curling.
       capture(flight, () => {}, () => {});
@@ -461,6 +531,8 @@ export function usePageCurl(options: Options): {
           downY.set(t.y);
           decided.set(false);
           preparing.set(false);
+          verdict.set(0);
+          started.set(false);
           // A turn still finishing lands under the finger, as a scroll still moving stops under one:
           // the next drag turns on from the page it was going to.
           if (!dragging.value) {
@@ -484,7 +556,12 @@ export function usePageCurl(options: Options): {
           }
           if (Math.hypot(dx, dy) < ACTIVATE_PX) return;
           decided.set(true);
-          if (allowed.value && across && (dx < 0 ? planLeft.value : planRight.value)) state.activate();
+          verdictDx.set(dx);
+          verdictDy.set(dy);
+          verdict.set(
+            !allowed.value ? OFF : !across ? STEEP : !(dx < 0 ? planLeft.value : planRight.value) ? NO_PAGE : ASKED,
+          );
+          if (verdict.value === ASKED) state.activate();
           else state.fail();
         })
         // eslint-disable-next-line react-hooks/refs -- a worklet: it reaches the in-flight turn (via beginDrag) only when a drag starts, never during this render.
@@ -494,11 +571,13 @@ export function usePageCurl(options: Options): {
           const plan = movingLeft ? planLeft.value : planRight.value;
           if (!plan) return;
           fingerDown.set(true);
+          started.set(true);
           originX.set(e.translationX);
           originY.set(e.translationY);
           arm(plan, dragGrabY(plan.leaf, e.y));
           dragging.set(true);
-          runOnJS(beginDrag)(plan, movingLeft, e.y);
+          // eslint-disable-next-line react-hooks/purity -- a worklet: the clock is read when a drag starts, for the trace, never during this render.
+          runOnJS(beginDrag)(plan, movingLeft, e.y, Date.now());
         })
         .onUpdate((e) => {
           'worklet';
@@ -539,10 +618,17 @@ export function usePageCurl(options: Options): {
             ),
           );
         })
-        // eslint-disable-next-line react-hooks/refs -- a worklet: it reaches the prepared pictures (via dropPrepared) only once the touch is over, never during this render.
+        // eslint-disable-next-line react-hooks/refs -- a worklet: it reaches the prepared pictures (via dropPrepared) and the trace only once the touch is over, never during this render.
         .onFinalize(() => {
           'worklet';
           fingerDown.set(false);
+          const why = verdict.value;
+          const dx = verdictDx.value;
+          const dy = verdictDy.value;
+          // A steep drag is only worth a line where it was nearly across: a swipe down is not a turn.
+          if ((why === ASKED && !started.value) || why === OFF || (why === STEEP && Math.abs(dx) * 2 >= Math.abs(dy))) {
+            runOnJS(reportMissed)(why, dx, dy);
+          }
           // A turn that started has taken its pictures by now; any others were for a drag that
           // never became one.
           runOnJS(dropPrepared)();
@@ -582,6 +668,11 @@ export function usePageCurl(options: Options): {
       pathT,
       releaseDrag,
       dropPrepared,
+      verdict,
+      verdictDx,
+      verdictDy,
+      started,
+      reportMissed,
     ],
   );
 

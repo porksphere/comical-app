@@ -802,6 +802,14 @@ Android's rounded-corner insets), so a folding phone's hard edge stays square. P
 fill their halves meet at the spine as they always have: padding the middle would leave the leaf
 hinging in empty space, and a drawing across both pages split by a band.
 
+The scroller standing still under the curl is also what stops holding off iOS 26's swipe back from
+anywhere on a page: the slide's UIScrollView claimed every sideways drag first, so the reader never
+noticed it was on (react-native-screens turns it on by default there). The reader turns it off
+(`fullScreenGestureEnabled: false`); its swipe away is the swipe down and the edge's. A drag that
+doesn't turn — another gesture took it, it was too steep, the JS side or the pictures lagged — goes
+in the Diagnostics log as `page-curl`, which a development build also prints to Metro, along with a
+line for every drag.
+
 # Press-in warms the destination
 
 Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is
