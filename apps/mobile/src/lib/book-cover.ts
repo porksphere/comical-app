@@ -165,7 +165,7 @@ export const FOLD: Shade = {
  * thinner volume, which real cover art erased; a staple is the one thing a book never has. Drawn far
  * bigger than a real staple (whose wire is about 0.3% of a B5's width) or it vanishes at card size.
  */
-export const STAPLES = { at: [0.195, 0.715], length: 0.09, overhang: 0.006, width: 0.026 } as const;
+export const STAPLES = { at: [0.205, 0.725], length: 0.07, overhang: 0.006, width: 0.02 } as const;
 
 /** A staple's wire, lit from the left: bright where it catches the light, falling to a dark trailing
  *  edge that stands in for its shadow on the paper (a `boxShadow` would be a layer per card). */
