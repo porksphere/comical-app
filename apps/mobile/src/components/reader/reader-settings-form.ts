@@ -10,7 +10,9 @@ import {
   type DoubleTapMode,
   type PageFit,
   type PageLayout,
+  type PageTurn,
   type ReaderDirection,
+  type SpreadFill,
 } from '@/hooks/use-reader-settings';
 import { useIsDesktop } from '@/hooks/use-responsive';
 
@@ -130,6 +132,22 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
             : 'Two pages side by side in landscape'
           : undefined,
     }),
+    // The curl is drawn by Skia from pictures of the pages on screen, which the web build can't take.
+    ...(Platform.OS !== 'web'
+      ? [
+          choice<PageTurn>({
+            key: 'page-turn',
+            label: 'Page turn',
+            value: settings.pageTurn,
+            options: [
+              { value: 'slide', label: 'Slide' },
+              { value: 'curl', label: 'Curl' },
+            ],
+            onChange: (v) => set({ pageTurn: v }),
+            disabled: !paged,
+          }),
+        ]
+      : []),
     {
       kind: 'toggle',
       key: 'spread-shift',
@@ -140,6 +158,31 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
       },
       disabled: !pairing || !seriesKey,
     },
+    // Native only: the padding is filled from the pages as published, read from expo-image's disk
+    // cache, which the web build doesn't have.
+    ...(Platform.OS !== 'web'
+      ? [
+          choice<SpreadFill>({
+            key: 'spread-fill',
+            label: 'Spread padding',
+            value: settings.spreadFill,
+            options: [
+              { value: 'off', label: 'Off' },
+              { value: 'sides', label: 'Sides' },
+              { value: 'middle', label: 'Middle' },
+            ],
+            onChange: (v) => set({ spreadFill: v }),
+            disabled: !pairing,
+            hint: !pairing
+              ? undefined
+              : settings.spreadFill === 'sides'
+                ? 'The space either side filled from the pages’ outer edges'
+                : settings.spreadFill === 'middle'
+                  ? 'The pages at the screen’s edges, the gap between filled from their inner edges'
+                  : undefined,
+          }),
+        ]
+      : []),
     { kind: 'toggle', key: 'keep-awake', label: 'Keep screen on', value: settings.keepAwake, onChange: (v) => set({ keepAwake: v }) },
     {
       kind: 'toggle',

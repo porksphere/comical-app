@@ -11,13 +11,14 @@ import {
 } from 'react';
 import type { LegendListRef, ViewToken } from '@legendapp/list/react-native';
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
-import { View } from 'react-native';
+import { View, type ViewInstance } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
   scrollTo,
   useAnimatedReaction,
   useAnimatedRef,
+  useReducedMotion,
   useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -27,8 +28,10 @@ import { ScrubBackdrop } from '@/components/reader/scrub-backdrop';
 import type { Size } from '@/components/reader/page-geometry';
 import { lastPageOf, pageToSpreadPosition, reportedPage, spreadPositions, type SpreadPad } from '@/components/reader/spreads';
 import { useSpreadLayout } from '@/components/reader/use-spread-layout';
+import { usePageCurl } from '@/components/reader/use-page-curl';
+import { useViewportCorners } from '@/components/reader/viewport-corners';
 import { ZoomablePage, type CellPage } from '@/components/reader/zoomable-page';
-import type { DoubleTapMode, PageFit } from '@/hooks/use-reader-settings';
+import type { DoubleTapMode, PageFit, PageTurn, SpreadFill } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { trace, traceJS } from '@/lib/gesture-trace';
@@ -43,6 +46,10 @@ export type PagedReaderHandle = {
   /** The pages sharing the screen with `logical` — itself alone outside double-page reading. A
    *  turn steps off the spread's ends, not off whichever page of it was last reported. */
   spreadOf: (logical: number) => { first: number; last: number };
+  /** A page TURN to the spread holding `logical`: under the curl (`pageTurn`), played as the page
+   *  curling over when it is the spread next to this one; otherwise the same jump as
+   *  `goToPage(logical, false)`. */
+  turnTo: (logical: number) => void;
 };
 
 /** One pager cell. The pager itself is chapter-agnostic — the reader screen may
@@ -58,6 +65,9 @@ type PagerCell = { key: string; pages: CellPage[]; pad?: SpreadPad };
 
 /** Module-level so it's stable without a hook — a list may keep the first one it's given. */
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
+/** How long after its picture arrives a page has finished rising out of its placeholder: the
+ *  longest of the reader page's cross-fades, and a frame or so over. */
+const PAGE_SETTLE_MS = STANDBY_FADE_MS + 40;
 
 /**
  * ── Swiping off either END of the list (see `edgeTurn`) ──────────────────────
@@ -132,6 +142,13 @@ type Props = {
   onReady?: () => void;
   /** As each drag of the list by a finger begins. */
   onDragBegin?: () => void;
+  /** How a page turns: the list sliding, or the page curling over (`use-page-curl`). */
+  pageTurn?: PageTurn;
+  /** How far down the window the pager is drawn — the curl rounds a page into the screen's corners
+   *  only as far as it reaches them. */
+  frameTop?: number;
+  /** What fills a two-page spread's spare width (`SpreadFill`). */
+  spreadFill?: SpreadFill;
 };
 
 /**
@@ -220,6 +237,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     onPageSize: onPageSizeProp,
     onReady,
     onDragBegin,
+    pageTurn = 'slide',
+    frameTop = 0,
+    spreadFill = 'off',
   },
   ref,
 ) {
@@ -239,13 +259,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
   const { layout, onPageSize: onPairingSize } = useSpreadLayout(pages, double, shift, activeKey, initialPage);
-  const onPageSize = useCallback(
-    (key: string, size: Size) => {
-      onPairingSize(key, size);
-      onPageSizeProp?.(key, size);
-    },
-    [onPairingSize, onPageSizeProp],
-  );
   const { spreads, spreadOf } = layout;
   const n = spreads.length;
   const lastPage = pages.length - 1;
@@ -304,6 +317,83 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     return found >= 0 ? found : initialIndex;
   }, [data, shownKey, initialIndex]);
 
+  // The page a scroll SETTLED on, taken from viewability rather than from `contentOffset / width`.
+  // (See `onMomentumEnd`, which reports it.)
+  const settledRef = useRef(initialIndex);
+
+  // ── The page curl (`pageTurn: 'curl'`) ──
+  // The views the cells are drawn in, by key, for the curl to take its pictures from.
+  const cellViews = useRef(new Map<string, ViewInstance>());
+  const cellView = useCallback((key: string) => cellViews.current.get(key), []);
+  // The pages drawn in those cells, by page key, once each has its picture in and faded up — for
+  // the curl's pictures: one of a cell still waiting for its page, or with the page still rising
+  // out of its dark placeholder, is a picture of the placeholder, and the turn was a black page.
+  const loadedPages = useRef(new Set<string>());
+  const settling = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(
+    () => () => {
+      for (const t of settling.current.values()) clearTimeout(t);
+    },
+    [],
+  );
+  const cellReady = useCallback(
+    (key: string) => {
+      const cell = data.find((c) => c.key === key);
+      return cell ? cell.pages.every((p) => loadedPages.current.has(p.key)) : false;
+    },
+    [data],
+  );
+  const corners = useViewportCorners(width, height, frameTop);
+  const reduceMotion = useReducedMotion();
+  // Under Reduce Motion a turn is the slide, as it is for everything else that moves.
+  const curlOn = pageTurn === 'curl' && !reduceMotion;
+  const curl = usePageCurl({
+    mode: curlOn,
+    enabled: curlOn && !standby && !pinching,
+    width,
+    height,
+    rtl,
+    double,
+    pageFit,
+    spreadFill,
+    zoomed,
+    data,
+    activeIndex,
+    display: corners,
+    cellView,
+    cellReady,
+    // A landed turn settles the pager where a swipe's momentum would have; a drag's landing is
+    // reported as one.
+    land: (index, fromDrag) => {
+      const key = data[index]?.key;
+      if (key) setActiveKey(key);
+      settledRef.current = index;
+      void listRef.current?.scrollToIndex({ index, animated: false });
+      if (fromDrag) onPageChange(reportOf(index));
+    },
+    onDragBegin,
+  });
+  const { pageLoaded, viewMoving } = curl;
+  const onPageSize = useCallback(
+    (key: string, size: Size) => {
+      onPairingSize(key, size);
+      onPageSizeProp?.(key, size);
+      const cell = data.find((c) => c.pages.some((p) => p.key === key));
+      // Loaded again (a cell come back into the window): rising out of its placeholder again.
+      loadedPages.current.delete(key);
+      clearTimeout(settling.current.get(key));
+      settling.current.set(
+        key,
+        setTimeout(() => {
+          settling.current.delete(key);
+          loadedPages.current.add(key);
+          if (cell) pageLoaded(cell.key);
+        }, PAGE_SETTLE_MS),
+      );
+    },
+    [onPairingSize, onPageSizeProp, data, pageLoaded],
+  );
+
   useImperativeHandle(
     ref,
     () => ({
@@ -328,9 +418,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         const spread = spreads[spreadAt(logical)];
         return spread ? { first: spread.first, last: lastPageOf(spread) } : { first: logical, last: logical };
       },
+      turnTo(logical: number) {
+        const index = toPhysical(spreadAt(logical));
+        if (curl.turnTo(index)) return;
+        const key = data[index]?.key;
+        if (key) setActiveKey(key);
+        void listRef.current?.scrollToIndex({ index, animated: false });
+      },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [n, rtl, layout],
+    [n, rtl, layout, curl.turnTo],
   );
 
   // ── UI-thread state, read by the scrub reaction and the edge pan further down ──
@@ -383,7 +480,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // The offset is no longer a reliable index: an anchored insert can leave the list carrying a
   // leading adjustment, and dividing through it would name the wrong page. Viewability answers the
   // question directly, and at rest exactly one page is over the threshold.
-  const settledRef = useRef(initialIndex);
   const onMomentumEnd = () => {
     onPageChange(reportOf(settledRef.current));
   };
@@ -487,19 +583,35 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // chapter wide. `scrubOrigin` carries that adjustment, asked of the list itself and kept fresh by
   // the layout effect above — see `measureScrubOrigin` for why it is no longer derived here from
   // where the scroll happens to be.
+  // Under the curl the list stands on the whole spread under the scrub and the curl turns on to the
+  // next by the fraction (`usePageCurl`'s `scrub`); otherwise the list slides with the finger.
+  const curlScrub = curl.scrub;
+  const curlScrubs = useSharedValue(false);
+  useLayoutEffect(() => {
+    curlScrubs.set(curlOn && !standby);
+  }, [curlScrubs, curlOn, standby]);
   useAnimatedReaction(
     () => scrubTarget?.value ?? -1,
     (target, previous) => {
-      if (target < 0) return;
+      if (target < 0) {
+        if ((previous ?? -1) >= 0 && curlScrub.value >= 0) curlScrub.set(-1);
+        return;
+      }
       // The target is in pages; the list scrolls by spread (the identity outside double-page).
       const logical = Math.max(0, Math.min(n - 1, pageToSpreadPosition(positions, target)));
+      if (curlScrubs.value) {
+        curlScrub.set(logical);
+        const whole = Math.floor(logical);
+        scrollTo(scrollRef, scrubOrigin.value + (rtl ? n - 1 - whole : whole) * width, 0, false);
+        return;
+      }
       const to = scrubOrigin.value + (rtl ? n - 1 - logical : logical) * width;
       // Once per drag: what the first target mapped to, in pages. `to` against `target` is the
       // whole question — they should differ by nothing but the leading adjustment.
       if ((previous ?? -1) < 0) trace('scrub', 'map', { target, to: to / width, origin: scrubOrigin.value / width });
       scrollTo(scrollRef, to, 0, false);
     },
-    [scrubTarget, n, rtl, width, positions],
+    [scrubTarget, n, rtl, width, positions, curlScrub, curlScrubs],
   );
 
   // Tap-zone meaning flips with direction (RTL: left = next, right = prev),
@@ -591,9 +703,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // sequences, did not. So the pages get told about it — the same `simultaneousExternal` wiring the
   // webtoon reader has always needed for the same reason.
   const nativeScroll = useMemo(() => Gesture.Native(), []);
-  const listGesture = useMemo(() => Gesture.Simultaneous(nativeScroll, edgeTurn), [nativeScroll, edgeTurn]);
-  // BOTH of them, handed to every page — see ZoomablePage's `scrollGesture`.
-  const pageExternals = useMemo(() => [nativeScroll, edgeTurn], [nativeScroll, edgeTurn]);
+  // The curl's drag runs alongside both: in curl mode the scroll is off and the drag turns the page;
+  // off either end of the window it finds no page to turn and the edge pan crosses the chapter.
+  const curlPan = curl.pan;
+  const listGesture = useMemo(
+    () => Gesture.Simultaneous(nativeScroll, edgeTurn, curlPan),
+    [nativeScroll, edgeTurn, curlPan],
+  );
+  // ALL of them, handed to every page — see ZoomablePage's `scrollGesture`. A zoomed page's pan
+  // blocks the curl as it blocks the scroll, and hands it the drag past the page's edge.
+  const pageExternals = useMemo(() => [nativeScroll, edgeTurn, curlPan], [nativeScroll, edgeTurn, curlPan]);
 
   // EVERYTHING A PAGE CELL DEPENDS ON BEYOND ITS OWN ITEM, and the list's own hand-off for
   // re-rendering cells when it changes.
@@ -632,6 +751,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       handleZoomChange,
       pageExternals,
       onPageSize,
+      spreadFill,
+      viewMoving,
     }),
     [
       activeIndex,
@@ -648,6 +769,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       handleZoomChange,
       pageExternals,
       onPageSize,
+      spreadFill,
+      viewMoving,
     ],
   );
 
@@ -693,7 +816,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         // Frozen only for the duration of a pinch (see `pinching`). A zoomed page's own pan
         // BLOCKS this scroll rather than disabling it, and fails — handing the touch over — for a
         // drag past the edge the page already shows, so a zoomed page is still swiped between.
-        scrollEnabled={!pinching}
+        // Under the curl the list never slides: a turn curls over a list standing still, and lands
+        // by jumping it to the spread turned to.
+        scrollEnabled={!pinching && !(curlOn && !standby)}
         // iOS: a drag that starts mostly vertical never moves the pages sideways. Vertical belongs
         // to the page's way out (the system's swipe-down dismissal, the lift, the collapse), and
         // the sideways drift a diagonal one carried used to shake the page as it left.
@@ -730,6 +855,27 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           standby && index !== activeIndex ? (
             <View style={{ width, height }} />
           ) : (
+            <View
+              collapsable={false}
+              style={{ width, height }}
+              ref={(view) => {
+                if (view) cellViews.current.set(item.key, view);
+                return () => {
+                  cellViews.current.delete(item.key);
+                  // Only a cell that has gone forgets its pages. Every render hands the cell a new
+                  // ref, so React runs this and gives the view straight back in the same commit:
+                  // forgotten on each, a loaded page read as not drawn for good, and one that
+                  // re-rendered while fading in was never pictured again for the curl.
+                  queueMicrotask(() => {
+                    if (cellViews.current.has(item.key)) return;
+                    for (const p of item.pages) {
+                      loadedPages.current.delete(p.key);
+                      clearTimeout(settling.current.get(p.key));
+                      settling.current.delete(p.key);
+                    }
+                  });
+                };
+              }}>
             <ZoomablePage
               // Standing page, not a turned one — see ReaderPage's `fadeMs`.
               fadeMs={standby ? STANDBY_FADE_MS : undefined}
@@ -756,12 +902,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               scrubbing={scrubTarget}
               scrollGesture={pageExternals}
               onPageSize={onPageSize}
+              spreadFill={spreadFill}
+              onViewMoving={viewMoving}
             />
-
+            </View>
           )
         }
       />
       </GestureDetector>
+      {curl.overlay}
     </View>
   );
 });

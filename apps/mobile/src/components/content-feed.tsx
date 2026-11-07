@@ -30,15 +30,10 @@ import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/
 import { contentRowType, type ContentRow, type FeedCardEntry, type SeeAllTarget } from '@/data/content-rows';
 import { DEFAULT_THUMB_ASPECT, rowCoverAspect } from '@/lib/aspect-ratio';
 import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
-import { useGridLayout } from '@/hooks/use-grid-layout';
+import { rowPad, useGridLayout } from '@/hooks/use-grid-layout';
 import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
 import { useRouter } from '@/lib/nav';
 
-// Terminal-grid cell inter-row spacing — mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM so a home
-// terminal row reads at the exact same height as a results-grid cell (and matches the fixed cellHeight).
-const CELL_PAD_TOP = Spacing.half;
-const CELL_PAD_BOTTOM = Spacing.half;
-const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 // The two knobs for the vertical rhythm now that EVERY heading is a shared standalone `sectionHead`
 // row: SECTION_GAP separates one section from the previous (the head's top pad), HEADING_GAP is the gap
 // from a heading to its own body (the head's bottom pad). Tune here in one place.
@@ -170,7 +165,10 @@ export function ContentFeed({
   /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
   scrollEnabled?: boolean;
 }) {
-  const { numColumns, cardWidth, columnGap, railViewport, width, gutter, insets } = useGridLayout();
+  const { numColumns, cardWidth, columnGap, rowGap, books, railViewport, width, gutter, insets } = useGridLayout();
+  // A terminal cell reserves its row gap the way a results-grid cell does (see `SeriesGrid`), so a home
+  // terminal row sits at exactly the height of a results row and of the fixed `cellHeight`.
+  const cellPad = rowPad(rowGap);
   const wide = useIsDesktop();
   // The breakpoint `SectionHead` itself reads — the sticky sizes its band from the head's real
   // height. A DIFFERENT breakpoint from `wide` above.
@@ -181,12 +179,12 @@ export function ContentFeed({
   const { subOf, byId } = useBridgeMap();
   const bridgeOrder = useMemo(() => new Map([...byId.keys()].map((id, i) => [id, i] as const)), [byId]);
 
-  const cellHeight = estimatedCardHeight(cardWidth, subOf(bridgeId)) + CELL_ROW_GAP;
+  const cellHeight = estimatedCardHeight(cardWidth, subOf(bridgeId)) + rowGap;
   // A terminal row is laid out to its tallest cover — the 2:3 maximum unless every card in it says
   // otherwise (see `rowCoverAspect`).
   const gridRowHeight = useCallback(
-    (items: FeedCardEntry[]) => estimatedCardHeight(cardWidth, subOf(bridgeId), rowCoverAspect(items)) + CELL_ROW_GAP,
-    [cardWidth, subOf, bridgeId],
+    (items: FeedCardEntry[]) => estimatedCardHeight(cardWidth, subOf(bridgeId), rowCoverAspect(items)) + rowGap,
+    [cardWidth, subOf, bridgeId, rowGap],
   );
 
   // Centre content to MaxTopLevelWidth. Unlike SeriesGrid (whose `sidePad` = centering +
@@ -237,16 +235,17 @@ export function ContentFeed({
             wide,
             subOf(row.bridgeId ?? bridgeId),
             gutter,
+            books,
             row.section.items,
           );
         case 'railSkeleton':
           // Self-headed (still renders its own title), so it's the whole head+strip height.
-          return railRowHeight('regular', railViewport, wide, subOf(bridgeId), gutter);
+          return railRowHeight('regular', railViewport, wide, subOf(bridgeId), gutter, books);
         default:
           return undefined; // gridBlock / gridBlockSkeleton — measured
       }
     },
-    [gridRowHeight, railViewport, wide, subOf, bridgeId, gutter],
+    [gridRowHeight, railViewport, wide, subOf, bridgeId, gutter, books],
   );
 
   // ── The sticky heading's offsets ────────────────────────────────────────────
@@ -488,7 +487,7 @@ export function ContentFeed({
                   // SeriesGrid's keyExtractor) so a cross-bridge row can't collide on a shared seriesId.
                   <View
                     key={entry.bridgeId ? `${entry.bridgeId}:${entry.id}` : entry.id}
-                    style={[styles.cell, { width: cardWidth, height: gridRowHeight(item.items) }]}>
+                    style={[styles.cell, cellPad, { width: cardWidth, height: gridRowHeight(item.items) }]}>
 
                     <SeriesCard
                       entry={entry}
@@ -554,8 +553,6 @@ const styles = StyleSheet.create({
   // NO flex: 1 — pinned to cardWidth at the call site so a short last row ends rather than stretching.
   cell: {
     justifyContent: 'flex-start',
-    paddingTop: CELL_PAD_TOP,
-    paddingBottom: CELL_PAD_BOTTOM,
   },
   // Shared standalone heading row for every section — SECTION_GAP above, HEADING_GAP below.
   sectionHead: {

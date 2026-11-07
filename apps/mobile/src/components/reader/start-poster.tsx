@@ -5,7 +5,9 @@ import { edgeOffset, pageRest, panLimits, type Size } from '@/components/reader/
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { spreadImage } from '@/components/reader/spreads';
-import type { PageFit } from '@/hooks/use-reader-settings';
+import { halfLayout, useSpreadColors } from '@/components/reader/spread-gutter';
+import { SpreadHalf, spineOf } from '@/components/reader/zoomable-page';
+import type { PageFit, SpreadFill } from '@/hooks/use-reader-settings';
 
 /** How the list under the poster lays out where it opens. */
 export type PosterLayout =
@@ -30,6 +32,7 @@ export function StartPoster({
   pageFit,
   rtl,
   standby,
+  spreadFill = 'off',
 }: {
   layout: PosterLayout;
   /** The start spread's halves, a blank half null — or, for a column, its first rows. */
@@ -41,10 +44,18 @@ export function StartPoster({
   pageFit: PageFit;
   rtl: boolean;
   standby: boolean;
+  /** What fills a spread's spare width, as the pager fills it (`SpreadFill`). */
+  spreadFill?: SpreadFill;
 }) {
   // The poster's own pictures can land before the list's report of the same ones.
   const [own, setOwn] = useState<Record<string, Size>>({});
   const fadeMs = standby ? STANDBY_FADE_MS : undefined;
+  const fillPage = (i: number) => {
+    const p = pages[i];
+    const side = layout !== 'column' && pages.length > 1 ? halfLayout(spineOf(i, rtl), spreadFill).filled : null;
+    return p && side ? { uri: p.uri, ready: !!(own[p.key] ?? sizeOf(p)), side } : undefined;
+  };
+  const fillColors = useSpreadColors(fillPage(0), fillPage(1), spreadFill === 'middle');
 
   if (layout === 'column') {
     return (
@@ -57,7 +68,7 @@ export function StartPoster({
   const viewport = { width, height };
   const known = (p: ReaderPageItem) => own[p.key] ?? sizeOf(p) ?? null;
   const double = pages.length > 1;
-  const image = double ? spreadImage(pages.map((p) => (p ? known(p) : undefined)), viewport) : known(pages[0]!);
+  const image = double ? spreadImage(pages.map((p) => (p ? known(p) : undefined)), viewport, spreadFill === 'middle') : known(pages[0]!);
   const rest = layout === 'contain' ? pageRest(image, viewport, pageFit, false, rtl, true) : pageRest(image, viewport, pageFit, double, rtl, standby);
   const off = edgeOffset(rest.restEdge, panLimits(rest.restScale, rest.content, viewport));
   return (
@@ -73,18 +84,27 @@ export function StartPoster({
           !p ? (
             <View key="blank" style={{ width: width / 2, height }} />
           ) : (
-            <ReaderPage
-              key={`${p.uri}:${pages.length}`}
-              fadeMs={fadeMs}
-              uri={p.uri}
-              page={p.pageNumber}
-              fit="contain"
+            <SpreadHalf
+              key={`${p.uri}:${pages.length}${pageFit === 'auto' && rest.strip ? ':strip' : ''}`}
+              fill={double ? spreadFill : 'off'}
+              spine={spineOf(i, rtl)}
+              color={fillColors[i] ?? null}
               width={double ? width / 2 : width}
-              height={rest.strip ? rest.content.height : height}
-              contentPosition={double ? ((i === 0) !== rtl ? 'right' : 'left') : undefined}
-              boxIsFinal={layout === 'contain' || double || pageFit !== 'fit-width'}
-              onLoadDims={(w, h) => setOwn((prev) => (prev[p.key] ? prev : { ...prev, [p.key]: { width: w, height: h } }))}
-            />
+              height={height}
+              image={known(p)}
+            >
+              <ReaderPage
+                fadeMs={fadeMs}
+                uri={p.uri}
+                page={p.pageNumber}
+                fit="contain"
+                width={double ? width / 2 : width}
+                height={rest.strip ? rest.content.height : height}
+                contentPosition={double ? halfLayout(spineOf(i, rtl), spreadFill).hug : undefined}
+                boxIsFinal={layout === 'contain' || double || pageFit !== 'fit-width'}
+                onLoadDims={(w, h) => setOwn((prev) => (prev[p.key] ? prev : { ...prev, [p.key]: { width: w, height: h } }))}
+              />
+            </SpreadHalf>
           ),
         )}
       </View>

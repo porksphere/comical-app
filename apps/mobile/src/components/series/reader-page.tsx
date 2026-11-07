@@ -1332,6 +1332,10 @@ export function SeriesReaderPage({
             // UIKit's interactive dismissal only where it is the reader's swipe away (`swipeAway`);
             // anywhere else the reader's own drags own the screen.
             gestureEnabled: nativePush && swipeAway && !readerZoomed && !scrubbing,
+            // Its swipe down and the edge's, never iOS 26's swipe back from anywhere on the page: the
+            // slide's scroller held that off by claiming every sideways drag, and under the curl,
+            // with the scroller still, it raced each drag to the right for the touch.
+            fullScreenGestureEnabled: false,
             // No title: plain text in the bar is what needs a backing behind it, and the system's
             // automatic edge goes opaque for one. Liquid Glass items read over any page by themselves.
             title: '',

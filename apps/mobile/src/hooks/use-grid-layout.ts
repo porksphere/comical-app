@@ -13,26 +13,38 @@
 import { Platform } from 'react-native';
 
 import { Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
+import { useBookCoversEnabled } from '@/hooks/use-book-covers';
 import { type SideInsets, useContentWidth, useSideInsets } from '@/hooks/use-content-width';
 import { sizeClassFor, useHydrated } from '@/hooks/use-responsive';
 import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
 
-// The reference's mobile grid uses a tighter inter-card gap than its row gap; Spacing.two (8px) is
-// the closest token. (Spacing.three was tried there and reverted — the wider gap cost card width
-// without reading better.)
-const GRID_COLUMN_GAP = Spacing.two;
-// A desktop card is much wider than a phone's, and 8px between covers that size reads as one strip
-// of artwork. Web only: a tablet is at this width too, and keeps the phone's spacing.
-const GRID_COLUMN_GAP_DESKTOP = Spacing.three;
-/** The space between rows of cards — tight, because a card's own title/author block already
- *  separates one row from the next (see `series-grid.tsx`). */
-export const GRID_ROW_GAP = Spacing.one;
-/** How a row spends that gap around its cards. Split, not all below: LegendList's web row container
- *  is `contain: paint`, which clips a card's hover-lift if the card is flush to the row's top edge.
- *  Every grid takes its padding from these, so one grid's first row never starts higher than
- *  another's. */
-export const GRID_ROW_PAD_TOP = GRID_ROW_GAP / 2;
-export const GRID_ROW_PAD_BOTTOM = GRID_ROW_GAP - GRID_ROW_PAD_TOP;
+/**
+ * The space between two cards side by side, in a grid or a rail. `wide` is a desktop-sized card: 8pt
+ * between covers that size reads as one strip of artwork.
+ *
+ * Flat tiles sit at the reference's tight 8pt on a phone (16 was tried there and reverted — it cost
+ * card width without reading better). Books don't: each one carries a spine edge, a rim and a shadow,
+ * and at 8pt a shelf of them reads as packed, so book covers buy the room back — about the tenth of a
+ * cover's width Apple Books leaves between its own.
+ */
+export function cardGap(books: boolean, wide: boolean): number {
+  if (books) return wide ? Spacing.four : Spacing.two + Spacing.one;
+  return wide ? Spacing.three : Spacing.two;
+}
+
+/** The space between rows of cards. Flat, it's tight, because a card's own title block already
+ *  separates one row from the next; a shelf of books takes its column gap, so the next row's covers
+ *  don't sit on the last row's longest title. */
+function rowGap(books: boolean, wide: boolean): number {
+  return books ? cardGap(true, wide) : Spacing.one;
+}
+
+/** How a row spends its gap around its cards. Split, not all below: LegendList's web row container is
+ *  `contain: paint`, which clips a card's hover-lift if the card is flush to the row's top edge. Every
+ *  grid takes its padding from here, so one grid's first row never starts higher than another's. */
+export function rowPad(gap: number): { paddingTop: number; paddingBottom: number } {
+  return { paddingTop: gap / 2, paddingBottom: gap / 2 };
+}
 
 // The width a column is counted by. A touch screen holds a smaller card than a desktop window does:
 // 150 keeps the Duo's cards about one size open, at five columns in landscape and four in portrait.
@@ -57,6 +69,12 @@ export type GridLayout = {
   /** The space between two cards in a row. Every card grid lays out with this one, so a card sits
    *  at the same x whichever grid drew it. */
   columnGap: number;
+  /** The space between two rows of cards — see `rowPad` for how a row spends it. */
+  rowGap: number;
+  /** Whether cards are drawn as books, which is what these gaps were chosen for — for a caller that
+   *  hands the geometry on (a rail's own strip), and for a list's layout key, since the gaps change
+   *  with it while the width doesn't. */
+  books: boolean;
   hydrated: boolean;
   /** The CONTENT width this geometry was derived from — the window minus the sidebar, inside the
    *  tabs; the window itself everywhere else; minus the safe area's sides either way. Not
@@ -82,10 +100,13 @@ export function gridGeometry(
   width: number,
   hydrated: boolean,
   gutter: number,
-): Pick<GridLayout, 'numColumns' | 'sidePad' | 'cardWidth' | 'columnGap'> {
+  books: boolean,
+): Pick<GridLayout, 'numColumns' | 'sidePad' | 'cardWidth' | 'columnGap' | 'rowGap'> {
   const large = hydrated && sizeClassFor(width) === 'regular';
   const numColumns = hydrated ? gridColumnsFor(width) : 3;
-  const columnGap = large && Platform.OS === 'web' ? GRID_COLUMN_GAP_DESKTOP : GRID_COLUMN_GAP;
+  // Web only: a tablet is at this width too, and keeps the phone's spacing.
+  const wide = large && Platform.OS === 'web';
+  const columnGap = cardGap(books, wide);
   // Center content within MaxTopLevelWidth (web only — see topLevelCenterInset) plus the edge gutter;
   // header/footer blocks bleed TopLevelGutter of this back out (see the Browse list). On native this is
   // just the gutter, so the grid spans the full device width.
@@ -93,7 +114,7 @@ export function gridGeometry(
   // Not returned: it exists only to derive `cardWidth`, and nothing outside this hook ever wanted it.
   const gridContentWidth = width - gutter - sidePad * 2;
   const cardWidth = (gridContentWidth - (numColumns - 1) * columnGap) / numColumns;
-  return { numColumns, sidePad, cardWidth, columnGap };
+  return { numColumns, sidePad, cardWidth, columnGap, rowGap: rowGap(books, wide) };
 }
 
 export function useGridLayout(): GridLayout {
@@ -105,6 +126,7 @@ export function useGridLayout(): GridLayout {
   const width = useContentWidth() - insets.left - insets.right;
   const hydrated = useHydrated();
   const gutter = useScrollbarGutter();
+  const books = useBookCoversEnabled();
   const railViewport = hydrated ? width : 390;
-  return { ...gridGeometry(width, hydrated, gutter), railViewport, hydrated, width, gutter, insets };
+  return { ...gridGeometry(width, hydrated, gutter, books), railViewport, hydrated, width, gutter, insets, books };
 }

@@ -11,7 +11,7 @@ import { buildCollectedRows, type CollectedRow } from '@/data/collected-rows';
 import type { CollectedGrouping } from '@/data/collected-view';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCollectedPageUris } from '@/hooks/use-collected-page-uris';
-import { GRID_ROW_GAP, GRID_ROW_PAD_BOTTOM, GRID_ROW_PAD_TOP, useGridLayout } from '@/hooks/use-grid-layout';
+import { rowPad, useGridLayout } from '@/hooks/use-grid-layout';
 
 /**
  * The grid of saved chapters or pages — a `GroupedGrid` (which owns the row list and the sticky
@@ -63,7 +63,7 @@ export function CollectedItemsGrid({
   /** Press-in warm for the destination `onOpen` will push — see CollectedItemTile. */
   onWarm?: (item: ApiSavedItem) => void;
 }) {
-  const { numColumns, sidePad, cardWidth, columnGap } = useGridLayout();
+  const { numColumns, sidePad, cardWidth, columnGap, rowGap } = useGridLayout();
   // One request per CHAPTER, not per tile — see the hook. Read during render as a lookup table;
   // never a memo dependency (it is a fresh Map each render by design).
   const uris = useCollectedPageUris(items);
@@ -80,7 +80,7 @@ export function CollectedItemsGrid({
   return (
     <GroupedGrid
       rows={rows}
-      rowHeight={estimatedCardHeight(cardWidth, true) + GRID_ROW_GAP}
+      rowHeight={estimatedCardHeight(cardWidth, true) + rowGap}
       scopeKey={scopeKey}
       listRef={listRef}
       header={header}
@@ -94,7 +94,7 @@ export function CollectedItemsGrid({
       sharedValues={sharedValues}
       onScroll={onScroll}
       renderRow={(rowItems) => (
-        <View style={[styles.row, { gap: columnGap }]}>
+        <View style={[styles.row, rowPad(rowGap), { gap: columnGap }]}>
           {rowItems.map((item) => (
             <CollectedItemTile
               key={item.id}
@@ -120,7 +120,5 @@ export function CollectedItemsGrid({
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    paddingTop: GRID_ROW_PAD_TOP,
-    paddingBottom: GRID_ROW_PAD_BOTTOM,
   },
 });

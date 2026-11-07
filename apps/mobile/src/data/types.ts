@@ -7,6 +7,7 @@
  * so both the real API adapter (`api.ts`) and the mock generator (`mock.ts`)
  * target these same types.
  */
+import type { CoverForm, ReadingDirection } from '@comical/contract';
 
 export type BadgePosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export type BadgeTone = 'info' | 'warn' | 'success' | 'neutral';
@@ -38,6 +39,10 @@ export type SeriesEntry = {
   unavailable?: boolean;
   /** Its source has confirmed the series is gone: what's downloaded reads, nothing more can be. */
   removed?: boolean;
+  /** The bridge's word on what the series is as an object (the contract's `coverForm`). */
+  coverForm?: CoverForm;
+  /** The bridge's word on how the series reads (the contract's `readingDirection`). */
+  readingDirection?: ReadingDirection;
 };
 
 export type TagGroup = {
@@ -329,6 +334,10 @@ export type Bridge = {
   /** The bridge's `ratings` contract flag: its source rates series at all. Unset, the app shows
    *  no rating UI for the bridge — not even an empty one. */
   ratings?: boolean;
+  /** What every series this bridge serves is, unless an entry says otherwise (`coverForm`). */
+  coverForm?: CoverForm;
+  /** How every series this bridge serves reads, unless an entry says otherwise (`readingDirection`). */
+  readingDirection?: ReadingDirection;
   thumbnail?: string;
   /** False for a bridge the library still references but that isn't installed (see
    *  `useBridgeMap().knownById`). Absent on the installed list. */
