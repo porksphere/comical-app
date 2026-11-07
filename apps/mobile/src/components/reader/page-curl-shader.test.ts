@@ -101,7 +101,11 @@ describe('the curl effect', () => {
     // The low corner lifted diagonally: the top corner hasn't turned yet.
     const start = turnPull(leaf, H - 1, 0);
     const early = draw(leaf, curlFrame(leaf, H - 1, start.x - 20, start.y - 20));
-    expect(early(W - 1, 1)).toEqual([0, 200, 0]);
+    // The page's green, perhaps under a touch of the curl's shadow — never the next page's yellow.
+    const [r, g, b] = early(W - 1, 1);
+    expect(r).toBe(0);
+    expect(b).toBe(0);
+    expect(g).toBeGreaterThan(180);
   });
 
   test('mid-turn shows the leaf, its back and the page beneath', () => {

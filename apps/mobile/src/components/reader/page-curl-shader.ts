@@ -87,6 +87,19 @@ float rollLight(float a) {
   return 0.62 + 0.38 * cos(a) + 0.06 * exp(-glint * glint);
 }
 
+// How far the paper reaches past the fold from its point \`f\`, along \`n\`: where that line leaves
+// the leaf's box, or 0 where it never crosses it.
+float reach(float2 f) {
+  float2 lo = leaf.xy;
+  float2 hi = leaf.xy + leaf.zw;
+  float exitX = n.x > 0.0001 ? (hi.x - f.x) / n.x : (n.x < -0.0001 ? (lo.x - f.x) / n.x : 1e6);
+  float exitY = n.y > 0.0001 ? (hi.y - f.y) / n.y : (n.y < -0.0001 ? (lo.y - f.y) / n.y : 1e6);
+  float entryX = n.x > 0.0001 ? (lo.x - f.x) / n.x : (n.x < -0.0001 ? (hi.x - f.x) / n.x : -1e6);
+  float entryY = n.y > 0.0001 ? (lo.y - f.y) / n.y : (n.y < -0.0001 ? (hi.y - f.y) / n.y : -1e6);
+  float exit = min(exitX, exitY);
+  return exit > max(max(entryX, entryY), 0.0) ? exit : 0.0;
+}
+
 // The leaf's back. Two-sided, it is the facing page of the spread being turned to, printed where it
 // lands once the leaf lies flat across the spine. One-sided, it is paper, the page showing through.
 float3 back(float2 q) {
@@ -99,23 +112,34 @@ half4 main(float2 at) {
   float3 col = (dual > 0.5 && p.x < spine) ? pageA(p) : pageB(p);
   float R = max(r, 0.75);
   float d = dot(p, n) - c;
-  if (d > R) {
-    col *= 1.0 - shade * 0.55 * exp(-(d - R) / (R * 1.4 + 6.0));
+  // The roll is never wider than the paper that has gone into it: toward the end of a diagonal fold,
+  // where only a sliver has lifted, it tightens to that sliver, so the paper always comes over the
+  // top rather than standing as a squeezed strip of its own front beside the page.
+  // Eased into the full radius rather than cut off at it, or the flap's outline kinks where the two
+  // meet.
+  float fit = reach(p - n * d) / PI;
+  float ease = R * 0.6;
+  float h = max(ease - abs(fit - R), 0.0) / ease;
+  float Rl = max(min(fit, R) - h * h * ease * 0.25, 0.75);
+  if (d > Rl) {
+    col *= 1.0 - shade * 0.55 * (Rl / R) * exp(-(d - Rl) / (R * 1.4 + 6.0));
   } else if (d >= 0.0) {
-    float a = asin(d / R);
-    float2 under = p + n * (R * a - d);
-    float2 over = p + n * (R * (PI - a) - d);
+    float a = asin(d / Rl);
+    float2 under = p + n * (Rl * a - d);
+    float2 over = p + n * (Rl * (PI - a) - d);
     float underC = onLeaf(under);
     float overC = onLeaf(over);
     col *= 1.0 - shade * 0.55 * (1.0 - underC);
     col = mix(col, pageA(under) * (0.5 + 0.5 * cos(a)), underC);
     col = mix(col, back(over) * rollLight(a), overC);
   } else {
-    float2 flap = p + n * (PI * R - 2.0 * d);
+    float2 flap = p + n * (PI * Rl - 2.0 * d);
     float flapD = leafDistance(flap);
     float flapC = clamp(0.5 - flapD * density, 0.0, 1.0);
     col = mix(col, pageA(p), onBox(p));
-    col *= 1.0 - shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.45 + 4.0));
+    // The turned-over flap's shadow falls from its outer edge; at the fold itself, where the flap's
+    // edge meets the roll, it would draw a crease down the flat page.
+    col *= 1.0 - shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.45 + 4.0)) * smoothstep(0.0, R * 0.6, -d);
     col = mix(col, back(flap) * rollLight(0.0), flapC);
   }
   return half4(half3(col), 1.0);
