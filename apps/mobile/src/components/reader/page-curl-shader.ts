@@ -63,6 +63,9 @@ uniform float density;
 const float PI = 3.14159265;
 const float SHADOW = 0.85;
 const float SHADOW_REACH = 1.7;
+// The ink line drawn round the lifted paper: half its width in points, and how much it darkens.
+const float OUTLINE = 0.75;
+const float OUTLINE_INK = 0.65;
 
 float2 screen(float2 q) { return mirrored > 0.5 ? float2(size.x - q.x, q.y) : q; }
 float3 pageA(float2 q) { return cur.eval(screen(q)).rgb; }
@@ -89,6 +92,18 @@ float rollLight(float a) {
   return 0.62 + 0.38 * cos(a) + 0.06 * exp(-glint * glint);
 }
 
+float ink(float distance) {
+  return 1.0 - smoothstep(OUTLINE - 0.5 / density, OUTLINE + 0.5 / density, abs(distance));
+}
+// How far the paper point \`q\`, carried round the roll at angle \`a\`, lies from the leaf's edge, as
+// measured on the screen: the roll squeezes the paper across the fold by cos(a) and not along it.
+float rolledEdge(float2 q, float a) {
+  float e = leafDistance(q);
+  float gn = (leafDistance(q + n * 0.5) - e) * 2.0;
+  float gt = (leafDistance(q + float2(-n.y, n.x) * 0.5) - e) * 2.0;
+  return e / max(length(float2(gt, gn / max(cos(a), 0.15))), 0.001);
+}
+
 // The leaf's back. Two-sided, it is the facing page of the spread being turned to, printed where it
 // lands once the leaf lies flat across the spine. One-sided, it is paper, the page showing through.
 float3 back(float2 q) {
@@ -101,6 +116,7 @@ half4 main(float2 at) {
   float3 col = (dual > 0.5 && p.x < spine) ? pageA(p) : pageB(p);
   float R = max(r, 0.75);
   float d = dot(p, n) - c;
+  float outline = 0.0;
   if (d >= 0.0) {
     // The lifted paper's shadow on the page beneath, laid down before the paper so the roll covers
     // it: darkest at the crease and falling away from it, and only where the crease runs across the
@@ -112,9 +128,13 @@ half4 main(float2 at) {
       float a = asin(d / R);
       float2 under = p + n * (R * a - d);
       float2 over = p + n * (R * (PI - a) - d);
+      float overC = onLeaf(over);
       col = mix(col, pageA(under) * (0.5 + 0.5 * cos(a)), onLeaf(under));
-      col = mix(col, back(over) * rollLight(a), onLeaf(over));
+      col = mix(col, back(over) * rollLight(a), overC);
+      outline = max(ink(rolledEdge(over, a)), ink(rolledEdge(under, a)) * (1.0 - overC));
     }
+    // The roll's own outline, where the paper reaches round to it.
+    outline = max(outline, ink(d - R) * onLeaf(p + n * (R * PI * 0.5 - d)));
   } else {
     float2 flap = p + n * (PI * R - 2.0 * d);
     float flapD = leafDistance(flap);
@@ -124,7 +144,10 @@ half4 main(float2 at) {
     // meets the roll, it would draw a dark line down the flat page.
     col *= 1.0 - shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.45 + 4.0)) * smoothstep(0.0, R * 0.6, -d);
     col = mix(col, back(flap) * rollLight(0.0), flapC);
+    outline = ink(flapD);
   }
+  // Drawn, not photographed: the turning paper is outlined, fading in and out with the turn.
+  col = mix(col, float3(0.12, 0.12, 0.13), shade * OUTLINE_INK * outline);
   return half4(half3(col), 1.0);
 }
 `;

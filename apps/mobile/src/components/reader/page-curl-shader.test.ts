@@ -137,6 +137,24 @@ describe('the curl effect', () => {
     expect(far[2]).toBeLessThan(200);
   });
 
+  test('the turning paper is outlined in ink', () => {
+    const leaf = makeLeaf({ x: 0, y: 0, width: W, height: H }, viewport, SQUARE_SCREEN, false, false);
+    const pull = turnPull(leaf, 60, 0.3);
+    const f = curlFrame(leaf, 60, pull.x, pull.y);
+    const light = picture([220, 220, 220], [220, 220, 220]);
+    const at = draw(leaf, f, false, light, light);
+    // The leaf's free edge, turned over onto the flap: the paper point q lies at p + n(πr − 2d).
+    const q = { x: W, y: 30 };
+    const d = Math.PI * f.r - (q.x * f.nx + q.y * f.ny - f.c);
+    const back = Math.PI * f.r - 2 * d;
+    const edge = { x: q.x - f.nx * back, y: q.y - f.ny * back };
+    const sum = ([r, g, b]: Rgb) => r + g + b;
+    const onEdge = sum(at(edge.x, edge.y));
+    // Darker than the flap on one side of it and the page it lies over on the other.
+    expect(onEdge).toBeLessThan(sum(at(edge.x + f.nx * 4, edge.y + f.ny * 4)));
+    expect(onEdge).toBeLessThan(sum(at(edge.x - f.nx * 4, edge.y - f.ny * 4)));
+  });
+
   test('a lone page turns as paper over the page beneath', () => {
     const page = singlePageBox({ width: 60, height: 80 }, viewport, 'auto', false);
     const leaf = makeLeaf(page, viewport, SQUARE_SCREEN, false, false);
