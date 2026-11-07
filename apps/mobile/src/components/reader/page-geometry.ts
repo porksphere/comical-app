@@ -135,10 +135,21 @@ export function stripGeometry(image: Size, viewport: Size): PageGeometry {
   };
 }
 
-/** Whether a page is a strip under fit-width: taller than the viewport at the viewport's width. */
+/** A page taller than the viewport at the viewport's width by no more than this share of the
+ *  viewport's height is contained, a hair smaller, rather than laid as a strip: a strip of a few
+ *  points is nothing to read by panning, and it armed the page's pan at 1× and left the page a
+ *  point or two off where its rest put it. */
+const STRIP_TOLERANCE = 0.02;
+
+/** Whether a page is a strip under fit-width: taller than the viewport at the viewport's width,
+ *  by more than `STRIP_TOLERANCE` of the viewport's height. */
 export function isStrip(image: Size | null, viewport: Size): boolean {
   'worklet';
-  return image != null && image.width > 0 && (viewport.width * image.height) / image.width > viewport.height + 1;
+  return (
+    image != null &&
+    image.width > 0 &&
+    (viewport.width * image.height) / image.width > viewport.height * (1 + STRIP_TOLERANCE)
+  );
 }
 
 /** A page's geometry from its picture's real dimensions (`null` until they load — a page whose

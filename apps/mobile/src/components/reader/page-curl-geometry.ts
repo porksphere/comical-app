@@ -226,10 +226,6 @@ export function turnPull(leaf: Leaf, grabY: number, t: number): { x: number; y: 
 
 /** Where a tap's turn takes the page from: low on the free edge, the corner a thumb lifts. */
 export const TAP_GRAB = 0.82;
-/** How much of where a drag starts, up or down the edge, moves the corner it takes from that one.
- *  All of it, and a drag begun high takes the top corner and swings the fold through a steep
- *  diagonal; none, and every drag is a tap. */
-export const GRAB_FOLLOW = 0.15;
 /**
  * The most a drag's vertical travel leans the fold, in radians, and the travel that takes it most
  * of the way there. The turn is a sideways gesture: a thumb's arc should lean the fold a little,
@@ -240,11 +236,13 @@ export const GRAB_FOLLOW = 0.15;
 export const MAX_TILT = (6 * Math.PI) / 180;
 const TILT_TRAVEL = 160;
 
-/** The height a drag that starts at `y` takes the free edge from — mostly the tap's corner. */
+/** The height a drag that starts at `y` takes the free edge from: the finger's own, held to the
+ *  page, as the page under a finger is the one it turns — low, the thumb's corner lifts; mid-way,
+ *  the whole page comes over on an upright fold; high, the top corner. (Taken mostly from the tap's
+ *  corner whatever the finger's height, the curl ran well below the finger.) */
 export function dragGrabY(leaf: Leaf, y: number): number {
   'worklet';
-  const corner = leaf.box.y + leaf.box.height * TAP_GRAB;
-  return corner + (y - corner) * GRAB_FOLLOW;
+  return Math.min(leaf.box.y + leaf.box.height, Math.max(leaf.box.y, y));
 }
 
 /**
@@ -254,7 +252,11 @@ export function dragGrabY(leaf: Leaf, y: number): number {
  */
 export function dragPull(leaf: Leaf, grabY: number, fromX: number, tx: number, ty: number): { x: number; y: number } {
   'worklet';
-  const x = fromX + tx;
+  // Held to the page's travel: a finger brought back past where it began can't push the page out
+  // past flat, nor past where it lands turned, any more than a hand can push paper into a book.
+  const from = leaf.box.x + leaf.box.width;
+  const to = 2 * leaf.spine - from;
+  const x = Math.min(from, Math.max(to, fromX + tx));
   const grab = grabPoint(leaf, grabY);
   const lean = Math.tan(MAX_TILT * Math.tanh(ty / TILT_TRAVEL));
   return { x, y: grab.y - turnLift(leaf, turnProgress(leaf, x)) + Math.abs(grab.x - x) * lean };

@@ -61,8 +61,11 @@ uniform float shade;
 uniform float density;
 
 const float PI = 3.14159265;
-const float SHADOW = 0.85;
 const float SHADOW_REACH = 1.7;
+// The shadows are screentone, not photographs: a dot where an ordered dither puts one for the
+// shadow's strength there, each dot DOT device pixels square and this dark.
+const float DOT = 3.0;
+const float SHADOW_INK = 0.8;
 // The ink line drawn round the lifted paper: half its width in points, and how much it darkens.
 const float OUTLINE = 0.75;
 const float OUTLINE_INK = 0.65;
@@ -95,6 +98,21 @@ float rollLight(float a) {
 float ink(float distance) {
   return 1.0 - smoothstep(OUTLINE - 0.5 / density, OUTLINE + 0.5 / density, abs(distance));
 }
+// The 4×4 Bayer matrix's threshold for a dot cell, 1/32 to 31/32: the bits of the cell's x and y,
+// interleaved and reversed, which is the matrix without a table.
+float bayer(float2 cell) {
+  float2 q = floor(mod(cell, 4.0));
+  float x0 = mod(q.x, 2.0);
+  float y0 = mod(q.y, 2.0);
+  float x1 = floor(q.x / 2.0);
+  float y1 = floor(q.y / 2.0);
+  return (mod(x0 + y0, 2.0) * 8.0 + y0 * 4.0 + mod(x1 + y1, 2.0) * 2.0 + y1) / 16.0 + 1.0 / 32.0;
+}
+// A shadow of strength \`s\` (0..1) at screen point \`at\`, as a dot or not: dots where the dither's
+// threshold falls under the strength, so their density is the shade.
+float tone(float s, float2 at) {
+  return s > bayer(floor(at * density / DOT)) ? 1.0 : 0.0;
+}
 // How far the paper point \`q\`, carried round the roll at angle \`a\`, lies from the leaf's edge, as
 // measured on the screen: the roll squeezes the paper across the fold by cos(a) and not along it.
 float rolledEdge(float2 q, float a) {
@@ -122,8 +140,13 @@ half4 main(float2 at) {
     // it: darkest at the crease and falling away from it, and only where the crease runs across the
     // leaf. Measured from the roll's edge instead, it stood beside the paper as a band wherever the
     // paper ran out short of the roll, near the corners and off the page.
-    float casting = 1.0 - smoothstep(0.0, R * 0.5 + 4.0, leafDistance(p - n * d));
-    col *= 1.0 - shade * SHADOW * casting * exp(-d / (R * SHADOW_REACH + 6.0));
+    // Against the leaf's square box, not its rounded outline: the crease runs the page's full
+    // height, and under a display's wide corner the outline put the top of the shadow well past
+    // the roll.
+    float2 crease = p - n * d;
+    float2 cq = abs(crease - (leaf.xy + leaf.zw * 0.5)) - leaf.zw * 0.5;
+    float casting = 1.0 - smoothstep(0.0, R * 0.5 + 4.0, max(cq.x, cq.y));
+    col *= 1.0 - SHADOW_INK * tone(shade * casting * exp(-d / (R * SHADOW_REACH + 6.0)), at);
     if (d <= R) {
       float a = asin(d / R);
       float2 under = p + n * (R * a - d);
@@ -142,7 +165,7 @@ half4 main(float2 at) {
     col = mix(col, pageA(p), onBox(p));
     // The turned-over flap's shadow falls from its outer edge; at the crease, where the flap's edge
     // meets the roll, it would draw a dark line down the flat page.
-    col *= 1.0 - shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.45 + 4.0)) * smoothstep(0.0, R * 0.6, -d);
+    col *= 1.0 - SHADOW_INK * tone(shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.45 + 4.0)) * smoothstep(0.0, R * 0.6, -d), at);
     col = mix(col, back(flap) * rollLight(0.0), flapC);
     outline = ink(flapD);
   }

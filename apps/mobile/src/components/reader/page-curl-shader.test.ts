@@ -130,11 +130,17 @@ describe('the curl effect', () => {
     const past = (d: number, y: number) => [(f.c + d - y * f.ny) / f.nx, y] as const;
     // Beside the roll, above the page: no paper there, so nothing casts a shadow.
     expect(at(...past(f.r / 2, 4))).toEqual([0, 0, 200]);
-    // On the page uncovered past the roll, darkest nearest the crease.
-    const near = at(...past(f.r + 3, 40));
-    const far = at(...past(f.r + 25, 40));
-    expect(near[2]).toBeLessThan(far[2]);
-    expect(far[2]).toBeLessThan(200);
+    // On the page uncovered past the roll, darkest nearest the crease. The shadow is a dither, so
+    // it is read as the mean over a block of dots, one period of the dither at this density.
+    const meanBlue = (x: number, y: number) => {
+      let sum = 0;
+      for (let i = -6; i < 6; i++) for (let j = -6; j < 6; j++) sum += at(Math.round(x + i), Math.round(y + j))[2];
+      return sum / 144;
+    };
+    const near = meanBlue(...past(f.r + 6, 40));
+    const far = meanBlue(...past(f.r + 20, 40));
+    expect(near).toBeLessThan(far);
+    expect(far).toBeLessThan(200);
   });
 
   test('the turning paper is outlined in ink', () => {
@@ -150,9 +156,16 @@ describe('the curl effect', () => {
     const edge = { x: q.x - f.nx * back, y: q.y - f.ny * back };
     const sum = ([r, g, b]: Rgb) => r + g + b;
     const onEdge = sum(at(edge.x, edge.y));
+    // Either side is read as the mean over a block: the page under the flap carries the dithered
+    // shadow's dots, and one of those alone is darker than the line.
+    const meanSum = (x: number, y: number) => {
+      let total = 0;
+      for (let i = -4; i < 4; i++) for (let j = -4; j < 4; j++) total += sum(at(Math.round(x + i), Math.round(y + j)));
+      return total / 64;
+    };
     // Darker than the flap on one side of it and the page it lies over on the other.
-    expect(onEdge).toBeLessThan(sum(at(edge.x + f.nx * 4, edge.y + f.ny * 4)));
-    expect(onEdge).toBeLessThan(sum(at(edge.x - f.nx * 4, edge.y - f.ny * 4)));
+    expect(onEdge).toBeLessThan(meanSum(edge.x + f.nx * 6, edge.y + f.ny * 6));
+    expect(onEdge).toBeLessThan(meanSum(edge.x - f.nx * 6, edge.y - f.ny * 6));
   });
 
   test('a lone page turns as paper over the page beneath', () => {

@@ -135,11 +135,19 @@ describe('a drag', () => {
   const leaf: Leaf = makeLeaf(singlePageBox(PAGE, PHONE, 'auto', false), PHONE, [55, 55, 55, 55], false, false);
   const corner = leaf.box.y + leaf.box.height * 0.82;
 
-  test('takes the free edge mostly from the low corner, wherever it starts', () => {
+  test('takes the free edge at the height the finger starts, held to the page', () => {
     expect(dragGrabY(leaf, corner)).toBeCloseTo(corner, 6);
-    const fromTop = dragGrabY(leaf, leaf.box.y);
-    expect(fromTop).toBeGreaterThan(leaf.box.y + leaf.box.height * 0.5);
-    expect(fromTop).toBeLessThan(corner);
+    const mid = leaf.box.y + leaf.box.height * 0.5;
+    expect(dragGrabY(leaf, mid)).toBeCloseTo(mid, 6);
+    expect(dragGrabY(leaf, leaf.box.y - 40)).toBe(leaf.box.y);
+    expect(dragGrabY(leaf, leaf.box.y + leaf.box.height + 40)).toBe(leaf.box.y + leaf.box.height);
+  });
+
+  test('taken mid-way, the page comes over on a near-upright fold, leaned only by its lift', () => {
+    const mid = leaf.box.y + leaf.box.height * 0.5;
+    const pull = turnPull(leaf, mid, 0.5);
+    const f = curlFrame(leaf, mid, pull.x, pull.y);
+    expect(Math.abs(f.ny)).toBeLessThan(0.2);
   });
 
   test('starts exactly where the edge lies', () => {

@@ -65,6 +65,9 @@ type PagerCell = { key: string; pages: CellPage[]; pad?: SpreadPad };
 
 /** Module-level so it's stable without a hook — a list may keep the first one it's given. */
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
+/** How long after its picture arrives a page has finished rising out of its placeholder: the
+ *  longest of the reader page's cross-fades, and a frame or so over. */
+const PAGE_SETTLE_MS = STANDBY_FADE_MS + 40;
 
 /**
  * ── Swiping off either END of the list (see `edgeTurn`) ──────────────────────
@@ -253,13 +256,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
   const { layout, onPageSize: onPairingSize } = useSpreadLayout(pages, double, shift, activeKey, initialPage);
-  const onPageSize = useCallback(
-    (key: string, size: Size) => {
-      onPairingSize(key, size);
-      onPageSizeProp?.(key, size);
-    },
-    [onPairingSize, onPageSizeProp],
-  );
   const { spreads, spreadOf } = layout;
   const n = spreads.length;
   const lastPage = pages.length - 1;
@@ -326,6 +322,24 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // The views the cells are drawn in, by key, for the curl to take its pictures from.
   const cellViews = useRef(new Map<string, ViewInstance>());
   const cellView = useCallback((key: string) => cellViews.current.get(key), []);
+  // The pages drawn in those cells, by page key, once each has its picture in and faded up — for
+  // the curl's pictures: one of a cell still waiting for its page, or with the page still rising
+  // out of its dark placeholder, is a picture of the placeholder, and the turn was a black page.
+  const loadedPages = useRef(new Set<string>());
+  const settling = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(
+    () => () => {
+      for (const t of settling.current.values()) clearTimeout(t);
+    },
+    [],
+  );
+  const cellReady = useCallback(
+    (key: string) => {
+      const cell = data.find((c) => c.key === key);
+      return cell ? cell.pages.every((p) => loadedPages.current.has(p.key)) : false;
+    },
+    [data],
+  );
   const corners = useViewportCorners(width, height, frameTop);
   const reduceMotion = useReducedMotion();
   // Under Reduce Motion a turn is the slide, as it is for everything else that moves.
@@ -343,6 +357,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     activeIndex,
     display: corners,
     cellView,
+    cellReady,
     // A landed turn settles the pager where a swipe's momentum would have; a drag's landing is
     // reported as one.
     land: (index, fromDrag) => {
@@ -354,6 +369,24 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     },
     onDragBegin,
   });
+  const { pageLoaded } = curl;
+  const onPageSize = useCallback(
+    (key: string, size: Size) => {
+      onPairingSize(key, size);
+      onPageSizeProp?.(key, size);
+      const cell = data.find((c) => c.pages.some((p) => p.key === key));
+      clearTimeout(settling.current.get(key));
+      settling.current.set(
+        key,
+        setTimeout(() => {
+          settling.current.delete(key);
+          loadedPages.current.add(key);
+          if (cell) pageLoaded(cell.key);
+        }, PAGE_SETTLE_MS),
+      );
+    },
+    [onPairingSize, onPageSizeProp, data, pageLoaded],
+  );
 
   useImperativeHandle(
     ref,
@@ -604,6 +637,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const fromEnd = useSharedValue(false);
   const fromAllowed = useSharedValue(false);
   const atAnEdge = activeIndex <= 0 || activeIndex >= n - 1;
+  // TEMPORARY: see the edge swipe's release below.
+  const traceEdge = useCallback((message: string) => {
+    if (__DEV__) console.log(`[page-curl] edge swipe ${message}`);
+  }, []);
   const edgeTurn = useMemo(
     () =>
       Gesture.Pan()
@@ -619,6 +656,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         })
         .onEnd((e) => {
           'worklet';
+          // TEMPORARY: each release of the edge swipe, to Metro, for the chapter crossing that doesn't.
+          runOnJS(traceEdge)(
+            `release at ${Math.round(e.translationX)}pt, ${Math.round(e.velocityX)}pt/s; allowed ${fromAllowed.value}, ` +
+              `at start ${fromStart.value}, at end ${fromEnd.value}, needs ${Math.round(width * EDGE_TURN_FRACTION)}pt headed, ` +
+              `committed ${releaseCommittedEitherWay(e.translationX, e.velocityX, width * EDGE_TURN_FRACTION)}`,
+          );
           if (!fromAllowed.value) return;
           // The shared projected release (lib/gesture-release), judged along whichever way the drag
           // went — a flick back at the moment of lifting is someone changing their mind.
@@ -632,7 +675,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
             runOnJS(rightAction)();
           }
         }),
-    [atAnEdge, width, leftAction, rightAction, atStart, atEnd, edgeAllowed, fromStart, fromEnd, fromAllowed],
+    [atAnEdge, width, leftAction, rightAction, atStart, atEnd, edgeAllowed, fromStart, fromEnd, fromAllowed, traceEdge],
   );
   // The list's own scroll, as a gesture RNGH can reason about — so the pan above runs ALONGSIDE it
   // rather than winning the touch off it.
@@ -803,6 +846,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
                 if (view) cellViews.current.set(item.key, view);
                 return () => {
                   cellViews.current.delete(item.key);
+                  for (const p of item.pages) {
+                    loadedPages.current.delete(p.key);
+                    clearTimeout(settling.current.get(p.key));
+                    settling.current.delete(p.key);
+                  }
                 };
               }}>
             <ZoomablePage
