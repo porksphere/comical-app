@@ -126,15 +126,15 @@ describe('the curl effect', () => {
     const leaf = makeLeaf({ x: 20, y: 20, width: 80, height: 40 }, viewport, SQUARE_SCREEN, false, false);
     const pull = turnPull(leaf, 50, 0.4);
     const f = curlFrame(leaf, 50, pull.x, pull.y);
-    const at = draw(leaf, f);
+    const at = draw(leaf, f, false, picture([200, 0, 0], [200, 0, 0]), picture([0, 0, 200], [0, 0, 200]));
     const past = (d: number, y: number) => [(f.c + d - y * f.ny) / f.nx, y] as const;
     // Beside the roll, above the page: no paper there, so nothing casts a shadow.
     expect(at(...past(f.r / 2, 4))).toEqual([0, 0, 200]);
     // On the page uncovered past the roll, darkest nearest the crease.
     const near = at(...past(f.r + 3, 40));
     const far = at(...past(f.r + 25, 40));
-    expect(near[0]).toBeLessThan(far[0]);
-    expect(far[0]).toBeLessThan(200);
+    expect(near[2]).toBeLessThan(far[2]);
+    expect(far[2]).toBeLessThan(200);
   });
 
   test('a lone page turns as paper over the page beneath', () => {
