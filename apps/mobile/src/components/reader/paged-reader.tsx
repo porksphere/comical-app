@@ -399,6 +399,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     () => ({
       goToPage(logical: number, animated = true) {
         const index = toPhysical(spreadAt(logical));
+        // A scrub released under the curl: its turns are still running over the list, which jumps
+        // to where they land rather than sliding there through every page between, mounting each.
+        if (curl.scrubRunning()) animated = false;
         // Viewability only names the new page a beat after the jump, and until it does a standby
         // strip draws every cell but the old one blank — the empty frame a zoom back to the strip
         // landed on.
@@ -427,7 +430,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [n, rtl, layout, curl.turnTo],
+    [n, rtl, layout, curl.turnTo, curl.scrubRunning],
   );
 
   // ── UI-thread state, read by the scrub reaction and the edge pan further down ──
@@ -583,8 +586,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // chapter wide. `scrubOrigin` carries that adjustment, asked of the list itself and kept fresh by
   // the layout effect above — see `measureScrubOrigin` for why it is no longer derived here from
   // where the scroll happens to be.
-  // Under the curl the list stands on the whole spread under the scrub and the curl turns on to the
-  // next by the fraction (`usePageCurl`'s `scrub`); otherwise the list slides with the finger.
+  // Under the curl the list stands still for the whole scrub and the curl turns the pages over it
+  // (`usePageCurl`'s `scrub`); the release's seek takes the list to where the turns land. Moved
+  // with the scrub instead — under the finger, or a spread at a time after the turns — it mounted
+  // and rendered as it went, dozens of renders a second, and that held up the JS thread the turns'
+  // pictures are drawn on. Otherwise the list slides with the finger.
   const curlScrub = curl.scrub;
   const curlScrubs = useSharedValue(false);
   useLayoutEffect(() => {
@@ -601,8 +607,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       const logical = Math.max(0, Math.min(n - 1, pageToSpreadPosition(positions, target)));
       if (curlScrubs.value) {
         curlScrub.set(logical);
-        const whole = Math.floor(logical);
-        scrollTo(scrollRef, scrubOrigin.value + (rtl ? n - 1 - whole : whole) * width, 0, false);
         return;
       }
       const to = scrubOrigin.value + (rtl ? n - 1 - logical : logical) * width;

@@ -16,7 +16,7 @@ import {
 } from 'react-native-reanimated';
 
 import { PageCurl, turnId, type LandedTurn, type StagedPicture } from '@/components/reader/page-curl';
-import { scrubPicture } from '@/components/reader/scrub-pictures';
+import { blankPicture, fetchPage, scrubPicture } from '@/components/reader/scrub-pictures';
 import {
   FLAT,
   TAP_GRAB,
@@ -78,21 +78,37 @@ const SCRUB_MAX_SPEED = 14;
  *  of turns glides to a stop rather than overshooting and springing back. */
 const SCRUB_GAIN = 7;
 const SCRUB_ACCEL = 10;
-/** Further behind than this, the position goes on to `SCRUB_SKIP_TO` short of the scrub's and turns
- *  only the last pages: a fling across a chapter is not played page by page. */
-const SCRUB_SKIP = 6;
-const SCRUB_SKIP_TO = 2;
 /** How long after the finger last moved the view of the page being read its picture is taken. */
 const VIEW_WARM_MS = 400;
 /** The longest the page being read counts as moving without word that it has stopped. */
 const VIEW_BUSY_LAPSE_MS = 5000;
 /** How long after a scrub's turns have landed the cells about the page are pictured. */
 const SCRUB_WARM_MS = 600;
-/** The longest a released scrub's turns may take to land before the scrub ends anyway. */
+/** The longest a released scrub's turns may stand still before the scrub ends anyway. A fling across
+ *  a chapter is every page turned, seconds of them, so it is the turns stopping that ends it early,
+ *  not the time they take. */
 const SCRUB_END_MS = 1500;
 /** How many pairs on from the scrubber, the way it is going, are drawn ahead. Each picture is the
  *  whole screen's, and so is its copy on the GPU once drawn: more ahead was memory, not smoothness. */
 const SCRUB_AHEAD = 2;
+/** How many pairs past the turn shown are drawn, however far ahead the scrubber is: a fling across
+ *  a chapter drew every pair to it at once, its pictures held all the while. */
+const SCRUB_LEAD = 3;
+/**
+ * The most turns the curl runs behind the scrub. Further behind, it finishes the turn under way and,
+ * with that spread lying flat, cuts to `SCRUB_SKIP_TO` turns short of the scrub and turns the rest —
+ * once the pair it lands on is in, so the cut is never a frame with nothing drawn over the pager. A
+ * fling across a chapter turned page by page ran on for seconds after the finger stopped.
+ */
+const SCRUB_CAP = 10;
+const SCRUB_SKIP_TO = 3;
+/** The last turns before the scrubber, counted in spreads, wait for the pages themselves rather than
+ *  turn stand-ins: a scrub ends on what it reached. */
+const SCRUB_FINAL_TURNS = 2;
+/** The longest one of those turns waits for them before it turns the stand-ins after all. */
+const SCRUB_FINAL_WAIT_MS = 300;
+/** The longest a scrub waits on a pair's missing pages before drawing it again with what is in. */
+const SCRUB_FETCH_WAIT_MS = 4000;
 /** A scrub's pair that takes longer than this to draw goes in the diagnostics log. */
 const SCRUB_SLOW_PAIR_MS = 200;
 /** How far through the turn a release has to be headed to finish it rather than fall back. */
@@ -126,6 +142,12 @@ type Options = {
   land: (index: number, fromDrag: boolean) => void;
   onDragBegin?: () => void;
 };
+
+/** Where the blank sheet a scrub's turns use in place of pages not yet drawn is staged. */
+const BLANK_KEY = 'blank';
+
+/** A scrub's pair, with whether its pictures are the pages themselves or stand-ins for them. */
+type ScrubPlan = Plan & { real: boolean };
 
 type Plan = {
   target: number;
@@ -207,6 +229,34 @@ function planTurn(o: Options, here: number, readingForward: boolean): Plan | nul
   };
 }
 
+/** Everything `planTurn` reads from either way out of the spread at `here`, as one string: the two
+ *  plans from there are the same while it is. */
+function planInputsOf(o: Options, here: number): string {
+  const cells = [here - 1, here, here + 1].map((i) => {
+    const cell = o.data[i];
+    if (!cell) return '-';
+    const sizes = cell.pages.map((p) => {
+      const size = knownPageSize(p.uri);
+      return size ? `${size.width}x${size.height}` : '?';
+    });
+    return `${cell.key}:${cell.pad ?? ''}:${sizes.join(',')}`;
+  });
+  return [
+    o.mode,
+    here,
+    o.data.length,
+    o.width,
+    o.height,
+    o.rtl,
+    o.double,
+    o.pageFit,
+    o.spreadFill,
+    o.zoomed,
+    o.display.join(','),
+    ...cells,
+  ].join('|');
+}
+
 /** What a cell holds: its pages and the half a lone page leaves. A spread's key is its first
  *  page's, whatever pages it holds, and spreads pair again as pages load — the cell keyed by page 5
  *  can go from pages 5 and 6 to page 5 alone — so a picture is of the cell only while this is what
@@ -246,6 +296,8 @@ export function usePageCurl(options: Options): {
   /** Where a scrub is, as a fractional position in spreads in reading order, or negative with no
    *  scrub: the pager stands on the whole spread and the curl turns to the next by the fraction. */
   scrub: SharedValue<number>;
+  /** Whether a scrub's turns are still running, released or not. */
+  scrubRunning: () => boolean;
   /** The finger is moving the view of the page being read, and has stopped (`useZoomable`'s
    *  `onMoving`). */
   viewMoving: (moving: boolean) => void;
@@ -327,16 +379,21 @@ export function usePageCurl(options: Options): {
   const scrubAt = useSharedValue(-1);
   const scrubSpeed = useSharedValue(0);
   const scrubBase = useSharedValue(-1);
-  const scrubPairs = useSharedValue<Record<string, Plan>>({});
+  const scrubPairs = useSharedValue<Record<string, ScrubPlan>>({});
+  // A final turn waiting on its real pictures: which, and since when (`SCRUB_FINAL_WAIT_MS`).
+  const scrubWaitBase = useSharedValue(-1);
+  const scrubWaitSince = useSharedValue(0);
   const scrubLanding = useSharedValue(-1);
   const scrubbingCurl = useSharedValue(false);
   // The spreads the JS side was last told of (`noteScrub`).
   const scrubToldGoal = useSharedValue(-1);
   const scrubToldShown = useSharedValue(-1);
   // When the scrub last stood with no turn drawn over the pager — which is the pager itself, the
-  // old scrubber, showing through — and why: at the scrub's start, or after a skip.
+  // old scrubber, showing through — and why.
   const scrubBareSince = useSharedValue(-1);
   const scrubBareWhy = useSharedValue('');
+  // The spread on screen in reading order, where a scrub's turns set off from.
+  const restAt = useSharedValue(options.activeIndex);
   // What the path animation running on `pathT` is finishing: nothing, a drag's release (and whether
   // it committed), or a tap's turn. Its completion is one worklet, `finishPath`, so a hurried path
   // (landed at once under a new finger) ends the same way as the one it cut short.
@@ -478,13 +535,23 @@ export function usePageCurl(options: Options): {
     const o = latest.current;
     planLeft.set(o.mode ? planTurn(o, current.current, !o.rtl) : null);
     planRight.set(o.mode ? planTurn(o, current.current, o.rtl) : null);
-  }, [planLeft, planRight]);
+    restAt.set(o.rtl ? o.data.length - 1 - current.current : current.current);
+  }, [planLeft, planRight, restAt]);
 
+  // What the plans are made from, as of the last time they were handed to the UI thread. The pager
+  // renders many times a second under a scrub, and each write to the UI thread costs a hop (in a
+  // development build, a captured stack as well): the plans are made again only when this changes.
+  const planInputs = useRef('');
+  const written = useRef<{ enabled: boolean; zoomed: boolean } | null>(null);
   useLayoutEffect(() => {
     latest.current = options;
     if (!inFlight.current) current.current = options.activeIndex;
-    allowed.set(enabled);
-    zoomedSV.set(options.zoomed);
+    if (written.current?.enabled !== enabled) allowed.set(enabled);
+    if (written.current?.zoomed !== options.zoomed) zoomedSV.set(options.zoomed);
+    written.current = { enabled, zoomed: options.zoomed };
+    const inputs = planInputsOf(options, current.current);
+    if (inputs === planInputs.current) return;
+    planInputs.current = inputs;
     replan();
   });
 
@@ -1022,11 +1089,18 @@ export function usePageCurl(options: Options): {
   }, [turnTo]);
 
   // ── Scrubbing ──
-  // A scrub in curl mode turns the pages after the scrubber: the pager stands on the spread under
-  // the scrubber, and the curl over it turns through the pages on a clock of its own (`scrubAt`),
-  // from pictures drawn off the main thread (`scrubPicture`) — a cell's own picture, taken there,
-  // stopped the turns dead each time — save where the cell's own is in hand.
+  // A scrub in curl mode turns the pages after the scrubber: the curl turns through them on a clock
+  // of its own (`scrubAt`), the pager following its turns beneath, never waiting on a picture. Each
+  // pair is handed over at once as stand-ins (one shared blank sheet, `blankPicture`) and again
+  // as the pages themselves once those are drawn off the main thread (`scrubPicture` — a cell's own
+  // picture, taken there, stopped the turns dead each time — save where the cell's own is in hand);
+  // a turn takes whichever is in when it reaches the pair, and only the last turns before the
+  // scrubber wait a moment for the pages.
   const scrubOffered = useRef(new Set<number>());
+  // Pairs drawn again once their missing pages were fetched, this scrub: once each, not in a loop.
+  const scrubRefetched = useRef(new Set<number>());
+  // Pairs handed over as stand-ins, not yet as the pages themselves.
+  const scrubStandIns = useRef(new Set<number>());
   const scrubPumping = useRef(false);
   const scrubLive = useRef(false);
 
@@ -1042,9 +1116,8 @@ export function usePageCurl(options: Options): {
       const have = cells.current.get(drawn);
       const cell = o.data.find((c) => c.key === key);
       if (!cell) return null;
-      // One drawn with a page still loading is drawn again once that page has a size.
-      const sized = cell.pages.every((p) => knownPageSize(p.uri));
-      if (have?.layout === layout && have.content === content && (have.ready || !sized)) return drawn;
+      // One drawn with a page not yet in is drawn again: the page has been fetched since.
+      if (have?.layout === layout && have.content === content && have.ready) return drawn;
       const drawing = await scrubPicture(cell, o).catch(() => null);
       if (!drawing) return null;
       if (!alive.current) {
@@ -1057,13 +1130,31 @@ export function usePageCurl(options: Options): {
     [stands, stage],
   );
 
-  /** Hand the UI thread a pair whose pictures are in, and let go of those far from the scrub. */
+  /** The picture `key`'s turn uses until its own is in: the cell's own where it stands, else the
+   *  one blank sheet every such turn shares (`blankPicture`). Each drawn as its pages' placeholders
+   *  instead, a dozen of them held about a scrub took memory enough to run out, and the time to make
+   *  them was lag; a page the turns run through faster than it can be drawn is not read anyway. */
+  const standInShot = useCallback(
+    (key: string): string | null => {
+      if (stands(key)) return key;
+      if (cells.current.has(BLANK_KEY)) return BLANK_KEY;
+      const image = blankPicture();
+      if (!image) return null;
+      stage(BLANK_KEY, image, false, 'any', 'rest', 'blank');
+      return BLANK_KEY;
+    },
+    [stands, stage],
+  );
+
+  /** Hand the UI thread a pair, and let go of those the scrub no longer needs. A pair already armed
+   *  keeps the pictures it was armed with: a pair handed over again only changes the turns after. */
   const offerPair = useCallback(
-    (plan: Plan, base: number, keepFrom: number, keepTo: number) => {
+    (plan: ScrubPlan, base: number, keep: number[]) => {
       'worklet';
-      const pairs: Record<string, Plan> = {};
-      for (const [b, kept] of Object.entries(scrubPairs.value)) {
-        if (Number(b) >= keepFrom && Number(b) <= keepTo) pairs[b] = kept;
+      const pairs: Record<string, ScrubPlan> = {};
+      for (const b of keep) {
+        const kept = scrubPairs.value[String(b)];
+        if (kept) pairs[String(b)] = kept;
       }
       pairs[String(base)] = plan;
       scrubPairs.set(pairs);
@@ -1071,12 +1162,95 @@ export function usePageCurl(options: Options): {
     [scrubPairs],
   );
 
-  /** Draw the pairs the scrub's turns will reach — from the turn shown toward the scrubber, and a
-   *  few on past it the way it is going — nearest first, for as long as a scrub runs. */
   // Where the scrub is and where its turns are, in whole spreads, as the UI thread last said
   // (`noteScrub`): read here, not asked of that thread, for the same reason as `busyNow`.
   const scrubGoal = useRef(-1);
   const scrubShown = useRef(-1);
+  // Whether the turns stood on a spread lying flat, not part way through a turn.
+  const scrubResting = useRef(true);
+
+  /**
+   * The pairs the scrub wants now: `near`, from the turn shown toward the scrubber and a little on
+   * past it, nearest first, and `finals`, the last turns before the scrubber. `keep` is every pair
+   * either names, with a spread to spare each side.
+   */
+  const scrubWanted = useCallback(() => {
+    const o = latest.current;
+    const goal = scrubGoal.current;
+    const from = scrubShown.current >= 0 ? scrubShown.current : goal;
+    const last = o.data.length - 2;
+    const valid = (b: number) => b >= 0 && b <= last;
+    if (goal < 0) return { near: [], finals: [], landing: [], keep: [] };
+    const way = goal >= from ? 1 : -1;
+    // Going back from a spread lying flat, the first turn is the one before it: drawn first, the
+    // pair on from it was a draw the scrub stood waiting on and never turned.
+    const start = way < 0 && scrubResting.current ? from - 1 : from;
+    const end = way > 0 ? Math.min(goal + SCRUB_AHEAD, from + SCRUB_LEAD) : Math.max(goal - SCRUB_AHEAD, from - SCRUB_LEAD);
+    const near: number[] = [];
+    for (let b = start; way > 0 ? b <= end : b >= end; b += way) if (valid(b)) near.push(b);
+    const finals: number[] = [];
+    for (let i = 0; i < SCRUB_FINAL_TURNS; i++) {
+      const b = way > 0 ? goal - i : goal + i;
+      if (valid(b)) finals.push(b);
+    }
+    // Falling past the cap (a turn early, the UI thread's count being a fraction ahead of this one):
+    // the turns after the cut, which the UI thread waits on before it cuts (see `SCRUB_CAP`).
+    const landing: number[] = [];
+    if (Math.abs(goal - from) > SCRUB_CAP - 1) {
+      const land = goal - way * SCRUB_SKIP_TO;
+      for (let b = way > 0 ? land : land - 1; way > 0 ? b < goal : b >= goal; b += way) if (valid(b)) landing.push(b);
+    }
+    const keep = new Set<number>();
+    for (const b of [...near, ...finals, ...landing]) for (const k of [b - 1, b, b + 1]) if (valid(k)) keep.add(k);
+    return { near, finals, landing, keep: [...keep] };
+  }, []);
+
+  /** Only the pictures of the pairs kept: for each cell, its own and its drawn one, and the blank. */
+  const sweepScrub = useCallback(
+    (keep: number[]) => {
+      const o = latest.current;
+      const at = (b: number) => (o.rtl ? o.data.length - 1 - b : b);
+      const kept = new Set<string>();
+      for (const b of keep) {
+        for (const i of [at(b), at(b + 1)]) {
+          const cell = o.data[i];
+          if (!cell) continue;
+          kept.add(cell.key);
+          kept.add(`scrub|${cell.key}`);
+        }
+      }
+      kept.add(BLANK_KEY);
+      for (const b of scrubOffered.current) if (!keep.includes(b)) scrubOffered.current.delete(b);
+      for (const b of scrubStandIns.current) if (!keep.includes(b)) scrubStandIns.current.delete(b);
+      sweep(kept);
+    },
+    [sweep],
+  );
+
+  /** Stand-ins for every pair the turns are coming to that has neither its pages nor a stand-in yet,
+   *  at once, so a turn never waits for a picture: the pages themselves follow (`pumpScrub`). */
+  const offerStandIns = useCallback(() => {
+    if (!scrubLive.current) return;
+    const o = latest.current;
+    const at = (b: number) => (o.rtl ? o.data.length - 1 - b : b);
+    const { near, finals, landing, keep } = scrubWanted();
+    // The cut's landing first: it is the pair the UI thread waits on before it cuts.
+    for (const b of [...landing, ...near, ...finals]) {
+      if (scrubOffered.current.has(b) || scrubStandIns.current.has(b)) continue;
+      const plan = planTurn(o, at(b), true);
+      if (!plan) continue;
+      const real = stands(plan.fromKey) && stands(plan.toKey);
+      const fromKey = standInShot(plan.fromKey);
+      const toKey = standInShot(plan.toKey);
+      if (!fromKey || !toKey) continue;
+      (real ? scrubOffered : scrubStandIns).current.add(b);
+      runOnUI(offerPair)({ ...plan, fromKey, toKey, real }, b, keep);
+    }
+  }, [scrubWanted, stands, standInShot, offerPair]);
+
+  /** Draw the pages themselves for the pairs the scrub wants, one pair at a time, for as long as it
+   *  runs: when the turns are far behind the scrubber, its last turns first, so the scrub ends on
+   *  the pages; then from the turn shown on. */
   const pumpScrub = useCallback(async () => {
     if (scrubPumping.current) return;
     scrubPumping.current = true;
@@ -1085,64 +1259,74 @@ export function usePageCurl(options: Options): {
         const o = latest.current;
         const at = (b: number) => (o.rtl ? o.data.length - 1 - b : b);
         const goal = scrubGoal.current;
-        const from = scrubShown.current >= 0 ? scrubShown.current : goal;
         // Nothing to draw until the scrub moves on: `noteScrub` starts this again then.
         if (goal < 0) return;
-        const way = goal >= from ? 1 : -1;
-        // From the turn shown to the scrubber (no further back than a skip leaves), and on past it.
-        const wanted: number[] = [];
-        const start = Math.abs(goal - from) > SCRUB_SKIP ? goal - way * SCRUB_SKIP_TO : from;
-        for (let b = start; way > 0 ? b <= goal + SCRUB_AHEAD : b >= goal - SCRUB_AHEAD; b += way) wanted.push(b);
-        // A turn back from the spread shown turns on from the one before it.
-        if (way < 0) wanted.unshift(from);
-        const next = wanted.find((b) => b >= 0 && b < o.data.length - 1 && !scrubOffered.current.has(b));
+        const { near, finals, landing } = scrubWanted();
+        const far = near.length > 0 && !finals.some((b) => near.includes(b));
+        const order = far ? [...new Set([...finals, ...landing, ...near])] : near;
+        const next = order.find((b) => !scrubOffered.current.has(b));
         if (next === undefined) return;
         scrubOffered.current.add(next);
         const plan = planTurn(o, at(next), true);
         if (!plan) continue;
+        const pagesOf = (b: number) =>
+          [at(b), at(b + 1)].flatMap((i) => (o.data[i] ? o.data[i]!.pages.map((p) => p.uri) : []));
+        // Pages the pager has never sized it has never loaded, so likely not on disk: the next pairs'
+        // fetched ahead (nothing else fetches them, the pager standing still under a scrub).
+        for (const b of order.slice(order.indexOf(next) + 1, order.indexOf(next) + 3)) {
+          for (const uri of pagesOf(b)) if (!knownPageSize(uri)) void fetchPage(uri);
+        }
+        // Drawn from what is on disk at once. A fetch asked for first, of pages already there as
+        // well, took the platform half a second and more a pair, and the turns ran on over blanks.
         const startedAt = Date.now();
         const fromKey = await scrubShot(plan.fromKey);
         const toKey = await scrubShot(plan.toKey);
         if (!scrubLive.current) return;
         const took = Date.now() - startedAt;
+        // A page that wasn't there is drawn as its placeholder: fetched, and the pair drawn again
+        // once, when it has come (or `SCRUB_FETCH_WAIT_MS` has passed).
+        const missing = [fromKey, toKey].filter((key): key is string => !!key && key.startsWith('scrub|') && !cells.current.get(key)?.ready);
+        if (missing.length > 0 && !scrubRefetched.current.has(next)) {
+          scrubRefetched.current.add(next);
+          const uris = missing.flatMap((key) => o.data.find((c) => `scrub|${c.key}` === key)?.pages.map((p) => p.uri) ?? []);
+          void Promise.race([
+            Promise.all(uris.map(fetchPage)),
+            new Promise((resolve) => setTimeout(resolve, SCRUB_FETCH_WAIT_MS)),
+          ]).then(() => {
+            if (!scrubLive.current) return;
+            scrubOffered.current.delete(next);
+            void pumpScrubRef.current();
+          });
+        }
         if (took > SCRUB_SLOW_PAIR_MS) logDiagnostic('page-curl', `A scrub took ${took}ms to draw the pair at spread ${next}, the scrubber at ${goal}.`);
         if (!fromKey || !toKey) {
-          logDiagnostic('page-curl', `A scrub couldn't draw the pair at spread ${next} (${fromKey ? '' : 'its first page'}${!fromKey && !toKey ? ' or ' : ''}${toKey ? '' : 'its second'}); trying again shortly.`);
+          // Its stand-in turns meanwhile; tried again in a moment (a page not yet read), not in a loop.
           scrubOffered.current.delete(next);
-          // Tried again in a moment (a page not yet sized or read), not in a loop.
           setTimeout(() => void pumpScrubRef.current(), 250);
           return;
         }
-        // The window kept: every pair `wanted` can name, the look-ahead included whichever way the
-        // scrub goes. One short of it going back, a pair drawn behind the scrubber was let go as soon
-        // as it was offered and offered again at once, a loop that held both threads.
-        const lo = Math.min(start, from, goal - (way < 0 ? SCRUB_AHEAD : 0)) - 1;
-        const hi = Math.max(start, from, goal + (way > 0 ? SCRUB_AHEAD : 0)) + 1;
-        runOnUI(offerPair)({ ...plan, fromKey, toKey }, next, lo, hi);
-        for (const b of scrubOffered.current) if (b < lo || b > hi) scrubOffered.current.delete(b);
-        // Only the pictures about the scrub are kept, and for each cell one: its own, or one drawn.
-        const near = new Set<string>();
-        for (let b = lo; b <= hi + 1; b++) {
-          const cell = o.data[at(b)];
-          if (cell) near.add(stands(cell.key) ? cell.key : `scrub|${cell.key}`);
-        }
-        sweep(near);
+        const { keep } = scrubWanted();
+        scrubStandIns.current.delete(next);
+        runOnUI(offerPair)({ ...plan, fromKey, toKey, real: true }, next, keep);
+        sweepScrub(keep);
       }
     } finally {
       scrubPumping.current = false;
     }
-  }, [scrubShot, offerPair, sweep, stands]);
+  }, [scrubShot, scrubWanted, offerPair, sweepScrub]);
   const pumpScrubRef = useRef(pumpScrub);
   useEffect(() => {
     pumpScrubRef.current = pumpScrub;
   }, [pumpScrub]);
   const noteScrub = useCallback(
-    (goal: number, shown: number) => {
+    (goal: number, shown: number, resting: boolean) => {
       scrubGoal.current = goal;
       scrubShown.current = shown;
+      scrubResting.current = resting;
+      offerStandIns();
       void pumpScrub();
     },
-    [pumpScrub],
+    [offerStandIns, pumpScrub],
   );
 
   // The frame callback below, for the JS side to stop: it calls back here when its turns have landed.
@@ -1152,6 +1336,8 @@ export function usePageCurl(options: Options): {
   const scrubFinished = useCallback(() => {
     scrubLive.current = false;
     scrubOffered.current.clear();
+    scrubRefetched.current.clear();
+    scrubStandIns.current.clear();
     scrubGoal.current = -1;
     scrubShown.current = -1;
     clearTimeout(scrubBackstop.current);
@@ -1200,15 +1386,10 @@ export function usePageCurl(options: Options): {
     const goal = landing >= 0 ? landing : scrubPos.value;
     if (goal < 0) return;
     const dt = Math.min(0.05, (frame.timeSincePreviousFrame ?? 16) / 1000);
-    let pos = scrubAt.value < 0 ? goal : scrubAt.value;
+    // From the spread on screen, every turn to the scrubber's: started where the finger came down
+    // instead, a touch far along the track jumped there with nothing turned.
+    const pos = scrubAt.value < 0 ? (restAt.value >= 0 ? restAt.value : goal) : scrubAt.value;
     let speed = scrubSpeed.value;
-    // A fling far ahead: on to just short of it, the turns shown so far put away.
-    if (Math.abs(goal - pos) > SCRUB_SKIP) {
-      pos = goal - Math.sign(goal - pos) * SCRUB_SKIP_TO;
-      scrubBase.set(-1);
-      armedTurn.set('');
-      scrubBareWhy.set(`a fling skipped ahead to spread ${Math.floor(pos)}`);
-    }
     const gap = goal - pos;
     const max = Math.min(SCRUB_MAX_SPEED, SCRUB_MIN_SPEED + Math.abs(gap) * SCRUB_SPEED_PER_SPREAD);
     const wanted = Math.max(-max, Math.min(max, gap * SCRUB_GAIN));
@@ -1220,11 +1401,32 @@ export function usePageCurl(options: Options): {
       next = goal;
       speed = 0;
     }
+    // Past the cap: at the end of the turn under way — the spread it ran to lying flat — or at once
+    // with none, a cut to `SCRUB_SKIP_TO` short of the scrub, once that pair is in (`SCRUB_CAP`).
+    const behind = goal - next;
+    if (Math.abs(behind) > SCRUB_CAP && (armedTurn.value === '' || Math.floor(next) !== Math.floor(pos))) {
+      const land = Math.floor(goal) - Math.sign(behind) * SCRUB_SKIP_TO;
+      const landBase = behind > 0 ? land : land - 1;
+      if (scrubPairs.value[String(landBase)]) {
+        // Going back, entered at its far end, the spread landed on lying flat.
+        next = behind > 0 ? land : land - 0.0001;
+      }
+    }
     // Into a pair only once its pictures are in: until then, held at the edge of the turn shown.
     const base = Math.floor(next);
     const shown = armedTurn.value === '' ? -1 : scrubBase.value;
     if (base !== shown) {
-      const plan = scrubPairs.value[String(base)];
+      let plan: ScrubPlan | undefined = scrubPairs.value[String(base)];
+      // One of the last turns before the scrubber waits a moment for the pages themselves.
+      let waiting = false;
+      if (plan && !plan.real && Math.abs(goal - base) < SCRUB_FINAL_TURNS) {
+        if (scrubWaitBase.value !== base) {
+          scrubWaitBase.set(base);
+          scrubWaitSince.set(Date.now());
+        }
+        waiting = Date.now() - scrubWaitSince.value < SCRUB_FINAL_WAIT_MS;
+        if (waiting) plan = undefined;
+      }
       if (plan) {
         arm(plan, plan.leaf.box.y + plan.leaf.box.height * TAP_GRAB);
         pathArc.set(true);
@@ -1236,11 +1438,17 @@ export function usePageCurl(options: Options): {
         pullY.set(pull.y);
         pathT.set(next - base);
       } else if (shown >= 0) {
-        if (landing >= 0) {
+        if (landing >= 0 && !waiting) {
           endScrub();
           return;
         }
         next = base > shown ? shown + 0.9999 : shown;
+        speed = 0;
+      } else {
+        // No turn yet to hold at the edge of: where the turns are, until the pair is in. Run on
+        // without one, the turns went on undrawn, the pager showing, until they reached a pair that
+        // happened to be in.
+        next = pos;
         speed = 0;
       }
     }
@@ -1253,7 +1461,7 @@ export function usePageCurl(options: Options): {
     if (goalSpread !== scrubToldGoal.value || shownSpread !== scrubToldShown.value) {
       scrubToldGoal.set(goalSpread);
       scrubToldShown.set(shownSpread);
-      runOnJS(noteScrub)(goalSpread, shownSpread);
+      runOnJS(noteScrub)(goalSpread, shownSpread, next === shownSpread);
     }
     if (scrubBase.value === Math.floor(next) && armedTurn.value !== '') pathT.set(next - Math.floor(next));
     if (armedTurn.value === '') {
@@ -1276,16 +1484,24 @@ export function usePageCurl(options: Options): {
     queued.current = null;
     settleNow(releasedCommitted.value);
     scrubOffered.current.clear();
+    scrubRefetched.current.clear();
+    scrubStandIns.current.clear();
     scrubLive.current = true;
     frames.setActive(true);
   }, [settleNow, releasedCommitted, frames]);
-  // Let go: the turns run on to where it lands, and if they haven't got there in a moment and a
-  // half (a page there can't be drawn, the frames held up), the scrub ends anyway.
+  // Let go: the turns run on to where it lands, and if they stand still for a moment and a half on
+  // the way (a page there can't be drawn, the frames held up), the scrub ends anyway.
   const scrubReleased = useCallback(() => {
     clearTimeout(scrubBackstop.current);
-    scrubBackstop.current = setTimeout(() => {
-      if (scrubLive.current) runOnUI(endScrub)();
-    }, SCRUB_END_MS);
+    const check = (seen: number) => {
+      scrubBackstop.current = setTimeout(() => {
+        if (!scrubLive.current) return;
+        // `noteScrub`'s word on where the turns are, not the UI thread asked: they have moved, so on.
+        if (scrubShown.current !== seen) check(scrubShown.current);
+        else runOnUI(endScrub)();
+      }, SCRUB_END_MS);
+    };
+    check(scrubShown.current);
   }, [endScrub]);
   useEffect(() => () => clearTimeout(scrubBackstop.current), []);
   useEffect(() => {
@@ -1312,6 +1528,8 @@ export function usePageCurl(options: Options): {
         scrubToldShown.set(-1);
         scrubBareSince.set(-1);
         scrubBareWhy.set('waiting for the first pair');
+        scrubBase.set(-1);
+        scrubWaitBase.set(-1);
         runOnJS(scrubBegan)();
       }
     },
@@ -1573,5 +1791,6 @@ export function usePageCurl(options: Options): {
       height={height}
     />
   ) : null;
-  return { pan, turnTo, pageLoaded, scrub: scrubPos, viewMoving, overlay };
+  const scrubRunning = useCallback(() => scrubLive.current, []);
+  return { pan, turnTo, pageLoaded, scrub: scrubPos, scrubRunning, viewMoving, overlay };
 }

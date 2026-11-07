@@ -75,9 +75,20 @@ const float OUTLINE_INK = 0.65;
 const float3 INK_DARK = float3(0.12, 0.12, 0.13);
 const float3 INK_LIGHT = float3(0.62, 0.62, 0.64);
 const float SHEEN = 0.2;
+// The shadows' screentone on dark paper: grey dots laid on, as white tone is on a black page, where
+// darker dots would show nothing. Switched over sharply, dot by dot, at the brightness where a grey
+// dot and a dark one stand out from the paper alike: blended across a band instead, paper in the
+// band got half of each, which cancelled out.
+const float3 TONE_LIGHT = float3(0.42, 0.42, 0.44);
+const float TONE_SWITCH = 0.21;
 
 float lum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 float darkness(float3 c) { return 1.0 - smoothstep(0.12, 0.3, lum(c)); }
+// Paper with a shadow dot on it (\`dotted\` 0 or 1): darkened, or on dark paper a grey dot.
+float3 toned(float3 c, float dotted) {
+  float onDark = 1.0 - step(TONE_SWITCH, lum(c));
+  return mix(c * (1.0 - SHADOW_INK * dotted), mix(c, TONE_LIGHT, SHADOW_INK * dotted), onDark);
+}
 
 float2 screen(float2 q) { return mirrored > 0.5 ? float2(size.x - q.x, q.y) : q; }
 float3 pageA(float2 q) { return cur.eval(screen(q)).rgb; }
@@ -170,7 +181,7 @@ half4 main(float2 at) {
     float2 crease = p - n * d;
     float2 cq = abs(crease - (leaf.xy + leaf.zw * 0.5)) - leaf.zw * 0.5;
     float casting = 1.0 - smoothstep(0.0, R * 0.5 + 4.0, max(cq.x, cq.y));
-    col *= 1.0 - SHADOW_INK * tone(shade * casting * exp(-d / (R * SHADOW_REACH + 3.0)), at);
+    col = toned(col, tone(shade * casting * exp(-d / (R * SHADOW_REACH + 3.0)), at));
     if (d <= R) {
       float a = asin(d / R);
       float2 under = p + n * (R * a - d);
@@ -193,7 +204,7 @@ half4 main(float2 at) {
     col = mix(col, pageA(p), onBox(p));
     // The turned-over flap's shadow falls from its outer edge; at the crease, where the flap's edge
     // meets the roll, it would draw a dark line down the flat page.
-    col *= 1.0 - SHADOW_INK * tone(shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.225 + 2.0)) * smoothstep(0.0, R * 0.6, -d), at);
+    col = toned(col, tone(shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.225 + 2.0)) * smoothstep(0.0, R * 0.6, -d), at));
     float3 laid = back(flap);
     col = mix(col, laid * rollLight(0.0), flapC);
     outline = ink(flapD);

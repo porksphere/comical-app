@@ -804,7 +804,10 @@ sides printed; a lone page is paper, and turning BACK brings the previous page o
 discs that keep the spine's ends down — and its corners are the screen's own wherever the page
 reaches into them (`concentric`, the rule iOS 26 rounds nested shapes by), read per corner by the
 local module `modules/screen-corners` (iOS 26's concentric corners, else the screen's one radius;
-Android's rounded-corner insets), so a folding phone's hard edge stays square. Pages that don't
+Android's rounded-corner insets), so a folding phone's hard edge stays square. On dark paper —
+a black page, or one still loading — dark ink and shadows draw nothing, so there the outline is
+light, the roll catches a highlight and the shadows' screentone is grey dots, switched dot by dot at
+the brightness where both stand out alike; light paper draws exactly as it did. Pages that don't
 fill their halves meet at the spine by default: a drawing across both pages stays whole. The
 `spreadFill` reader setting (native only) fills a spread's spare width from the pages themselves:
 `sides` keeps the pages at the spine and fills each outer side from its page's outer edge, `middle`
@@ -835,8 +838,18 @@ missing turn before it was a rule:
   unmounted forgets that its pages have drawn (a new ref every render runs the old one's cleanup).
 - The JS side cleans up after a landing a frame and more late: what it clears, it clears on the UI
   thread, and only the turn that landed (`putAway`).
-- A scrub's turns run on their own clock after the scrubber (`SCRUB_MAX_SPEED`), only into pairs
-  whose pictures are in, rather than straight under it.
+- A scrub's turns run on their own clock after the scrubber (`SCRUB_MAX_SPEED`), and never wait on
+  a picture: each pair is handed over at once with one shared blank sheet for any page not drawn
+  yet, and again with the pages once they are; only the last turns before the scrubber wait a
+  moment for them. A stand-in drawn per page (its placeholder) held enough memory to run out.
+- A scrub's pictures are drawn from the pages on disk first, and only a page that wasn't there is
+  fetched: a fetch asked for first, of pages already there too, took half a second a pair.
+- The pager stands still under a scrub and the release jumps it to where the turns land. Moved
+  with the scrub — under the finger, or a spread at a time after the turns — it mounted and
+  rendered dozens of times a second, and the JS thread the pictures are drawn on stalled.
+- More than `SCRUB_CAP` turns behind, the turns finish the one under way and cut, between two
+  spreads lying flat, to a few short of the scrubber, once the pair they land on is in. Every page
+  turned ran on for seconds after a fling; the cut that dropped the turn first showed the pager.
 
 The scroller standing still under the curl is also what stops holding off iOS 26's swipe back from
 anywhere on a page: the slide's UIScrollView claimed every sideways drag first, so the reader never

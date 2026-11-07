@@ -1,4 +1,5 @@
 import { matchFont, Skia, type SkCanvas, type SkFont, type SkImage } from '@shopify/react-native-skia';
+import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Platform } from 'react-native';
 
@@ -31,6 +32,13 @@ type Box = { x: number; y: number; width: number; height: number };
 
 const decoded = new Map<string, Promise<SkImage | null>>();
 
+/** Fetch a page to the disk cache the scrub draws from, without drawing it: the pager stands still
+ *  under a scrub, so nothing else fetches the pages it turns through. Resolves whether it arrived. */
+export function fetchPage(uri: string): Promise<boolean> {
+  if (uri.startsWith('file://')) return Promise.resolve(true);
+  return Image.prefetch(uri, 'disk').catch(() => false);
+}
+
 async function decode(uri: string, width: number): Promise<SkImage | null> {
   const file = await fileOf(uri);
   if (!file) return null;
@@ -48,7 +56,13 @@ function page(uri: string, width: number): Promise<SkImage | null> {
   if (made) {
     decoded.delete(key);
   } else {
-    made = decode(uri, width).catch(() => null);
+    // Not kept when it came to nothing (no file yet): asked again once the page has been fetched.
+    made = decode(uri, width)
+      .catch(() => null)
+      .then((image) => {
+        if (!image && decoded.get(key) === made) decoded.delete(key);
+        return image;
+      });
     while (decoded.size >= KEEP) {
       const [oldest, gone] = decoded.entries().next().value!;
       decoded.delete(oldest);
@@ -79,37 +93,60 @@ function fontAt(scale: number): SkFont {
   return placeholderFont;
 }
 
+/** A box in whole pixels at `scale`: drawn at fractional ones, two pages meeting at a spine that
+ *  falls between pixels each left the pixel half bare, a hairline down the middle of the spread. */
+function pixels(scale: number) {
+  return (box: Box) => {
+    const left = Math.round(box.x * scale);
+    const top = Math.round(box.y * scale);
+    return Skia.XYWHRect(left, top, Math.round((box.x + box.width) * scale) - left, Math.round((box.y + box.height) * scale) - top);
+  };
+}
+
 /** A page still loading, as the pager draws it in `frame`: its dark surface and "Page N" over the
  *  middle, set up by the status line under it, as ReaderPage stacks the two. */
-function drawPlaceholder(canvas: SkCanvas, frame: Box, page: number, rect: (box: Box) => ReturnType<typeof Skia.XYWHRect>) {
+function drawPlaceholder(canvas: SkCanvas, frame: Box, page: number, scale: number) {
   const surface = Skia.Paint();
   surface.setColor(Skia.Color(PAGED_BACKDROP));
-  canvas.drawRect(rect(frame), surface);
-  const font = fontAt(SCALE);
+  canvas.drawRect(pixels(scale)(frame), surface);
+  const font = fontAt(scale);
   const label = `Page ${page}`;
   const ink = Skia.Paint();
   ink.setColor(Skia.Color('rgba(255,255,255,0.5)'));
   const lineMiddle = frame.y + frame.height / 2 - (Spacing.one + PLACEHOLDER_STATUS_HEIGHT) / 2;
   const { ascent, descent } = font.getMetrics();
   const across = font.measureText(label).width;
-  const x = (frame.x + frame.width / 2) * SCALE - across / 2;
-  canvas.drawText(label, x, lineMiddle * SCALE - (ascent + descent) / 2, ink, font);
+  const x = (frame.x + frame.width / 2) * scale - across / 2;
+  canvas.drawText(label, x, lineMiddle * scale - (ascent + descent) / 2, ink, font);
+}
+
+/**
+ * The sheet a scrub's turn draws for a page whose picture isn't in yet: the colour an unloaded page
+ * shows, one pixel stretched over the screen, made once and shared by every such turn. The dark
+ * paper's light outline and grey screentone are what show the turn (`page-curl-shader.ts`).
+ */
+export function blankPicture(): SkImage | null {
+  const surface = Skia.Surface.Make(1, 1);
+  if (!surface) return null;
+  surface.getCanvas().clear(Skia.Color(PAGED_BACKDROP));
+  const picture = surface.makeImageSnapshot();
+  surface.dispose();
+  return picture;
 }
 
 /**
  * A picture of `cell` as the pager draws it at rest, or null where it can't be drawn at all. A
- * page not yet in — no size, or nothing on disk to draw — is drawn as its placeholder, as the pager
- * shows it, and the picture is not `complete`: a scrub across pages still loading turns them too,
- * rather than standing still over them.
+ * page with nothing on disk to draw yet is drawn as its placeholder, as the pager shows it, and the
+ * picture is not `complete`: drawn again once the page has been fetched.
  */
 export async function scrubPicture(cell: Cell, layout: Layout): Promise<{ image: SkImage; complete: boolean } | null> {
   const { width, height, rtl, pageFit, spreadFill } = layout;
   const viewport = { width, height };
   const halves = spreadHalves(cell);
-  // What goes where: each page's box on the screen, and a fill beside it.
-  const draws: { uri: string; box: Box; frame: Box; page: number }[] = [];
-  const fills: { box: Box; color: string }[] = [];
-  const waiting: { frame: Box; page: number }[] = [];
+  // Each page: its frame on the screen, where a page of a given shape lies in it, and the side its
+  // fill runs on, if any.
+  type Slot = { uri: string; page: number; frame: Box; place: (size: Size) => Box; filled?: 'left' | 'right'; color?: string };
+  const slots: Slot[] = [];
   if (halves.length > 1) {
     const half = width / 2;
     const onScreen = rtl ? [...halves].reverse() : halves;
@@ -126,64 +163,81 @@ export async function scrubPicture(cell: Cell, layout: Layout): Promise<{ image:
       const { p, hug, filled } = sides[i]!;
       if (!p) continue;
       const frame = { x: i * half, y: 0, width: half, height };
-      const size = knownPageSize(p.uri);
-      if (!size) {
-        waiting.push({ frame, page: p.page });
-        continue;
-      }
-      const box = hugged(size, frame, hug);
-      draws.push({ uri: p.uri, box, frame, page: p.page });
-      const color = colors[i];
-      if (filled && color) {
-        // A point under the page, as the cell's fill runs (`SpreadGutter`).
-        const gap =
-          filled === 'left'
-            ? { x: frame.x, width: box.x - frame.x + 1 }
-            : { x: box.x + box.width - 1, width: frame.x + half - (box.x + box.width) + 1 };
-        if (gap.width > 1.5) fills.push({ box: { ...gap, y: box.y, height: box.height }, color });
-      }
+      slots.push({
+        uri: p.uri,
+        page: p.page,
+        frame,
+        place: (size) => hugged(size, frame, hug),
+        ...(filled && colors[i] ? { filled, color: colors[i]! } : {}),
+      });
     }
   } else {
     const p = cell.pages[0]!;
-    const size = knownPageSize(p.uri);
-    const frame = { x: 0, y: 0, width, height };
-    if (!size) {
-      waiting.push({ frame, page: p.page });
-    } else {
+    slots.push({
+      uri: p.uri,
+      page: p.page,
+      frame: { x: 0, y: 0, width, height },
       // At its rest, as the pager draws it: contained, then scaled and set at its edge where it
       // rests zoomed (a wide page fitted to the height).
-      const rest = pageRest(size, viewport, pageFit, false, rtl, false);
-      const off = edgeOffset(rest.restEdge, panLimits(rest.restScale, rest.content, viewport));
-      const w = rest.content.width * rest.restScale;
-      const h = rest.content.height * rest.restScale;
-      draws.push({ uri: p.uri, box: { x: (width - w) / 2 + off.x, y: (height - h) / 2 + off.y, width: w, height: h }, frame, page: p.page });
-    }
+      place: (size) => {
+        const rest = pageRest(size, viewport, pageFit, false, rtl, false);
+        const off = edgeOffset(rest.restEdge, panLimits(rest.restScale, rest.content, viewport));
+        const w = rest.content.width * rest.restScale;
+        const h = rest.content.height * rest.restScale;
+        return { x: (width - w) / 2 + off.x, y: (height - h) / 2 + off.y, width: w, height: h };
+      },
+    });
   }
 
-  const images = await Promise.all(draws.map((d) => page(d.uri, Math.ceil(d.box.width * SCALE))));
+  // Each page decoded at the width it is drawn — a page the pager hasn't sized yet (the scrub fetches
+  // its pages itself, and the pager stands still under it) takes its shape from the copy decoded
+  // at its frame's width. A page with nothing on disk to draw stands as its placeholder.
+  const drawn = await Promise.all(
+    slots.map(async (slot) => {
+      const known = knownPageSize(slot.uri);
+      if (known) {
+        const box = slot.place(known);
+        const image = await page(slot.uri, Math.ceil(box.width * SCALE));
+        return image ? { slot, box, image } : null;
+      }
+      let image = await page(slot.uri, Math.ceil(slot.frame.width * SCALE));
+      if (!image) return null;
+      const box = slot.place({ width: image.width(), height: image.height() });
+      // Drawn far wider than decoded (a wide page resting zoomed): decoded again at that width.
+      if (box.width * SCALE > image.width() * 1.2) image = (await page(slot.uri, Math.ceil(box.width * SCALE))) ?? image;
+      return { slot, box, image };
+    }),
+  );
+
   const surface = Skia.Surface.Make(Math.round(width * SCALE), Math.round(height * SCALE));
   if (!surface) return null;
   const canvas = surface.getCanvas();
-  // In whole pixels: drawn at fractional ones, two pages meeting at a spine that falls between
-  // pixels each left the pixel half bare, a hairline down the middle of the spread.
-  const px = (box: Box) => {
-    const left = Math.round(box.x * SCALE);
-    const top = Math.round(box.y * SCALE);
-    return Skia.XYWHRect(left, top, Math.round((box.x + box.width) * SCALE) - left, Math.round((box.y + box.height) * SCALE) - top);
-  };
+  const px = pixels(SCALE);
   const paint = Skia.Paint();
-  for (const fill of fills) {
-    const color = Skia.Paint();
-    color.setColor(Skia.Color(fill.color));
-    canvas.drawRect(px(fill.box), color);
-  }
-  draws.forEach((d, i) => {
-    const image = images[i];
-    if (image) canvas.drawImageRect(image, Skia.XYWHRect(0, 0, image.width(), image.height()), px(d.box), paint);
-    else waiting.push({ frame: d.frame, page: d.page });
+  let complete = true;
+  drawn.forEach((d, i) => {
+    if (!d) {
+      complete = false;
+      drawPlaceholder(canvas, slots[i]!.frame, slots[i]!.page, SCALE);
+      return;
+    }
+    const { slot, box, image } = d;
+    if (slot.filled && slot.color) {
+      // A point under the page, as the cell's fill runs (`SpreadGutter`).
+      const { frame } = slot;
+      const gap =
+        slot.filled === 'left'
+          ? { x: frame.x, width: box.x - frame.x + 1 }
+          : { x: box.x + box.width - 1, width: frame.x + frame.width - (box.x + box.width) + 1 };
+      if (gap.width > 1.5) {
+        const color = Skia.Paint();
+        color.setColor(Skia.Color(slot.color));
+        canvas.drawRect(px({ ...gap, y: box.y, height: box.height }), color);
+      }
+    }
+    canvas.drawImageRect(image, Skia.XYWHRect(0, 0, image.width(), image.height()), px(box), paint);
   });
-  for (const w of waiting) drawPlaceholder(canvas, w.frame, w.page, px);
   const picture = surface.makeImageSnapshot();
   surface.dispose();
-  return { image: picture, complete: waiting.length === 0 };
+  return { image: picture, complete };
 }

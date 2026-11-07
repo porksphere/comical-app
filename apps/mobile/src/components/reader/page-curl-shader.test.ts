@@ -219,3 +219,20 @@ describe('dark paper', () => {
     expect(brightest).toBeGreaterThan(60);
   });
 });
+
+describe('the shadow on dark paper', () => {
+  test('is grey screentone, so it shows on black', () => {
+    const leaf = makeLeaf(halfPageBox(null, viewport, 'right'), viewport, SQUARE_SCREEN, true, false);
+    const black = picture([6, 6, 6], [6, 6, 6]);
+    const pull = turnPull(leaf, 60, 0.5);
+    const at = draw(leaf, curlFrame(leaf, 60, pull.x, pull.y), false, black, black);
+    // Grey dots: lifted well off the black, short of the light outline's grey.
+    let dots = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const v = at(x, y)[0];
+      if (v > 60 && v < 110) dots++;
+    }
+    // Half as many before the tone went grey: those were the outline's edges alone.
+    expect(dots).toBeGreaterThan(300);
+  });
+});
