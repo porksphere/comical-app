@@ -115,6 +115,9 @@ export const persister = createAsyncStoragePersister({
 // a new cache entry per Activity-tab visit. The watermark is gone — the count is one stable, tiny
 // entry now, and persisting it gives the tab pip an instant cold-start value.)
 const NO_PERSIST_KEYS = new Set([
+  // One tiny entry per cover ever shown — hundreds a session. Re-reading one is a few-pixel decode
+  // from the image cache, far cheaper than re-serialising them all on the persist throttle.
+  'coverGlow',
   'seriesDetail',
   'seriesList',
   'chapterPages',

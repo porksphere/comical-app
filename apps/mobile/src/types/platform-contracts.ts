@@ -48,6 +48,8 @@ import type * as UseColorScheme from '@/hooks/use-color-scheme';
 import type * as UseColorSchemeWeb from '@/hooks/use-color-scheme.web';
 import type * as UseKeyboardLift from '@/hooks/use-keyboard-lift';
 import type * as UseKeyboardLiftWeb from '@/hooks/use-keyboard-lift.web';
+import type * as CoverGlowReader from '@/lib/cover-glow-reader';
+import type * as CoverGlowReaderWeb from '@/lib/cover-glow-reader.web';
 import type * as ScrubHaptics from '@/lib/scrub-haptics';
 import type * as ScrubHapticsWeb from '@/lib/scrub-haptics.web';
 
@@ -121,12 +123,14 @@ export type PlatformContracts = [
   Conforms<Drift<typeof SettingsPanel, typeof SettingsPanelIos>>,
   // Web has no continuous scrubber (the progress pill jumps) and no poster for the list to end
   // (see reader-pane). It zooms the page itself and never says so, so on a touch browser the
-  // reader's swipe-down stays armed while a page is zoomed.
+  // reader's swipe-down stays armed while a page is zoomed. It has no page curl either (its
+  // pictures of the page can't be taken), so it always slides; nor a spread's padding, which is
+  // read from a disk cache the browser keeps to itself.
   Conforms<
     Drift<
       typeof PagedReader,
       typeof PagedReaderWeb,
-      'scrubTarget' | 'scrubbing' | 'onReady' | 'onDragBegin' | 'onZoomChange'
+      'scrubTarget' | 'scrubbing' | 'onReady' | 'onDragBegin' | 'onZoomChange' | 'pageTurn' | 'frameTop' | 'spreadFill'
     >
   >,
   // As the pager, and web's list joins the next or previous chapter as it scrolls, so it has no
@@ -161,4 +165,5 @@ export type PlatformContracts = [
   Conforms<Drift<typeof UseColorScheme, typeof UseColorSchemeWeb>>,
   Conforms<Drift<typeof UseKeyboardLift, typeof UseKeyboardLiftWeb>>,
   Conforms<Drift<typeof ScrubHaptics, typeof ScrubHapticsWeb>>,
+  Conforms<Drift<typeof CoverGlowReader, typeof CoverGlowReaderWeb>>,
 ];

@@ -1,10 +1,13 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type DimensionValue, type ViewStyle } from 'react-native';
 
+import { LibraryRibbon } from '@/components/book-chrome';
 import { SavedIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { SPINE_FRACTION, ribbonSize, type BookCover } from '@/lib/book-cover';
 import type { BadgePosition, BadgeTone, CardBadge as CardBadgeData } from '@/data/mock';
 
 // Overlay badges on a card cover: bridge-defined `pos-*` / `tone-*` labels plus
@@ -33,11 +36,19 @@ const TONES: Record<BadgeTone, string> = {
   neutral: 'rgba(0,0,0,0.68)',
 };
 
+const FACING: Record<BadgePosition, BadgePosition> = {
+  'top-left': 'top-right',
+  'top-right': 'top-left',
+  'bottom-left': 'bottom-right',
+  'bottom-right': 'bottom-left',
+};
+
 export function CardOverlays({
   badges,
   rank,
   saved,
   unread,
+  book,
 }: {
   /** Bridge-defined badges, each stacked in its own corner (top-left when it names none). */
   badges?: readonly CardBadgeData[];
@@ -45,19 +56,53 @@ export function CardOverlays({
   /** The series is in the library. */
   saved?: boolean;
   unread?: number;
+  /** Drawn as a book: the library mark becomes a ribbon, and nothing sits on the spine. */
+  book?: BookCover | null;
 }) {
+  const desktop = useIsDesktop();
+  const ribbon = !!book && !!saved;
   const stacks: Record<BadgePosition, ReactNode[]> = { 'top-left': [], 'top-right': [], 'bottom-left': [], 'bottom-right': [] };
   if (rank != null) stacks['top-left'].push(<RankBadge key="rank" rank={rank} />);
-  if (saved) stacks['top-left'].push(<SavedBadge key="saved" />);
+  if (saved && !ribbon) stacks['top-left'].push(<SavedBadge key="saved" />);
   if (unread != null) stacks['top-right'].push(<UnreadBadge key="unread" count={unread} />);
   badges?.forEach((b, i) => stacks[b.position ?? 'top-left'].push(<CardBadge key={i} badge={b} />));
-  return CORNERS.map(
-    (corner) =>
-      stacks[corner].length > 0 && (
-        <View key={corner} style={[styles.stack, CORNER[corner], { pointerEvents: 'none' }]}>
-          {stacks[corner]}
-        </View>
-      ),
+
+  // On a book the corners keep their meaning; only the spine side moves, past the hinge, so a badge
+  // never sits on the crease. Two stacks on one edge split it rather than each taking 85% of it.
+  const spineSide = book && SPINE_FRACTION[book.form] > 0 ? book.binding : null;
+  const spine: DimensionValue | undefined = book ? `${SPINE_FRACTION[book.form] * 100}%` : undefined;
+  const ribbonSide = spineSide ?? 'left';
+  const ribbonClear = ribbonSize(desktop).width + 3;
+  const placed = (corner: BadgePosition): ViewStyle | undefined => {
+    if (!book) return undefined;
+    const side = corner.endsWith('left') ? 'left' : 'right';
+    const onSpine = side === spineSide;
+    const pastRibbon = ribbon && corner.startsWith('top') && side === ribbonSide;
+    const margin = (onSpine ? Spacing.one : 0) + (pastRibbon ? ribbonClear : 0);
+    // Spread, never `undefined`: an explicit undefined inset still wins when styles flatten, and would
+    // unpin the stack from the corner its own style puts it in.
+    return {
+      ...(stacks[FACING[corner]].length > 0 ? { maxWidth: '46%' } : null),
+      ...(onSpine ? (side === 'left' ? { left: spine } : { right: spine }) : null),
+      ...(margin ? (side === 'left' ? { marginLeft: margin } : { marginRight: margin }) : null),
+    };
+  };
+  return (
+    <>
+      {ribbon && (
+        <LibraryRibbon
+          style={ribbonSide === 'left' ? { left: spineSide ? spine : Spacing.one, marginLeft: spineSide ? Spacing.one : 0 } : { right: spine, marginRight: Spacing.one }}
+        />
+      )}
+      {CORNERS.map(
+        (corner) =>
+          stacks[corner].length > 0 && (
+            <View key={corner} style={[styles.stack, CORNER[corner], placed(corner), { pointerEvents: 'none' }]}>
+              {stacks[corner]}
+            </View>
+          ),
+      )}
+    </>
   );
 }
 

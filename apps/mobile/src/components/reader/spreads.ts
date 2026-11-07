@@ -197,14 +197,16 @@ export function knownPageSize(uri: string): Size | undefined {
  * back out of `pageGeometry` unscaled. Null until both pages have loaded. A padded spread's blank
  * half (`undefined`) is measured as its page's twin, so the page stays at the spine under zoom.
  */
-export function spreadImage(halves: (Size | null | undefined)[], viewport: Size): Size | null {
+export function spreadImage(halves: (Size | null | undefined)[], viewport: Size, edges = false): Size | null {
   const known = halves.filter((h) => h !== undefined);
   const images = halves.map((h) => (h === undefined ? known[0] : h));
   if (!known.length || images.some((image) => !image)) return null;
   const half = { width: viewport.width / 2, height: viewport.height };
   const boxes = images.map((image) => containedSize(image!, half));
   return {
-    width: 2 * Math.max(...boxes.map((b) => b.width)),
+    // Laid out to the screen's edges (`spreadFill: 'middle'`), the spread is the screen's width,
+    // gutter and all.
+    width: edges ? viewport.width : 2 * Math.max(...boxes.map((b) => b.width)),
     height: Math.max(...boxes.map((b) => b.height)),
   };
 }

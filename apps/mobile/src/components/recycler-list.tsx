@@ -5,6 +5,7 @@ import { Platform, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent
 import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 
+import { useBookCoversEnabled } from '@/hooks/use-book-covers';
 import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
 import { useListLayout } from '@/hooks/use-list-layout';
 import { useRowTransition } from '@/lib/row-motion';
@@ -144,11 +145,13 @@ export function RecyclerList<T>({
   // The list runs under the safe area's sides and its content stays inside them, so the colour behind
   // a landscape iPhone's sensor housing is the screen's and no card sits under it.
   const insets = useSideInsets();
-  // Every caller's rows and fixed sizes come out of the content width (`useGridLayout`).
+  // Every caller's rows and fixed sizes come out of the content width (`useGridLayout`), and its gaps
+  // out of whether cards are drawn as books, which changes them while the width holds still.
   const ownListRef = useRef<LegendListRef>(null);
   const ref = listRef ?? ownListRef;
   const contentWidth = useContentWidth();
-  const listExtra = useListLayout(ref, `${contentWidth}:${insets.left}:${insets.right}`, extraData);
+  const books = useBookCoversEnabled();
+  const listExtra = useListLayout(ref, `${contentWidth}:${insets.left}:${insets.right}:${books}`, extraData);
   const rowTransition = useRowTransition(itemLayoutAnimation);
 
   // The marker is keyed WITH the list: it registers the scroll view once per attach, so a list

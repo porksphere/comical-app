@@ -14,7 +14,7 @@ import {
   edgeOffset,
   fillRule,
   freePanLimits,
-  isStrip,
+  stripsUnder,
   pageGeometry,
   stripGeometry,
   panLimits,
@@ -57,6 +57,8 @@ export type PagedReaderHandle = {
   scrubTo: (logical: number) => void;
   /** The pages sharing the screen with `logical` — see the native handle. */
   spreadOf: (logical: number) => { first: number; last: number };
+  /** A page turn: the web has no curl, so this is `goToPage(logical, false)`. */
+  turnTo: (logical: number) => void;
 };
 
 type Props = {
@@ -293,7 +295,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     (cell: Spread<ReaderPageItem> | undefined) => {
       const img = imageOf(cell);
       if (cell && spreadHalves(cell).length > 1) return pageGeometry(img, { width, height }, fill === 'wide' ? 'none' : fill, rtl);
-      return pageFit === 'fit-width' && img && isStrip(img, { width, height })
+      return img && stripsUnder(pageFit, img, { width, height })
         ? stripGeometry(img, { width, height })
         : pageGeometry(img, { width, height }, fill, rtl);
     },
@@ -686,6 +688,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       spreadOf(logical: number) {
         const spread = spreads[spreadAt(logical)];
         return spread ? { first: spread.first, last: lastPageOf(spread) } : { first: logical, last: logical };
+      },
+      turnTo(logical: number) {
+        settleTo(toPhysical(spreadAt(logical)), false);
       },
     }),
     [settleTo, toPhysical, spreadAt, spreads],

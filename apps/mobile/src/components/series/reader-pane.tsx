@@ -544,6 +544,15 @@ export const ReaderPane = forwardRef<
     },
     [settings.mode],
   );
+  // A page TURN to a flat index: the pager may play it (the curl, see PagedReaderHandle.turnTo);
+  // anything else is the plain jump.
+  const turnFlat = useCallback(
+    (flat: number) => {
+      if (settings.mode === 'paged') pagedRef.current?.turnTo(flat);
+      else webtoonRef.current?.goToPage(flat, false);
+    },
+    [settings.mode],
+  );
   // Chapter-local page index in; the stitched readers take the flat one.
   const goTo = useCallback(
     (index: number, animated = true) => {
@@ -605,40 +614,44 @@ export const ReaderPane = forwardRef<
   const turnPrev = useCallback(() => {
     const { first } = spreadAround(currentRef.current);
     if (first > 0) {
-      goTo(first - 1, false);
+      const page = first - 1;
+      setCurrent(page);
+      turnFlat(stitched ? prefixLen + page : page);
       return;
     }
     if (stitched && prefixLen > 0) {
       handleFlatPageChange(prefixLen - 1);
-      goFlat(prefixLen - 1, false);
+      turnFlat(prefixLen - 1);
       return;
     }
     if (chaptered && hasPrevChapter) onCrossChapter(-1);
-  }, [spreadAround, goTo, stitched, prefixLen, handleFlatPageChange, goFlat, chaptered, hasPrevChapter, onCrossChapter]);
+  }, [spreadAround, setCurrent, turnFlat, stitched, prefixLen, handleFlatPageChange, chaptered, hasPrevChapter, onCrossChapter]);
   const turnNext = useCallback(() => {
     const { last } = spreadAround(currentRef.current);
     if (last < pages.length - 1) {
       // Named by the page the landing spread will report, so the counter doesn't step through its
       // first page on the way.
-      goTo(spreadAround(last + 1).last, false);
+      const page = Math.min(pages.length - 1, spreadAround(last + 1).last);
+      setCurrent(page);
+      turnFlat(stitched ? prefixLen + page : page);
       return;
     }
     const nextFlat = prefixLen + pages.length;
     if (stitched && nextFlat < flatItems.length) {
       handleFlatPageChange(nextFlat);
-      goFlat(nextFlat, false);
+      turnFlat(nextFlat);
       return;
     }
     if (chaptered && hasNextChapter) onCrossChapter(1);
   }, [
     spreadAround,
-    goTo,
+    setCurrent,
+    turnFlat,
     stitched,
     prefixLen,
     pages,
     flatItems.length,
     handleFlatPageChange,
-    goFlat,
     chaptered,
     hasNextChapter,
     onCrossChapter,
@@ -917,6 +930,9 @@ export const ReaderPane = forwardRef<
           onNext={turnNext}
           onToggleChrome={onToggleChrome}
           onZoomChange={handleZoom}
+          pageTurn={settings.pageTurn}
+          frameTop={insetTop}
+          spreadFill={settings.spreadFill}
         />
       ) : (
         <WebtoonReader
@@ -973,6 +989,7 @@ export const ReaderPane = forwardRef<
           pageFit={settings.mode === 'paged' ? pageFit : settings.pageFit}
           rtl={settings.direction === 'rtl'}
           standby={!!standby}
+          spreadFill={settings.spreadFill}
         />
       )}
       </View>

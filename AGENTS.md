@@ -714,14 +714,18 @@ it. There is no "fit page": on any screen that is just whichever of the two is s
 fit-width already shows an ordinary page whole on a phone and fit-height shows it whole on a
 landscape tablet. `auto`, the default, is the device-independent one: every page whole, and a
 SPREAD alone — a picture wider than it is tall — lifted to fit-height and panned sideways, since
-it would otherwise lie as a strip. An ordinary page is never scrolled under it on any screen.
+it would otherwise lie as a strip; and its mirror, a stitched STRIP of panels (more than
+`STRIP_ASPECT` times as tall as wide), laid to the width and panned down from its top, since whole
+it is a sliver a few points wide (`stripsUnder`). An ordinary page is never scrolled under it on
+any screen.
 
 **A page that fits is drawn in the contain box, under either axis, and that box is the viewport's
 size and never changes.** That is the whole reason the reader doesn't shift: a box sized from the
 picture's aspect is sized from a GUESS until the picture arrives, and re-centring it then moves
 the page (that was built, as the fit-width default, and was the "page shifting around"). Only a
-page that overflows the height under fit-width — a strip — is drawn in a box its own height
-(`stripGeometry`), centred like every other box and panned DOWN by the same gesture that pans a
+strip — a page that overflows the height under fit-width, or a stitched strip under `auto` — is
+drawn in a box its own height (`stripGeometry`; under `auto` the page remounts once its shape says
+it is one, so its decode is made against the strip's box, not the screen's), centred like every other box and panned DOWN by the same gesture that pans a
 zoomed page, from its top, with the same momentum and the same hand-off to the pager for a
 sideways drag. (It used to have a gesture of its own, composed alongside the pager's swipe rather
 than blocking it and with no momentum: a thumb drag that started slightly diagonal turned the
@@ -776,6 +780,69 @@ silently and the page arriving reports its own rest on activation; the old arran
 leaving page reported `false`, would race the arriving spread's `true` in the same commit, in tree
 order rather than reading order. A page under the pager's `standby` (the entrance, the collapsed
 strip) rests at 1×, to match the poster over it, and zooms to its rest once primary.
+
+# Page curl: a picture of the pager, turned over it
+
+`pageTurn: 'curl'` (Reader settings → Page turn, native only) turns pages as paper curling over,
+in single and two-page reading. The pager itself never animates a curl: scrolling is OFF under it,
+and a turn is drawn by Skia over a list standing still (`components/reader/use-page-curl.tsx`),
+from pictures of the two cells the turn runs between (`makeImageFromView` on each cell's wrapper),
+so it turns exactly what was on screen — zoom, fit and all. When the turn lands the list JUMPS to
+the spread turned to, under a curl that by then shows exactly that spread, and the curl goes two
+frames later. Taps and keys come in through `PagedReaderHandle.turnTo`; a drag is the curl's own
+pan, beside the edge pan and blocked by a zoomed page's pan exactly as the scroll is. Under Reduce
+Motion, and in the standby strip, it is the slide.
+
+All the geometry (`page-curl-geometry.ts`) is in TURN space, where the leaf lies right of the spine
+and goes left; a turn the other way across the screen is the same turn mirrored, and the effect
+(`page-curl-shader.ts`, SkSL, checked pixel for pixel through CanvasKit in its test) samples the
+pictures through the same flip. A two-page leaf is the page on the side the turn starts from, both
+sides printed; a lone page is paper, and turning BACK brings the previous page over the current one
+(the forward turn played in reverse). The leaf is bound at its spine — the pull is held inside the
+discs that keep the spine's ends down — and its corners are the screen's own wherever the page
+reaches into them (`concentric`, the rule iOS 26 rounds nested shapes by), read per corner by the
+local module `modules/screen-corners` (iOS 26's concentric corners, else the screen's one radius;
+Android's rounded-corner insets), so a folding phone's hard edge stays square. Pages that don't
+fill their halves meet at the spine by default: a drawing across both pages stays whole. The
+`spreadFill` reader setting (native only) fills a spread's spare width from the pages themselves:
+`sides` keeps the pages at the spine and fills each outer side from its page's outer edge, `middle`
+moves each page against the screen's edge and fills the gutter from their inner edges
+(`components/reader/spread-gutter.tsx`, `halfLayout`). A fill is one solid colour, the most
+frequent along the edge it is beside (colours bucketed, so paper speckle counts as one): the gutter
+one colour across both pages' inner edges, each side its own page's outer edge. It is read off the
+page as published — expo-image's original on disk (`getCachePathAsync`), or a downloaded page's
+file — shrunk by the platform's decoder (expo-image-manipulator, off the main thread; Skia's own
+decoders don't read AVIF) and read with Skia on the JS thread, never the UI thread the turns are
+drawn on. It is drawn inside each page's half, so under the curl
+a filled spread's leaf is the whole half, page and fill (`halfPageBox`): the fill turns with its
+page, and the leaf never hinges in empty space.
+
+**What keeps the curl responsive — don't undo any of it.** Each of these was a stall, a freeze or a
+missing turn before it was a rule:
+
+- Everything a turn draws comes from the UI thread: the pictures are staged by cell in a shared
+  value, the armed turn names its cells by key, the landed turn is held there, and the next turns'
+  plans are handed over at the landing. A turn waiting on a React render was 40–120ms of nothing.
+- A derived value follows only the shared values read directly in it, never through a helper it
+  calls: through one, the curl kept drawing a replaced, disposed picture (black, or nothing).
+- A cell's picture (`makeImageFromView`) stops the main thread — the curl's own — for 30–100ms.
+  Never take one while anything moves: they are taken at a landing, while the landed spread lies
+  flat, or once nothing moves and no finger is down (`whenStill`), and kept until the cell changes,
+  not for a set time. A scrub draws its own pictures off the main thread (`scrub-pictures.ts`).
+- A picture goes only after the UI thread has drawn without it, and only a cell that has really
+  unmounted forgets that its pages have drawn (a new ref every render runs the old one's cleanup).
+- The JS side cleans up after a landing a frame and more late: what it clears, it clears on the UI
+  thread, and only the turn that landed (`putAway`).
+- A scrub's turns run on their own clock after the scrubber (`SCRUB_MAX_SPEED`), only into pairs
+  whose pictures are in, rather than straight under it.
+
+The scroller standing still under the curl is also what stops holding off iOS 26's swipe back from
+anywhere on a page: the slide's UIScrollView claimed every sideways drag first, so the reader never
+noticed it was on (react-native-screens turns it on by default there). The reader turns it off
+(`fullScreenGestureEnabled: false`); its swipe away is the swipe down and the edge's. A drag that
+doesn't turn — another gesture took it, it was too steep, the JS side or the pictures lagged — goes
+in the Diagnostics log as `page-curl`, which a development build also prints to Metro, along with a
+line for every drag.
 
 # Press-in warms the destination
 

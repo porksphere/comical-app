@@ -12,15 +12,10 @@ import { buildGroupedRows } from '@/data/grouped-rows';
 import type { SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { rowCoverAspect, rowCoverAspects } from '@/lib/aspect-ratio';
-import { GRID_ROW_GAP, GRID_ROW_PAD_BOTTOM, GRID_ROW_PAD_TOP, useGridLayout } from '@/hooks/use-grid-layout';
+import { rowPad, useGridLayout } from '@/hooks/use-grid-layout';
 import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { useZoomSurfaceKey } from '@/lib/series-zoom';
 import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
-
-// A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are absolutely
-// positioned). The split (see `GRID_ROW_PAD_TOP`) feeds both `styles.cell`'s padding AND the fixed
-// `cellHeight` below, so the two never drift.
-const CELL_ROW_GAP = GRID_ROW_GAP;
 
 // The id a card registers under for the zoom (`entry.id`), never `keyOf`'s bridge-qualified one.
 const gridSeriesId = (item: SeriesGridItem) => String(item.id);
@@ -134,7 +129,10 @@ export function SeriesGrid({
   /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
   scrollEnabled?: boolean;
 }) {
-  const { numColumns, sidePad, cardWidth, columnGap } = useGridLayout();
+  const { numColumns, sidePad, cardWidth, columnGap, rowGap } = useGridLayout();
+  // A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are
+  // absolutely positioned), so the same gap feeds both the cell's padding and its fixed height.
+  const cellPad = rowPad(rowGap);
   const { subOf } = useBridgeMap();
 
   // FIXED row heights — every cell is forced to its ROW's height (worst-case card content via
@@ -145,10 +143,10 @@ export function SeriesGrid({
   // the uniform grid it always was. The sub line is reserved only when this surface's entries
   // actually carry one (see `hasSub`).
   const sub = hasSub ?? subOf(bridgeId);
-  const cellHeight = estimatedCardHeight(cardWidth, sub) + CELL_ROW_GAP;
+  const cellHeight = estimatedCardHeight(cardWidth, sub) + rowGap;
   const rowAspects = useMemo(() => rowCoverAspects(items, numColumns), [items, numColumns]);
   const rowAspectAt = (index: number) => rowAspects[Math.floor(index / numColumns)];
-  const heightAt = (index: number) => estimatedCardHeight(cardWidth, sub, rowAspectAt(index)) + CELL_ROW_GAP;
+  const heightAt = (index: number) => estimatedCardHeight(cardWidth, sub, rowAspectAt(index)) + rowGap;
 
   // A series is identified by its BRIDGE plus its id, never its id alone — the Library is a
   // cross-bridge grid, and two bridges can hand out the same seriesId. Single-bridge grids leave
@@ -181,7 +179,7 @@ export function SeriesGrid({
     return (
       <GroupedGrid
         rows={groupedRows}
-        rowHeight={(rowItems) => estimatedCardHeight(cardWidth, sub, rowCoverAspect(rowItems)) + CELL_ROW_GAP}
+        rowHeight={(rowItems) => estimatedCardHeight(cardWidth, sub, rowCoverAspect(rowItems)) + rowGap}
         scopeKey={scopeKey}
         listRef={listRef}
         scrollRef={scrollRef}
@@ -197,14 +195,14 @@ export function SeriesGrid({
         onScroll={onScroll}
         renderRow={(rowItems) => {
           const rowAspect = rowCoverAspect(rowItems);
-          const height = estimatedCardHeight(cardWidth, sub, rowAspect) + CELL_ROW_GAP;
+          const height = estimatedCardHeight(cardWidth, sub, rowAspect) + rowGap;
           return (
             // Manual rows lay out with a real flex gap (LegendList's column slots can't gap — see the
             // marginLeft note below), which lands cards at the same `cardWidth + columnGap`
             // rhythm as the ungrouped grid; fixed widths keep a short final row left-aligned.
             <View style={[styles.groupedRow, { gap: columnGap }]}>
               {rowItems.map((item) => (
-                <View key={keyOf(item)} style={[styles.cell, { width: cardWidth, height }]}>
+                <View key={keyOf(item)} style={[styles.cell, cellPad, { width: cardWidth, height }]}>
                   <SeriesCard
                     entry={item}
                     bridge={item.bridge ?? bridge}
@@ -268,6 +266,7 @@ export function SeriesGrid({
         <View
           style={[
             styles.cell,
+            cellPad,
             { width: cardWidth, height: heightAt(index), marginLeft: (index % numColumns) * (columnGap / numColumns) },
           ]}>
           <SeriesCard
@@ -291,8 +290,6 @@ const styles = StyleSheet.create({
     // NO `flex: 1` — pinned to `cardWidth` at the call site so a short last row ends rather than
     // stretching. `justifyContent: flex-start` so a card shorter than the fixed cell top-aligns.
     justifyContent: 'flex-start',
-    paddingTop: GRID_ROW_PAD_TOP,
-    paddingBottom: GRID_ROW_PAD_BOTTOM,
   },
   groupedRow: {
     flexDirection: 'row',

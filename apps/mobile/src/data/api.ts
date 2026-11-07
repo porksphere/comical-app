@@ -589,6 +589,8 @@ export async function getBridges(signal?: AbortSignal): Promise<Bridge[]> {
     capabilities: b.info.capabilities ?? [],
     cardSubtitles: b.info.cardSubtitles ?? false,
     ratings: b.info.ratings ?? false,
+    ...(b.info.coverForm !== undefined && { coverForm: b.info.coverForm }),
+    ...(b.info.readingDirection !== undefined && { readingDirection: b.info.readingDirection }),
     thumbnail: b.info.iconUrl,
   }));
 }

@@ -25,16 +25,25 @@ export type DoubleTapMode = 'magnify' | 'switch-fit' | 'off';
 /** How many pages share the paged reader's screen: one, two (a spread), or two exactly when the
  *  reading frame is landscape. See `components/reader/spreads`. */
 export type PageLayout = 'single' | 'double' | 'auto';
+/** How the paged reader turns a page: the list sliding sideways, or the page curling over like
+ *  paper (`components/reader/page-curl`). */
+export type PageTurn = 'slide' | 'curl';
 /** Pages warmed ahead of the one being read — any whole number from none to PREFETCH_AHEAD_MAX. */
 export type PrefetchAhead = number;
 export const PREFETCH_AHEAD_MIN = 0;
 export const PREFETCH_AHEAD_MAX = 10;
+/** What fills a two-page spread's spare width: nothing (the pages meet at the spine, the reader's
+ *  background either side), the sides (the pages still meet at the spine, each side filled from
+ *  its page's outer edge), or the middle (each page against the screen's edge, the gutter between
+ *  them filled from their inner edges). See `components/reader/spread-gutter`. */
+export type SpreadFill = 'off' | 'sides' | 'middle';
 export type ReaderSettings = {
   mode: ReaderMode;
   direction: ReaderDirection;
   pageFit: PageFit;
   doubleTap: DoubleTapMode;
   pageLayout: PageLayout;
+  pageTurn: PageTurn;
   /** Hold the screen awake while a page is on screen. */
   keepAwake: boolean;
   /** Keep the page count faintly on screen after the rest of the chrome has hidden. */
@@ -47,6 +56,7 @@ export type ReaderSettings = {
    *  costs memory on every page whether or not you ever zoom one. On, like every other reader. */
   downsample: boolean;
   prefetchAhead: PrefetchAhead;
+  spreadFill: SpreadFill;
 };
 
 const STORAGE_KEY = 'comical:readerSettings';
@@ -58,11 +68,13 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   // Like other readers: a phone held upright reads one page, turned sideways (or a tablet, or a
   // desktop window) two.
   pageLayout: 'auto',
+  pageTurn: 'slide',
   keepAwake: true,
   pageCountWhenHidden: true,
   respectSafeArea: false,
   downsample: true,
   prefetchAhead: 4,
+  spreadFill: 'off',
 };
 
 // Starts at DEFAULT_SETTINGS (also the pre-hydration value the web static export
@@ -112,6 +124,15 @@ export function useReadsRightToLeft(): boolean {
     const { mode, direction } = { ...DEFAULT_SETTINGS, ...settings$.get() };
     return mode === 'paged' && direction === 'rtl';
   });
+}
+
+/** The reader's own mode (without any series' override) and its direction, which is global: nothing
+ *  stores a direction per series or per bridge. Tracked when read inside `use$` or `computed`. */
+export function readerDefaults(): { mode: ReaderMode; direction: ReaderDirection } {
+  return {
+    mode: settings$.mode.get() ?? DEFAULT_SETTINGS.mode,
+    direction: settings$.direction.get() ?? DEFAULT_SETTINGS.direction,
+  };
 }
 
 /** `[settings, patch]`. Reads spread over the defaults so a blob persisted before a
