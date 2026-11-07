@@ -1,10 +1,13 @@
-import { Skia, type SkImage } from '@shopify/react-native-skia';
+import { matchFont, Skia, type SkCanvas, type SkFont, type SkImage } from '@shopify/react-native-skia';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { Platform } from 'react-native';
 
 import { halfLayout } from '@/components/reader/gutter-bands';
 import { fileOf, spreadColorsNow } from '@/components/reader/gutter-colors';
 import { containedSize, edgeOffset, pageRest, panLimits, type Size } from '@/components/reader/page-geometry';
+import { PAGED_BACKDROP, PLACEHOLDER_STATUS_HEIGHT } from '@/components/reader/reader-page';
 import { knownPageSize, spreadHalves, type SpreadPad } from '@/components/reader/spreads';
+import { Spacing } from '@/constants/theme';
 import type { PageFit, SpreadFill } from '@/hooks/use-reader-settings';
 
 /**
@@ -22,7 +25,7 @@ const SCALE = 1.25;
 /** Decoded pages kept for reuse, the most recent last: enough for the pairs about a scrub. */
 const KEEP = 6;
 
-type Cell = { key: string; pages: { uri: string }[]; pad?: SpreadPad };
+type Cell = { key: string; pages: { uri: string; page: number }[]; pad?: SpreadPad };
 type Layout = { width: number; height: number; double: boolean; rtl: boolean; pageFit: PageFit; spreadFill: SpreadFill };
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -63,17 +66,50 @@ function hugged(size: Size, frame: Box, hug: 'left' | 'right' | null): Box {
   return { x, y: frame.y + (frame.height - shown.height) / 2, width: shown.width, height: shown.height };
 }
 
+// ReaderPage's placeholder line, as `ScrubBackdrop` matches it: the default type, at half white.
+const PLACEHOLDER_TYPE = 16;
+let placeholderFont: SkFont | null = null;
+function fontAt(scale: number): SkFont {
+  placeholderFont ??= matchFont({
+    fontFamily: Platform.select({ ios: 'Helvetica', default: 'sans-serif' }),
+    fontSize: PLACEHOLDER_TYPE,
+    fontWeight: '500',
+  });
+  placeholderFont.setSize(PLACEHOLDER_TYPE * scale);
+  return placeholderFont;
+}
+
+/** A page still loading, as the pager draws it in `frame`: its dark surface and "Page N" over the
+ *  middle, set up by the status line under it, as ReaderPage stacks the two. */
+function drawPlaceholder(canvas: SkCanvas, frame: Box, page: number, rect: (box: Box) => ReturnType<typeof Skia.XYWHRect>) {
+  const surface = Skia.Paint();
+  surface.setColor(Skia.Color(PAGED_BACKDROP));
+  canvas.drawRect(rect(frame), surface);
+  const font = fontAt(SCALE);
+  const label = `Page ${page}`;
+  const ink = Skia.Paint();
+  ink.setColor(Skia.Color('rgba(255,255,255,0.5)'));
+  const lineMiddle = frame.y + frame.height / 2 - (Spacing.one + PLACEHOLDER_STATUS_HEIGHT) / 2;
+  const { ascent, descent } = font.getMetrics();
+  const across = font.measureText(label).width;
+  const x = (frame.x + frame.width / 2) * SCALE - across / 2;
+  canvas.drawText(label, x, lineMiddle * SCALE - (ascent + descent) / 2, ink, font);
+}
+
 /**
- * A picture of `cell` as the pager draws it at rest, or null where a page's size isn't known yet
- * or it can't be read.
+ * A picture of `cell` as the pager draws it at rest, or null where it can't be drawn at all. A
+ * page not yet in — no size, or nothing on disk to draw — is drawn as its placeholder, as the pager
+ * shows it, and the picture is not `complete`: a scrub across pages still loading turns them too,
+ * rather than standing still over them.
  */
-export async function scrubPicture(cell: Cell, layout: Layout): Promise<SkImage | null> {
+export async function scrubPicture(cell: Cell, layout: Layout): Promise<{ image: SkImage; complete: boolean } | null> {
   const { width, height, rtl, pageFit, spreadFill } = layout;
   const viewport = { width, height };
   const halves = spreadHalves(cell);
   // What goes where: each page's box on the screen, and a fill beside it.
-  const draws: { uri: string; box: Box }[] = [];
+  const draws: { uri: string; box: Box; frame: Box; page: number }[] = [];
   const fills: { box: Box; color: string }[] = [];
+  const waiting: { frame: Box; page: number }[] = [];
   if (halves.length > 1) {
     const half = width / 2;
     const onScreen = rtl ? [...halves].reverse() : halves;
@@ -89,11 +125,14 @@ export async function scrubPicture(cell: Cell, layout: Layout): Promise<SkImage 
     for (let i = 0; i < 2; i++) {
       const { p, hug, filled } = sides[i]!;
       if (!p) continue;
-      const size = knownPageSize(p.uri);
-      if (!size) return null;
       const frame = { x: i * half, y: 0, width: half, height };
+      const size = knownPageSize(p.uri);
+      if (!size) {
+        waiting.push({ frame, page: p.page });
+        continue;
+      }
       const box = hugged(size, frame, hug);
-      draws.push({ uri: p.uri, box });
+      draws.push({ uri: p.uri, box, frame, page: p.page });
       const color = colors[i];
       if (filled && color) {
         // A point under the page, as the cell's fill runs (`SpreadGutter`).
@@ -107,18 +146,21 @@ export async function scrubPicture(cell: Cell, layout: Layout): Promise<SkImage 
   } else {
     const p = cell.pages[0]!;
     const size = knownPageSize(p.uri);
-    if (!size) return null;
-    // At its rest, as the pager draws it: contained, then scaled and set at its edge where it rests
-    // zoomed (a wide page fitted to the height).
-    const rest = pageRest(size, viewport, pageFit, false, rtl, false);
-    const off = edgeOffset(rest.restEdge, panLimits(rest.restScale, rest.content, viewport));
-    const w = rest.content.width * rest.restScale;
-    const h = rest.content.height * rest.restScale;
-    draws.push({ uri: p.uri, box: { x: (width - w) / 2 + off.x, y: (height - h) / 2 + off.y, width: w, height: h } });
+    const frame = { x: 0, y: 0, width, height };
+    if (!size) {
+      waiting.push({ frame, page: p.page });
+    } else {
+      // At its rest, as the pager draws it: contained, then scaled and set at its edge where it
+      // rests zoomed (a wide page fitted to the height).
+      const rest = pageRest(size, viewport, pageFit, false, rtl, false);
+      const off = edgeOffset(rest.restEdge, panLimits(rest.restScale, rest.content, viewport));
+      const w = rest.content.width * rest.restScale;
+      const h = rest.content.height * rest.restScale;
+      draws.push({ uri: p.uri, box: { x: (width - w) / 2 + off.x, y: (height - h) / 2 + off.y, width: w, height: h }, frame, page: p.page });
+    }
   }
 
   const images = await Promise.all(draws.map((d) => page(d.uri, Math.ceil(d.box.width * SCALE))));
-  if (images.some((image) => !image)) return null;
   const surface = Skia.Surface.Make(Math.round(width * SCALE), Math.round(height * SCALE));
   if (!surface) return null;
   const canvas = surface.getCanvas();
@@ -136,10 +178,12 @@ export async function scrubPicture(cell: Cell, layout: Layout): Promise<SkImage 
     canvas.drawRect(px(fill.box), color);
   }
   draws.forEach((d, i) => {
-    const image = images[i]!;
-    canvas.drawImageRect(image, Skia.XYWHRect(0, 0, image.width(), image.height()), px(d.box), paint);
+    const image = images[i];
+    if (image) canvas.drawImageRect(image, Skia.XYWHRect(0, 0, image.width(), image.height()), px(d.box), paint);
+    else waiting.push({ frame: d.frame, page: d.page });
   });
+  for (const w of waiting) drawPlaceholder(canvas, w.frame, w.page, px);
   const picture = surface.makeImageSnapshot();
   surface.dispose();
-  return picture;
+  return { image: picture, complete: waiting.length === 0 };
 }

@@ -69,6 +69,15 @@ const float SHADOW_INK = 0.8;
 // The ink line drawn round the lifted paper: half its width in points, and how much it darkens.
 const float OUTLINE = 0.75;
 const float OUTLINE_INK = 0.65;
+// On dark paper — a black page, or a page still loading, which is pictured as the black behind it —
+// dark ink and shadows draw nothing, and a spread of them turned with nothing to see. There the
+// outline is drawn light and the roll catches a highlight; light paper is drawn as before.
+const float3 INK_DARK = float3(0.12, 0.12, 0.13);
+const float3 INK_LIGHT = float3(0.62, 0.62, 0.64);
+const float SHEEN = 0.2;
+
+float lum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+float darkness(float3 c) { return 1.0 - smoothstep(0.12, 0.3, lum(c)); }
 
 float2 screen(float2 q) { return mirrored > 0.5 ? float2(size.x - q.x, q.y) : q; }
 float3 pageA(float2 q) { return cur.eval(screen(q)).rgb; }
@@ -148,6 +157,8 @@ half4 main(float2 at) {
   float R = max(r, 0.001);
   float d = dot(p, n) - c;
   float outline = 0.0;
+  // The paper the outline is drawn round, for which ink shows on it.
+  float3 sheet = float3(1.0);
   if (d >= 0.0) {
     // The lifted paper's shadow on the page beneath, laid down before the paper so the roll covers
     // it: darkest at the crease and falling away from it, and only where the crease runs across the
@@ -165,9 +176,13 @@ half4 main(float2 at) {
       float2 under = p + n * (R * a - d);
       float2 over = p + n * (R * (PI - a) - d);
       float overC = onLeaf(over);
-      col = mix(col, pageA(under) * (0.5 + 0.5 * cos(a)), onLeaf(under));
-      col = mix(col, back(over) * rollLight(a), overC);
+      float3 front = pageA(under);
+      float3 rolled = back(over);
+      col = mix(col, front * (0.5 + 0.5 * cos(a)), onLeaf(under));
+      float glint = (a - 0.9) / 0.35;
+      col = mix(col, rolled * rollLight(a) + darkness(rolled) * SHEEN * exp(-glint * glint), overC);
       outline = max(ink(rolledEdge(over, a)), ink(rolledEdge(under, a)) * (1.0 - overC));
+      sheet = mix(front, rolled, overC);
     }
     // The roll's own outline, where the paper reaches round to it.
     outline = max(outline, ink(d - R) * onLeaf(p + n * (R * PI * 0.5 - d)));
@@ -179,11 +194,13 @@ half4 main(float2 at) {
     // The turned-over flap's shadow falls from its outer edge; at the crease, where the flap's edge
     // meets the roll, it would draw a dark line down the flat page.
     col *= 1.0 - SHADOW_INK * tone(shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.225 + 2.0)) * smoothstep(0.0, R * 0.6, -d), at);
-    col = mix(col, back(flap) * rollLight(0.0), flapC);
+    float3 laid = back(flap);
+    col = mix(col, laid * rollLight(0.0), flapC);
     outline = ink(flapD);
+    sheet = flapC > 0.0 ? laid : pageA(p);
   }
   // Drawn, not photographed: the turning paper is outlined, fading in and out with the turn.
-  col = mix(col, float3(0.12, 0.12, 0.13), shade * OUTLINE_INK * outline);
+  col = mix(col, mix(INK_DARK, INK_LIGHT, darkness(sheet)), shade * OUTLINE_INK * outline);
   return half4(half3(col), 1.0);
 }
 `;

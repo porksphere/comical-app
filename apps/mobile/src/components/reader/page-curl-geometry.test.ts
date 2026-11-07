@@ -148,6 +148,16 @@ describe('a spread laid out to the screen edges', () => {
   test('otherwise turns the page alone, against the spine', () => {
     expect(halfPageBox(page, screen, 'right')).toEqual({ x: 475.5, y: 0, width: 458, height: 669 });
   });
+
+  test("a page wider than its half, lying shorter than the screen, still turns the screen's full height", () => {
+    const wide = { width: 600, height: 500 };
+    expect(halfPageBox(wide, screen, 'right')).toEqual({ x: 475.5, y: 0, width: 475.5, height: 669 });
+    expect(halfPageBox(wide, screen, 'left', true)).toEqual({ x: 0, y: 0, width: 475.5, height: 669 });
+    const tall = halfPageBox({ width: 400, height: 900 }, screen, 'left');
+    expect(tall.y).toBe(0);
+    expect(tall.height).toBe(669);
+    expect(tall.x + tall.width).toBe(475.5);
+  });
 });
 
 describe('a drag', () => {

@@ -39,7 +39,7 @@ import { logDiagnostic } from '@/lib/diagnostics';
 import { projectRelease } from '@/lib/gesture-release';
 
 /** What the curl needs of a pager cell: its pages, by picture, and the half a lone page leaves. */
-export type CurlCell = { key: string; pages: { uri: string }[]; pad?: SpreadPad };
+export type CurlCell = { key: string; pages: { uri: string; page: number }[]; pad?: SpreadPad };
 
 /**
  * Travel that decides a touch — the distance the slide's UIScrollView claims one at (see
@@ -93,6 +93,8 @@ const SCRUB_END_MS = 1500;
 /** How many pairs on from the scrubber, the way it is going, are drawn ahead. Each picture is the
  *  whole screen's, and so is its copy on the GPU once drawn: more ahead was memory, not smoothness. */
 const SCRUB_AHEAD = 2;
+/** A scrub's pair that takes longer than this to draw goes in the diagnostics log. */
+const SCRUB_SLOW_PAIR_MS = 200;
 /** How far through the turn a release has to be headed to finish it rather than fall back. */
 const COMMIT_PROGRESS = 0.25;
 /** A tap's turn, start to finish. */
@@ -331,6 +333,10 @@ export function usePageCurl(options: Options): {
   // The spreads the JS side was last told of (`noteScrub`).
   const scrubToldGoal = useSharedValue(-1);
   const scrubToldShown = useSharedValue(-1);
+  // When the scrub last stood with no turn drawn over the pager — which is the pager itself, the
+  // old scrubber, showing through — and why: at the scrub's start, or after a skip.
+  const scrubBareSince = useSharedValue(-1);
+  const scrubBareWhy = useSharedValue('');
   // What the path animation running on `pathT` is finishing: nothing, a drag's release (and whether
   // it committed), or a tap's turn. Its completion is one worklet, `finishPath`, so a hurried path
   // (landed at once under a new finger) ends the same way as the one it cut short.
@@ -1034,16 +1040,18 @@ export function usePageCurl(options: Options): {
       const layout = layoutOf(o);
       const content = contentOf(o, key);
       const have = cells.current.get(drawn);
-      if (have?.layout === layout && have.content === content) return drawn;
       const cell = o.data.find((c) => c.key === key);
       if (!cell) return null;
-      const image = await scrubPicture(cell, o).catch(() => null);
-      if (!image) return null;
+      // One drawn with a page still loading is drawn again once that page has a size.
+      const sized = cell.pages.every((p) => knownPageSize(p.uri));
+      if (have?.layout === layout && have.content === content && (have.ready || !sized)) return drawn;
+      const drawing = await scrubPicture(cell, o).catch(() => null);
+      if (!drawing) return null;
       if (!alive.current) {
-        image.dispose();
+        drawing.image.dispose();
         return null;
       }
-      stage(drawn, image, true, layout, 'rest', content);
+      stage(drawn, drawing.image, drawing.complete, layout, 'rest', content);
       return drawn;
     },
     [stands, stage],
@@ -1092,10 +1100,14 @@ export function usePageCurl(options: Options): {
         scrubOffered.current.add(next);
         const plan = planTurn(o, at(next), true);
         if (!plan) continue;
+        const startedAt = Date.now();
         const fromKey = await scrubShot(plan.fromKey);
         const toKey = await scrubShot(plan.toKey);
         if (!scrubLive.current) return;
+        const took = Date.now() - startedAt;
+        if (took > SCRUB_SLOW_PAIR_MS) logDiagnostic('page-curl', `A scrub took ${took}ms to draw the pair at spread ${next}, the scrubber at ${goal}.`);
         if (!fromKey || !toKey) {
+          logDiagnostic('page-curl', `A scrub couldn't draw the pair at spread ${next} (${fromKey ? '' : 'its first page'}${!fromKey && !toKey ? ' or ' : ''}${toKey ? '' : 'its second'}); trying again shortly.`);
           scrubOffered.current.delete(next);
           // Tried again in a moment (a page not yet sized or read), not in a loop.
           setTimeout(() => void pumpScrubRef.current(), 250);
@@ -1152,12 +1164,26 @@ export function usePageCurl(options: Options): {
     }, SCRUB_WARM_MS);
   }, [sweep, warm]);
 
+  /** A stretch of a scrub with no turn drawn, where it was long enough to see. */
+  const reportBare = useCallback((ms: number, why: string, base: number, goal: number) => {
+    const offered = scrubOffered.current.has(base);
+    logDiagnostic(
+      'page-curl',
+      `A scrub showed the pager for ${Math.round(ms)}ms with no turn over it (${why}): the pair at spread ${base} was ${offered ? 'still being drawn' : 'not asked for yet'}, the scrubber at ${goal}.`,
+    );
+  }, []);
+
   /** A scrub's turns are over: the curl goes, from wherever its turns had got to, and the JS side is
    *  told. Where a release can't be reached — the pair on to it can't be drawn — the scrub ends
    *  there rather than waiting at the page's edge for good, the reader counted busy all the while. */
   const endScrub = useCallback(() => {
     'worklet';
     if (!scrubbingCurl.value) return;
+    if (scrubBareSince.value >= 0) {
+      const ms = Date.now() - scrubBareSince.value;
+      if (ms > SLOW_MS) runOnJS(reportBare)(ms, `${scrubBareWhy.value}, and the scrub ended so`, Math.floor(scrubAt.value), Math.floor(scrubPos.value));
+      scrubBareSince.set(-1);
+    }
     armedTurn.set('');
     scrubbingCurl.set(false);
     scrubAt.set(-1);
@@ -1165,7 +1191,7 @@ export function usePageCurl(options: Options): {
     scrubLanding.set(-1);
     scrubPairs.set({});
     runOnJS(scrubFinished)();
-  }, [scrubbingCurl, armedTurn, scrubAt, scrubBase, scrubLanding, scrubPairs, scrubFinished]);
+  }, [scrubbingCurl, armedTurn, scrubAt, scrubBase, scrubLanding, scrubPairs, scrubFinished, scrubBareSince, scrubBareWhy, scrubPos, reportBare]);
 
   const frames = useFrameCallback((frame) => {
     'worklet';
@@ -1181,6 +1207,7 @@ export function usePageCurl(options: Options): {
       pos = goal - Math.sign(goal - pos) * SCRUB_SKIP_TO;
       scrubBase.set(-1);
       armedTurn.set('');
+      scrubBareWhy.set(`a fling skipped ahead to spread ${Math.floor(pos)}`);
     }
     const gap = goal - pos;
     const max = Math.min(SCRUB_MAX_SPEED, SCRUB_MIN_SPEED + Math.abs(gap) * SCRUB_SPEED_PER_SPREAD);
@@ -1229,6 +1256,14 @@ export function usePageCurl(options: Options): {
       runOnJS(noteScrub)(goalSpread, shownSpread);
     }
     if (scrubBase.value === Math.floor(next) && armedTurn.value !== '') pathT.set(next - Math.floor(next));
+    if (armedTurn.value === '') {
+      if (scrubBareSince.value < 0) scrubBareSince.set(Date.now());
+    } else if (scrubBareSince.value >= 0) {
+      const ms = Date.now() - scrubBareSince.value;
+      if (ms > SLOW_MS) runOnJS(reportBare)(ms, scrubBareWhy.value, Math.floor(next), goalSpread);
+      scrubBareSince.set(-1);
+      scrubBareWhy.set('');
+    }
     // A released scrub, landed: the pager has gone there under the curl, which goes.
     if (landing >= 0 && Math.abs(goal - next) < 0.002 && Math.abs(speed) < 0.05) {
       if (scrubBase.value >= 0) pathT.set(Math.round(next) === scrubBase.value ? 0 : 1);
@@ -1275,6 +1310,8 @@ export function usePageCurl(options: Options): {
         scrubSpeed.set(0);
         scrubToldGoal.set(-1);
         scrubToldShown.set(-1);
+        scrubBareSince.set(-1);
+        scrubBareWhy.set('waiting for the first pair');
         runOnJS(scrubBegan)();
       }
     },

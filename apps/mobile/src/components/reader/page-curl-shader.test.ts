@@ -207,3 +207,15 @@ describe('the curl effect', () => {
     expect(landed(W / 2, 40)).toEqual([0, 0, 200]);
   });
 });
+
+describe('dark paper', () => {
+  test('a spread of black pages, or of pages still loading, still shows the turn', () => {
+    const leaf = makeLeaf(halfPageBox(null, viewport, 'right'), viewport, SQUARE_SCREEN, true, false);
+    const black = picture([6, 6, 6], [6, 6, 6]);
+    const pull = turnPull(leaf, 60, 0.5);
+    const at = draw(leaf, curlFrame(leaf, 60, pull.x, pull.y), false, black, black);
+    let brightest = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) brightest = Math.max(brightest, ...at(x, y));
+    expect(brightest).toBeGreaterThan(60);
+  });
+});
