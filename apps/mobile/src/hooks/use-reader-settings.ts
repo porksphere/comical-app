@@ -68,7 +68,8 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   // Like other readers: a phone held upright reads one page, turned sideways (or a tablet, or a
   // desktop window) two.
   pageLayout: 'auto',
-  pageTurn: 'slide',
+  // The page curling over, like paper; Reduce Motion, the web build and the standby strip slide.
+  pageTurn: 'curl',
   keepAwake: true,
   pageCountWhenHidden: true,
   respectSafeArea: false,

@@ -146,7 +146,9 @@ appId: com.porksphere.comical
     commands:
       - tapOn:
           id: "reader.settings.page-layout.auto"
-# A choice is segments on Android, a menu on iOS: opened by its row, its options named, not ided.
+# Back to the default, the curl, for the flows after this one (it is already on unless a run
+# before this one left it off). A choice is segments on Android, a menu on iOS: opened by its row,
+# its options named, not ided.
 - runFlow:
     when:
       platform: iOS
@@ -154,13 +156,13 @@ appId: com.porksphere.comical
       - tapOn:
           id: "reader.settings.page-turn"
       - tapOn:
-          text: "Slide"
+          text: "Curl"
 - runFlow:
     when:
       platform: Android
     commands:
       - tapOn:
-          id: "reader.settings.page-turn.slide"
+          id: "reader.settings.page-turn.curl"
 - tapOn:
     point: "50%, 8%"
 
