@@ -205,18 +205,49 @@ export function curlFrame(leaf: Leaf, grabY: number, x: number, y: number): Curl
   return { nx, ny, c, r, shade };
 }
 
+/** How far a turning edge rises at `t` through the turn, as a hand turning a page lifts it: none
+ *  lying flat or landed, most half way over. */
+export function turnLift(leaf: Leaf, t: number): number {
+  'worklet';
+  return Math.sin(Math.PI * t) * leaf.box.height * 0.08;
+}
+
 /**
  * Where the finger would be at `t` through a turn nobody is dragging — a tap, a key, a released
  * drag finishing on its own: the free edge carried from where it lies flat (t = 0) to where it lands
- * (t = 1), lifting a little on the way, as a hand turning a page does.
+ * (t = 1), lifting a little on the way.
  */
 export function turnPull(leaf: Leaf, grabY: number, t: number): { x: number; y: number } {
   'worklet';
   const grab = grabPoint(leaf, grabY);
   const land = landingPoint(leaf, grabY);
-  const lift = Math.sin(Math.PI * t) * leaf.box.height * 0.08;
-  return { x: grab.x + (land.x - grab.x) * t, y: grab.y - lift };
+  return { x: grab.x + (land.x - grab.x) * t, y: grab.y - turnLift(leaf, t) };
 }
 
 /** Where a tap's turn takes the page from: low on the free edge, the corner a thumb lifts. */
 export const TAP_GRAB = 0.82;
+/** How much of where a drag starts, up or down the edge, moves the corner it takes from that one.
+ *  All of it, and a drag begun high takes the top corner and swings the fold through a steep
+ *  diagonal; none, and every drag is a tap. */
+export const GRAB_FOLLOW = 0.3;
+/** How much of a drag's vertical travel reaches the free edge. The turn is a sideways gesture: a
+ *  thumb's natural arc should tilt the fold a little, never steer it. */
+export const VERTICAL_FOLLOW = 0.3;
+
+/** The height a drag that starts at `y` takes the free edge from — mostly the tap's corner. */
+export function dragGrabY(leaf: Leaf, y: number): number {
+  'worklet';
+  const corner = leaf.box.y + leaf.box.height * TAP_GRAB;
+  return corner + (y - corner) * GRAB_FOLLOW;
+}
+
+/**
+ * Where a drag puts the free edge: carried across by the finger's sideways travel `tx` (in turn
+ * space) from where the turn starts (`fromX`), lifting as a tap's turn does, and moved by a damped
+ * share of its vertical travel `ty`.
+ */
+export function dragPull(leaf: Leaf, grabY: number, fromX: number, tx: number, ty: number): { x: number; y: number } {
+  'worklet';
+  const x = fromX + tx;
+  return { x, y: grabPoint(leaf, grabY).y - turnLift(leaf, turnProgress(leaf, x)) + ty * VERTICAL_FOLLOW };
+}

@@ -4,6 +4,8 @@ import {
   FLAT,
   concentric,
   curlFrame,
+  dragGrabY,
+  dragPull,
   halfPageBox,
   landingPoint,
   leafRadii,
@@ -125,5 +127,31 @@ describe('the curl', () => {
     expect(turnProgress(leaf, turnPull(leaf, grabY, 0).x)).toBe(0);
     expect(turnProgress(leaf, turnPull(leaf, grabY, 0.5).x)).toBeCloseTo(0.5, 6);
     expect(turnProgress(leaf, turnPull(leaf, grabY, 1).x)).toBe(1);
+  });
+});
+
+describe('a drag', () => {
+  const leaf: Leaf = makeLeaf(singlePageBox(PAGE, PHONE, 'auto', false), PHONE, [55, 55, 55, 55], false, false);
+  const corner = leaf.box.y + leaf.box.height * 0.82;
+
+  test('takes the free edge mostly from the low corner, wherever it starts', () => {
+    expect(dragGrabY(leaf, corner)).toBeCloseTo(corner, 6);
+    const fromTop = dragGrabY(leaf, leaf.box.y);
+    expect(fromTop).toBeGreaterThan(leaf.box.y + leaf.box.height * 0.5);
+    expect(fromTop).toBeLessThan(corner);
+  });
+
+  test('starts exactly where the edge lies', () => {
+    const edge = turnPull(leaf, corner, 0);
+    expect(dragPull(leaf, corner, edge.x, 0, 0)).toEqual(edge);
+  });
+
+  test('lets only a little of its vertical travel tilt the fold', () => {
+    const edge = turnPull(leaf, corner, 0);
+    const level = dragPull(leaf, corner, edge.x, -150, 0);
+    const climbing = dragPull(leaf, corner, edge.x, -150, -200);
+    expect(level.y - climbing.y).toBeCloseTo(200 * 0.3, 6);
+    // A level drag rises the way a tap's turn does.
+    expect(level.y).toBeLessThan(edge.y);
   });
 });

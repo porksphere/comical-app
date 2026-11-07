@@ -18,6 +18,8 @@ import {
   FLAT,
   TAP_GRAB,
   curlFrame,
+  dragGrabY,
+  dragPull,
   halfPageBox,
   makeLeaf,
   singlePageBox,
@@ -172,7 +174,6 @@ export function usePageCurl(options: Options): {
   const fingerDown = useSharedValue(false);
   const dragging = useSharedValue(false);
   const dragFromX = useSharedValue(0);
-  const dragFromY = useSharedValue(0);
   // What a released drag decided, for a turn asked for before it finished falling into place.
   const releasedCommitted = useSharedValue(false);
   // A turn finishing on its own: along the turn's own arc (a tap), or straight from where a
@@ -243,11 +244,10 @@ export function usePageCurl(options: Options): {
       pullX.set(start.x);
       pullY.set(start.y);
       dragFromX.set(start.x);
-      dragFromY.set(start.y);
       pathT.set(-1);
       turnLeaf.set(plan.leaf);
     },
-    [mirroredSV, grabY, startT, endT, pullX, pullY, dragFromX, dragFromY, pathT, turnLeaf],
+    [mirroredSV, grabY, startT, endT, pullX, pullY, dragFromX, pathT, turnLeaf],
   );
 
   /** Take both pictures and show the curl once they are in, unless the turn has moved on. A cell
@@ -346,7 +346,7 @@ export function usePageCurl(options: Options): {
       const token = ++tokens.current;
       const flight: InFlight = { ...plan, token, fromDrag: true };
       inFlight.current = flight;
-      arm(plan, y);
+      arm(plan, dragGrabY(plan.leaf, y));
       // Let go already: there is no drag left to follow.
       if (!fingerDown.value) {
         finish(token, false);
@@ -386,10 +386,12 @@ export function usePageCurl(options: Options): {
         })
         .onUpdate((e) => {
           'worklet';
-          if (!dragging.value || !turnLeaf.value) return;
+          const leaf = turnLeaf.value;
+          if (!dragging.value || !leaf) return;
           const tx = mirroredSV.value ? -e.translationX : e.translationX;
-          pullX.set(dragFromX.value + tx);
-          pullY.set(dragFromY.value + e.translationY);
+          const pull = dragPull(leaf, grabY.value, dragFromX.value, tx, e.translationY);
+          pullX.set(pull.x);
+          pullY.set(pull.y);
         })
         // eslint-disable-next-line react-hooks/refs -- a worklet: it reaches the in-flight turn (via releaseDrag) only once a released drag has finished turning, never during this render.
         .onEnd((e) => {
@@ -431,7 +433,6 @@ export function usePageCurl(options: Options): {
       pullX,
       pullY,
       dragFromX,
-      dragFromY,
       endT,
       startT,
       grabY,

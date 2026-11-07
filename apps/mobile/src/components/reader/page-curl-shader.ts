@@ -74,6 +74,18 @@ float leafDistance(float2 p) {
   return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rad;
 }
 float onLeaf(float2 p) { return clamp(0.5 - leafDistance(p) * density, 0.0, 1.0); }
+// The leaf's box with its corners square. Outside a rounded corner is no paper, but it is still the
+// page as drawn there until that part has turned — the next page must not show in the corner.
+float onBox(float2 p) {
+  float2 q = abs(p - (leaf.xy + leaf.zw * 0.5)) - leaf.zw * 0.5;
+  return clamp(0.5 - max(q.x, q.y) * density, 0.0, 1.0);
+}
+// Light on the roll's top, by how far round it the paper has come: full where it leaves the flap,
+// so the two meet without a seam, falling toward the roll's far side, with a faint glint.
+float rollLight(float a) {
+  float glint = (a - 0.45) / 0.2;
+  return 0.62 + 0.38 * cos(a) + 0.06 * exp(-glint * glint);
+}
 
 // The leaf's back. Two-sided, it is the facing page of the spread being turned to, printed where it
 // lands once the leaf lies flat across the spine. One-sided, it is paper, the page showing through.
@@ -97,16 +109,14 @@ half4 main(float2 at) {
     float overC = onLeaf(over);
     col *= 1.0 - shade * 0.55 * (1.0 - underC);
     col = mix(col, pageA(under) * (0.5 + 0.5 * cos(a)), underC);
-    float glint = (a - 0.45) / 0.2;
-    float lit = 0.6 + 0.4 * cos(a) + 0.16 * exp(-glint * glint);
-    col = mix(col, back(over) * lit, overC);
+    col = mix(col, back(over) * rollLight(a), overC);
   } else {
     float2 flap = p + n * (PI * R - 2.0 * d);
     float flapD = leafDistance(flap);
     float flapC = clamp(0.5 - flapD * density, 0.0, 1.0);
-    col = mix(col, pageA(p), onLeaf(p));
+    col = mix(col, pageA(p), onBox(p));
     col *= 1.0 - shade * (1.0 - flapC) * 0.4 * exp(-max(flapD, 0.0) / (R * 0.45 + 4.0));
-    col = mix(col, back(flap) * mix(1.0, 0.97, shade), flapC);
+    col = mix(col, back(flap) * rollLight(0.0), flapC);
   }
   return half4(half3(col), 1.0);
 }

@@ -92,6 +92,18 @@ describe('the curl effect', () => {
     expect(at(100, 40)).toEqual([7, 7, 7]);
   });
 
+  test("a rounded corner shows the page it belongs to, never the next one, until it turns", () => {
+    // A lone page filling a screen rounded at the far corners: the corner outside the curve is still
+    // the page on screen while the leaf lies flat, and while it lies flat partway through a turn.
+    const leaf = makeLeaf({ x: 0, y: 0, width: W, height: H }, viewport, [0, 30, 30, 0], false, false);
+    const atRest = draw(leaf, FLAT);
+    expect(atRest(W - 1, 1)).toEqual([0, 200, 0]);
+    // The low corner lifted diagonally: the top corner hasn't turned yet.
+    const start = turnPull(leaf, H - 1, 0);
+    const early = draw(leaf, curlFrame(leaf, H - 1, start.x - 20, start.y - 20));
+    expect(early(W - 1, 1)).toEqual([0, 200, 0]);
+  });
+
   test('mid-turn shows the leaf, its back and the page beneath', () => {
     const leaf = makeLeaf(halfPageBox(halfShape, viewport, 'right'), viewport, SQUARE_SCREEN, true, false);
     const pull = turnPull(leaf, 60, 0.5);
