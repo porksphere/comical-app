@@ -1,4 +1,4 @@
-import { Platform, useWindowDimensions } from 'react-native';
+import { Platform } from 'react-native';
 
 import { readsDouble } from '@/components/reader/spreads';
 import {
@@ -15,6 +15,7 @@ import {
   type SpreadFill,
 } from '@/hooks/use-reader-settings';
 import { useIsDesktop } from '@/hooks/use-responsive';
+import { useWindowSize } from '@/hooks/use-window-size';
 
 /**
  * The reader's settings sheet as data: what it holds, in order, with each field's value, its
@@ -77,7 +78,7 @@ export function useReaderSettingsForm(seriesKey: string | null): ReaderSettingsF
   const shift = useSpreadShift(seriesKey);
   // The window stands in for the reader's frame, which is the window less any safe-area inset —
   // close enough to say whether `auto` is pairing right now.
-  const window = useWindowDimensions();
+  const window = useWindowSize();
   // A desktop window has no orientation to speak of; it is nearly always wider than tall.
   const desktop = useIsDesktop();
   const paged = settings.mode === 'paged';

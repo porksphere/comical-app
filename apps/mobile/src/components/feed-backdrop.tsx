@@ -1,8 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Platform, StyleSheet, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useWindowSize } from '@/hooks/use-window-size';
 
 /** One section's vertical extent in the feed's content space: its heading from `top`, its body
  *  from `bodyTop`. `tint` picks its colour — sections sharing one are the same colour. */
@@ -121,7 +122,7 @@ export function FeedBackdrop({
 }) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
-  const { height: viewport } = useWindowDimensions();
+  const { height: viewport } = useWindowSize();
 
   const scroll = useAnimatedStyle(() => ({ transform: [{ translateY: -scrollOffset.value }] }));
   const unscroll = useAnimatedStyle(() => ({ transform: [{ translateY: scrollOffset.value }] }));

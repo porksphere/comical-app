@@ -1,5 +1,5 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useCallback, useMemo, useRef, type ReactElement, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type AnimatedRef, type SharedValue } from 'react-native-reanimated';
@@ -12,7 +12,8 @@ import { buildGroupedRows } from '@/data/grouped-rows';
 import type { SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { rowCoverAspect, rowCoverAspects } from '@/lib/aspect-ratio';
-import { rowPad, useGridLayout } from '@/hooks/use-grid-layout';
+import { columnPlacement, rowColumnGap, rowPad, useGridLayout } from '@/hooks/use-grid-layout';
+import { onBeforeWindowResize } from '@/hooks/use-window-size';
 import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { useZoomSurfaceKey } from '@/lib/series-zoom';
 import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
@@ -129,7 +130,7 @@ export function SeriesGrid({
   /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
   scrollEnabled?: boolean;
 }) {
-  const { numColumns, sidePad, cardWidth, columnGap, rowGap } = useGridLayout();
+  const { numColumns, sidePad, cardWidth, cellWidth, columnGap, rowGap } = useGridLayout();
   // A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are
   // absolutely positioned), so the same gap feeds both the cell's padding and its fixed height.
   const cellPad = rowPad(rowGap);
@@ -160,11 +161,16 @@ export function SeriesGrid({
   // derives its surface key from (`useZoomSurfaceKey` memoizes by name), so this registers against
   // the very surface the cards capture into.
   const ownListRef = useRef<LegendListRef>(null);
+  // Where the reader is, kept through a resize that changes the columns (an iPhone Duo folding or
+  // opening): the list holds its first visible card where it was, rather than its pixel offset, which
+  // in twice the columns is a different stretch of the library.
+  const anchorRef = listRef ?? ownListRef;
+  useEffect(() => onBeforeWindowResize(() => void anchorRef.current?.anchorVisibleContent()), [anchorRef]);
   useZoomSurfaceList(useZoomSurfaceKey(scopeKey), items, gridSeriesId, listRef ?? ownListRef, {
-    // Column k sits at k·(cardWidth + gap) — see the marginLeft note in renderItem.
+    // Column k's box sits at k·(cellWidth + gap), its card centred in it — see `columnPlacement`.
     xAtIndex: useCallback(
-      (index: number) => (index % numColumns) * (cardWidth + columnGap),
-      [numColumns, cardWidth, columnGap],
+      (index: number) => (index % numColumns) * (cellWidth + columnGap) + (cellWidth - cardWidth) / 2,
+      [numColumns, cardWidth, cellWidth, columnGap],
     ),
     locatable: !groupOf,
   });
@@ -181,7 +187,7 @@ export function SeriesGrid({
         rows={groupedRows}
         rowHeight={(rowItems) => estimatedCardHeight(cardWidth, sub, rowCoverAspect(rowItems)) + rowGap}
         scopeKey={scopeKey}
-        listRef={listRef}
+        listRef={anchorRef}
         scrollRef={scrollRef}
         header={header}
         paddingTop={paddingTop}
@@ -197,22 +203,25 @@ export function SeriesGrid({
           const rowAspect = rowCoverAspect(rowItems);
           const height = estimatedCardHeight(cardWidth, sub, rowAspect) + rowGap;
           return (
-            // Manual rows lay out with a real flex gap (LegendList's column slots can't gap — see the
-            // marginLeft note below), which lands cards at the same `cardWidth + columnGap`
-            // rhythm as the ungrouped grid; fixed widths keep a short final row left-aligned.
-            <View style={[styles.groupedRow, { gap: columnGap }]}>
-              {rowItems.map((item) => (
-                <View key={keyOf(item)} style={[styles.cell, cellPad, { width: cardWidth, height }]}>
-                  <SeriesCard
-                    entry={item}
-                    bridge={item.bridge ?? bridge}
-                    bridgeId={item.bridgeId ?? bridgeId}
-                    direct={item.direct ?? direct}
-                    cohort={scopeKey}
-                    crossfading={crossfading}
-                    markSaved={markSaved}
-                    rowAspect={rowAspect}
-                  />
+            // Manual rows, each card in its column's box by the same placement as the ungrouped grid
+            // (`columnPlacement`), so the two land cards at the same x; a short final row just ends.
+            <View style={[styles.groupedRow, { gap: rowColumnGap(columnGap) }]}>
+              {rowItems.map((item, column) => (
+                <View
+                  key={keyOf(item)}
+                  style={[styles.cell, cellPad, { height }, columnPlacement(column, numColumns, columnGap, cardWidth)]}>
+                  <View style={{ width: cardWidth }}>
+                    <SeriesCard
+                      entry={item}
+                      bridge={item.bridge ?? bridge}
+                      bridgeId={item.bridgeId ?? bridgeId}
+                      direct={item.direct ?? direct}
+                      cohort={scopeKey}
+                      crossfading={crossfading}
+                      markSaved={markSaved}
+                      rowAspect={rowAspect}
+                    />
+                  </View>
                 </View>
               ))}
             </View>
@@ -263,22 +272,19 @@ export function SeriesGrid({
         // Browse feed's hand-laid rows. Column k sits `k·gap/n` right of its slot start, which lands
         // every card at exactly `k·(cardWidth+gap)`: true `columnGap` gaps, flush right edge,
         // identical to ContentFeed's terminal grid.
-        <View
-          style={[
-            styles.cell,
-            cellPad,
-            { width: cardWidth, height: heightAt(index), marginLeft: (index % numColumns) * (columnGap / numColumns) },
-          ]}>
-          <SeriesCard
-            entry={item}
-            bridge={item.bridge ?? bridge}
-            bridgeId={item.bridgeId ?? bridgeId}
-            direct={item.direct ?? direct}
-            cohort={scopeKey}
-            crossfading={crossfading}
-            markSaved={markSaved}
-            rowAspect={rowAspectAt(index)}
-          />
+        <View style={[styles.cell, cellPad, { height: heightAt(index) }, columnPlacement(index % numColumns, numColumns, columnGap, cardWidth, true)]}>
+          <View style={{ width: cardWidth }}>
+            <SeriesCard
+              entry={item}
+              bridge={item.bridge ?? bridge}
+              bridgeId={item.bridgeId ?? bridgeId}
+              direct={item.direct ?? direct}
+              cohort={scopeKey}
+              crossfading={crossfading}
+              markSaved={markSaved}
+              rowAspect={rowAspectAt(index)}
+            />
+          </View>
         </View>
       )}
     />
@@ -287,9 +293,11 @@ export function SeriesGrid({
 
 const styles = StyleSheet.create({
   cell: {
-    // NO `flex: 1` — pinned to `cardWidth` at the call site so a short last row ends rather than
-    // stretching. `justifyContent: flex-start` so a card shorter than the fixed cell top-aligns.
+    // NO `flex: 1` — its card held to `cardWidth` so a short last row ends rather than stretching,
+    // centred in the column's box. `justifyContent: flex-start` so a card shorter than the fixed cell
+    // top-aligns.
     justifyContent: 'flex-start',
+    alignItems: 'center',
   },
   groupedRow: {
     flexDirection: 'row',

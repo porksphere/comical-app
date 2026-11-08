@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react';
-import { Platform, useWindowDimensions } from 'react-native';
+import { Platform } from 'react-native';
 
 import { RegularWidthBreakpoint, sizeClassFor, type SizeClass } from '@/constants/size-class';
 import { DesktopTopBarHeight, TopBarHeight } from '@/constants/theme';
+import { useWindowSize } from '@/hooks/use-window-size';
 
 export { RegularWidthBreakpoint, sizeClassFor, type SizeClass };
 
@@ -12,7 +13,7 @@ export { RegularWidthBreakpoint, sizeClassFor, type SizeClass };
  *
  * The deferral is a web-only concern: the static export prerenders with no viewport (width 0), so the
  * client's first render has to reproduce that same small-screen assumption or React warns and
- * reflows. Native has no prerender — `useWindowDimensions()` returns the true width on the very first
+ * reflows. Native has no prerender — `useWindowSize()` returns the true width on the very first
  * render — so deferring there buys nothing and COSTS a guaranteed-wrong first frame: every consumer
  * lays out at the fallback size, then jumps to the real one a frame later (rail cards visibly
  * snapping wider, a desktop-width top bar starting short). Gate the deferral on web so native is
@@ -76,9 +77,23 @@ export const LARGE_SCREEN_BREAKPOINT = RegularWidthBreakpoint;
  * to the real width. On native the real width is used from the first render.
  */
 export function useIsCompact(): boolean {
-  const { width } = useWindowDimensions();
+  const { width } = useWindowSize();
   const hydrated = useHydrated();
   return hydrated ? width <= COMPACT_BREAKPOINT : true;
+}
+
+/**
+ * Whether text takes the compact type scale: card titles, section headings, the selector's labels.
+ * On an iPhone always — the iPhone Duo's inner display included — and by the window elsewhere
+ * (`useIsCompact`). The Duo's two displays fall either side of the breakpoint, so by the window every
+ * fold changed the type of every card and heading on screen, a render after the system had resized
+ * the layout: headings visibly jumped, and every card rendered again for it. A phone held open is
+ * still a phone in the hand, read at a phone's distance.
+ */
+export function useCompactType(): boolean {
+  const compact = useIsCompact();
+  if (Platform.OS === 'ios' && !Platform.isPad) return true;
+  return compact;
 }
 
 /**
@@ -91,7 +106,7 @@ export function useIsCompact(): boolean {
  * real width applies from the first render (see `useHydrated`).
  */
 export function useSizeClass(): SizeClass {
-  const { width } = useWindowDimensions();
+  const { width } = useWindowSize();
   const hydrated = useHydrated();
   return hydrated ? sizeClassFor(width) : 'compact';
 }
@@ -121,7 +136,7 @@ export function useIsDesktop(): boolean {
  * the first render, so a desktop-width bar doesn't start short and jump (see `useHydrated`).
  */
 export function useTopBarHeight(): number {
-  const { width } = useWindowDimensions();
+  const { width } = useWindowSize();
   const hydrated = useHydrated();
   return hydrated && sizeClassFor(width) === 'regular' ? DesktopTopBarHeight : TopBarHeight;
 }

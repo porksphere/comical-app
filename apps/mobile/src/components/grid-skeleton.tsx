@@ -5,13 +5,14 @@
  * "cards incoming" placeholder. Mirrors a real card's cell so it reads at the
  * same size and column offset as the cards that replace it.
  */
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useIsDesktop } from '@/hooks/use-responsive';
+import { useWindowSize } from '@/hooks/use-window-size';
 
 /** A single skeleton card (cover + two title lines) — one grid cell's worth. */
 export function SkeletonCard() {
@@ -33,7 +34,7 @@ const SKELETON_LINE_H = 12;
  *  desktop window empty, where six-across cards make each row short next to the window's height. */
 export function useSkeletonRows(): number {
   const { cardWidth } = useGridLayout();
-  const { height } = useWindowDimensions();
+  const { height } = useWindowSize();
   const rowHeight = cardWidth * 1.5 + SKELETON_LINE_H * 2 + Spacing.one * 2 + Spacing.half * 2 + Spacing.three;
   if (!(rowHeight > 0)) return 2;
   return Math.min(8, Math.max(2, Math.ceil(height / rowHeight)));

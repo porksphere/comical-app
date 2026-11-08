@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, type ViewInstance } from 'react-native';
+import { Pressable, StyleSheet, type ViewInstance } from 'react-native';
 
 import { openCollectionPicker } from '@/components/collection-picker';
 import { BookmarkIcon } from '@/components/icons/reader-icons';
@@ -7,6 +7,7 @@ import { openSpreadPick, type SpreadPickRequest, type SpreadSide } from '@/compo
 import { showToast } from '@/components/toast';
 import { peekResolvedAssetSource } from '@/data/api';
 import { usePageCollected } from '@/hooks/use-page-collected';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { hapticImpactLight } from '@/lib/haptics';
 import { isTypingTarget } from '@/lib/key-hold';
 import { isKey } from '@/lib/keybindings';
@@ -142,7 +143,7 @@ export function CollectPageControl({
 }) {
   const { collected, save, openPicker, spread, spreadMenu } = useCollectPage(page);
   const ref = useRef<ViewInstance>(null);
-  const { width: winW } = useWindowDimensions();
+  const { width: winW } = useWindowSize();
 
   // Hung from the button like a dropdown, right edge to the button's.
   const menuFromButton = (shown: OnScreen, intent: 'save' | 'pick') =>

@@ -1,6 +1,6 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 
@@ -20,9 +20,9 @@ import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { DEFAULT_THUMB_ASPECT, rowCoverAspect, rowCoverAspects } from '@/lib/aspect-ratio';
 import { useBookCoversEnabled } from '@/hooks/use-book-covers';
-import { cardGap, gridColumnsFor, gridGeometry } from '@/hooks/use-grid-layout';
+import { cardGap, gridGeometry } from '@/hooks/use-grid-layout';
 import { useHovered } from '@/hooks/use-hovered';
-import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
+import { useCompactType, useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
 import { ZoomSurfaceContext, useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
@@ -65,26 +65,25 @@ function stripGapFor(books: boolean): number {
 }
 
 /**
- * Responsive card width per rail kind, given the current viewport width (passed
- * in from the screen so there's a single, hydration-safe dimensions source). We
- * size so that N full cards plus a ⅓ peek of the next fit the viewport: with left
- * pad P and gap G,
- *   P + N·c + N·G + c/3 = viewport  ⇒  c = (viewport − P − N·G) / (N + ⅓).
- * Regular/ranked carousels show as many full cards as the grid has columns at that
- * width, 3 on a phone (the reference's mobile CSS collapses both to the same width);
- * hero cards are larger, showing 2 full + ⅓ at every width. This
- * converges to nearly the same card width the reference's raw `flex-basis: 30%`
- * computes once its own padding is netted out — deriving it from the "N + ⅓
- * cards visible" constraint directly is more robust than porting the percentage
- * literally, which (having tried it) overshoots because comical-app's strip
- * doesn't share the reference's full-bleed padding cancellation.
+ * A strip's card width per rail kind: FIXED, not a share of the viewport. A wider screen shows more
+ * cards rather than larger ones, the way the system's own rails do (the App Store's, Books'), and the
+ * next card peeks wherever the strip runs past the screen.
+ *
+ * It used to fit N cards and a third of the next to the viewport, with N growing with the width. That
+ * tied every card's size to the window's: an iPhone Duo folding or opening resized every card in
+ * every rail a render after the window had (JS sizing them, never the layout the system was
+ * animating), re-measured each strip, moved it back onto its card and changed every rail's height,
+ * shifting the feed under it. At a width of its own, a fold only changes how many cards fit.
+ *
+ * About the folded Duo's cards at the old rule (124pt with book covers there); a 402pt phone shows a
+ * little under three, the open Duo about seven. A hero rail's cards are larger, about two across a
+ * phone.
  */
-function peekWidth(viewport: number, fullCards: number, gap: number): number {
-  return Math.round((viewport - STRIP_PAD - fullCards * gap) / (fullCards + 1 / 3));
-}
+const RAIL_CARD_WIDTH = 120;
+const HERO_CARD_WIDTH = 176;
 
-function cardWidthFor(kind: RailSection['kind'], viewport: number, books: boolean): number {
-  return peekWidth(viewport, kind === 'hero' ? 2 : gridColumnsFor(viewport), stripGapFor(books));
+function cardWidthFor(kind: RailSection['kind']): number {
+  return kind === 'hero' ? HERO_CARD_WIDTH : RAIL_CARD_WIDTH;
 }
 
 /**
@@ -93,7 +92,7 @@ function cardWidthFor(kind: RailSection['kind'], viewport: number, books: boolea
  * sizes of the same card one click apart.
  *
  * Except `hero`, whose point is bigger cards: it spreads the same content width over ⅔ as many
- * columns (6 → 4 on a full desktop), the wide-layout counterpart of its 2⅓-card mobile strip.
+ * columns (6 → 4 on a full desktop), the wide-layout counterpart of its larger strip cards.
  */
 function wideGrid(
   viewport: number,
@@ -124,7 +123,7 @@ export const SECTION_HEAD_HEIGHT = 32;
 const HEAD_HEIGHT_COMPACT = 28;
 const HEAD_HEIGHT_WIDE = SECTION_HEAD_HEIGHT;
 
-/** A `SectionHead`'s rendered height at the caller's breakpoint — pass `useIsCompact()`, the same
+/** A `SectionHead`'s rendered height at the caller's breakpoint — pass `useCompactType()`, the same
  *  hook the head itself reads. The sticky sizes its band from this, so the band's padding is
  *  symmetric around the heading at either breakpoint. */
 export function sectionHeadHeight(compact: boolean): number {
@@ -181,7 +180,7 @@ export function railStripHeight(
     return Spacing.one * 2 + cards + (rowAspects.length - 1) * rowGap;
   }
   // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
-  return estimatedCardHeight(cardWidthFor(kind, viewportWidth, books), hasSub) + STRIP_PAD_V * 2;
+  return estimatedCardHeight(cardWidthFor(kind), hasSub) + STRIP_PAD_V * 2;
 }
 
 /** Whole rail row INCLUDING its own heading — for callers where the rail renders its own head (a
@@ -247,7 +246,7 @@ export function Rail({
   const stripHalfGap = stripGap / 2;
   const gutter = useScrollbarGutter();
   const grid = wideGrid(viewportWidth, gutter, books, section.kind);
-  const cardWidth = wide ? grid.cardWidth : cardWidthFor(section.kind, viewportWidth, books);
+  const cardWidth = wide ? grid.cardWidth : cardWidthFor(section.kind);
   // One card's scroll "slot" (card width + inter-card gap). The strip snaps to multiples of this and
   // the resting card index is derived from it, so it's the single value shared by getFixedItemSize,
   // snapToInterval, and the rest-index persist/restore below — they can't disagree.
@@ -343,7 +342,9 @@ export function Rail({
   // user left it. Defaulting to 0 also subsumes the old iOS-only workaround for a horizontal
   // LegendList mounting already scrolled away (legendapp/list#458): scrolling to offset 0 is a
   // harmless no-op on web/Android and the fix on iOS.
-  useEffect(() => {
+  // A layout effect, so the strip is back on its card before the frame that shows the new widths:
+  // after the commit, a frame drew it at the old card's offset in the new widths, then it jumped.
+  useLayoutEffect(() => {
     if (wide) return;
     const idx = railRestIndex.get(railRestKey(bridgeId, section.id)) ?? 0;
     listRef.current?.scrollToOffset({ offset: idx * itemSize, animated: false });
@@ -492,11 +493,13 @@ export function Rail({
             railRestIndex.set(railRestKey(bridgeId, section.id), Math.max(0, Math.round(e.nativeEvent.contentOffset.x / itemSize)))
           }
           renderItem={({ item, index }) => (
-            <View style={[styles.stripItem, { paddingHorizontal: stripHalfGap }]}>
+            // The slot carries the width and the card fills it, so a new width (a fold) renders the
+            // slots again, not every card in the rail.
+            <View style={[styles.stripItem, { width: itemSize, paddingHorizontal: stripHalfGap }]}>
               <SeriesCard
                 entry={item}
                 size={size}
-                width={cardWidth}
+                width="fill"
                 rank={ranked ? index + 1 : undefined}
                 bridge={bridge}
                 bridgeId={bridgeId}
@@ -524,9 +527,9 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
   const books = useBookCoversEnabled();
   const grid = wideGrid(viewportWidth, gutter, books);
   const stripGap = wide ? grid.columnGap : stripGapFor(books);
-  const cardWidth = wide ? grid.cardWidth : cardWidthFor('regular', viewportWidth, books);
-  // The strip's full cards and the one peeking in.
-  const count = wide ? grid.columns : gridColumnsFor(viewportWidth) + 1;
+  const cardWidth = wide ? grid.cardWidth : cardWidthFor('regular');
+  // Enough fixed-width cards to run past the screen's edge, as the strip does.
+  const count = wide ? grid.columns : Math.ceil((viewportWidth - STRIP_PAD) / (cardWidth + stripGap)) + 1;
   // The wide skeleton is the full grid the feed already reserves height for (railStripHeight with
   // no count) — rows at the loaded grid's own pitch, so nothing shifts when the cards arrive.
   const rows = wide ? GRID_ROWS : 1;
@@ -604,7 +607,7 @@ export function SectionHeadContent({
 }) {
   const theme = useTheme();
   // Match the reference's `.section-head h3`: 1.2rem mobile / 1.5rem desktop.
-  const compact = useIsCompact();
+  const compact = useCompactType();
   return (
     <>
       <ThemedText
@@ -638,7 +641,7 @@ export function SectionHead({
   testID?: string;
 }) {
   const theme = useTheme();
-  const compact = useIsCompact();
+  const compact = useCompactType();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   // Claimed by EVERY head, not just the drillable ones — otherwise a rail you can drill into would
   // stand a different height from one you can't whenever the chevron outgrows the title's line box.

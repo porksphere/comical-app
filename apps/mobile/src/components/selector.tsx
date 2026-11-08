@@ -7,7 +7,7 @@ import { OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
-import { useIsCompact, usePointerFine } from '@/hooks/use-responsive';
+import { useCompactType, usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
@@ -49,7 +49,7 @@ type SelectorProps = {
 
 /** The `subtitle` trigger's type, for a bar title that sits beside a `Selector`. */
 export function useSubtitleSelectorStyle() {
-  const compact = useIsCompact();
+  const compact = useCompactType();
   return { label: compact ? styles.subtitleCompact : styles.subtitleWide };
 }
 
@@ -57,7 +57,7 @@ export function useSubtitleSelectorStyle() {
  *  sits nearer the cap height — so it lines up with a word that ends in lowercase. */
 export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['size'] }) {
   const theme = useTheme();
-  const compact = useIsCompact();
+  const compact = useCompactType();
   const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : 8;
   const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (compact ? 22.4 : 28) : 14;
   return (
@@ -70,7 +70,7 @@ export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['siz
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
 export function Selector({ title, value, options, onChange, thumbnails, sources, labels, size = 'title', testID }: SelectorProps) {
   const { ref, openAt } = useAnchoredOverlay();
-  const compact = useIsCompact();
+  const compact = useCompactType();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
   return (

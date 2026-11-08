@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -16,7 +16,7 @@ import type { SeriesEntry } from '@/data/types';
 import { useBookCover } from '@/hooks/use-book-covers';
 import { useCoverShelf } from '@/hooks/use-cover-shelf';
 import { useSavedInLibrary } from '@/hooks/use-library-marker';
-import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
+import { useCompactType, useIsDesktop } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
@@ -398,7 +398,7 @@ function CoverShrink({
   return <>{children({ pictureStyle, trailingStyle, onCoverLayout, runShrink })}</>;
 }
 
-export function SeriesCard({
+function SeriesCardBody({
   entry,
   size = 'grid',
   rank,
@@ -415,8 +415,10 @@ export function SeriesCard({
   size?: CardSize;
   rank?: number;
   /** Explicit card width (rails compute a responsive one); falls back to the
-   *  per-size default. `grid` cards ignore this and fill their column. */
-  width?: number;
+   *  per-size default. `grid` cards ignore this and fill their column, and `'fill'` has any card fill
+   *  the box it is put in — so a width that changes is the box's, and the card is not rendered again
+   *  for it. */
+  width?: number | 'fill';
   /** Originating bridge name, carried to the series detail's header. */
   bridge?: string;
   /** Originating bridge's stable id, carried so the series detail can call the
@@ -488,7 +490,7 @@ export function SeriesCard({
   // a server-relative `/img-proxy` cover (from a Referer-gated source) is routed to the API
   // base on web / the in-process transport on device. Without this those covers render blank.
   const resolvedCover = useResolvedAsset(entry.cover);
-  const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
+  const fixedWidth = size === 'grid' || width === 'fill' ? undefined : (width ?? WIDTHS[size]);
   // The active/held decorations differ by platform: web keeps the hover highlight ring + full-title
   // peek popover; iOS/Android drop both (the OS-native long-press context menu is the affordance
   // there, and its own lifted preview would fight an inline ring/popover) in favor of a subtle
@@ -590,7 +592,7 @@ export function SeriesCard({
   }
 
   // Responsive title size matching the reference's mobile/desktop type scale.
-  const compact = useIsCompact();
+  const compact = useCompactType();
   const titleFontSize = compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular;
   const titleLineHeight = compact ? TITLE_LINE_HEIGHT.compact : TITLE_LINE_HEIGHT.regular;
   const titleSize = { fontSize: titleFontSize, lineHeight: titleLineHeight };
@@ -955,12 +957,20 @@ export function SeriesCard({
 }
 
 /**
+ * A series card, rendered again only when what it is handed changes. Its cover takes its height
+ * from its own shape and its width from its cell, so a new window size is its cell's business: a
+ * row rendering again for one (a list's layout key, an iPhone Duo folding or opening) rendered
+ * every card on screen with it, the larger part of a fold's work.
+ */
+export const SeriesCard = memo(SeriesCardBody);
+
+/**
  * A card's title and sub lines on their own, for a grid tile that is not a `SeriesCard` but sits in
  * the same grid as one. The tile supplies `styles.card`'s gap above it; `estimatedCardHeight` with
  * `hasSub` is then its height too.
  */
 export function CardCaption({ title, sub }: { title: string; sub?: string }) {
-  const compact = useIsCompact();
+  const compact = useCompactType();
   return (
     <>
       <ThemedText
@@ -1001,7 +1011,7 @@ export function CardCaption({ title, sub }: { title: string; sub?: string }) {
 function TitlePeek({ title, anchor }: { title: string; anchor: RefObject<ViewInstance | null> }) {
   const theme = useTheme();
   // Match the card title's responsive size so the popover wraps identically.
-  const compact = useIsCompact();
+  const compact = useCompactType();
   const titleSize = {
     fontSize: compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular,
     lineHeight: compact ? TITLE_LINE_HEIGHT.compact : TITLE_LINE_HEIGHT.regular,

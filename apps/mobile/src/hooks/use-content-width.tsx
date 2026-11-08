@@ -4,7 +4,7 @@
  * The window's width is not that number once the sidebar exists. `app-tabs` reserves the rail with
  * a `paddingLeft` on `TabSlot` (it has to — the slot must stay a direct child of `Tabs`, so the rail
  * can't be a sibling column in a row), and padding is invisible to the descendants that size
- * themselves: a grid dividing `useWindowDimensions().width` into columns lays out cards for the
+ * themselves: a grid dividing `useWindowSize().width` into columns lays out cards for the
  * whole window and is then pushed right by the rail, overhanging the viewport by its width. That
  * was the bug — 224pt of the last column past the right edge at 1180.
  *
@@ -19,8 +19,10 @@
  * preferences, and `ZoomSurfaceContext` is the same shape for the same reason.
  */
 import { createContext, useContext, useMemo } from 'react';
-import { useWindowDimensions } from 'react-native';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useWindowSize } from '@/hooks/use-window-size';
 
 type NavLayout = {
   /** The width left for content after the rail. */
@@ -48,7 +50,7 @@ export function ContentWidthProvider({
 
 /** The window's width outside a provider, the inset content column inside one. */
 export function useContentWidth(): number {
-  const { width } = useWindowDimensions();
+  const { width } = useWindowSize();
   return useContext(NavLayoutContext)?.contentWidth ?? width;
 }
 

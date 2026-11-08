@@ -1,5 +1,6 @@
-import { Stack } from 'expo-router';
-import type { ComponentProps } from 'react';
+import { Stack, useIsFocused } from 'expo-router';
+import { useEffect, useState, type ComponentProps } from 'react';
+import { Freeze } from 'react-freeze';
 import { ReanimatedScreenProvider } from 'react-native-screens/reanimated';
 
 import { barExtentLayout } from '@/components/bar-extent';
@@ -55,7 +56,9 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  */
 export default function TabStack({ tab }: { tab: string }) {
   const barMaterial = useBarMaterial();
+  const frozen = useFrozenWhileHidden();
   return (
+    <Freeze freeze={frozen}>
     <TabRouteContext.Provider value={tab}>
       <TabBarClearanceReporter />
       <ReanimatedScreenProvider>
@@ -69,7 +72,26 @@ export default function TabStack({ tab }: { tab: string }) {
         </Stack>
       </ReanimatedScreenProvider>
     </TabRouteContext.Provider>
+    </Freeze>
   );
+}
+
+/**
+ * Whether this tab's screens are held still: while another tab is up. Every tab stays mounted, and
+ * a tab out of sight still rendered for every change it reads, the window's size among them: an
+ * iPhone Duo folding re-rendered Browse's rails under Library, half the work of the fold. Frozen a
+ * render after the tab is left, so it settles as it goes, the way react-native-screens freezes a
+ * screen it covers; let go at once when the tab is chosen again, which renders it at what it
+ * missed.
+ */
+function useFrozenWhileHidden(): boolean {
+  const focused = useIsFocused();
+  const [settled, setSettled] = useState(!focused);
+  useEffect(() => {
+    const id = setTimeout(() => setSettled(!focused), 0);
+    return () => clearTimeout(id);
+  }, [focused]);
+  return !focused && settled;
 }
 
 function tabScreenLayout(args: Parameters<NonNullable<ComponentProps<typeof Stack>['screenLayout']>>[0]) {

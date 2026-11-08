@@ -71,6 +71,7 @@
         "lucide-react-native": "1.21.0",
         "react": "19.3.0",
         "react-dom": "19.3.0",
+        "react-freeze": "^1.0.4",
         "react-native": "0.88.0",
         "react-native-gesture-handler": "~3.3.0",
         "react-native-get-random-values": "~1.11.0",

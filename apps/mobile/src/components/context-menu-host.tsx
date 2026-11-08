@@ -31,7 +31,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { Platform, StyleSheet, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
+import { Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
@@ -65,6 +65,7 @@ import {
   menuStyles,
   type MenuRowSpec,
 } from '@/components/context-menu-material';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { useDismissKey } from '@/lib/dismiss-key';
 import { isTypingTarget } from '@/lib/key-hold';
 import { moveDirectionOf, readerScopeActive } from '@/lib/keybindings';
@@ -307,7 +308,7 @@ export function ContextMenuHost() {
 }
 
 function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRowSpec[] }) {
-  const { width: winW, height: winH } = useWindowDimensions();
+  const { width: winW, height: winH } = useWindowSize();
   const insets = useSafeAreaInsets();
   const scheme = useActiveColorScheme();
   const tint = scheme === 'dark' ? 'dark' : 'light';

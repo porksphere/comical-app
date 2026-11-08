@@ -30,8 +30,8 @@ import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/
 import { contentRowType, type ContentRow, type FeedCardEntry, type SeeAllTarget } from '@/data/content-rows';
 import { DEFAULT_THUMB_ASPECT, rowCoverAspect } from '@/lib/aspect-ratio';
 import { useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
-import { rowPad, useGridLayout } from '@/hooks/use-grid-layout';
-import { useIsCompact, useIsDesktop } from '@/hooks/use-responsive';
+import { columnPlacement, rowColumnGap, rowPad, useGridLayout } from '@/hooks/use-grid-layout';
+import { useCompactType, useIsDesktop } from '@/hooks/use-responsive';
 import { useRouter } from '@/lib/nav';
 
 // The two knobs for the vertical rhythm now that EVERY heading is a shared standalone `sectionHead`
@@ -172,7 +172,7 @@ export function ContentFeed({
   const wide = useIsDesktop();
   // The breakpoint `SectionHead` itself reads — the sticky sizes its band from the head's real
   // height. A DIFFERENT breakpoint from `wide` above.
-  const compact = useIsCompact();
+  const compact = useCompactType();
   const router = useRouter();
   // Per-bridge `cardSubtitles` flags: each rail reserves the sub line only if ITS bridge sends one
   // (aggregate rails mix bridges), and the terminal grid follows the feed's own bridge.
@@ -480,24 +480,26 @@ export function ContentFeed({
           case 'gridRow': {
             const rowAspect = rowCoverAspect(item.items);
             return (
-              <View style={[styles.row, styles.gridRow, { gap: columnGap }]}>
-                {item.items.map((entry) => (
-                  // Both dims fixed — cardWidth (from useGridLayout) + the row's height — so a short final
-                  // row just ends, matching series-grid.tsx's cell exactly. Bridge-scope the key (like
+              <View style={[styles.row, styles.gridRow, { gap: rowColumnGap(columnGap) }]}>
+                {item.items.map((entry, column) => (
+                  // The row's height fixed and the width its column's share (`columnPlacement`), so a short
+                  // final row just ends, matching series-grid.tsx's cell exactly. Bridge-scope the key (like
                   // SeriesGrid's keyExtractor) so a cross-bridge row can't collide on a shared seriesId.
                   <View
                     key={entry.bridgeId ? `${entry.bridgeId}:${entry.id}` : entry.id}
-                    style={[styles.cell, cellPad, { width: cardWidth, height: gridRowHeight(item.items) }]}>
+                    style={[styles.cell, cellPad, { height: gridRowHeight(item.items) }, columnPlacement(column, numColumns, columnGap, cardWidth)]}>
 
-                    <SeriesCard
-                      entry={entry}
-                      bridge={entry.bridge ?? bridge}
-                      bridgeId={entry.bridgeId ?? bridgeId}
-                      direct={entry.direct ?? direct}
-                      cohort={scopeKey}
-                      crossfading={crossfading}
-                      rowAspect={rowAspect}
-                    />
+                    <View style={{ width: cardWidth }}>
+                      <SeriesCard
+                        entry={entry}
+                        bridge={entry.bridge ?? bridge}
+                        bridgeId={entry.bridgeId ?? bridgeId}
+                        direct={entry.direct ?? direct}
+                        cohort={scopeKey}
+                        crossfading={crossfading}
+                        rowAspect={rowAspect}
+                      />
+                    </View>
                   </View>
                 ))}
               </View>
@@ -553,6 +555,7 @@ const styles = StyleSheet.create({
   // NO flex: 1 — pinned to cardWidth at the call site so a short last row ends rather than stretching.
   cell: {
     justifyContent: 'flex-start',
+    alignItems: 'center',
   },
   // Shared standalone heading row for every section — SECTION_GAP above, HEADING_GAP below.
   sectionHead: {

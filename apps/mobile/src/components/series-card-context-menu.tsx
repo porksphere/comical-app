@@ -4,7 +4,7 @@ import { usePathname } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
-import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Extrapolation,
@@ -65,6 +65,7 @@ import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { useDismissKey } from '@/lib/dismiss-key';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { useRouter } from '@/lib/nav';
@@ -270,7 +271,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // The VISUAL corner radius the preview starts at (matches the source it lifts from); it morphs to the
   // resting radius (REST_COVER_RADIUS) as it opens. Defaults to that resting radius (a card cover).
   const startRadius = req.startRadius ?? REST_COVER_RADIUS;
-  const { width: winW, height: winH } = useWindowDimensions();
+  const { width: winW, height: winH } = useWindowSize();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const scheme = useActiveColorScheme();

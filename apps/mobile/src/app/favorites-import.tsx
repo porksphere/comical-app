@@ -29,7 +29,7 @@ import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Holdable } from '@/components/context-menu';
@@ -52,6 +52,7 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { useListLayout } from '@/hooks/use-list-layout';
 import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { friendlyError } from '@/lib/friendly-error';
 import { hapticSelection } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
@@ -66,7 +67,7 @@ export default function FavoritesImportScreen() {
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width } = useWindowSize();
   const { paddingTop } = useSettingsScrollPadding();
   const ds = useDataSource();
   const mock = useMockActive();

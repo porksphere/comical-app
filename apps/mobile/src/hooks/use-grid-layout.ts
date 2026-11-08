@@ -12,6 +12,7 @@
  */
 import { Platform } from 'react-native';
 
+import { RegularWidthBreakpoint } from '@/constants/size-class';
 import { Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { useBookCoversEnabled } from '@/hooks/use-book-covers';
 import { type SideInsets, useContentWidth, useSideInsets } from '@/hooks/use-content-width';
@@ -50,11 +51,47 @@ export function rowPad(gap: number): { paddingTop: number; paddingBottom: number
 // 150 keeps the Duo's cards about one size open, at five columns in landscape and four in portrait.
 const GRID_MIN_CARD = Platform.OS === 'web' ? 200 : 150;
 
-/** Cards across a content width: the grid's columns, and how many whole cards a native rail shows.
- *  It takes the width alone, not the size class, whose line falls between the Duo's two open poses.
- *  A phone's width counts to fewer than 3, so a phone stays at 3. */
+/** Cards across a content width on the WEB: the grid's columns. It takes the width alone, not the
+ *  size class. A phone-sized window counts to fewer than 3, so it stays at 3. (A device's grid has a
+ *  card width of its own — see `gridGeometry`.) */
 export function gridColumnsFor(width: number): number {
   return Math.min(6, Math.max(3, Math.floor(width / GRID_MIN_CARD)));
+}
+
+/**
+ * A device's grid card width: fixed, as a strip's is (see `rail.tsx`). A wider window shows more
+ * columns of the same cards, the spare width going to the gaps, rather than wider cards: by the
+ * window's width, an iPhone Duo folding or opening resized every card a render after the system had
+ * resized the layout. This size fits three across the folded Duo beside its side column and six
+ * across the open one — about the old phone grid's card, so a phone looks as it did.
+ */
+const DEVICE_GRID_CARD = 104;
+/** The most columns a device's grid lays out: past this a wide tablet grows its gaps. */
+const DEVICE_GRID_MAX_COLUMNS = 8;
+
+/**
+ * Where a grid cell's card sits in its column — every card grid's cells, the virtualized grid's and
+ * the feed's hand-laid rows alike. Natively by flex: the cell takes its column's share of the row (a
+ * LegendList column band is already that share: `inBand`), less a padding each side that depends only
+ * on the column, so the card comes out `cardWidth` wide at exactly `k·(cardWidth+gap)` without being
+ * told the width. A window that changes size (an iPhone Duo folding or opening) then has its cards at
+ * their new width in the frame it resizes in, laid out natively, rather than at the old one until JS
+ * has rendered again. The web takes the measured width, its scrollbar's gutter being out of the
+ * shares' reckoning; a hand-laid row there keeps its `gap` (`rowColumnGap`).
+ */
+export function columnPlacement(column: number, columns: number, gap: number, cardWidth: number, inBand = false) {
+  if (Platform.OS === 'web') return inBand ? { width: cardWidth, marginLeft: column * (gap / columns) } : { width: cardWidth };
+  return {
+    width: inBand ? ('100%' as const) : (`${100 / columns}%` as const),
+    paddingLeft: column * (gap / columns),
+    paddingRight: (columns - 1 - column) * (gap / columns),
+  };
+}
+
+/** The `gap` a hand-laid row of cells takes: natively none, the cells' own padding being the gap
+ *  (`columnPlacement`). */
+export function rowColumnGap(gap: number): number {
+  return Platform.OS === 'web' ? gap : 0;
 }
 
 export type GridLayout = {
@@ -63,9 +100,13 @@ export type GridLayout = {
   sidePad: number;
   /** Hydration-safe viewport width for rails (mobile fallback before mount). */
   railViewport: number;
-  /** EXACT width of one card, not a hint — `SeriesGrid` pins its cells to this. It's the whole reason
-   *  a short final row can just end: an elastic cell would stretch to fill the row instead. */
+  /** EXACT width of one card, not a hint — each grid holds its card to this, centred in its column's
+   *  band. On a device it is fixed (`DEVICE_GRID_CARD`) whatever the window, the spare width going to
+   *  the gaps; it's also why a short final row can just end rather than stretch across the row. */
   cardWidth: number;
+  /** A column's band less its share of the gaps — the box a card is centred in (`columnPlacement`).
+   *  `cardWidth` where the cards fill the row. */
+  cellWidth: number;
   /** The space between two cards in a row. Every card grid lays out with this one, so a card sits
    *  at the same x whichever grid drew it. */
   columnGap: number;
@@ -101,9 +142,8 @@ export function gridGeometry(
   hydrated: boolean,
   gutter: number,
   books: boolean,
-): Pick<GridLayout, 'numColumns' | 'sidePad' | 'cardWidth' | 'columnGap' | 'rowGap'> {
+): Pick<GridLayout, 'numColumns' | 'sidePad' | 'cardWidth' | 'cellWidth' | 'columnGap' | 'rowGap'> {
   const large = hydrated && sizeClassFor(width) === 'regular';
-  const numColumns = hydrated ? gridColumnsFor(width) : 3;
   // Web only: a tablet is at this width too, and keeps the phone's spacing.
   const wide = large && Platform.OS === 'web';
   const columnGap = cardGap(books, wide);
@@ -113,8 +153,21 @@ export function gridGeometry(
   const sidePad = topLevelCenterInset(width) + TopLevelGutter;
   // Not returned: it exists only to derive `cardWidth`, and nothing outside this hook ever wanted it.
   const gridContentWidth = width - gutter - sidePad * 2;
-  const cardWidth = (gridContentWidth - (numColumns - 1) * columnGap) / numColumns;
-  return { numColumns, sidePad, cardWidth, columnGap, rowGap: rowGap(books, wide) };
+  const fill = (columns: number) => (gridContentWidth - (columns - 1) * columnGap) / columns;
+  if (Platform.OS === 'web') {
+    const numColumns = hydrated ? gridColumnsFor(width) : 3;
+    return { numColumns, sidePad, cardWidth: fill(numColumns), cellWidth: fill(numColumns), columnGap, rowGap: rowGap(books, wide) };
+  }
+  // As many fixed cards as fit, never fewer than three (a narrow phone shrinks them to fit three), and
+  // at a regular width an even count, so a foldable's fold — the iPhone Duo's open display — runs
+  // between two columns rather than through a card.
+  let numColumns = Math.min(
+    DEVICE_GRID_MAX_COLUMNS,
+    Math.max(3, Math.floor((gridContentWidth + columnGap) / (DEVICE_GRID_CARD + columnGap))),
+  );
+  if (width >= RegularWidthBreakpoint && numColumns % 2 === 1 && numColumns > 3) numColumns -= 1;
+  const cardWidth = Math.min(DEVICE_GRID_CARD, fill(numColumns));
+  return { numColumns, sidePad, cardWidth, cellWidth: fill(numColumns), columnGap, rowGap: rowGap(books, wide) };
 }
 
 export function useGridLayout(): GridLayout {

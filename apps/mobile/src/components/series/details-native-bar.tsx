@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, useWindowDimensions } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated, {
   interpolate,
   runOnJS,
@@ -14,6 +14,7 @@ import { useManagesBar } from '@/components/bar-scrolled';
 import { BarContentGap } from '@/constants/theme';
 import { useNativeHeaderHeight } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { HIDDEN_TOP_EDGE, SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
 
 import { NavBarFade } from '../../../modules/nav-bar-fade';
@@ -77,7 +78,7 @@ export function SeriesDetailsNativeBar({
     [titleTop],
   );
   const theme = useTheme();
-  const { width } = useWindowDimensions();
+  const { width } = useWindowSize();
   // One style object: expo-router's Slot, which `Stack.Title asChild` clones through, rejects an
   // array in development.
   const titleFade = useAnimatedStyle(() => ({

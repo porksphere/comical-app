@@ -1,13 +1,15 @@
 import { usePathname } from 'expo-router';
 import { NativeTabs } from 'expo-router/native-tabs';
 import { useCallback, useEffect, useState, type ComponentProps } from 'react';
-import { useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { Dimensions, type LayoutChangeEvent } from 'react-native';
 
+import { foldTrace } from '@/components/fold-trace';
 import { navModeFor } from '@/constants/size-class';
 import { useActivityBadgeCount } from '@/data/activity/use-activity-badge';
 import { useSettingsBadgeCount } from '@/data/use-settings-badge';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useTheme } from '@/hooks/use-theme';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { useNativeTabBarHidden } from '@/lib/native-tab-bar';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { ROOT_TAB_PATHS } from '@/lib/root-tabs';
@@ -50,7 +52,7 @@ const NO_RECEDE = new Set<string>([ROOT_TAB_PATHS.history, ROOT_TAB_PATHS.activi
 
 export default function AppTabs() {
   const theme = useTheme();
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth } = useWindowSize();
   const pathname = usePathname();
   const activityBadge = useActivityBadgeCount();
   const settingsBadge = useSettingsBadgeCount();
@@ -63,11 +65,24 @@ export default function AppTabs() {
   // The content column's width: the window on a phone, less the sidebar when UIKit mounts the bar
   // beside the content (iPad, a regular-width resizable scene). Each trigger's native screen view is
   // laid out to exactly that column, and the grids divide it into cards.
-  const [contentWidth, setContentWidth] = useState<number | null>(null);
+  // Measured against the window it was measured in: the measure lands with the native layout, a
+  // render after the window's new size does, and read as it stood it laid every grid out at the old
+  // width first and the new one a beat later (an iPhone Duo folding or opening, ~130ms). Until it
+  // catches up, the column is the new window less what the last measure took off it (the sidebar).
+  const [measure, setMeasure] = useState<{ width: number; window: number } | null>(null);
   const onContentLayout = useCallback((e: LayoutChangeEvent) => {
     const w = e.nativeEvent.layout.width;
-    if (w > 0) setContentWidth(w);
+    foldTrace(`tab content width ${Math.round(w)}`);
+    // The window as it is when the layout lands, not as this render saw it: the event can arrive
+    // before the render for the new size, and paired with the old window it read the whole new width
+    // as a sidebar.
+    if (w > 0) setMeasure({ width: w, window: Dimensions.get('window').width });
   }, []);
+  const contentWidth = !measure
+    ? null
+    : measure.window === windowWidth
+      ? measure.width
+      : Math.max(0, windowWidth - (measure.window - measure.width));
   // The screen's props are typed without `ViewProps`, but the native spec extends it and the iOS
   // component spreads every unlisted prop onto the screen view, so the layout callback does arrive.
   const measured = { onLayout: onContentLayout } as ComponentProps<typeof NativeTabs.Trigger>['unstable_nativeProps'];

@@ -17,7 +17,7 @@
  */
 import { BlurView } from 'expo-blur';
 import type { ReactElement } from 'react';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type ViewInstance } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type ViewInstance } from 'react-native';
 import { Gesture, GestureDetector, type LegacyPanGesture as PanGesture } from 'react-native-gesture-handler';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useEffect, useRef, useState } from 'react';
@@ -29,6 +29,7 @@ import { SelectModeIcon, SelectOptionsIcon } from '@/components/icons/ui-icons';
 import { SelectCircle } from '@/components/multi-select/selectable-row';
 import type { BarSymbol, TopBarAction } from '@/components/top-bar';
 import { Spacing } from '@/constants/theme';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { hapticSelection } from '@/lib/haptics';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 
@@ -263,7 +264,7 @@ export function useDragSelect({
    *  stays mounted either way (see the cache note) so entering select mode doesn't mount one per row. */
   selecting: boolean;
 }): { gestureFor: (index: number) => PanGesture } {
-  const { height: winH } = useWindowDimensions();
+  const { height: winH } = useWindowSize();
   const drag = useRef<DragState | null>(null);
   // Live screen state for the stable gesture handlers — refreshed post-render, read at event time.
   const live = useRef({ keys, selected, selectSet, rowHeight, winH });

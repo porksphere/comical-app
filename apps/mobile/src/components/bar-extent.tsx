@@ -1,8 +1,10 @@
 import { useSelector } from '@legendapp/state/react';
 import { createContext, useEffect, useRef, useState, type ReactElement } from 'react';
-import { Platform, StyleSheet, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { SafeAreaListener } from 'react-native-safe-area-context';
 import { BarScrolledProvider } from '@/components/bar-scrolled';
+import { foldTrace } from '@/components/fold-trace';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { persisted$ } from '@/lib/observable';
 
 /**
@@ -60,7 +62,7 @@ const SETTLE_MS = 250;
 
 function BarExtent({ slides, root, children }: { slides: boolean; root: boolean; children: ReactElement }) {
   const [measured] = useState(slides);
-  const { width, height } = useWindowDimensions();
+  const { width, height } = useWindowSize();
   const pose = `${Platform.Version}:${width}x${height}`;
   // `useSelector`, not `use$`: the React Compiler knows a hook by its name and `use$` isn't one to
   // it, so it memoized the read on the window size and skipped it on the next render, which React
@@ -74,9 +76,14 @@ function BarExtent({ slides, root, children }: { slides: boolean; root: boolean;
     },
     [],
   );
-  if (!measured) return children;
   const ownTop = own?.pose === pose ? own.top : null;
   const top = ownTop ?? seed;
+  // TEMPORARY, with fold-trace.
+  const traced = `bar extent ${pose.split(':')[1]}: ${top ?? 'none'} (${ownTop !== null ? 'measured' : seed !== null ? 'remembered' : 'unknown'})`;
+  useEffect(() => {
+    if (measured && root) foldTrace(traced);
+  }, [measured, root, traced]);
+  if (!measured) return children;
   const measure = (next: number) => {
     if (settling.current) clearTimeout(settling.current);
     settling.current = null;

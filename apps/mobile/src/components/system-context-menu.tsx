@@ -1,9 +1,10 @@
 import { observable, ObservableHint, type OpaqueObject } from '@legendapp/state';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { StyleSheet, useWindowDimensions, View, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
 
 import { ContextMenuHold, type LiveMenuRows } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
+import { useWindowSize } from '@/hooks/use-window-size';
 import {
   setSystemMenu,
   SystemContextMenuPreviewContent as PreviewContentView,
@@ -158,7 +159,7 @@ export function SystemContextMenuHost() {
 
 /** Its height is measured, kept between opens as the next one's estimate, and followed while up. */
 function PreviewSlot({ preview }: { preview: (() => ReactNode) | undefined }) {
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth } = useWindowSize();
   const [height, setHeight] = useState(PREVIEW_HEIGHT_ESTIMATE);
   if (!PreviewSlotView || !PreviewContentView) return null;
   const width = Math.min(windowWidth - 2 * PREVIEW_MARGIN, PREVIEW_MAX_WIDTH);

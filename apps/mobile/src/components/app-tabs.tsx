@@ -6,7 +6,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  useWindowDimensions,
   View,
   type GestureResponderEvent,
   type ViewStyle,
@@ -36,6 +35,7 @@ import { useCollections } from '@/hooks/use-collections';
 import { useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { setBridgeSearchPaneAvailable, useBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
 import { closeContentPanes, hasContentPanes, openContentPaneKeys, useOpenContentPaneKeys } from '@/lib/content-panes';
 import { isTypingTarget } from '@/lib/key-hold';
@@ -325,7 +325,7 @@ const HIDE_OFFSET_SLACK = 2;
  * navigator to build its screens from.
  */
 export default function AppTabs() {
-  const { width } = useWindowDimensions();
+  const { width } = useWindowSize();
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const theme = useTheme();

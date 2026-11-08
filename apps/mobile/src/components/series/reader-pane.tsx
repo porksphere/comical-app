@@ -290,7 +290,7 @@ export const ReaderPane = forwardRef<
   useEffect(() => {
     const t = setTimeout(() => setPosterExpired(true), POSTER_BACKSTOP_MS);
     return () => clearTimeout(t);
-  }, []);
+  }, [pagerMount.layout]);
   const dropPoster = useCallback(() => setPosterExpired(true), []);
   const handleZoom = useCallback(
     (zoomed: boolean) => {
@@ -334,8 +334,8 @@ export const ReaderPane = forwardRef<
   const startAt = useMemo(() => {
     const list = stitched ? flatItems : items;
     const base = stitched ? prefixLen : 0;
-    return { list, base, at: Math.max(0, Math.min(list.length - 1, base + startIndex)) };
-  }, [stitched, flatItems, items, prefixLen, startIndex]);
+    return { list, base, at: Math.max(0, Math.min(list.length - 1, base + pagerMount.page)) };
+  }, [stitched, flatItems, items, prefixLen, pagerMount.page]);
   // Sizes that land, under the poster, for the start page and the one after it: the two whose
   // shapes can re-pair the spread it opens on. The pager re-pairs on them the moment they arrive
   // (sizes BEHIND its anchor it holds back — see useSpreadLayout — so those two are the whole
@@ -348,6 +348,20 @@ export const ReaderPane = forwardRef<
   // pairing sizes above, which must not learn of a page behind the anchor.
   const [drawnSizes, setDrawnSizes] = useState<ReadonlyMap<string, Size>>(() => new Map());
   const [handedOver, setHandedOver] = useState(false);
+  // The poster stands in for the page a pager opens on, each time one does — not only the reader's
+  // first: a layout remount (a setting, a rotation, an iPhone Duo folding or opening) brings up a
+  // pager whose native offset lands frames after it mounts, over its first slot's empty space, the
+  // black the poster exists to cover. So a remount starts its whole life over, on the page being read.
+  const [posterMount, setPosterMount] = useState(pagerMount.layout);
+  if (posterMount !== pagerMount.layout) {
+    setPosterMount(pagerMount.layout);
+    setParked(false);
+    setListReady(false);
+    setHandedOver(false);
+    setPosterExpired(false);
+    setDrawnSizes(new Map());
+    setLandedSizes(new Map());
+  }
   const onPageSize = useCallback(
     (key: string, size: Size) => {
       detectPageSize(key, size);
@@ -366,7 +380,7 @@ export const ReaderPane = forwardRef<
   const startSpread = useMemo(() => {
     const { list, base, at } = startAt;
     if (!list.length) return null;
-    if (!double) return { halves: [list[at]!], first: startIndex, last: startIndex };
+    if (!double) return { halves: [list[at]!], first: pagerMount.page, last: pagerMount.page };
     const { spreads, spreadOf } = buildSpreads(list, (p) => landedSizes.get(p.key) ?? knownPageSize(p.uri), shift);
     const spread = spreads[spreadOf[at]!]!;
     return {
@@ -374,7 +388,7 @@ export const ReaderPane = forwardRef<
       first: spread.first - base,
       last: spread.first - base + spread.pages.length - 1,
     };
-  }, [startAt, startIndex, double, shift, landedSizes]);
+  }, [startAt, pagerMount.page, double, shift, landedSizes]);
   // How the list under the poster lays out where it opens, and the pages it shows there.
   const posterLayout: PosterLayout =
     settings.mode === 'paged' ? 'page' : webtoonFit(settings.pageFit) === 'fit-page' ? 'contain' : 'column';

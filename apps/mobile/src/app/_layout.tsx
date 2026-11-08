@@ -33,6 +33,7 @@ import type { ComponentProps } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { FoldTrace } from '@/components/fold-trace';
 import { SplashGate } from '@/components/splash-gate';
 import { barExtentLayout } from '@/components/bar-extent';
 import { pushedScreen, useBarMaterial, useSettingsScreen } from '@/lib/native-bar';
@@ -63,6 +64,7 @@ import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { useWindowThemeColor } from '@/lib/window-controls';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
+import { BookCoverSourceProvider } from '@/hooks/use-book-covers';
 import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
 import { Colors } from '@/constants/theme';
 /* eslint-enable import/first */
@@ -116,7 +118,9 @@ function RootLayout() {
           {/* Resolves the active scheme once for the whole tree; every `useTheme`
               consumer below reads it from context. */}
           <ThemeSchemeProvider>
-            <RootNavigation />
+            <BookCoverSourceProvider>
+              <RootNavigation />
+            </BookCoverSourceProvider>
           </ThemeSchemeProvider>
         </GestureHandlerRootView>
       </PersistQueryClientProvider>
@@ -177,6 +181,7 @@ function RootNavigation() {
       {Platform.OS === 'ios' ? null : <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />}
       <SplashGate />
       <FrameTrace />
+      <FoldTrace />
       <FocusedTabTracker />
       {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
       <OverlayProvider>

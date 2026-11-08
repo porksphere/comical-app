@@ -12,7 +12,7 @@ import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys } from '@/data/q
 import { useDedupedPages } from '@/data/grid-pages';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
-import { useGridLayout } from '@/hooks/use-grid-layout';
+import { columnPlacement, rowColumnGap, useGridLayout } from '@/hooks/use-grid-layout';
 import { rowCoverAspect } from '@/lib/aspect-ratio';
 import { testId } from '@/lib/test-id';
 
@@ -101,18 +101,20 @@ export function HomeGridBlock({
           tighter than the terminal grid on the same page. */}
       <View style={{ gap: rowGap }}>
         {rows.map((row, r) => (
-          <View key={r} style={[styles.row, styles.gridRow, { gap: columnGap }]}>
-            {row.map((item) => (
-              // Pinned to `cardWidth`, like SeriesGrid's cells. A short last row just ends — this
+          <View key={r} style={[styles.row, styles.gridRow, { gap: rowColumnGap(columnGap) }]}>
+            {row.map((item, column) => (
+              // Its column's share of the row, like SeriesGrid's cells (`columnPlacement`). A short last row just ends — this
               // block used to append invisible spacer views to stop a `flex: 1` cell stretching.
-              <View key={item.id} style={[styles.cell, { width: cardWidth }]}>
-                <SeriesCard
-                  entry={item}
-                  bridge={bridge}
-                  bridgeId={bridgeId}
-                  direct={direct}
-                  rowAspect={rowCoverAspect(row)}
-                />
+              <View key={item.id} style={[styles.cell, columnPlacement(column, numColumns, columnGap, cardWidth)]}>
+                <View style={{ width: cardWidth }}>
+                  <SeriesCard
+                    entry={item}
+                    bridge={bridge}
+                    bridgeId={bridgeId}
+                    direct={direct}
+                    rowAspect={rowCoverAspect(row)}
+                  />
+                </View>
               </View>
             ))}
           </View>
@@ -151,7 +153,9 @@ const styles = StyleSheet.create({
   },
   // NO `flex: 1` — pinned to `cardWidth` at the call site, so a short last row ends rather than
   // stretching its cards (which is what the old spacer views existed to prevent).
-  cell: {},
+  cell: {
+    alignItems: 'center',
+  },
   loadMoreButton: {
     alignSelf: 'center',
   },

@@ -1,6 +1,7 @@
 import { useNavigation, useRoute, useSegments } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Platform, useWindowDimensions } from 'react-native';
+import { Platform } from 'react-native';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { useSeriesPaneWidth } from '@/lib/series-pane-context';
 
 const IS_IOS = Platform.OS === 'ios';
@@ -15,7 +16,7 @@ const IS_IOS = Platform.OS === 'ios';
  * subtree is that wide.
  */
 export function useViewport(): { width: number; height: number } {
-  const win = useWindowDimensions();
+  const win = useWindowSize();
   const pane = useSeriesPaneWidth();
   return useMemo(
     () => (pane === null ? { width: win.width, height: win.height } : { width: pane, height: win.height }),

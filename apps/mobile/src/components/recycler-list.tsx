@@ -134,10 +134,11 @@ export function RecyclerList<T>({
 }) {
   // LegendList's web build resets its render state *during* render on an empty→non-empty data swap
   // after it has held data ("Cannot update a component while rendering a different component"). Fold
-  // the empty↔populated boundary + column count into the key so a 0→N fill is always a FRESH mount's
-  // initial render, which skips that path (a different column count is also a different layout, and a
-  // scopeKey change is a scroll-to-top moment anyway).
-  const listKey = `${numColumns}|${scopeKey}|${data.length > 0 ? 'full' : 'empty'}`;
+  // the empty↔populated boundary into the key so a 0→N fill is always a FRESH mount's initial render,
+  // which skips that path (a scopeKey change is a scroll-to-top moment anyway). The column count is in
+  // it on the web only: natively the list takes a new count in place, and keyed by it every grid was
+  // rebuilt empty, scrolled to the top, whenever an iPhone Duo folded or opened.
+  const listKey = `${Platform.OS === 'web' ? numColumns : ''}|${scopeKey}|${data.length > 0 ? 'full' : 'empty'}`;
   // This list's identity for the series-page zoom — see the provider at the bottom. Taken from
   // `scopeKey`, which already names what this list is showing, so the key outlives the list itself:
   // `listKey` right above deliberately remounts the whole LegendList on a 0 -> N data fill.

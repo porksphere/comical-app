@@ -1,5 +1,6 @@
 import { use$ } from '@legendapp/state/react';
 import { useQuery } from '@tanstack/react-query';
+import { createContext, createElement, use, useMemo, type ReactNode } from 'react';
 
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -43,22 +44,38 @@ function useCoverDefaults(): Defaults {
   });
 }
 
-/** The bridge's declared defaults, read off the one bridges query every card shares and selected down
- *  to a string, so a card re-renders only when its own bridge's answer changes. */
-function useBridgeCoverHints(bridgeId: string | undefined, wanted: boolean): { form?: CoverForm; direction?: ReadingDirection } {
+/** What every card's book is drawn from but its own series: whether books are on and the reader's
+ *  defaults (`Defaults`), and each bridge's declared cover hints, by id, as `form|direction`. */
+type CoverSource = { defaults: Defaults; bridgeHints: ReadonlyMap<string, string> };
+
+const CoverSourceContext = createContext<CoverSource>({ defaults: 'off', bridgeHints: new Map() });
+
+/**
+ * Reads the covers' shared inputs once, for every card under it — mounted at the app root. Each card
+ * read them itself before: the settings, the data source, the mock toggle and an observer of the
+ * bridges query apiece, which a screen of cards rendering together (an iPhone Duo folding or opening,
+ * a list's layout changing) paid once per card.
+ */
+export function BookCoverSourceProvider({ children }: { children: ReactNode }) {
+  const defaults = useCoverDefaults();
   const ds = useDataSource();
   const mock = useMockActive();
   const { data } = useQuery({
     queryKey: queryKeys.bridges(mock),
     queryFn: ({ signal }) => ds.getBridges(signal),
-    enabled: wanted && !!bridgeId,
-    select: (bridges) => {
-      const b = bridges.find((x) => x.id === bridgeId);
-      return `${b?.coverForm ?? ''}|${b?.readingDirection ?? ''}`;
-    },
+    enabled: defaults !== 'off',
+    // Down to a string, so the cards render again only when a bridge's declared hints do.
+    select: (bridges) => bridges.map((b) => `${b.id}\t${b.coverForm ?? ''}|${b.readingDirection ?? ''}`).join('\n'),
   });
-  const [form, direction] = (data ?? '|').split('|');
-  return { form: (form || undefined) as CoverForm | undefined, direction: (direction || undefined) as ReadingDirection | undefined };
+  const value = useMemo((): CoverSource => {
+    const bridgeHints = new Map<string, string>();
+    for (const line of (data ?? '').split('\n')) {
+      const [id, hints] = line.split('\t');
+      if (id && hints) bridgeHints.set(id, hints);
+    }
+    return { defaults, bridgeHints };
+  }, [defaults, data]);
+  return createElement(CoverSourceContext.Provider, { value }, children);
 }
 
 /**
@@ -84,9 +101,13 @@ export function useBookCover({
   coverForm?: CoverForm;
   readingDirection?: ReadingDirection;
 }): BookCover | null {
-  const defaults = useCoverDefaults();
+  const { defaults, bridgeHints } = use(CoverSourceContext);
   const on = defaults !== 'off';
-  const bridge = useBridgeCoverHints(bridgeId, on && (coverForm === undefined || readingDirection === undefined));
+  const [bridgeForm, bridgeDirection] = ((bridgeId && bridgeHints.get(bridgeId)) || '|').split('|');
+  const bridge = {
+    form: (bridgeForm || undefined) as CoverForm | undefined,
+    direction: (bridgeDirection || undefined) as ReadingDirection | undefined,
+  };
   const seriesMode = useSeriesReaderMode(on && bridgeId ? `${bridgeId}:${seriesId}` : null)?.mode;
   if (!on) return null;
   const [readerMode, readerDirection, shuffle] = defaults.split(':');

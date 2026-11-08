@@ -4,6 +4,7 @@
  */
 
 import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from 'react';
+import * as SystemUI from 'expo-system-ui';
 import { Appearance, Platform } from 'react-native';
 
 import { Colors } from '@/constants/theme';
@@ -106,6 +107,13 @@ export function ThemeSchemeProvider({ children }: { children: ReactNode }) {
     if (Platform.OS !== 'ios') return;
     Appearance.setColorScheme(preference === 'system' ? 'unspecified' : preference);
   }, [preference]);
+  // The window and root view in the theme's background: whatever isn't drawn yet as the window
+  // changes size — an iPhone Duo folding or opening — shows that, not the root view's own white or
+  // black, picked from the trait when it was made.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    void SystemUI.setBackgroundColorAsync(Colors[scheme].background);
+  }, [scheme]);
   return createElement(SchemeContext.Provider, { value: scheme }, children);
 }
 

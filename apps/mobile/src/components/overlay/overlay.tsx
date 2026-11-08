@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type TextInputInstance, type ViewInstance } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type TextInputInstance, type ViewInstance } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
@@ -31,6 +31,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { useDismissKey } from '@/lib/dismiss-key';
 import { focusLayer, focusMarks } from '@/lib/focus-nav';
 import { closeNativeSheet, holdNativeSheet, NATIVE_OVERLAY_SHEETS } from '@/lib/native-overlay-sheets';
@@ -769,7 +770,7 @@ function OverlaySheet({
   register: (id: number, fn: () => void) => void;
   children: ReactNode;
 }) {
-  const { height } = useWindowDimensions();
+  const { height } = useWindowSize();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const translateY = useSharedValue(height);
@@ -1088,7 +1089,7 @@ function OverlaySheet({
  * which leaves the top safe area and a margin above it and stands on the bottom inset.
  */
 export function NativeSheetBody({ children }: { children: ReactNode }) {
-  const { height } = useWindowDimensions();
+  const { height } = useWindowSize();
   const insets = useSafeAreaInsets();
   const maxHeight = height - insets.top - insets.bottom - Spacing.four;
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -1135,7 +1136,7 @@ function OverlayDialog({
   register: (id: number, fn: () => void) => void;
   children: ReactNode;
 }) {
-  const { width, height } = useWindowDimensions();
+  const { width, height } = useWindowSize();
   const theme = useTheme();
   const progress = useSharedValue(0);
   const dialogRef = useRef<ViewInstance>(null);
@@ -1274,7 +1275,7 @@ function OverlayPopover({
   onRect?: (rect: { left: number; top: number; width: number; height: number } | null) => void;
   children: ReactNode;
 }) {
-  const { width: vw, height: vh } = useWindowDimensions();
+  const { width: vw, height: vh } = useWindowSize();
   const sides = useSafeAreaInsets();
   const controls = useWindowControlsStrip();
   const theme = useTheme();
