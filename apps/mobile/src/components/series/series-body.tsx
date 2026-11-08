@@ -763,7 +763,17 @@ export function SeriesBody({
       {newBadge}
     </View>
   );
-  const actionsBelow = !isLarge;
+  // The compact header (the large one is two columns): the cover centred, the actions under it,
+  // each held to a phone's width so a wide compact window (the open iPhone Duo) doesn't spread them.
+  const actionsOrSkel = loading ? actionsSkel : actionsEl;
+  const compactHero = (
+    <>
+      <View style={styles.hero}>
+        <View style={styles.coverCentered}>{coverEl}</View>
+      </View>
+      <View style={styles.actionsCapped}>{actionsOrSkel}</View>
+    </>
+  );
 
   // Tapping a tag chip drops the Browse tab into a matching search, mirroring
   // comical-web's tag chips (app.ts): a `tagQueries` entry runs a free-text
@@ -935,11 +945,7 @@ export function SeriesBody({
       ) : (
         /* Small screen: hero row then content stacked below. */
         <>
-          <View style={styles.hero}>
-            {actionsBelow ? <View style={styles.coverCentered}>{coverEl}</View> : coverEl}
-            {!actionsBelow && (loading ? actionsSkel : actionsEl)}
-          </View>
-          {actionsBelow && (loading ? actionsSkel : actionsEl)}
+          {compactHero}
           {loading ? contentSkel : contentEl}
         </>
       )}
@@ -1012,11 +1018,7 @@ export function SeriesBody({
     </View>
   ) : (
     <>
-      <View style={styles.hero}>
-        {actionsBelow ? <View style={styles.coverCentered}>{coverEl}</View> : coverEl}
-        {!actionsBelow && (loading ? actionsSkel : actionsEl)}
-      </View>
-      {actionsBelow && (loading ? actionsSkel : actionsEl)}
+      {compactHero}
       {loading ? contentSkel : contentEl}
     </>
   );
@@ -1183,7 +1185,14 @@ const styles = StyleSheet.create({
   // The cover alone in the hero row, centred, when the actions run under it.
   coverCentered: {
     width: '56%',
+    maxWidth: 300,
     marginHorizontal: 'auto'
+  },
+  // The actions as a phone-wide column, centred, on a wider window.
+  actionsCapped: {
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center'
   },
   // Genres + tag-group rows packed tightly together (the outer column's larger
   // gap then separates the whole block from the meta grid below).
