@@ -26,7 +26,7 @@ import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { TagGroupRow } from '@/components/chip';
 import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton } from '@/components/rail';
-import { ACTION_ICON_SIZE, ActionButton, ActionShapeContext, NewBadge } from '@/components/series/action-button';
+import { ACTION_ICON_SIZE, ActionButton, ActionShapeContext, NewBadge, ROUND_SIDE_SPACE } from '@/components/series/action-button';
 import { ChapterScrollList, Disclosure, PageThumbList, TurningChevron } from '@/components/series/chapters-section';
 import { SeriesDownloadButton } from '@/components/series/download-button';
 import { SeriesRemovedNotice } from '@/components/series/series-removed';
@@ -1174,13 +1174,17 @@ const styles = StyleSheet.create({
   },
   // The actions: the Read capsule over a row of round buttons.
   actionsStack: {
+    alignSelf: 'center',
     gap: Spacing.three
   },
+  // Packed: each button's slot already spaces its face from the next. Pulled out by the slots'
+  // side space, so the actions are as wide as the outer faces and the Read capsule ends with them.
+  // One line, never wrapped: Yoga sizes a wrapping row to all the width it may have, not to its
+  // buttons, which stretched the capsule past them. A narrow column squeezes the slots instead.
   roundRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-around',
-    rowGap: Spacing.three
+    justifyContent: 'center',
+    marginHorizontal: -ROUND_SIDE_SPACE
   },
   // The cover alone in the hero row, centred, when the actions run under it.
   coverCentered: {
@@ -1188,9 +1192,9 @@ const styles = StyleSheet.create({
     maxWidth: 300,
     marginHorizontal: 'auto'
   },
-  // The actions as a phone-wide column, centred, on a wider window.
+  // The actions as wide as the round buttons need, centred: the Read capsule stretches to the row
+  // under it, never past it.
   actionsCapped: {
-    width: '100%',
     maxWidth: 400,
     alignSelf: 'center'
   },
@@ -1277,6 +1281,8 @@ const styles = StyleSheet.create({
   },
   skelRoundSlot: {
     width: 72,
+    flexShrink: 1,
+    minWidth: 56,
     alignItems: 'center'
   },
   skelRound: {

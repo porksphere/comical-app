@@ -126,6 +126,13 @@ export function ActionButton({
   );
 }
 
+/** A round button's slot, and its face centred in it. */
+const ROUND_SLOT = 72;
+const ROUND_FACE = 50;
+/** The space a round button's slot leaves beside its face: a row pulled out by it on each side
+ *  lines its outer faces up with the edges of whatever is above or below. */
+export const ROUND_SIDE_SPACE = (ROUND_SLOT - ROUND_FACE) / 2;
+
 /** The size every icon in the slot is drawn at, so a play glyph and a star sit on one baseline. */
 export const ACTION_ICON_SIZE = 15;
 
@@ -185,14 +192,16 @@ const styles = StyleSheet.create({
   },
   // A round button with its label under it: the series page's other actions.
   round: {
-    width: 72,
+    width: ROUND_SLOT,
+    flexShrink: 1,
+    minWidth: 56,
     alignItems: 'center',
     gap: Spacing.one + Spacing.half,
   },
   roundFace: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: ROUND_FACE,
+    height: ROUND_FACE,
+    borderRadius: ROUND_FACE / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
