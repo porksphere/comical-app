@@ -489,17 +489,15 @@ export function ContentFeed({
                     key={entry.bridgeId ? `${entry.bridgeId}:${entry.id}` : entry.id}
                     style={[styles.cell, cellPad, { height: gridRowHeight(item.items) }, columnPlacement(column, numColumns, columnGap, cardWidth)]}>
 
-                    <View style={{ width: cardWidth }}>
-                      <SeriesCard
-                        entry={entry}
-                        bridge={entry.bridge ?? bridge}
-                        bridgeId={entry.bridgeId ?? bridgeId}
-                        direct={entry.direct ?? direct}
-                        cohort={scopeKey}
-                        crossfading={crossfading}
-                        rowAspect={rowAspect}
-                      />
-                    </View>
+                    <SeriesCard
+                      entry={entry}
+                      bridge={entry.bridge ?? bridge}
+                      bridgeId={entry.bridgeId ?? bridgeId}
+                      direct={entry.direct ?? direct}
+                      cohort={scopeKey}
+                      crossfading={crossfading}
+                      rowAspect={rowAspect}
+                    />
                   </View>
                 ))}
               </View>
@@ -555,7 +553,6 @@ const styles = StyleSheet.create({
   // NO flex: 1 — pinned to cardWidth at the call site so a short last row ends rather than stretching.
   cell: {
     justifyContent: 'flex-start',
-    alignItems: 'center',
   },
   // Shared standalone heading row for every section — SECTION_GAP above, HEADING_GAP below.
   sectionHead: {

@@ -167,7 +167,7 @@ export function SeriesGrid({
   const anchorRef = listRef ?? ownListRef;
   useEffect(() => onBeforeWindowResize(() => void anchorRef.current?.anchorVisibleContent()), [anchorRef]);
   useZoomSurfaceList(useZoomSurfaceKey(scopeKey), items, gridSeriesId, listRef ?? ownListRef, {
-    // Column k's box sits at k·(cellWidth + gap), its card centred in it — see `columnPlacement`.
+    // Column k's box sits at k·(cellWidth + gap), its card filling it — see `columnPlacement`.
     xAtIndex: useCallback(
       (index: number) => (index % numColumns) * (cellWidth + columnGap) + (cellWidth - cardWidth) / 2,
       [numColumns, cardWidth, cellWidth, columnGap],
@@ -210,18 +210,16 @@ export function SeriesGrid({
                 <View
                   key={keyOf(item)}
                   style={[styles.cell, cellPad, { height }, columnPlacement(column, numColumns, columnGap, cardWidth)]}>
-                  <View style={{ width: cardWidth }}>
-                    <SeriesCard
-                      entry={item}
-                      bridge={item.bridge ?? bridge}
-                      bridgeId={item.bridgeId ?? bridgeId}
-                      direct={item.direct ?? direct}
-                      cohort={scopeKey}
-                      crossfading={crossfading}
-                      markSaved={markSaved}
-                      rowAspect={rowAspect}
-                    />
-                  </View>
+                  <SeriesCard
+                    entry={item}
+                    bridge={item.bridge ?? bridge}
+                    bridgeId={item.bridgeId ?? bridgeId}
+                    direct={item.direct ?? direct}
+                    cohort={scopeKey}
+                    crossfading={crossfading}
+                    markSaved={markSaved}
+                    rowAspect={rowAspect}
+                  />
                 </View>
               ))}
             </View>
@@ -273,18 +271,16 @@ export function SeriesGrid({
         // every card at exactly `k·(cardWidth+gap)`: true `columnGap` gaps, flush right edge,
         // identical to ContentFeed's terminal grid.
         <View style={[styles.cell, cellPad, { height: heightAt(index) }, columnPlacement(index % numColumns, numColumns, columnGap, cardWidth, true)]}>
-          <View style={{ width: cardWidth }}>
-            <SeriesCard
-              entry={item}
-              bridge={item.bridge ?? bridge}
-              bridgeId={item.bridgeId ?? bridgeId}
-              direct={item.direct ?? direct}
-              cohort={scopeKey}
-              crossfading={crossfading}
-              markSaved={markSaved}
-              rowAspect={rowAspectAt(index)}
-            />
-          </View>
+          <SeriesCard
+            entry={item}
+            bridge={item.bridge ?? bridge}
+            bridgeId={item.bridgeId ?? bridgeId}
+            direct={item.direct ?? direct}
+            cohort={scopeKey}
+            crossfading={crossfading}
+            markSaved={markSaved}
+            rowAspect={rowAspectAt(index)}
+          />
         </View>
       )}
     />
@@ -293,11 +289,9 @@ export function SeriesGrid({
 
 const styles = StyleSheet.create({
   cell: {
-    // NO `flex: 1` — its card held to `cardWidth` so a short last row ends rather than stretching,
-    // centred in the column's box. `justifyContent: flex-start` so a card shorter than the fixed cell
-    // top-aligns.
+    // NO `flex: 1` — its column's box (`columnPlacement`), so a short last row ends rather than
+    // stretching. `justifyContent: flex-start` so a card shorter than the fixed cell top-aligns.
     justifyContent: 'flex-start',
-    alignItems: 'center',
   },
   groupedRow: {
     flexDirection: 'row',

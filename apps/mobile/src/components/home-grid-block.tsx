@@ -106,15 +106,13 @@ export function HomeGridBlock({
               // Its column's share of the row, like SeriesGrid's cells (`columnPlacement`). A short last row just ends — this
               // block used to append invisible spacer views to stop a `flex: 1` cell stretching.
               <View key={item.id} style={[styles.cell, columnPlacement(column, numColumns, columnGap, cardWidth)]}>
-                <View style={{ width: cardWidth }}>
-                  <SeriesCard
-                    entry={item}
-                    bridge={bridge}
-                    bridgeId={bridgeId}
-                    direct={direct}
-                    rowAspect={rowCoverAspect(row)}
-                  />
-                </View>
+                <SeriesCard
+                  entry={item}
+                  bridge={bridge}
+                  bridgeId={bridgeId}
+                  direct={direct}
+                  rowAspect={rowCoverAspect(row)}
+                />
               </View>
             ))}
           </View>
@@ -153,9 +151,7 @@ const styles = StyleSheet.create({
   },
   // NO `flex: 1` — pinned to `cardWidth` at the call site, so a short last row ends rather than
   // stretching its cards (which is what the old spacer views existed to prevent).
-  cell: {
-    alignItems: 'center',
-  },
+  cell: {},
   loadMoreButton: {
     alignSelf: 'center',
   },
