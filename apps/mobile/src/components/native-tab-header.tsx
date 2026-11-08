@@ -5,6 +5,7 @@ import { StyleSheet } from 'react-native';
 import { useHoldAction } from '@/components/hold-action-target';
 import type { TabFilter } from '@/components/tab-filter';
 import { HIDDEN_TOP_EDGE } from '@/lib/native-bar';
+import { useTitleFont } from '@/lib/title-font';
 import { NavBarHold } from '../../modules/nav-bar-hold';
 import { NavBarLargeTitle } from '../../modules/nav-bar-large-title';
 
@@ -33,10 +34,18 @@ import { NavBarLargeTitle } from '../../modules/nav-bar-large-title';
  * clears the query, which is what closing the custom field does too.
  */
 export function NativeTabHeader({ title, filter, placeholder }: { title: string; filter?: TabFilter; placeholder?: string }) {
+  // The tab's name in the title typeface (lib/title-font), once it has loaded.
+  const titleFont = useTitleFont();
   return (
     <>
       <Stack.Screen
-        options={{ title, headerLargeTitleEnabled: true, headerLargeStyle: BARE_AT_TOP, scrollEdgeEffects: HIDDEN_TOP_EDGE }}
+        options={{
+          title,
+          headerLargeTitleEnabled: true,
+          headerLargeStyle: BARE_AT_TOP,
+          scrollEdgeEffects: HIDDEN_TOP_EDGE,
+          ...(titleFont && { headerLargeTitleStyle: { fontFamily: titleFont }, headerTitleStyle: { fontFamily: titleFont } }),
+        }}
       />
       {filter ? (
         <Stack.SearchBar

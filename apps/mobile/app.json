@@ -85,7 +85,12 @@
           "enableBackgroundRecording": false
         }
       ],
-      "expo-font",
+      [
+        "expo-font",
+        {
+          "fonts": ["./assets/fonts/ShipporiMinchoB1-ExtraBold.ttf"]
+        }
+      ],
       "expo-image",
       "expo-status-bar",
       "expo-web-browser"

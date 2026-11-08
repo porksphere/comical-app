@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { testId } from '@/lib/test-id';
+import { useTitleFont } from '@/lib/title-font';
 import { useWindowControlsClearance } from '@/lib/window-controls';
 
 /**
@@ -37,6 +38,7 @@ export function TabTitleBar({
    *  pinned section heading takes over the bottom edge (see StickySectionHeader). */
   barStyle?: AnimatedProps<ViewProps>['style'];
 }) {
+  const titleFont = useTitleFont();
   const barHeight = useTopBarHeight();
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   return (
@@ -51,7 +53,10 @@ export function TabTitleBar({
         ]}>
         {leading != null && <View style={styles.leading}>{leading}</View>}
         {titleSlot ?? (
-          <ThemedText testID={title ? testId('screen-title', title) : undefined} numberOfLines={1} style={styles.title}>
+          <ThemedText
+            testID={title ? testId('screen-title', title) : undefined}
+            numberOfLines={1}
+            style={[styles.title, titleFont && { fontFamily: titleFont, fontWeight: 'normal' }]}>
             {title}
           </ThemedText>
         )}
