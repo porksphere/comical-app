@@ -859,6 +859,35 @@ doesn't turn — another gesture took it, it was too steep, the JS side or the p
 in the Diagnostics log as `page-curl`, which a development build also prints to Metro, along with a
 line for every drag.
 
+# iPhone Duo folds: a resize, not a rebuild
+
+Folding or opening an iPhone Duo resizes the same scene, animated by UIKit: Apple's own apps look
+ready mid-fold because their layout runs inside that animation. Ours can only match it with layout
+that FLEX decides, which Fabric re-runs synchronously when the root resizes; anything sized from
+the window in JS lands a render after the animation, and is what shows as a jump. So:
+
+- Read the window through `useWindowSize` (`hooks/use-window-size.ts`), never React Native's hook:
+  folding, React Native first reports the open size turned upright, larger than the screen, and
+  laid out for it the app worked a whole layout for nothing. `onBeforeWindowResize` runs before a
+  new size renders (the grids hold their first visible card through a column change with it), and
+  `useWindowResizing` is true from a new size until a second after it settles.
+- A card grid's cells take their column by flex (`columnPlacement`), cards fill them, and
+  `SeriesCard` is memoized, so a new width renders the cells and not the cards. A rail can't: its
+  list places cards at offsets JS computes, along the axis a fold widens, so its cards keep the
+  compact (folded) size on a wide window rather than resize a render late (`cardWidthFor` in
+  `rail.tsx`). Flexbox can't choose a count from a width; only native layout code could.
+- Type stays compact on an iPhone, open Duo included (`useCompactType`): by the window, every fold
+  changed every card's and heading's type.
+- Tabs out of sight are frozen only while the window resizes (`tab-stack.ios.tsx`), and catch up a
+  second after, as a transition React renders in slices: frozen all the time, a tab came up black
+  until the JS side heard of the switch. (React's `Activity` hides its content the same way, and
+  takes down its effects while hidden.)
+- The reader's pager still remounts on a fold (pairing is fixed for its lifetime), under the poster.
+- History and Activity don't render again on a fold: nothing in them reads the window on a device
+  (`useIsDesktop` is false there without reading it, `useCenterInset` is 0). Give either a layout
+  that depends on the width and it renders on every fold again, under the screen being folded — read
+  the size in the one component that needs it, not at the screen.
+
 # Press-in warms the destination
 
 Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is

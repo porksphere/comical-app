@@ -22,9 +22,10 @@ import { DEFAULT_THUMB_ASPECT, rowCoverAspect, rowCoverAspects } from '@/lib/asp
 import { useBookCoversEnabled } from '@/hooks/use-book-covers';
 import { cardGap, gridGeometry } from '@/hooks/use-grid-layout';
 import { useHovered } from '@/hooks/use-hovered';
-import { useCompactType, useIsDesktop } from '@/hooks/use-responsive';
+import { sizeClassFor, useCompactType, useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
+import { persisted$ } from '@/lib/observable';
 import { ZoomSurfaceContext, useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { testId } from '@/lib/test-id';
@@ -65,25 +66,33 @@ function stripGapFor(books: boolean): number {
 }
 
 /**
- * A strip's card width per rail kind: FIXED, not a share of the viewport. A wider screen shows more
- * cards rather than larger ones, the way the system's own rails do (the App Store's, Books'), and the
- * next card peeks wherever the strip runs past the screen.
+ * A strip's card width per rail kind. At a compact width — a phone, the folded iPhone Duo — the grid's
+ * own card there (`gridGeometry`), so a rail and the "See all" grid behind it draw one size of card;
+ * a wider window keeps that same card, remembered from the last compact one (`railCards$`), and shows
+ * more of them. A hero rail's cards are half as large again. The strip runs past the screen wherever
+ * it holds more, the next card peeking.
  *
- * It used to fit N cards and a third of the next to the viewport, with N growing with the width. That
- * tied every card's size to the window's: an iPhone Duo folding or opening resized every card in
- * every rail a render after the window had (JS sizing them, never the layout the system was
- * animating), re-measured each strip, moved it back onto its card and changed every rail's height,
- * shifting the feed under it. At a width of its own, a fold only changes how many cards fit.
- *
- * About the folded Duo's cards at the old rule (124pt with book covers there); a 402pt phone shows a
- * little under three, the open Duo about seven. A hero rail's cards are larger, about two across a
- * phone.
+ * Not the grid's card at every width: a rail can't resize natively as the grid does (its list places
+ * cards at offsets JS computes, along the axis a fold widens), so a card grown with the open Duo's
+ * grid changed a render after the fold, every rail and the feed under them with it. Before that it
+ * fitted N cards and a third of the next, N growing with the width, which resized them on any change
+ * of a point. Native layout code could pick the count in the layout pass, as the system's own rails
+ * do; until then, the open display shows the folded display's cards.
  */
-const RAIL_CARD_WIDTH = 120;
-const HERO_CARD_WIDTH = 176;
+const railCards$ = persisted$('comical:railCardWidth', { books: 0, flat: 0 });
+/** A wide window's card before any compact one has been seen (an iPad): about the folded Duo's. */
+const WIDE_RAIL_CARD_FALLBACK = 106;
 
-function cardWidthFor(kind: RailSection['kind']): number {
-  return kind === 'hero' ? HERO_CARD_WIDTH : RAIL_CARD_WIDTH;
+function compactRailCard(viewport: number, gutter: number, books: boolean): number {
+  return Math.round(gridGeometry(viewport, true, gutter, books).cardWidth);
+}
+
+function cardWidthFor(kind: RailSection['kind'], viewport: number, gutter: number, books: boolean): number {
+  const card =
+    sizeClassFor(viewport) === 'compact'
+      ? compactRailCard(viewport, gutter, books)
+      : railCards$[books ? 'books' : 'flat'].peek() || WIDE_RAIL_CARD_FALLBACK;
+  return Math.round(kind === 'hero' ? card * 1.5 : card);
 }
 
 /**
@@ -180,7 +189,7 @@ export function railStripHeight(
     return Spacing.one * 2 + cards + (rowAspects.length - 1) * rowGap;
   }
   // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
-  return estimatedCardHeight(cardWidthFor(kind), hasSub) + STRIP_PAD_V * 2;
+  return estimatedCardHeight(cardWidthFor(kind, viewportWidth, gutter, books), hasSub) + STRIP_PAD_V * 2;
 }
 
 /** Whole rail row INCLUDING its own heading — for callers where the rail renders its own head (a
@@ -246,7 +255,12 @@ export function Rail({
   const stripHalfGap = stripGap / 2;
   const gutter = useScrollbarGutter();
   const grid = wideGrid(viewportWidth, gutter, books, section.kind);
-  const cardWidth = wide ? grid.cardWidth : cardWidthFor(section.kind);
+  const cardWidth = wide ? grid.cardWidth : cardWidthFor(section.kind, viewportWidth, gutter, books);
+  // The compact card, remembered for the wide windows that show it too (see `cardWidthFor`).
+  useEffect(() => {
+    if (wide || sizeClassFor(viewportWidth) !== 'compact') return;
+    railCards$[books ? 'books' : 'flat'].set(compactRailCard(viewportWidth, gutter, books));
+  }, [wide, viewportWidth, gutter, books]);
   // One card's scroll "slot" (card width + inter-card gap). The strip snaps to multiples of this and
   // the resting card index is derived from it, so it's the single value shared by getFixedItemSize,
   // snapToInterval, and the rest-index persist/restore below — they can't disagree.
@@ -527,7 +541,7 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
   const books = useBookCoversEnabled();
   const grid = wideGrid(viewportWidth, gutter, books);
   const stripGap = wide ? grid.columnGap : stripGapFor(books);
-  const cardWidth = wide ? grid.cardWidth : cardWidthFor('regular');
+  const cardWidth = wide ? grid.cardWidth : cardWidthFor('regular', viewportWidth, gutter, books);
   // Enough fixed-width cards to run past the screen's edge, as the strip does.
   const count = wide ? grid.columns : Math.ceil((viewportWidth - STRIP_PAD) / (cardWidth + stripGap)) + 1;
   // The wide skeleton is the full grid the feed already reserves height for (railStripHeight with

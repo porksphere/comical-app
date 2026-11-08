@@ -121,10 +121,14 @@ export function useIsLargeScreen(): boolean {
  * True on a desktop: the large-screen layout in a browser or the desktop shell. A tablet is as wide
  * and is not one — it keeps the phone's card metrics at any width.
  */
-export function useIsDesktop(): boolean {
-  const large = useIsLargeScreen();
-  return large && Platform.OS === 'web';
+function useIsDesktopWeb(): boolean {
+  return useIsLargeScreen();
 }
+
+// Never on a device, and read there without the window: every caller — each card's overlays, each
+// History row — rendered again for every new window size (an iPhone Duo folding or opening) only to
+// learn `false` again.
+export const useIsDesktop: () => boolean = Platform.OS === 'web' ? useIsDesktopWeb : () => false;
 
 /**
  * Content height of the sticky top bars — taller on desktop (≥768px), compact

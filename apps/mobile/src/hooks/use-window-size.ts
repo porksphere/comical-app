@@ -16,11 +16,22 @@ function takes(window: ScaledSize, screen: ScaledSize): boolean {
 
 const window$ = observable<ScaledSize>(Dimensions.get('window'));
 const beforeResize = new Set<() => void>();
+// Whether the window is changing size, from its first new size until `RESIZE_SETTLE_MS` after its
+// last (`useWindowResizing`).
+const resizing$ = observable(false);
+const RESIZE_SETTLE_MS = 1000;
+let settle: ReturnType<typeof setTimeout> | undefined;
 if (Platform.OS !== 'web') {
   Dimensions.addEventListener('change', ({ window, screen }: { window: ScaledSize; screen: ScaledSize }) => {
     if (!takes(window, screen)) return;
     const was = window$.peek();
-    if (was.width !== window.width || was.height !== window.height) for (const run of beforeResize) run();
+    if (was.width !== window.width || was.height !== window.height) {
+      for (const run of beforeResize) run();
+      // Set before the size, so whatever holds still for a resize does so in the render that has it.
+      resizing$.set(true);
+      clearTimeout(settle);
+      settle = setTimeout(() => resizing$.set(false), RESIZE_SETTLE_MS);
+    }
     window$.set(window);
   });
 }
@@ -37,6 +48,12 @@ export function onBeforeWindowResize(run: () => void): () => void {
 
 function useNativeWindowSize(): ScaledSize {
   return useSelector(() => window$.get());
+}
+
+/** Whether the window is in the middle of changing size (an iPhone Duo folding or opening), until a
+ *  second after it settles. Always false on the web. */
+export function useWindowResizing(): boolean {
+  return useSelector(() => resizing$.get());
 }
 
 // The web never reports one: it keeps React Native's own hook, prerender handling and all.

@@ -29,13 +29,13 @@ import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { historyQuery, libraryQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
-import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
+import { useCenterInset, useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
@@ -54,7 +54,6 @@ export default function HistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // The content column, not the window — the sidebar's inset is already out of it.
-  const width = useContentWidth();
   const filter = useTabFilter();
   const query = filter.query;
   const queryClient = useQueryClient();
@@ -134,7 +133,7 @@ export default function HistoryScreen() {
   // content width and the swipe-to-delete reaches the edge instead of being cut off inside a side inset.
   // The safe area's sides are the exception: a row inside them keeps clear of the sensor housing.
   const sides = useSideInsets();
-  const sidePad = topLevelCenterInset(width - sides.left - sides.right);
+  const sidePad = useCenterInset(sides);
 
   // The 3-dot opens the SERIES side of that same page — no `reader` param, so it lands on
   // the details with the reader as the strip, which is exactly a browse open. Same zoom off this

@@ -20,8 +20,10 @@
  */
 import { createContext, useContext, useMemo } from 'react';
 
+import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { topLevelCenterInset } from '@/constants/theme';
 import { useWindowSize } from '@/hooks/use-window-size';
 
 type NavLayout = {
@@ -60,6 +62,18 @@ export function useHasSidebar(): boolean {
 }
 
 export type SideInsets = { left: number; right: number };
+
+function useCenterInsetWeb(sides: SideInsets): number {
+  const width = useContentWidth();
+  return topLevelCenterInset(width - sides.left - sides.right);
+}
+
+/**
+ * `topLevelCenterInset` of the content column less `sides`: the web's centring of a capped column.
+ * A device's content isn't capped, so there it is 0, and read without the width — a list that wants
+ * nothing else of it (History, Activity) doesn't render again for every new window size.
+ */
+export const useCenterInset: (sides: SideInsets) => number = Platform.OS === 'web' ? useCenterInsetWeb : () => 0;
 
 /**
  * The safe area's left and right edges for content in this subtree: the sensor housing's side of a

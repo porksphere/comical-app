@@ -3,7 +3,6 @@ import { createContext, useEffect, useRef, useState, type ReactElement } from 'r
 import { Platform, StyleSheet } from 'react-native';
 import { SafeAreaListener } from 'react-native-safe-area-context';
 import { BarScrolledProvider } from '@/components/bar-scrolled';
-import { foldTrace } from '@/components/fold-trace';
 import { useWindowSize } from '@/hooks/use-window-size';
 import { persisted$ } from '@/lib/observable';
 
@@ -78,11 +77,6 @@ function BarExtent({ slides, root, children }: { slides: boolean; root: boolean;
   );
   const ownTop = own?.pose === pose ? own.top : null;
   const top = ownTop ?? seed;
-  // TEMPORARY, with fold-trace.
-  const traced = `bar extent ${pose.split(':')[1]}: ${top ?? 'none'} (${ownTop !== null ? 'measured' : seed !== null ? 'remembered' : 'unknown'})`;
-  useEffect(() => {
-    if (measured && root) foldTrace(traced);
-  }, [measured, root, traced]);
   if (!measured) return children;
   const measure = (next: number) => {
     if (settling.current) clearTimeout(settling.current);

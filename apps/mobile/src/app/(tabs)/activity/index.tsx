@@ -31,14 +31,14 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { useZoomId, withZoomSource } from '@/components/zoom-source';
-import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { autoDownloadNewChapters } from '@/data/downloads/auto';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
-import { useContentWidth, useSideInsets } from '@/hooks/use-content-width';
+import { useCenterInset, useSideInsets } from '@/hooks/use-content-width';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -87,7 +87,6 @@ export default function ActivityScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // The content column, not the window — the sidebar's inset is already out of it.
-  const width = useContentWidth();
   const filter = useTabFilter();
   const query = filter.query;
   const queryClient = useQueryClient();
@@ -243,7 +242,7 @@ export default function ActivityScreen() {
   // own horizontal gutter so the swipe-to-clear reaches the edge (see history-row / history), but
   // inside the safe area's sides.
   const sides = useSideInsets();
-  const sidePad = topLevelCenterInset(width - sides.left - sides.right);
+  const sidePad = useCenterInset(sides);
 
   // See history.tsx's `openDetail` — the same control, opening the same series on its details
   // page.

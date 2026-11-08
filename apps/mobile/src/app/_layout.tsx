@@ -33,7 +33,6 @@ import type { ComponentProps } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { FoldTrace } from '@/components/fold-trace';
 import { SplashGate } from '@/components/splash-gate';
 import { barExtentLayout } from '@/components/bar-extent';
 import { pushedScreen, useBarMaterial, useSettingsScreen } from '@/lib/native-bar';
@@ -181,7 +180,6 @@ function RootNavigation() {
       {Platform.OS === 'ios' ? null : <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />}
       <SplashGate />
       <FrameTrace />
-      <FoldTrace />
       <FocusedTabTracker />
       {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
       <OverlayProvider>

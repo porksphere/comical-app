@@ -1,10 +1,11 @@
 import { Stack, useIsFocused } from 'expo-router';
-import { useEffect, useState, type ComponentProps } from 'react';
+import { startTransition, useEffect, useState, type ComponentProps } from 'react';
 import { Freeze } from 'react-freeze';
 import { ReanimatedScreenProvider } from 'react-native-screens/reanimated';
 
 import { barExtentLayout } from '@/components/bar-extent';
 import { TabRootScrollContext } from '@/components/screen-scroll-marker';
+import { useWindowResizing } from '@/hooks/use-window-size';
 import { TabRouteContext } from '@/lib/focused-tab';
 import { NATIVE_BAR, useBarMaterial } from '@/lib/native-bar';
 import { NESTED_SEARCH_BAR } from '@/lib/series-nav';
@@ -56,7 +57,7 @@ import { TabBarClearanceReporter } from '@/lib/tab-bar-clearance';
  */
 export default function TabStack({ tab }: { tab: string }) {
   const barMaterial = useBarMaterial();
-  const frozen = useFrozenWhileHidden();
+  const frozen = useFrozenThroughResize();
   return (
     <Freeze freeze={frozen}>
     <TabRouteContext.Provider value={tab}>
@@ -77,21 +78,33 @@ export default function TabStack({ tab }: { tab: string }) {
 }
 
 /**
- * Whether this tab's screens are held still: while another tab is up. Every tab stays mounted, and
- * a tab out of sight still rendered for every change it reads, the window's size among them: an
- * iPhone Duo folding re-rendered Browse's rails under Library, half the work of the fold. Frozen a
- * render after the tab is left, so it settles as it goes, the way react-native-screens freezes a
- * screen it covers; let go at once when the tab is chosen again, which renders it at what it
- * missed.
+ * Whether this tab's screens are held still: while another tab is up AND the window is changing size.
+ * Every tab stays mounted, and an iPhone Duo folding re-rendered the tabs out of sight with the one
+ * on screen, Browse's rails under Library, half the fold's work. Frozen in the render that has the
+ * new size, they catch up a second after it settles, still out of sight — as a transition, so React
+ * renders the catch-up in slices between frames: let go at once, it was a block of up to 750ms on the
+ * JS thread a second after every fold.
+ *
+ * Only then: a frozen tab's screens are hidden, not just held, and frozen whenever another tab was up
+ * a tab came up empty — black until the JS side had heard of the switch and let it go — where it had
+ * always been there at once. (React's `Activity` hides its content the same way, and takes down its
+ * effects while hidden: the tabs' scroll views and bar items would register again on every switch.)
  */
-function useFrozenWhileHidden(): boolean {
+function useFrozenThroughResize(): boolean {
   const focused = useIsFocused();
-  const [settled, setSettled] = useState(!focused);
+  const resizing = useWindowResizing();
+  // Held from the resize until the transition letting it go has rendered.
+  const [held, setHeld] = useState(false);
+  const [wasResizing, setWasResizing] = useState(resizing);
+  if (resizing !== wasResizing) {
+    setWasResizing(resizing);
+    if (resizing) setHeld(true);
+  }
   useEffect(() => {
-    const id = setTimeout(() => setSettled(!focused), 0);
-    return () => clearTimeout(id);
-  }, [focused]);
-  return !focused && settled;
+    if (resizing || !held) return;
+    startTransition(() => setHeld(false));
+  }, [resizing, held]);
+  return !focused && (resizing || held);
 }
 
 function tabScreenLayout(args: Parameters<NonNullable<ComponentProps<typeof Stack>['screenLayout']>>[0]) {

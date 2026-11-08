@@ -22,21 +22,21 @@ import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
  * The space between two cards side by side, in a grid or a rail. `wide` is a desktop-sized card: 8pt
  * between covers that size reads as one strip of artwork.
  *
- * Flat tiles sit at the reference's tight 8pt on a phone (16 was tried there and reverted — it cost
- * card width without reading better). Books don't: each one carries a spine edge, a rim and a shadow,
- * and at 8pt a shelf of them reads as packed, so book covers buy the room back — about the tenth of a
- * cover's width Apple Books leaves between its own.
+ * On a phone, flat tiles take 12pt: the reference's 8 read packed beside the larger covers a grid
+ * now grows to on an open iPhone Duo (16 was tried once and reverted — it cost card width without
+ * reading better). Books take more: each one carries a spine edge, a rim and a shadow, and a shelf of
+ * them at the flat gap reads as crowded.
  */
 export function cardGap(books: boolean, wide: boolean): number {
-  if (books) return wide ? Spacing.four : Spacing.two + Spacing.one;
-  return wide ? Spacing.three : Spacing.two;
+  if (books) return wide ? Spacing.four : Spacing.three;
+  return wide ? Spacing.three : Spacing.two + Spacing.one;
 }
 
-/** The space between rows of cards. Flat, it's tight, because a card's own title block already
- *  separates one row from the next; a shelf of books takes its column gap, so the next row's covers
- *  don't sit on the last row's longest title. */
+/** The space between rows of cards. Flat, it's tighter than between columns, because a card's own
+ *  title block already separates one row from the next; a shelf of books takes its column gap, so
+ *  the next row's covers don't sit on the last row's longest title. */
 function rowGap(books: boolean, wide: boolean): number {
-  return books ? cardGap(true, wide) : Spacing.one;
+  return books ? cardGap(true, wide) : Spacing.two;
 }
 
 /** How a row spends its gap around its cards. Split, not all below: LegendList's web row container is

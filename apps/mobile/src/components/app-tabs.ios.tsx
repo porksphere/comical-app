@@ -3,7 +3,6 @@ import { NativeTabs } from 'expo-router/native-tabs';
 import { useCallback, useEffect, useState, type ComponentProps } from 'react';
 import { Dimensions, type LayoutChangeEvent } from 'react-native';
 
-import { foldTrace } from '@/components/fold-trace';
 import { navModeFor } from '@/constants/size-class';
 import { useActivityBadgeCount } from '@/data/activity/use-activity-badge';
 import { useSettingsBadgeCount } from '@/data/use-settings-badge';
@@ -72,7 +71,6 @@ export default function AppTabs() {
   const [measure, setMeasure] = useState<{ width: number; window: number } | null>(null);
   const onContentLayout = useCallback((e: LayoutChangeEvent) => {
     const w = e.nativeEvent.layout.width;
-    foldTrace(`tab content width ${Math.round(w)}`);
     // The window as it is when the layout lands, not as this render saw it: the event can arrive
     // before the render for the new size, and paired with the old window it read the whole new width
     // as a sidebar.
