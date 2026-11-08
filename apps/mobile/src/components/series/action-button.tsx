@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { createContext, use, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ChevronDownIcon } from '@/components/icons/ui-icons';
@@ -11,6 +11,14 @@ import { useTheme } from '@/hooks/use-theme';
 // The series actions column buttons. `primary` is the accent Read button; the
 // rest are subtle filled buttons (Library, Sources ▾, Trackers ▾, Favorite).
 // Mirrors `.read-primary` / `#lib-toggle` etc. in the reference.
+
+/**
+ * The shape an `ActionButton` takes, set by the layout around it, so the buttons drawn inside other
+ * components (download, trackers) take it too: the series page's large `hero` capsule to read, its
+ * labelled `round` buttons for the rest, or a full-width `bar` anywhere else.
+ */
+export type ActionShape = 'bar' | 'hero' | 'round';
+export const ActionShapeContext = createContext<ActionShape>('bar');
 
 export function ActionButton({
   label,
@@ -40,7 +48,54 @@ export function ActionButton({
 }) {
   const theme = useTheme();
   const primary = variant === 'primary';
+  const shape = use(ActionShapeContext);
   const { hovered, onHoverIn, onHoverOut } = useHovered();
+  const fill = primary ? (hovered ? theme.accentHover : theme.accent) : hovered ? theme.backgroundSelected : theme.backgroundElement;
+  if (shape === 'round') {
+    return (
+      <Pressable
+        testID={testID}
+        onPress={disabled ? undefined : onPress}
+        disabled={disabled}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityState={{ disabled: !!disabled }}
+        style={({ pressed }) => [styles.round, disabled && styles.disabled, pressed && styles.pressed]}>
+        <View style={[styles.roundFace, { backgroundColor: fill }]}>
+          <View style={styles.roundIcon}>{leading}</View>
+        </View>
+        <ThemedText numberOfLines={1} style={[styles.roundLabel, { color: theme.textSecondary }]}>
+          {label}
+        </ThemedText>
+      </Pressable>
+    );
+  }
+  if (shape === 'hero') {
+    return (
+      <Pressable
+        testID={testID}
+        onPress={disabled ? undefined : onPress}
+        disabled={disabled}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityState={{ disabled: !!disabled }}
+        style={({ pressed }) => [styles.heroBtn, disabled && styles.disabled, pressed && styles.pressed]}>
+        <View style={[styles.heroFill, { backgroundColor: fill }]}>
+          {leading}
+          <ThemedText
+            numberOfLines={1}
+            style={[styles.label, styles.heroLabel, { color: primary ? theme.accentOn : theme.text }]}>
+            {label}
+          </ThemedText>
+          {caret && <ChevronDownIcon color={primary ? theme.accentOn : theme.textSecondary} size={14} />}
+        </View>
+      </Pressable>
+    );
+  }
   return (
     <Pressable
       testID={testID}
@@ -109,6 +164,45 @@ const styles = StyleSheet.create({
   label: {
     flexShrink: 1,
     minWidth: 0,
+  },
+  // The large capsule the series page reads from.
+  heroBtn: {
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  heroFill: {
+    height: 50,
+    paddingHorizontal: Spacing.four,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+  },
+  heroLabel: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
+  },
+  // A round button with its label under it: the series page's other actions.
+  round: {
+    width: 72,
+    alignItems: 'center',
+    gap: Spacing.one + Spacing.half,
+  },
+  roundFace: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // The slot's icons are drawn for the bar's 15pt; a round button's face wants them larger.
+  roundIcon: {
+    transform: [{ scale: 1.35 }],
+  },
+  roundLabel: {
+    fontSize: 12,
+    lineHeight: 16,
   },
   newBadge: {
     alignSelf: 'flex-start',

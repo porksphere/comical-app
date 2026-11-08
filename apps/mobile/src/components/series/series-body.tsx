@@ -26,7 +26,7 @@ import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { TagGroupRow } from '@/components/chip';
 import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton } from '@/components/rail';
-import { ACTION_ICON_SIZE, ActionButton, NewBadge } from '@/components/series/action-button';
+import { ACTION_ICON_SIZE, ActionButton, ActionShapeContext, NewBadge } from '@/components/series/action-button';
 import { ChapterScrollList, Disclosure, PageThumbList, TurningChevron } from '@/components/series/chapters-section';
 import { SeriesDownloadButton } from '@/components/series/download-button';
 import { SeriesRemovedNotice } from '@/components/series/series-removed';
@@ -317,7 +317,6 @@ export function SeriesBody({
   bridgeId,
   isLarge,
   sticky,
-  actionsWidth,
   direct,
   width,
   initialCover,
@@ -341,7 +340,6 @@ export function SeriesBody({
   bridgeId?: string;
   isLarge: boolean;
   sticky: boolean;
-  actionsWidth: number;
   direct: boolean;
   width: number;
   /** Cover forwarded from browse. When it matches this body's cover, skip the
@@ -609,10 +607,15 @@ export function SeriesBody({
   // Kept in sync with SeriesSkeleton's pieces — same styles, same shapes — so the
   // only thing that changes when data lands is the content, not the layout.
   const actionsSkel = (
-    <View style={[styles.actions, !isLarge && { width: actionsWidth }]}>
-      {Array.from({ length: 5 }).map((_, i) => (
-        <Skeleton key={i} style={styles.skelButton} />
-      ))}
+    <View style={styles.actionsStack}>
+      <Skeleton style={styles.skelHero} />
+      <View style={styles.roundRow}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <View key={i} style={styles.skelRoundSlot}>
+            <Skeleton style={styles.skelRound} />
+          </View>
+        ))}
+      </View>
     </View>
   );
   const contentSkel = (
@@ -631,9 +634,9 @@ export function SeriesBody({
     </>
   );
 
-  // Action buttons — shared between layouts; width controlled by parent.
-  const actionsEl = (
-    <View {...actionsMarks} style={[styles.actions, !isLarge && { width: actionsWidth }]}>
+  // Action buttons — shared between layouts. Each its own element, for the layout below to arrange.
+  const readButton = (
+    <>
       <ActionButton
         testID="series.action.read"
         label={primaryLabel}
@@ -648,6 +651,10 @@ export function SeriesBody({
         accessibilityLabel={settled ? `${primaryLabel} — ${readingLabel.toLowerCase()}` : undefined}
         onPress={startReading}
       />
+    </>
+  );
+  const saveButton = (
+    <>
       {/* ONE control: a tap saves into the last-used collection and the label then names it; once
           saved, a tap opens the picker. The caret is the same affordance either way, so the button
           reads as "there is more here" rather than as a dead end. See useSeriesSave. */}
@@ -664,6 +671,10 @@ export function SeriesBody({
         caret
         onPress={save.onPress}
       />
+    </>
+  );
+  const downloadButton = (
+    <>
       {bridgeId && !missingBridge && (
         <SeriesDownloadButton
           bridgeId={bridgeId}
@@ -675,6 +686,10 @@ export function SeriesBody({
           removed={series.removal !== undefined}
         />
       )}
+    </>
+  );
+  const favoriteButton = (
+    <>
       {/* One control, four faces (see useFavorite's `status`). ABSENT for a bridge without favorites —
           a greyed star there promised a feature that would never arrive. A bridge that has favorites
           but no account yet gets the way IN rather than a dead button: the same slot reads "Log in to
@@ -705,6 +720,10 @@ export function SeriesBody({
           onPress={toggleFavorite}
         />
       ) : null}
+    </>
+  );
+  const sourcesButton = (
+    <>
       {series.hasSources && (
         <ActionButton
           testID="series.action.sources"
@@ -713,15 +732,38 @@ export function SeriesBody({
           caret
         />
       )}
+    </>
+  );
+  const trackerButton = (
+    <>
       {/* Tracker sits at the bottom of the column: it's the "where does this series belong"
           action, below the ones that act on the series itself. The old "Add to collection" button
           stood beside it and is gone — it was the Save button above with extra steps. */}
       {Array.isArray(trackers) && trackers.length > 0 && bridgeId && (
         <TrackerButton bridgeId={bridgeId} seriesId={series.id} title={series.title} />
       )}
-      {series.newCount != null && <NewBadge count={series.newCount} />}
+    </>
+  );
+  const newBadge = series.newCount != null && <NewBadge count={series.newCount} />;
+  // One large capsule to read and the rest as labelled round buttons under it, under the cover on a
+  // phone: the shape Apple's detail pages share (Books, TV). A column of full-width bars beside the
+  // cover gave one main action and five lesser ones the same weight, each as wide as the column.
+  const actionsEl = (
+    <View {...actionsMarks} style={styles.actionsStack}>
+      <ActionShapeContext.Provider value="hero">{readButton}</ActionShapeContext.Provider>
+      <ActionShapeContext.Provider value="round">
+        <View style={styles.roundRow}>
+          {saveButton}
+          {downloadButton}
+          {favoriteButton}
+          {sourcesButton}
+          {trackerButton}
+        </View>
+      </ActionShapeContext.Provider>
+      {newBadge}
     </View>
   );
+  const actionsBelow = !isLarge;
 
   // Tapping a tag chip drops the Browse tab into a matching search, mirroring
   // comical-web's tag chips (app.ts): a `tagQueries` entry runs a free-text
@@ -894,9 +936,10 @@ export function SeriesBody({
         /* Small screen: hero row then content stacked below. */
         <>
           <View style={styles.hero}>
-            {coverEl}
-            {loading ? actionsSkel : actionsEl}
+            {actionsBelow ? <View style={styles.coverCentered}>{coverEl}</View> : coverEl}
+            {!actionsBelow && (loading ? actionsSkel : actionsEl)}
           </View>
+          {actionsBelow && (loading ? actionsSkel : actionsEl)}
           {loading ? contentSkel : contentEl}
         </>
       )}
@@ -970,9 +1013,10 @@ export function SeriesBody({
   ) : (
     <>
       <View style={styles.hero}>
-        {coverEl}
-        {loading ? actionsSkel : actionsEl}
+        {actionsBelow ? <View style={styles.coverCentered}>{coverEl}</View> : coverEl}
+        {!actionsBelow && (loading ? actionsSkel : actionsEl)}
       </View>
+      {actionsBelow && (loading ? actionsSkel : actionsEl)}
       {loading ? contentSkel : contentEl}
     </>
   );
@@ -1007,6 +1051,7 @@ export function SeriesBody({
 // The keyboard comes in on Read, and up and down keep to the actions rather than zig-zagging into the
 // details beside them (lib/focus-nav).
 const actionsMarks = focusMarks('landing', 'column');
+
 const columnMark = focusMarks('column');
 
 const styles = StyleSheet.create({
@@ -1125,8 +1170,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700'
   },
-  actions: {
-    gap: Spacing.two
+  // The actions: the Read capsule over a row of round buttons.
+  actionsStack: {
+    gap: Spacing.three
+  },
+  roundRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    rowGap: Spacing.three
+  },
+  // The cover alone in the hero row, centred, when the actions run under it.
+  coverCentered: {
+    width: '56%',
+    marginHorizontal: 'auto'
   },
   // Genres + tag-group rows packed tightly together (the outer column's larger
   // gap then separates the whole block from the meta grid below).
@@ -1204,10 +1261,19 @@ const styles = StyleSheet.create({
   skelLine: {
     borderRadius: 6
   },
-  skelButton: {
-    height: 34,
-    ...ContinuousCorner,
-    borderRadius: Spacing.two
+  // The actions' shapes, as `ActionButton` draws them (its `hero` and `round` shapes).
+  skelHero: {
+    height: 50,
+    borderRadius: 25
+  },
+  skelRoundSlot: {
+    width: 72,
+    alignItems: 'center'
+  },
+  skelRound: {
+    width: 50,
+    height: 50,
+    borderRadius: 25
   },
   skelChips: {
     flexDirection: 'row',

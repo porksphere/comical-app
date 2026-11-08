@@ -109,7 +109,6 @@ export function SeriesDetailsHost({
   };
 
   const isLarge = sizeClassFor(width) === 'regular';
-  const actionsWidth = Math.round(Math.min(width * 0.4, 220));
 
   const goneReason = seriesGoneReason(queryError);
   if (queryError && goneReason !== undefined) {
@@ -150,7 +149,6 @@ export function SeriesDetailsHost({
       // position:sticky is a web full-page affordance — inside the card's own scroller it wouldn't
       // resolve against the viewport anyway.
       sticky={false}
-      actionsWidth={actionsWidth}
       direct={isDirect}
       width={width}
       initialCover={cover}
