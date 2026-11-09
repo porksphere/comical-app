@@ -1,6 +1,7 @@
 import {
   Button,
   Form,
+  Group,
   Host,
   HStack,
   Image,
@@ -31,6 +32,7 @@ import {
   font,
   foregroundStyle,
   frame,
+  id as scrollId,
   keyboardType,
   lineLimit,
   listRowBackground,
@@ -46,13 +48,14 @@ import {
   refreshable,
   resizable,
   scrollContentBackground,
+  scrollPosition,
   shapes,
   tag,
   textInputAutocapitalization,
   textSelection,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
-import { useMemo, useRef, type ReactNode } from 'react';
+import { use, useMemo, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ChipRow } from '@/components/chip';
@@ -69,6 +72,7 @@ import {
   type SettingsListProps,
   type SettingsTone,
 } from '@/components/settings/settings-form';
+import { FOCUS_WASH, FocusRowContext, useFocusRow, washHex } from '@/components/settings/use-focus-row';
 import { useReselectScrollToTop } from '@/hooks/use-scroll-to-top-on-reselect';
 import { SettingsCardInset, Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -97,18 +101,22 @@ const CHEVRON = font({ size: 13, weight: 'semibold' });
  * slide, and the tab bar's edge on the landing tab), and scrolls it on the tab's reselect.
  * `column` is the reading column's cap, which the form has no need of: a list insets itself.
  */
-export function SettingsList({ sections, reselectRoute, refresh }: SettingsListProps) {
+export function SettingsList({ sections, reselectRoute, refresh, focus }: SettingsListProps) {
   const scheme = useActiveColorScheme();
   const theme = useTheme();
   const anchor = useRef<ContentScrollAnchorRef>(null);
   const report = useReportBarScrolled();
   const managed = useBarManaged();
   useReselectScrollToTop(reselectRoute, () => void anchor.current?.scrollToTop());
+  // The form scrolls to the row named by its id (`LinkRow`); iOS 17 and later.
+  const scrolledTo = useNativeState<string | null>(null);
+  const marked = useFocusRow(focus, sections, (key) => scrolledTo.set(key));
   const form = (
     <Host style={styles.fill} colorScheme={scheme} seedColor={theme.accent} useViewportSizeMeasurement>
       <Form
         modifiers={[
           scrollContentBackground('hidden'),
+          ...(focus ? [scrollPosition(scrolledTo, { anchor: 'center' })] : []),
           ...(refresh
             ? [
                 refreshable(async () => {
@@ -132,7 +140,8 @@ export function SettingsList({ sections, reselectRoute, refresh }: SettingsListP
       </Form>
     </Host>
   );
-  if (!ContentScrollAnchor) return form;
+  const focused = focus ? <FocusRowContext value={{ focus, marked }}>{form}</FocusRowContext> : form;
+  if (!ContentScrollAnchor) return focused;
   return (
     <ContentScrollAnchor
       ref={anchor}
@@ -143,7 +152,7 @@ export function SettingsList({ sections, reselectRoute, refresh }: SettingsListP
       // The screen's own edge option never reaches a SwiftUI list: set on the list itself, where
       // the bar switches its own backing — see ScreenScrollMarker.
       topEdge={managed ? 'hidden' : undefined}>
-      {form}
+      {focused}
     </ContentScrollAnchor>
   );
 }
@@ -326,6 +335,16 @@ function MultiRow({ field, id }: { field: Extract<SettingsField, { kind: 'multi'
  */
 function LinkRow({ field, section, id }: { field: Extract<SettingsField, { kind: 'link' }>; section: SettingsFormSection; id: string }) {
   const theme = useTheme();
+  const focus = use(FocusRowContext);
+  const row = <LinkRowBody field={field} section={section} id={id} />;
+  const key = fieldKey(field);
+  if (focus.focus !== key) return row;
+  const wash = focus.marked ? [listRowBackground(washHex(theme.accent, theme.backgroundElement, FOCUS_WASH))] : [];
+  return <Group modifiers={[scrollId(key), ...wash]}>{row}</Group>;
+}
+
+function LinkRowBody({ field, section, id }: { field: Extract<SettingsField, { kind: 'link' }>; section: SettingsFormSection; id: string }) {
+  const theme = useTheme();
   const selection = section.selection;
   const key = fieldKey(field);
   const selectable = !!selection && !!field.key && (!selection.selectable || selection.selectable.has(key));
@@ -350,7 +369,7 @@ function LinkRow({ field, section, id }: { field: Extract<SettingsField, { kind:
       ) : field.marked ? (
         <Image systemName="circle.fill" size={8} color={theme.accent} />
       ) : null}
-      {selecting ? null : <Chevron />}
+      {selecting || !field.onPress ? null : <Chevron />}
     </HStack>
   );
   if (selecting) {
@@ -362,10 +381,13 @@ function LinkRow({ field, section, id }: { field: Extract<SettingsField, { kind:
       : [disabled()];
     return <HStack modifiers={[accessibilityIdentifier(id), moveDisabled(true), ...gestures]}>{content}</HStack>;
   }
-  const row = (
+  // A row that opens nothing is not a button: it would highlight under a tap that does nothing.
+  const row = field.onPress ? (
     <Button onPress={field.onPress} modifiers={[accessibilityIdentifier(id)]}>
       {content}
     </Button>
+  ) : (
+    <HStack modifiers={[accessibilityIdentifier(id)]}>{content}</HStack>
   );
   if (!field.actions?.length) return row;
   return (
@@ -388,12 +410,20 @@ function LinkRow({ field, section, id }: { field: Extract<SettingsField, { kind:
 }
 
 /** A React Native block hosted in a row of its own, with no inset of the row's: the block keeps
- *  the inset it draws with elsewhere. For what a screen draws itself, and the app's chips. */
+ *  the inset it draws with elsewhere. For what a screen draws itself, and the app's chips.
+ *
+ *  The host takes its width from the row, but React Native's layout inside it is never told: a
+ *  share of the width (`'50%'`) or a `flex: 1` label resolved against nothing, so a two-column
+ *  legend laid out at its text's width and ran off the row. The width the host reports is handed
+ *  back to the block. */
 function Hosted({ id, children }: { id: string; children: ReactNode }) {
+  const [width, setWidth] = useState<number>();
   return (
     <VStack modifiers={[listRowInsets({ top: 0, bottom: 0, leading: 0, trailing: 0 })]}>
-      <RNHostView matchContents={{ vertical: true }}>
-        <View testID={id}>{children}</View>
+      <RNHostView matchContents={{ vertical: true }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+        <View testID={id} style={width ? { width } : undefined}>
+          {children}
+        </View>
       </RNHostView>
     </VStack>
   );
@@ -438,6 +468,9 @@ function Tile({ icon }: { icon: SettingsIcon }) {
   const file = useThumbFile(icon.uri);
   if (file) {
     return <Image uiImage={file} modifiers={[resizable(), frame({ width: 28, height: 28 }), clipShape('roundedRectangle', 7)]} />;
+  }
+  if (icon.bare) {
+    return <Image systemName={icon.symbol} size={20} color={theme.textSecondary} modifiers={[frame({ width: 28, height: 28 })]} />;
   }
   return (
     <Image

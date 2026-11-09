@@ -104,7 +104,9 @@ export type SettingsField =
       busy?: boolean;
       /** What a swipe (a hover, on web) reveals: at most three, the last at the edge. */
       actions?: readonly SettingsRowAction[];
-      onPress: () => void;
+      /** Unset, the row opens nothing and has no chevron: a thing in a list that is only shown,
+       *  acted on by its swipe and the select mode (a chapter in a series' downloads). */
+      onPress?: () => void;
       testID?: string;
     }
   | {
@@ -179,6 +181,8 @@ export type SettingsIcon = {
   symbol: SFSymbol;
   glyph: (color: string, size: number) => ReactNode;
   uri?: string;
+  /** The glyph alone, with no tile behind it: a state (a download's), not a thing's picture. */
+  bare?: boolean;
 };
 
 /** One thing a swipe on a row reveals. The last is at the edge: the natural destructive slot. */
@@ -207,6 +211,9 @@ export type SettingsSelection = {
   toggle: (key: string) => void;
   /** A hold on a row: select from the last toggled row to this one. */
   rangeFill?: (key: string) => void;
+  /** Replaces the selection: where it is given, a drag down the check circles sweeps them (the app's
+   *  renderer, on an `unbounded` section). */
+  selectSet?: (set: ReadonlySet<string>) => void;
 };
 
 export type SettingsFormSection = {
@@ -221,6 +228,10 @@ export type SettingsFormSection = {
   onReorder?: (keys: string[]) => void;
   /** The screen's select mode over the rows with a `key`; the rest go inert while it is on. */
   selection?: SettingsSelection;
+  /** The rows can run to hundreds or thousands (downloads, a series' chapters). The app's renderer
+   *  draws such a section as a recycled list, the screen's main scroller, with the other sections
+   *  above and below it; the iOS form is lazy already. At most one per screen. */
+  unbounded?: boolean;
 };
 
 /** What a screen hands its list (`settings-list.tsx`, `settings-list.ios.tsx`). */
@@ -232,6 +243,8 @@ export type SettingsListProps = {
   reselectRoute?: string;
   /** Pull to refresh. */
   refresh?: () => Promise<unknown>;
+  /** A row's key to bring into view and mark for a moment: what the screen was opened to show. */
+  focus?: string;
 };
 
 /** The id a field's row carries, for tests and as its React key. */

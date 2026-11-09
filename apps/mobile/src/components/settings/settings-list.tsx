@@ -1,12 +1,14 @@
-import { useRef, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, View, type ScrollViewInstance } from 'react-native';
+import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
+import { use, useMemo, useRef, type ReactNode, type RefObject } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, View, type ScrollViewInstance, type ViewInstance } from 'react-native';
+import type { LegacyPanGesture as PanGesture } from 'react-native-gesture-handler';
 
 import { ChipRow } from '@/components/chip';
 import { Holdable } from '@/components/context-menu';
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
-import { SelectLead, SelectLeadGap } from '@/components/multi-select/select-mode';
+import { SelectLead, SelectLeadGap, useDragSelect } from '@/components/multi-select/select-mode';
 import { IntStepper } from '@/components/reader/int-stepper';
-import { ScreenScrollView } from '@/components/screen-scroll-marker';
+import { ScreenScrollMarker, ScreenScrollView } from '@/components/screen-scroll-marker';
 import { MultiSelectRow } from '@/components/settings/multi-select-row';
 import { RefreshableScrollView } from '@/components/settings/refreshable-scroll';
 import { ReorderableList } from '@/components/settings/reorderable-list';
@@ -21,12 +23,15 @@ import {
   type SettingsTone,
 } from '@/components/settings/settings-form';
 import { settingsRowFrame, SettingsRow, SettingsSection } from '@/components/settings/settings-row';
-import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
+import { SwipeableSettingsRow, swipeActionsOf } from '@/components/settings/swipeable-row';
+import { FOCUS_WASH, FocusRowContext, useFocusRow } from '@/components/settings/use-focus-row';
 import { UpdateDot, UpdatePip } from '@/components/tab-badge';
 import { ThemedText } from '@/components/themed-text';
-import { MaxContentWidth, SettingsCardInset, Spacing } from '@/constants/theme';
+import { MaxContentWidth, SettingsCardInset, SettingsRowHeight, Spacing } from '@/constants/theme';
+import { useContentWidth } from '@/hooks/use-content-width';
+import { useListLayout } from '@/hooks/use-list-layout';
 import { useReselectScrollToTop } from '@/hooks/use-scroll-to-top-on-reselect';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticSelection } from '@/lib/haptics';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
@@ -38,12 +43,49 @@ import { scrollbarInset } from '@/lib/scrollbar-inset';
  * (`settings-list.ios.tsx`). The screen keeps its `TopBar` and its frame; this is the list.
  *
  * A screen that is one section of draggable rows (Bridges, Registries) is the reorderable list,
- * which owns its scroll, its pull and its card; any other screen scrolls its sections, with the
- * shared pull where it refreshes.
+ * which owns its scroll, its pull and its card; a screen with an `unbounded` section is a recycled
+ * list (`RecycledSections`); any other screen scrolls its sections, with the shared pull where it
+ * refreshes.
  */
-export function SettingsList({ sections, column = MaxContentWidth, reselectRoute, refresh }: SettingsListProps) {
-  const padding = useSettingsScrollPadding(column);
+export function SettingsList(props: SettingsListProps) {
+  const unbounded = props.sections.findIndex((s) => s.unbounded && s.fields.length > 0);
+  return unbounded >= 0 ? <RecycledSections {...props} at={unbounded} /> : <ScrolledSections {...props} />;
+}
+
+function ScrolledSections(props: SettingsListProps) {
+  const { sections, focus } = props;
   const ref = useRef<ScrollViewInstance>(null);
+  const offset = useRef(0);
+  const focusRef = useRef<ViewInstance>(null);
+  // Centred in the scroller, from where both stand on screen: the one measurement that holds
+  // whatever the content around the row is. Only the plain scroller is followed for its offset;
+  // the draggable and refreshable lists leave the row where it is.
+  const marked = useFocusRow(focus, sections, () => {
+    const list = ref.current;
+    const row = focusRef.current;
+    if (!list || !row) return;
+    list.measureInWindow((_lx, ly, _lw, lh) =>
+      row.measureInWindow((_rx, ry, _rw, rh) => {
+        list.scrollTo({ y: Math.max(0, offset.current + ry - ly - (lh - rh) / 2), animated: true });
+      }),
+    );
+  });
+  return (
+    <FocusRowContext value={{ focus, marked, hold: (view) => (focusRef.current = view) }}>
+      <Sections {...props} scrollRef={ref} onOffset={(y) => (offset.current = y)} />
+    </FocusRowContext>
+  );
+}
+
+function Sections({
+  sections,
+  column = MaxContentWidth,
+  reselectRoute,
+  refresh,
+  scrollRef: ref,
+  onOffset,
+}: SettingsListProps & { scrollRef: RefObject<ScrollViewInstance | null>; onOffset: (y: number) => void }) {
+  const padding = useSettingsScrollPadding(column);
   useReselectScrollToTop(reselectRoute, () => ref.current?.scrollTo({ y: 0, animated: true }));
   const [only] = sections;
   if (sections.length === 1 && only?.onReorder) {
@@ -79,6 +121,8 @@ export function SettingsList({ sections, column = MaxContentWidth, reselectRoute
   return (
     <ScreenScrollView
       ref={ref}
+      onScroll={(e) => onOffset(e.nativeEvent.contentOffset.y)}
+      scrollEventThrottle={16}
       style={scrollbarInset(padding.paddingTop)}
       contentContainerStyle={[
         styles.content,
@@ -93,7 +137,124 @@ export function SettingsList({ sections, column = MaxContentWidth, reselectRoute
   );
 }
 
-function Field({ field, section }: { field: SettingsField; section: SettingsFormSection }) {
+const NO_KEYS: ReadonlySet<string> = new Set();
+
+/**
+ * A screen whose `at` section runs to hundreds of rows: that section is the screen's scroller, a
+ * recycled list of fixed-height rows, with the sections before it above the rows and the ones after
+ * below. A recycled row is a view handed from one item to the next, never a member of a group, so
+ * the rows are laid out plain, at the cards' text inset, and the sections around them pad back out
+ * to the cards' edge (`useSettingsListPad`). A drag down the check circles sweeps them where the
+ * selection can be replaced wholesale (`selectSet`). No pull to refresh here.
+ */
+function RecycledSections({ sections, at, focus }: SettingsListProps & { at: number }) {
+  const theme = useTheme();
+  const section = sections[at];
+  const width = useContentWidth();
+  const { paddingTop, paddingBottom } = useSettingsScrollPadding();
+  const sidePad = useSettingsSidePad(width);
+  const listPad = useSettingsListPad(width);
+  const listRef = useRef<LegendListRef>(null);
+  const scrollY = useRef(0);
+  const focusRef = useRef<ViewInstance>(null);
+  const keys = useMemo(() => section.fields.map(fieldKey), [section.fields]);
+  const selection = section.selection;
+  const sweep = useDragSelect({
+    keys,
+    selected: selection?.selected ?? NO_KEYS,
+    selectSet: (set) => {
+      const allowed = selection?.selectable;
+      selection?.selectSet?.(allowed ? new Set([...set].filter((k) => allowed.has(k))) : set);
+    },
+    rowHeight: SettingsRowHeight,
+    scrollRef: listRef,
+    scrollYRef: scrollY,
+    selecting: !!selection?.selecting && !!selection.selectSet,
+  });
+  const marked = useFocusRow(focus, sections, (key) => {
+    const index = keys.indexOf(key);
+    if (index >= 0) listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+  });
+  const extra = useListLayout(
+    listRef,
+    sidePad.left,
+    useMemo(() => ({ selected: selection?.selected, selecting: selection?.selecting, marked }), [selection?.selected, selection?.selecting, marked]),
+  );
+  const around = (from: number, to: number) => {
+    const group = sections.slice(from, to).filter((s) => s.fields.length > 0);
+    if (group.length === 0) return null;
+    return (
+      <View style={styles.around}>
+        {group.map((s, i) => (
+          <SettingsSection key={s.title ?? i} title={s.title} footer={s.footer}>
+            {s.fields.map((field) => (
+              <Field key={fieldTestID(field)} field={field} section={s} />
+            ))}
+          </SettingsSection>
+        ))}
+      </View>
+    );
+  };
+  const before = around(0, at);
+  const after = around(at + 1, sections.length);
+  return (
+    <FocusRowContext value={{ focus, marked, hold: (view) => (focusRef.current = view) }}>
+      <ScreenScrollMarker>
+        <LegendList
+          ref={listRef}
+          onScroll={(e) => {
+            scrollY.current = e.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
+          style={[styles.recycled, scrollbarInset(paddingTop)]}
+          data={section.fields as SettingsField[]}
+          keyExtractor={fieldKey}
+          recycleItems
+          estimatedItemSize={SettingsRowHeight}
+          // Every row is one settings row tall, so the list need not measure each one, nor correct
+          // the scroll from measurements as it goes (a flinging jitter).
+          getFixedItemSize={() => SettingsRowHeight}
+          maintainVisibleContentPosition={{ data: false, size: false }}
+          extraData={extra}
+          renderItem={({ item, index }) => (
+            <View>
+              <Field field={item} section={section} sweep={sweep.gestureFor(index)} />
+              {index < keys.length - 1 && <View pointerEvents="none" style={[styles.recycledDivider, { backgroundColor: theme.hairline }]} />}
+            </View>
+          )}
+          ListHeaderComponent={
+            before || section.title ? (
+              <>
+                {before}
+                {section.title ? (
+                  <ThemedText type="smallBold" themeColor="textSecondary" style={styles.recycledTitle}>
+                    {section.title}
+                  </ThemedText>
+                ) : null}
+              </>
+            ) : undefined
+          }
+          ListFooterComponent={
+            section.footer || after ? (
+              <>
+                {section.footer ? (
+                  <ThemedText type="small" themeColor="textSecondary" style={styles.recycledFooter}>
+                    {section.footer}
+                  </ThemedText>
+                ) : null}
+                {after}
+              </>
+            ) : undefined
+          }
+          contentContainerStyle={{ flexGrow: 1, paddingTop, paddingBottom, paddingLeft: listPad.left, paddingRight: listPad.right }}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+        />
+      </ScreenScrollMarker>
+    </FocusRowContext>
+  );
+}
+
+function Field({ field, section, sweep }: { field: SettingsField; section: SettingsFormSection; sweep?: PanGesture }) {
   const theme = useTheme();
   const id = fieldTestID(field);
   switch (field.kind) {
@@ -163,7 +324,7 @@ function Field({ field, section }: { field: SettingsField; section: SettingsForm
         </View>
       );
     case 'link':
-      return <LinkRow field={field} section={section} id={id} />;
+      return <LinkRow field={field} section={section} id={id} sweep={sweep} />;
     case 'action': {
       const tint = field.role === 'destructive' ? theme.danger : theme.accent;
       return (
@@ -261,7 +422,24 @@ function Field({ field, section }: { field: SettingsField; section: SettingsForm
  * the tap toggling the row and a hold range-filling, the swipe parked meanwhile. A row without a
  * key in a selecting section keeps its column and goes inert.
  */
-function LinkRow({ field, section, id }: { field: Extract<SettingsField, { kind: 'link' }>; section: SettingsFormSection; id: string }) {
+type LinkRowProps = { field: Extract<SettingsField, { kind: 'link' }>; section: SettingsFormSection; id: string; sweep?: PanGesture };
+
+function LinkRow(props: LinkRowProps) {
+  const { field } = props;
+  const theme = useTheme();
+  const { focus, marked, hold } = use(FocusRowContext);
+  const row = <LinkRowBody {...props} />;
+  if (focus !== fieldKey(field)) return row;
+  // The mark lies OVER the row: a swipeable row fills its own opaque background.
+  return (
+    <View ref={hold} collapsable={false}>
+      {row}
+      {marked && <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.accent, opacity: FOCUS_WASH }]} />}
+    </View>
+  );
+}
+
+function LinkRowBody({ field, section, id, sweep }: LinkRowProps) {
   const theme = useTheme();
   const selection = section.selection;
   const key = fieldKey(field);
@@ -272,7 +450,7 @@ function LinkRow({ field, section, id }: { field: Extract<SettingsField, { kind:
   // icon; otherwise it trails with the value.
   const icon = field.icon ? (
     <View>
-      <RowIcon uri={field.icon.uri} fallback={field.icon.glyph} />
+      <RowIcon uri={field.icon.uri} fallback={field.icon.glyph} bare={field.icon.bare} />
       {pip && (
         <View style={field.marked && field.badge === undefined ? styles.tileDot : styles.tilePip} pointerEvents="none">
           {pip}
@@ -283,7 +461,7 @@ function LinkRow({ field, section, id }: { field: Extract<SettingsField, { kind:
   const leading = selection ? (
     <>
       {selectable ? (
-        <SelectLead progress={selection.progress} selected={selection.selected.has(key)} itemKey={key} edgeOffset={SettingsCardInset} />
+        <SelectLead progress={selection.progress} selected={selection.selected.has(key)} itemKey={key} edgeOffset={SettingsCardInset} gesture={sweep} />
       ) : (
         <SelectLeadGap progress={selection.progress} />
       )}
@@ -310,10 +488,10 @@ function LinkRow({ field, section, id }: { field: Extract<SettingsField, { kind:
     right: trailing.length > 0 ? <View style={styles.trailing}>{trailing}</View> : undefined,
     onPress: selecting ? (selectable ? () => selection!.toggle(key) : undefined) : field.onPress,
   };
-  if (!field.actions?.length) return <SettingsRow {...common} chevron={!selecting} />;
-  const actions = field.actions.map((a) => ({ key: a.key, label: a.label, icon: a.glyph, destructive: a.destructive, onPress: a.onPress }));
+  if (!field.actions?.length) return <SettingsRow {...common} chevron={!selecting && !!field.onPress} />;
+  const actions = swipeActionsOf(field.actions);
   const row = (onLongPress?: Parameters<typeof SwipeableSettingsRow>[0]['onLongPress']) => (
-    <SwipeableSettingsRow {...common} onLongPress={onLongPress} swipeEnabled={!selecting} actions={actions} />
+    <SwipeableSettingsRow {...common} recycleKey={key} onLongPress={onLongPress} swipeEnabled={!selecting} actions={actions} />
   );
   if (!selectable || !selection?.rangeFill) return row();
   const rangeFill = selection.rangeFill;
@@ -344,6 +522,33 @@ function toneColor(theme: ReturnType<typeof useTheme>, tone: SettingsTone | unde
 }
 
 const styles = StyleSheet.create({
+  recycled: {
+    flex: 1,
+  },
+  // The cards around a recycled list pad back out to where a card's edge is (see `useSettingsListPad`).
+  around: {
+    gap: Spacing.five,
+    paddingHorizontal: SettingsCardInset,
+    paddingBottom: Spacing.five,
+  },
+  recycledTitle: {
+    paddingHorizontal: SettingsCardInset,
+    paddingBottom: Spacing.two,
+    textTransform: 'uppercase',
+  },
+  recycledFooter: {
+    paddingHorizontal: SettingsCardInset,
+    paddingTop: Spacing.two,
+    paddingBottom: Spacing.five,
+  },
+  // The cards' inset divider, absolute so a row stays exactly one settings row tall.
+  recycledDivider: {
+    position: 'absolute',
+    bottom: 0,
+    left: SettingsCardInset,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
+  },
   content: {
     // Spacing BETWEEN sections (SettingsSection carries no top margin — see settings-row).
     gap: Spacing.five,

@@ -18,6 +18,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { HOVER_RAIL_FADE, HoverRailContext } from '@/components/settings/hover-rail';
+import type { SettingsRowAction } from '@/components/settings/settings-form';
 import { SettingsRow } from '@/components/settings/settings-row';
 import { ContinuousCorner, SettingsCardInset, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
@@ -90,6 +91,11 @@ export type SwipeRowAction = {
    *  confirm the row would fold away before the question was asked. */
   collapses?: boolean;
 };
+
+/** The model's row actions (`settings-form`) as this row's: the glyph is all it draws. */
+export function swipeActionsOf(actions: readonly SettingsRowAction[]): SwipeRowAction[] {
+  return actions.map((a) => ({ key: a.key, label: a.label, icon: a.glyph, destructive: a.destructive, onPress: a.onPress }));
+}
 
 /** Clamp to what fits, and shout in a dev build when a caller over- (or under-) fills the row — a
  *  `console.error` surfaces in the Metro logs and the RN LogBox, without crashing a release build. */

@@ -17,7 +17,16 @@ const ICON_SIZE = 28;
  * SOME rows carry artwork would have the rest of its labels start at a different x, which reads as
  * broken rather than as sparse.
  */
-export function RowIcon({ uri, fallback }: { uri?: string | undefined; fallback: (color: string, size: number) => ReactNode }) {
+export function RowIcon({
+  uri,
+  fallback,
+  bare,
+}: {
+  uri?: string | undefined;
+  fallback: (color: string, size: number) => ReactNode;
+  /** The glyph without its tile, at the tile's size (a state, not a picture). */
+  bare?: boolean;
+}) {
   const theme = useTheme();
   if (uri) {
     return (
@@ -32,6 +41,7 @@ export function RowIcon({ uri, fallback }: { uri?: string | undefined; fallback:
       />
     );
   }
+  if (bare) return <View style={[styles.tile, styles.fallback]}>{fallback(theme.textSecondary, 20)}</View>;
   return (
     <View style={[styles.tile, styles.fallback, { backgroundColor: theme.tileWash }]}>
       {fallback(theme.textSecondary, 16)}
