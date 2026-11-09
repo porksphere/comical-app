@@ -5,6 +5,7 @@ import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue,
 
 import { BehindPrint, BookChrome, BookShadow, BookStaples, PrintPaper } from '@/components/book-chrome';
 import { CardOverlays } from '@/components/card-badge';
+import { SavedIcon } from '@/components/icons/ui-icons';
 import { FloatOver } from '@/components/float-over';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { Skeleton } from '@/components/skeleton';
@@ -729,6 +730,7 @@ function SeriesCardBody({
         numberOfLines={MAX_TITLE_LINES}
         themeColor={entry.unavailable ? 'textSecondary' : undefined}
         style={[styles.title, titleSize]}>
+        {saved && <TitleMark size={titleSize.fontSize} />}
         {entry.title}
       </ThemedText>
     );
@@ -786,7 +788,7 @@ function SeriesCardBody({
           pictureInner
         )}
         {book && <BookChrome cover={book} />}
-        <CardOverlays badges={entry.badges} rank={rank} saved={saved} unread={entry.unread} book={book} />
+        <CardOverlays badges={entry.badges} rank={rank} unread={entry.unread} book={book} />
         {/* A wash in the page colour, not an opacity dim: here "broken" is the message, but the
             badges above still have to read. */}
         {entry.unavailable && (
@@ -1028,7 +1030,23 @@ function TitlePeek({ title, anchor }: { title: string; anchor: RefObject<ViewIns
   );
 }
 
+/** "In your library": the bookmark glyph before a card's title, inline, so a wrapped title wraps
+ *  under it. Not on the cover, where any mark covers part of the art. An icon, so nothing a bridge
+ *  sends (text) can imitate it. */
+function TitleMark({ size }: { size: number }) {
+  const theme = useTheme();
+  const glyph = Math.round(size * 0.85);
+  return (
+    <View accessibilityLabel="In your library" style={[styles.titleMark, { width: glyph + 3, height: glyph }]}>
+      <SavedIcon color={theme.accent} size={glyph} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  titleMark: {
+    paddingRight: 3,
+  },
   card: {
     // A touch more breathing room between the thumbnail and its title.
     gap: Spacing.two,

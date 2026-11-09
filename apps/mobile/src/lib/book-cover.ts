@@ -72,7 +72,7 @@ export function shuffledHints(key: string): { form: CoverForm; direction: Readin
 
 /**
  * How much of the cover's width the spine-side treatment covers, as a fraction. Anything laid over
- * the cover on that side (badges, the library ribbon) starts past it rather than on the crease.
+ * the cover on that side (badges) starts past it rather than on the crease.
  */
 export const SPINE_FRACTION: Record<CoverForm, number> = { volume: 0.065, issue: 0.04, scroll: 0, sheets: 0 };
 
@@ -222,9 +222,4 @@ export function liftShadows(width: number, { rim, foot }: LiftShade) {
     { offsetX: 0, offsetY: 0.02 * width, blurRadius: 0.096 * width, color: rim },
     { offsetX: 0, offsetY: 0.2 * width, blurRadius: 0.16 * width, spreadDistance: -0.12 * width, color: foot },
   ];
-}
-
-/** The library ribbon: hangs from the head of the spine, just past the hinge. */
-export function ribbonSize(desktop: boolean): { width: number; height: number } {
-  return desktop ? { width: 11, height: 28 } : { width: 8, height: 20 };
 }

@@ -20,7 +20,6 @@ import {
   bookRadius,
   liftShadows,
   printWindow,
-  ribbonSize,
   shadowPlacement,
   type BookCover,
 } from '@/lib/book-cover';
@@ -215,26 +214,6 @@ export function ThumbLift({ width, radius, cover }: { width: number; radius: num
   return <View style={[styles.fill, ContinuousCorner, { borderRadius: radius, boxShadow: liftShadows(width, shade) }]} />;
 }
 
-/** "In your library", as the bookmark it already was in icon form, hanging from the head of the
- *  spine. A shape bridges can't send, so nothing a bridge sends can imitate it. Two plain views — the
- *  notched tail is a border triangle — rather than an SVG per saved card. */
-export function LibraryRibbon({ style }: { style: StyleProp<ViewStyle> }) {
-  const theme = useTheme();
-  const { width, height } = ribbonSize(useIsDesktop());
-  const notch = Math.round(height * 0.22);
-  return (
-    <View accessibilityLabel="In your library" style={[styles.ribbon, { width, height }, style]}>
-      <View style={{ height: height - notch, backgroundColor: theme.accent }} />
-      <View
-        style={[
-          styles.tail,
-          { borderLeftWidth: width / 2, borderRightWidth: width / 2, borderBottomWidth: notch, borderLeftColor: theme.accent, borderRightColor: theme.accent },
-        ]}
-      />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   fill: {
     position: 'absolute',
@@ -286,16 +265,5 @@ const styles = StyleSheet.create({
   },
   dim: {
     backgroundColor: 'rgba(0,0,0,0.3)',
-  },
-  ribbon: {
-    position: 'absolute',
-    top: 0,
-    zIndex: 2,
-    pointerEvents: 'none',
-  },
-  tail: {
-    width: 0,
-    height: 0,
-    borderBottomColor: 'transparent',
   },
 });

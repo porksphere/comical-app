@@ -1,21 +1,19 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, View, type DimensionValue, type ViewStyle } from 'react-native';
 
-import { LibraryRibbon } from '@/components/book-chrome';
 import { SavedIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { useIsDesktop } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-import { SPINE_FRACTION, ribbonSize, type BookCover } from '@/lib/book-cover';
+import { SPINE_FRACTION, type BookCover } from '@/lib/book-cover';
 import type { BadgePosition, BadgeTone, CardBadge as CardBadgeData } from '@/data/mock';
 
 // Overlay badges on a card cover: bridge-defined `pos-*` / `tone-*` labels plus
 // the unread-count pill. Mirrors `.card-badge` / `.badge-unread` in the
 // reference web app.
 
-// A bridge may put any number of badges in any corner, and the app adds its own (rank, the
-// library marker, unread) to the same corners — so each corner is a stack that lines its badges
+// A bridge may put any number of badges in any corner, and the app adds its own (rank, unread) to
+// the same corners — so each corner is a stack that lines its badges
 // up from the corner inward, never a set of absolutely placed views landing on top of each other.
 // The app's own badges lead their corner, so a bridge's can never push them off the cover.
 const CORNER: Record<BadgePosition, ViewStyle> = {
@@ -46,24 +44,18 @@ const FACING: Record<BadgePosition, BadgePosition> = {
 export function CardOverlays({
   badges,
   rank,
-  saved,
   unread,
   book,
 }: {
   /** Bridge-defined badges, each stacked in its own corner (top-left when it names none). */
   badges?: readonly CardBadgeData[];
   rank?: number;
-  /** The series is in the library. */
-  saved?: boolean;
   unread?: number;
-  /** Drawn as a book: the library mark becomes a ribbon, and nothing sits on the spine. */
+  /** Drawn as a book: nothing sits on the spine. */
   book?: BookCover | null;
 }) {
-  const desktop = useIsDesktop();
-  const ribbon = !!book && !!saved;
   const stacks: Record<BadgePosition, ReactNode[]> = { 'top-left': [], 'top-right': [], 'bottom-left': [], 'bottom-right': [] };
   if (rank != null) stacks['top-left'].push(<RankBadge key="rank" rank={rank} />);
-  if (saved && !ribbon) stacks['top-left'].push(<SavedBadge key="saved" />);
   if (unread != null) stacks['top-right'].push(<UnreadBadge key="unread" count={unread} />);
   badges?.forEach((b, i) => stacks[b.position ?? 'top-left'].push(<CardBadge key={i} badge={b} />));
 
@@ -71,14 +63,11 @@ export function CardOverlays({
   // never sits on the crease. Two stacks on one edge split it rather than each taking 85% of it.
   const spineSide = book && SPINE_FRACTION[book.form] > 0 ? book.binding : null;
   const spine: DimensionValue | undefined = book ? `${SPINE_FRACTION[book.form] * 100}%` : undefined;
-  const ribbonSide = spineSide ?? 'left';
-  const ribbonClear = ribbonSize(desktop).width + 3;
   const placed = (corner: BadgePosition): ViewStyle | undefined => {
     if (!book) return undefined;
     const side = corner.endsWith('left') ? 'left' : 'right';
     const onSpine = side === spineSide;
-    const pastRibbon = ribbon && corner.startsWith('top') && side === ribbonSide;
-    const margin = (onSpine ? Spacing.one : 0) + (pastRibbon ? ribbonClear : 0);
+    const margin = onSpine ? Spacing.one : 0;
     // Spread, never `undefined`: an explicit undefined inset still wins when styles flatten, and would
     // unpin the stack from the corner its own style puts it in.
     return {
@@ -89,11 +78,6 @@ export function CardOverlays({
   };
   return (
     <>
-      {ribbon && (
-        <LibraryRibbon
-          style={ribbonSide === 'left' ? { left: spineSide ? spine : Spacing.one, marginLeft: spineSide ? Spacing.one : 0 } : { right: spine, marginRight: Spacing.one }}
-        />
-      )}
       {CORNERS.map(
         (corner) =>
           stacks[corner].length > 0 && (
