@@ -29,6 +29,7 @@ import { persisted$ } from '@/lib/observable';
 import { ZoomSurfaceContext, useZoomSurfaceKey, useZoomSurfaceMembership } from '@/lib/series-zoom';
 import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
 import { testId } from '@/lib/test-id';
+import { fontMetrics, useTitleFontFor } from '@/lib/title-font';
 
 // Card cover aspect is 2:3, so a card of width W has a cover of height W·3/2.
 const COVER_RATIO = 3 / 2;
@@ -139,25 +140,26 @@ export function sectionHeadHeight(compact: boolean): number {
   return compact ? HEAD_HEIGHT_COMPACT : HEAD_HEIGHT_WIDE;
 }
 
-// Drill-down chevron on a `SectionHead`. Sized against the title's letters, not its line box: lucide
-// draws chevron-right as `m9 18 6-6-6-6`, spanning only the middle half of its 24-unit box, so half
-// of any size here is whitespace and the drawn glyph is half the number. At 25/28 that's 12.5/14px
-// against cap heights of ~14/17 — a shade under the letters, reading as part of the heading.
+// Drill-down chevron on a `SectionHead`, drawn from the title's own capitals: its glyph a shade under
+// their height, centred on them the way an SF Symbol sits on its text. lucide draws chevron-right as
+// `m9 18 6-6-6-6`, the middle half of its 24-unit box, so the icon is twice the glyph. Matching the
+// cap height outright made the chevron compete with the title instead of pointing off it.
 //
-// This is a step back down from 28/32 (a 14/16px glyph), which overshot: matching the cap height
-// exactly made the chevron compete with the title instead of pointing off it. Both now sit inside
-// the head heights above, so the row's height doesn't depend on them either way.
-const CHEVRON_SIZE_COMPACT = 25;
-const CHEVRON_SIZE_WIDE = 28;
+// Centred on the line box it sat off the capitals for any face but San Francisco: iOS centres a
+// face's whole ascender-to-descender box in the line, so its capitals land `(ascender - descender -
+// capHeight) / 2` ems below the line's middle — nothing for SF, over a point for the Japanese faces,
+// whose ascenders leave room for kanji.
+const CHEVRON_TO_CAP = 0.92;
+const TITLE_SIZE_COMPACT = 19.2;
+const TITLE_SIZE_WIDE = 24;
 // Lucide has no bold/light variants — one glyph per name — so weight is `strokeWidth`. A hair over
 // the default 2 keeps the chevron from reading thin beside a semibold title without going as heavy
 // as the 2.5 that paired with the larger glyph.
 const CHEVRON_STROKE = 2.25;
 // It sits tight against the title on purpose — the chevron belongs to the heading and must not read
 // as a separate control — so the nudge is negative, cancelling most of the leading whitespace inside
-// lucide's square box. That whitespace scales with the icon (the glyph starts 9/24 of the way in),
-// so it tracks the size: 28/32 carried ~10.5/12px and took -5; 25/28 carries ~9.4/10.5 and takes -4.
-const CHEVRON_NUDGE = -4;
+// lucide's square box. That whitespace scales with the icon (the glyph starts 9/24 of the way in).
+const CHEVRON_NUDGE = -0.16;
 
 /**
  * Reserved vertical height of a whole `Rail` row (heading + strip/grid), used by `ContentFeed`'s
@@ -622,21 +624,34 @@ export function SectionHeadContent({
   const theme = useTheme();
   // Match the reference's `.section-head h3`: 1.2rem mobile / 1.5rem desktop.
   const compact = useCompactType();
+  const font = useTitleFontFor(title);
+  const fontSize = compact ? TITLE_SIZE_COMPACT : TITLE_SIZE_WIDE;
+  const { ascender, descender, capHeight } = fontMetrics(font);
+  const chevronSize = 2 * CHEVRON_TO_CAP * capHeight * fontSize;
   return (
     <>
       <ThemedText
         type="subtitle"
-        style={[styles.headTitle, compact ? styles.headTitleCompact : styles.headTitleWide, !!titleColor && { color: titleColor }]}
+        style={[
+          styles.headTitle,
+          compact ? styles.headTitleCompact : styles.headTitleWide,
+          font && { fontFamily: font, fontWeight: 'normal' },
+          !!titleColor && { color: titleColor },
+        ]}
         numberOfLines={1}>
         {title}
       </ThemedText>
       {chevron && (
         /* Wrapped so the nudge can be a margin: `gap` can't do it, since a negative gap is invalid
            CSS on web (react-native-web drops the whole declaration) even though Yoga accepts it. */
-        <View style={styles.headChevron}>
+        <View
+          style={{
+            marginLeft: CHEVRON_NUDGE * chevronSize,
+            transform: [{ translateY: ((ascender - descender - capHeight) / 2) * fontSize }],
+          }}>
           <ChevronRightIcon
             color={chevronColor ?? theme.textSecondary}
-            size={compact ? CHEVRON_SIZE_COMPACT : CHEVRON_SIZE_WIDE}
+            size={chevronSize}
             strokeWidth={CHEVRON_STROKE}
           />
         </View>
@@ -716,11 +731,11 @@ const styles = StyleSheet.create({
   // its size (32px at 24), so a 30px box cut the descenders off on Windows. The title is centred in
   // the head either way, so filling it moves no glyph.
   headTitleCompact: {
-    fontSize: 19.2,
+    fontSize: TITLE_SIZE_COMPACT,
     lineHeight: HEAD_HEIGHT_COMPACT,
   },
   headTitleWide: {
-    fontSize: 24,
+    fontSize: TITLE_SIZE_WIDE,
     lineHeight: HEAD_HEIGHT_WIDE,
   },
   // Title + chevron as one drill-down target. Hugs its content (`flexShrink` so a long title
@@ -738,9 +753,6 @@ const styles = StyleSheet.create({
   },
   headLinkPressed: {
     opacity: 0.6,
-  },
-  headChevron: {
-    marginLeft: CHEVRON_NUDGE,
   },
   strip: {
     // gap is set inline (`stripGapFor`, the skeleton's own on a desktop) alongside this.

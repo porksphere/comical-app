@@ -27,6 +27,7 @@ import { RetryBlock } from '@/components/retry-block';
 import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
+import { EmptyMessage } from '@/components/empty-message';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
@@ -187,9 +188,7 @@ export default function HistoryScreen() {
     if (!visible || visible.length === 0) {
       if (query.trim()) return <ThemedText themeColor="textSecondary">No matches</ThemedText>;
       return (
-        <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-          No reading history yet. Open a series and start reading — it’ll show up here.
-        </ThemedText>
+        <EmptyMessage title="No history yet" detail="Open a series and start reading — it’ll show up here." />
       );
     }
     return null;
@@ -425,10 +424,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.four,
-  },
-  emptyText: {
-    textAlign: 'center',
-    maxWidth: 340,
   },
   list: {
     flex: 1,

@@ -4,6 +4,7 @@ import type { SharedValue } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
+import { useTitleFontFor } from '@/lib/title-font';
 
 /** Where the series page wants to know how tall its title came out, wrapped lines included. */
 export const InlineTitleHeightContext = createContext<SharedValue<number> | null>(null);
@@ -14,10 +15,11 @@ export const InlineTitleHeightContext = createContext<SharedValue<number> | null
  */
 export function InlineSeriesTitle({ style, ...props }: ComponentProps<typeof ThemedText>) {
   const height = use(InlineTitleHeightContext);
+  const font = useTitleFontFor(typeof props.children === 'string' ? props.children : '');
   return (
     <ThemedText
       {...props}
-      style={[style, NATIVE_HEADER && styles.large]}
+      style={[style, NATIVE_HEADER && styles.large, font && { fontFamily: font, fontWeight: 'normal' }]}
       onLayout={height ? (e) => height.set(e.nativeEvent.layout.height) : undefined}
     />
   );

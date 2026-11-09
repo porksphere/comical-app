@@ -6,7 +6,7 @@ import type { SharedValue } from 'react-native-reanimated';
 
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { RetryBlock } from '@/components/retry-block';
-import { ThemedText } from '@/components/themed-text';
+import { EmptyMessage } from '@/components/empty-message';
 import { Spacing } from '@/constants/theme';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 
@@ -93,14 +93,7 @@ function ListingSkeleton() {
 }
 
 function EmptyState({ message: [title, detail] }: { message: ListingMessage }) {
-  return (
-    <View style={styles.empty}>
-      <ThemedText style={styles.emptyTitle}>{title}</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.emptyDetail}>
-        {detail}
-      </ThemedText>
-    </View>
-  );
+  return <EmptyMessage title={title} detail={detail} style={styles.empty} />;
 }
 
 /**
@@ -135,17 +128,6 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.five,
   },
   empty: {
-    alignItems: 'center',
-    gap: Spacing.two,
     paddingTop: Spacing.six,
-  },
-  emptyTitle: {
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  emptyDetail: {
-    textAlign: 'center',
-    maxWidth: 320,
   },
 });

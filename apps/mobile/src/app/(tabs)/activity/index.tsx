@@ -27,6 +27,7 @@ import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab
 import { NativeTabHeader } from '@/components/native-tab-header';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { TabTitleBar } from '@/components/tab-title-bar';
+import { EmptyMessage } from '@/components/empty-message';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
@@ -293,9 +294,7 @@ export default function ActivityScreen() {
     if (!ready || isLoading || items === undefined) return <ThemedText themeColor="textSecondary">Loading…</ThemedText>;
     if (!visible || visible.length === 0) {
       return (
-        <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-          New chapters in your library appear here automatically.
-        </ThemedText>
+        <EmptyMessage title="Nothing new yet" detail="New chapters in your library appear here automatically." />
       );
     }
     if (rows.length === 0) return <ThemedText themeColor="textSecondary">No matches</ThemedText>;
@@ -534,10 +533,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.four,
-  },
-  emptyText: {
-    textAlign: 'center',
-    maxWidth: 340,
   },
   list: {
     flex: 1,

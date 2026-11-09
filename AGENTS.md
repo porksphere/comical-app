@@ -888,6 +888,17 @@ the window in JS lands a render after the animation, and is what shows as a jump
   that depends on the width and it renders on every fold again, under the screen being folded — read
   the size in the one component that needs it, not at the screen.
 
+# Headings are set in the title typeface, and nothing else is
+
+Shippori Antique B1 (`lib/title-font.ts`) sets the tabs' titles, the series page's title (and the
+bar's copy of it), the feeds' section headings and the empty screens' headlines. The heavier
+mincho and gothic faces were tried and read too serious for a comics app. Text that is read
+or tapped — cards, rows, buttons, settings, the reader — stays in the system face: at card sizes
+a display face loses its shape. The bundled file is cut down to Latin, so a heading whose words
+aren't ours (a series' name, a bridge's section) takes it through `useTitleFontFor`, which falls
+back to the system face for a title it can't set whole; iOS would otherwise fill the missing
+letters from the system face one by one, one title in two typefaces.
+
 # Press-in warms the destination
 
 Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is

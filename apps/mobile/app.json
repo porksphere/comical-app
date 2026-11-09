@@ -88,7 +88,7 @@
       [
         "expo-font",
         {
-          "fonts": ["./assets/fonts/ShipporiMinchoB1-ExtraBold.ttf"]
+          "fonts": ["./assets/fonts/ShipporiAntiqueB1-Regular.ttf"]
         }
       ],
       "expo-image",

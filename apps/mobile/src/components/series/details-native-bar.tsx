@@ -16,6 +16,7 @@ import { useNativeHeaderHeight } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
 import { useWindowSize } from '@/hooks/use-window-size';
 import { HIDDEN_TOP_EDGE, SLIDE_AWAY_BAR, useBarMaterial } from '@/lib/native-bar';
+import { useTitleFontFor } from '@/lib/title-font';
 
 import { NavBarFade } from '../../../modules/nav-bar-fade';
 
@@ -79,10 +80,12 @@ export function SeriesDetailsNativeBar({
   );
   const theme = useTheme();
   const { width } = useWindowSize();
+  const titleFont = useTitleFontFor(title);
   // One style object: expo-router's Slot, which `Stack.Title asChild` clones through, rejects an
   // array in development.
   const titleFade = useAnimatedStyle(() => ({
     ...TITLE_STYLE,
+    ...(titleFont && { fontFamily: titleFont, fontWeight: 'normal' as const }),
     color: theme.text,
     maxWidth: width * TITLE_MAX_WIDTH,
     opacity: interpolate(
