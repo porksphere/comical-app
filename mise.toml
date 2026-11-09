@@ -1,0 +1,7 @@
+# The repo's toolchain. Bun is the package manager and script runner; Node and JDK 17 are what a
+# local native build needs, matching CI's Android lane (build-android-reusable.yml): React Native's
+# Gradle setup shells out to `node`, and the Android Gradle Plugin wants JDK 17.
+[tools]
+bun = "1.4.4"
+node = "20"
+java = "temurin-17"
