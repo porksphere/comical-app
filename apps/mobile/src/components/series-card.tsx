@@ -183,7 +183,8 @@ export function CoverFrame({
   if (Platform.OS !== 'web' && book?.form !== 'issue') {
     // Native has no ring, so the box IS the clip — one fewer host view means one fewer Fabric clone
     // up the ancestor chain on every commit, on the platform that scrolls these grids. An issue's
-    // staples overhang its edge, so an issue keeps the box and the clip apart, as the web does.
+    // staples cast their shadows outside the clip (`BookStaples`), so an issue keeps the box and the
+    // clip apart, as the web does.
     return (
       <View
         ref={coverRef}

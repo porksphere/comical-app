@@ -51,15 +51,15 @@ export function BookChrome({ cover }: { cover: BookCover }) {
   );
 }
 
-/** An issue's staples. They overhang the binding edge, so they are drawn beside the cover's clip, not
- *  in it, by whatever holds the cover, in a box the cover's size. Each casts a hard shadow, offset as
- *  the light falls, rather than a live one per card. */
+/** An issue's staples, lying in the crease. Drawn beside the cover's clip, not in it, by whatever
+ *  holds the cover, in a box the cover's size, so a shadow cast past a cover's edge isn't cut. Each
+ *  casts a hard shadow, offset as the light falls, rather than a live one per card. */
 export function BookStaples({ cover }: { cover: BookCover }) {
   if (cover.form !== 'issue') return null;
   return (
     <>
       {STAPLES.at.map((at) => {
-        const place = { top: `${at * 100}%`, [cover.binding]: `${-STAPLES.overhang * 100}%` } as const;
+        const place = { top: `${at * 100}%`, [cover.binding]: `${STAPLES.inset * 100}%` } as const;
         return (
           <Fragment key={at}>
             <View style={[styles.staple, styles.stapleShadow, place]} />
@@ -247,14 +247,15 @@ const styles = StyleSheet.create({
   staple: {
     position: 'absolute',
     width: `${STAPLES.width * 100}%`,
+    minWidth: STAPLES.minWidth,
     height: `${STAPLES.length * 100}%`,
-    // A pill at any size: every platform clamps a radius to half the shorter side.
+    // Rounded wire ends at any size: every platform clamps a radius to half the shorter side.
     borderRadius: 99,
     pointerEvents: 'none',
   },
   stapleShadow: {
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    transform: [{ translateX: 0.6 }, { translateY: 0.5 }],
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    transform: [{ translateX: 0.7 }, { translateY: 0.4 }],
   },
   shadowBox: {
     position: 'absolute',

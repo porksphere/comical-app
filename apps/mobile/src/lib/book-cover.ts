@@ -133,14 +133,15 @@ export type Shade = { colors: readonly [string, string, ...string[]]; locations:
  * this was) loses to busy cover art: on manga it was simply gone.
  *
  * Each colour fades to transparent in its own hue before the next begins, so no stop interpolates
- * through grey.
+ * through grey. The spine's cues sit a third stronger than Apple's: at their measured strength busy
+ * manga art still swallowed the groove.
  */
 export const SPINE: Shade = {
   colors: [
-    'rgba(0,0,0,0.28)', 'rgba(0,0,0,0.22)', 'rgba(0,0,0,0)',
-    'rgba(255,255,255,0)', 'rgba(255,255,255,0.12)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0)',
-    'rgba(0,0,0,0)', 'rgba(0,0,0,0.13)', 'rgba(0,0,0,0)',
-    'rgba(255,255,255,0)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0)',
+    'rgba(0,0,0,0.38)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)',
+    'rgba(255,255,255,0)', 'rgba(255,255,255,0.16)', 'rgba(255,255,255,0.135)', 'rgba(255,255,255,0)',
+    'rgba(0,0,0,0)', 'rgba(0,0,0,0.175)', 'rgba(0,0,0,0)',
+    'rgba(255,255,255,0)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)',
     'rgba(255,255,255,0)', 'rgba(255,255,255,0.08)',
   ],
   locations: [0, 0.01, 0.011, 0.011, 0.012, 0.016, 0.023, 0.026, 0.037, 0.048, 0.048, 0.054, 0.065, 0.988, 1],
@@ -160,18 +161,19 @@ export const FOLD: Shade = {
 
 /**
  * An issue's two saddle staples, a fifth of the way in from each end, as fractions: `at` and `length`
- * of the cover's height, `width` of its width, and `overhang` past the binding edge — they cross the
- * fold itself, so they stand just proud of the cover. The crease alone made an issue a slightly
+ * of the cover's height, `width` of its width (never under `minWidth` points), and `inset` from the
+ * binding edge — a thin flat wire lying in the crease. The crease alone made an issue a slightly
  * thinner volume, which real cover art erased; a staple is the one thing a book never has. Drawn far
- * bigger than a real staple (whose wire is about 0.3% of a B5's width) or it vanishes at card size.
+ * bigger than a real staple (whose wire is about 0.3% of a B5's width) or it vanishes at card size,
+ * but kept to a wire: glossy pills standing past the edge read as plastic, not metal.
  */
-export const STAPLES = { at: [0.205, 0.725], length: 0.07, overhang: 0.006, width: 0.02 } as const;
+export const STAPLES = { at: [0.205, 0.725], length: 0.07, inset: 0.009, width: 0.011, minWidth: 1.2 } as const;
 
-/** A staple's wire, lit from the left: bright where it catches the light, falling to a dark trailing
- *  edge that stands in for its shadow on the paper (a `boxShadow` would be a layer per card). */
+/** A staple's wire, lit from the left and falling away across its width; its shadow on the paper is a
+ *  hard offset copy (`BookStaples`), since a `boxShadow` would be a layer per card. */
 export const STAPLE: Shade = {
-  colors: ['#F5F7FA', '#A3AAB4', '#5D636B'],
-  locations: [0, 0.55, 1],
+  colors: ['#EEF1F5', '#A7AEB8'],
+  locations: [0, 1],
 };
 
 /** Every form's top and bottom, read downward: the top edge catches the light and the bottom edge
