@@ -120,6 +120,7 @@ function CollectionMenu({
             testID={`library.collection.${v.testKey}`}
             label={v.name}
             selected={value === v.id}
+            titleFace
             leading={<CollectionThumb view={v.id} name={v.name} size={thumb.size} style={thumb.style} />}
             onPress={() => pick(v.id)}
           />

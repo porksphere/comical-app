@@ -36,6 +36,7 @@ import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { useTitleFontFor } from '@/lib/title-font';
 
 /** The check GLYPH. Its slot is wider — see `ROW_ART`. */
 const CHECK_SIZE = 16;
@@ -136,6 +137,7 @@ export function OptionRow({
   label,
   selected,
   leading,
+  titleFace,
   onPress,
   testID,
 }: {
@@ -143,10 +145,14 @@ export function OptionRow({
   selected: boolean;
   /** Rendered before the label — the selector's bridge thumbnail. */
   leading?: React.ReactNode;
+  /** The label in the title typeface: a row of a bar's title selector, whose picks become the title. */
+  titleFace?: boolean;
   onPress: () => void;
   testID: string;
 }) {
   const theme = useTheme();
+  const titleFont = useTitleFontFor(label);
+  const font = titleFace ? titleFont : undefined;
   const pointer = usePointerFine();
   const { hovered, handlers } = useHover();
   return (
@@ -175,7 +181,7 @@ export function OptionRow({
             as one list with a small row in it. Both platforms separate them the other way round —
             items at the full label colour, the heading receding from them. */}
         <ThemedText
-          style={selected ? styles.labelSelected : undefined}
+          style={[selected && styles.labelSelected, font && { fontFamily: font, fontWeight: 'normal' }]}
           numberOfLines={1}>
           {label}
         </ThemedText>

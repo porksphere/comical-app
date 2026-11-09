@@ -151,6 +151,7 @@ function SelectMenu({
             testID={testId(testID, 'option', opt)}
             label={labels?.[opt] ?? opt}
             selected={opt === selected}
+            titleFace
             leading={<OptionThumb label={labels?.[opt] ?? opt} thumbnail={thumbnails ? (thumbnails[opt] ?? null) : undefined} source={sources?.[opt]} />}
             onPress={() => {
               onSelect(opt);

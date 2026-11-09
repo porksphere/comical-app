@@ -71,6 +71,7 @@ import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect'
 import { useFeedTint } from '@/hooks/use-feed-tint';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
+import { useTitleFont } from '@/lib/title-font';
 import { useWindowControlsClearance } from '@/lib/window-controls';
 
 // Stable, never-fetched keys for the two grid infinite queries while they're disabled (no active
@@ -91,6 +92,7 @@ export default function BrowseScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const titleFont = useTitleFont();
   const feedTint = useFeedTint();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('browse', listRef);
@@ -840,7 +842,7 @@ export default function BrowseScreen() {
   const onboardingBody = (
     <View style={styles.noBridges}>
       <Image style={styles.noBridgesIcon} source={require('@/assets/images/comical-logo.png')} />
-      <ThemedText type="subtitle" style={styles.noBridgesTitle}>
+      <ThemedText type="subtitle" style={[styles.noBridgesTitle, titleFont && { fontFamily: titleFont, fontWeight: 'normal' }]}>
         Comical
       </ThemedText>
       <ThemedText type="small" themeColor="textSecondary" style={styles.noBridgesDetail}>

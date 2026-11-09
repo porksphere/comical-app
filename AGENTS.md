@@ -896,7 +896,8 @@ the window in JS lands a render after the animation, and is what shows as a jump
 # Headings are set in the title typeface, and nothing else is
 
 Shippori Antique B1 (`lib/title-font.ts`) sets the tabs' titles (off iOS, Browse's and Library's
-are their bars' selectors, `useSubtitleSelectorStyle`: a heading that opens a menu), the series page's title (and the
+are their bars' selectors, `useSubtitleSelectorStyle`: a heading that opens a menu, and the rows of
+those menus are too, `OptionRow`'s `titleFace`, since a pick becomes the title), the series page's title (and the
 bar's copy of it), the feeds' section headings and the empty screens' headlines. The heavier
 mincho and gothic faces were tried and read too serious for a comics app. Text that is read
 or tapped — cards, rows, buttons, settings, the reader — stays in the system face: at card sizes
