@@ -886,6 +886,7 @@ function SeriesCardBody({
       entry={entry}
       direct={direct}
       coverAspect={coverAspect}
+      startRadius={coverRadius}
       zoomSource={zoomSource}
       onOpen={openFromPreview}>
       {({ onLongPress, hidden, menuOpen }) => {

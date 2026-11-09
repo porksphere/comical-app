@@ -21,7 +21,7 @@ import {
 import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
-import { BehindPrint, BookChrome, BookShadow, BookStaples, PrintPaper } from '@/components/book-chrome';
+import { BookCoverArt, type CoverArtFrame } from '@/components/book-chrome';
 import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { TagGroupRow } from '@/components/chip';
 import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
@@ -52,7 +52,6 @@ import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
-import { bookRadius, type BookCover } from '@/lib/book-cover';
 import { focusMarks, focusSkip } from '@/lib/focus-nav';
 import { isTypingTarget } from '@/lib/key-hold';
 import { isKey } from '@/lib/keybindings';
@@ -68,16 +67,16 @@ const LARGE_COVER_WIDTH = 300;
 /** The hero cover's box: width fills its wrap, height follows the animated aspect. Mounts AT the
  *  current aspect (no mount animation — the skeleton⇄body swap must not replay the resize) and
  *  eases to a new one over `ASPECT_TRANSITION_MS`, matching the cards' box-settle. The box clips
- *  and rounds; the child image/skeleton just fills it — except a CG set's, whose print does both
- *  inside it (`PrintPaper`). Drawn as a book, it takes the book's corners at the largest size. */
+ *  and rounds with `frame` (see `BookCoverArt`); the child image/skeleton just fills it — except a CG
+ *  set's, whose print does both inside it. */
 function SeriesCoverBox({
   aspect,
-  book,
+  frame,
   children,
   onRect
 }: {
   aspect: number;
-  book: BookCover | null;
+  frame: CoverArtFrame;
   children: ReactNode;
   /** Reports this box's on-screen rect on layout. Only the series page passes it — it
    *  is the destination bound its zoom transition aligns the tapped card to (see there). */
@@ -103,7 +102,7 @@ function SeriesCoverBox({
       ref={boxRef}
       onLayout={onRect ? reportRect : undefined}
       style={[
-        book?.form === 'sheets' ? styles.coverBoxBare : [styles.coverBox, book && { borderRadius: bookRadius(book, true) }],
+        frame.bare ? styles.coverBoxBare : [styles.coverBox, { borderRadius: frame.radius }],
         boxStyle,
       ]}>
       {children}
@@ -544,7 +543,6 @@ export function SeriesBody({
     coverForm: series.coverForm,
     readingDirection: series.readingDirection,
   });
-  const sheets = book?.form === 'sheets';
   const coverPicture = resolvedCover ? (
     <Image
       source={{ uri: resolvedCover }}
@@ -577,24 +575,23 @@ export function SeriesBody({
       onPress={startReading}
       accessibilityRole="button"
       accessibilityLabel={primaryLabel}>
-      {/* The wrap is the cover's size, so these fill it and ease with the box's aspect. */}
-      {book && <BookShadow aspect={coverAspect} fill sheets={sheets} cover={resolvedCover} />}
-      {sheets && <BehindPrint aspect={coverAspect} fill cover={resolvedCover} recyclingKey={series.id} />}
-      {/* iOS zoom: the box the tapped card's cover grows into and shrinks back to (series-card's
-          zoom link). A layout-neutral wrapper there, the box itself everywhere else. */}
-      <LinkAppleZoomTarget>
-        <SeriesCoverBox aspect={coverAspect} book={book} onRect={onHeroCoverRect}>
-          {sheets ? (
-            <PrintPaper aspect={coverAspect}>{coverPicture}</PrintPaper>
-          ) : (
-            <>
-              {coverPicture}
-              {book && <BookChrome cover={book} />}
-            </>
-          )}
-        </SeriesCoverBox>
-      </LinkAppleZoomTarget>
-      {book && <BookStaples cover={book} />}
+      {/* The wrap is the cover's size, so the art fills it and eases with the box's aspect. */}
+      <BookCoverArt
+        book={book}
+        aspect={coverAspect}
+        cover={resolvedCover}
+        recyclingKey={series.id}
+        picture={coverPicture}
+        box={(content, frame) => (
+          // iOS zoom: the box the tapped card's cover grows into and shrinks back to (series-card's
+          // zoom link). A layout-neutral wrapper there, the box itself everywhere else.
+          <LinkAppleZoomTarget>
+            <SeriesCoverBox aspect={coverAspect} frame={frame} onRect={onHeroCoverRect}>
+              {content}
+            </SeriesCoverBox>
+          </LinkAppleZoomTarget>
+        )}
+      />
       {chapterCount != null && (
         <View style={styles.coverBadge}>
           <ThemedText style={styles.coverBadgeText}>{chapterCount}</ThemedText>
@@ -1117,7 +1114,6 @@ const styles = StyleSheet.create({
   coverBox: {
     width: '100%',
     ...ContinuousCorner,
-    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)'
   },

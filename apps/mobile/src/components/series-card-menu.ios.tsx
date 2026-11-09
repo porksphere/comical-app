@@ -9,8 +9,9 @@ import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
  * iOS per-card quick actions: the system context menu (components/system-context-menu.tsx), where
  * Android keeps the custom hold popup (`series-card-menu.tsx`). Holding a card lifts its cover (the
  * `liftTarget` around `CoverFrame`), or a History or Activity row's thumbnail, and grows it into
- * the cover alone, as large as fits over the menu (`SeriesCardPreview`), the way Books and Photos
- * preview a held item. Tapping the preview does what tapping the card does.
+ * the cover alone, drawn as the card's book and as large as fits over the menu
+ * (`SeriesCardPreview`), the way Books and Photos preview a held item. Tapping the preview does what
+ * tapping the card does.
  *
  * A card costs one plain native view while it scrolls: the rows and the preview mount when a hold
  * begins, from the root host, never per card. The SwiftUI context menu this file once held mounted
@@ -43,7 +44,9 @@ export function SeriesCardMenu({
     <SystemContextMenu
       enabled={enabled}
       rows={() => rows}
-      preview={() => <SeriesCardPreview cover={entry.cover} />}
+      preview={() => (
+        <SeriesCardPreview bridgeId={bridgeId} entry={entry} aspect={aspect} {...(direct !== undefined && { direct })} />
+      )}
       previewSize={(room) => coverPreviewSize(aspect, room)}
       {...(onOpen && { onPreviewPress: onOpen })}>
       {content}

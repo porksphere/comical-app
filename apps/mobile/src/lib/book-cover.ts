@@ -123,6 +123,14 @@ export function bookRadius(cover: BookCover, desktop: boolean): number {
   return desktop ? corner.desktop : corner.phone;
 }
 
+/** A plain cover's corner when it is drawn large: the series page's, and a held card's preview. */
+export const LARGE_COVER_CORNER = 12;
+
+/** A cover's corner drawn large: a book's at its largest size, else `LARGE_COVER_CORNER`. */
+export function largeCoverRadius(cover: BookCover | null): number {
+  return cover ? bookRadius(cover, true) : LARGE_COVER_CORNER;
+}
+
 export type Shade = { colors: readonly [string, string, ...string[]]; locations: readonly [number, number, ...number[]] };
 
 /**

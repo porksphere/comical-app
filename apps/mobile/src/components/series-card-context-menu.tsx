@@ -45,7 +45,8 @@ import {
   type SubmenuSpec,
 } from '@/components/context-menu-material';
 import { CheckIcon, DownloadsIcon, LogInIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
-import { COVER_PREVIEW_RADIUS, coverPreviewSize } from '@/components/series-card-preview';
+import { coverPreviewSize, useEntryBook } from '@/components/series-card-preview';
+import { BookCoverArt, type CoverArtFrame } from '@/components/book-chrome';
 import { seriesDetailQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useItemCollections } from '@/hooks/use-item-collections';
@@ -60,6 +61,7 @@ import { useActiveColorScheme } from '@/hooks/use-theme';
 import { useWindowSize } from '@/hooks/use-window-size';
 import { useDismissKey } from '@/lib/dismiss-key';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { largeCoverRadius } from '@/lib/book-cover';
 import { useRouter } from '@/lib/nav';
 import { setZoomOrigin } from '@/lib/series-zoom';
 import { testId } from '@/lib/test-id';
@@ -237,8 +239,12 @@ export function SeriesCardContextMenuHost() {
 function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const { entry, bridgeId, bridge, direct, coverAspect, rect, zoomSource } = req;
   // The VISUAL corner radius the preview starts at (matches the source it lifts from); it morphs to the
-  // resting radius (COVER_PREVIEW_RADIUS) as it opens.
+  // resting radius (`largeCoverRadius`) as it opens.
   const startRadius = req.startRadius ?? CARD_COVER_RADIUS;
+  // Drawn as the book the card is, spine, staples, print and all, at the preview's size.
+  const aspect = clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
+  const book = useEntryBook(bridgeId, entry, direct, aspect);
+  const restRadius = largeCoverRadius(book);
   const { width: winW, height: winH } = useWindowSize();
   const insets = useSafeAreaInsets();
   const scheme = useActiveColorScheme();
@@ -388,7 +394,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const cardCenterX = rect.x + rect.width / 2;
   // The preview is the cover alone, as large as the window allows (the same size iOS's system preview
   // takes), centred over the card as far as the edges let it, so it grows out of the card in place.
-  const { width: coverW, height: coverH } = coverPreviewSize(clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT), {
+  const { width: coverW, height: coverH } = coverPreviewSize(aspect, {
     width: maxRight - minLeft,
     height: winH,
   });
@@ -946,7 +952,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     const live = interpolate(progress.value, [0, 1], [coverFrom.scale.value, scale]);
     // The VISUAL corner morphs from the source's radius to the resting radius over the open, then is
     // counter-scaled by the live scale so that visual radius is what lands on screen.
-    const visualRadius = interpolate(progress.value, [0, 1], [startRadius, COVER_PREVIEW_RADIUS]);
+    const visualRadius = interpolate(progress.value, [0, 1], [startRadius, restRadius]);
     return { borderRadius: visualRadius / Math.max(0.01, live) };
   });
   // The menu isn't dragged and isn't scaled — it TRACKS the panel's scaled bottom edge. Its position
@@ -1439,20 +1445,31 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         <Animated.View
           pointerEvents="none"
           style={[styles.coverLayer, { width: coverW, height: coverH }, coverStyle, parentDimStyle]}>
-          <Animated.View style={[styles.coverInner, coverRadiusStyle]}>
-            {resolvedCover ? (
-              <Image
-                source={{ uri: resolvedCover }}
-                style={StyleSheet.absoluteFill}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                // Hold the morph until the bitmap is on screen (see `openMorph`); on error, open anyway
-                // rather than wait out the fallback.
-                onLoad={openMorph}
-                onError={openMorph}
-              />
-            ) : null}
-          </Animated.View>
+          {/* The book's pieces all ride the layer's transform, so they grow with it; only the
+              clip's corner is eased against it (`coverRadiusStyle`). A CG set's print clips itself. */}
+          <BookCoverArt
+            book={book}
+            aspect={aspect}
+            cover={resolvedCover}
+            recyclingKey={entry.id}
+            picture={
+              resolvedCover ? (
+                <Image
+                  source={{ uri: resolvedCover }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  // Hold the morph until the bitmap is on screen (see `openMorph`); on error, open
+                  // anyway rather than wait out the fallback.
+                  onLoad={openMorph}
+                  onError={openMorph}
+                />
+              ) : null
+            }
+            box={(content, { bare }: CoverArtFrame) =>
+              bare ? <View style={styles.coverInner}>{content}</View> : <Animated.View style={[styles.coverInner, styles.coverRound, coverRadiusStyle]}>{content}</Animated.View>
+            }
+          />
         </Animated.View>
       </View>
 
@@ -1572,6 +1589,8 @@ const styles = StyleSheet.create({
   },
   coverInner: {
     flex: 1,
+  },
+  coverRound: {
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.2)',
   },

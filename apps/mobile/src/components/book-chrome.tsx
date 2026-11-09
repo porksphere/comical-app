@@ -18,6 +18,7 @@ import {
   STAPLE,
   STAPLES,
   bookRadius,
+  largeCoverRadius,
   liftShadows,
   printWindow,
   shadowPlacement,
@@ -202,6 +203,62 @@ export function BehindPrint({
   );
 }
 
+/** What `BookCoverArt` hands its `box`: whether the box is bare (a CG set's, whose print clips its
+ *  own picture) and the corner it clips with otherwise. */
+export type CoverArtFrame = { bare: boolean; radius: number };
+
+/**
+ * A cover drawn whole, as a book where it is one (`book`), over a parent that is the cover's own size:
+ * its shadow (`shadow`), a CG set's print tipped behind, the box with the picture in it under its spine
+ * or fold, or in its print's window, and an issue's staples. `picture` fills the box; `box` draws the
+ * box itself, in the flow, for a caller whose box does more (the series page's eases its shape and is
+ * the zoom's target; the hold popup's eases its corner as it flies), else it is a plain one filling the
+ * parent, clipped to `largeCoverRadius`. The series page and the held card's previews draw it; a card
+ * draws the same pieces around its own animated picture.
+ */
+export function BookCoverArt({
+  book,
+  aspect,
+  cover,
+  recyclingKey,
+  picture,
+  shadow = true,
+  box = plainBox,
+}: {
+  book: BookCover | null;
+  aspect: number;
+  /** The resolved picture, for the dark mode glow and the print behind. */
+  cover: string | undefined;
+  recyclingKey: string;
+  picture: ReactNode;
+  shadow?: boolean;
+  box?: (content: ReactNode, frame: CoverArtFrame) => ReactNode;
+}) {
+  const sheets = book?.form === 'sheets';
+  return (
+    <>
+      {book && shadow && <BookShadow aspect={aspect} fill sheets={sheets} cover={cover} />}
+      {sheets && <BehindPrint aspect={aspect} fill cover={cover} recyclingKey={recyclingKey} />}
+      {box(
+        sheets ? (
+          <PrintPaper aspect={aspect}>{picture}</PrintPaper>
+        ) : (
+          <>
+            {picture}
+            {book && <BookChrome cover={book} />}
+          </>
+        ),
+        { bare: sheets, radius: largeCoverRadius(book) },
+      )}
+      {book && <BookStaples cover={book} />}
+    </>
+  );
+}
+
+function plainBox(content: ReactNode, { bare, radius }: CoverArtFrame): ReactNode {
+  return <View style={bare ? styles.box : [styles.box, styles.clip, ContinuousCorner, { borderRadius: radius }]}>{content}</View>;
+}
+
 /**
  * The lift under a list row's thumbnail: the cards' shadow, or in dark mode their glow in the cover's
  * colours, with no book drawn on the thumbnail. Live shadows (`liftShadows`), behind the thumbnail and
@@ -265,5 +322,13 @@ const styles = StyleSheet.create({
   },
   dim: {
     backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  box: {
+    width: '100%',
+    height: '100%',
+  },
+  clip: {
+    overflow: 'hidden',
+    backgroundColor: 'rgba(128,128,128,0.15)',
   },
 });
