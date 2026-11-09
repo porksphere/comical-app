@@ -46,6 +46,7 @@ the end of this doc is the only guard.
 | 17 | Status bar through the root screen | Routing around React Native's StatusBar | Keep | [ ] |
 | 18 | Tab badge rendered only above zero | Library bug | Keep | [ ] |
 | 19 | Type casts at library seams | Typing | Keep | [ ] |
+| 27 | Room keep rule for R8 | Shrinker rule | Keep | [ ] |
 | 21 | No bar material on the folded Duo | Resolved and its code removed | Done | [x] |
 | 23 | `nav-bar-edge` | Removed with the section label it served | Done | [x] |
 
@@ -376,6 +377,20 @@ These use public APIs, but the shape exists only because of a gap somewhere.
   know a computed path. A wrong in-tab path is therefore a **runtime** failure, not a type error.
 - `navigation.addListener` cast for `transitionEnd`: `app/search.tsx:319`,
   `components/reader/chapter-navigator.tsx:138`, `components/search-field.tsx:93`.
+
+### 27. Room keep rule for R8
+
+- **What:** `-keep class * extends androidx.room.RoomDatabase { <init>(); }`, through
+  `expo-build-properties`' `extraProguardRules` in `app.json`.
+- **Where:** `apps/mobile/app.json`.
+- **Why:** since the SDK 58 upgrade, R8 strips the no-argument constructor from WorkManager's generated
+  `WorkDatabase_Impl` (WorkManager comes in with `expo-background-task`). Room creates that class by
+  reflection, so every Android release build crashed at launch in `androidx.startup`, before any of
+  our code ran, with `Failed to create an instance of class androidx.work.impl.WorkDatabase.canonicalName`.
+  Debug builds don't shrink and never showed it.
+- **How it fails:** loudly, at launch, release builds only. Drop the rule when Room's own consumer rules
+  keep the constructor again: build a release APK without it and check `WorkDatabase_Impl` still has
+  `<init>()V` (`dexdump`).
 
 ## Timers standing in for a signal
 
