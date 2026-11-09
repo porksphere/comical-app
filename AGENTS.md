@@ -194,12 +194,15 @@ the id its component had; `settings-list.tsx` draws them as the app's cards and 
 the desktop panes) and `settings-list.ios.tsx` as a SwiftUI `Form` filling the screen under the
 system bar, its rows the system's switches, menu pickers, buttons and label–value rows, a `custom`
 field hosted in a row through `RNHostView`. Each renderer's switch over the kinds is complete or the
-typecheck fails. Every settings screen but Downloads is on it, the list screens included: a
+typecheck fails. Every settings screen is on it, the list screens and Downloads included: a
 section with `onReorder` is a draggable list (the app's `ReorderableList`; SwiftUI's `List.ForEach`
 move), a `link` row's `actions` are its swipe actions (`SwipeableSettingsRow`; SwiftUI's
 `SwipeActions`), and a section's `selection` is the screen's select mode (the animated check
 circle on the app's rows; a check circle the iOS row draws, since the form never enters the
-list's edit mode). A `text` field is the system's text or secure field on iOS, a `stepper` its
+list's edit mode). A section that is `unbounded` (Downloads, a series' chapters) is the screen's
+recycled list on the app's renderer, plain rows with the other sections around them, where a drag
+down the check circles sweeps; the iOS form is lazy already. A list's `focus` names a row to bring into view and mark for a moment, what the
+screen was opened to show (`use-focus-row.ts`). A `text` field is the system's text or secure field on iOS, a `stepper` its
 stepper, a `multi` field the overlay's checklist everywhere (a system menu holds one check).
 The chrome around a list follows: the add button (`components/add-fab.tsx`) and the select
 mode's verbs and staging menu (`components/multi-select/select-pill-bar.tsx`) are the floating

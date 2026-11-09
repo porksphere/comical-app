@@ -17,36 +17,23 @@
  * selection's downloaded ones). Range-fill long-press works like every multi-select list (through
  * `Holdable` — a bare Pressable long-press doesn't fire inside iOS scroll views).
  */
-import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
-
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { openConfirm } from '@/components/confirm-popup';
-import { Holdable } from '@/components/context-menu';
-import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
 import { chapterActions, chapterCan } from '@/components/downloads/row-actions';
-import {
-  CheckIcon,
-  ClearIcon,
-  DownloadingIcon,
-  DownloadsIcon,
-  EyeIcon,
-  PauseIcon,
-  PlayIcon,
-  TrashIcon,
-} from '@/components/icons/ui-icons';
-import { PILL_HEIGHT, SelectLead, useDragSelect, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { DOWNLOAD_STATE_ICON, NOT_DOWNLOADED_ICON } from '@/components/downloads/state-icon';
+import { CheckIcon, ClearIcon, DownloadsIcon, EyeIcon, PauseIcon, PlayIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
 import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
-import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
-import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
-import { ThemedText } from '@/components/themed-text';
+import type { SettingsField, SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { SettingsCardInset, SettingsRowHeight, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { dlDeleteChapter, dlGetSeries } from '@/data/api';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from '@/data/downloads/constants';
 import { bySortValue, chapterSortValue, displayChapterState } from '@/data/downloads/derive';
@@ -64,23 +51,19 @@ import { relativeTime } from '@/data/mock';
 import { queryClient } from '@/data/query-client';
 import { queryKeys, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import { hapticSelection } from '@/lib/haptics';
 import { usePreferredGroup } from '@/lib/preferred-group';
 import { testId } from '@/lib/test-id';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
-import { useContentWidth } from '@/hooks/use-content-width';
-import { useListLayout } from '@/hooks/use-list-layout';
-import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import type { ChapterGroup } from '@/lib/chapter-order';
-import {useLocalSearchParams, useRouter} from '@/lib/nav';
+import { useLocalSearchParams, useRouter } from '@/lib/nav';
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
 /**
  * One chapter row: a manifest chapter, a not-yet-downloaded logical chapter, or both merged.
  * Selection deliberately is NOT a field — rows keep a stable object identity across selection taps
- * AND download ticks (see the identity cache below), and `renderItem` reads the live selection set
- * directly (LegendList repaints visible rows via `extraData`).
+ * AND download ticks (see the identity cache below), and so do the form rows made from them, so a
+ * recycled list repaints only the row that ticked.
  */
 interface RosterRow {
   key: string;
@@ -117,10 +100,7 @@ function bestManifest(versionIds: string[], manifest: DownloadedChapter[]): Down
 export default function SeriesDownloadsScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  // The standard settings-screen top inset (top bar + SettingsTopGap) — the same gap every
-  // fixed-row-height list starts at, so this screen can't drift from the Downloads page's.
-  const { paddingTop } = useSettingsScrollPadding();
-  const width = useContentWidth();
+  const contentPadding = useSettingsScrollPadding();
   const ds = useDataSource();
   const mock = useMockActive();
   const preferredGroup = usePreferredGroup();
@@ -261,28 +241,12 @@ export default function SeriesDownloadsScreen() {
   const allKeys = useMemo(() => rows.map((r) => r.key), [rows]);
   const unreadKeys = useMemo(() => rows.filter((r) => r.unread && !r.c).map((r) => r.key), [rows]);
   const ms = useMultiSelect(allKeys);
-  // Stable until the selection set or mode actually changes — an inline literal would change
-  // identity every render and make the list repaint all rows on every download tick.
-  const listExtra = useMemo(() => ({ selected: ms.selected, selecting }), [ms.selected, selecting]);
 
   const toggleSelecting = () => {
     if (selecting) ms.clear();
     mode.toggle();
   };
   const selectToggle = useSelectToggle(selecting, toggleSelecting, 'series.dl.select-toggle');
-
-  // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
-  const listRef = useRef<LegendListRef>(null);
-  const scrollYRef = useRef(0);
-  const dragSelect = useDragSelect({
-    keys: allKeys,
-    selected: ms.selected,
-    selectSet: ms.selectSet,
-    rowHeight: SettingsRowHeight,
-    scrollRef: listRef,
-    scrollYRef,
-    selecting,
-  });
 
   // The series-page Download intent (`select=1`): once the chapter list lands, STAGE the default
   // pick — every unread chapter not already marked for download — so the button's most common
@@ -387,11 +351,6 @@ export default function SeriesDownloadsScreen() {
       onConfirm: () => void deleteChapterRow(c),
     });
 
-  // Full-width scroller centered within the settings column (same treatment as the Downloads page).
-  const sidePad = useSettingsSidePad(width);
-  const listPad = useSettingsListPad(width);
-  const rowsExtra = useListLayout(listRef, sidePad.left, listExtra);
-
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
 
   // The staging menu rows (top-left three-dot trigger, replacing the back button in select mode).
@@ -399,6 +358,7 @@ export default function SeriesDownloadsScreen() {
     {
       label: allSelected ? 'Deselect all' : 'Select all',
       Icon: allSelected ? ClearIcon : CheckIcon,
+      symbol: allSelected ? ('xmark.circle' as const) : ('checkmark.circle' as const),
       loading: false,
       disabled: allKeys.length === 0,
       onPress: allSelected ? ms.clear : ms.selectAll,
@@ -409,6 +369,7 @@ export default function SeriesDownloadsScreen() {
           {
             label: 'Select unread',
             Icon: EyeIcon,
+            symbol: 'eye' as const,
             loading: false,
             disabled: unreadKeys.length === 0,
             onPress: () => ms.selectOnly(unreadKeys),
@@ -424,147 +385,88 @@ export default function SeriesDownloadsScreen() {
     invalidate();
   };
 
-  const renderItem = ({ item, index }: { item: RosterRow; index: number }) => {
-    const cState = item.c ? displayChapterState(item.c) : undefined;
-    const row = (
-      <Holdable
-        enabled={selecting}
-        onHold={() => {
-          hapticSelection();
-          ms.rangeFill(item.key);
-        }}>
-        {({ onLongPress }) => (
-          <SwipeableSettingsRow
-            recycleKey={item.key}
-            swipeEnabled={!selecting}
-            testID={testId('series.dl.row', item.key)}
-            label={item.name}
-            description={item.desc}
-            leading={
-              <>
-                <SelectLead
-                  progress={mode.progress}
-                  selected={ms.selected.has(item.key)}
-                  itemKey={item.key}
-                  edgeOffset={sidePad.left}
-                  // Always mounted (built disabled off select mode) so entering select mode flips
-                  // `enabled` rather than mounting a GestureDetector per visible row at once.
-                  gesture={dragSelect.gestureFor(index)}
-                />
-                {item.c && cState ? (
-                  <DownloadStatusIndicator
-                    state={cState}
-                    fraction={item.c.pageCount > 0 ? item.c.completedPages / item.c.pageCount : 0}
-                    size={20}
-                    interactive={!selecting}
-                    onPause={() => void pauseChapter(item.c!.bridgeId, item.c!.seriesId, item.c!.chapterId)}
-                    onResume={() => void resumeChapterDownload(item.c!.bridgeId, item.c!.seriesId, item.c!.chapterId)}
-                    onRetry={() => void retryChapter(item.c!.bridgeId, item.c!.seriesId, item.c!.chapterId)}
-                  />
-                ) : (
-                  // Not downloaded: a muted glyph keeps the label rail aligned with tracked rows.
-                  <View style={styles.undownloaded}>
-                    <DownloadingIcon color={theme.textSecondary} size={18} />
-                  </View>
-                )}
-              </>
-            }
-            right={selecting ? <View /> : undefined /* suppress the auto chevron a pressable row grows */}
-            onPress={selecting ? () => ms.toggle(item.key) : undefined}
-            onLongPress={selecting ? onLongPress : undefined}
-            actions={
-              item.c && cState
-                ? chapterActions(cState, {
-                    onPause: () => void pauseChapter(item.c!.bridgeId, item.c!.seriesId, item.c!.chapterId),
-                    onResume: () => void resumeChapterDownload(item.c!.bridgeId, item.c!.seriesId, item.c!.chapterId),
-                    onRetry: () => void retryChapter(item.c!.bridgeId, item.c!.seriesId, item.c!.chapterId),
-                    onCancel: () => void deleteChapterRow(item.c!),
-                    onDelete: () => confirmDeleteChapter(item.name, item.c!),
-                  })
-                : []
-            }
-          />
-        )}
-      </Holdable>
-    );
-    return (
-      <View>
-        {row}
-        {index < rows.length - 1 && (
-          <View pointerEvents="none" style={[styles.divider, { backgroundColor: theme.hairline }]} />
-        )}
-      </View>
-    );
+  // A chapter as a form row: its state as the tile, its size and progress under it, its swipe
+  // actions; it opens nothing (`onPress` unset). Made once per row object (`rowCache` keeps those
+  // across ticks), so a recycled list re-renders only the chapter that changed.
+  const [fieldCache] = useState(() => new WeakMap<RosterRow, SettingsField>());
+  const fieldOf = (r: RosterRow): SettingsField => {
+    const cached = fieldCache.get(r);
+    if (cached) return cached;
+    const c = r.c;
+    const state = c ? displayChapterState(c) : undefined;
+    const field: SettingsField = {
+      kind: 'link',
+      key: r.key,
+      testID: testId('series.dl.row', r.key),
+      label: r.name,
+      description: r.desc,
+      tone: state === 'failed' ? 'danger' : undefined,
+      icon: state ? DOWNLOAD_STATE_ICON[state] : NOT_DOWNLOADED_ICON,
+      progress: c && state === 'downloading' && c.pageCount > 0 ? c.completedPages / c.pageCount : undefined,
+      actions:
+        c && state
+          ? chapterActions(state, {
+              onPause: () => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId),
+              onResume: () => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId),
+              onRetry: () => void retryChapter(c.bridgeId, c.seriesId, c.chapterId),
+              onCancel: () => void deleteChapterRow(c),
+              onDelete: () => confirmDeleteChapter(r.name, c),
+            })
+          : undefined,
+    };
+    fieldCache.set(r, field);
+    return field;
   };
+
+  const sections: SettingsFormSection[] = [
+    rows.length > 0
+      ? {
+          fields: rows.map(fieldOf),
+          unbounded: true,
+          selection: { selecting, progress: mode.progress, selected: ms.selected, toggle: ms.toggle, rangeFill: ms.rangeFill, selectSet: ms.selectSet },
+        }
+      : {
+          fields: [
+            {
+              kind: 'note',
+              testID: 'series.dl.empty',
+              title: showAll && !chapters ? 'Loading chapters…' : 'Nothing downloaded for this series',
+            },
+          ],
+        },
+  ];
 
   return (
     <ThemedView style={styles.container}>
-      {/* The back button always shows (the staging "…" lives in the bottom-left pill now); select
-          mode just swaps the title for the live count. The mode toggle is hidden on the forced
+      {/* Select mode swaps the title for the live count. The mode toggle is hidden on the forced
           series-download entry — there the back button is the only way out. */}
       <TopBar title={selecting ? `${ms.count} selected` : title} actions={forcedSelect ? undefined : [selectToggle]} />
+      <SettingsList sections={sections} />
 
-      <ScreenScrollMarker>
-        <LegendList
-          ref={listRef}
-          onScroll={(e) => {
-            scrollYRef.current = e.nativeEvent.contentOffset.y;
-          }}
-          // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
-          // tracking manual scrolling accurately without spamming.
-          scrollEventThrottle={16}
-          style={[styles.list, scrollbarInset(paddingTop)]}
-          data={rows}
-          keyExtractor={(r) => r.key}
-          recycleItems
-          estimatedItemSize={SettingsRowHeight}
-          getFixedItemSize={() => SettingsRowHeight}
-          maintainVisibleContentPosition={{ data: false, size: false }}
-          // Selection lives OUTSIDE the row objects (identity-cached — see `rows`); this tells the
-          // list to repaint visible rows when the selection set or the mode changes.
-          extraData={rowsExtra}
-          renderItem={renderItem}
-          ListEmptyComponent={
-            <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-              {showAll && !chapters ? 'Loading chapters…' : 'Nothing downloaded for this series.'}
-            </ThemedText>
-          }
-          contentContainerStyle={{
-            flexGrow: 1,
-            paddingTop,
-            paddingLeft: listPad.left,
-            paddingRight: listPad.right,
-            // Room for the floating pills, so the last rows can scroll clear of them.
-            paddingBottom: selecting ? PILL_HEIGHT + Spacing.six : Spacing.three,
-          }}
-          showsVerticalScrollIndicator={Platform.OS === 'web'}
-        />
-      </ScreenScrollMarker>
-
-      {/* The floating select-mode chrome: staging "…" bottom-left, all valid verbs in ONE pill
-          bottom-right (download tinted blue, cancel/delete danger). */}
+      {/* The select-mode chrome: staging "…" leading, every valid verb trailing (download tinted,
+          cancel/delete danger). */}
       {selecting && (
         <SelectPillBar
-          left={sidePad.left}
-          right={sidePad.right}
+          left={contentPadding.paddingLeft}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="series.dl.select-options"
           verbs={[
             ...(toPause.length > 0
-              ? [{ key: 'pause', label: `Pause ${toPause.length} chapters`, Icon: PauseIcon, onPress: pauseSelected, testID: 'series.dl.pause' }]
+              ? [{ key: 'pause', symbol: 'pause' as const, label: `Pause ${toPause.length} chapters`, Icon: PauseIcon, onPress: pauseSelected, testID: 'series.dl.pause' }]
               : []),
             ...(toResume.length > 0
-              ? [{ key: 'resume', label: `Resume ${toResume.length} chapters`, Icon: PlayIcon, onPress: resumeSelected, testID: 'series.dl.resume' }]
+              ? [{ key: 'resume', symbol: 'play' as const, label: `Resume ${toResume.length} chapters`, Icon: PlayIcon, onPress: resumeSelected, testID: 'series.dl.resume' }]
               : []),
             ...(toCancel.length > 0
-              ? [{ key: 'cancel', label: `Cancel ${toCancel.length} queued chapters`, Icon: ClearIcon, color: theme.danger, onPress: () => void cancelSelected(), testID: 'series.dl.cancel' }]
+              ? [{ key: 'cancel', symbol: 'xmark' as const, label: `Cancel ${toCancel.length} queued chapters`, Icon: ClearIcon, color: theme.danger, onPress: () => void cancelSelected(), testID: 'series.dl.cancel' }]
               : []),
             ...(toDelete.length > 0
-              ? [{ key: 'delete', label: `Delete ${toDelete.length} chapters`, Icon: TrashIcon, color: theme.danger, onPress: confirmDeleteSelected, testID: 'series.dl.delete' }]
+              ? [{ key: 'delete', symbol: 'trash' as const, label: `Delete ${toDelete.length} chapters`, Icon: TrashIcon, color: theme.danger, onPress: confirmDeleteSelected, testID: 'series.dl.delete' }]
               : []),
             ...(toDownload.length > 0
-              ? [{ key: 'download', label: `Download ${toDownload.length} chapters`, Icon: DownloadsIcon, color: theme.accent, onPress: downloadSelected, testID: 'series.dl.download' }]
+              ? [{ key: 'download', symbol: 'arrow.down.circle' as const, label: `Download ${toDownload.length} chapters`, Icon: DownloadsIcon, color: theme.accent, onPress: downloadSelected, testID: 'series.dl.download' }]
               : []),
           ]}
         />
@@ -576,26 +478,5 @@ export default function SeriesDownloadsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  list: {
-    flex: 1,
-  },
-  undownloaded: {
-    width: 20,
-    alignItems: 'center',
-    opacity: 0.6,
-  },
-  // The settings-standard inset divider (see the Downloads page): absolute so rows stay exactly one
-  // settings-row tall for the fixed-size list.
-  divider: {
-    position: 'absolute',
-    bottom: 0,
-    left: SettingsCardInset,
-    right: 0,
-    height: StyleSheet.hairlineWidth,
-  },
-  empty: {
-    paddingTop: Spacing.five,
-    textAlign: 'center',
   },
 });

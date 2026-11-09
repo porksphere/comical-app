@@ -1,8 +1,9 @@
 /**
- * The Downloads screen (a Settings sub-page): the download preferences and the SERIES list — ordered
- * queue-first then most-recent, each row showing a progress radial while in flight and swipe/hover
- * actions that match its state (Cancel an in-flight download, Resume a paused one, Delete a finished
- * one). Tapping a series opens its own download screen (`series-downloads.tsx`) with the chapter
+ * The Downloads screen (a Settings sub-page): the storage bar and the SERIES list — ordered
+ * queue-first then most-recent, each row showing its cover, its state and size, its progress while in
+ * flight, and swipe/hover actions that match its state (Cancel an in-flight download, Resume a paused
+ * one, Delete a finished one). One form like every settings screen (`settings-form.ts`): the system's
+ * list on iOS, the app's rows elsewhere. Tapping a series opens its own download screen (`series-downloads.tsx`) with the chapter
  * roster — there is no inline foldout anymore. The storage bar + size accounting live on the Storage
  * screen; this page is management.
  *
@@ -15,29 +16,26 @@
  * server — which owns the blobs and aborts in-flight work; this screen only prunes the offline index
  * and refetches. The Wi-Fi-only / background download policies live in General settings now.
  */
-import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { openConfirm } from '@/components/confirm-popup';
-import { Holdable } from '@/components/context-menu';
-import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
 import { seriesActions, seriesCan } from '@/components/downloads/row-actions';
 import { SeriesStorageBar } from '@/components/downloads/series-storage-bar';
+import { DOWNLOAD_STATE_ICON } from '@/components/downloads/state-icon';
 import { CheckIcon, ClearIcon, PauseIcon, PlayIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { PILL_HEIGHT, SelectLead, useDragSelect, useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
 import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
-import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
-import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
-import { ThemedText } from '@/components/themed-text';
+import type { SettingsField, SettingsFormSection } from '@/components/settings/settings-form';
+import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { SettingsCardInset, SettingsRowHeight, Spacing } from '@/constants/theme';
-import { dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
+import { SettingsCardInset, Spacing } from '@/constants/theme';
+import { dlDeleteChapter, dlDeleteSeries, dlStorageUsage, peekResolvedAssetSource } from '@/data/api';
 import { bySortValue, deriveSeriesState, EMPTY_STORAGE_USAGE, seriesFraction, seriesSortValue } from '@/data/downloads/derive';
 import { kickDownloads, pauseSeries, resumeSeriesDownload, retryChapter } from '@/data/downloads/engine';
 import { forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
@@ -45,27 +43,12 @@ import { seriesRowKey } from '@/data/downloads/nav';
 import { formatBytes } from '@/data/downloads/format';
 import { queryClient } from '@/data/query-client';
 import { queryKeys } from '@/data/queries';
-import { hapticSelection } from '@/lib/haptics';
-import { testId } from '@/lib/test-id';
-import { scrollbarInset } from '@/lib/scrollbar-inset';
-import { useContentWidth } from '@/hooks/use-content-width';
-import { useListLayout } from '@/hooks/use-list-layout';
-import { useSettingsListPad, useSettingsScrollPadding, useSettingsSidePad } from '@/hooks/use-settings-scroll-padding';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { useSeriesSubPath } from '@/lib/series-nav';
 import { useRouter } from '@/lib/nav';
-import type { StorageUsageSeries } from '@comical/downloads';
-
-/**
- * One list row — a series. Row objects are REUSED from `cache` while their `s` snapshot is identical,
- * so when one entry ticks only that row gets a fresh object — every other row keeps its reference and
- * LegendList (and the compiler-memoized renderItem) skip re-rendering it. Tapping a row opens the
- * per-series download screen (`/series-downloads`), which owns the chapter roster.
- */
-interface DlRow {
-  key: string;
-  s: StorageUsageSeries;
-}
+import { testId } from '@/lib/test-id';
+import type { DownloadState, StorageUsageSeries } from '@comical/downloads';
 
 function refresh(): void {
   void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
@@ -73,48 +56,30 @@ function refresh(): void {
 
 const seriesKey = (s: { bridgeId: string; seriesId: string }) => seriesRowKey(s.bridgeId, s.seriesId);
 
-/** How long a focused row stays tinted after being scrolled to (see the `focus` param). */
-const FOCUS_FLASH_MS = 2200;
+/** What a row says of its series' state ahead of its size; a finished series says nothing. */
+const STATE_LABEL: Record<DownloadState, string | undefined> = {
+  downloading: 'Downloading',
+  queued: 'Queued',
+  paused: 'Paused',
+  failed: 'Failed',
+  complete: undefined,
+};
 
-/** The series list, queue-first then most-recent, with per-row object identity kept via `cache`. */
-function buildRows(bySeries: StorageUsageSeries[], cache: Map<string, DlRow>): DlRow[] {
-  // Decorate-sort-undecorate: seriesSortValue filters+maps a series' chapters, so calling it twice per
-  // comparison re-walked every series' chapters O(n log n) times. Compute it ONCE per series instead —
-  // cuts the allocation churn the same way the per-series chapter screen's sort does.
-  const ordered = bySeries
-    .map((s) => ({ s, key: seriesKey(s), sv: seriesSortValue(s.chapters) }))
-    .sort((a, b) => bySortValue(a.sv, b.sv));
-  const rows: DlRow[] = [];
-  const live = new Set<string>();
-  for (const { s, key } of ordered) {
-    live.add(key);
-    const prev = cache.get(key);
-    const row: DlRow = prev && prev.s === s ? prev : { key, s };
-    cache.set(key, row);
-    rows.push(row);
-  }
-  for (const k of cache.keys()) if (!live.has(k)) cache.delete(k);
-  return rows;
+/** The series, queue-first then most recent. */
+function ordered(bySeries: StorageUsageSeries[]): StorageUsageSeries[] {
+  // Decorated once: `seriesSortValue` walks a series' chapters, so calling it per comparison
+  // re-walked them O(n log n) times.
+  return bySeries
+    .map((s) => ({ s, sv: seriesSortValue(s.chapters) }))
+    .sort((a, b) => bySortValue(a.sv, b.sv))
+    .map(({ s }) => s);
 }
 
 export default function DownloadsScreen() {
-  const { paddingTop, paddingBottom } = useSettingsScrollPadding();
-  const width = useContentWidth();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-
-  // Full-width scroller (scrollbar at the screen's edge); rows centered within the settings column via
-  // symmetric side padding — LegendList ignores maxWidth/alignSelf on its content container, so the
-  // centring has to be explicit.
-  const sidePad = useSettingsSidePad(width);
-  const listPad = useSettingsListPad(width);
   const theme = useTheme();
-
-  // Caches row objects across renders so an unchanged row keeps the SAME reference — the basis for
-  // LegendList skipping its re-render (see `buildRows` / the `DlRow` note). A state-held Map
-  // (stable instance, populated during render's own computation) rather than a ref, which must not
-  // be read during render.
-  const [rowCache] = useState(() => new Map<string, DlRow>());
+  const insets = useSafeAreaInsets();
+  const contentPadding = useSettingsScrollPadding();
 
   const { data: usage = EMPTY_STORAGE_USAGE } = useQuery({
     queryKey: queryKeys.downloadsUsage(),
@@ -157,68 +122,29 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Memoized on the usage tree so it stops re-sorting + rebuilding on every unrelated re-render (it
-  // ran raw in render before). buildRows keeps stable row identities via rowCache for LegendList.
-  const rows = useMemo(() => buildRows(usage.bySeries, rowCache), [usage.bySeries, rowCache]);
+  const series = useMemo(() => ordered(usage.bySeries), [usage.bySeries]);
 
-  // ── Focused row (`focus=<bridgeId>:<seriesId>`) ───────────────────────────────
-  // Arriving from a direct series' Download button: scroll that row into view and tint it long
-  // enough to be spotted, then let it settle into an ordinary row. `focused` is what's TINTED — it
-  // clears on the timer — while the scroll runs once, guarded by a ref, so a progress tick (which
-  // remakes `rows`) can't yank the list back under a user who has scrolled away.
-  const focusKey = useLocalSearchParams<{ focus?: string }>().focus ?? '';
-  const [focused, setFocused] = useState(focusKey);
-  const didScrollToFocus = useRef(false);
+  // Arriving from a direct series' Download button (`focus=<bridgeId>:<seriesId>`): the list brings
+  // that row into view and marks it — see `data/downloads/nav.ts`.
+  const focus = useLocalSearchParams<{ focus?: string }>().focus || undefined;
 
   // ── Multi-select mode (the shared select-mode chrome) — bulk-manage SERIES here ──
   const mode = useSelectMode();
   const selecting = mode.selecting;
-  const allKeys = useMemo(() => rows.map((r) => r.key), [rows]);
+  const allKeys = useMemo(() => series.map(seriesKey), [series]);
   const ms = useMultiSelect(allKeys);
-  const listExtra = useMemo(
-    () => ({ selected: ms.selected, selecting, focused }),
-    [ms.selected, selecting, focused],
-  );
   const toggleSelecting = () => {
     if (selecting) ms.clear();
     mode.toggle();
   };
   const selectToggle = useSelectToggle(selecting, toggleSelecting, 'downloads.select-toggle');
 
-  // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
-  const listRef = useRef<LegendListRef>(null);
-  const rowsExtra = useListLayout(listRef, sidePad.left, listExtra);
-  const scrollYRef = useRef(0);
-  const dragSelect = useDragSelect({
-    keys: allKeys,
-    selected: ms.selected,
-    selectSet: ms.selectSet,
-    rowHeight: SettingsRowHeight,
-    scrollRef: listRef,
-    scrollYRef,
-    selecting,
-  });
-  // The focus scroll + its flash timer. Runs when the row first EXISTS (the list arrives async), so
-  // it depends on the row index rather than on `rows` itself — a progress tick doesn't re-trigger it.
-  const focusIndex = focused ? rows.findIndex((r) => r.key === focused) : -1;
-  useEffect(() => {
-    if (!focused || focusIndex < 0 || didScrollToFocus.current) return;
-    didScrollToFocus.current = true;
-    // Next frame: the list has just been handed these rows and can't scroll to an index it hasn't
-    // laid out yet.
-    const scroll = setTimeout(() => listRef.current?.scrollToIndex({ index: focusIndex, animated: true }), 0);
-    const clear = setTimeout(() => setFocused(''), FOCUS_FLASH_MS);
-    return () => {
-      clearTimeout(scroll);
-      clearTimeout(clear);
-    };
-  }, [focused, focusIndex]);
-
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
   const stagingRows = [
     {
       label: allSelected ? 'Deselect all' : 'Select all',
       Icon: allSelected ? ClearIcon : CheckIcon,
+      symbol: allSelected ? ('xmark.circle' as const) : ('checkmark.circle' as const),
       loading: false,
       disabled: allKeys.length === 0,
       onPress: allSelected ? ms.clear : ms.selectAll,
@@ -230,25 +156,25 @@ export default function DownloadsScreen() {
   // actions (`seriesCan`, row-actions.tsx): Delete only for settled series (complete/paused/failed),
   // Cancel for in-flight ones (discards their incomplete chapters, keeps the finished),
   // Pause/Resume for in-flight/paused.
-  const picked = rows.filter((r) => ms.selected.has(r.key));
+  const picked = series.filter((s) => ms.selected.has(seriesKey(s)));
   const stateOf = (s: StorageUsageSeries) => deriveSeriesState(s.chapters);
-  const toPause = picked.filter((r) => seriesCan.pause(stateOf(r.s)));
-  const toResume = picked.filter((r) => seriesCan.resume(stateOf(r.s)));
-  const toCancel = picked.filter((r) => seriesCan.cancel(stateOf(r.s)));
-  const toDelete = picked.filter((r) => seriesCan.delete(stateOf(r.s)));
+  const toPause = picked.filter((s) => seriesCan.pause(stateOf(s)));
+  const toResume = picked.filter((s) => seriesCan.resume(stateOf(s)));
+  const toCancel = picked.filter((s) => seriesCan.cancel(stateOf(s)));
+  const toDelete = picked.filter((s) => seriesCan.delete(stateOf(s)));
   const pauseSelected = () => {
-    for (const r of toPause) void pauseSeries(r.s.bridgeId, r.s.seriesId);
+    for (const s of toPause) void pauseSeries(s.bridgeId, s.seriesId);
   };
   const resumeSelected = () => {
-    for (const r of toResume) void resumeSeriesDownload(r.s.bridgeId, r.s.seriesId);
+    for (const s of toResume) void resumeSeriesDownload(s.bridgeId, s.seriesId);
   };
   const cancelSelected = async () => {
-    for (const r of toCancel) await cancelSeriesInflight(r.s);
+    for (const s of toCancel) await cancelSeriesInflight(s);
     ms.clear();
     mode.exit();
   };
   const deleteSelected = async () => {
-    for (const r of toDelete) await deleteSeries(r.s);
+    for (const s of toDelete) await deleteSeries(s);
     ms.clear();
     mode.exit();
   };
@@ -280,140 +206,77 @@ export default function DownloadsScreen() {
       },
     });
 
-  // Total downloaded + a per-series colour breakdown of that space (top 10 + "Other"). Replaces the
-  // old cumulative progress radial — per-row radials already show in-flight progress. ALWAYS
-  // rendered (an empty track + "0 B" when nothing is downloaded): the page keeps a stable shape, and
-  // a fresh download grows the bar in place instead of popping a widget in. The Wi-Fi/background
-  // download policies moved to General settings (they cluttered the queue).
-  const header = (
-    <View style={styles.header}>
-      <View style={styles.storage}>
-        <SeriesStorageBar bySeries={usage.bySeries} totalBytes={usage.totalBytes} />
-      </View>
-    </View>
-  );
-
-  const renderItem = ({ item, index }: { item: DlRow; index: number }) => {
-    const { s } = item;
+  // A series: its cover as the tile (a proxied one only once it has been resolved elsewhere — the
+  // state's glyph stands in), its state and size under the title, its progress while it downloads.
+  const row = (s: StorageUsageSeries): SettingsField => {
+    const key = seriesKey(s);
     const state = deriveSeriesState(s.chapters);
-    const frac = seriesFraction(s.chapters);
-    return (
-      <View>
-        <Holdable
-          enabled={selecting}
-          onHold={() => {
-            hapticSelection();
-            ms.rangeFill(item.key);
-          }}>
-          {({ onLongPress }) => (
-            <SwipeableSettingsRow
-              recycleKey={item.key}
-              swipeEnabled={!selecting}
-              label={s.title}
-              labelBold
-              description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
-              leading={
-                <>
-                  <SelectLead
-                    progress={mode.progress}
-                    selected={ms.selected.has(item.key)}
-                    itemKey={item.key}
-                    edgeOffset={sidePad.left}
-                    // Always mounted (built disabled off select mode) so entering select mode flips
-                    // `enabled` rather than mounting a GestureDetector per visible row at once.
-                    gesture={dragSelect.gestureFor(index)}
-                  />
-                  <DownloadStatusIndicator
-                    state={state}
-                    fraction={frac}
-                    size={22}
-                    interactive={false}
-                    onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
-                    onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
-                    onRetry={() => retrySeries(s)}
-                  />
-                </>
-              }
-              onPress={selecting ? () => ms.toggle(item.key) : () => openSeries(s)}
-              onLongPress={selecting ? onLongPress : undefined}
-              actions={seriesActions(state, {
-                onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
-                onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
-                onRetry: () => retrySeries(s),
-                onCancel: () => void cancelSeriesInflight(s),
-                onDelete: () => confirmDeleteSeries(s),
-              })}
-            />
-          )}
-        </Holdable>
-        {/* Every row except the last carries the standard inset hairline at its bottom edge —
-            absolutely positioned so the row stays exactly `SettingsRowHeight` tall. */}
-        {index < rows.length - 1 && (
-          <View pointerEvents="none" style={[styles.divider, { backgroundColor: theme.hairline }]} />
-        )}
-        {/* The arrived-here-for-this-series flash (see the `focus` param). Painted OVER the row, not
-            behind it: a swipeable row fills its own opaque background, which would hide a tint. */}
-        {item.key === focused && (
-          <View pointerEvents="none" style={[styles.focusFlash, { backgroundColor: theme.accent }]} />
-        )}
-      </View>
-    );
+    const chapters = `${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'}`;
+    return {
+      kind: 'link',
+      key,
+      testID: testId('downloads.row', key),
+      label: s.title,
+      description: [STATE_LABEL[state], chapters, formatBytes(s.bytes)].filter(Boolean).join(' · '),
+      tone: state === 'failed' ? 'danger' : undefined,
+      icon: { ...DOWNLOAD_STATE_ICON[state], uri: s.thumbnailUrl ? peekResolvedAssetSource(s.thumbnailUrl) : undefined },
+      progress: state === 'downloading' ? seriesFraction(s.chapters) : undefined,
+      onPress: () => openSeries(s),
+      actions: seriesActions(state, {
+        onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
+        onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
+        onRetry: () => retrySeries(s),
+        onCancel: () => void cancelSeriesInflight(s),
+        onDelete: () => confirmDeleteSeries(s),
+      }),
+    };
   };
+
+  // Total downloaded + a per-series colour breakdown of that space (top 10 + "Other"). Always drawn,
+  // an empty track and "0 B" when nothing is downloaded, so a fresh download grows the bar in place.
+  const sections: SettingsFormSection[] = [
+    {
+      fields: [
+        {
+          kind: 'custom',
+          testID: 'downloads.storage',
+          render: () => (
+            <View style={styles.storage}>
+              <SeriesStorageBar bySeries={usage.bySeries} totalBytes={usage.totalBytes} />
+            </View>
+          ),
+        },
+      ],
+    },
+    series.length > 0
+      ? {
+          fields: series.map(row),
+          unbounded: true,
+          selection: { selecting, progress: mode.progress, selected: ms.selected, toggle: ms.toggle, rangeFill: ms.rangeFill, selectSet: ms.selectSet },
+        }
+      : {
+          fields: [
+            {
+              kind: 'note',
+              testID: 'downloads.empty',
+              title: 'No downloads yet',
+              text: 'Open a series and tap Download to keep chapters for offline reading.',
+            },
+          ],
+        },
+  ];
 
   return (
     <ThemedView style={styles.container}>
       <TopBar title={selecting ? `${ms.count} selected` : 'Downloads'} actions={[selectToggle]} />
-      <ScreenScrollMarker>
-        <LegendList
-          ref={listRef}
-          onScroll={(e) => {
-            scrollYRef.current = e.nativeEvent.contentOffset.y;
-          }}
-          // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
-          // tracking manual scrolling accurately without spamming.
-          scrollEventThrottle={16}
-          style={[styles.list, scrollbarInset(paddingTop)]}
-          data={rows}
-          keyExtractor={(r) => r.key}
-          // Recycle row views instead of mounting/unmounting a fresh gesture+reanimated swipe stack for
-          // every row that scrolls into view (the heavy part); the swipe row resets its gesture state on
-          // recycle via `recycleKey`.
-          recycleItems
-          estimatedItemSize={SettingsRowHeight}
-          // Every row is exactly one settings-row tall, so declare it KNOWN — LegendList then skips
-          // measuring each row after render (the main source of this list's lag vs. the grid pages, which
-          // are fixed-size too). With sizes known, also stop retro-correcting scroll offset from
-          // measurements, which otherwise adds a flinging jitter. Mirrors `RecyclerList`.
-          getFixedItemSize={() => SettingsRowHeight}
-          maintainVisibleContentPosition={{ data: false, size: false }}
-          // Selection lives OUTSIDE the row objects (identity-cached — see `buildRows`); this tells
-          // the list to repaint visible rows when the selection set or the mode changes.
-          extraData={rowsExtra}
-          renderItem={renderItem}
-          ListHeaderComponent={header}
-          ListEmptyComponent={
-            <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-              No downloads yet. Open a series and tap Download to keep chapters for offline reading.
-            </ThemedText>
-          }
-          contentContainerStyle={{
-            flexGrow: 1,
-            paddingTop,
-            // Room for the floating pills while selecting, so the last rows can scroll clear of them.
-            paddingBottom: paddingBottom + (selecting ? PILL_HEIGHT + Spacing.six : 0),
-            paddingLeft: listPad.left,
-            paddingRight: listPad.right,
-          }}
-          showsVerticalScrollIndicator={Platform.OS === 'web'}
-        />
-      </ScreenScrollMarker>
+      <SettingsList sections={sections} focus={focus} />
 
-      {/* The floating select-mode chrome, over the selected SERIES: staging "…" bottom-left, all
-          valid verbs in ONE pill bottom-right. */}
+      {/* The select-mode chrome, over the selected SERIES: staging "…" leading, the valid verbs
+          trailing. */}
       {selecting && (
         <SelectPillBar
-          left={sidePad.left}
-          right={sidePad.right}
+          left={contentPadding.paddingLeft}
+          right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
           options={stagingRows}
           optionsTestID="downloads.select-options"
@@ -437,47 +300,12 @@ export default function DownloadsScreen() {
   );
 }
 
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  list: {
-    flex: 1,
-  },
-  header: {
-    paddingHorizontal: SettingsCardInset,
-    // Space between the preferences and the first series row (was the ScrollView's inter-section gap).
-    paddingBottom: Spacing.five,
-  },
   storage: {
-    // A little breathing room over the big total (matching the Storage page), plus space below before
-    // the toggles. The bar component adds the rest of its own internal padding.
-    paddingTop: Spacing.two,
-    paddingBottom: Spacing.four,
-  },
-  empty: {
-    paddingHorizontal: Spacing.three,
-    textAlign: 'center',
-  },
-  // The rows' bottom hairline (see `renderItem`): the same inset divider as `SettingsSection`'s,
-  // under the row's text. Absolute so it adds no height to the fixed-size rows.
-  divider: {
-    position: 'absolute',
-    bottom: 0,
-    left: SettingsCardInset,
-    right: 0,
-    height: StyleSheet.hairlineWidth,
-  },
-  // The focused row's brief accent wash — translucent so the row's own label/radial read straight
-  // through it.
-  focusFlash: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    opacity: 0.14,
-    borderRadius: 8,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: SettingsCardInset,
   },
 });

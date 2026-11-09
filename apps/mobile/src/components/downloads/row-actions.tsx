@@ -18,7 +18,7 @@
  * action only with a longer one.
  */
 import { ClearIcon, PauseIcon, PlayIcon, RetryIcon, TrashIcon } from '@/components/icons/ui-icons';
-import type { SwipeRowAction } from '@/components/settings/swipeable-row';
+import type { SettingsRowAction } from '@/components/settings/settings-form';
 import type { DownloadState } from '@comical/downloads';
 
 export interface RowHandlers {
@@ -48,15 +48,15 @@ export const seriesCan = {
   retry: (s: DownloadState) => s === 'failed',
 } as const;
 
-const PAUSE = (onPress: () => void): SwipeRowAction => ({ label: 'Pause', icon: PauseIcon, onPress });
-const RESUME = (onPress: () => void): SwipeRowAction => ({ label: 'Resume', icon: PlayIcon, onPress });
-const RETRY = (onPress: () => void): SwipeRowAction => ({ label: 'Retry', icon: RetryIcon, onPress });
-const CANCEL = (onPress: () => void): SwipeRowAction => ({ label: 'Cancel', icon: ClearIcon, destructive: true, onPress });
-const DELETE = (onPress: () => void): SwipeRowAction => ({ label: 'Delete', icon: TrashIcon, destructive: true, onPress });
+const PAUSE = (onPress: () => void): SettingsRowAction => ({ label: 'Pause', symbol: 'pause.fill', glyph: PauseIcon, onPress });
+const RESUME = (onPress: () => void): SettingsRowAction => ({ label: 'Resume', symbol: 'play.fill', glyph: PlayIcon, onPress });
+const RETRY = (onPress: () => void): SettingsRowAction => ({ label: 'Retry', symbol: 'arrow.clockwise', glyph: RetryIcon, onPress });
+const CANCEL = (onPress: () => void): SettingsRowAction => ({ label: 'Cancel', symbol: 'xmark', glyph: ClearIcon, destructive: true, onPress });
+const DELETE = (onPress: () => void): SettingsRowAction => ({ label: 'Delete', symbol: 'trash', glyph: TrashIcon, destructive: true, onPress });
 
 /** A chapter row's swipe actions — derived from `chapterCan`, so the pill bar always agrees. */
-export function chapterActions(state: DownloadState, h: RowHandlers): SwipeRowAction[] {
-  const out: SwipeRowAction[] = [];
+export function chapterActions(state: DownloadState, h: RowHandlers): SettingsRowAction[] {
+  const out: SettingsRowAction[] = [];
   if (chapterCan.cancel(state)) out.push(CANCEL(h.onCancel));
   else if (chapterCan.delete(state)) out.push(DELETE(h.onDelete));
   if (chapterCan.resume(state)) out.push(RESUME(h.onResume));
@@ -66,8 +66,8 @@ export function chapterActions(state: DownloadState, h: RowHandlers): SwipeRowAc
 }
 
 /** A series row's swipe actions — derived from `seriesCan`, so the pill bar always agrees. */
-export function seriesActions(state: DownloadState, h: RowHandlers): SwipeRowAction[] {
-  const out: SwipeRowAction[] = [];
+export function seriesActions(state: DownloadState, h: RowHandlers): SettingsRowAction[] {
+  const out: SettingsRowAction[] = [];
   if (seriesCan.cancel(state)) out.push(CANCEL(h.onCancel));
   else if (seriesCan.delete(state)) out.push(DELETE(h.onDelete));
   if (seriesCan.resume(state)) out.push(RESUME(h.onResume));

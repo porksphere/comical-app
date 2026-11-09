@@ -60,9 +60,11 @@ export function StorageBreakdownBar({ segments, totalBytes }: { segments: Storag
         {segments.map((seg) => (
           <View key={seg.key} style={styles.legendItem}>
             <View style={[styles.dot, { backgroundColor: seg.color }]} />
-            <ThemedText type="small" numberOfLines={1} style={styles.legendLabel}>
-              {seg.label}
-            </ThemedText>
+            <View style={styles.legendLabel}>
+              <ThemedText type="small" numberOfLines={1}>
+                {seg.label}
+              </ThemedText>
+            </View>
             <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
               {formatBytes(seg.bytes)}
             </ThemedText>
@@ -106,10 +108,15 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
   },
-  // Absorbs the row's slack (and truncates a long title) so the trailing size sits at a stable spot and
-  // the label re-truncates in place rather than pushing anything.
+  // Absorbs the row's slack so the trailing size sits at a stable spot. A box around the title, not
+  // the title itself: on iOS a one-line text given `flex: 1` and `minWidth: 0` still took its whole
+  // line's width and ran into the next column; the box takes what is left and the text, stretched to
+  // it, truncates there.
   legendLabel: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
     minWidth: 0,
+    overflow: 'hidden',
   },
 });
