@@ -21,9 +21,10 @@ public class NavBarHoldModule: Module {
   }
 }
 
-/// A touch that wanders further than this is a drag, not a hold; the title's label is taken this
-/// much larger, too.
+/// How much larger than the title's label a touch is taken on, and how far past it a held finger may
+/// go before the hold ends: a thumb rolls as it holds, and ending on any movement made it finicky.
 private let holdSlop: CGFloat = 10
+private let leaveSlop: CGFloat = 24
 /// A beat's swell is quick and its settle slower, the custom marks' pulse (`use-ramped-hold`).
 private let pulseUp: TimeInterval = 0.07
 private let pulseDown: TimeInterval = 0.12
@@ -32,8 +33,8 @@ private let pulseDown: TimeInterval = 0.12
 /// read from the bar's touches instead: this view, placed in the page, attaches a recognizer to
 /// the navigation controller's view (the touch lands on the bar, which the controller's view
 /// holds, and a recognizer sees every touch under its view) that reports a press beginning on the
-/// title and ending — the lift, a drag past the slop, or the system cancelling it — as `onHold`
-/// phases, for the screen's ramped hold. It takes only touches on the title's label, the largest
+/// title and ending — the lift, the finger leaving the title, or the system cancelling it — as
+/// `onHold` phases, for the screen's ramped hold. It takes only touches on the title's label, the largest
 /// label in the bar showing the screen's title, of the screen that owns it while that screen is
 /// the top one and while the bar is in place (minimized, the bar's content is moved above it),
 /// and never cancels or delays the bar's own handling. The recognizer leaves with the view.
@@ -49,7 +50,6 @@ final class NavBarHoldView: ExpoView, UIGestureRecognizerDelegate {
 
   private weak var navigation: UINavigationController?
   private var recognizer: UILongPressGestureRecognizer?
-  private var origin = CGPoint.zero
   private var holding = false
   private weak var heldLabel: UILabel?
 
@@ -113,15 +113,17 @@ final class NavBarHoldView: ExpoView, UIGestureRecognizerDelegate {
   @objc private func handle(_ recognizer: UILongPressGestureRecognizer) {
     switch recognizer.state {
     case .began:
-      origin = recognizer.location(in: nil)
       holding = true
       if let navigation, let owner = owningController(of: self) {
         heldLabel = titleLabel(in: navigation.navigationBar, titled: owner.navigationItem.title)
       }
       onHold(["phase": "begin"])
     case .changed:
-      let point = recognizer.location(in: nil)
-      if holding, hypot(point.x - origin.x, point.y - origin.y) > holdSlop {
+      guard holding, let label = heldLabel, let bar = navigation?.navigationBar else {
+        break
+      }
+      let title = label.convert(label.bounds, to: bar).insetBy(dx: -leaveSlop, dy: -leaveSlop)
+      if !title.contains(recognizer.location(in: bar)) {
         end()
       }
     case .ended, .cancelled, .failed:
