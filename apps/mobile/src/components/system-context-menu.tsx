@@ -31,7 +31,9 @@ import {
 export const SYSTEM_MENU = SystemContextMenuView !== null;
 
 type Rows = MenuRowSpec[] | LiveMenuRows;
-type SystemMenuRequest = { token: number; rows: Rows; preview: (() => ReactNode) | undefined };
+/** A preview's size for the room the window leaves it, for a preview whose shape is known up front. */
+export type PreviewSize = (room: { width: number; height: number }) => { width: number; height: number };
+type SystemMenuRequest = { token: number; rows: Rows; preview: (() => ReactNode) | undefined; previewSize: PreviewSize | undefined };
 
 // Opaque: a request carries functions (`rows` may be one), which an observable would otherwise take
 // for computeds and call.
@@ -65,6 +67,7 @@ export function SystemContextMenu({
   previewRadius,
   previewBackground,
   preview,
+  previewSize,
   onPreviewPress,
   style,
   children,
@@ -77,6 +80,9 @@ export function SystemContextMenu({
   previewBackground?: ColorValue;
   /** What the held content grows into, drawn at the menu's width; rendered only while it is up. */
   preview?: () => ReactNode;
+  /** The preview's own size, where it has one; otherwise it is the menu's width and its content's
+   *  height. */
+  previewSize?: PreviewSize;
   onPreviewPress?: () => void;
   style?: StyleProp<ViewStyle>;
   children: ReactNode;
@@ -91,7 +97,7 @@ export function SystemContextMenu({
       preview={!!preview}
       style={style}
       onMenuRequest={(e) =>
-        systemMenu$.set(ObservableHint.opaque({ token: e.nativeEvent.token, rows: rows(), preview }))
+        systemMenu$.set(ObservableHint.opaque({ token: e.nativeEvent.token, rows: rows(), preview, previewSize }))
       }
       onMenuAction={(e) => {
         if (actions?.token === e.nativeEvent.token) actions.byId.get(e.nativeEvent.id)?.();
@@ -152,24 +158,32 @@ export function SystemContextMenuHost() {
         ) : (
           <Publish token={req.token} rows={req.rows} />
         ))}
-      <PreviewSlot preview={req?.preview} />
+      <PreviewSlot preview={req?.preview} size={req?.previewSize} />
     </>
   );
 }
 
-/** Its height is measured, kept between opens as the next one's estimate, and followed while up. */
-function PreviewSlot({ preview }: { preview: (() => ReactNode) | undefined }) {
-  const { width: windowWidth } = useWindowSize();
-  const [height, setHeight] = useState(PREVIEW_HEIGHT_ESTIMATE);
+/** Sized by the preview where it says, else its height is measured, kept between opens as the next
+ *  one's estimate, and followed while up. */
+function PreviewSlot({ preview, size }: { preview: (() => ReactNode) | undefined; size: PreviewSize | undefined }) {
+  const { width: windowWidth, height: windowHeight } = useWindowSize();
+  const [measured, setMeasured] = useState(PREVIEW_HEIGHT_ESTIMATE);
   if (!PreviewSlotView || !PreviewContentView) return null;
-  const width = Math.min(windowWidth - 2 * PREVIEW_MARGIN, PREVIEW_MAX_WIDTH);
+  const room = { width: windowWidth - 2 * PREVIEW_MARGIN, height: windowHeight - 2 * PREVIEW_MARGIN };
+  const fixed = size?.(room);
+  const width = fixed?.width ?? Math.min(room.width, PREVIEW_MAX_WIDTH);
+  const height = fixed?.height ?? measured;
   return (
     <PreviewSlotView style={styles.slot} pointerEvents="none">
       <PreviewContentView preferredWidth={width} preferredHeight={height} style={[styles.content, { width, height }]}>
         {preview ? (
-          <View style={{ width }} onLayout={(e) => setHeight(Math.ceil(e.nativeEvent.layout.height))}>
-            {preview()}
-          </View>
+          fixed ? (
+            <View style={{ width, height }}>{preview()}</View>
+          ) : (
+            <View style={{ width }} onLayout={(e) => setMeasured(Math.ceil(e.nativeEvent.layout.height))}>
+              {preview()}
+            </View>
+          )
         ) : null}
       </PreviewContentView>
     </PreviewSlotView>

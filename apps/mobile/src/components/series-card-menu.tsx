@@ -19,7 +19,7 @@ import {
 /**
  * Android per-card quick-actions menu; iOS has the system's (`series-card-menu.ios.tsx`), typed by
  * the props here. A long-press anywhere on the card opens the hold-down menu — a dimmed backdrop,
- * the card lifted as a preview, and a rounded menu springing in (rendered by the root
+ * the cover grown into a preview, and a rounded menu springing in (rendered by the root
  * `SeriesCardContextMenuHost`, driven by `openSeriesCardMenu`). Web has its own affordance (a hover
  * 3-dot button), in the `.web.tsx` file.
  *
@@ -35,12 +35,12 @@ export type SeriesCardMenuProps = {
   /** When false (no `bridgeId` — e.g. mock mode), the card renders with no menu. */
   enabled: boolean;
   bridgeId?: string;
-  /** Bridge display name — carried so a tapped tag in the preview can drive a Browse search. */
+  /** Bridge display name, for the rows that open the series or its reader. */
   bridge?: string;
   entry: SeriesEntry;
-  /** Whether the bridge serves direct (page-thumbnail) series — the preview shows a page rail. */
+  /** Whether the bridge serves direct (page-thumbnail) series — the rows' queries ask accordingly. */
   direct?: boolean;
-  /** Cover aspect ratio, so the lifted preview matches the card's shape. */
+  /** Cover aspect ratio, so the preview is the cover's own shape. */
   coverAspect?: number;
   /** Corner radius the lifted preview STARTS at, to match the source it lifts from (a thumbnail with a
    *  smaller radius than a card cover). Defaults to 10 — see `SeriesCardMenuRequest.startRadius`. */

@@ -23,10 +23,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 
-import { TagStrip } from '@/components/chip';
 import {
   ANDROID_BLUR,
   BACKDROP_BLUR,
@@ -47,15 +45,9 @@ import {
   type SubmenuSpec,
 } from '@/components/context-menu-material';
 import { CheckIcon, DownloadsIcon, LogInIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
-import { PageThumb } from '@/components/series/chapters-section';
-import { Skeleton } from '@/components/skeleton';
-import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
-import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
-import type { TagGroup } from '@/data/mock';
-import { seriesDetailQuery, seriesListQuery } from '@/data/queries';
+import { COVER_PREVIEW_RADIUS, coverPreviewSize } from '@/components/series-card-preview';
+import { seriesDetailQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import type { PageThumbSource } from '@/data/types';
 import { useItemCollections } from '@/hooks/use-item-collections';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useResetReadProgress } from '@/hooks/use-reset-read-progress';
@@ -64,12 +56,11 @@ import { useCollections } from '@/hooks/use-collections';
 import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
-import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useActiveColorScheme } from '@/hooks/use-theme';
 import { useWindowSize } from '@/hooks/use-window-size';
 import { useDismissKey } from '@/lib/dismiss-key';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { useRouter } from '@/lib/nav';
-import { drillSeriesFromOverlay, encodeSeriesParam } from '@/lib/series-nav';
 import { setZoomOrigin } from '@/lib/series-zoom';
 import { testId } from '@/lib/test-id';
 import {
@@ -154,35 +145,12 @@ const CLIP_UNTIL = 0.25;
 const TAB_ROUTES = new Set(['/', '/library', '/history', '/activity', '/settings']);
 
 const EDGE_PAD = 12; // keep the whole thing off the screen edges (and off the bars — see chromeTop)
-const GAP = 12; // between the preview panel and the menu
-const PANEL_MAX_WIDTH = 360; // cap the panel width on wide screens
-const PANEL_PAD = Spacing.three;
-const COVER_W = 118; // cover width inside the panel
-const REST_COVER_RADIUS = 10; // the preview cover's resting VISUAL corner radius (also the default start)
+const GAP = 12; // between the preview and the menu
+const CARD_COVER_RADIUS = 10; // a card cover's corner: where the lift starts unless the source says otherwise
 // How long the open morph waits for the lifted cover's bitmap before starting anyway. The cover is
 // virtually always in the memory cache (its card is on-screen), so onLoad fires within a frame or two
 // and this ceiling is never reached; it's only a safety valve so a decode failure can't hang the open.
 const COVER_DECODE_WAIT_MS = 180;
-const RAIL_THUMB_W = 64; // nominal fallback width (unused in slot mode: PageThumb sizes to slotHeight)
-const RAIL_THUMB_H = 180; // the rail's fixed tile height; each tile's width follows its own page aspect
-const RAIL_GAP = Spacing.two;
-// Meta + description slots. The skeleton reserves their expected space so a fresh (uncached) series
-// opens near the height it settles to; once the detail lands, both collapse to their REAL content —
-// a series with no description (or no meta) no longer carries a permanently-empty reserve, which was
-// most visible on landscape covers, where the info column is what sets the panel's height. The
-// resulting height change rides the panel's existing content-geometry springs (see `resizeReady`).
-const SMALL_LINE_H = 20; // ThemedText "small" lineHeight
-const META_H = SMALL_LINE_H; // one line
-const DESC_LINES = 3;
-const DESC_H = DESC_LINES * SMALL_LINE_H;
-// Rolling "last measured" description height — the same trick as series-card.tsx's rolling cover
-// aspect: each popup OPENS assuming the previous popup's description size (instead of always the
-// full 3-line reserve), then eases to the real size when its own detail resolves. Most catalogues
-// are homogeneous (all described, or none), so the assumption is usually right and the panel
-// doesn't move at all.
-let lastDescHeight = DESC_H;
-// Rough panel height before it's measured, so the menu is roughly placed on frame one.
-const PANEL_HEIGHT_ESTIMATE = 190;
 // MENU_WIDTH / ROW_HEIGHT / MENU_PAD_V / the highlight + hover constants live in
 // `context-menu-material.tsx` now (imported above) — shared with the generic ContextMenuHost so the
 // two hold menus render the exact same object.
@@ -238,14 +206,14 @@ const MIN_VISIBLE_ROWS = 4;
 // surface" and "the scrim follows the theme" reasoning, which was written here first.
 
 /**
- * Root-mounted host for the native card context menu (the iOS / X hold-down): a dimmed backdrop, a
- * rich preview panel (cover + title + series info, and a page-thumbnail rail for direct series), and
- * a rounded actions menu below it. Rendered once (see `app/_layout.tsx`); any card opens it via
+ * Root-mounted host for the native card context menu (the iOS / X hold-down): a dimmed backdrop, the
+ * held series' cover grown as large as fits (`coverPreviewSize`, the size iOS's system preview takes
+ * too), and a rounded actions menu below it. Rendered once (see `app/_layout.tsx`); any card opens it via
  * `openSeriesCardMenu` on long-press. Only mounted while open, so its queries cost nothing during
  * scroll.
  *
- * Animation is a shared-element: the COVER morphs precisely out of the pressed card (FLIP), while the
- * panel background + its content (title/info/rail) just fade in at the final position around it.
+ * Animation is a shared-element: the COVER morphs precisely out of the pressed card (FLIP) into the
+ * preview. The "panel" below is the preview's box, which the cover lands in and the menu tracks.
  */
 // DEV + WEB only: a handle to open this from a browser, where the long-press path doesn't exist (web
 // cards use the hover 3-dot affordance instead — see series-card-menu.web.tsx). Without it the popup
@@ -269,16 +237,14 @@ export function SeriesCardContextMenuHost() {
 function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const { entry, bridgeId, bridge, direct, coverAspect, rect, zoomSource } = req;
   // The VISUAL corner radius the preview starts at (matches the source it lifts from); it morphs to the
-  // resting radius (REST_COVER_RADIUS) as it opens. Defaults to that resting radius (a card cover).
-  const startRadius = req.startRadius ?? REST_COVER_RADIUS;
+  // resting radius (COVER_PREVIEW_RADIUS) as it opens.
+  const startRadius = req.startRadius ?? CARD_COVER_RADIUS;
   const { width: winW, height: winH } = useWindowSize();
   const insets = useSafeAreaInsets();
-  const theme = useTheme();
   const scheme = useActiveColorScheme();
   const menuTint = scheme === 'dark' ? 'dark' : 'light';
   const router = useRouter();
-  // Which screen the menu was opened over — a tapped tag only needs to PUSH Search when we aren't
-  // already on it (see `onTagPress`).
+  // Which screen the menu was opened over: whether the tab bar is chrome the cover slides under.
   const pathname = usePathname();
   const progress = useSharedValue(0);
 
@@ -291,9 +257,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       cover: entry.cover,
     }),
   );
-  // The page rail (direct series only). A chaptered series fetches NOTHING here: Read either resumes
-  // from history or hands the reader an unspecified chapter, which it resolves itself.
-  const pageList = useQuery(seriesListQuery(ds, mock, bridgeId ?? '', entry.id, !!direct, !!direct && !!bridgeId));
   // Where Read takes you — the resume point, or the first chapter / page 0. Shared with the series
   // screen's primary button, so the two can't resume at different places (see useStartReading).
   const reading = useStartReading({
@@ -305,19 +268,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     ...(bridge ? { bridge } : {}),
     ...(entry.cover ? { cover: entry.cover } : {}),
   });
-  // The detail query is SEEDED with placeholder data (the card's title + cover) so the panel has them
-  // instantly — so "has data" is true from frame one. The real meta/description/tags only exist once
-  // the fetch resolves (`isPlaceholderData` flips false); gate the skeletons on THAT, not on presence,
-  // or they never show and the panel opens condensed then jumps when the real detail lands.
-  const detailLoaded = !!detail.data && !detail.isPlaceholderData;
-  // The description reserve THIS popup opened assuming (captured once — the rolling value must not
-  // move the skeleton mid-open when another popup writes it). A loaded empty description records 0,
-  // so the next popup on a description-less catalogue opens compact instead of reserving 3 lines.
-  const [assumedDescH] = useState(lastDescHeight);
-  useEffect(() => {
-    if (detailLoaded && !detail.data?.description) lastDescHeight = 0;
-  }, [detailLoaded, detail.data?.description]);
-
   const { favorited, toggle: toggleFavorite, status: favoriteStatus, loginSettings } = useFavorite(bridgeId, entry.id);
   const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
   // Collections for the Save row's submenu: the set itself (the expanded rows) + this series'
@@ -433,12 +383,17 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // the screen bottom, and the two floors coincide.
   const menuBottomLimit = winH - insets.bottom - EDGE_PAD;
 
-  // The PANEL still opens against the left edge — it's near enough the full width of a phone that
-  // centring it would move it by a few pixels and buy nothing.
   const minLeft = insets.left + EDGE_PAD;
   const maxRight = winW - insets.right - EDGE_PAD;
-  const panelW = Math.min(maxRight - minLeft, PANEL_MAX_WIDTH);
-  const panelLeft = minLeft;
+  const cardCenterX = rect.x + rect.width / 2;
+  // The preview is the cover alone, as large as the window allows (the same size iOS's system preview
+  // takes), centred over the card as far as the edges let it, so it grows out of the card in place.
+  const { width: coverW, height: coverH } = coverPreviewSize(clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT), {
+    width: maxRight - minLeft,
+    height: winH,
+  });
+  const panelW = coverW;
+  const panelLeft = clamp(cardCenterX - panelW / 2, minLeft, maxRight - panelW);
 
   const menuW = Math.min(MENU_WIDTH, maxRight - minLeft);
   const menuRowCount = MENU_ROWS - (favoriteStatus === 'unsupported' ? 1 : 0) + DEBUG_EXTRA_MENU_ROWS;
@@ -449,19 +404,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // there, which is the same reasoning as the placement above (the popup appears where you're looking,
   // not where the layout finds convenient). Clamped, so a card at either edge still gets a menu fully
   // on screen rather than one hanging off it.
-  const cardCenterX = rect.x + rect.width / 2;
   const menuLeft = clamp(cardCenterX - menuW / 2, minLeft, maxRight - menuW);
 
-  const coverH = COVER_W / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
-
-  // The panel's NATURAL height — what it would be if nothing constrained it. Measured from the content
-  // itself (not the panel, whose height we now drive), so it stays known even while the panel is
-  // squeezed below it.
+  // The panel's NATURAL height — what it would be if nothing constrained it. Measured off the
+  // preview's box, which is the cover's.
   const [contentH, setContentH] = useState<number | null>(null);
-  const naturalPanelH = contentH != null ? contentH + PANEL_PAD * 2 : PANEL_HEIGHT_ESTIMATE;
+  const naturalPanelH = contentH ?? coverH;
 
-  // Gate the geometry springs so they only animate CONTENT-driven changes (a skeleton swapping for
-  // real content), not the one-time correction from the rough estimate to the first measured height —
+  // Gate the geometry springs so they only animate LATE changes (the card's measured rect landing),
+  // not the one-time correction from the rough estimate to the first measured height —
   // otherwise everything would spring out of its estimate placement on every open. Turns on a render
   // after the first measurement, so that first correction snaps into place un-animated (it lands
   // before the morph is visible anyway).
@@ -480,8 +431,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   //                            band allows. The menu may be below the fold; swipe to bring it up.
   //   expand 0               → the panel is scaled down just enough for the whole menu to fit below it.
   //
-  // The whole panel scales — cover, title, tags, rail — rather than the panel keeping its size and
-  // clipping its contents. It reads as the preview zooming out to make room, which is the point: you
+  // The whole preview scales rather than being cropped. It reads as the preview zooming out to make room, which is the point: you
   // are still looking at the same thing, just smaller, rather than at a cropped piece of it.
   //
   // If the column already fits at full size, the range is empty and the pan has nothing to resize —
@@ -515,9 +465,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // travel at all — the preview simply blooms in place. Anything else is movement for its own sake, and
   // a fixed fraction of the screen (which this used to be) guarantees it: a card at the bottom of the
   // grid had its cover thrown halfway up the screen just to satisfy the fraction.
-  // (PANEL_PAD is the cover slot's offset inside the panel — `coverSlotLocalY` below, which is declared
-  // with the rest of the FLIP. Scaled, because the slot moves with the panel.)
-  const idealTop = rect.y - PANEL_PAD * maxScale;
+  const idealTop = rect.y;
 
   // The open ANCHOR has to satisfy both invariants; within what they leave, it moves as little as it
   // possibly can. In priority order:
@@ -563,30 +511,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
 
 
-  // Shared-element FLIP for the COVER only: it travels from the pressed card's cover (scaled to the
-  // card's width) to its resting SLOT — a top corner of the panel's top row. The radius is
-  // counter-scaled so the visual corner stays a constant 10px however scaled the cover is.
-  //
-  // The slot goes on whichever side (left/right) is nearer the pressed card, so the morph travels the
-  // shortest distance — a card near the right edge lifts into a right-anchored cover instead of flying
-  // across the panel.
-  //
-  // The slot is now given in the PANEL'S OWN coordinates, not the screen's: the panel scales (about its
-  // top-left), so the slot's real position is `panelTop/Left + local * scale` and its real size is
-  // `COVER_W * scale`. The flying cover has to land on that — a cover that ignored the panel's scale
-  // would come to rest floating over a smaller preview.
-  const leftSlotLocalX = PANEL_PAD;
-  const rightSlotLocalX = panelW - PANEL_PAD - COVER_W;
-  const coverOnRight = Math.abs(rect.x - (panelLeft + rightSlotLocalX)) < Math.abs(rect.x - (panelLeft + leftSlotLocalX));
-  const coverSlotLocalX = coverOnRight ? rightSlotLocalX : leftSlotLocalX;
-  const coverSlotLocalY = PANEL_PAD;
-  const fromScale = rect.width / COVER_W;
+  // Shared-element FLIP for the COVER: it travels from the pressed card's cover (scaled to the card's
+  // width) to the preview's box, at the panel's live scale (the panel scales about its top-left). The
+  // radius is counter-scaled so the visual corner is what lands on screen however scaled the cover is.
+  const fromScale = rect.width / coverW;
 
   // ── Live geometry ─────────────────────────────────────────────────────────
   // Every position above can CHANGE while the morph is already playing: the card's measured rect
   // arrives a frame or two after the finger-point estimate the menu opens with (see
-  // `series-card-menu.tsx`), and the panel grows when the detail query swaps skeletons for real
-  // content, which pushes `panelTop` (and with it the cover's slot) up on a low card. Feeding those
+  // `series-card-menu.tsx`), which moves the preview's box with it. Feeding those
   // straight into `left`/`top` teleported the panel and the flying cover mid-flight — the first-press
   // jump, invisible on a re-press only because the cached query + warm JS thread land the corrections
   // on frame 0.
@@ -824,8 +757,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         // Parked while a submenu is expanded: its row area is a vertical SCROLL, which this pan
         // would otherwise claim as a resize/dismiss drag. iOS locks the parent the same way.
         .enabled(!submenuOpen)
-        // Vertical intent only: a horizontal drag must reach the page rail (a horizontally-scrolling
-        // list inside the panel) rather than being swallowed as a resize.
+        // Vertical intent only: a sideways drag is nobody's resize.
         .activeOffsetY([-8, 8])
         .failOffsetX([-16, 16])
         .onStart(() => {
@@ -948,9 +880,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const backdropTintStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 0.2, 1], [0, 0, scrimOpacity]),
   }));
-  // The panel fades in at its position, and SCALES about its top-left corner — the whole preview,
-  // cover and text and rail together, zooming out to make room for the menu rather than being cropped.
-  // Scaling is transform-only, so resizing costs no layout at all.
+  // The preview's box SCALES about its top-left corner, zooming out to make room for the menu rather
+  // than being cropped. Scaling is transform-only, so resizing costs no layout at all.
   const panelStyle = useAnimatedStyle(() => {
     const scale = minS.value + expand.value * (maxS.value - minS.value);
     const top = topMin.value + expand.value * (topMax.value - topMin.value);
@@ -966,8 +897,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     // The slot, in screen coords, at the panel's live scale (the panel scales about its own top-left).
     const scale = minS.value + expand.value * (maxS.value - minS.value);
     const top = topMin.value + expand.value * (topMax.value - topMin.value);
-    const toX = panelPos.x.value + coverSlotLocalX * scale;
-    const toY = top + coverSlotLocalY * scale;
+    const toX = panelPos.x.value;
+    const toY = top;
     return {
     transform: [
       { translateX: interpolate(progress.value, [0, 1], [coverFrom.x.value, toX]) },
@@ -1015,7 +946,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     const live = interpolate(progress.value, [0, 1], [coverFrom.scale.value, scale]);
     // The VISUAL corner morphs from the source's radius to the resting radius over the open, then is
     // counter-scaled by the live scale so that visual radius is what lands on screen.
-    const visualRadius = interpolate(progress.value, [0, 1], [startRadius, REST_COVER_RADIUS]);
+    const visualRadius = interpolate(progress.value, [0, 1], [startRadius, COVER_PREVIEW_RADIUS]);
     return { borderRadius: visualRadius / Math.max(0.01, live) };
   });
   // The menu isn't dragged and isn't scaled — it TRACKS the panel's scaled bottom edge. Its position
@@ -1036,32 +967,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     };
   });
 
-  const metaLine = buildMetaLine(detail.data?.meta, detail.data?.chapterCount, direct);
-
   const act = (toggle: () => void) => {
     toggle();
     dismiss();
   };
-
-  // Tapping a tag opens Search on a matching query/filter — the same shared intent as the Series
-  // screen's tag chips (see tagSearchIntent). Close instantly, then hand the intent over.
-  //
-  // Only PUSH `/search` when we aren't already there. This menu is a root overlay, so it also opens
-  // over cards in Search's OWN results grid; pushing from there would stack a second Search screen on
-  // the first. When Search is already the open screen, setting the intent is enough — it consumes it
-  // through `subscribeSearchIntent` and refines in place (dismissing this overlay changes no route,
-  // so there's no remount to consume it on).
-  const onTagPress = useCallback(
-    (group: TagGroup, index: number) => {
-      const intent = tagSearchIntent(group, index, { bridgeId: bridgeId ?? '' });
-      if (!intent) return;
-      setSearchIntent(intent);
-      req.onClose?.();
-      closeSeriesCardMenu();
-      if (pathname !== '/search') router.push('/search');
-    },
-    [bridgeId, req, router, pathname],
-  );
 
   // Hand the pressed card's rect to the series page's zoom, so opening from this menu grows out of
   // exactly the card the preview lifted from — the same transition a plain tap gets. The menu drops
@@ -1075,32 +984,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     const coverHeight = rect.width / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
     setZoomOrigin(entry.id, zoomSource, { x: rect.x, y: rect.y, width: rect.width, height: coverHeight, radius: startRadius });
   }, [rect.x, rect.y, rect.width, coverAspect, entry.id, startRadius, zoomSource]);
-
-  // Tapping a page in the rail opens the series page READER-FIRST at that page — the same screen
-  // the Read row opens, and the same one a History row opens; the details are one swipe below it.
-  // (There is no separate reader route any more: details and pages are one page.)
-  const openReaderAt = useCallback(
-    (pageIndex: number) => {
-      handOffZoom();
-      req.onClose?.();
-      closeSeriesCardMenu();
-      const params: Record<string, string> = {
-        id: entry.id,
-        title: entry.title,
-        direct: '1',
-        reader: '1',
-        start: String(pageIndex),
-        picked: '1',
-        ...(bridgeId ? { bridgeId } : {}),
-        ...(bridge ? { bridge: encodeSeriesParam(bridge) } : {}),
-        ...(entry.cover ? { cover: encodeSeriesParam(entry.cover) } : {}),
-      };
-      // Long-pressed inside a series page's related rail → a LAYER on that page, never a second
-      // contained transparent modal (see drillSeriesFromOverlay).
-      if (!drillSeriesFromOverlay(params)) router.push({ pathname: '/series', params });
-    },
-    [handOffZoom, req, router, entry.id, entry.title, entry.cover, bridge, bridgeId],
-  );
 
   // ── The rows, as data ─────────────────────────────────────────────────────
   // Rendering them from a list (rather than three hand-written JSX rows) is what lets a ROW INDEX mean
@@ -1515,7 +1398,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     // The pan lives on the ROOT, so the resize/dismiss drag works anywhere on the screen — over the
     // backdrop, the panel, or the menu — which is the point of it. It only claims a gesture once the
     // finger has travelled vertically (see activeOffsetY), so taps still reach the menu rows and the
-    // backdrop, and a horizontal drag still belongs to the page rail.
+    // backdrop.
     <GestureDetector gesture={pan}>
       <View {...windowModalLayer} style={StyleSheet.absoluteFill} pointerEvents="box-none">
         {/* Blurred, tap-to-dismiss backdrop. */}
@@ -1528,86 +1411,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           </View>
         </GestureDetector>
 
-      {/* Panel background + content — fades in at the final position. `box-none` so taps fall through
-          to the dismiss backdrop while the page rail's FlatList still receives touches. The cover slot
-          is a transparent placeholder; the real cover is the morphing layer below. */}
+      {/* The preview's box, where the cover lands: measured, so the scale range knows the preview's
+          natural height. Transparent; the cover is the morphing layer below. */}
       <Animated.View
         pointerEvents="box-none"
         style={[styles.panelWrap, { width: panelW }, panelStyle]}>
-        <Animated.View style={[styles.panel, { backgroundColor: theme.backgroundPanel }, parentDimStyle]}>
-          {/* Measured so the scale range knows how tall the preview actually wants to be — the panel is
-              never squeezed, only SCALED, so this natural height is what the whole range is derived from
-              (and what the menu's tracked position is computed against). */}
-          <View style={styles.panelContent} onLayout={(e) => setContentH(e.nativeEvent.layout.height)}>
-          <View style={[styles.topRow, coverOnRight && styles.topRowReverse]}>
-            <View style={[styles.coverSlot, { width: COVER_W, height: coverH }]} />
-            <View style={styles.info}>
-              <ThemedText style={styles.title} numberOfLines={3}>
-                {entry.title}
-              </ThemedText>
-              {/* While loading, the slots reserve their EXPECTED space (meta line + the remembered
-                  description height) so an uncached open lands near its final size; once loaded they
-                  collapse to the real content — an absent meta/description leaves no dead reserve,
-                  and any difference from the assumption springs via the panel's content geometry. */}
-              {detailLoaded ? (
-                metaLine ? (
-                  <View style={styles.metaSlot}>
-                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                      {metaLine}
-                    </ThemedText>
-                  </View>
-                ) : null
-              ) : (
-                <View style={styles.metaSlot}>
-                  <Skeleton style={styles.metaSkeleton} />
-                </View>
-              )}
-              {detailLoaded ? (
-                detail.data?.description ? (
-                  // Intrinsic height (≤ DESC_LINES lines), measured into the rolling assumption so
-                  // the NEXT popup opens at this size.
-                  <View
-                    onLayout={(e) => {
-                      lastDescHeight = Math.round(e.nativeEvent.layout.height);
-                    }}>
-                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={DESC_LINES}>
-                      {detail.data.description}
-                    </ThemedText>
-                  </View>
-                ) : null
-              ) : assumedDescH > 0 ? (
-                // Clipped to the assumed height, so a 1-line memory shows one skeleton line, not 3.
-                <View style={{ height: assumedDescH, overflow: 'hidden' }}>
-                  <View style={styles.descSkeleton}>
-                    <Skeleton style={styles.descLine} />
-                    <Skeleton style={styles.descLine} />
-                    <Skeleton style={[styles.descLine, styles.descLineShort]} />
-                  </View>
-                </View>
-              ) : null}
-            </View>
-          </View>
-          {/* Every group folded into ONE row, each chip in its group's colour (see TagStrip). A row
-              per group was the single biggest thing making this panel tall — and the colour is the
-              same one the series page puts on those tags, so the strip stays readable. */}
-          {detailLoaded ? (
-            <TagStrip
-              groups={detail.data?.tagGroups}
-              contentInset={PANEL_PAD}
-              onTagPress={onTagPress}
-            />
-          ) : (
-            <TagsSkeleton />
-          )}
-          {direct ? (
-            <PageRail thumbs={pageList.data?.pageThumbs} loading={pageList.isLoading} bridgeId={bridgeId} seed={entry.id} onOpenPage={openReaderAt} />
-          ) : null}
-          </View>
-        </Animated.View>
+        <View style={{ width: coverW, height: coverH }} onLayout={(e) => setContentH(e.nativeEvent.layout.height)} />
         {/* While a submenu is open, a tap anywhere on the preview card — including the thumbnail, whose
             morphing layer sits above this but is pointerEvents="none", so the tap falls through to here
             — collapses the submenu, the same one-level-back as tapping the faded parent menu. Only
-            mounted while the submenu is up, so the panel's tags / page rail stay interactive otherwise. */}
+            mounted while the submenu is up. */}
         {submenuOpen && (
           <GestureDetector gesture={tapCollapse}>
             <View style={StyleSheet.absoluteFill} />
@@ -1625,7 +1438,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         ]}>
         <Animated.View
           pointerEvents="none"
-          style={[styles.coverLayer, { width: COVER_W, height: coverH }, coverStyle, parentDimStyle]}>
+          style={[styles.coverLayer, { width: coverW, height: coverH }, coverStyle, parentDimStyle]}>
           <Animated.View style={[styles.coverInner, coverRadiusStyle]}>
             {resolvedCover ? (
               <Image
@@ -1701,102 +1514,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   );
 }
 
-/** A single line summarizing the series — author · type · status, plus a chapter/page count. */
-export function buildMetaLine(
-  meta: { label: string; value: string }[] | undefined,
-  chapterCount: number | undefined,
-  direct: boolean | undefined,
-): string {
-  const pick = (label: string) => meta?.find((m) => m.label === label)?.value;
-  const parts = [pick('AUTHOR'), pick('TYPE'), pick('STATUS')].filter(Boolean) as string[];
-  if (chapterCount != null) parts.push(`${chapterCount} ${direct ? 'pages' : 'chapters'}`);
-  return parts.join('  ·  ');
-}
-
-type RailCell = { thumb: PageThumbSource | null; index: number };
-
-/** Horizontal, VIRTUALIZED + lazy rail of a direct series' page thumbnails: the FlatList only mounts
- *  the visible tiles, and each `PageThumb` lazily fetches its own thumbnail when it isn't inlined. */
-function PageRail({
-  thumbs,
-  loading,
-  bridgeId,
-  seed,
-  onOpenPage,
-}: {
-  thumbs: (PageThumbSource | null)[] | undefined;
-  loading: boolean;
-  bridgeId?: string;
-  seed: string;
-  onOpenPage: (pageIndex: number) => void;
-}) {
-  if (loading) return <RailSkeleton />;
-  if (!thumbs || thumbs.length === 0) return null;
-  // Wrap in objects so `null` thumbs never appear as raw list data (a null entry ends LegendList's
-  // virtualization). The inter-tile gap lives as a per-item marginRight, since LegendList positions
-  // items virtually and ignores a contentContainerStyle gap.
-  const data: RailCell[] = thumbs.map((thumb, index) => ({ thumb, index }));
-  return (
-    <LegendList
-      horizontal
-      data={data}
-      keyExtractor={(it) => String(it.index)}
-      recycleItems
-      estimatedItemSize={RAIL_THUMB_H * DEFAULT_THUMB_ASPECT + RAIL_GAP}
-      showsHorizontalScrollIndicator={false}
-      style={styles.railList}
-      contentContainerStyle={styles.rail}
-      renderItem={({ item }) => (
-        <View style={styles.railItem}>
-          <PageThumb
-            thumb={item.thumb}
-            index={item.index}
-            seed={seed}
-            bridgeId={bridgeId}
-            page={item.index + 1}
-            width={RAIL_THUMB_W}
-            slotHeight={RAIL_THUMB_H}
-            showPageNumber={false}
-            onPress={() => onOpenPage(item.index)}
-          />
-        </View>
-      )}
-    />
-  );
-}
-
-// ── Loading skeletons ────────────────────────────────────────────────────────
-// Shown while `detail` / `pageList` fetch, so the panel opens at roughly its final size (title is
-// already known synchronously) and the swap to real content is a small, animated size change rather
-// than a jarring pop-in. Shapes mirror the real elements: a meta line, a few description lines, one
-// row of tag pills, and a rail of page-sized tiles.
-
-const SKELETON_CHIP_WIDTHS = [56, 44, 72, 38, 60, 50];
-const RAIL_SKELETON_W = Math.round(RAIL_THUMB_H * DEFAULT_THUMB_ASPECT);
-
-/** A single full-bleed row of pill placeholders — the tags always collapse to one row now
- *  (see TagStrip), so the skeleton is exactly the shape the real thing lands in. */
-function TagsSkeleton() {
-  return (
-    <View style={styles.tagRowSkeleton}>
-      {SKELETON_CHIP_WIDTHS.map((w, i) => (
-        <Skeleton key={i} style={[styles.chipSkeleton, { width: w }]} />
-      ))}
-    </View>
-  );
-}
-
-/** A short run of page-sized tiles filling the rail's height. */
-function RailSkeleton() {
-  return (
-    <View style={styles.railSkeleton}>
-      {[0, 1, 2, 3, 4].map((i) => (
-        <Skeleton key={i} style={styles.railSkeletonTile} />
-      ))}
-    </View>
-  );
-}
-
 // `MenuRowSpec` / `MenuRow` (and the "NO theme.accent IN THIS MENU" rule that governs them) moved to
 // `context-menu-material.tsx`, shared with the generic ContextMenuHost.
 
@@ -1811,17 +1528,6 @@ const styles = StyleSheet.create({
     // it, and the cover's resting slot is computed in the same frame of reference (panelTop/Left +
     // local * scale). A centre origin would drift both.
     transformOrigin: '0% 0%',
-    borderRadius: 16,
-    shadowColor: '#000000',
-    shadowOpacity: 0.22,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 12,
-  },
-  panelContent: {
-    // The preview at its natural size. The panel is SCALED as a whole (see panelStyle), never
-    // squeezed, so this never reflows — the resize costs no layout at all.
-    gap: Spacing.three,
   },
   // The expanded submenu card: absolutely placed inside the menu's transformed container at the
   // opening row's slot (`top` set inline), blooming from its top edge; may extend past the parent
@@ -1843,42 +1549,6 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 14,
     overflow: 'hidden',
-  },
-  panel: {
-    borderRadius: 16,
-    // Only vertical padding: the horizontal scrollers (tags, page rail) bleed to the panel's rounded
-    // edges (clipped by `overflow: hidden`) so their content isn't cut off at an inset viewport; they
-    // carry their own leading inset (`PANEL_PAD`) instead. The top row re-adds horizontal padding.
-    paddingVertical: PANEL_PAD,
-    overflow: 'hidden',
-  },
-  topRow: {
-    flexDirection: 'row',
-    gap: Spacing.three,
-    paddingHorizontal: PANEL_PAD,
-  },
-  // Cover on the right (nearer a right-edge card): swap the row so the cover slot lands on that side.
-  topRowReverse: {
-    flexDirection: 'row-reverse',
-  },
-  coverSlot: {
-    // A purely transparent spacer that reserves the cover's resting spot in the row (so the title
-    // column doesn't shift). No fill/radius: a visible placeholder here would read as a second shape
-    // sitting under the cover as it morphs over from the card.
-    backgroundColor: 'transparent',
-  },
-  info: {
-    flex: 1,
-    gap: Spacing.one,
-  },
-  title: {
-    fontWeight: '700',
-    fontSize: 16,
-    lineHeight: 21,
-  },
-  metaSlot: {
-    height: META_H,
-    justifyContent: 'center',
   },
   // Full-bleed horizontally; vertically it spans only the gap between the bars, and clips the cover to
   // it. Transparent and non-interactive — it exists purely as the clip boundary.
@@ -1904,58 +1574,6 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.2)',
-  },
-  // The list is exactly one tile tall, so no stray vertical padding pushes the tile past the viewport
-  // and clips its bottom edge (the panel's own `gap` already spaces the rail from the tags above).
-  railList: {
-    height: RAIL_THUMB_H,
-  },
-  rail: {
-    // Leading inset so the first tile rests off the panel edge, while the list viewport itself spans
-    // full-bleed (content scrolls all the way to the rounded edge instead of clipping at an inset).
-    paddingLeft: PANEL_PAD,
-  },
-  railItem: {
-    // Fixed height; width follows each page's real aspect (PageThumb `slotHeight` mode). No bg/clip —
-    // the tile rounds and clips itself.
-    height: RAIL_THUMB_H,
-    marginRight: RAIL_GAP,
-  },
-  metaSkeleton: {
-    height: 12,
-    width: '70%',
-    borderRadius: 4,
-  },
-  descSkeleton: {
-    gap: 6,
-  },
-  descLine: {
-    height: 12,
-    borderRadius: 4,
-  },
-  descLineShort: {
-    width: '55%',
-  },
-  tagRowSkeleton: {
-    flexDirection: 'row',
-    gap: Spacing.one,
-    paddingLeft: PANEL_PAD,
-  },
-  chipSkeleton: {
-    height: 24,
-    borderRadius: 999,
-  },
-  railSkeleton: {
-    flexDirection: 'row',
-    gap: RAIL_GAP,
-    height: RAIL_THUMB_H,
-    paddingLeft: PANEL_PAD,
-    overflow: 'hidden',
-  },
-  railSkeletonTile: {
-    height: RAIL_THUMB_H,
-    width: RAIL_SKELETON_W,
-    borderRadius: 8,
   },
   // menuWrap / menu / hoverBubble / row styles live in `context-menu-material.tsx` (menuStyles).
 });

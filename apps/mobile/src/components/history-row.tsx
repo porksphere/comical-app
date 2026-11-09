@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View, type ViewInstance } from 'react-native';
 
 import { ThumbLift } from '@/components/book-chrome';
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
+import { liftTarget } from '@/components/system-context-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useZoomHref, ZoomSource } from '@/components/zoom-source';
@@ -118,16 +119,20 @@ export function HistoryRow({
               <ZoomSource href={zoomHref} onId={onZoomId} style={[styles.thumbZoomBox, desktop && styles.thumbDesktop]} />
             </View>
           ) : null}
-          {resolvedThumb ? (
-            <Image
-              source={{ uri: resolvedThumb }}
-              style={thumbStyle}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              transition={150}
-            />
-          ) : (
-            <View style={[thumbStyle, { backgroundColor: theme.backgroundElement }]} />
+          {/* What the iOS system menu lifts into the cover's preview: the thumbnail, not the row. */}
+          {liftTarget(
+            resolvedThumb ? (
+              <Image
+                source={{ uri: resolvedThumb }}
+                style={thumbStyle}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={150}
+              />
+            ) : (
+              <View style={[thumbStyle, { backgroundColor: theme.backgroundElement }]} />
+            ),
+            THUMB_RADIUS,
           )}
           {progress !== undefined && (
             <View style={styles.progressTrack} testID={testId(base, 'progress')}>
