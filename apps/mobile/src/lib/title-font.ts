@@ -33,11 +33,11 @@ export function useTitleFontFor(text: string): string | undefined {
 }
 
 /** A face's vertical metrics, in ems: the hhea ascender and descender iOS lays a line out by, and
- *  the height of a capital H, measured from the files. */
-export type FontMetrics = { ascender: number; descender: number; capHeight: number };
+ *  the heights of a capital H and a lowercase x, measured from the files. */
+export type FontMetrics = { ascender: number; descender: number; capHeight: number; xHeight: number };
 
-const SYSTEM_METRICS: FontMetrics = { ascender: 0.952, descender: 0.241, capHeight: 0.705 };
-const TITLE_METRICS: FontMetrics = { ascender: 1.16, descender: 0.288, capHeight: 0.733 };
+const SYSTEM_METRICS: FontMetrics = { ascender: 0.952, descender: 0.241, capHeight: 0.705, xHeight: 0.53 };
+const TITLE_METRICS: FontMetrics = { ascender: 1.16, descender: 0.288, capHeight: 0.733, xHeight: 0.524 };
 
 /** The metrics of a face these hooks returned: the title typeface, else (`undefined`) the system's. */
 export function fontMetrics(font: string | undefined): FontMetrics {

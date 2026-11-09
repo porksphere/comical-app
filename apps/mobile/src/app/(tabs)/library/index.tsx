@@ -68,7 +68,7 @@ export default function LibraryScreen() {
 
   const { collections } = useCollections();
   const viewName = collections.find((c) => c.id === collection)?.name ?? ALL_VIEW_NAME;
-  const titleType = useSubtitleSelectorStyle();
+  const titleType = useSubtitleSelectorStyle(viewName);
 
   const headerHeight = useTopChromeHeight();
 

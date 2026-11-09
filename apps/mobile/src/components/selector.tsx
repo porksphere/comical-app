@@ -10,6 +10,7 @@ import { useHover } from '@/hooks/use-hover';
 import { useCompactType, usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
+import { fontMetrics, useTitleFontFor } from '@/lib/title-font';
 
 /** Size of the bridge thumbnail shown in the dropdown rows — also reused by the
  *  browse top bar so the two read at the same size. */
@@ -47,21 +48,29 @@ type SelectorProps = {
   testID: string;
 };
 
-/** The `subtitle` trigger's type, for a bar title that sits beside a `Selector`. */
-export function useSubtitleSelectorStyle() {
+/** The `subtitle` trigger's type for `text`: a bar's title, which these selectors are off iOS, so
+ *  it is set in the title typeface where that can set it whole. `font` goes to `SelectorCaret`. */
+export function useSubtitleSelectorStyle(text: string) {
   const compact = useCompactType();
-  return { label: compact ? styles.subtitleCompact : styles.subtitleWide };
+  const font = useTitleFontFor(text);
+  return {
+    label: [compact ? styles.subtitleCompact : styles.subtitleWide, font && { fontFamily: font, fontWeight: 'normal' as const }],
+    font,
+  };
 }
 
 /** The trigger's dropdown caret. Centred on the label's x-height rather than its line box, which
- *  sits nearer the cap height — so it lines up with a word that ends in lowercase. */
-export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['size'] }) {
+ *  sits nearer the cap height — so it lines up with a word that ends in lowercase. The line box
+ *  centres the face's ascender-to-descender span, so the x-height's middle sits that far off it. */
+export function SelectorCaret({ size = 'subtitle', font }: { size?: SelectorProps['size']; font?: string }) {
   const theme = useTheme();
   const compact = useCompactType();
   const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : 8;
   const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (compact ? 22.4 : 28) : 14;
+  const { ascender, descender, xHeight } = fontMetrics(font);
+  const drop = ((ascender - descender - xHeight) / 2) * fontSize;
   return (
-    <View style={[styles.caret, { transform: [{ translateY: Math.round(fontSize * 0.09) }] }]}>
+    <View style={[styles.caret, { transform: [{ translateY: Math.round(drop) }] }]}>
       <CaretDownIcon color={theme.textSecondary} size={px} />
     </View>
   );
@@ -70,9 +79,11 @@ export function SelectorCaret({ size = 'subtitle' }: { size?: SelectorProps['siz
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
 export function Selector({ title, value, options, onChange, thumbnails, sources, labels, size = 'title', testID }: SelectorProps) {
   const { ref, openAt } = useAnchoredOverlay();
-  const compact = useCompactType();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
+  const shown = labels?.[value] ?? value;
+  const subtitle = useSubtitleSelectorStyle(shown);
+  const font = size === 'subtitle' ? subtitle.font : undefined;
   return (
     <Pressable
       testID={testID}
@@ -103,13 +114,10 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
       <ThemedText
         type={size}
         numberOfLines={1}
-        style={[
-          styles.triggerLabel,
-          size === 'subtitle' ? (compact ? styles.subtitleCompact : styles.subtitleWide) : null,
-        ]}>
-        {labels?.[value] ?? value}
+        style={[styles.triggerLabel, size === 'subtitle' && subtitle.label]}>
+        {shown}
       </ThemedText>
-      <SelectorCaret size={size} />
+      <SelectorCaret size={size} font={font} />
     </Pressable>
   );
 }

@@ -37,9 +37,8 @@ export function LibraryCollectionSelector({
   const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
-  const type = useSubtitleSelectorStyle();
-
   const currentLabel = (value && collections.find((c) => c.id === value)?.name) || ALL_VIEW_NAME;
+  const type = useSubtitleSelectorStyle(currentLabel);
   // Rows, not collections: every view plus "Manage collections…".
   const rowCount = libraryViews(collections).length + 1;
 
@@ -58,7 +57,7 @@ export function LibraryCollectionSelector({
       <ThemedText numberOfLines={1} style={[styles.triggerLabel, type.label]}>
         {currentLabel}
       </ThemedText>
-      <SelectorCaret size="subtitle" />
+      <SelectorCaret size="subtitle" font={type.font} />
     </Pressable>
   );
 }
