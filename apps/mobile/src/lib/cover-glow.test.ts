@@ -1,41 +1,36 @@
 import { describe, expect, test } from 'bun:test';
 
-import { glowFromTones, liftGlow, oneOfAFew, tonesFromBlurhash } from './cover-glow';
+import { glowFromTones, liftGlow, oneOfAFew, tonesFromPixels } from './cover-glow';
 
-const BASE83 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~';
-const encode83 = (value: number, length: number) =>
-  Array.from({ length }, (_, i) => BASE83[Math.floor(value / 83 ** (length - 1 - i)) % 83]).join('');
+/** A `width` x `height` RGBA picture, each row coloured by `rowColour`. */
+const picture = (width: number, height: number, rowColour: (y: number) => [number, number, number]) => {
+  const px = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) px.set([...rowColour(y), 255], (y * width + x) * 4);
+  }
+  return px;
+};
 
-/** A one-column, two-row hash: `dc` the average colour, `ac` the vertical component's quantised
- *  channels (0..18, 9 is none). */
-const hash = (dc: [number, number, number], ac: [number, number, number], quantisedMax = 40) =>
-  encode83(9, 1) + encode83(quantisedMax, 1) + encode83((dc[0] << 16) + (dc[1] << 8) + dc[2], 4) + encode83(ac[0] * 361 + ac[1] * 19 + ac[2], 2);
-
-describe('tonesFromBlurhash', () => {
+describe('tonesFromPixels', () => {
   test('a flat cover is the same colour top and bottom', () => {
-    const tones = tonesFromBlurhash(hash([200, 120, 60], [9, 9, 9]));
-    expect(tones).not.toBeNull();
-    expect(tones!.top).toEqual(tones!.bottom);
-    for (const [got, want] of tones!.top.map((c, i) => [c, [200, 120, 60][i]])) expect(Math.abs(got - want)).toBeLessThanOrEqual(1);
+    const tones = tonesFromPixels(picture(12, 18, () => [200, 120, 60]), 12, 18);
+    expect(tones).toEqual({ top: [200, 120, 60], bottom: [200, 120, 60] });
   });
 
-  test('a vertical component makes the top and bottom differ, in opposite directions', () => {
-    // Red rises toward the top (positive first row of the cosine), blue toward the bottom.
-    const tones = tonesFromBlurhash(hash([128, 128, 128], [18, 9, 0]))!;
-    expect(tones.top[0]).toBeGreaterThan(tones.bottom[0]);
-    expect(tones.top[2]).toBeLessThan(tones.bottom[2]);
-    expect(Math.abs(tones.top[1] - tones.bottom[1])).toBeLessThanOrEqual(1);
+  test('the top tone comes from the top band and the bottom tone from the bottom band', () => {
+    const tones = tonesFromPixels(picture(12, 18, (y) => (y < 3 ? [255, 0, 0] : y >= 15 ? [0, 0, 255] : [0, 255, 0])), 12, 18)!;
+    expect(tones.top).toEqual([255, 0, 0]);
+    expect(tones.bottom).toEqual([0, 0, 255]);
   });
 
-  test('decodes an expo-image default-size hash (4x3) too', () => {
-    const sized = encode83(2 * 9 + 3, 1) + encode83(40, 1) + encode83(0x808080, 4) + encode83(9 * 361 + 9 * 19 + 9, 2).repeat(11);
-    expect(tonesFromBlurhash(sized)).not.toBeNull();
+  test('a band is the average across it', () => {
+    const tones = tonesFromPixels(picture(1, 25, (y) => (y % 2 ? [100, 100, 100] : [200, 200, 200])), 1, 25)!; // a 4-row band
+    for (const c of tones.top) expect(c).toBeCloseTo(150, 0);
   });
 
-  test('rejects what is not a hash', () => {
-    expect(tonesFromBlurhash('')).toBeNull();
-    expect(tonesFromBlurhash('LEHV6nWB2yk8')).toBeNull(); // a real 4x3 hash cut short
-    expect(tonesFromBlurhash('9 00000000')).toBeNull();
+  test('rejects an empty or short picture', () => {
+    expect(tonesFromPixels(new Uint8Array(0), 0, 0)).toBeNull();
+    expect(tonesFromPixels(new Uint8Array(8), 12, 18)).toBeNull();
   });
 });
 

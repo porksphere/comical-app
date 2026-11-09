@@ -46,7 +46,9 @@ export function menuThumbFile(source: string | number, radius?: number, size = M
 
 async function renderTile(source: string | number, size: number): Promise<string> {
   const px = Math.round(size * PixelRatio.get());
-  const loaded = await Image.loadAsync(source, { maxWidth: 4 * px, maxHeight: 4 * px });
+  // Whole, never with a max size: SDWebImage left a copy decoded that small in its memory cache under
+  // the picture's own key, and every view of that picture drew it (cover-glow-reader has the story).
+  const loaded = await Image.loadAsync(source);
   try {
     const { width, height } = loaded;
     const side = Math.min(width, height);
