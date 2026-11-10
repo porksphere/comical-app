@@ -72,7 +72,7 @@ final class NavBarLeadingView: ExpoView {
   /// rebuilt menu, or a rebuilt item, has to be handed over again.
   private weak var menuItem: UIBarButtonItem?
   private weak var navigationItem: UINavigationItem?
-  private var observation: NSKeyValueObservation?
+  private var observations: [NSKeyValueObservation] = []
 
   func propsDidUpdate() {
     image = imageURI.flatMap(Self.load) ?? Self.symbol(symbol)
@@ -142,19 +142,28 @@ final class NavBarLeadingView: ExpoView {
       return
     }
     navigationItem = item
-    observation = item.observe(\.rightBarButtonItems, options: [.new]) { [weak self] _, _ in
-      self?.apply()
-    }
+    observations = [
+      item.observe(\.rightBarButtonItems, options: [.new]) { [weak self] _, _ in
+        self?.apply()
+      },
+      item.observe(\.leftBarButtonItems, options: [.new]) { [weak self] _, _ in
+        self?.apply()
+      },
+    ]
   }
 
-  /// The placeholder's label, which finds it among the trailing items (the search and a screen's
-  /// own menus sit there too) until it is claimed and relabelled; a header update rebuilds them.
+  /// The placeholder's label, which finds it among the bar's items (the search and a screen's own
+  /// menus sit there too) until it is claimed and relabelled; a header update rebuilds them. A
+  /// tab puts it on either side: it leads the title on a portrait window.
   var placeholder = ""
   private weak var claimed: UIBarButtonItem?
 
   private func apply() {
-    guard let items = navigationItem?.rightBarButtonItems,
-          let leading = items.first(where: { $0 === claimed || $0.accessibilityLabel == placeholder }) else {
+    guard let navigationItem else {
+      return
+    }
+    let items = (navigationItem.leftBarButtonItems ?? []) + (navigationItem.rightBarButtonItems ?? [])
+    guard let leading = items.first(where: { $0 === claimed || $0.accessibilityLabel == placeholder }) else {
       return
     }
     claimed = leading

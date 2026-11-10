@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { PixelRatio, StyleSheet, type ImageURISource, type NativeSyntheticEvent } from 'react-native';
 
+import { useWindowPortrait } from '@/hooks/use-window-size';
 import type { SystemSymbol } from '@/lib/initial-symbol';
 import { NavBarLeading, type NavBarLeadingSection } from '../../modules/nav-bar-leading';
 
@@ -26,10 +27,11 @@ export type LeadingMenuProps = {
 };
 
 /**
- * A tab's ONE menu button in the iOS bar, at the trailing edge beside the search, and its flat
- * menu of inline sections: Browse's bridges and pages, Library's collections and kinds. Two
- * parts, since a screen's trailing items all go in ONE `Stack.Toolbar`: expo-router keeps each
- * toolbar's items as one option, and the last toolbar rendered replaces the others' outright.
+ * A tab's ONE menu button in the iOS bar, leading the title on a portrait window and among the
+ * trailing items elsewhere (`useMenuLeads`), and its flat menu of inline sections: Browse's
+ * bridges and pages, Library's collections and kinds. Two parts, since a screen's trailing items all go in ONE `Stack.Toolbar`: expo-router
+ * keeps each toolbar's items as one option, and the last toolbar rendered replaces the others'
+ * outright.
  * `navBarLeadingMenuItem` is the item for that toolbar, a direct child, as the toolbar reads the
  * element tree and sees nothing through a component; `NavBarLeadingMenu` is the view beside it.
  *
@@ -65,6 +67,18 @@ export function navBarLeadingMenuItem({ image, symbol, label, sections }: Leadin
       ))}
     </Stack.Toolbar.Menu>
   );
+}
+
+/**
+ * Whether the tab's menu leads the title: on a portrait window, where Android's and web's selector
+ * sits. A landscape one (a phone on its side, the Duo folded or open) lays the bar out as a side
+ * column, and the menu stays among the trailing items there.
+ */
+export const useMenuLeads = useWindowPortrait;
+
+/** The menu as the bar's leading item, for a screen where `useMenuLeads`. */
+export function NavBarLeadingMenuToolbar(menu: LeadingMenuProps) {
+  return <Stack.Toolbar placement="left">{navBarLeadingMenuItem(menu)}</Stack.Toolbar>;
 }
 
 /** The module's view for the item `navBarLeadingMenuItem` put in the toolbar; nothing without

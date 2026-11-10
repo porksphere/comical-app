@@ -8,6 +8,8 @@ import {
   type LeadingMenuSection,
   NavBarLeadingMenu,
   navBarLeadingMenuItem,
+  NavBarLeadingMenuToolbar,
+  useMenuLeads,
 } from '@/components/nav-bar-leading-menu';
 import { useLibrarySavedPresent } from '@/components/library/library-saved-view';
 import { useLibrarySeriesPresent } from '@/components/library/library-series-view';
@@ -103,10 +105,10 @@ const KIND_SYMBOLS: Record<ItemKind, 'books.vertical' | 'book' | 'photo'> = {
 
 /**
  * The Library's items in the iOS navigation bar, ONE trailing toolbar (a second trailing toolbar
- * replaces the first's items outright): the collection menu and the arranging controls, one `⋯`
- * menu, in one glass group, what the tab shows and how it is arranged, with the system search
- * item in a group of its own at the edge (the bar lists its trailing items from the edge in, so
- * the menu comes FIRST here), as
+ * replaces the first's items outright): the collection menu (leading the title instead on a
+ * portrait window, `useMenuLeads`) and the arranging controls, one `⋯` menu, in one glass group,
+ * what the tab shows and how it is arranged, with the system search item in a group of its own at
+ * the edge (the bar lists its trailing items from the edge in, so the menu comes FIRST here), as
  * Files and Notes keep theirs: Filter and Sort as submenus (each keeping its own icon), the same
  * axes the custom bar keeps beside its title.
  *
@@ -122,22 +124,32 @@ const KIND_SYMBOLS: Record<ItemKind, 'books.vertical' | 'book' | 'photo'> = {
  */
 export function LibraryNativeToolbar(props: CollectionMenuProps) {
   const menu = useLibraryCollectionMenu(props);
+  const leads = useMenuLeads();
   return props.kind === 'series' ? (
-    <SeriesToolbar collection={props.collection} menu={menu} />
+    <SeriesToolbar collection={props.collection} menu={menu} leads={leads} />
   ) : (
-    <SavedToolbar collection={props.collection} kind={props.kind} menu={menu} />
+    <SavedToolbar collection={props.collection} kind={props.kind} menu={menu} leads={leads} />
   );
 }
 
-function SeriesToolbar({ collection, menu }: { collection: string | null; menu: LeadingMenuProps | null }) {
+function SeriesToolbar({
+  collection,
+  menu,
+  leads,
+}: {
+  collection: string | null;
+  menu: LeadingMenuProps | null;
+  leads: boolean;
+}) {
   const [sort, setSort] = useLibrarySort(collection);
   const [grouping, setGrouping] = useLibraryGrouping();
   const present = useLibrarySeriesPresent(collection, sort);
   const filterState = useLibraryFilterState(present);
   return (
     <>
+      {menu && leads ? <NavBarLeadingMenuToolbar {...menu} /> : null}
       <Stack.Toolbar placement="right">
-        {menu ? navBarLeadingMenuItem(menu) : null}
+        {menu && !leads ? navBarLeadingMenuItem(menu) : null}
         <Stack.Toolbar.Menu {...arrangeMenu(libraryFilterNarrowing({ withShow: true, ...filterState }))}>
           {libraryFilterMenu({ withShow: true, ...filterState })}
           {librarySortMenu({ value: sort, onChange: setSort, grouping, onGroupingChange: setGrouping })}
@@ -152,18 +164,21 @@ function SavedToolbar({
   collection,
   kind,
   menu,
+  leads,
 }: {
   collection: string | null;
   kind: SavedKind;
   menu: LeadingMenuProps | null;
+  leads: boolean;
 }) {
   const [view, setView] = useCollectedView(collection, kind);
   const present = useLibrarySavedPresent(collection, kind, view);
   const filterState = useLibraryFilterState(present);
   return (
     <>
+      {menu && leads ? <NavBarLeadingMenuToolbar {...menu} /> : null}
       <Stack.Toolbar placement="right">
-        {menu ? navBarLeadingMenuItem(menu) : null}
+        {menu && !leads ? navBarLeadingMenuItem(menu) : null}
         <Stack.Toolbar.Menu {...arrangeMenu(libraryFilterNarrowing({ withShow: false, ...filterState }))}>
           {libraryFilterMenu({ withShow: false, ...filterState })}
           {collectedSortMenu({ value: view, onChange: setView })}

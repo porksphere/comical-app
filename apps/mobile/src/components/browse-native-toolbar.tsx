@@ -1,6 +1,12 @@
 import { Stack } from 'expo-router';
 
-import { type LeadingMenuProps, NavBarLeadingMenu, navBarLeadingMenuItem } from '@/components/nav-bar-leading-menu';
+import {
+  type LeadingMenuProps,
+  NavBarLeadingMenu,
+  navBarLeadingMenuItem,
+  NavBarLeadingMenuToolbar,
+  useMenuLeads,
+} from '@/components/nav-bar-leading-menu';
 import type { PageOption } from '@/data/browse-page';
 import type { Bridge } from '@/data/types';
 import { initialSymbol } from '@/lib/initial-symbol';
@@ -53,6 +59,7 @@ export function BrowseNativeToolbar({
   const circles = useMenuThumbFiles(thumbnails, sources, BAR_THUMB_RADIUS, BAR_THUMB_PX);
   const tiles = useMenuThumbFiles(thumbnails, sources, MENU_THUMB_RADIUS);
   const current = bridges.find((b) => b.id === bridgeId);
+  const leads = useMenuLeads();
   const pageSection = {
     title: 'Page',
     rows: pages.map((option) => ({
@@ -79,6 +86,17 @@ export function BrowseNativeToolbar({
     label: current ? `${current.name}, bridge and page` : 'Bridge and page',
     sections: withBridges ? [bridgeSection, pageSection] : [pageSection],
   };
+  if (leads) {
+    return (
+      <>
+        <NavBarLeadingMenuToolbar {...menu} />
+        <Stack.Toolbar placement="right">
+          <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={onSearch} />
+        </Stack.Toolbar>
+        <NavBarLeadingMenu {...menu} />
+      </>
+    );
+  }
   // One toolbar: a second trailing toolbar replaces the first's items. The bar lists its trailing
   // items from the edge in, so the last here is at the edge: the search, with the menu inward of
   // it. The fixed space, even of no width, is where UIKit splits one placement's shared glass

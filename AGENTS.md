@@ -139,7 +139,9 @@ name elsewhere; on every tab it is also the NSFW hold target, because the bars h
 items and a `UIBarButtonItem` has no long-press of its own (holding one opens its menu): the
 title is UIKit's text, so the local module `modules/nav-bar-hold` reads the bar's touches on its
 label and reports the press and its end to the same ramped hold (`useHoldAction`). Each has ONE
-`Stack.Toolbar.Menu` among the trailing items: Browse's in a glass group of its own, a zero-width
+`Stack.Toolbar.Menu`, leading the title on a portrait window, where Android's and web's
+selector sits (`useMenuLeads`), and elsewhere (a phone on its side, the Duo folded or open, all of
+which lay the bar out as a side column) among the trailing items: Browse's in a glass group of its own, a zero-width
 `Stack.Toolbar.Spacer` splitting it from the search (UIKit splits one placement's shared glass at
 a fixed space), the Library's in one group with the arranging `⋯` menu, what the tab shows and
 how it is arranged, with the system search item in its own group at the edge,
@@ -169,7 +171,7 @@ rows' checks popped the whole bar. Both render `NavBarLeadingMenu`
 (`components/nav-bar-leading-menu.tsx`), which gives the config a placeholder that never
 changes and hands the live picture, label and menu (inline sections of rows) to the local
 module `apps/mobile/modules/nav-bar-leading`, a zero-size view in the page that sets them on
-that item in place (found among the trailing items by the placeholder's label), and again whenever the items are rebuilt,
+that item in place (found among the bar's items, either side, by the placeholder's label), and again whenever the items are rebuilt,
 as they are on every return to the screen. It decodes the files itself: through React Native's loader the bar reads one off
 the main thread, uncached, so the button was blank for the first part of every pop back, and a
 menu row's never showed, landing after the menu was built (a bar item keeps a copy of its

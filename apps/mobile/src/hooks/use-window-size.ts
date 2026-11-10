@@ -56,5 +56,21 @@ export function useWindowResizing(): boolean {
   return useSelector(() => resizing$.get());
 }
 
+function useNativeWindowPortrait(): boolean {
+  return useSelector(() => {
+    const { width, height } = window$.get();
+    return height > width;
+  });
+}
+
+function useWebWindowPortrait(): boolean {
+  const { width, height } = useWindowDimensions();
+  return height > width;
+}
+
+/** Whether the window is taller than it is wide, re-rendering only when that flips: a resize that
+ *  keeps the shape (the Duo folding, landscape both ways) renders nothing. */
+export const useWindowPortrait: () => boolean = Platform.OS === 'web' ? useWebWindowPortrait : useNativeWindowPortrait;
+
 // The web never reports one: it keeps React Native's own hook, prerender handling and all.
 export const useWindowSize: () => ScaledSize = Platform.OS === 'web' ? useWindowDimensions : useNativeWindowSize;
