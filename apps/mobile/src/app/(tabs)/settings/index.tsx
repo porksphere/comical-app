@@ -194,7 +194,7 @@ export default function SettingsScreen() {
       {NATIVE_HEADER ? (
         <NativeTabHeader title="Settings" />
       ) : (
-        <TabTitleBar title="Settings" />
+        <TabTitleBar title="Settings" holdTestID="settings.nsfw-hold" />
       )}
     </ThemedView>
   );

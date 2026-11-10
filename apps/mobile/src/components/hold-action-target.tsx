@@ -37,7 +37,8 @@ export function useHoldAction(onPulse?: (amount: number) => void): {
 }
 
 /**
- * A top-bar identity mark — Browse's bridge icon or its title, Library's collection icon — that
+ * A top-bar identity mark — Browse's bridge icon, Library's collection icon, the other tabs'
+ * titles (`TabTitleBar`'s `holdTestID`) — that
  * runs whatever Settings has the hold gesture bound to: three haptic beats ramp up while holding,
  * then it commits (see useRampedHold) and a toast says what happened. A plain tap does nothing.
  *

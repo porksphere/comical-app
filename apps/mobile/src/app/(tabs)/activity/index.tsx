@@ -376,6 +376,7 @@ export default function ActivityScreen() {
       ) : (
         <TabTitleBar
           title="Activity"
+          holdTestID="activity.nsfw-hold"
           titleSlot={
             filter.open ? (
               <TabFilterField filter={filter} testID="activity.search" placeholder="Filter activity…" />

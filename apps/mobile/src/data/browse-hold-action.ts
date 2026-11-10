@@ -5,8 +5,8 @@ import { persisted$ } from '@/lib/observable';
 
 /**
  * What the bridge-icon HOLD does — the hidden, unlabelled gesture on the top-left identity mark of
- * Browse and Library (`HoldActionTarget`: three escalating haptic beats, then one commit; a plain
- * tap does nothing).
+ * Browse and Library and on the other tabs' titles (every tab's title on iOS) (`HoldActionTarget`:
+ * three escalating haptic beats, then one commit; a plain tap does nothing).
  *
  * The gesture is a binary trigger with deliberate friction, so what it can usefully carry is
  * narrow: something consequential enough to deserve a second and a half of holding, and something

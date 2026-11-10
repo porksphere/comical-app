@@ -3,6 +3,7 @@ import { Platform, StyleSheet, View, type ViewProps } from 'react-native';
 import type { AnimatedProps } from 'react-native-reanimated';
 
 import { BarSurface } from '@/components/bar-surface';
+import { HoldActionTarget } from '@/components/hold-action-target';
 import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
@@ -20,6 +21,8 @@ import { useWindowControlsClearance } from '@/lib/window-controls';
  *
  * `titleSlot` replaces the plain title text with arbitrary leading content (e.g. the Library's list
  * selector); `right` fills a trailing slot pushed to the far edge (e.g. the Library's search icon).
+ * `holdTestID` makes the plain title the hold gesture's target (`HoldActionTarget`), as every tab's
+ * title is on iOS; Browse and Library hold their icon instead, their titles opening menus.
  */
 export function TabTitleBar({
   title,
@@ -27,6 +30,7 @@ export function TabTitleBar({
   leading,
   right,
   barStyle,
+  holdTestID,
 }: {
   title?: string;
   titleSlot?: ReactNode;
@@ -37,10 +41,26 @@ export function TabTitleBar({
   /** Extra style for the bar surface itself — e.g. an animated rule colour, for a screen whose
    *  pinned section heading takes over the bottom edge (see StickySectionHeader). */
   barStyle?: AnimatedProps<ViewProps>['style'];
+  holdTestID?: string;
 }) {
   const titleFont = useTitleFont();
   const barHeight = useTopBarHeight();
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
+  const titleText = (
+    <ThemedText
+      testID={title ? testId('screen-title', title) : undefined}
+      numberOfLines={1}
+      style={[styles.title, titleFont && { fontFamily: titleFont, fontWeight: 'normal' }]}>
+      {title}
+    </ThemedText>
+  );
+  const heldTitle = holdTestID ? (
+    <HoldActionTarget testID={holdTestID} {...(title ? { label: title } : {})}>
+      {titleText}
+    </HoldActionTarget>
+  ) : (
+    titleText
+  );
   return (
     <BarSurface style={[styles.topBar, barStyle]}>
       {/* Cap+centre only on web; native fills the width so the title aligns with the full-width grids. */}
@@ -52,14 +72,7 @@ export function TabTitleBar({
           leading != null && { paddingLeft: TopLevelGutter },
         ]}>
         {leading != null && <View style={styles.leading}>{leading}</View>}
-        {titleSlot ?? (
-          <ThemedText
-            testID={title ? testId('screen-title', title) : undefined}
-            numberOfLines={1}
-            style={[styles.title, titleFont && { fontFamily: titleFont, fontWeight: 'normal' }]}>
-            {title}
-          </ThemedText>
-        )}
+        {titleSlot ?? heldTitle}
         {right != null && <View style={styles.right}>{right}</View>}
       </View>
     </BarSurface>

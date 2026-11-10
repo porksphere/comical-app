@@ -256,6 +256,7 @@ export default function HistoryScreen() {
       ) : (
         <TabTitleBar
           title="History"
+          holdTestID="history.nsfw-hold"
           titleSlot={
             filter.open ? (
               <TabFilterField filter={filter} testID="history.search" placeholder="Filter history…" />

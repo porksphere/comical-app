@@ -81,6 +81,13 @@ const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
   { value: 'dark', label: 'Dark', description: 'Always use the dark theme.' },
 ];
 
+// On iOS every tab's title is the target; elsewhere Browse's and Library's titles open menus, so
+// there it is their icon (see TabTitleBar's holdTestID).
+const HOLD_TARGETS =
+  Platform.OS === 'ios'
+    ? "Holding a tab's title"
+    : "Holding the icon at the top of Browse or Library, or another tab's title,";
+
 export default function GeneralSettingsScreen() {
   const [nsfwMode, setNsfwMode] = useNsfwMode();
   const [holdAction, setHoldAction] = useBrowseHoldAction();
@@ -160,10 +167,10 @@ export default function GeneralSettingsScreen() {
       ],
     },
     // The hold row sits with NSFW because that is what it acts on, and its footer is the gesture's
-    // only documentation — nothing on Browse or Library says the icon is holdable.
+    // only documentation — nothing on screen says a title or an icon is holdable.
     {
       title: 'Browsing',
-      footer: `NSFW content decides whether NSFW-flagged bridges are visible. Holding the bridge icon at the top of Browse or Library runs the chosen action; Hold sound clicks along with its countdown.${
+      footer: `NSFW content decides whether NSFW-flagged bridges are visible. ${HOLD_TARGETS} runs the chosen action; Hold sound clicks along with its countdown.${
         Platform.OS === 'web'
           ? ' Keep pages open per tab leaves a series or search you opened beside the sidebar open on its tab — and on its bridge or collection — while you visit another.'
           : ''
