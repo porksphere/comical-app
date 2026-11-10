@@ -130,8 +130,8 @@ tab's large title, its menu and the search (`NativeTabHeader`, above). The BAR s
 as the content scrolls down and back as it scrolls up: iOS 27's bar
 minimization, the way Settings' own pages behave, asked for on every tab and pushed bar
 `SLIDE_AWAY_BAR` in `lib/native-bar.ts`, react-native-screens' header config through
-expo-router's `unstable_nativeProps`). The props arrive in react-native-screens 4.31, a NIGHTLY
-here until it ships, and so do the tsconfig line pointing its `reanimated` types at the folder
+expo-router's `unstable_nativeProps`). The props come with react-native-screens 5.0, on its BETA
+here (`5.0.0-beta.1`, npm's `next`) until it ships stable, and so do the tsconfig line pointing its `reanimated` types at the folder
 its build writes them to and the `metro.config.js` redirect that sends web to its TurboModule
 stub (without it web crashes at load). The reader's bar never slides (`never`): it follows the chrome. The title names the view on Browse ("<bridge> <page>") and
 Library ("<view> <kind>", the kind only while the view holds more than one), and is the tab's
