@@ -1305,9 +1305,9 @@ export function SeriesReaderPage({
 
   const dimOverlays = <StripDim progress={progress} />;
 
-  // iOS: the system bar is the reader's top chrome, through the route's options: its glass items
-  // alone over the page, the back button and the save and settings buttons (ReaderNativeToolbar),
-  // with no title and nothing behind them, following the chrome's auto-hide through `headerShown`,
+  // iOS: the system bar is the reader's top chrome, through the route's options: the chapter's
+  // name as its title, the back button and the save and settings buttons (ReaderNativeToolbar),
+  // following the chrome's auto-hide through `headerShown`,
   // so UIKit slides it away and back. A mounted Stack.Toolbar sets `headerShown: true` on top of
   // these options (expo-router merges its items in over the page's own), so no toolbar renders its
   // items while the bar is down. Only the top instance sets the options (they are the route's,
@@ -1316,7 +1316,7 @@ export function SeriesReaderPage({
   // that is the root's first page reaches the `index` of the nested stack (app/series/_layout),
   // never the contained transparent modal around it, whose content react-native-screens remounts
   // when its `headerShown` flips; a nested root has no back of its own, hence the chevron.
-  // Off iOS, in sequence mode, the reader's own bar describes the VISIBLE entry — which series the
+  // In sequence mode the reader's bar describes the VISIBLE entry — which series the
   // page in front of you belongs to is the one thing that bar must answer there.
   const readerBarTitle = sequence ? (visibleSequenceEntry?.seriesTitle ?? seriesTitle) : seriesTitle;
   const readerBarSubtitle = sequence ? (visibleSequenceEntry?.chapterName ?? '') : (target?.chapterName ?? '');
@@ -1336,15 +1336,11 @@ export function SeriesReaderPage({
             // slide's scroller held that off by claiming every sideways drag, and under the curl,
             // with the scroller still, it raced each drag to the right for the touch.
             fullScreenGestureEnabled: false,
-            // No title: plain text in the bar is what needs a backing behind it, and the system's
-            // automatic edge goes opaque for one. Liquid Glass items read over any page by themselves.
-            title: '',
-            headerTitle: '',
+            // The chapter, as plain text: the system's scroll edge is left on to back it, since
+            // text, unlike the glass items, does not read over any page by itself.
+            title: readerBarSubtitle || readerBarTitle,
             headerBlurEffect: 'none',
             headerTintColor: '#fff',
-            // Nothing behind the items in either mode, so a webtoon scrolled under the bar matches
-            // a pager, which never is.
-            scrollEdgeEffects: { top: 'hidden' },
             // The bar comes and goes with the chrome, never with the scroll (see SLIDE_AWAY_BAR).
             unstable_nativeProps: { headerConfig: { minimizationBehavior: 'never' } },
           }}

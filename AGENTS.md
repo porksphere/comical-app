@@ -298,12 +298,12 @@ pathname, to know which copy it is in. The series page takes the system bar in B
 one bar, so the back button and the items morph between them: details bare over the strip, the
 series' title fading in as the page's own scrolls under the bar and the frost following it, a
 toolbar chevron in place of the custom one;
-the reader nothing but its glass items over the page, the back button and save + settings
-(`components/reader/reader-native-toolbar.tsx`), with no title and nothing behind them, the bar
+the reader the chapter's name as a plain text title between the back button and save + settings
+(`components/reader/reader-native-toolbar.tsx`), the bar
 following the chrome's auto-hide through `headerShown` — with every `Stack.Toolbar` unrendered while
 it is down, since a mounted one sets `headerShown: true` over the page's own options — and the
-system's scroll edge hidden on it in both modes: Apple keeps that for content scrolled under a bar,
-which a sideways pager never is, and plain title text is what made a backing necessary at all —
+system's scroll edge left on to back that text, which does not read over any page as the glass
+items do —
 and hides the tab bar while the reader is expanded through
 `lib/native-tab-bar.ts`, a pin counter like `tab-bar-visibility`'s. The reader's settings are ONE
 model and two renderers: `components/reader/reader-settings-form.ts` (`useReaderSettingsForm`) is
