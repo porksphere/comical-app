@@ -12,7 +12,7 @@ const MAX_WIDTH = 360;
 /** The most of the window's height the cover may take, leaving the menu room beneath it. */
 const MAX_HEIGHT_SHARE = 0.5;
 /** How far a CG set's print, tipped behind the front one, reaches past the cover's box, of its
- *  height: what the preview leaves round the art so the platter doesn't cut its corners. */
+ *  height: what the preview leaves round the art so the print stays inside it. */
 const TIPPED_REACH = Math.sin((Math.abs(PRINT.tilt) * Math.PI) / 180) / 2;
 
 /**
@@ -23,6 +23,19 @@ const TIPPED_REACH = Math.sin((Math.abs(PRINT.tilt) * Math.PI) / 180) / 2;
 export function coverPreviewSize(aspect: number, room: { width: number; height: number }): { width: number; height: number } {
   const width = Math.round(Math.min(room.width, MAX_WIDTH, room.height * MAX_HEIGHT_SHARE * aspect));
   return { width, height: Math.round(width / aspect) };
+}
+
+/** The empty margin round the cover in iOS's preview. UIKit clips the grown preview to a rounded
+ *  rect of its own whose radius no API sets, which cut the book's corners; set in this far, a
+ *  corner of the cover clears an arc of up to ~34pt (inset ≥ R·(1 − 1/√2)), so the clip cuts
+ *  only the transparent margin and the book keeps its own shape. */
+const PLATTER_CLEARANCE = 10;
+
+/** iOS's preview: `coverPreviewSize` within what the margin leaves, with the margin round it. */
+export function platterPreviewSize(aspect: number, room: { width: number; height: number }): { width: number; height: number } {
+  const pad = 2 * PLATTER_CLEARANCE;
+  const cover = coverPreviewSize(aspect, { width: room.width - pad, height: room.height - pad });
+  return { width: cover.width + pad, height: cover.height + pad };
 }
 
 /** The book a held series is drawn as: the card's, from the same inputs the card reads. */
@@ -38,9 +51,9 @@ export function useEntryBook(bridgeId: string | undefined, entry: SeriesEntry, d
 }
 
 /**
- * The cover alone, as the book the card draws, filling the box it is given: what iOS's system
- * context menu grows a held series into (series-card-menu.ios.tsx). UIKit's preview takes no touches
- * and casts its own shadow, so the book's is left out.
+ * The cover alone, as the book the card draws, inside the box `platterPreviewSize` gives: what
+ * iOS's system context menu grows a held series into (series-card-menu.ios.tsx). UIKit's preview
+ * takes no touches and casts its own shadow, so the book's is left out.
  */
 export function SeriesCardPreview({
   bridgeId,
@@ -68,6 +81,7 @@ export function SeriesCardPreview({
 const styles = StyleSheet.create({
   room: {
     flex: 1,
+    padding: PLATTER_CLEARANCE,
     alignItems: 'center',
     justifyContent: 'center',
   },

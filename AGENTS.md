@@ -260,7 +260,9 @@ Series cards and the History and Activity rows wear it through `series-card-menu
 card's cover, or a row's thumbnail, grows into the cover alone (`SeriesCardPreview`), as large as
 fits over the menu, the way Books and Photos preview a held item; Android's hold popup grows the
 cover to the same size (`coverPreviewSize`). Both draw it as the book the card is (`BookCoverArt`,
-which the series page's cover draws too). Tapping the preview does what tapping the item does
+which the series page's cover draws too). UIKit clips the grown preview to a rounded rect whose
+radius no API sets, so the book sits inside a transparent margin (`platterPreviewSize`) and the
+clip cuts only that, never the book's own corners. Tapping the preview does what tapping the item does
 (`onOpen`), and Save on a saved series is the collections submenu, checks kept in place.
 The preview is drawn by the root host into one native view kept out of the window
 (`SystemContextMenuPreviewSlotView`), the way expo-router hands UIKit a link's preview, so a grid

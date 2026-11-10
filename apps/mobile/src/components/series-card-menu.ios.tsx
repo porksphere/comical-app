@@ -1,6 +1,6 @@
 import type { LiveMenuRows } from '@/components/context-menu-host';
 import { SeriesCardSystemMenuRows } from '@/components/series-card-actions-menu';
-import { coverPreviewSize, SeriesCardPreview } from '@/components/series-card-preview';
+import { platterPreviewSize, SeriesCardPreview } from '@/components/series-card-preview';
 import type { SeriesCardMenuProps } from '@/components/series-card-menu';
 import { SystemContextMenu } from '@/components/system-context-menu';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
@@ -47,7 +47,7 @@ export function SeriesCardMenu({
       preview={() => (
         <SeriesCardPreview bridgeId={bridgeId} entry={entry} aspect={aspect} {...(direct !== undefined && { direct })} />
       )}
-      previewSize={(room) => coverPreviewSize(aspect, room)}
+      previewSize={(room) => platterPreviewSize(aspect, room)}
       {...(onOpen && { onPreviewPress: onOpen })}>
       {content}
     </SystemContextMenu>
