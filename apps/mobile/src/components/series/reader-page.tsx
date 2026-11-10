@@ -118,7 +118,7 @@ const CHROME_HIDE_MS = 3000;
 const FOCUSABLE = 'button, a[href], input, [tabindex]:not([tabindex="-1"])';
 
 // CI-speed override: Maestro steps can outlast the auto-hide, and hidden chrome drops out of the
-// accessibility tree.
+// accessibility tree. The reader opens with its chrome down, so there it opens with it up too.
 const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
 
 /** A mouse this close to the top of the reader brings the toolbar up, the way a video player's
@@ -499,8 +499,8 @@ export function SeriesReaderPage({
   }, []);
 
   // ── Chrome auto-hide ───────────────────────────────────────────────────────
-  // A reader page growing out of the strip fades its chrome in as it opens (see SplitHandoff).
-  const [chromeVisible, setChromeVisible] = useState(!stripReader);
+  // The reader opens on the page alone: a tap brings the chrome up.
+  const [chromeVisible, setChromeVisible] = useState(!CHROME_AUTO_HIDE && !stripReader);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chromeHeldRef = useRef(false);
   // Who is holding it up: a control in use, and the keyboard's focus — kept apart so one letting go
@@ -758,6 +758,7 @@ export function SeriesReaderPage({
           runOnJS(covered)();
         }),
       );
+      if (CHROME_AUTO_HIDE) return;
       // A frame in, so the chrome fades in with the page rather than landing with its first paint.
       const frame = requestAnimationFrame(() => setChromeVisible(true));
       return () => cancelAnimationFrame(frame);
