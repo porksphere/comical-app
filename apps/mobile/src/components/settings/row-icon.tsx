@@ -21,11 +21,14 @@ export function RowIcon({
   uri,
   fallback,
   bare,
+  tint,
 }: {
   uri?: string | undefined;
   fallback: (color: string, size: number) => ReactNode;
   /** The glyph without its tile, at the tile's size (a state, not a picture). */
   bare?: boolean;
+  /** The tile's colour, the glyph white on it (`SettingsIcon.tint`). */
+  tint?: string | undefined;
 }) {
   const theme = useTheme();
   if (uri) {
@@ -43,8 +46,8 @@ export function RowIcon({
   }
   if (bare) return <View style={[styles.tile, styles.fallback]}>{fallback(theme.textSecondary, 20)}</View>;
   return (
-    <View style={[styles.tile, styles.fallback, { backgroundColor: theme.tileWash }]}>
-      {fallback(theme.textSecondary, 16)}
+    <View style={[styles.tile, styles.fallback, { backgroundColor: tint ?? theme.tileWash }]}>
+      {fallback(tint ? '#FFFFFF' : theme.textSecondary, 16)}
     </View>
   );
 }

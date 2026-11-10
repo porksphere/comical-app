@@ -183,6 +183,8 @@ export type SettingsIcon = {
   uri?: string;
   /** The glyph alone, with no tile behind it: a state (a download's), not a thing's picture. */
   bare?: boolean;
+  /** The tile's own colour (`SettingsTint`), the glyph white on it: a settings category's. */
+  tint?: string;
 };
 
 /** One thing a swipe on a row reveals. The last is at the edge: the natural destructive slot. */

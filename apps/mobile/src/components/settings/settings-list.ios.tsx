@@ -462,7 +462,8 @@ function Chevron() {
 }
 
 /** The leading tile of a list row: the artwork where there is some, else the glyph on a tinted
- *  rounded square, as the system's Settings rows have, the size the app's own tile is. */
+ *  rounded square, as the system's Settings rows have (white on the category's colour where it
+ *  has one), the size the app's own tile is. */
 function Tile({ icon }: { icon: SettingsIcon }) {
   const theme = useTheme();
   const file = useThumbFile(icon.uri);
@@ -476,8 +477,11 @@ function Tile({ icon }: { icon: SettingsIcon }) {
     <Image
       systemName={icon.symbol}
       size={15}
-      color={theme.text}
-      modifiers={[frame({ width: 28, height: 28 }), background(theme.tileWash, shapes.roundedRectangle({ cornerRadius: 7 }))]}
+      color={icon.tint ? '#FFFFFF' : theme.text}
+      modifiers={[
+        frame({ width: 28, height: 28 }),
+        background(icon.tint ?? theme.tileWash, shapes.roundedRectangle({ cornerRadius: 7 })),
+      ]}
     />
   );
 }

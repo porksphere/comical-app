@@ -450,7 +450,7 @@ function LinkRowBody({ field, section, id, sweep }: LinkRowProps) {
   // icon; otherwise it trails with the value.
   const icon = field.icon ? (
     <View>
-      <RowIcon uri={field.icon.uri} fallback={field.icon.glyph} bare={field.icon.bare} />
+      <RowIcon uri={field.icon.uri} fallback={field.icon.glyph} bare={field.icon.bare} tint={field.icon.tint} />
       {pip && (
         <View style={field.marked && field.badge === undefined ? styles.tileDot : styles.tilePip} pointerEvents="none">
           {pip}

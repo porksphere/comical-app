@@ -339,6 +339,25 @@ export const SettingsGutter = Spacing.four;
  */
 export const SettingsCardInset = Spacing.three;
 
+/**
+ * The colours a settings category's tile takes, under a white glyph: Apple's system palette, as
+ * the system's Settings rows wear it. The same in either scheme, as there: a category is known by
+ * its colour.
+ */
+export const SettingsTint = {
+  red: '#FF3B30',
+  orange: '#FF9500',
+  green: '#34C759',
+  mint: '#00C7BE',
+  teal: '#30B0C7',
+  cyan: '#32ADE6',
+  blue: '#007AFF',
+  indigo: '#5856D6',
+  purple: '#AF52DE',
+  pink: '#FF2D55',
+  gray: '#8E8E93',
+} as const;
+
 /** Corner radius of a settings card. Uniform — a per-corner radius crashes Fabric on Android. */
 export const SettingsCardRadius = 20;
 

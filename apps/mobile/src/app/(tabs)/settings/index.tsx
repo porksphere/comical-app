@@ -22,7 +22,7 @@ import { NativeTabHeader } from '@/components/native-tab-header';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedView } from '@/components/themed-view';
 
-import { MaxTopLevelWidth } from '@/constants/theme';
+import { MaxTopLevelWidth, SettingsTint } from '@/constants/theme';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
@@ -42,21 +42,22 @@ import { useRouter } from '@/lib/nav';
 const HAS_SHORTCUTS = Platform.OS === 'web';
 
 /** Each category's glyph, in both languages (`SettingsIcon`): the lucide icon the app's rows draw
- *  and the SF Symbol the iOS form draws, chosen to say the same thing. */
+ *  and the SF Symbol the iOS form draws, chosen to say the same thing, white on the category's
+ *  colour. The symbols are the filled ones where there is one, as the system's Settings draws. */
 const ICONS = {
-  general: { symbol: 'slider.horizontal.3', glyph: (color, size) => <GeneralSettingsIcon color={color} size={size} /> },
-  notifications: { symbol: 'bell', glyph: (color, size) => <NotificationsIcon color={color} size={size} /> },
-  sync: { symbol: 'macbook.and.iphone', glyph: (color, size) => <SyncIcon color={color} size={size} /> },
-  keyboard: { symbol: 'keyboard', glyph: (color, size) => <KeyboardIcon color={color} size={size} /> },
-  bridges: { symbol: 'puzzlepiece', glyph: (color, size) => <BridgesIcon color={color} size={size} /> },
-  trackers: { symbol: 'arrow.clockwise', glyph: (color, size) => <TrackersIcon color={color} size={size} /> },
-  registries: { symbol: 'cylinder', glyph: (color, size) => <RegistriesIcon color={color} size={size} /> },
-  customPages: { symbol: 'square.grid.2x2', glyph: (color, size) => <CustomPagesIcon color={color} size={size} /> },
-  downloads: { symbol: 'arrow.down.circle', glyph: (color, size) => <DownloadsIcon color={color} size={size} /> },
-  storage: { symbol: 'externaldrive', glyph: (color, size) => <StorageIcon color={color} size={size} /> },
-  diagnostics: { symbol: 'ladybug', glyph: (color, size) => <DiagnosticsIcon color={color} size={size} /> },
-  about: { symbol: 'info.circle', glyph: (color, size) => <AboutIcon color={color} size={size} /> },
-  developer: { symbol: 'apple.terminal', glyph: (color, size) => <DeveloperIcon color={color} size={size} /> },
+  general: { symbol: 'slider.horizontal.3', tint: SettingsTint.gray, glyph: (color, size) => <GeneralSettingsIcon color={color} size={size} /> },
+  notifications: { symbol: 'bell.fill', tint: SettingsTint.red, glyph: (color, size) => <NotificationsIcon color={color} size={size} /> },
+  sync: { symbol: 'macbook.and.iphone', tint: SettingsTint.blue, glyph: (color, size) => <SyncIcon color={color} size={size} /> },
+  keyboard: { symbol: 'keyboard.fill', tint: SettingsTint.indigo, glyph: (color, size) => <KeyboardIcon color={color} size={size} /> },
+  bridges: { symbol: 'puzzlepiece.fill', tint: SettingsTint.purple, glyph: (color, size) => <BridgesIcon color={color} size={size} /> },
+  trackers: { symbol: 'arrow.clockwise', tint: SettingsTint.mint, glyph: (color, size) => <TrackersIcon color={color} size={size} /> },
+  registries: { symbol: 'cylinder.fill', tint: SettingsTint.teal, glyph: (color, size) => <RegistriesIcon color={color} size={size} /> },
+  customPages: { symbol: 'square.grid.2x2.fill', tint: SettingsTint.pink, glyph: (color, size) => <CustomPagesIcon color={color} size={size} /> },
+  downloads: { symbol: 'arrow.down', tint: SettingsTint.green, glyph: (color, size) => <DownloadsIcon color={color} size={size} /> },
+  storage: { symbol: 'externaldrive.fill', tint: SettingsTint.gray, glyph: (color, size) => <StorageIcon color={color} size={size} /> },
+  diagnostics: { symbol: 'ladybug.fill', tint: SettingsTint.orange, glyph: (color, size) => <DiagnosticsIcon color={color} size={size} /> },
+  about: { symbol: 'info', tint: SettingsTint.cyan, glyph: (color, size) => <AboutIcon color={color} size={size} /> },
+  developer: { symbol: 'apple.terminal.fill', tint: SettingsTint.gray, glyph: (color, size) => <DeveloperIcon color={color} size={size} /> },
 } satisfies Record<string, SettingsIcon>;
 
 /**
