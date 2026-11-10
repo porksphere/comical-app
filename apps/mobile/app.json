@@ -2,7 +2,7 @@
   "expo": {
     "name": "Comical",
     "slug": "comical",
-    "version": "0.8.0",
+    "version": "0.9.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "comical",
@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.porksphere.comical",
-      "versionCode": 18,
+      "versionCode": 19,
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -89,7 +89,9 @@
       [
         "expo-font",
         {
-          "fonts": ["./assets/fonts/ShipporiAntiqueB1-Regular.ttf"]
+          "fonts": [
+            "./assets/fonts/ShipporiAntiqueB1-Regular.ttf"
+          ]
         }
       ],
       "expo-image",
