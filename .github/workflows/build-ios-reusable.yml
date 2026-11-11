@@ -349,6 +349,12 @@ jobs:
           echo "Patching $PLIST -> CFBundleShortVersionString=${{ steps.ver.outputs.full }}, CFBundleVersion=${{ steps.ver.outputs.build_number }}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.full }}" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ steps.ver.outputs.build_number }}" "$PLIST"
+          # The widget extension's Info.plist is generated from its target's build settings
+          # (apps/mobile/targets/widgets), and an extension is expected to carry its app's versions.
+          sed -i '' -E \
+            -e "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = ${{ steps.ver.outputs.full }};/" \
+            -e "s/CURRENT_PROJECT_VERSION = [^;]+;/CURRENT_PROJECT_VERSION = ${{ steps.ver.outputs.build_number }};/" \
+            *.xcodeproj/project.pbxproj
 
       # Route the compiler through ccache. RN wires CC=ccache-clang.sh, whose
       # `exec $CCACHE_BINARY clang` relies on the CCACHE_BINARY build setting
@@ -429,6 +435,13 @@ jobs:
         if: always()
         run: ccache -s -v 2>/dev/null || ccache -s
 
+      # The archive is built unsigned, and an unsigned binary carries no entitlements. AltStore and
+      # SideStore read what an app asks for off the binary's own signature, so with none there the
+      # App Group the app shares with its widgets (apps/mobile/targets/widgets) was never
+      # registered, and the two had no folder in common. An ad-hoc signature says it. Only the App
+      # Group goes in: the generated entitlements also name push (expo-notifications), which a
+      # free Apple ID can't be given and a signer would stop on. The signer replaces this signature
+      # with its own; the IPA is still for re-signing, hence its name.
       - name: Package unsigned IPA
         if: ${{ !inputs.simulator }}
         run: |
@@ -436,6 +449,27 @@ jobs:
           APP=$(ls -d "$RUNNER_TEMP/comical.xcarchive/Products/Applications/"*.app | head -1)
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          APP="$RUNNER_TEMP/Payload/$(basename "$APP")"
+
+          ENTITLEMENTS="$RUNNER_TEMP/sideload.entitlements"
+          rm -f "$ENTITLEMENTS"
+          /usr/libexec/PlistBuddy -c "Add :com.apple.security.application-groups array" "$ENTITLEMENTS"
+          node -p "require('./apps/mobile/app.json').expo.ios.entitlements['com.apple.security.application-groups'].join('\n')" |
+            while IFS= read -r group; do
+              /usr/libexec/PlistBuddy -c "Add :com.apple.security.application-groups: string $group" "$ENTITLEMENTS"
+            done
+
+          # Inside out: codesign refuses a bundle holding unsigned code.
+          for code in "$APP"/Frameworks/*.framework "$APP"/Frameworks/*.dylib; do
+            if [ -e "$code" ]; then codesign --force --sign - "$code"; fi
+          done
+          for appex in "$APP"/PlugIns/*.appex; do
+            if [ -e "$appex" ]; then codesign --force --sign - --entitlements "$ENTITLEMENTS" "$appex"; fi
+          done
+          codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP"
+          codesign --verify --deep --strict "$APP"
+          codesign -d --entitlements - "$APP"
+
           (cd "$RUNNER_TEMP" && zip -qry comical-unsigned.ipa Payload)
 
       # Simulator artifacts need NO code signing at all (unlike the device path above, which

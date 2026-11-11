@@ -19,6 +19,7 @@ import { Platform } from 'react-native';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import * as api from '../api';
 import { autoDownloadNewChapters } from '../downloads/auto';
+import { publishHomeWidgets } from '../home-widgets/publish';
 import { isMockActive } from '../mock';
 import { syncAppBadge } from './app-badge';
 import { feedCounts } from './feed-counts';
@@ -45,7 +46,7 @@ if (isNative) {
 }
 
 /**
- * One background pass: scan → notify → badge. Exported for testing/manual trigger.
+ * One background pass: scan → notify → badge → widgets. Exported for testing/manual trigger.
  *
  * A headless launch does NOT mount `_layout.tsx`, so the transport must be bootstrapped here —
  * `startEmbeddedRuntime()` is idempotent and installs whichever transport the user configured
@@ -66,6 +67,8 @@ export async function runChapterCheck(): Promise<BackgroundTask.BackgroundTaskRe
     // Same whole-feed unread count as the tab pip, so the icon and the in-app badge always agree.
     const { unread } = await api.getActivityCount({ caughtUpOnly: prefs.caughtUpOnly });
     syncAppBadge(unread);
+    // Ahead of the downloads, which may use up what is left of the window.
+    await publishHomeWidgets();
     await autoDownloadNewChapters(false);
 
     return BackgroundTask.BackgroundTaskResult.Success;

@@ -20,6 +20,12 @@ export function knownBridges(installed: Bridge[], missing: MissingBridge[]): Map
   return known;
 }
 
+/** `items` minus those of an NSFW bridge. The ITEM's bridge decides, since the lists this is for
+ *  span bridges. One `known` has nothing on is kept — see `useVisibleByBridge`. */
+export function withoutNsfw<T extends { bridgeId: string }>(items: T[], known: Map<string, Bridge>): T[] {
+  return items.filter((i) => !known.get(i.bridgeId)?.nsfw);
+}
+
 /** The bridge a request is to — `/bridges/<id>/…` — if it is one. */
 export function bridgeIdOfRequest(path: string): string | undefined {
   const m = /^\/bridges\/([^/?#]+)/.exec(path);

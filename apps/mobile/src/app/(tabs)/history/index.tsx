@@ -21,7 +21,7 @@ import {
   useZoomSurfaceKey,
   ZoomSurfaceContext,
 } from '@/lib/series-zoom';
-import { encodeSeriesParam } from '@/lib/series-nav';
+import { historyResumeParams, seriesDetailParams } from '@/lib/series-links';
 import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
 import { RetryBlock } from '@/components/retry-block';
 import { RowHairline } from '@/components/row-hairline';
@@ -43,6 +43,7 @@ import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
+import { historyProgress, historySub } from '@/lib/history-sub';
 import { relTime } from '@/lib/rel-time';
 import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
 import { ROW_REORDER_TRANSITION, useRowTransition } from '@/lib/row-motion';
@@ -143,39 +144,20 @@ export default function HistoryScreen() {
   const openDetail = (h: HistoryEntry, zoomId: string | null) => {
     router.push({
       pathname: '/series',
-      params: withZoomSource(
-        {
-          id: h.seriesId,
-          title: h.title,
-          bridge: encodeSeriesParam(nameOf(h.bridgeId)),
-          bridgeId: h.bridgeId,
-          ...(h.thumbnailUrl ? { cover: encodeSeriesParam(h.thumbnailUrl) } : {}),
-          ...(directOf(h.bridgeId) ? { direct: '1' } : {}),
-        },
-        zoomId,
-      ),
+      params: withZoomSource(seriesDetailParams(h, { name: nameOf(h.bridgeId), direct: directOf(h.bridgeId) }), zoomId),
     });
   };
 
+  // A row is a "carry on reading" action, so it opens the series page straight into the READER
+  // — a swipe up brings the details in, and the whole thing collapses back into this row's
+  // thumbnail.
   const resume = (h: HistoryEntry, zoomId: string | null) => {
-    const isDirect = h.chapterId === DIRECT_CHAPTER_ID || !h.chapterId;
-    // A row is a "carry on reading" action, so it opens the series page straight into the READER
-    // — a swipe up brings the details in, and the whole thing collapses back into this row's
-    // thumbnail. The read position is passed explicitly (this row already knows it), which is also
-    // what lets that screen request the page ahead of the series detail.
     router.push({
       pathname: '/series',
       params: withZoomSource(
         {
-          id: h.seriesId,
-          title: h.title,
-          bridge: encodeSeriesParam(nameOf(h.bridgeId)),
-          bridgeId: h.bridgeId,
-          reader: '1',
-          start: String(h.lastPage ?? 0),
-          ...(h.thumbnailUrl ? { cover: encodeSeriesParam(h.thumbnailUrl) } : {}),
+          ...historyResumeParams(h, nameOf(h.bridgeId)),
           ...(zoomId && h.thumbnailUrl ? { zoomFrom: 'cover' } : {}),
-          ...(isDirect ? { direct: '1' } : { chapterId: h.chapterId!, chapterName: h.chapterName ?? '' }),
         },
         zoomId,
       ),
@@ -300,7 +282,7 @@ function HistoryItem({
 }) {
   // The row's bar: pages seen of the chapter being read. A page count the reader hasn't learned
   // yet (or a direct read, which has no chapter) leaves it off.
-  const progress = item.lastPage !== undefined && item.pageCount ? (item.lastPage + 1) / item.pageCount : undefined;
+  const progress = historyProgress(item);
   // The series standing takes the time with it onto a second line; without one the time stays on
   // the first, as it always has. On desktop the time is the row's own column (`when`), so neither
   // line carries it, and the page reads as words rather than a fraction.
@@ -388,26 +370,6 @@ function HistoryItem({
       <RowHairline />
     </>
   );
-}
-
-/**
- * Build the row's secondary line: `chapter · X / N · when`, omitting absent parts. `long` spells the
- * page out (`Page X of N`) for a row with the width for it.
- */
-function historySub(h: HistoryEntry, { withTime, long }: { withTime: boolean; long: boolean }): string {
-  const isDirect = h.chapterId === DIRECT_CHAPTER_ID;
-  const chapter = !isDirect && h.chapterName ? h.chapterName : '';
-  const page =
-    h.lastPage === undefined
-      ? ''
-      : long
-        ? h.pageCount
-          ? `Page ${h.lastPage + 1} of ${h.pageCount}`
-          : `Page ${h.lastPage + 1}`
-        : h.pageCount
-          ? `${h.lastPage + 1} / ${h.pageCount}`
-          : `${h.lastPage + 1}`;
-  return [chapter, page, withTime ? relTime(h.lastReadAt) : ''].filter(Boolean).join('  ·  ');
 }
 
 const styles = StyleSheet.create({

@@ -360,8 +360,11 @@ whoever wants a shell after a lull rather than on every PR. If it starts to bite
 scheduled run on `main` often enough to stay inside the eviction window (twice weekly is plenty),
 not a wider trigger.
 
-Constraint: avoid entitlements a free Apple ID can't grant (push, certain App Groups) for
-now. A future TestFlight/App Store path can be added as an extra `eas.json` profile + signed
+Constraint: avoid entitlements a free Apple ID can't grant (push) for now. The one entitlement
+the IPA carries is the App Group the app shares with its home-screen widgets, which a free account
+can register; the packaging step ad-hoc signs it into the app and the widget extension, since a
+signer reads what to register off the binary's signature (see AGENTS.md → "Home-screen widgets").
+The widget extension is one more App ID out of the ten a free account may register in a week. A future TestFlight/App Store path can be added as an extra `eas.json` profile + signed
 CI job without reworking the pipeline.
 
 ## Crash monitoring & Sentry autofix

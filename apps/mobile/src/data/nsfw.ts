@@ -18,7 +18,7 @@
 import { AppState } from 'react-native';
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
-import { persisted$ } from '@/lib/observable';
+import { persisted$, whenPersistLoaded } from '@/lib/observable';
 
 export type NsfwMode = 'off' | 'on' | 'until-background' | 'until-restart';
 type DurableNsfwMode = 'off' | 'on';
@@ -88,6 +88,17 @@ export function toggleNsfwSession(until: SessionNsfwMode): 'enabled' | 'reverted
     return durable === 'off' ? 'reverted' : 'already-visible';
   }
   return 'already-visible';
+}
+
+/**
+ * Whether the STORED choice hides NSFW, for what is drawn outside the app and outlives the session
+ * (the home-screen widgets): a session override shows NSFW until the app is left, and a widget is
+ * what is on screen once it has been. Waits for the stored value, since the task that asks may run
+ * before any screen has.
+ */
+export async function hidesNsfwDurably(): Promise<boolean> {
+  await whenPersistLoaded(durableNsfw$);
+  return durableNsfw$.peek() === 'off';
 }
 
 /** True whenever NSFW-flagged bridges/content should stay hidden — every screen

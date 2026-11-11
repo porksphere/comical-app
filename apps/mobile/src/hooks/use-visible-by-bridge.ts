@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { withoutNsfw } from '@/data/known-bridges';
 import { useHideNsfw } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 
@@ -27,7 +28,6 @@ export function useVisibleByBridge<T extends { bridgeId: string }>(items: T[] | 
   const { knownById } = useBridgeMap();
   return useMemo(() => {
     if (!items) return [];
-    if (!hideNsfw) return items;
-    return items.filter((i) => !knownById.get(i.bridgeId)?.nsfw);
+    return hideNsfw ? withoutNsfw(items, knownById) : items;
   }, [items, hideNsfw, knownById]);
 }
