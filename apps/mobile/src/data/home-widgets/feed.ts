@@ -4,6 +4,8 @@
  * link it is handed, so everything a row says, and where it goes, is decided here from the same
  * helpers the tabs' own rows use.
  *
+ * The file's format is a contract with native code on each platform: `docs/WIDGETS.md`.
+ *
  * Free of react-native imports so it can be tested; `./publish.ts` does the fetching and writing.
  */
 import { sha256 } from '@noble/hashes/sha2.js';

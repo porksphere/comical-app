@@ -1014,6 +1014,8 @@ is the History tab's newest rows and New Chapters the Activity tab's unread ones
 home-screen sizes. A widget is another process and can read nothing of the app's but the App Group
 folder the two share, so the app leaves the feed there (`data/home-widgets/`, through the local
 module `modules/home-widgets`): `snapshot.json` and a `covers` folder beside it.
+`docs/WIDGETS.md` is the contract: the feed's format, what each widget shows at each size, and
+how Android would be built to the same one. A change to either goes there too.
 
 **The widget decides nothing.** A row's text and the link a tap opens are worked out in the app,
 from the helpers the tabs' own rows use (`lib/series-links.ts`, `lib/history-sub.ts`,
