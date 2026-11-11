@@ -189,27 +189,35 @@ private struct CoverArt: View {
           ProgressBar(value: progress)
         }
       }
+      .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
       .overlay(alignment: .topTrailing) {
         if let badge {
-          CoverBadge(text: badge).padding(4)
+          CoverBadge(text: badge, ringed: true).offset(x: 6, y: -6)
         }
       }
-      .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
   }
 }
 
 /// The app's unread pill, as a library card wears it (`UnreadBadge` in components/card-badge.tsx).
 private struct CoverBadge: View {
   let text: String
+  /// For a pill hung off its cover's corner: a ring in the widget's own colour parts it from the
+  /// cover's edge.
+  var ringed = false
 
   var body: some View {
-    Text(text)
+    let pill = Text(text)
       .font(.system(size: 11, weight: .bold))
       .foregroundStyle(Color.white)
       .padding(.horizontal, 6)
       .padding(.vertical, 1)
       .frame(minWidth: 18)
       .background(Capsule().fill(Self.fill))
+    if ringed {
+      pill.padding(1.5).background(Capsule().fill(.background))
+    } else {
+      pill
+    }
   }
 
   private static let fill = Color(red: 0x25 / 255.0, green: 0x63 / 255.0, blue: 0xEB / 255.0)

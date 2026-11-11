@@ -73,8 +73,8 @@ export function HistoryRow({
   actions: RowAction[];
   /** Render at reduced opacity (an already-read activity item). */
   dimmed?: boolean;
-  /** How many chapters are unread (an activity item): the library card's count pill, on the
-   *  thumbnail's corner. */
+  /** How many chapters are unread (an activity item): the library card's count pill, hung off
+   *  the thumbnail's corner the way an app icon wears its badge. */
   unread?: number;
   /** A second secondary line under `sub` (History's series standing + time). */
   detail?: string;
@@ -144,7 +144,7 @@ export function HistoryRow({
             </View>
           )}
           {unread !== undefined && (
-            <View style={styles.unread} testID={testId(base, 'unread')}>
+            <View style={[styles.unread, { backgroundColor: theme.background }]} testID={testId(base, 'unread')}>
               <UnreadBadge count={unread} />
             </View>
           )}
@@ -211,6 +211,7 @@ const THUMB_W = 46;
 /** Desktop: the row has the width for a cover one can actually recognise. */
 const THUMB_W_DESKTOP = 72;
 const THUMB_RADIUS = 6;
+const UNREAD_OVERHANG = 6;
 
 const styles = StyleSheet.create({
   row: {
@@ -307,10 +308,13 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     gap: Spacing.half,
   },
+  // A ring in the page's colour parts the pill from the cover's edge where it crosses it.
   unread: {
     position: 'absolute',
-    top: 3,
-    right: 3,
+    top: -UNREAD_OVERHANG,
+    right: -UNREAD_OVERHANG,
+    padding: 1.5,
+    borderRadius: 999,
   },
   sub: {
     // Slightly tighter than the title→sub default so the row stays compact.

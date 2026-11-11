@@ -47,6 +47,9 @@ private val STRIP_SLOTS = 4
 private val STRIP_GAP = 8.dp
 /** The two lines of text under a strip's cover. */
 private val STRIP_TEXT = 34.dp
+/** How far a strip's badge hangs off its cover's corner. A widget draws nothing outside a view,
+ *  so the cover is set in from a box this much larger and the badge sits in that box's corner. */
+private val BADGE_OVERHANG = 6.dp
 private val LIST_ROWS = 5
 private val LIST_HEADING = 22.dp
 private val LIST_ROW = 53.dp
@@ -115,14 +118,33 @@ private fun Feature(row: FeedRow) {
 @Composable
 private fun Strip(rows: List<FeedRow>, width: Dp, height: Dp) {
   val slot = (width - MARGIN * 2 - STRIP_GAP * (STRIP_SLOTS - 1)) / STRIP_SLOTS
-  val coverHeight = min(slot * 1.5f, height - MARGIN * 2 - STRIP_TEXT)
+  val overhang = if (rows.any { it.item.badge != null }) BADGE_OVERHANG else 0.dp
+  val coverHeight = min((slot - overhang) * 1.5f, height - MARGIN * 2 - STRIP_TEXT - overhang)
+  val coverWidth = coverHeight / 1.5f
   val context = LocalContext.current
   Surface {
     Row(modifier = GlanceModifier.fillMaxSize()) {
       rows.forEachIndexed { index, row ->
         if (index > 0) Spacer(GlanceModifier.width(STRIP_GAP))
         Column(modifier = GlanceModifier.width(slot).clickable(open(context, row.item.url))) {
-          Cover(row, coverHeight / 1.5f, coverHeight, badge = row.item.badge)
+          Box(
+            modifier = GlanceModifier.size(coverWidth + overhang, coverHeight + overhang),
+            contentAlignment = Alignment.BottomStart,
+          ) {
+            Cover(row, coverWidth, coverHeight)
+            if (row.item.badge != null) {
+              Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
+                Box(
+                  modifier = GlanceModifier
+                    .background(GlanceTheme.colors.widgetBackground)
+                    .cornerRadius(11.dp)
+                    .padding(1.5.dp),
+                ) {
+                  Badge(row.item.badge)
+                }
+              }
+            }
+          }
           Spacer(GlanceModifier.height(3.dp))
           Text(
             text = row.item.title,
@@ -227,7 +249,7 @@ private fun Surface(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Cover(row: FeedRow, width: Dp, height: Dp, badge: String? = null) {
+private fun Cover(row: FeedRow, width: Dp, height: Dp) {
   Box(
     modifier = GlanceModifier
       .size(width, height)
@@ -251,11 +273,6 @@ private fun Cover(row: FeedRow, width: Dp, height: Dp, badge: String? = null) {
     if (row.item.progress != null) {
       Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.BottomStart) {
         ProgressBar(row.item.progress)
-      }
-    }
-    if (badge != null) {
-      Box(modifier = GlanceModifier.fillMaxSize().padding(4.dp), contentAlignment = Alignment.TopEnd) {
-        Badge(badge)
       }
     }
   }

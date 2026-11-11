@@ -130,9 +130,11 @@ while under 250dp tall, List beyond that.
 - **List** (the large size): the widget's name as a heading, then up to five rows of a small
   cover, the title over `detail`, and the row's age at the trailing edge. Each row is a tap target.
 
-In Feature and Strip, a row with a `badge` wears it in its cover's top trailing corner: the app's
-unread pill, as a library card and an Activity row wear it (`UnreadBadge` in
-`components/card-badge.tsx`), `#2563eb` with the count in white. The List draws none.
+In Feature and Strip, a row with a `badge` wears it at its cover's top trailing corner: the app's
+unread pill (`UnreadBadge` in `components/card-badge.tsx`), `#2563eb` with the count in white. In
+Strip it hangs off the corner, half out of the cover, with a thin ring in the widget's background
+colour, as an Activity row's does in the app. In Feature the cover is the whole widget, so the pill
+sits inside its corner. The List draws none.
 
 In every layout:
 
