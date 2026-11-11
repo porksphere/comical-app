@@ -11,6 +11,8 @@ struct FeedItem: Decodable, Identifiable {
   let cover: String?
   /// Pages seen of the chapter being read, 0 to 1.
   let progress: Double?
+  /// A mark that the row holds something new: how many, or empty for a bare dot.
+  let badge: String?
   let url: String
 
   var destination: URL { URL(string: url) ?? Feed.appURL }

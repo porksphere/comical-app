@@ -83,8 +83,13 @@ describe('activityRows', () => {
       true,
     );
     expect(rest).toEqual([]);
-    expect(row).toMatchObject({ id: 'safe:s1', detail: '2 new chapters', at: 3000 });
+    expect(row).toMatchObject({ id: 'safe:s1', detail: '2 new chapters', at: 3000, badge: '2' });
     expect(paramsOf(row!.url)).toMatchObject({ reader: '1', chapterId: 'c3', chapterName: 'Chapter 3', start: '0', picked: '1' });
+  });
+
+  test('one new chapter is a bare dot, and History rows carry no badge', () => {
+    expect(activityRows([found()], known, true)[0]!.badge).toBe('');
+    expect(historyRows([read()], known, true)[0]).not.toHaveProperty('badge');
   });
 
   test('only rows with something left to read are shown', () => {

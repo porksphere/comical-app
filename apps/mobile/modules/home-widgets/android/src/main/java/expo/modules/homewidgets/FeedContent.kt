@@ -51,6 +51,8 @@ private val LIST_ROWS = 5
 private val LIST_HEADING = 22.dp
 private val LIST_ROW = 53.dp
 private val WHITE = ColorProvider(Color.White)
+/** The app's accent. */
+private val ACCENT = ColorProvider(Color(0xFF3478F6))
 
 /** The three layouts of docs/WIDGETS.md, chosen from the room the widget has been given. */
 @Composable
@@ -102,6 +104,11 @@ private fun Feature(row: FeedRow) {
         ProgressBar(row.item.progress)
       }
     }
+    if (row.item.badge != null) {
+      Box(modifier = GlanceModifier.fillMaxSize().padding(MARGIN), contentAlignment = Alignment.TopEnd) {
+        Badge(row.item.badge)
+      }
+    }
   }
 }
 
@@ -115,7 +122,7 @@ private fun Strip(rows: List<FeedRow>, width: Dp, height: Dp) {
       rows.forEachIndexed { index, row ->
         if (index > 0) Spacer(GlanceModifier.width(STRIP_GAP))
         Column(modifier = GlanceModifier.width(slot).clickable(open(context, row.item.url))) {
-          Cover(row, coverHeight / 1.5f, coverHeight)
+          Cover(row, coverHeight / 1.5f, coverHeight, badge = row.item.badge)
           Spacer(GlanceModifier.height(3.dp))
           Text(
             text = row.item.title,
@@ -220,7 +227,7 @@ private fun Surface(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Cover(row: FeedRow, width: Dp, height: Dp) {
+private fun Cover(row: FeedRow, width: Dp, height: Dp, badge: String? = null) {
   Box(
     modifier = GlanceModifier
       .size(width, height)
@@ -246,6 +253,25 @@ private fun Cover(row: FeedRow, width: Dp, height: Dp) {
         ProgressBar(row.item.progress)
       }
     }
+    if (badge != null) {
+      Box(modifier = GlanceModifier.fillMaxSize().padding(4.dp), contentAlignment = Alignment.TopEnd) {
+        Badge(badge)
+      }
+    }
+  }
+}
+
+@Composable
+private fun Badge(text: String) {
+  if (text.isEmpty()) {
+    Box(modifier = GlanceModifier.size(10.dp).cornerRadius(5.dp).background(ACCENT)) {}
+  } else {
+    Text(
+      text = text,
+      modifier = GlanceModifier.background(ACCENT).cornerRadius(9.dp).padding(horizontal = 5.dp, vertical = 1.dp),
+      style = TextStyle(color = WHITE, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+      maxLines = 1,
+    )
   }
 }
 

@@ -15,6 +15,7 @@ internal class FeedItem(
   val at: Long,
   val cover: String?,
   val progress: Float?,
+  val badge: String?,
   val url: String,
 )
 
@@ -81,6 +82,7 @@ internal object WidgetStore {
           at = row.getLong("at"),
           cover = if (row.has("cover")) row.getString("cover") else null,
           progress = if (row.has("progress")) row.getDouble("progress").toFloat() else null,
+          badge = if (row.has("badge")) row.getString("badge") else null,
           url = row.getString("url"),
         )
       }

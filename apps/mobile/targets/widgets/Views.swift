@@ -45,8 +45,13 @@ private struct FeatureView: View {
           .padding(.top, 4)
       }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
     .foregroundStyle(Color.white)
+    .overlay(alignment: .topTrailing) {
+      if let badge = item.badge {
+        CoverBadge(text: badge)
+      }
+    }
     .containerBackground(for: .widget) {
       ZStack {
         Color(white: 0.1)
@@ -73,7 +78,7 @@ private struct CoverStripView: View {
       ForEach(items) { item in
         Link(destination: item.destination) {
           VStack(alignment: .leading, spacing: 3) {
-            CoverArt(item: item)
+            CoverArt(item: item, badge: item.badge)
             Text(item.title)
               .font(.caption2.weight(.medium))
               .foregroundStyle(Color.primary)
@@ -165,6 +170,7 @@ private struct EmptyFeedView: View {
 /// A cover at a book's shape, as large as the space it is given allows.
 private struct CoverArt: View {
   let item: FeedItem
+  var badge: String? = nil
 
   var body: some View {
     Color.gray.opacity(0.25)
@@ -183,8 +189,37 @@ private struct CoverArt: View {
           ProgressBar(value: progress)
         }
       }
+      .overlay(alignment: .topTrailing) {
+        if let badge {
+          CoverBadge(text: badge).padding(4)
+        }
+      }
       .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
   }
+}
+
+/// The app's accent, outlined in white so it stands off any cover.
+private struct CoverBadge: View {
+  let text: String
+
+  var body: some View {
+    if text.isEmpty {
+      Circle()
+        .fill(Self.accent)
+        .frame(width: 10, height: 10)
+        .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+    } else {
+      Text(text)
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 5)
+        .frame(minWidth: 17, minHeight: 17)
+        .background(Capsule().fill(Self.accent))
+        .overlay(Capsule().stroke(Color.white, lineWidth: 1.5))
+    }
+  }
+
+  private static let accent = Color(red: 0x34 / 255.0, green: 0x78 / 255.0, blue: 0xF6 / 255.0)
 }
 
 private struct ProgressBar: View {
