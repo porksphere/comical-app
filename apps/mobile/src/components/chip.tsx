@@ -72,26 +72,29 @@ export function Chip({
  */
 const chipKey = (label: string, index: number) => `${index}:${label}`;
 
-/** Wraps a tappable chip (an actionable tag, or the "+N more" expander) with
- *  press + hover feedback — a plain `Chip` has none, since most chips are
- *  static. One instance per chip so each gets its own `useHovered` (chips are
- *  rendered from a `.map`, where a hook can't be called directly). Renders the
- *  `Chip` itself (rather than taking it as `children`) so hover can brighten
- *  its fill directly — the same "lighten, don't dim" treatment as the chapter
- *  tab strip — instead of dimming the whole chip via opacity. */
-function PressableChip({
+/** Wraps a tappable chip (an actionable tag, or a "+N more" expander — the series page's tag groups,
+ *  chapter list and page grid all expand from one) with press + hover feedback — a plain `Chip` has
+ *  none, since most chips are static. One instance per chip so each gets its own `useHovered` (chips
+ *  are rendered from a `.map`, where a hook can't be called directly). Renders the `Chip` itself
+ *  (rather than taking it as `children`) so hover can brighten its fill directly — the same "lighten,
+ *  don't dim" treatment as the chapter tab strip — instead of dimming the whole chip via opacity. */
+export function PressableChip({
   label,
   accent,
   color,
   onPress,
   accessibilityLabel,
+  hitSlop,
   testID,
 }: {
   label: string;
   accent?: boolean;
   color?: TagColor;
   onPress: () => void;
-  accessibilityLabel: string;
+  /** Read out instead of the label. Leave it off where an e2e flow selects the chip by its testID:
+   *  on web an aria-label takes the testID's place as the id the flows select by. */
+  accessibilityLabel?: string;
+  hitSlop?: number;
   /** Automation selector (see src/lib/test-id.ts). */
   testID: string;
 }) {
@@ -102,6 +105,7 @@ function PressableChip({
       onPress={onPress}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
+      hitSlop={hitSlop}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => pressed && styles.chipPressed}>

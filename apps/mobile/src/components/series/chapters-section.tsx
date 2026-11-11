@@ -1,4 +1,4 @@
-import type { LegendListRef } from '@legendapp/list/react-native';
+import { useIsLastItem, type LegendListRef } from '@legendapp/list/react-native';
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
 import { GestureDetector, type LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
@@ -30,6 +30,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
 import { SavedBadge } from '@/components/card-badge';
+import { PressableChip } from '@/components/chip';
 import { openCollectionPicker } from '@/components/collection-picker';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
@@ -44,6 +45,7 @@ import {
   TrashIcon,
 } from '@/components/icons/ui-icons';
 import { OVERFLOW_MENU, OverflowMenu } from '@/components/overflow-menu';
+import { SectionHeadContent, sectionHeadHeight } from '@/components/rail';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { coverRingColor, coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
@@ -58,7 +60,7 @@ import { useSideInsets } from '@/hooks/use-content-width';
 import { useHovered } from '@/hooks/use-hovered';
 import { useListLayout } from '@/hooks/use-list-layout';
 import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
-import { sizeClassFor } from '@/hooks/use-responsive';
+import { sizeClassFor, useCompactType } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
 import {
@@ -105,24 +107,17 @@ const TABS: { id: Tab; label: string }[] = [
 // to the other. Two highlighted-arrow segments used to stand for this, and read as two mystery
 // buttons: an arrow alone doesn't say whether it's the order you have or the one you'd get.
 const SORT_LABEL = { desc: 'Newest first', asc: 'Oldest first' } as const;
-// How a chapter row is drawn, kept flippable while the forms are tried against each other on a
-// device. `bubble` is the filled, bordered, rounded card each row was originally; `plate` is that
-// card without its hairline — the fill alone, the grouped-cell look; `outline` is the hairline
-// alone on the page background; `flat` is the look every other list in the app has — full-width
-// rows parted by a hairline inset to the text gutter (History, Downloads, Settings). Flip this,
-// nothing else.
-const CHAPTER_ROWS = 'plate' as 'flat' | 'bubble' | 'plate' | 'outline';
-const FLAT_ROWS = CHAPTER_ROWS === 'flat';
-// A filled row keeps its greyed title for read state, since a dimmed plate reads as disabled rather
-// than as read; the unfilled forms dim as a whole instead.
-const PLATED_ROWS = CHAPTER_ROWS === 'bubble' || CHAPTER_ROWS === 'plate';
+// A chapter row's text sits on the page's text edge, under the heading and the meta labels; its hover
+// fill reaches this far past that edge on each side, so the fill has room without moving the text.
+const ROW_BLEED = Spacing.two;
+const ROW_HEIGHT = 44;
+const ROW_RADIUS = 8;
 
 function NoHold({ children }: Parameters<typeof HoldMenu>[0]) {
   return children({});
 }
 // Where a chapter's actions sit behind its ⋮, holding the row opens nothing.
 const RowHold = OVERFLOW_MENU ? NoHold : HoldMenu;
-const BORDERED_ROWS = CHAPTER_ROWS === 'bubble' || CHAPTER_ROWS === 'outline';
 // A long tab collapses to a configurable number of chapters from the start and the
 // end, with an expand button between them for the hidden middle.
 const COLLAPSED_HEAD_COUNT = 5;
@@ -134,20 +129,44 @@ const TAB_GAP = 4;
 // toggle) reads as one consistent height.
 const CONTROLS_HEIGHT = 32;
 
+/** "Chapters" and "Pages", in the related rails' own heading type and line box, so every section
+ *  heading on the series page is one family. */
+function SectionTitle({ title, style }: { title: string; style?: StyleProp<ViewStyle> }) {
+  const compact = useCompactType();
+  return (
+    <View style={[styles.sectionTitle, { minHeight: sectionHeadHeight(compact) }, style]}>
+      <SectionHeadContent title={title} />
+    </View>
+  );
+}
+
+/** The hairline under a chapter-list row, across the column. Absolutely placed for the reason
+ *  `RowHairline` gives; unlike that one it stops at the column, and it stays on a desktop, where it
+ *  carries the eye across a row as wide as the window to the date at its far end. */
+function ChapterDivider() {
+  const theme = useTheme();
+  const isLast = useIsLastItem();
+  return isLast ? null : <View style={[styles.rowDivider, { backgroundColor: theme.hairline }]} />;
+}
+
+const SKELETON_NAME_WIDTHS = ['38%', '30%', '34%', '28%', '36%', '32%'] as const;
+
 /** Chapter-list placeholder shown while the deferred chapter fetch is in flight
  *  (getSeriesList). Header + a few skeleton rows, so the section holds its place
  *  instead of popping in when the ~200ms /chapters request lands. */
 function ChapterListSkeleton() {
+  const theme = useTheme();
   return (
-    <View style={styles.section}>
-      <View style={styles.head}>
-        <ThemedText type="subtitle" style={styles.headTitle}>
-          Chapters
-        </ThemedText>
-      </View>
-      <View style={styles.skelRows}>
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} style={styles.skelChapterRow} />
+    <View style={[styles.section, styles.sectionBreak]}>
+      <SectionTitle title="Chapters" />
+      <View>
+        {SKELETON_NAME_WIDTHS.map((w, i) => (
+          <View
+            key={i}
+            style={[styles.skelRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.hairline }]}>
+            <Skeleton style={[styles.skelName, { width: w }]} />
+            <Skeleton style={styles.skelDate} />
+          </View>
         ))}
       </View>
     </View>
@@ -175,9 +194,7 @@ function PageGridSkeleton() {
   const cols = pageGridCols(useSeriesContentWidth());
   return (
     <View style={styles.section}>
-      <ThemedText type="subtitle" style={styles.headTitle}>
-        Pages
-      </ThemedText>
+      <SectionTitle title="Pages" />
       <View style={styles.skelTileRow}>
         {Array.from({ length: cols }).map((_, i) => (
           <View key={i} style={styles.skelTile}>
@@ -243,7 +260,7 @@ function Segmented<T extends string>({
           style={[
             styles.tabPill,
             {
-              backgroundColor: theme.accent,
+              backgroundColor: theme.chipFill,
               left: activeBox.x,
               width: activeBox.width,
             },
@@ -308,7 +325,7 @@ function SegmentButton({
   );
 }
 
-/** The chapter order toggle: a square button beside the tab strip, at the strip's height, holding
+/** The chapter order toggle: a round button beside the tab strip, at the strip's height, holding
  *  ONE arrow that turns over to point the way the list now runs — down for newest-first, up for
  *  oldest-first. (Two side-by-side arrows with one highlighted were the previous form; an arrow
  *  alone never said whether it was the order you had or the one you would get, and the highlight
@@ -337,7 +354,7 @@ function SortToggle({ asc, onToggle }: { asc: boolean; onToggle: () => void }) {
         type="backgroundElement"
         style={[styles.sortToggle, hovered && { backgroundColor: theme.backgroundSelected }]}>
         <Animated.View style={arrowStyle}>
-          <ArrowDownIcon color={theme.textSecondary} size={16} />
+          <ArrowDownIcon color={theme.text} size={16} />
         </Animated.View>
       </ThemedView>
     </Pressable>
@@ -393,7 +410,18 @@ export function Disclosure({ open, children }: { open: boolean; children: ReactN
 /** One expanded scanlator/language version row under a chapter. Its own
  *  component (rather than raw `Pressable` inside `group.versions.map`) so
  *  each row gets its own `useHovered` call. */
-function VersionRow({ v, active, onPress }: { v: Chapter; active: boolean; onPress: () => void }) {
+function VersionRow({
+  v,
+  active,
+  menuSlot,
+  onPress,
+}: {
+  v: Chapter;
+  active: boolean;
+  /** The chapter row carries a ⋮ after its versions slot. */
+  menuSlot: boolean;
+  onPress: () => void;
+}) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
@@ -405,7 +433,7 @@ function VersionRow({ v, active, onPress }: { v: Chapter; active: boolean; onPre
       style={({ pressed }) => [
         styles.versionRow,
         pressed && styles.rowPressed,
-        hovered && { backgroundColor: theme.backgroundSelected },
+        hovered && { backgroundColor: theme.backgroundElement },
       ]}>
       <ThemedText
         type="small"
@@ -421,6 +449,10 @@ function VersionRow({ v, active, onPress }: { v: Chapter; active: boolean; onPre
       <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
         {relativeTime(v.date)}
       </ThemedText>
+      {/* The chapter row's trailing slots, held empty, so a version's date sits in the chapter
+          dates' column. The ⋮ is a slot wide too: it tucks the rest of its box into the row's bleed. */}
+      <View style={styles.versionsSlot} />
+      {menuSlot && <View style={styles.versionsSlot} />}
     </Pressable>
   );
 }
@@ -544,7 +576,6 @@ export function ChapterScrollList({
   const [asc, setAsc] = useState(false);
   // Reveal the collapsed middle portion of the current tab inline.
   const [middleExpanded, setMiddleExpanded] = useState(false);
-  const expandMiddleHover = useHovered();
 
   // Narrow screens can't fit four content-sized tabs + the sort toggle within the content margin
   // (the strip overflowed ~34pt past the right edge). There, the strip fills the row and its tabs
@@ -650,8 +681,8 @@ export function ChapterScrollList({
   // What the rows read besides their group (see AGENTS.md on list rows): without it a download
   // finishing, or a page of one landing, never reached a row already on screen.
   const rowsExtra = useMemo(
-    () => [dl, preferredGroup, offline, missingBridgeName, removed, theme, expandMiddleHover.hovered],
-    [dl, preferredGroup, offline, missingBridgeName, removed, theme, expandMiddleHover.hovered],
+    () => [dl, preferredGroup, offline, missingBridgeName, removed, theme],
+    [dl, preferredGroup, offline, missingBridgeName, removed, theme],
   );
   const chapterMenu = (g: ChapterGroup): MenuRowSpec[] => {
     if (!bridgeId) return [];
@@ -707,10 +738,8 @@ export function ChapterScrollList({
   const chapterControls = loading ? (
     <ChapterListSkeleton />
   ) : hasChapters ? (
-    <View style={[styles.head, styles.chapterControlsHead]}>
-      <ThemedText type="subtitle" style={styles.headTitle}>
-        Chapters
-      </ThemedText>
+    <View style={[styles.head, styles.sectionBreak, styles.chapterControlsHead]}>
+      <SectionTitle title="Chapters" />
       <View style={styles.controls}>
         <Segmented
           options={TABS.map((t) => ({
@@ -721,7 +750,7 @@ export function ChapterScrollList({
               <ThemedText
                 type="small"
                 numberOfLines={1}
-                style={[styles.tabLabel, active ? { color: theme.accentOn } : { color: theme.textSecondary }]}>
+                style={[styles.tabLabel, active ? { color: theme.chipText, fontWeight: '600' } : { color: theme.textSecondary }]}>
                 {t.label}
               </ThemedText>
             ),
@@ -743,31 +772,31 @@ export function ChapterScrollList({
   const renderListItem = (item: ChapterListRow): ReactElement => {
     if (item.type === 'empty') {
       return (
-        <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
+        <ThemedText type="small" themeColor="textSecondary" style={[styles.listItem, styles.empty]}>
           No chapters here.
         </ThemedText>
       );
     }
     if (item.type === 'more') {
       return (
-        <Pressable
-          testID="series.chapters.expand-middle"
-          onPress={() => setMiddleExpanded(true)}
-          onHoverIn={expandMiddleHover.onHoverIn}
-          onHoverOut={expandMiddleHover.onHoverOut}
-          style={[
-            styles.expandMiddle,
-            // Brighten (not dim) on hover — same treatment as the chapter tab strip.
-            expandMiddleHover.hovered && { ...ContinuousCorner, backgroundColor: theme.backgroundSelected, borderRadius: 8 },
-          ]}>
-          <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
-            Show {item.hiddenCount} more chapters
-          </ThemedText>
-        </Pressable>
+        <View style={[styles.listItem, styles.expandMiddle]}>
+          {/* The tag groups' "+N more" chip. No accessibilityLabel: the e2e flows select it by testID. */}
+          <PressableChip
+            testID="series.chapters.expand-middle"
+            label={`+${item.hiddenCount} more`}
+            hitSlop={Spacing.two}
+            onPress={() => setMiddleExpanded(true)}
+          />
+          <ChapterDivider />
+        </View>
       );
     }
-    // Row gap: there's no list container to carry a `gap`, so each row supplies its own spacing.
-    return <View style={FLAT_ROWS ? undefined : styles.chapterRowGap}>{renderRow(item.group)}</View>;
+    return (
+      <View style={styles.listItem}>
+        {renderRow(item.group)}
+        <ChapterDivider />
+      </View>
+    );
   };
 
   // The list header (virtualized path): the series title, the hero/meta (from series.tsx), then the
@@ -800,7 +829,7 @@ export function ChapterScrollList({
       // state-reset dance the page grid pays for — plain windowing already drops the mount count
       // from "all N" to the visible handful.
       getItemType={(item) => item.type}
-      estimatedItemSize={46}
+      estimatedItemSize={ROW_HEIGHT}
       ListHeaderComponent={listHeader}
       ListFooterComponent={
         footer ? (
@@ -813,9 +842,12 @@ export function ChapterScrollList({
         paddingTop: topInset + BarContentGap,
         paddingBottom: insets.bottom + Spacing.five,
         // Large screens cap + centre the whole list at MaxTopLevelWidth (via largeSidePad); small
-        // screens just inset by Spacing.four. Either way inside the safe area's sides.
-        paddingLeft: (isLarge ? largeSidePad : Spacing.four) + sides.left,
-        paddingRight: (isLarge ? largeSidePad : Spacing.four) + sides.right,
+        // screens just inset by Spacing.four. Either way inside the safe area's sides. Short of that
+        // by ROW_BLEED, which the header, footer and every item pad back: the web item container
+        // paints only inside its own box (`contain: paint`), so a row's hover fill needs the room
+        // inside the item.
+        paddingLeft: (isLarge ? largeSidePad : Spacing.four) + sides.left - ROW_BLEED,
+        paddingRight: (isLarge ? largeSidePad : Spacing.four) + sides.right - ROW_BLEED,
       }}
       renderItem={({ item }) => renderListItem(item)}
     />
@@ -911,7 +943,7 @@ function ChapterRow({
       {({ onLongPress, onContextMenu }) => (
     // A read chapter dims as a whole, the way a consumed History row does — the unread ones are the
     // list you still have to get through, so they are the ones drawn at full strength.
-    <View style={dimmed || unavailable ? styles.rowDimmed : read && !PLATED_ROWS ? styles.rowRead : undefined}>
+    <View style={dimmed || unavailable ? styles.rowDimmed : read ? styles.rowRead : undefined}>
       {/* Only the row itself lifts on iOS, not the versions list open under it. */}
       {liftTarget(
         <Pressable
@@ -923,18 +955,8 @@ function ChapterRow({
           onHoverIn={rowHover.onHoverIn}
           onHoverOut={rowHover.onHoverOut}
           style={({ pressed }) => pressed && styles.rowPressed}>
-          <ThemedView
-            type={PLATED_ROWS ? 'backgroundElement' : 'background'}
-            style={[
-              styles.row,
-              FLAT_ROWS ? styles.rowFlat : BORDERED_ROWS ? { borderColor: theme.hairline } : styles.rowUnbordered,
-              // Brighten (not dim) on hover — same treatment as the chapter tab strip.
-              rowHover.hovered && { backgroundColor: theme.backgroundSelected },
-            ]}>
-            <ThemedText
-              type="small"
-              numberOfLines={1}
-              style={[styles.rowName, read && PLATED_ROWS && { color: theme.textSecondary }]}>
+          <View style={[styles.row, rowHover.hovered && { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText type="small" numberOfLines={1} style={styles.rowName}>
               {group.name}
             </ThemedText>
             {dlState && (
@@ -973,20 +995,25 @@ function ChapterRow({
                 disabled={dimmed}
               />
             )}
-          </ThemedView>
+          </View>
         </Pressable>,
-        FLAT_ROWS ? 10 : 8,
+        ROW_RADIUS,
       )}
       {multi && (
         <Disclosure open={expanded}>
           <View style={styles.versionList}>
             {group.versions.map((v) => (
-              <VersionRow key={v.id} v={v} active={v.id === def.id} onPress={() => open(v)} />
+              <VersionRow
+                key={v.id}
+                v={v}
+                active={v.id === def.id}
+                menuSlot={OVERFLOW_MENU && !!menu}
+                onPress={() => open(v)}
+              />
             ))}
           </View>
         </Disclosure>
       )}
-      {FLAT_ROWS && <View style={[styles.rowDivider, { backgroundColor: theme.hairline }]} />}
     </View>
       )}
     </RowHold>
@@ -1194,7 +1221,7 @@ function chapterMenuRows(
   return rows;
 }
 
-// Rows of tiles shown before a long page set collapses behind "Show all".
+// Rows of tiles shown before a long page set collapses behind its "+N more" chip.
 const COLLAPSED_ROWS = 4;
 const PAGE_GRID_GAP = Spacing.two;
 /**
@@ -1225,7 +1252,7 @@ type PageRow = { cells: PageCell[] };
  *
  * The collapse is kept (it isn't only about perf): a long grid otherwise pushes
  * the related rails far out of reach, so by default we show the first few rows
- * with a "Show all N pages" button and the rails right below it; tapping it
+ * with a "+N more" chip and the rails right below it; tapping it
  * expands to the full (now virtualized) grid. The old batch-streaming sentinel is
  * gone — virtualization is what makes the expanded set cheap.
  */
@@ -1256,8 +1283,8 @@ export function PageThumbList({
   topInset?: number;
   /** See `ChapterScrollList`. */
   scrollbarInsetTop?: number;
-  /** Related-series rails — the list footer, below the grid and the "Show all"
-   *  button (while collapsed). */
+  /** Related-series rails — the list footer, below the grid and the "+N more"
+   *  chip (while collapsed). */
   footer?: ReactElement | null;
   /** Tapping a page thumbnail is handed HERE — same in-place-reader hand-off as
    *  ChapterScrollList's `onOpenChapter`. On iOS with the tile's zoom source, for the reader to grow
@@ -1271,7 +1298,6 @@ export function PageThumbList({
   const insets = useSafeAreaInsets();
   const rtl = useReadsRightToLeft();
   const [expanded, setExpanded] = useState(false);
-  const showMoreHover = useHovered();
   // Which pages are in a collection, for the tile badge. A direct series' pages are filed under the
   // DIRECT_CHAPTER_ID sentinel, so this is the same per-chapter index set the reader's heart reads
   // (and the picker invalidates) — one query for the grid, never a membership check per tile.
@@ -1305,7 +1331,7 @@ export function PageThumbList({
   const fadeHeight = Math.round(slotHeightPx * 0.6);
 
   const collapsedCount = cols * COLLAPSED_ROWS;
-  // Only collapse behind "Show all" when there's a footer (related rails, or
+  // Only collapse behind "+N more" when there's a footer (related rails, or
   // its loading skeleton) worth keeping reachable — that's the entire reason
   // this gate exists. A series with nothing below the grid has nothing to
   // protect, so just render the full (already-virtualized) list directly.
@@ -1364,9 +1390,7 @@ export function PageThumbList({
           ) : (
             // marginBottom reinstates the title→grid gap the old `section` gap gave
             // (the list's items start immediately after this header otherwise).
-            <ThemedText type="subtitle" style={[styles.headTitle, styles.pagesHeading]}>
-              Pages
-            </ThemedText>
+            <SectionTitle title="Pages" style={styles.pagesHeading} />
           )}
         </View>
       }
@@ -1374,31 +1398,19 @@ export function PageThumbList({
         <View style={styles.pageFooter}>
           {collapsed && (
             // Overlaps the last visible row (negative top margin) with a gradient
-            // that fades it out under the centered "Show all" button — the old
+            // that fades it out under the centered "+N more" chip — the old
             // `.page-thumbs-more` overlay, reproduced in the list footer.
             // The prop, not the style: RN-web writes a style `box-none` straight into CSS, which has no
             // such value, so the overlay swallowed every press (and hit test) over the faded row.
             <View pointerEvents="box-none" style={[styles.moreOverlay, { height: fadeHeight, marginTop: -fadeHeight }]}>
               <GradientFade color={theme.background} />
-              <Pressable
+              <PressableChip
                 testID="series.pages.show-all"
+                label={`+${thumbs.length - collapsedCount} more`}
+                accessibilityLabel={`Show all ${thumbs.length} pages`}
+                hitSlop={Spacing.two}
                 onPress={() => setExpanded(true)}
-                onHoverIn={showMoreHover.onHoverIn}
-                onHoverOut={showMoreHover.onHoverOut}
-                hitSlop={8}>
-                <ThemedView
-                  type="backgroundElement"
-                  style={[
-                    styles.showMore,
-                    { borderColor: theme.hairline },
-                    // Brighten (not dim) on hover — same treatment as the chapter tab strip.
-                    showMoreHover.hovered && { backgroundColor: theme.backgroundSelected },
-                  ]}>
-                  <ThemedText type="small" style={{ color: theme.accent }}>
-                    Show all {thumbs.length} pages
-                  </ThemedText>
-                </ThemedView>
-              </Pressable>
+              />
             </View>
           )}
           {/* Rails are full-bleed to the capped column — cancel the Spacing.four inset. */}
@@ -1949,7 +1961,7 @@ function useResolvedThumbUrl(url: string, onError?: (message: string) => void): 
 
 /** A gentle vertical transparent→`color` fade over the last collapsed row; only
  *  the very bottom reaches solid (where it meets the page background), so the
- *  "Show all" button floats over the still-visible, fading thumbnails rather than
+ *  "+N more" chip floats over the still-visible, fading thumbnails rather than
  *  a solid block. Mirrors the reference's `.page-thumbs-more`. */
 function GradientFade({ color }: { color: string }) {
   return (
@@ -1972,16 +1984,16 @@ const styles = StyleSheet.create({
   // Series hero/meta + the "Chapters" heading/controls, stacked as the list header.
   listHeader: {
     gap: Spacing.four,
+    paddingHorizontal: ROW_BLEED,
+  },
+  listItem: {
+    paddingHorizontal: ROW_BLEED,
   },
   // Series title — full-width above the two-column hero. Matches series.tsx's own title style.
   seriesTitle: {
     fontSize: 24,
     lineHeight: 30,
     fontWeight: '700',
-  },
-  // Per-row bottom spacing (the old inline list used a container `gap`; a virtualized list can't).
-  chapterRowGap: {
-    marginBottom: Spacing.one,
   },
   // Breathing room below the tab/sort controls before the first chapter row (the header→rows gap is
   // otherwise zero — the rows are list data, not siblings under the head). Mirrors the head's own
@@ -1998,13 +2010,13 @@ const styles = StyleSheet.create({
   // sit further right than the chapter rows. Cancel exactly the rail's own gutter so its first card
   // lines up with the content padding edge, matching the chapter rows.
   chapterFooterSmall: {
-    marginHorizontal: -TopLevelGutter,
+    marginHorizontal: ROW_BLEED - TopLevelGutter,
   },
   // Large screens: the list content is inset by `largeSidePad` (which folds in a Spacing.four gutter
   // on top of the centering pad). A Rail bakes in its OWN gutter, so cancel just that Spacing.four so
   // the rails are full-bleed to the capped column and their first card lines up with the hero edge.
   chapterFooterLarge: {
-    marginHorizontal: -Spacing.four,
+    marginHorizontal: ROW_BLEED - Spacing.four,
   },
   // ── Page-thumbnail list (PageThumbList) ──────────────────────────────────
   pageList: {
@@ -2017,9 +2029,9 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
     paddingTop: Spacing.two,
   },
-  // The collapsed "Show all" overlay: pulled up over the last visible row (height
+  // The collapsed "+N more" overlay: pulled up over the last visible row (height
   // + negative marginTop set inline), the gradient fades that row out and the
-  // button sits centred at the bottom of the fade.
+  // chip sits centred at the bottom of the fade.
   moreOverlay: {
     justifyContent: 'flex-end',
     alignItems: 'center',
@@ -2046,27 +2058,37 @@ const styles = StyleSheet.create({
   head: {
     gap: Spacing.two,
   },
-  headTitle: {
-    // Reference .chapters-head h3: 1.15rem (~18px).
-    fontSize: 18,
-    lineHeight: 24,
+  sectionTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  // Square, at the strip's height and radius, so the row reads as one control.
+  // The list header's gap tops up to the break the related rails get above their headings.
+  sectionBreak: {
+    marginTop: Spacing.five - Spacing.four,
+  },
+  // Round, at the strip's height: every control on the series page is a capsule or a circle. No
+  // ContinuousCorner on these: on web it draws a fully rounded box as a squircle.
   sortToggle: {
     height: CONTROLS_HEIGHT,
     width: CONTROLS_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
-    ...ContinuousCorner,
-    borderRadius: 10,
+    borderRadius: CONTROLS_HEIGHT / 2,
   },
-  skelRows: {
-    gap: Spacing.two,
+  skelRow: {
+    height: ROW_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  skelChapterRow: {
-    height: 44,
-    ...ContinuousCorner,
-    borderRadius: Spacing.two,
+  skelName: {
+    height: 14,
+    borderRadius: 4,
+  },
+  skelDate: {
+    width: 48,
+    height: 12,
+    borderRadius: 4,
   },
   skelTileRow: {
     flexDirection: 'row',
@@ -2098,8 +2120,7 @@ const styles = StyleSheet.create({
     height: CONTROLS_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
-    ...ContinuousCorner,
-    borderRadius: 10,
+    borderRadius: CONTROLS_HEIGHT / 2,
     padding: TAB_PAD,
     gap: TAB_GAP,
   },
@@ -2118,8 +2139,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.one,
-    ...ContinuousCorner,
-    borderRadius: 8,
+    borderRadius: CONTROLS_HEIGHT / 2 - TAB_PAD,
   },
   // Sliding highlight behind the active option (see `Segmented`) — sized to
   // exactly overlay the active option's own rect (same top/bottom inset from
@@ -2133,16 +2153,14 @@ const styles = StyleSheet.create({
     top: TAB_PAD,
     bottom: TAB_PAD,
     left: 0,
-    ...ContinuousCorner,
-    borderRadius: 8,
+    borderRadius: CONTROLS_HEIGHT / 2 - TAB_PAD,
   },
   tab: {
     height: CONTROLS_HEIGHT - TAB_PAD * 2,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.three,
-    ...ContinuousCorner,
-    borderRadius: 8,
+    borderRadius: CONTROLS_HEIGHT / 2 - TAB_PAD,
   },
   tabLabel: {
     // Reference .ch-tab: 0.82rem (~13px). Every tab is sized to its own label
@@ -2155,24 +2173,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.two,
+    minHeight: ROW_HEIGHT,
     paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: ROW_BLEED,
+    marginHorizontal: -ROW_BLEED,
     ...ContinuousCorner,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: ROW_RADIUS,
   },
-  // The flat look: no plate, no border, no corner — the divider below is the row's only edge.
-  rowFlat: {
-    borderWidth: 0,
-    borderRadius: 0,
-  },
-  rowUnbordered: {
-    borderWidth: 0,
-  },
-  // Starts at the text gutter and runs to the right edge — the inset divider every other list uses.
+  // Across the column, as the meta grid's rules are.
   rowDivider: {
+    position: 'absolute',
+    left: ROW_BLEED,
+    right: ROW_BLEED,
+    bottom: 0,
     height: StyleSheet.hairlineWidth,
-    marginLeft: Spacing.three,
   },
   // The same 55% a read History row settles to.
   rowRead: {
@@ -2201,12 +2215,9 @@ const styles = StyleSheet.create({
   rowDimmed: {
     opacity: 0.4,
   },
-  // The versions toggle's column at the row's trailing edge, past the date. Pulled into the row's
-  // side padding so its box sits the same distance from the right edge as from the top and bottom
-  // — the row's vertical padding, not its wider horizontal one.
+  // The versions toggle's column at the row's trailing edge, past the date.
   versionsSlot: {
     width: 20,
-    marginRight: Spacing.two - Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2229,10 +2240,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
   },
-  // The expanded per-version list, indented under its logical-chapter row.
+  // The expanded per-version list, indented under its logical-chapter row's name.
   versionList: {
-    marginTop: Spacing.one,
-    marginLeft: Spacing.four,
+    marginLeft: Spacing.three,
+    paddingBottom: Spacing.two,
     gap: Spacing.one,
   },
   versionRow: {
@@ -2241,7 +2252,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: Spacing.two,
     paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: ROW_BLEED,
+    marginHorizontal: -ROW_BLEED,
+    ...ContinuousCorner,
+    borderRadius: ROW_RADIUS,
   },
   versionLabel: {
     flex: 1,
@@ -2250,25 +2264,12 @@ const styles = StyleSheet.create({
   empty: {
     paddingVertical: Spacing.three,
   },
-  // The middle expand affordance — plain centred accent text (no chrome). The rows above/below carry
-  // their gap as `marginBottom`, so without a matching `marginBottom` here the button would hug the
-  // row below it (4px gap above, 0 below) and read as vertically off-centre between the two rows.
+  // A row of the list in its own right, the chip centred in it.
   expandMiddle: {
+    minHeight: ROW_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.three,
-    marginBottom: Spacing.one,
-  },
-  expandMiddleText: {
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  showMore: {
     paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.four,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
   },
   thumbCorner: {
     ...ContinuousCorner,
