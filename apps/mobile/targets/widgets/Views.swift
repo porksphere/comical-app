@@ -198,28 +198,21 @@ private struct CoverArt: View {
   }
 }
 
-/// The app's accent, outlined in white so it stands off any cover.
+/// The app's unread pill, as a library card wears it (`UnreadBadge` in components/card-badge.tsx).
 private struct CoverBadge: View {
   let text: String
 
   var body: some View {
-    if text.isEmpty {
-      Circle()
-        .fill(Self.accent)
-        .frame(width: 10, height: 10)
-        .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
-    } else {
-      Text(text)
-        .font(.caption2.weight(.bold))
-        .foregroundStyle(Color.white)
-        .padding(.horizontal, 5)
-        .frame(minWidth: 17, minHeight: 17)
-        .background(Capsule().fill(Self.accent))
-        .overlay(Capsule().stroke(Color.white, lineWidth: 1.5))
-    }
+    Text(text)
+      .font(.system(size: 11, weight: .bold))
+      .foregroundStyle(Color.white)
+      .padding(.horizontal, 6)
+      .padding(.vertical, 1)
+      .frame(minWidth: 18)
+      .background(Capsule().fill(Self.fill))
   }
 
-  private static let accent = Color(red: 0x34 / 255.0, green: 0x78 / 255.0, blue: 0xF6 / 255.0)
+  private static let fill = Color(red: 0x25 / 255.0, green: 0x63 / 255.0, blue: 0xEB / 255.0)
 }
 
 private struct ProgressBar: View {

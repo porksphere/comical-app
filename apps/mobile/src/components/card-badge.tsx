@@ -114,7 +114,7 @@ export function SavedBadge({ accessibilityLabel = 'In your library' }: { accessi
   );
 }
 
-function UnreadBadge({ count }: { count: number }) {
+export function UnreadBadge({ count }: { count: number }) {
   const theme = useTheme();
   return (
     <View style={[styles.unread, { backgroundColor: theme.badgeInfo }]}>

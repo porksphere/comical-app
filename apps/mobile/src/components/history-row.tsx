@@ -3,6 +3,7 @@ import type { RefObject } from 'react';
 import { Pressable, StyleSheet, View, type ViewInstance } from 'react-native';
 
 import { ThumbLift } from '@/components/book-chrome';
+import { UnreadBadge } from '@/components/card-badge';
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { liftTarget } from '@/components/system-context-menu';
 import { ThemedText } from '@/components/themed-text';
@@ -72,8 +73,9 @@ export function HistoryRow({
   actions: RowAction[];
   /** Render at reduced opacity (an already-read activity item). */
   dimmed?: boolean;
-  /** Accent dot before the title (an unread activity item). */
-  unread?: boolean;
+  /** How many chapters are unread (an activity item): the library card's count pill, on the
+   *  thumbnail's corner. */
+  unread?: number;
   /** A second secondary line under `sub` (History's series standing + time). */
   detail?: string;
   /** Pages seen of the chapter being read, 0–1 — a thin bar along the thumbnail's bottom edge.
@@ -141,14 +143,16 @@ export function HistoryRow({
               />
             </View>
           )}
+          {unread !== undefined && (
+            <View style={styles.unread} testID={testId(base, 'unread')}>
+              <UnreadBadge count={unread} />
+            </View>
+          )}
         </View>
         <View style={[styles.body, desktop && styles.bodyDesktop]}>
-          <View style={styles.titleRow}>
-            {unread && <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} />}
-            <ThemedText type="smallBold" numberOfLines={2} style={[styles.titleText, desktop && styles.titleDesktop]}>
-              {title}
-            </ThemedText>
-          </View>
+          <ThemedText type="smallBold" numberOfLines={2} style={desktop && styles.titleDesktop}>
+            {title}
+          </ThemedText>
           {sub ? (
             <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.sub}>
               {sub}
@@ -303,20 +307,10 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     gap: Spacing.half,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  titleText: {
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  unreadDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    flexShrink: 0,
+  unread: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
   },
   sub: {
     // Slightly tighter than the title→sub default so the row stays compact.

@@ -27,7 +27,7 @@ export type WidgetItem = {
   /** A file in the shared folder's `covers`, once the cover has been stored there. */
   cover?: string;
   progress?: number;
-  /** A mark on the row's cover that it holds something new: how many, or '' for a bare dot. */
+  /** How many chapters of the row are unread: the count pill the Activity tab's row wears. */
   badge?: string;
   url: string;
 };
@@ -70,7 +70,7 @@ export function activityRows(entries: ActivityEntry[], known: Map<string, Bridge
       title: g.title,
       detail: activityLabel(g, bridge.name),
       at: g.latestAt,
-      badge: g.newCount > 99 ? '99+' : g.newCount > 1 ? String(g.newCount) : '',
+      badge: String(g.newCount),
       ...(g.thumbnailUrl && { thumbnailUrl: g.thumbnailUrl }),
       url: seriesLink(activityReadParams(g, bridge)),
     };

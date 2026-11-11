@@ -87,8 +87,8 @@ describe('activityRows', () => {
     expect(paramsOf(row!.url)).toMatchObject({ reader: '1', chapterId: 'c3', chapterName: 'Chapter 3', start: '0', picked: '1' });
   });
 
-  test('one new chapter is a bare dot, and History rows carry no badge', () => {
-    expect(activityRows([found()], known, true)[0]!.badge).toBe('');
+  test('the badge counts the unread chapters, and History rows carry none', () => {
+    expect(activityRows([found()], known, true)[0]!.badge).toBe('1');
     expect(historyRows([read()], known, true)[0]).not.toHaveProperty('badge');
   });
 

@@ -379,7 +379,7 @@ function ActivityItem({
       title={item.title}
       sub={activitySub(item, bridge, !desktop)}
       dimmed={!item.hasUnread && !item.removed}
-      unread={item.hasUnread}
+      unread={item.hasUnread ? item.newCount : undefined}
       onPress={() => onRead(thumbZoomId.current)}
       onPressIn={onRowPressIn}
       onMore={() => onOpenDetail(thumbZoomId.current)}

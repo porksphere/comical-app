@@ -77,7 +77,7 @@ Widgets/
 | `detail` | The row's second line, complete. May be empty. |
 | `at` | When the row last moved, in milliseconds since 1970: last read (history), newest detection (activity). The widget words the age. |
 | `progress` | Optional. Pages seen of the chapter being read, 0 to 1. History rows only, and only when the page count is known. |
-| `badge` | Optional. A mark on the row's cover that it holds something new: a count ("3", "99+"), or the empty string for a bare dot. Activity rows only. |
+| `badge` | Optional. How many chapters of the row are unread, as text. Activity rows only. |
 | `cover` | Optional. A file name in `covers/`. Present only once that file has been stored, so a named cover can be assumed to exist. |
 | `url` | What a tap opens. Opaque to the widget. |
 
@@ -130,9 +130,9 @@ while under 250dp tall, List beyond that.
 - **List** (the large size): the widget's name as a heading, then up to five rows of a small
   cover, the title over `detail`, and the row's age at the trailing edge. Each row is a tap target.
 
-In Feature and Strip, a row with a `badge` wears it in its cover's top trailing corner, in the
-app's accent (`#3478F6`) with white text: a pill holding the count, or a dot when the string is
-empty. The List draws none.
+In Feature and Strip, a row with a `badge` wears it in its cover's top trailing corner: the app's
+unread pill, as a library card and an Activity row wear it (`UnreadBadge` in
+`components/card-badge.tsx`), `#2563eb` with the count in white. The List draws none.
 
 In every layout:
 

@@ -51,8 +51,8 @@ private val LIST_ROWS = 5
 private val LIST_HEADING = 22.dp
 private val LIST_ROW = 53.dp
 private val WHITE = ColorProvider(Color.White)
-/** The app's accent. */
-private val ACCENT = ColorProvider(Color(0xFF3478F6))
+/** The app's unread pill, as a library card wears it (`UnreadBadge` in components/card-badge.tsx). */
+private val BADGE = ColorProvider(Color(0xFF2563EB))
 
 /** The three layouts of docs/WIDGETS.md, chosen from the room the widget has been given. */
 @Composable
@@ -263,16 +263,12 @@ private fun Cover(row: FeedRow, width: Dp, height: Dp, badge: String? = null) {
 
 @Composable
 private fun Badge(text: String) {
-  if (text.isEmpty()) {
-    Box(modifier = GlanceModifier.size(10.dp).cornerRadius(5.dp).background(ACCENT)) {}
-  } else {
-    Text(
-      text = text,
-      modifier = GlanceModifier.background(ACCENT).cornerRadius(9.dp).padding(horizontal = 5.dp, vertical = 1.dp),
-      style = TextStyle(color = WHITE, fontSize = 11.sp, fontWeight = FontWeight.Bold),
-      maxLines = 1,
-    )
-  }
+  Text(
+    text = text,
+    modifier = GlanceModifier.background(BADGE).cornerRadius(9.dp).padding(horizontal = 6.dp, vertical = 1.dp),
+    style = TextStyle(color = WHITE, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+    maxLines = 1,
+  )
 }
 
 @Composable
