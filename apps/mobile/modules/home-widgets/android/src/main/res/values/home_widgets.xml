@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="home_widget_history_title">Continue Reading</string>
+  <string name="home_widget_history_description">Pick up the series you read last.</string>
+  <string name="home_widget_history_empty">Series you read show up here.</string>
+  <string name="home_widget_activity_title">New Chapters</string>
+  <string name="home_widget_activity_description">New chapters of the series in your library.</string>
+  <string name="home_widget_activity_empty">No new chapters.</string>
+</resources>

@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@bacons/apple-targets": "5.0.0",
     "@expo/ui": "~58.0.23",
     "@legendapp/list": "^3.7.2",
     "@legendapp/state": "^3.0.0-beta.47",
@@ -89,5 +90,12 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "autolinking": {
+      "exclude": [
+        "@bacons/apple-targets"
+      ]
+    }
+  }
 }

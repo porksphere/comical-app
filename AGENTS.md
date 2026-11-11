@@ -1006,6 +1006,55 @@ expo-image's memory cache — so on a platform with nothing to gain it only rais
 "it also bounds per-slice memory" argument for doing it on iOS was simply wrong, in the direction
 that matters. Where the page draws, leave it alone.
 
+# Home-screen widgets: the app writes a feed, the widget draws it
+
+Continue Reading is the History tab's newest rows and New Chapters the Activity tab's unread ones,
+each in three layouts. The drawing is native and written once per platform, since a widget is not
+a React Native view on either: on iOS `apps/mobile/targets/widgets`, a WidgetKit extension in Swift
+(added to the generated project by `@bacons/apple-targets`; `expo-target.config.js` there is its
+settings), and on Android Jetpack Glance in `modules/home-widgets/android`. Everything before the
+drawing is one implementation in JS. A widget reads none of the app's state, only a folder the app
+writes the feed to (`data/home-widgets/`, through the local module `modules/home-widgets`):
+`snapshot.json` and a `covers` folder beside it. `docs/WIDGETS.md` is the contract both platforms
+draw to: the feed's format, the module's functions, and what each widget shows in each layout. A
+change to a widget is made on both platforms and in that file.
+
+**The widget decides nothing.** A row's text and the link a tap opens are worked out in the app,
+from the helpers the tabs' own rows use (`lib/series-links.ts`, `lib/history-sub.ts`,
+`data/activity/feed-rows.ts`), so the widget's row and the tab's cannot say or open different
+things. A change to what a row says or opens goes in those helpers. The link is a plain `/series`
+deep link, the root route's.
+
+**The feed is written when it may have moved while a widget could be seen:** as the app is left
+(`installHomeWidgets`), and at the end of a background chapter check (`activity/background.ts`).
+A widget is never on screen while the app is, so nothing writes while it is in use. The module
+reloads the widgets only when the file changed: a reload from the background comes out of a daily
+budget. Covers are rendered by the app to small JPEGs (a widget can't send a bridge's headers, and
+its process has little memory), named for their URL so each is rendered once, and a row goes out
+without its cover rather than wait on one.
+
+**NSFW follows the STORED choice** (`hidesNsfwDurably`), never a session override: an override
+lasts until the app is left, and the widget is what is on screen after that.
+
+The rest is iOS's alone. On Android a widget's receiver runs in the app's own process and reads
+the app's files, so there is no shared container to find and nothing to sign.
+
+**The App Group's name is found at run time, never written down.** A sideload signer registers the
+group under the installing Apple ID and has to rename it (AltStore and SideStore append the team
+id), so `group.com.porksphere.comical` is not the group a sideloaded build has.
+`SharedContainer.swift` looks for the real one where a signer leaves it: the `ALTAppGroups`
+Info.plist key, then the embedded provisioning profile. The app's module compiles a copy of that
+one file (`plugins/with-widget-shared-sources.js`), so the two sides cannot resolve different
+folders. This is why the widgets are not `expo-widgets`: it reads the group from a fixed
+Info.plist key, in the extension too, and under a renamed group the app and its widgets share
+nothing.
+
+**The IPA is ad-hoc signed with the App Group entitlement** (`build-ios-reusable.yml`, the
+packaging step). A signer learns what an app asks for from the binary's signature; an unsigned
+binary has none, and the group is never registered. Only the group is in it. Don't add an
+entitlement a free Apple ID can't be given (push is already in the generated file, and is left out
+for that reason).
+
 # Testing: new screens need a flow
 
 A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.

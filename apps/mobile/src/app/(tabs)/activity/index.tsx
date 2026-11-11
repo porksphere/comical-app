@@ -15,7 +15,7 @@ import {
   useZoomSurfaceKey,
   ZoomSurfaceContext,
 } from '@/lib/series-zoom';
-import { encodeSeriesParam } from '@/lib/series-nav';
+import { activityReadParams, seriesDetailParams } from '@/lib/series-links';
 import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
@@ -36,6 +36,7 @@ import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacin
 import { autoDownloadNewChapters } from '@/data/downloads/auto';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
+import { activityLabel, coalesceActivity, type SeriesActivity } from '@/data/activity/feed-rows';
 import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
@@ -52,32 +53,6 @@ import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
 import { ROW_REORDER_TRANSITION, useRowTransition } from '@/lib/row-motion';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
-
-/**
- * One coalesced feed row: a single library series with its newly-detected chapters folded together
- * (so three new chapters read as one "3 new chapters" row, not three), sorted by the most recent of
- * those detections. Mirrors a History row's shape and interactions — tap reads, 3-dot opens the
- * series, long-press opens the quick-actions popup, swipe-left clears the series from the feed.
- */
-type SeriesActivity = {
-  bridgeId: string;
-  seriesId: string;
-  title: string;
-  thumbnailUrl?: string;
-  /** When the group last had news — the sort key and the row's "when". */
-  latestAt: number;
-  /** How many of the group's new chapters are still unread — the "N new chapters" count. */
-  newCount: number;
-  /** Any unread chapter in the group (drives the accent dot; all-read rows dim). */
-  hasUnread: boolean;
-  /** The chapter a tap reads: the newest unread one, else the newest overall. None when the row is
-   *  only a removal, and a tap opens the series instead. */
-  chapterId?: string;
-  chapterName?: string;
-  number?: number;
-  /** The source confirmed the series is gone. News, but never unread. */
-  removed: boolean;
-};
 
 /** Stable, so the zoom surface registers once rather than every render — see useZoomSurfaceList. */
 const activitySeriesId = (item: SeriesActivity) => item.seriesId;
@@ -188,44 +163,9 @@ export default function ActivityScreen() {
   const visible = items ? safe : undefined;
 
 
-  // Coalesce the flat per-chapter feed into one row per series. `visible` is already newest-first, so a
-  // series' first appearance is its newest detection (the row's snapshot + sort position), and the
-  // first unread entry we see is its newest unread (the tap's read target).
   const rows = useMemo<SeriesActivity[]>(() => {
     if (!visible) return [];
-    const groups = new Map<string, { head: ActivityEntry; entries: ActivityEntry[] }>();
-    for (const a of visible) {
-      const key = `${a.bridgeId}:${a.seriesId}`;
-      const g = groups.get(key);
-      if (g) g.entries.push(a);
-      else groups.set(key, { head: a, entries: [a] });
-    }
-    const out: SeriesActivity[] = [];
-    for (const { head, entries } of groups.values()) {
-      const chapters = entries.filter((e) => !e.removed);
-      const unread = chapters.filter((e) => !e.read);
-      const rep = unread[0] ?? chapters[0]; // newest unread, else newest
-      out.push({
-        bridgeId: head.bridgeId,
-        seriesId: head.seriesId,
-        title: head.title,
-        thumbnailUrl: head.thumbnailUrl,
-        latestAt: (entries.find((e) => !e.quiet) ?? head).detectedAt,
-        newCount: unread.length,
-        hasUnread: unread.length > 0,
-        chapterId: rep?.chapterId,
-        chapterName: rep?.chapterName,
-        number: rep?.number,
-        removed: chapters.length < entries.length,
-      });
-    }
-    // Everything still unread first, newest update first within each half — so what's left to read
-    // is one block at the top and the dimmed rows a trail beneath it, rather than the two mixed in
-    // date order where an unread row could sit under a page of finished ones. (Insertion order is
-    // already close to the date order, but ties/interleaving make the explicit sort the source of
-    // truth.) A removal has no read state to drain, so it stays up in the live block until cleared.
-    const live = (r: SeriesActivity) => Number(r.hasUnread || r.removed);
-    out.sort((a, b) => live(b) - live(a) || b.latestAt - a.latestAt);
+    const out = coalesceActivity(visible);
     // A filter over rows already grouped, not a query: applied after coalescing so a match keeps the
     // whole series' row rather than splitting its entries.
     const q = query.trim().toLowerCase();
@@ -247,41 +187,22 @@ export default function ActivityScreen() {
 
   // See history.tsx's `openDetail` — the same control, opening the same series on its details
   // page.
+  const bridgeFacts = (bridgeId: string) => ({ name: nameOf(bridgeId), direct: directOf(bridgeId) });
   const openDetail = (g: SeriesActivity, zoomId: string | null) => {
     router.push({
       pathname: '/series',
-      params: withZoomSource(
-        {
-          id: g.seriesId,
-          title: g.title,
-          bridge: encodeSeriesParam(nameOf(g.bridgeId)),
-          bridgeId: g.bridgeId,
-          ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
-          ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
-        },
-        zoomId,
-      ),
+      params: withZoomSource(seriesDetailParams(g, bridgeFacts(g.bridgeId)), zoomId),
     });
   };
 
+  // See history.tsx's `resume` — same experiment, same reasoning.
   const read = (g: SeriesActivity, zoomId: string | null) => {
     if (g.chapterId === undefined) return openDetail(g, zoomId);
-    // See history.tsx's `resume` — same experiment, same reasoning.
     router.push({
       pathname: '/series',
       params: withZoomSource(
         {
-          id: g.seriesId,
-          title: g.title,
-          bridge: encodeSeriesParam(nameOf(g.bridgeId)),
-          bridgeId: g.bridgeId,
-          reader: '1',
-          chapterId: g.chapterId,
-          chapterName: g.chapterName ?? '',
-          start: '0',
-          picked: '1',
-          ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
-          ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
+          ...activityReadParams(g, bridgeFacts(g.bridgeId)),
           ...(zoomId && g.thumbnailUrl ? { zoomFrom: 'cover' } : {}),
         },
         zoomId,
@@ -458,7 +379,7 @@ function ActivityItem({
       title={item.title}
       sub={activitySub(item, bridge, !desktop)}
       dimmed={!item.hasUnread && !item.removed}
-      unread={item.hasUnread}
+      unread={item.hasUnread ? item.newCount : undefined}
       onPress={() => onRead(thumbZoomId.current)}
       onPressIn={onRowPressIn}
       onMore={() => onOpenDetail(thumbZoomId.current)}
@@ -508,15 +429,10 @@ function ActivityItem({
   );
 }
 
-/** Row secondary line: `N new chapters · when` when several coalesce, else `chapter · when`; a
- *  removal says so instead. */
+/** Row secondary line: what the row has to say, then when. */
 function activitySub(g: SeriesActivity, bridge: string, withTime: boolean): string {
-  const chapter = g.removed
-    ? `Removed from ${bridge}`
-    : g.newCount > 1
-      ? `${g.newCount} new chapters`
-      : (g.chapterName ?? (g.number !== undefined ? `Chapter ${g.number}` : 'New chapter'));
-  return withTime ? `${chapter}  ·  ${relTime(g.latestAt)}` : chapter;
+  const label = activityLabel(g, bridge);
+  return withTime ? `${label}  ·  ${relTime(g.latestAt)}` : label;
 }
 
 const styles = StyleSheet.create({

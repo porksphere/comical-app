@@ -51,17 +51,7 @@ export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/s
  */
 export const InSeriesPageStack = createContext(false);
 
-/**
- * Percent-encode one series route param — a bridge display name or a cover URL.
- *
- * Parens included, explicitly: `encodeURIComponent` leaves '(' and ')' alone (they're unreserved),
- * and expo-router's href resolution breaks on literal parens in a param value. Real bridge names
- * carry them all the time ("Illustration Gallery (Demo)"), as do plenty of cover URLs. The series
- * page decodes with a single `decodeURIComponent`, which handles %28/%29 like any other escape.
- */
-export function encodeSeriesParam(value: string): string {
-  return encodeURIComponent(value).replace(/\(/g, '%28').replace(/\)/g, '%29');
-}
+export { encodeSeriesParam } from './series-links';
 
 /**
  * Registrations as a stack, newest answering. Drilled series are layers inside ONE series page,

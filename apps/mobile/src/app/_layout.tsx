@@ -48,6 +48,7 @@ import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu
 import { SystemContextMenuHost } from '@/components/system-context-menu';
 import { ToastHost } from '@/components/toast';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
+import { installHomeWidgets } from '@/data/home-widgets/publish';
 import { installDesktopChapterCheck } from '@/data/activity/desktop-check';
 import { installDesktopSyncRefresh } from '@/data/sync/desktop';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
@@ -76,6 +77,8 @@ startEmbeddedRuntime();
 installActivityAutoCheck();
 installDesktopChapterCheck();
 installDesktopSyncRefresh();
+// The home-screen widgets' feed, rewritten as the app is left (a no-op on web).
+installHomeWidgets();
 
 // App-update auto-check on launch + foreground return — see data/use-app-update.ts. No-ops on
 // internal/dev build channels.
