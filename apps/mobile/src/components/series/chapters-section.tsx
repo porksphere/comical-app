@@ -41,6 +41,7 @@ import {
   ChevronDownIcon,
   DownloadsIcon,
   EyeOffIcon,
+  KeptOfflineIcon,
   PlusIcon,
   TrashIcon,
 } from '@/components/icons/ui-icons';
@@ -112,6 +113,8 @@ const SORT_LABEL = { desc: 'Newest first', asc: 'Oldest first' } as const;
 const ROW_BLEED = Spacing.two;
 const ROW_HEIGHT = 44;
 const ROW_RADIUS = 8;
+// Room for a chapter's download state and the longest date ("59m ago", "Sep 30") beside it.
+const DATE_COLUMN = 88;
 
 function NoHold({ children }: Parameters<typeof HoldMenu>[0]) {
   return children({});
@@ -959,14 +962,22 @@ function ChapterRow({
             <ThemedText type="small" numberOfLines={1} style={styles.rowName}>
               {group.name}
             </ThemedText>
-            {dlState && (
-              <View style={styles.rowDownload} testID={testId('series.chapter', group.key, 'download-state')}>
-                <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
-              </View>
-            )}
-            <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
-              {relativeTime(def.date)}
-            </ThemedText>
+            {/* The download state stands with the date it qualifies, not out in the gap the date's
+                fixed column leaves. */}
+            <View style={styles.rowMeta}>
+              {dlState && (
+                <View testID={testId('series.chapter', group.key, 'download-state')}>
+                  {dlState.state === 'complete' ? (
+                    <KeptOfflineIcon color={theme.textSecondary} size={14} />
+                  ) : (
+                    <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
+                  )}
+                </View>
+              )}
+              <ThemedText type="small" themeColor="textSecondary" style={styles.rowDate}>
+                {relativeTime(def.date)}
+              </ThemedText>
+            </View>
             {/* The slot is reserved on every row, chevron or not, so the dates stay in one column. */}
             <View style={styles.versionsSlot}>
               {multi && (
@@ -2199,17 +2210,23 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '600',
   },
-  // A fixed column, right-aligned: the widest relative time the row can carry ("11 months ago")
-  // fits, so the "N versions" toggle to its left lands in the same place on every row instead of
-  // drifting with the length of the date beside it.
+  // A fixed column, right-aligned, so the versions toggle beside it lands in the same place on every
+  // row instead of drifting with the length of the date. A version row's date is in it too.
   rowTime: {
     fontSize: 12,
-    width: 88,
+    width: DATE_COLUMN,
     textAlign: 'right',
   },
-  // Trailing per-chapter download indicator — sits between the name and the time.
-  rowDownload: {
-    marginRight: Spacing.one,
+  // The chapter row's date column, holding the download state ahead of the date.
+  rowMeta: {
+    width: DATE_COLUMN,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: Spacing.one + Spacing.half,
+  },
+  rowDate: {
+    fontSize: 12,
   },
   // Offline + not downloaded: the chapter can't be read, so the whole row reads as unavailable.
   rowDimmed: {

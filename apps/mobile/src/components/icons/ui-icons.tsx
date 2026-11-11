@@ -11,6 +11,7 @@ import {
   Bug,
   Check,
   CheckCheck,
+  CircleArrowDown,
   CircleCheck,
   ChevronDown,
   ChevronRight,
@@ -152,6 +153,9 @@ export const FailedIcon = ({ color, size = 16 }: IconProps) => <TriangleAlert co
 // Fully-downloaded (complete) marker — a bare check for a chapter/series kept offline (the circled
 // variant read too close to the multi-select circles beside it).
 export const DownloadedIcon = ({ color, size = 16 }: IconProps) => <Check color={color} size={size} />;
+// A chapter kept offline, on the series page's chapter rows: Apple Music's downloaded mark. A check
+// there reads as "read", which the same rows also show.
+export const KeptOfflineIcon = ({ color, size = 16 }: IconProps) => <CircleArrowDown color={color} size={size} />;
 export const RetryIcon = ({ color, size = 16 }: IconProps) => <RotateCcw color={color} size={size} />;
 // Ask again for what's already on screen (check for updates). One arrow, so it can sit in the
 // Trackers top bar without reading as the two-arrow sync glyph on the rows beneath it.
