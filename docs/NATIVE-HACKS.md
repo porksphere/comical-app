@@ -432,7 +432,8 @@ Already on `main`, so not from this work: `ZOOM_BOUND_WAIT_MS`, `ZOOM_THUMB_PAIN
 - `plugins/with-cmake-long-paths.js`: local Windows build tooling, gated on the host OS.
 - `plugins/with-ios-orientations.js`: the supported way to set per-device orientations.
 - `plugins/with-widget-shared-sources.js`, `modules/home-widgets`, `targets/widgets`: the home-screen
-  widgets, on public APIs (WidgetKit, an App Group). See AGENTS.md → "Home-screen widgets".
+  widgets, on public APIs (WidgetKit and an App Group; Jetpack Glance). See AGENTS.md →
+  "Home-screen widgets".
 - The `xml` entry in Metro's `assetExts`: the Material Symbols drawables for the Android menu.
 
 ## The update check

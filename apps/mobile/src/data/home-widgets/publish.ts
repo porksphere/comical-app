@@ -1,7 +1,8 @@
 /**
- * Keeps the home-screen widgets' feed current (iOS; `modules/home-widgets` is null elsewhere).
+ * Keeps the home-screen widgets' feed current (iOS and Android; `modules/home-widgets` is null on
+ * web).
  *
- * The widgets can read nothing of the app's but the folder they share with it, so the feed is
+ * The widgets read nothing of the app's but one folder, so the feed is
  * written there whenever it may have moved while the widgets could be seen: as the app is left
  * (reading reorders History, and marks Activity rows read), and after a background chapter check
  * (`activity/background.ts`). A widget is never on screen while the app is, so nothing writes

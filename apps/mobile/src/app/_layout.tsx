@@ -77,7 +77,7 @@ startEmbeddedRuntime();
 installActivityAutoCheck();
 installDesktopChapterCheck();
 installDesktopSyncRefresh();
-// The home-screen widgets' feed, rewritten as the app is left (iOS; a no-op elsewhere).
+// The home-screen widgets' feed, rewritten as the app is left (a no-op on web).
 installHomeWidgets();
 
 // App-update auto-check on launch + foreground return — see data/use-app-update.ts. No-ops on

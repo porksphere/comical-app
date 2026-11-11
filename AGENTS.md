@@ -1008,14 +1008,16 @@ that matters. Where the page draws, leave it alone.
 
 # Home-screen widgets: the app writes a feed, the widget draws it
 
-iOS only. `apps/mobile/targets/widgets` is a WidgetKit extension in Swift (added to the generated
-project by `@bacons/apple-targets`; `expo-target.config.js` there is its settings): Continue Reading
-is the History tab's newest rows and New Chapters the Activity tab's unread ones, each in the three
-home-screen sizes. A widget is another process and can read nothing of the app's but the App Group
-folder the two share, so the app leaves the feed there (`data/home-widgets/`, through the local
-module `modules/home-widgets`): `snapshot.json` and a `covers` folder beside it.
-`docs/WIDGETS.md` is the contract: the feed's format, what each widget shows at each size, and
-how Android would be built to the same one. A change to either goes there too.
+Continue Reading is the History tab's newest rows and New Chapters the Activity tab's unread ones,
+each in three layouts. The drawing is native and written once per platform, since a widget is not
+a React Native view on either: on iOS `apps/mobile/targets/widgets`, a WidgetKit extension in Swift
+(added to the generated project by `@bacons/apple-targets`; `expo-target.config.js` there is its
+settings), and on Android Jetpack Glance in `modules/home-widgets/android`. Everything before the
+drawing is one implementation in JS. A widget reads none of the app's state, only a folder the app
+writes the feed to (`data/home-widgets/`, through the local module `modules/home-widgets`):
+`snapshot.json` and a `covers` folder beside it. `docs/WIDGETS.md` is the contract both platforms
+draw to: the feed's format, the module's functions, and what each widget shows in each layout. A
+change to a widget is made on both platforms and in that file.
 
 **The widget decides nothing.** A row's text and the link a tap opens are worked out in the app,
 from the helpers the tabs' own rows use (`lib/series-links.ts`, `lib/history-sub.ts`,
@@ -1033,6 +1035,9 @@ without its cover rather than wait on one.
 
 **NSFW follows the STORED choice** (`hidesNsfwDurably`), never a session override: an override
 lasts until the app is left, and the widget is what is on screen after that.
+
+The rest is iOS's alone. On Android a widget's receiver runs in the app's own process and reads
+the app's files, so there is no shared container to find and nothing to sign.
 
 **The App Group's name is found at run time, never written down.** A sideload signer registers the
 group under the installing Apple ID and has to rename it (AltStore and SideStore append the team

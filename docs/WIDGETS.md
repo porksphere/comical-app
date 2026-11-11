@@ -1,8 +1,8 @@
 # Home-screen widgets
 
 What the widgets are, what a platform's implementation must do, and what it may not decide for
-itself. iOS has them (`apps/mobile/targets/widgets`). Android does not yet; the last section is how
-it would be built against the same contract.
+itself. Both platforms have them: iOS in `apps/mobile/targets/widgets`, Android in
+`apps/mobile/modules/home-widgets/android`.
 
 ## What is shared and what can't be
 
@@ -15,7 +15,7 @@ platform-neutral:
 | Fetching, cover rendering, when to write | `src/data/home-widgets/publish.ts` | Yes |
 | The feed on disk | `snapshot.json` + `covers/` (below) | Yes, as a file format |
 | Storing the feed and asking for a redraw | `modules/home-widgets` | One JS API, one native implementation per platform |
-| Drawing the widget | WidgetKit + SwiftUI / Glance | No |
+| Drawing the widget | WidgetKit + SwiftUI (iOS), Jetpack Glance (Android) | No |
 
 The drawing can't be shared. A widget is not a React Native view on either platform: iOS draws an
 archived SwiftUI view in the system's process, and Android draws `RemoteViews` in the launcher's.
@@ -115,7 +115,9 @@ else writes it, and a platform adds no trigger of its own.
 | Empty message | Series you read show up here. | No new chapters. |
 | A tap when empty | `comical://history` | `comical://activity` |
 
-Both come in the same three layouts:
+Both come in the same three layouts. iOS has a fixed size for each. Android widgets are resized
+freely, so there the layout follows the room given: Feature under 250dp wide, Strip from there
+while under 250dp tall, List beyond that.
 
 - **Feature** (the smallest size): the first row alone. Its cover fills the widget under a dark
   gradient rising from the bottom edge, with the title (two lines at most) and `detail` (one line)
@@ -147,30 +149,27 @@ step that makes one possible are in AGENTS.md → "Home-screen widgets".
 
 ## Android
 
-Not built. How it would be:
+Jetpack Glance, in Kotlin, in the `android/` directory of `modules/home-widgets`. The module's
+manifest declares the two receivers and is merged into the app's, so there is no config plugin.
 
-- **Where:** an `android/` directory in `modules/home-widgets`, in Kotlin, as `screen-corners` and
-  `comical-runtime` have. A local module's manifest is merged into the app's, so the widget's
-  receivers and their `appwidget-provider` metadata are declared there with no config plugin.
-- **Drawing:** Jetpack Glance, Android's Compose-style layer over `RemoteViews`. The module needs
-  the Compose compiler plugin and the `androidx.glance:glance-appwidget` dependency; Compose is
-  already in the build through `@expo/ui`.
-- **Sizes:** an Android widget is resized freely, so the layout is chosen from the size it has
-  been given (`SizeMode.Responsive`): Feature when small, Strip when wide, List when wide and tall.
-- **The feed:** `Widgets/` under the app's files directory. The receiver runs in the app's own
-  process, so there is no shared container to find and `isAvailable()` is always true. The four
-  module functions are plain file operations, and `publish` ends in `updateAll` on each widget.
-- **Taps:** each row starts an `ACTION_VIEW` intent on its `url`. The `comical` scheme is already
-  the app's, and the links are the root `/series` route's.
+- **The feed** is `Widgets/` under the app's files directory. A widget's receiver runs in the
+  app's own process, so there is no shared container to find and `isAvailable()` is always true.
+- **Sizes:** `SizeMode.Exact`, the widget's real size. Nothing in a widget can hold a cover to its
+  shape, so each layout works its covers' sizes out from the room there is. A new widget is four
+  cells by two, the Strip.
+- **Redrawing:** `publish` ends in `updateAll` on each widget. Glance does not reload a widget it
+  is already running, so the feed is also re-read on a counter that `publish` moves
+  (`WidgetStore.version`).
 - **Ages:** Glance has no text that counts on its own, so the age is worded when the widget is
-  drawn, and `updatePeriodMillis` (thirty minutes is the least Android allows) redraws it.
-- **Covers:** decoded down to the size drawn. `RemoteViews` carries bitmaps to the launcher by
-  value and rejects an update whose bitmaps are too large in total.
+  drawn, and `updatePeriodMillis` (thirty minutes, the least Android allows) redraws it.
+- **Covers:** decoded down to about the size drawn, and the same bitmap is used wherever a cover
+  appears. `RemoteViews` carries bitmaps to the launcher by value and rejects an update whose
+  bitmaps are too large in total.
+- **Colours** are the system's dynamic ones (`GlanceTheme`), and the launcher rounds the widget
+  itself on Android 12 and later. Earlier versions draw it and its covers square.
+- **Taps** start an `ACTION_VIEW` intent on the row's `url`, which the app's own `comical` scheme
+  receives.
 
-The JS needs no change: `publish.ts` already does nothing where the module is null, and starts
-working where it is not. `Image.loadAsync`, the image manipulator, the app-state listener and the
-background task (WorkManager there) all exist on Android.
-
-Open questions for whoever builds it: whether Glance's Kotlin and Compose versions sit with the
-pinned Kotlin (`with-kotlin-version.js`), and how the three layouts read on launchers that
-give widgets odd sizes.
+One class per widget (`HistoryWidget`, `ActivityWidget`), never one class given a feed: Glance
+finds a widget's instances by its class, and two receivers sharing one would each be updated with
+the other's feed.

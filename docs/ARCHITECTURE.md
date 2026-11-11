@@ -16,6 +16,7 @@ comical/
 │   │   ├── src/data/           # data layer: api.ts (transport seam), source.ts, embedded/ (on-device wiring)
 │   │   ├── modules/comical-runtime/  # local Expo native module wrapping comical's ComicalBridgeContext
 │   │   ├── targets/widgets/    # iOS home-screen widgets (a WidgetKit extension, Swift)
+│   │   ├── modules/home-widgets/  # the widgets' feed writer, and the Android widgets (Glance)
 │   │   ├── app.json            # Expo config (bundleId: com.porksphere.comical)
 │   │   └── eas.json            # build profiles (optional `eas build --local` path)
 │   └── desktop/                # Electron SPIKE (not shipped) — the web export + the host in-process
