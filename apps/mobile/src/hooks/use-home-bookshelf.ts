@@ -11,6 +11,7 @@ import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import type { CoverForm, ReadingDirection } from '@/lib/book-cover';
 import { arrangeShelf, pickShelf } from '@/lib/bookshelf';
 import { persisted$ } from '@/lib/observable';
+import { PROFILING_ENABLED } from '@/lib/profiling';
 
 /** Persisted as an OBJECT, not a bare boolean — see lib/dev-profiler-flag for why a bare `false`
  *  breaks Legend State's persistence. */
@@ -32,12 +33,13 @@ const unavailable$ = observable(false);
 
 /** Whether the shelf says how its frames are going (Settings → Developer): a line over the stage,
  *  and one in the Diagnostics log for each time it has moved. Nothing else measures them on a
- *  device. */
+ *  device. Only in a build that has that screen: the choice is kept on the device, and a release
+ *  installed over a PR build would show the line with no switch to turn it off. */
 export function useHomeBookshelfStats(): boolean {
-  return useSelector(() => bookshelf$.stats.get() ?? false);
+  return useSelector(() => PROFILING_ENABLED && (bookshelf$.stats.get() ?? false));
 }
 
-export const homeBookshelfStats = () => bookshelf$.stats.peek() ?? false;
+export const homeBookshelfStats = () => PROFILING_ENABLED && (bookshelf$.stats.peek() ?? false);
 
 export function setHomeBookshelfStats(on: boolean): void {
   bookshelf$.stats.set(on);
