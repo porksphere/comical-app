@@ -549,6 +549,7 @@ export class ShelfScene {
         spine.userData.cloth = colour(spec.board);
         spine.userData.letter = colour(spec.ink);
         spine.userData.shape = w / h;
+        spine.userData.rim = roll / w;
         spine.receiveShadow = true;
         group.add(spine);
         cloth.push(new THREE.ShapeGeometry(new THREE.Shape(outline)).rotateX(-Math.PI / 2).translate(0, h - 0.5, 0));
@@ -619,8 +620,11 @@ export class ShelfScene {
   private readonly rubbedEnds = Fn(() => {
     const at = uv() as unknown as THREE.Node<'vec2'>;
     const cloth = materialColor as unknown as THREE.Node<'vec4'>;
-    const ends = min(at.y, at.y.oneMinus()).div(userData('shape', 'float') as unknown as THREE.Node<'float'>);
-    return vec4(mix(vec3Of(cloth.xyz), RUBBED, this.rubbedEdge(ends, this.grain(at)).mul(RUB)), cloth.w);
+    // From where the cover's picture ends, inside its board's rolled edge, so the two bands meet.
+    const ends = min(at.y, at.y.oneMinus())
+      .div(userData('shape', 'float') as unknown as THREE.Node<'float'>)
+      .sub(userData('rim', 'float') as unknown as THREE.Node<'float'>);
+    return vec4(mix(vec3Of(cloth.xyz), RUBBED, this.rubbedEdge(ends, this.grain(at)).mul(step(0, ends)).mul(RUB)), cloth.w);
   })();
 
   private discard(group: THREE.Group) {

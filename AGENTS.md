@@ -1195,7 +1195,9 @@ its two free corners rounded and the bound ones square, with the board's edge ro
 picture stopping short of it, and its laminate is rubbed pale along the free edges and at those
 corners: a rectangle with a razor's edge was a picture pasted on a box. The rub along its head and
 foot carries on round a hard cover's back (`rubbedEnds`), as wide and as strong as where the two
-meet: stopping at the hinge, it was a seam down any book whose cover it shows up on. (The picture carried
+meet and starting where the cover's picture does, inside the board's rolled edge: stopping at the
+hinge it was a seam down any book whose cover it shows up on, and begun at the back's very rim it
+was a bright ring round the spine's ends, half a point off the cover's band. (The picture carried
 round onto the spine, and a band of gloss sliding with the drift, were drawn up beside these and
 not taken.) A CG set is the card's two prints (`PRINT`)
 as two cards with the book's depth between them, each leaning its own way on a corner and the one
