@@ -1097,6 +1097,11 @@ none, or its device will not take the shaders, it hands the shelf to three's for
 renderer it started with, since its driver holds that renderer's pictures: the component is
 keyed by it. Its spines on books bound on the right are lit from behind ON PURPOSE (`buildBook`):
 three's are, by the way its back is wound, and that is the tone a shelf of manga was tuned at.
+Its shadow goes with the shelf (`sunOverShelf`): cast in the shelf's space, with the light where it
+stands over a shelf that is not drifting, so it is cast only when a book has moved, as three's is,
+and never crawls along its edge as the view drifts. And a frame of it makes nothing: its matrices
+are written in place, since what a frame leaves behind is collected on the thread the frames are
+drawn on.
 `camera.test.ts` holds its matrices to `projectToStage`, and `geometry.test.ts` its faces to their
 winding, which the shadow's pass culls by. Its shader is checked nowhere but in a browser: paste
 `SHADER` into `createShaderModule` and read `getCompilationInfo`. On a device the two are told

@@ -34,7 +34,7 @@ struct Tone {
 struct Frame {
   viewProjection: mat4x4f,
   shelf: mat4x4f,
-  sunProjection: mat4x4f,
+  sunOverShelf: mat4x4f,
   eye: vec4f,       // w is one cell of the dither, in pixels
   sun: vec4f,       // toward the light; w is one cell of the backdrop's dither
   paper: vec4f,
@@ -105,27 +105,30 @@ fn turned(v: vec3f, yaw: f32) -> vec3f {
   return vec3f(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
 }
 
-fn stood(position: vec3f, index: u32) -> vec4f {
+// A point of a book where the book stands, in the shelf's space.
+fn stood(position: vec3f, index: u32) -> vec3f {
   let place = books[index].place;
-  return frame.shelf * vec4f(turned(position, place.z) + vec3f(place.x, 0.0, place.y), 1.0);
+  return turned(position, place.z) + vec3f(place.x, 0.0, place.y);
 }
 
 @vertex
 fn shadowVertex(@location(0) position: vec3f, @builtin(instance_index) index: u32) -> @builtin(position) vec4f {
-  return frame.sunProjection * stood(position, index);
+  return frame.sunOverShelf * vec4f(stood(position, index), 1.0);
 }
 
 @vertex
 fn vertex(in: Vertex, @builtin(instance_index) index: u32) -> Varyings {
   var out: Varyings;
-  let world = stood(in.position, index);
-  let normal = normalize((frame.shelf * vec4f(turned(in.normal, books[index].place.z), 0.0)).xyz);
+  let onShelf = stood(in.position, index);
+  let facing = turned(in.normal, books[index].place.z);
+  let world = frame.shelf * vec4f(onShelf, 1.0);
+  let normal = normalize((frame.shelf * vec4f(facing, 0.0)).xyz);
   out.clip = frame.viewProjection * world;
   out.world = world.xyz;
   out.normal = normal;
   out.uv = in.uv;
   out.local = in.position;
-  let lit = frame.sunProjection * vec4f(world.xyz + normal * NORMAL_BIAS, 1.0);
+  let lit = frame.sunOverShelf * vec4f(onShelf + facing * NORMAL_BIAS, 1.0);
   out.shadow = vec3f(lit.xy * vec2f(0.5, -0.5) + 0.5, lit.z);
   out.material = u32(in.material + 0.5);
   out.book = index;

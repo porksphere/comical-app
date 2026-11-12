@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { bookPoint, placeShelf, projectToStage, type ShelfBook } from '@/lib/bookshelf';
 
-import { multiply, pickBook, shelfToWorld, sunProjection, through, viewProjection, worldToShelf, type StageView } from './camera';
+import { multiply, pickBook, shelfToWorld, sunOverShelf, through, viewProjection, worldToShelf, writeShelfToWorld, type StageView } from './camera';
 
 const stage: StageView = { width: 430, height: 346, centre: 245, yaw: 2.1, pitch: -1.2 };
 
@@ -38,9 +38,15 @@ describe('the direct renderer’s camera', () => {
     back.forEach((value, axis) => expect(value).toBeCloseTo(point[axis], 3));
   });
 
+  test('writes the shelf’s matrix in place as it builds it', () => {
+    const out = new Float32Array(20);
+    writeShelfToWorld(out, 3, stage);
+    shelfToWorld(stage).forEach((value, n) => expect(out[3 + n]).toBeCloseTo(value, 5));
+  });
+
   test('casts the shadow from inside the light’s reach', () => {
     for (const point of [[0, 0, 0], [-300, 0, 80], [300, 200, -100]] as const) {
-      const [x, y, depth] = through(sunProjection(), point);
+      const [x, y, depth] = through(sunOverShelf(stage), point);
       for (const along of [x, y]) expect(Math.abs(along)).toBeLessThan(1);
       expect(depth).toBeGreaterThan(0);
       expect(depth).toBeLessThan(1);

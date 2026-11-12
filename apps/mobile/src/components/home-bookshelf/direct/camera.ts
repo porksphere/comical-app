@@ -98,6 +98,30 @@ export function shelfToWorld(stage: StageView): Mat4 {
   return [translation(0, middle, 0), aboutX(rad(SHELF.look + stage.pitch)), aboutY(rad(stage.yaw)), translation(0, -middle, 0)].reduce(multiply);
 }
 
+/** `shelfToWorld`, written into `out` from `at` on with nothing made on the way: this one changes
+ *  with every frame of the view's drift, on the thread a frame's garbage is collected on. */
+export function writeShelfToWorld(out: Float32Array, at: number, stage: StageView) {
+  const middle = stage.height / 2 - SHELF.floor;
+  const tip = rad(SHELF.look + stage.pitch);
+  const turn = rad(stage.yaw);
+  const ca = Math.cos(tip);
+  const sa = Math.sin(tip);
+  const cb = Math.cos(turn);
+  const sb = Math.sin(turn);
+  out.fill(0, at, at + 16);
+  out[at] = cb;
+  out[at + 1] = sa * sb;
+  out[at + 2] = -ca * sb;
+  out[at + 5] = ca;
+  out[at + 6] = sa;
+  out[at + 8] = sb;
+  out[at + 9] = -sa * cb;
+  out[at + 10] = ca * cb;
+  out[at + 13] = middle * (1 - ca);
+  out[at + 14] = -middle * sa;
+  out[at + 15] = 1;
+}
+
 /** The world back to the shelf's space. */
 export function worldToShelf(stage: StageView): Mat4 {
   const middle = stage.height / 2 - SHELF.floor;
@@ -118,7 +142,17 @@ const unit = (a: Vec3): Vec3 => {
 /** The direction toward the key light. */
 export const sunward = unit(minus(SUN.from, SUN.at));
 
-/** The world to the key light's clip space, which the shadow is cast and read in. */
+/**
+ * The shelf's space to the key light's clip space, which the shadow is cast and read in. The light
+ * stands where it does over a shelf that is not drifting, and goes with the shelf as it drifts: a
+ * shadow cast again for every degree of drift crawled along its edge, a texel at a time, and one
+ * that goes with the shelf is cast only when a book has moved.
+ */
+export function sunOverShelf(stage: StageView): Mat4 {
+  return multiply(sunProjection(), shelfToWorld({ ...stage, yaw: 0, pitch: 0 }));
+}
+
+/** The world to the key light's clip space. */
 export function sunProjection(): Mat4 {
   const back = sunward;
   const right = unit(cross([0, 1, 0], back));

@@ -13,7 +13,7 @@ import type { Rgb, ShelfPlace } from '@/lib/bookshelf';
 
 import type { Pixels } from '../pixels';
 import type { ShelfBookSpec, ShelfPicture, ShelfRenderer, SpinePicture } from '../spec';
-import { eyeOf, pickBook, shelfToWorld, sunProjection, sunward, viewProjection, type StageView } from './camera';
+import { eyeOf, pickBook, sunOverShelf, sunward, viewProjection, writeShelfToWorld, type StageView } from './camera';
 import { VERTEX_FLOATS, buildBook, buildPlank } from './geometry';
 import { BOOK_FLOATS, FRAME_FLOATS, MAX_BOOKS, SHADER, SHADOW_SIZE, SHRINK_SHADER, linear } from './shader';
 
@@ -95,7 +95,11 @@ export class DirectScene implements ShelfRenderer {
   private books: Built[] = [];
   private covers = new Map<string, Picture & { aspect: number }>();
   private places: readonly ShelfPlace[] = [];
-  private stage: StageView = { width: 1, height: 1, centre: 0.5, yaw: 0, pitch: 0 };
+  private readonly stage: StageView = { width: 1, height: 1, centre: 0.5, yaw: 0, pitch: 0 };
+  /** Where each book stood when the shadow was last cast (x, z and its turn), and which were drawn. */
+  private readonly cast = new Float64Array(MAX_BOOKS * 3);
+  private readonly seen: number[] = [];
+  private recast = true;
   private clear: GPUColor = { r: 1, g: 1, b: 1, a: 1 };
   private gone = false;
 
@@ -218,7 +222,6 @@ export class DirectScene implements ShelfRenderer {
       ],
     });
     this.tone(80, 3, [0.11, 0.11, 0.12], [0.97, 0.97, 0.97], 0, 1);
-    this.frame.set(sunProjection(), 32);
     this.frame.set(sunward, 52);
     void device.lost?.then((lost) => {
       if (this.gone || lost.reason === 'destroyed') return;
@@ -289,7 +292,11 @@ export class DirectScene implements ShelfRenderer {
 
   resize(width: number, height: number, pixelRatio: number, centre = width / 2) {
     if (!width || !height) return;
-    this.stage = { ...this.stage, width, height, centre };
+    Object.assign(this.stage, { width, height, centre });
+    this.frame.set(viewProjection(this.stage), 0);
+    this.frame.set(sunOverShelf(this.stage), 32);
+    this.frame.set(eyeOf(this.stage), 48);
+    this.recast = true;
     this.surface.canvas.width = Math.max(1, Math.floor(width * pixelRatio));
     this.surface.canvas.height = Math.max(1, Math.floor(height * pixelRatio));
     const dot = Math.max(1, Math.floor(DOT_POINTS * pixelRatio + 0.25));
@@ -298,7 +305,8 @@ export class DirectScene implements ShelfRenderer {
   }
 
   setView(yaw: number, pitch: number) {
-    this.stage = { ...this.stage, yaw, pitch };
+    this.stage.yaw = yaw;
+    this.stage.pitch = pitch;
   }
 
   setTheme(dark: boolean, background: string) {
@@ -346,6 +354,7 @@ export class DirectScene implements ShelfRenderer {
     });
     for (const gone of kept.values()) this.discard(gone);
     this.books.forEach((book, index) => this.describe(book, index));
+    this.recast = true;
   }
 
   /** A book's cover picture, once it has loaded; `aspect` is the picture's own shape. */
@@ -410,17 +419,23 @@ export class DirectScene implements ShelfRenderer {
     const screen = this.surface.context.getCurrentTexture();
     const targets = this.targetsFor(screen.width, screen.height);
 
-    frame.set(viewProjection(stage), 0);
-    frame.set(shelfToWorld(stage), 16);
-    frame.set(eyeOf(stage), 48);
+    writeShelfToWorld(frame, 16, stage);
     frame[76] = screen.width;
     frame[77] = screen.height;
     // Only what stands in the view, or near enough beside it to throw its shadow in, is drawn.
     const reach = Math.max(stage.centre, stage.width - stage.centre) * 1.15 + 120;
-    const seen: number[] = [];
+    const { seen, cast: stood } = this;
+    let moved = this.recast;
+    seen.length = 0;
     this.books.forEach(({ spec }, index) => {
       const place = places[index];
       if (!place) return;
+      if (stood[index * 3] !== place.x || stood[index * 3 + 1] !== place.z || stood[index * 3 + 2] !== place.yaw) {
+        stood[index * 3] = place.x;
+        stood[index * 3 + 1] = place.z;
+        stood[index * 3 + 2] = place.yaw;
+        moved = true;
+      }
       const at = index * BOOK_FLOATS;
       rows[at] = place.x;
       rows[at + 1] = place.z;
@@ -432,18 +447,23 @@ export class DirectScene implements ShelfRenderer {
     device.queue.writeBuffer(this.rowsBuffer, 0, rows);
 
     const encoder = device.createCommandEncoder();
-    const cast = encoder.beginRenderPass({
-      colorAttachments: [],
-      depthStencilAttachment: { view: this.shadow, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
-    });
-    cast.setPipeline(this.pipelines.cast);
-    cast.setBindGroup(0, this.lean);
-    for (const index of seen) {
-      const book = this.books[index];
-      cast.setVertexBuffer(0, book.vertices);
-      cast.draw(book.casting, 1, 0, index);
+    // The shadow goes with the shelf (`sunOverShelf`), so it is cast again only when a book has
+    // moved: a shelf that only stands and drifts casts none.
+    if (moved) {
+      this.recast = false;
+      const cast = encoder.beginRenderPass({
+        colorAttachments: [],
+        depthStencilAttachment: { view: this.shadow, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
+      });
+      cast.setPipeline(this.pipelines.cast);
+      cast.setBindGroup(0, this.lean);
+      for (const index of seen) {
+        const book = this.books[index];
+        cast.setVertexBuffer(0, book.vertices);
+        cast.draw(book.casting, 1, 0, index);
+      }
+      cast.end();
     }
-    cast.end();
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [{ view: targets.colour.createView(), resolveTarget: screen.createView(), clearValue: this.clear, loadOp: 'clear', storeOp: 'discard' }],
