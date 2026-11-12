@@ -77,18 +77,18 @@ export function homeBookshelfHeight(width: number): number {
 const STICKER = { paper: '#ffffff', ink: '#1c1c1e' } as const;
 const TONE = { light: '#1c1c1e', dark: '#8a8a8f' } as const;
 
-/** The burst's outline: sixteen even points, every other one a little longer. Even, because the
- *  first cut's uneven ones read as a mistake at this size rather than as a hand's; and wider than
- *  it is tall, because a round star looks the same whichever way it is turned, and this one is
- *  turned afresh for each book. */
-const BURST = Array.from({ length: 32 }, (_, k) => {
-  const angle = (k / 32) * Math.PI * 2 - Math.PI / 2;
-  const reach = k % 2 ? 31 : k % 4 ? 40 : 45;
-  return `${(Math.cos(angle) * reach * 1.08).toFixed(1)},${(Math.sin(angle) * reach * 0.84).toFixed(1)}`;
+/** The burst's outline: twelve even points, every other one a little longer. Even, because the
+ *  first cut's uneven ones read as a mistake at this size rather than as a hand's. Twelve, because
+ *  it is turned afresh for each book: sixteen were too fine for the turn to show, and a star made
+ *  wider than it is tall, so that it would, only looked slanted. */
+const BURST_POINTS = 12;
+const BURST = Array.from({ length: BURST_POINTS * 2 }, (_, k) => {
+  const angle = (k / (BURST_POINTS * 2)) * Math.PI * 2 - Math.PI / 2;
+  const reach = k % 2 ? 30 : k % 4 ? 40 : 46;
+  return `${(Math.cos(angle) * reach).toFixed(1)},${(Math.sin(angle) * reach).toFixed(1)}`;
 }).join(' ');
-/** How far the burst is turned either way, in degrees: enough to be seen, and its long side still
- *  under its lettering. */
-const BURST_TURN = 26;
+/** The turn after which the burst is the same shape again, in degrees: a long point and a short. */
+const BURST_TURN = 720 / BURST_POINTS;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -329,7 +329,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     driver.listen({
       onFront: (key, byHand) => {
         setFrontKey(key);
-        setStuck({ lean: (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3), turn: (Math.random() * 2 - 1) * BURST_TURN });
+        setStuck({ lean: (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3), turn: Math.random() * BURST_TURN });
         // A book the reader brought forward clicks into place; the one the shelf opens on does not.
         if (byHand) tick();
       },

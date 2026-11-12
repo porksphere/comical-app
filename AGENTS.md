@@ -1130,8 +1130,9 @@ bare `three`.
 phone is being held, so a tip eases back to nothing) laid on top at less than the drift's own
 size. The stickers ride the drift through the camera and take a few points more from the tilt.
 Each is put on afresh for each book that comes forward: the caption leaning one way or the other,
-the burst's star turned at random under lettering that stays level — a star wider than it is
-tall, since an even round one looks the same whichever way it is turned. A book the reader brings
+the burst's star turned at random under lettering that stays level — twelve points, since
+sixteen were too fine for the turn to show and a star stretched so that it would only looked
+slanted. A book the reader brings
 forward ticks (`hapticSelection`); the one the shelf opens on does not.
 
 **A tap presses the book before it opens the page.** The front book gives under the finger —
