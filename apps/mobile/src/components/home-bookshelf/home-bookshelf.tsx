@@ -20,7 +20,6 @@ import Svg, { Circle, Defs, Pattern, Polygon, Rect } from 'react-native-svg';
 import { FeedHeading, SECTION_HEAD_ROW_HEIGHT } from '@/components/content-feed';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
-import { withZoomSource } from '@/components/zoom-source';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { activityLabel } from '@/data/activity/feed-rows';
 import { resolveAssetSourceCached } from '@/data/api';
@@ -483,7 +482,11 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
         const picture = await resolveAssetSourceCached(thumbnailUrl!)
           .then((source) => loadCover(source, binding))
           .catch(() => null);
-        if (!picture) continue;
+        if (!picture) {
+          // Asked again the next time the shelf's books are worked out: offline is not for good.
+          asked.current.delete(key);
+          continue;
+        }
         if (!alive.current) {
           picture.texture.dispose();
           return;
@@ -539,7 +542,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     const opens = opening();
     if (!opens) return;
     opens.warm();
-    driver.pressOut(() => router.push({ pathname: '/series', params: withZoomSource(opens.params, null) }));
+    driver.pressOut(() => router.push({ pathname: '/series', params: opens.params }));
   };
   const tap = (x: number, y: number) => {
     if (onFront(x, y)) return resume();

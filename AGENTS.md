@@ -1065,8 +1065,9 @@ unread ones, each making up the number where the other runs short (`pickShelf`,
 `useBookshelfEntries`); a series in both is one book. They stand with what matters most in the
 MIDDLE — the book read last, then the two halves by turns to either side of it (`arrangeShelf`) —
 and the shelf opens on the middle, so the least of them is furthest out whichever way the reader
-goes. The book in front is kept by what it is, not where it stands (`ShelfDriver.setBooks`): the
-one just read moves to the middle while the reader is away in it. A History row says what its
+goes. Once the reader has moved the shelf, the book in front is kept by what it is, not where it
+stands (`ShelfDriver.setBooks`): the one just read moves to the middle while the reader is away in
+it. Until then every new set opens on its middle: the first is whichever half answered first. A History row says what its
 series is as an object (`coverForm`, `readingDirection`), written by the reader with the read that
 made it and kept with the row by a host that knows the fields (comical's "History rows keep each
 series' cover hints"; an older host drops them and answers without); a row without them, and an
@@ -1153,9 +1154,10 @@ that only drifts casts none. Merge by hand (`merged`): three's own merge is an a
 bare `three`.
 
 **The view drifts, and the phone only adds to it.** A couple of degrees of turn over seconds
-(`driftAt`), with the device's tilt (`useDeviceTilt`: gravity's direction, measured from how the
+(`driftAt`), with the device's tilt (`DeviceTilt`: gravity's direction, measured from how the
 phone is being held, so a tip eases back to nothing) laid on top at less than the drift's own
-size. The stickers ride the drift through the camera and take a few points more from the tilt.
+size. It is a component, mounted only while the shelf may drift: the sensor runs for as long as
+its hook is mounted, and as a hook of the shelf's it ran under every other tab and the reader. The stickers ride the drift through the camera and take a few points more from the tilt.
 Each is put on afresh for each book that comes forward: the caption leaning one way or the other,
 the burst's star turned at random under lettering that stays level — twelve points, since
 sixteen were too fine for the turn to show and a star stretched so that it would only looked

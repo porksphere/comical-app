@@ -70,8 +70,7 @@ export async function loadCover(uri: string, binding: CoverBinding): Promise<Cov
   const file = await fileOf(uri);
   if (!file) return null;
   const small = await ImageManipulator.manipulate(file).resize({ width: COVER_WIDTH }).renderAsync();
-  const encoded = await small.saveAsync({ format: SaveFormat.JPEG, compress: 0.9, base64: true });
-  small.release();
+  const encoded = await small.saveAsync({ format: SaveFormat.JPEG, compress: 0.9, base64: true }).finally(() => small.release());
   const image = encoded.base64 ? Skia.Image.MakeImageFromEncoded(Skia.Data.fromBase64(encoded.base64)) : null;
   if (!image) return null;
   try {

@@ -369,6 +369,8 @@ export class ShelfScene {
     const across = Math.min(1, face / cover.aspect);
     const up = Math.min(1, cover.aspect / face);
     const { texture } = cover;
+    // Already on: a material told it changed is built again, and every book is asked each time one changes.
+    if (book.coverMaterial.map === texture) return;
     if (kind.form === 'scroll') {
       // An extruded face's texture coordinates are its own points, from its middle.
       texture.repeat.set(across / width, up / height);
