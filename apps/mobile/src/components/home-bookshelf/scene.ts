@@ -49,6 +49,9 @@ const PAPER = '#F1EBDD';
 const DOT_POINTS = 1.5;
 /** How much of a spine's lettering is the shelf's tone, the rest laid on solid. */
 const LETTER_GRAIN = 0.5;
+/** What shows where a cover's laminate is rubbed through, and how much of it at the most. */
+const RUBBED = vec3(0.93, 0.91, 0.86);
+const RUB = 0.55;
 const rad = (degrees: number) => (degrees * Math.PI) / 180;
 const colour = ([r, g, b]: Rgb) => new THREE.Color(cssRgb([r, g, b]));
 
@@ -524,10 +527,12 @@ export class ShelfScene implements ShelfRenderer {
         });
         const back = this.glossy(lettering ? { map: lettering } : { color: colour(spec.board) });
         back.outputNode = this.inkedSpine;
+        back.colorNode = this.rubbedEnds;
         back.side = THREE.DoubleSide;
         const spine = new THREE.Mesh(hull, back);
         spine.userData.cloth = colour(spec.board);
         spine.userData.letter = colour(spec.ink);
+        spine.userData.shape = w / h;
         spine.receiveShadow = true;
         group.add(spine);
         cloth.push(new THREE.ShapeGeometry(new THREE.Shape(outline)).rotateX(-Math.PI / 2).translate(0, h - 0.5, 0));
@@ -577,16 +582,30 @@ export class ShelfScene implements ShelfRenderer {
       const down = at.y.oneMinus().div(shape);
       const edge = min(fromFree, min(up, down));
       const corner = fromFree.add(min(up, down));
-      const grain = fract(sin(dot(at.mul(vec2(311.7, 183.3)), vec2(12.9898, 78.233))).mul(43758.5453));
-      const rubbed = clamp(
-        smoothstep(0.002, 0.012, edge).oneMinus().mul(grain.mul(0.7).add(0.3)).add(smoothstep(0.008, 0.035, corner).oneMinus().mul(grain.mul(0.5).add(0.5))),
-        0,
-        1,
-      );
+      const grain = this.grain(at);
+      const rubbed = clamp(this.rubbedEdge(edge, grain).add(smoothstep(0.008, 0.035, corner).oneMinus().mul(grain.mul(0.5).add(0.5))), 0, 1);
       const printed = vec3Of(picture.xyz.mul(dark.oneMinus()).add(lit));
-      return vec4(mix(printed, vec3(0.93, 0.91, 0.86), rubbed.mul(0.55)), picture.w);
+      return vec4(mix(printed, RUBBED, rubbed.mul(RUB)), picture.w);
     })();
   }
+
+  private readonly grain = Fn(([at]: [THREE.Node<'vec2'>]) => fract(sin(dot(at.mul(vec2(311.7, 183.3)), vec2(12.9898, 78.233))).mul(43758.5453)));
+
+  /** How far an edge is rubbed through `edge` cover widths in from it. */
+  private readonly rubbedEdge = Fn(([edge, grain]: [THREE.Node<'float'>, THREE.Node<'float'>]) => smoothstep(0.002, 0.012, edge).oneMinus().mul(grain.mul(0.7).add(0.3)));
+
+  /**
+   * The cover's wear carried on round the back: the same rub along the spine's head and foot, as
+   * wide and as strong as the cover's is where the two meet. Without it the cover's stopped dead at
+   * the hinge, and on a cover it shows up on — a dark one — that was a seam down the book.
+   * `shape` is the cover's width over its height, on the mesh.
+   */
+  private readonly rubbedEnds = Fn(() => {
+    const at = uv() as unknown as THREE.Node<'vec2'>;
+    const cloth = materialColor as unknown as THREE.Node<'vec4'>;
+    const ends = min(at.y, at.y.oneMinus()).div(userData('shape', 'float') as unknown as THREE.Node<'float'>);
+    return vec4(mix(vec3Of(cloth.xyz), RUBBED, this.rubbedEdge(ends, this.grain(at)).mul(RUB)), cloth.w);
+  })();
 
   private discard(group: THREE.Group) {
     this.floor.remove(group);

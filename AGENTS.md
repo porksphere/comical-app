@@ -1201,7 +1201,9 @@ light on the fore-edge and head (`emboss`) are the card's own shading (`SPINE`, 
 lib/book-cover) laid over the picture in the material. A bound cover is cut to a cover's outline,
 its two free corners rounded and the bound ones square, with the board's edge rolled over and the
 picture stopping short of it, and its laminate is rubbed pale along the free edges and at those
-corners: a rectangle with a razor's edge was a picture pasted on a box. (The picture carried
+corners: a rectangle with a razor's edge was a picture pasted on a box. The rub along its head and
+foot carries on round a hard cover's back (`rubbedEnds`), as wide and as strong as where the two
+meet: stopping at the hinge, it was a seam down any book whose cover it shows up on. (The picture carried
 round onto the spine, and a band of gloss sliding with the drift, were drawn up beside these and
 not taken.) A CG set is the card's two prints (`PRINT`)
 as two cards with the book's depth between them, each leaning its own way on a corner and the one
