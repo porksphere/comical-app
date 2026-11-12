@@ -34,13 +34,7 @@ import { useDataSource, useMockActive, useNsfwMode, type NsfwMode } from '@/data
 import { connectServer } from '@/data/switch-server';
 import { setBookCovers, useBookCoversEnabled } from '@/hooks/use-book-covers';
 import { setCoverShelf, useCoverShelf } from '@/hooks/use-cover-shelf';
-import {
-  setHomeBookshelf,
-  setHomeBookshelfRenderer,
-  useHomeBookshelf,
-  useHomeBookshelfRendererChoice,
-  type BookshelfRenderer,
-} from '@/hooks/use-home-bookshelf';
+import { setHomeBookshelf, useHomeBookshelf } from '@/hooks/use-home-bookshelf';
 import { setFeedTint, useFeedTint } from '@/hooks/use-feed-tint';
 import { setLibraryMarker, useLibraryMarker } from '@/hooks/use-library-marker';
 import { setKeepTabPanes, useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
@@ -88,11 +82,6 @@ const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
   { value: 'dark', label: 'Dark', description: 'Always use the dark theme.' },
 ];
 
-const SHELF_RENDERER_OPTIONS: SettingsOption<BookshelfRenderer>[] = [
-  { value: 'direct', label: 'Direct', description: 'Drawn straight on WebGPU. The lighter of the two.' },
-  { value: 'three', label: 'three.js', description: 'Drawn through the three.js engine.' },
-];
-
 // On iOS every tab's title is the target; elsewhere Browse's and Library's titles open menus, so
 // there it is their icon (see TabTitleBar's holdTestID).
 const HOLD_TARGETS =
@@ -110,7 +99,6 @@ export default function GeneralSettingsScreen() {
   const bookCovers = useBookCoversEnabled();
   const coverShelf = useCoverShelf();
   const homeBookshelf = useHomeBookshelf();
-  const shelfRenderer = useHomeBookshelfRendererChoice();
   const lightCards = useLightCards();
   const feedTint = useFeedTint();
   const libraryMarker = useLibraryMarker();
@@ -170,13 +158,12 @@ export default function GeneralSettingsScreen() {
     {
       title: 'Display',
       footer:
-        'Book covers draws each series as the thing it is: a bound volume (spine on the right when you read right to left), a stapled issue, a set of loose sheets, or an unbound webtoon. Shelf alignment stands the covers in a row on one line, so covers of different shapes sit like books on a shelf, with their titles in line beneath them. Home bookshelf opens the Comical home on what you are reading, as books on a shelf. Bookshelf renderer is what draws it: the same shelf either way, so pick whichever runs smoother. Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.',
+        'Book covers draws each series as the thing it is: a bound volume (spine on the right when you read right to left), a stapled issue, a set of loose sheets, or an unbound webtoon. Shelf alignment stands the covers in a row on one line, so covers of different shapes sit like books on a shelf, with their titles in line beneath them. Home bookshelf opens the Comical home on what you are reading, as books on a shelf. Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.',
       fields: [
         select({ label: 'Appearance', value: themePref, options: THEME_OPTIONS, onChange: setThemePref }),
         { kind: 'toggle', label: 'Book covers', value: bookCovers, onChange: setBookCovers },
         { kind: 'toggle', label: 'Shelf alignment', value: coverShelf, onChange: setCoverShelf },
         { kind: 'toggle', label: 'Home bookshelf', value: homeBookshelf, onChange: setHomeBookshelf },
-        ...(homeBookshelf ? [select({ label: 'Bookshelf renderer', value: shelfRenderer, options: SHELF_RENDERER_OPTIONS, onChange: setHomeBookshelfRenderer })] : []),
         { kind: 'toggle', label: 'Lightweight cards', value: lightCards, onChange: (v) => lightCards$.light.set(v) },
         { kind: 'toggle', label: 'Tinted backgrounds', value: feedTint, onChange: setFeedTint },
         { kind: 'toggle', label: 'Mark saved series', value: libraryMarker, onChange: setLibraryMarker },

@@ -1082,47 +1082,6 @@ told by where it hangs (`captionHang`), not by a touch target of its own. Until 
 started the stage shows a placeholder of a cover and spines. Settings → General → Home bookshelf
 turns it off.
 
-**There are two renderers, and they draw the same shelf** (`ShelfRenderer` in `spec.ts`;
-Settings → General → Bookshelf renderer). three's (`scene.ts`, below) came first. The other
-(`direct/`) is the same scene written straight on WebGPU with no engine between: its camera as
-matrices (`direct/camera.ts`), each book's triangles (`direct/geometry.ts`), and three's node
-materials written out in WGSL (`direct/shader.ts`), sum for sum, so a change to the
-shelf's look is made in both. It is there because of what a frame costs through three (below): a
-book is three draws at the most and no walk of a scene, its place is a row of one uniform
-block, and a frame is a hundred calls or so whatever stands on the shelf — measured in a browser,
-about a twentieth of the script three runs a frame. Nothing of three is in its chunk. It draws through
-`react-native-webgpu` on iOS and Android and the browser's WebGPU on the web; where there is
-none, or its device will not take the shaders, it hands the shelf to three's for the session
-(`markHomeBookshelfRendererFailed`), which has WebGL to fall back on. A shelf keeps to the
-renderer it started with, since its driver holds that renderer's pictures: the component is
-keyed by it. Its spines on books bound on the right are lit from behind ON PURPOSE (`buildBook`):
-three's are, by the way its back is wound, and that is the tone a shelf of manga was tuned at.
-Each kind of surface has a pipeline of its own (cloth and paper, a bound cover, a loose picture, a
-spine, the plank), and no face turned from the eye is drawn. It began as ONE shader that chose by
-the surface, with every face drawn: every pixel then paid for a cover's relief, a spine's lettering
-and both their pictures, since a GPU works both sides of a choice more often than not, and it ran
-near three times three's cost a pixel — fewer frames on a phone than three, for all its script was
-a twentieth. Script is the half of a frame a browser's clock shows; the other half is seen only
-with the GPU's work waited for (`queue.onSubmittedWorkDone`), which is how this was found, and
-split as it is now it is under three's there too.
-Its shadow goes with the shelf (`sunOverShelf`): cast in the shelf's space, with the light where it
-stands over a shelf that is not drifting, so it is cast only when a book has moved, as three's is,
-and never crawls along its edge as the view drifts. And a frame of it makes nothing: its matrices
-are written in place, since what a frame leaves behind is collected on the thread the frames are
-drawn on.
-`camera.test.ts` holds its matrices to `projectToStage`, and `geometry.test.ts` its faces to their
-winding, which the shadow's pass culls by. Its shader is checked nowhere but in a browser: paste
-`SHADER` into `createShaderModule` and read `getCompilationInfo`. On a device the two are told
-apart by Settings → Developer → Bookshelf frame stats (`frame-stats.ts`): a line over the stage for
-the last second, and a line in the Diagnostics log for each time the shelf has moved. It gives the
-three numbers that say what holds a shelf back: the frames the display OFFERED a second against
-those drawn (on iOS the frames come from react-native-worklets' display link, which lowers its own
-rate — 120, 60, 30 — by how long the UI thread's frame work has been taking: its
-`IOS_DYNAMIC_FRAMERATE_ENABLED` flag, on by default), the frames skipped at the hand-off between
-the threads, and how long after a frame's script the GPU was done with it (`ShelfRenderer.drawn`).
-The line is a view of its own over a store of its own: set in the shelf's state it rendered the
-shelf every second, on the thread whose frames it counts.
-
 **The books are real geometry under a real light, drawn by three.js on WebGPU.** On iOS and Android
 that is `react-native-webgpu` (Dawn, over Metal and Vulkan); on the web it is the browser's own
 WebGPU, or WebGL 2 where there is none, which three's renderer falls back to by itself — the reason
@@ -1130,7 +1089,12 @@ WebGPU, or WebGL 2 where there is none, which three's renderer falls back to by 
 the first. One scene (`scene.ts`) and one shader, written in three's node language, which compiles
 to WGSL or GLSL as the backend needs. Filament is the faster engine and was passed over for having
 no web build and shaders compiled ahead of time; expo-gl is OpenGL ES. Skia stays what draws the
-reader: it is 2D, and a book is not.
+reader: it is 2D, and a book is not. (The same scene written straight on WebGPU, with no engine —
+its own matrices, triangles and WGSL — was built beside three's and taken out. It ran a twentieth
+of the script a frame and still drew fewer frames on a phone: its first cut, one shader that chose
+by the surface with every face drawn, cost three times three's GPU time a pixel, and split into a
+shader a surface it was still the slower on a device. Script is the half of a frame a browser's
+clock shows.)
 
 - **Import `three/webgpu` and `three/tsl`, never bare `three`.** They are different builds of the
   same classes, and one of each in a bundle is two libraries that don't recognise each other's
@@ -1138,12 +1102,11 @@ reader: it is 2D, and a book is not.
 - **`three` and `react-native-webgpu` are pinned exactly, together.** The renderer reaches into
   the canvas and the device the package hands it. Skia 2 has no part in this; Skia 3 draws through
   the same Dawn, and from then the two packages must be a pair their docs list as compatible.
-- **Nothing here is imported until the shelf is on screen**, and all of it through `engine.ts`
-  (`direct/engine.ts` for the other renderer): three is most of a megabyte. Asked for from two
-  places it was two chunks on the web, and three, shared by both, went to the main bundle.
+- **Nothing here is imported until the shelf is on screen**, and all of it through `engine.ts`:
+  three is most of a megabyte. Asked for from two places it was two chunks on the web, and three,
+  shared by both, went to the main bundle.
 
-**One camera, written twice** (a third time for the direct renderer, whose test holds it to the
-arithmetic). `ShelfScene.resize` and `setView` set it for the renderer and
+**One camera, written twice.** `ShelfScene.resize` and `setView` set it for the renderer and
 `projectToStage` (`lib/bookshelf`) is the same camera as arithmetic, which is how the callouts — the
 burst for new chapters, the caption for where you stopped, the tab over each shelved book with
 something new — stand on a book's corners while being plain views over the canvas. Change one and
@@ -1171,7 +1134,14 @@ are the display's own (`useFrameCallback`, handed across one at a time, so a slo
 dropped frame and never a queue), because React Native's `requestAnimationFrame` ticks at 60
 whatever the screen does. A shelf that is moving takes every frame. One that stands takes about
 every other, for its drift, and none once it has scrolled off the top, lost the screen, or under
-Reduce Motion.
+Reduce Motion. How the frames are going is told by Settings → Developer → Bookshelf frame stats
+(`frame-stats.ts`): a line over the stage for the last second and one in the Diagnostics log for
+each time the shelf has moved, giving the frames the display OFFERED a second against those drawn
+(on iOS they come from react-native-worklets' display link, which lowers its own rate — 120, 60,
+30 — by how long the UI thread's frame work has been taking: `IOS_DYNAMIC_FRAMERATE_ENABLED`, on by
+default), the frames skipped at the hand-off, a frame's script, and how long after it the GPU was
+done (`ShelfScene.drawn`). The line is a view of its own over a store of its own: set in the
+shelf's state it rendered the shelf every second, on the thread whose frames it counts.
 
 **A draw is the cost, not a triangle.** Each is a trip through three in an interpreter, and a book
 built of loose boxes with a material a face was sixteen of them, twice over with the shadow's
@@ -1251,9 +1221,7 @@ ink and a paper (`inked` in `scene.ts`, the matrix of `page-curl-shader.ts`), cu
 as it is shown on screen, after lighting; the shelf itself is always tone, so the shadows the
 books cast on it are screentone and not a blur. A sticker is ink on paper whatever the theme.
 
-**Pictures are made where each platform can make them** (`pixels.ts`, `pixels.web.ts`: RGBA rows
-that either renderer makes its texture of — `pictures.ts` for three, the scene itself for the
-direct one, which also draws each picture's smaller copies), a few
+**Textures are made where each platform can make them** (`pictures.ts`, `pictures.web.ts`), a few
 covers at a time from the middle of the shelf outward: only the books near the front are drawn,
 so a long shelf costs a picture a book and little else, but a shelf's worth decoded at once was a
 stall as the app started. A cover is expo-image's own copy on disk, shrunk by the platform's decoder and read back through
@@ -1263,9 +1231,8 @@ paragraph, so a title the heading face has no letters for falls back a glyph at 
 cloth is the colour of its cover beside the binding (`boardColour`). A cover that can't be had
 leaves the book in plain cloth.
 
-**A renderer that cannot start takes the shelf away, not the screen**
-(`markHomeBookshelfRendererFailed`): the direct one hands over to three's, and when three's cannot
-start either the rails begin the page as they did, until the app is next opened.
+**A renderer that cannot start takes the shelf away, not the screen** (`markHomeBookshelfUnavailable`):
+the rails begin the page as they did, until the app is next opened.
 
 # Testing: new screens need a flow
 

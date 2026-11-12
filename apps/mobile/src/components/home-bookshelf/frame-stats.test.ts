@@ -41,11 +41,11 @@ describe('the shelf’s frame stats', () => {
   });
 
   test('read as one line', () => {
-    expect(describeFrames('direct', { frames: 143, perSecond: 118.4, offered: 120.1, script: 0.416, worst: 1.308, skipped: 2 })).toBe(
-      'direct: 143 frames, 118 a second of 120 offered (2 skipped), script 0.42 ms (worst 1.31)',
+    expect(describeFrames({ frames: 143, perSecond: 118.4, offered: 120.1, script: 0.416, worst: 1.308, skipped: 2 })).toBe(
+      '143 frames, 118 a second of 120 offered (2 skipped), script 0.42 ms (worst 1.31)',
     );
-    expect(describeFrames('three', { frames: 60, perSecond: 59.6, offered: 60, script: 5.2, worst: 9, skipped: 0, gpu: { mean: 3.14, worst: 11 } })).toBe(
-      'three: 60 frames, 60 a second of 60 offered (0 skipped), script 5.20 ms (worst 9.00), GPU 3.1 ms (worst 11.0)',
+    expect(describeFrames({ frames: 60, perSecond: 59.6, offered: 60, script: 5.2, worst: 9, skipped: 0, gpu: { mean: 3.14, worst: 11 } })).toBe(
+      '60 frames, 60 a second of 60 offered (0 skipped), script 5.20 ms (worst 9.00), GPU 3.1 ms (worst 11.0)',
     );
   });
 });

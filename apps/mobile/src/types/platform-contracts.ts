@@ -54,10 +54,8 @@ import type * as ScrubHaptics from '@/lib/scrub-haptics';
 import type * as ScrubHapticsWeb from '@/lib/scrub-haptics.web';
 import type * as ShelfCanvas from '@/components/home-bookshelf/shelf-canvas';
 import type * as ShelfCanvasWeb from '@/components/home-bookshelf/shelf-canvas.web';
-import type * as DirectShelfCanvas from '@/components/home-bookshelf/direct/shelf-canvas';
-import type * as DirectShelfCanvasWeb from '@/components/home-bookshelf/direct/shelf-canvas.web';
-import type * as ShelfPixels from '@/components/home-bookshelf/pixels';
-import type * as ShelfPixelsWeb from '@/components/home-bookshelf/pixels.web';
+import type * as ShelfPictures from '@/components/home-bookshelf/pictures';
+import type * as ShelfPicturesWeb from '@/components/home-bookshelf/pictures.web';
 
 /**
  * Every platform file checked against its base. Call sites only ever see the base (tsconfig has no
@@ -119,8 +117,7 @@ type Conforms<T extends Record<string, never>> = T;
 
 export type PlatformContracts = [
   Conforms<Drift<typeof ShelfCanvas, typeof ShelfCanvasWeb>>,
-  Conforms<Drift<typeof DirectShelfCanvas, typeof DirectShelfCanvasWeb>>,
-  Conforms<Drift<typeof ShelfPixels, typeof ShelfPixelsWeb>>,
+  Conforms<Drift<typeof ShelfPictures, typeof ShelfPicturesWeb>>,
   Conforms<Drift<typeof AddFab, typeof AddFabIos>>,
   Conforms<Drift<typeof AppTabs, typeof AppTabsIos>>,
   Conforms<Drift<typeof SelectPillBar, typeof SelectPillBarIos>>,

@@ -30,14 +30,7 @@ import { useBookCoverResolver } from '@/hooks/use-book-covers';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSideInsets } from '@/hooks/use-content-width';
 import { useDeviceTilt, type Tilt } from '@/hooks/use-device-tilt';
-import {
-  homeBookshelfStats,
-  markHomeBookshelfRendererFailed,
-  useHomeBookshelfRenderer,
-  useHomeBookshelfStats,
-  type BookshelfEntry,
-  type BookshelfRenderer,
-} from '@/hooks/use-home-bookshelf';
+import { homeBookshelfStats, markHomeBookshelfUnavailable, useHomeBookshelfStats, type BookshelfEntry } from '@/hooks/use-home-bookshelf';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import {
   NEUTRAL_BOARD,
@@ -63,22 +56,10 @@ import { useTitleFontFor } from '@/lib/title-font';
 import { ShelfDriver } from './driver';
 import { FrameStats, describeFrames } from './frame-stats';
 import { PAGE_DOTS_HEIGHT, PageDots } from './page-dots';
-import type { ShelfBookSpec } from './spec';
+import type { ShelfBookSpec } from './scene';
 
-// The two renderers, each its own chunk on the web and neither loaded until a shelf wants it:
-// three and its scene are most of a megabyte, the one written straight on WebGPU a few kilobytes.
-const ENGINES = {
-  three: () => import('./engine'),
-  direct: () => import('./direct/engine'),
-} satisfies Record<BookshelfRenderer, unknown>;
-const CANVASES = {
-  three: lazy(() => ENGINES.three().then((m) => ({ default: m.ShelfCanvas }))),
-  direct: lazy(() => ENGINES.direct().then((m) => ({ default: m.ShelfCanvas }))),
-};
-const FAILED = {
-  three: () => markHomeBookshelfRendererFailed('three'),
-  direct: () => markHomeBookshelfRendererFailed('direct'),
-};
+// Its own chunk on the web: three and the scene are most of a megabyte that only the shelf needs.
+const ShelfCanvas = lazy(() => import('./engine').then((m) => ({ default: m.ShelfCanvas })));
 
 /** The least time between two frames of a shelf that only stands and drifts, in milliseconds:
  *  half the rate of one that is moving, which a turn of a degree or so over seconds doesn't miss. */
@@ -118,7 +99,6 @@ const BURST_TURN = 720 / BURST_POINTS;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-/** A renderer that throws as it starts takes the shelf away, not the screen. */
 // In a store of its own, read by one small view: set in the shelf's own state, a line a second
 // would render the whole shelf a second, on the thread whose frames it is counting.
 const readout$ = observable('');
@@ -134,6 +114,7 @@ function FrameReadout({ left }: { left: number }) {
   );
 }
 
+/** A renderer that throws as it starts takes the shelf away, not the screen. */
 class Fallible extends Component<{ onError: () => void; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
@@ -312,19 +293,12 @@ function ShelfPlaceholder({ stage, coverWidth }: { stage: { height: number; cent
  * caption — it gives under the finger and springs back out — opens it: where the History tab's row would for one that has been read, and where the
  * Activity tab's would for one that has only its new chapters.
  *
- * The books are lit geometry (a `ShelfRenderer`), drawn through one camera that `lib/bookshelf`
- * also projects with, which is how the callouts — plain views over the canvas — stand on a book's
+ * The books are lit geometry (`ShelfScene`), drawn through one camera that `lib/bookshelf` also
+ * projects with, which is how the callouts — plain views over the canvas — stand on a book's
  * corners. Everything that moves is `ShelfDriver`'s.
  */
-export function HomeBookshelf(props: { entries: readonly BookshelfEntry[]; width: number }) {
-  const renderer = useHomeBookshelfRenderer();
-  // A shelf keeps to the renderer it started with: its driver holds that renderer's pictures.
-  return <Shelf key={renderer} renderer={renderer} {...props} />;
-}
-
-function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[]; width: number; renderer: BookshelfRenderer }) {
+export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfEntry[]; width: number }) {
   const [driver] = useState(() => new ShelfDriver());
-  const ShelfCanvas = CANVASES[renderer];
   const showStats = useHomeBookshelfStats();
   const theme = useTheme();
   const dark = useActiveColorScheme() === 'dark';
@@ -401,8 +375,8 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
   const moving = useSharedValue(false);
   const drifting = useSharedValue(false);
   const driftedAt = useSharedValue(0);
-  // How the frames are going, for telling the two renderers apart on a device (Settings →
-  // Developer): the last second's for the line over the stage, and each move's for the log.
+  // How the frames are going (Settings → Developer): the last second's for the line over the
+  // stage, and each move's for the log.
   const skipped = useSharedValue(0);
   const [meter] = useState(() => ({ second: new FrameStats(), move: new FrameStats(), moving: false, movedAt: 0, timingGpu: false }));
   const [draw] = useState(() => (now: number, tiltX: number, tiltY: number, missed: number) => {
@@ -418,8 +392,8 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
         // A move is over once the shelf has stood this long, which a drag's frames never do.
         if (now - meter.movedAt > MOVE_OVER_MS) {
           const moved = meter.move.take();
-          // A tap's few frames say nothing about a renderer.
-          if (moved && moved.frames >= 20) logDiagnostic('bookshelf', describeFrames(renderer, moved));
+          // A tap's few frames say nothing.
+          if (moved && moved.frames >= 20) logDiagnostic('bookshelf', describeFrames(moved));
         }
         if (moving) {
           meter.move.add(now, script, missed);
@@ -440,7 +414,7 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
           };
           done.then(timed, () => (meter.timingGpu = false));
         }
-        if (meter.second.span >= 1000) readout$.set(describeFrames(renderer, meter.second.take()!));
+        if (meter.second.span >= 1000) readout$.set(describeFrames(meter.second.take()!));
       }
     }
   });
@@ -476,7 +450,7 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
         if (!mayDrift) frames.setActive(false);
       },
     });
-  }, [driver, frames, mayDrift, drifting, moving, meter, renderer]);
+  }, [driver, frames, mayDrift, drifting, moving, meter]);
   useEffect(() => driver.setStage(stage, Math.min(3, PixelRatio.get())), [driver, stage]);
   useEffect(() => driver.setTheme(dark, theme.background), [driver, dark, theme.background]);
   useEffect(() => driver.setBooks(specs), [driver, specs]);
@@ -502,24 +476,24 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
     for (const { key } of wanted) asked.current.add(key);
     let next = 0;
     const work = async () => {
-      const { loadCover } = await ENGINES[renderer]();
+      const { loadCover } = await import('./engine');
       while (alive.current && next < wanted.length) {
         const { key, bridgeId, seriesId, thumbnailUrl, coverForm, readingDirection } = wanted[next++];
         const { binding } = coverOf({ bridgeId, seriesId, direct: false, aspect: SHELF_ASPECT.unknown, coverForm, readingDirection });
-        const cover = await resolveAssetSourceCached(thumbnailUrl!)
+        const picture = await resolveAssetSourceCached(thumbnailUrl!)
           .then((source) => loadCover(source, binding))
           .catch(() => null);
-        if (!cover) continue;
+        if (!picture) continue;
         if (!alive.current) {
-          cover.picture.dispose();
+          picture.texture.dispose();
           return;
         }
-        driver.setCover(key, cover.picture, cover.aspect);
-        setPictures((known) => ({ ...known, [key]: { aspect: cover.aspect, board: cover.board } }));
+        driver.setCover(key, picture.texture, picture.aspect);
+        setPictures((known) => ({ ...known, [key]: { aspect: picture.aspect, board: picture.board } }));
       }
     };
     for (let worker = 0; worker < 3; worker++) void work().catch(() => {});
-  }, [entries, coverOf, driver, renderer]);
+  }, [entries, coverOf, driver]);
 
   const shown = entries.find((entry) => entry.key === frontKey) ?? entries[shelfMiddle(entries.length)];
   const front = shown ? entries.indexOf(shown) : 0;
@@ -614,9 +588,9 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
             else if (nativeEvent.actionName === 'decrement') driver.goTo(driver.focused - 1);
             else resume();
           }}>
-          <Fallible onError={FAILED[renderer]}>
+          <Fallible onError={markHomeBookshelfUnavailable}>
             <Suspense fallback={null}>
-              <ShelfCanvas style={StyleSheet.absoluteFill} driver={driver} onUnavailable={FAILED[renderer]} />
+              <ShelfCanvas style={StyleSheet.absoluteFill} driver={driver} onUnavailable={markHomeBookshelfUnavailable} />
             </Suspense>
           </Fallible>
           <LinearGradient pointerEvents="none" style={styles.fadeTop} colors={[theme.background, `${theme.background}00`]} />

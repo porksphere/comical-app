@@ -51,7 +51,7 @@ export default function DeveloperSettingsScreen() {
           kind: 'toggle',
           label: 'Bookshelf frame stats',
           description:
-            'Shows over the home bookshelf how its frames are going — how many a second, the script each takes, and how many were skipped — and logs a line to Diagnostics each time the shelf has moved. For comparing its two renderers.',
+            'Shows over the home bookshelf how its frames are going — how many a second of those the display offered, the script and the GPU time each takes, and how many were skipped — and logs a line to Diagnostics each time the shelf has moved.',
           value: shelfStats,
           onChange: setHomeBookshelfStats,
         },

@@ -69,8 +69,8 @@ export class FrameStats {
   }
 }
 
-export function describeFrames(renderer: string, { frames, perSecond, offered, script, worst, skipped, gpu }: FrameReport): string {
-  const drawn = `${renderer}: ${frames} frames, ${Math.round(perSecond)} a second of ${Math.round(offered)} offered (${skipped} skipped)`;
+export function describeFrames({ frames, perSecond, offered, script, worst, skipped, gpu }: FrameReport): string {
+  const drawn = `${frames} frames, ${Math.round(perSecond)} a second of ${Math.round(offered)} offered (${skipped} skipped)`;
   const cost = `script ${script.toFixed(2)} ms (worst ${worst.toFixed(2)})`;
   return [drawn, cost, ...(gpu ? [`GPU ${gpu.mean.toFixed(1)} ms (worst ${gpu.worst.toFixed(1)})`] : [])].join(', ');
 }
