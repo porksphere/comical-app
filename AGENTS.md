@@ -1153,10 +1153,12 @@ Dela Gothic One, tried first, was far too bold for a row of spines. It is loaded
 FILE (`prepare`): asked for by name, a Skia paragraph looks in the system's fonts, where a bundled
 face is not, and every spine was set in the system's. The chapter the book opens at is at its
 foot, two digits at least (`spineNumber`). A shelved spine's cloth is cut to the covers' own coarse
-steps, but its lettering is laid on SOLID, light on cloth that comes out dark and dark on light
-(`lettered` in `scene.ts`, which tells lettering from cloth by the picture's own colour): cut to
-tone with the cloth the dither ate the strokes, and at steps fine enough to keep them (eight was
-tried) the spine stopped reading as tone at all.
+steps, and its lettering is half that tone and half laid on SOLID, light on cloth that comes out
+dark and dark on light (`lettered` and `LETTER_GRAIN` in `scene.ts`, which tells lettering from
+cloth by the picture's own colour). All tone, the dither ate the strokes, and turning the dither
+down did not bring them back: under the shelf's light the lettering falls on a middle step, hard
+by the cloth's. At steps fine enough to keep them (eight was tried) the spine stopped reading as
+tone at all, and all solid the lettering lay on the spine like a label.
 
 **A cover has its relief, and a CG set is its card.** The hinge's groove and lip, the catch of
 light on the fore-edge and head (`emboss`) are the card's own shading (`SPINE`, `FOLD`, `EDGES` in

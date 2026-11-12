@@ -60,6 +60,8 @@ const PAPER = '#F1EBDD';
 /** One cell of the dither, in points — half again the page curl's on a 3× screen, where its own
  *  three device pixels read as a grey rather than as tone on a face this small. */
 const DOT_POINTS = 1.5;
+/** How much of a spine's lettering is the shelf's tone, the rest laid on solid. */
+const LETTER_GRAIN = 0.5;
 const rad = (degrees: number) => (degrees * Math.PI) / 180;
 const colour = ([r, g, b]: Rgb) => new THREE.Color(cssRgb([r, g, b]));
 
@@ -234,12 +236,14 @@ export class ShelfScene {
   }
 
   /**
-   * A spine's tone. Its cloth is cut to the covers' own steps, coarse as the rest of the shelf, but
-   * its lettering is laid on solid — light on a cloth that comes out dark and dark on one that
-   * comes out light — because a title a few points high cut to four steps was the dither eating
-   * its strokes, and at steps fine enough to keep them the spine stopped being tone. What is
-   * lettering is read off the picture itself: how far its colour is from the cloth's (`cloth`)
-   * toward the lettering's (`letter`), both on the mesh.
+   * A spine's tone. Its cloth is cut to the covers' own steps, coarse as the rest of the shelf.
+   * Its lettering is half that and half solid — light on a cloth that comes out dark and dark on
+   * one that comes out light (`LETTER_GRAIN`). All tone, a title a few points high was the dither
+   * eating its strokes, and less of the dither did not bring it back: under the shelf's light the
+   * lettering falls on a middle step, hard by the cloth's, however little it is dithered. All
+   * solid, it lay on the spine like a label, off the shelf's tone. What is lettering is read off
+   * the picture itself: how far its colour is from the cloth's (`cloth`) toward the lettering's
+   * (`letter`), both on the mesh.
    */
   private lettered(ink: THREE.Node<'float'>, t: Tone) {
     const cloth = userData('cloth', 'color') as unknown as THREE.Node<'vec3'>;
@@ -257,7 +261,9 @@ export class ShelfScene {
       const light = clamp(shown.sub(t.from).div(t.to.sub(t.from)), 0, 1);
       const cell = floor(pixel.div(this.dot));
       const toned = clamp(floor(light.mul(t.levels).add(this.bayer(cell))).div(t.levels), 0, 1);
-      const tone = mix(toned, step(light, 0.5), lettering);
+      const seen = clamp(dot(vec3Of(sRGBTransferOETF(lit.xyz)), luma).sub(t.from).div(t.to.sub(t.from)), 0, 1);
+      const grained = clamp(floor(seen.mul(t.levels).add(this.bayer(cell))).div(t.levels), 0, 1);
+      const tone = mix(toned, mix(step(light, 0.5), grained, LETTER_GRAIN), lettering);
       return vec4(mix(lit.xyz, vec3Of(sRGBTransferEOTF(mix(t.lo, t.hi, tone))), ink), lit.w);
     })();
   }
