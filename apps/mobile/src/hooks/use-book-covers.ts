@@ -1,4 +1,4 @@
-import { use$ } from '@legendapp/state/react';
+import { use$, useSelector } from '@legendapp/state/react';
 import { useQuery } from '@tanstack/react-query';
 import { createContext, createElement, use, useCallback, useMemo, type ReactNode } from 'react';
 
@@ -78,40 +78,31 @@ export function BookCoverSourceProvider({ children }: { children: ReactNode }) {
   return createElement(CoverSourceContext.Provider, { value }, children);
 }
 
-/**
- * How this card is drawn as a book, or `null` when book covers are off. The series' own hints win,
- * then its bridge's defaults; what neither says is guessed — see `resolveCover`.
- *
- * `aspect` is the cover's own shape, not the row's: a square cover in a row of portrait ones is still
- * square, and still drops its spine. The returned cover is one of the shared `BOOK_COVERS`, never a
- * fresh object.
- */
-export function useBookCover({
-  bridgeId,
-  seriesId,
-  direct,
-  aspect,
-  coverForm,
-  readingDirection,
-}: {
+type CoverSeries = {
   bridgeId?: string;
   seriesId: string;
   direct: boolean;
   aspect: number;
   coverForm?: CoverForm;
   readingDirection?: ReadingDirection;
-}): BookCover | null {
-  const { defaults, bridgeHints } = use(CoverSourceContext);
-  const on = defaults !== 'off';
+};
+
+/** The series' own hints win, then its bridge's defaults; what neither says is guessed — see
+ *  `resolveCover`. `reading` is `<mode>:<direction>[:shuffle]`, the reader's defaults. */
+function coverOf(
+  reading: string,
+  bridgeHints: ReadonlyMap<string, string>,
+  seriesMode: string | undefined,
+  { bridgeId, seriesId, direct, aspect, coverForm, readingDirection }: CoverSeries,
+): BookCover {
   const [bridgeForm, bridgeDirection] = ((bridgeId && bridgeHints.get(bridgeId)) || '|').split('|');
-  const bridge = {
-    form: (bridgeForm || undefined) as CoverForm | undefined,
-    direction: (bridgeDirection || undefined) as ReadingDirection | undefined,
-  };
-  const seriesMode = useSeriesReaderMode(on && bridgeId ? `${bridgeId}:${seriesId}` : null)?.mode;
-  if (!on) return null;
-  const [readerMode, readerDirection, shuffle] = defaults.split(':');
-  const hints = shuffle ? shuffledHints(`${bridgeId ?? ''}:${seriesId}`) : { form: coverForm ?? bridge.form, direction: readingDirection ?? bridge.direction };
+  const [readerMode, readerDirection, shuffle] = reading.split(':');
+  const hints = shuffle
+    ? shuffledHints(`${bridgeId ?? ''}:${seriesId}`)
+    : {
+        form: coverForm ?? ((bridgeForm || undefined) as CoverForm | undefined),
+        direction: readingDirection ?? ((bridgeDirection || undefined) as ReadingDirection | undefined),
+      };
   return resolveCover({
     form: hints.form,
     direction: hints.direction,
@@ -123,41 +114,36 @@ export function useBookCover({
 }
 
 /**
+ * How this card is drawn as a book, or `null` when book covers are off.
+ *
+ * `aspect` is the cover's own shape, not the row's: a square cover in a row of portrait ones is still
+ * square, and still drops its spine. The returned cover is one of the shared `BOOK_COVERS`, never a
+ * fresh object.
+ */
+export function useBookCover(series: CoverSeries): BookCover | null {
+  const { defaults, bridgeHints } = use(CoverSourceContext);
+  const on = defaults !== 'off';
+  const seriesMode = useSeriesReaderMode(on && series.bridgeId ? `${series.bridgeId}:${series.seriesId}` : null)?.mode;
+  if (!on) return null;
+  return coverOf(defaults, bridgeHints, seriesMode, series);
+}
+
+/**
  * `useBookCover`'s answer for any series, for a place that draws a list of books in one component
  * (the home bookshelf) where a hook apiece can't be called. It differs in two ways: a series' own
  * reader mode is read as it stands rather than followed, and a book is returned with book covers
  * off too, since what asks is drawing books either way.
  */
-export function useBookCoverResolver(): (series: {
-  bridgeId: string;
-  seriesId: string;
-  direct: boolean;
-  aspect: number;
-  coverForm?: CoverForm;
-  readingDirection?: ReadingDirection;
-}) => BookCover {
+export function useBookCoverResolver(): (series: CoverSeries & { bridgeId: string }) => BookCover {
   const { defaults, bridgeHints } = use(CoverSourceContext);
+  // With book covers off the context carries no reading defaults, and the shelf still follows them.
+  const reader = useSelector(() => {
+    const { mode, direction } = readerDefaults();
+    return `${mode}:${direction}`;
+  });
+  const reading = defaults === 'off' ? reader : defaults;
   return useCallback(
-    ({ bridgeId, seriesId, direct, aspect, coverForm, readingDirection }) => {
-      const key = `${bridgeId}:${seriesId}`;
-      const [bridgeForm, bridgeDirection] = (bridgeHints.get(bridgeId) || '|').split('|');
-      const reader = readerDefaults();
-      const [readerMode, readerDirection, shuffle] = defaults === 'off' ? [reader.mode, reader.direction, ''] : defaults.split(':');
-      const hints = shuffle
-        ? shuffledHints(key)
-        : {
-            form: coverForm ?? ((bridgeForm || undefined) as CoverForm | undefined),
-            direction: readingDirection ?? ((bridgeDirection || undefined) as ReadingDirection | undefined),
-          };
-      return resolveCover({
-        form: hints.form,
-        direction: hints.direction,
-        readsVertically: (peekSeriesReaderMode(key)?.mode ?? readerMode) === 'webtoon',
-        readerRightToLeft: readerDirection === 'rtl',
-        direct,
-        aspect,
-      });
-    },
-    [defaults, bridgeHints],
+    (series) => coverOf(reading, bridgeHints, peekSeriesReaderMode(`${series.bridgeId}:${series.seriesId}`)?.mode, series),
+    [reading, bridgeHints],
   );
 }
