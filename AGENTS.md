@@ -1150,9 +1150,10 @@ stall of their own. The sheets are unlit, the paper's own colour: lit like the r
 a dull brown. A CG set has no cover: its two prints fan apart. A slab only comes nearer. The fetch
 is warmed first, so the opening is time the page would have spent loading.
 
-**Spines are read.** They are lettered in Shippori Mincho B1 at its heaviest (`SPINE_FONT` in
+**Spines are read.** They are lettered in Shippori Mincho B1 in bold (`SPINE_FONT` in
 `lib/title-font.ts`), the serif a volume's spine is set in — the one place it is used, and the one
-heading not in the title typeface. Its lighter weights lose their hairlines at a spine's size, and
+heading not in the title typeface. Its regular and medium weights lose their hairlines at a spine's size, its heaviest was more
+than a spine wants, and
 Dela Gothic One, tried first, was far too bold for a row of spines. It is loaded from its own
 FILE (`prepare`): asked for by name, a Skia paragraph looks in the system's fonts, where a bundled
 face is not, and every spine was set in the system's. The chapter the book opens at is at its

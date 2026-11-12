@@ -27,7 +27,7 @@ let preparing: Promise<void> | undefined;
  * not at all on Android — and every spine was set in the system's face.
  */
 export function prepare(): Promise<void> {
-  preparing ??= loadData(require('@/assets/fonts/ShipporiMinchoB1-ExtraBold.ttf'), (data) => Skia.Typeface.MakeFreeTypeFaceFromData(data))
+  preparing ??= loadData(require('@/assets/fonts/ShipporiMinchoB1-Bold.ttf'), (data) => Skia.Typeface.MakeFreeTypeFaceFromData(data))
     .then((typeface) => {
       if (!typeface) return;
       const provider = Skia.TypefaceFontProvider.Make();
