@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  DRIFT,
   SHELF,
   bayer4,
   boardColour,
@@ -8,7 +9,9 @@ import {
   bookPoint,
   driftAt,
   inkOn,
+  openEase,
   openedPlace,
+  pickShelf,
   placeShelf,
   popIn,
   projectToStage,
@@ -217,13 +220,16 @@ test('a stage whose middle is off its centre projects about that line', () => {
 test('the view drifts a little, and a tipped phone adds a little to it', () => {
   for (let now = 0; now < 20000; now += 137) {
     const { yaw, pitch } = driftAt(now, { x: 0, y: 0 });
-    expect(Math.abs(yaw)).toBeLessThanOrEqual(1.4);
-    expect(Math.abs(pitch)).toBeLessThanOrEqual(0.8);
+    expect(Math.abs(yaw)).toBeLessThanOrEqual(DRIFT.yaw);
+    expect(Math.abs(pitch)).toBeLessThanOrEqual(DRIFT.pitch);
   }
   const level = driftAt(5000, { x: 0, y: 0 });
   const tipped = driftAt(5000, { x: 1, y: -1 });
-  expect(tipped.yaw - level.yaw).toBeCloseTo(0.9);
-  expect(tipped.pitch - level.pitch).toBeCloseTo(-0.5);
+  expect(tipped.yaw - level.yaw).toBeCloseTo(DRIFT.tiltYaw);
+  expect(tipped.pitch - level.pitch).toBeCloseTo(-DRIFT.tiltPitch);
+  // The phone adds to the drift and never outweighs it.
+  expect(DRIFT.tiltYaw).toBeLessThan(DRIFT.yaw);
+  expect(DRIFT.tiltPitch).toBeLessThan(DRIFT.pitch);
 });
 
 test('a drifted view moves what stands off the middle and leaves the middle where it was', () => {
@@ -238,9 +244,47 @@ test('an opening book slides off its binding and turns square', () => {
   const place = { x: 0, z: 50, yaw: 12, ink: 0 };
   expect(openedPlace(place, book('left'), 0)).toBe(place);
   const left = openedPlace(place, book('left'), 1);
-  expect(left.x).toBeGreaterThan(0);
-  expect(left.yaw).toBeCloseTo(2.4);
+  expect(left.x).toBeCloseTo(65);
+  expect(left.yaw).toBeCloseTo(0);
   expect(openedPlace({ ...place, yaw: -12 }, book('right'), 1).x).toBeLessThan(0);
+});
+
+test('a set of prints opens where it stands, toward the reader', () => {
+  const place = { x: 10, z: 50, yaw: 12, ink: 0 };
+  const fanned = openedPlace(place, { ...book('left', 6), form: 'sheets' }, 1);
+  expect(fanned.x).toBe(10);
+  expect(fanned.yaw).toBeCloseTo(0);
+  expect(fanned.z).toBeGreaterThan(50);
+});
+
+test('an opening starts fast and lands exactly', () => {
+  expect(openEase(0)).toBe(0);
+  expect(openEase(1)).toBe(1);
+  expect(openEase(0.5)).toBeGreaterThan(0.8);
+  expect(openEase(2)).toBe(1);
+});
+
+describe('pickShelf', () => {
+  const read = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'];
+  const news = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8'];
+
+  test('half from each, alternating behind the book read last', () => {
+    expect(pickShelf(read, news, 6)).toEqual(['r1', 'n1', 'n2', 'r2', 'n3', 'r3']);
+  });
+
+  test('one that runs short is made up from the other', () => {
+    expect(pickShelf(read, ['n1'], 6)).toEqual(['r1', 'n1', 'r2', 'r3', 'r4', 'r5']);
+    expect(pickShelf(['r1'], news, 6)).toEqual(['r1', 'n1', 'n2', 'n3', 'n4', 'n5']);
+    expect(pickShelf([], news, 4)).toEqual(['n1', 'n2', 'n3', 'n4']);
+    expect(pickShelf(['r1', 'r2'], ['n1'], 6)).toEqual(['r1', 'n1', 'r2']);
+  });
+
+  test('a series in both is one book, and still in front when it was read last', () => {
+    const picked = pickShelf(['x', 'r2', 'r3', 'r4'], ['n1', 'x', 'n3'], 6);
+    expect(picked[0]).toBe('x');
+    expect(picked.filter((key) => key === 'x')).toHaveLength(1);
+    expect(picked).toHaveLength(6);
+  });
 });
 
 test('the stickers leave as the cover opens', () => {

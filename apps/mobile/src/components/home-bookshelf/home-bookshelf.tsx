@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from 'expo-router';
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { PixelRatio, Pressable, StyleSheet, Text, View } from 'react-native';
+import { PixelRatio, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   measure,
@@ -16,9 +16,11 @@ import Animated, {
 import Svg, { Circle, Defs, Pattern, Polygon, Rect } from 'react-native-svg';
 
 import { FeedHeading, SECTION_HEAD_ROW_HEIGHT } from '@/components/content-feed';
+import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { withZoomSource } from '@/components/zoom-source';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
+import { activityLabel } from '@/data/activity/feed-rows';
 import { resolveAssetSourceCached } from '@/data/api';
 import { useWarmChapterPages } from '@/data/prefetch';
 import { DIRECT_CHAPTER_ID } from '@/data/types';
@@ -30,6 +32,7 @@ import { markHomeBookshelfUnavailable, type BookshelfEntry } from '@/hooks/use-h
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import {
   NEUTRAL_BOARD,
+  SHELF,
   SHELF_ASPECT,
   bookDepth,
   inkOn,
@@ -43,7 +46,7 @@ import {
 import { createTickHaptic, hapticSelection } from '@/lib/haptics';
 import { historySub } from '@/lib/history-sub';
 import { useRouter } from '@/lib/nav';
-import { historyResumeParams } from '@/lib/series-links';
+import { activityReadParams, historyResumeParams } from '@/lib/series-links';
 import { useTitleFontFor } from '@/lib/title-font';
 
 import { ShelfDriver } from './driver';
@@ -57,8 +60,11 @@ const ShelfCanvas = lazy(() => import('./engine').then((m) => ({ default: m.Shel
  *  half the rate of one that is moving, which a turn of a degree or so over seconds doesn't miss. */
 const IDLE_FRAME_MS = 30;
 
-/** The title, where the reader stopped, and Resume, under the stage. */
-const CAPTION_HEIGHT = 60;
+/** The title and where the reader stopped, under the stage. */
+const CAPTION_HEIGHT = 52;
+/** How far below the stage a callout may hang: the caption rides over the scene's fade into the
+ *  page, and a thick book's stands lower than a thin one's. */
+const CALLOUT_OVERHANG = 20;
 
 /** Its height in a feed `width` wide, heading and all — known ahead of it, so the feed's offsets
  *  below never wait on a measurement. */
@@ -128,10 +134,10 @@ function Burst({
     return {
       opacity: count ? Math.min(1, settled * 4) : 0,
       transform: [
-        { translateX: burst.x - 48 + stir.x * 3 },
-        { translateY: burst.y - 48 - stir.y * 2 },
+        { translateX: burst.x - 48 + stir.x * 4.5 },
+        { translateY: burst.y - 48 - stir.y * 3 },
         { scale: pop * burst.scale },
-        { rotate: `${stir.x * 2}deg` },
+        { rotate: `${stir.x * 3}deg` },
       ],
     };
   });
@@ -150,41 +156,53 @@ function Burst({
   );
 }
 
+/** Where the caption hangs from the point the shelf gives it: most of it clear of the cover, by
+ *  the side it stands on. Fractions of its own size, which a tap is tested against too. */
+const captionHang = (side: 1 | -1) => ({ x: side < 0 ? 0.34 : 0.66, y: 0.38 });
+
 function Caption({
   fx,
   tilt,
+  label,
   where,
   lean,
   tone,
+  onSize,
 }: {
   fx: SharedValue<ShelfCallouts>;
   tilt: SharedValue<Tilt>;
+  /** What a tap does, in a word. */
+  label: string;
   where: string;
   /** The way it was slapped on, in degrees: one way or the other, a little or a little more. */
   lean: number;
   tone: string;
+  onSize: (width: number, height: number) => void;
 }) {
   const style = useAnimatedStyle(() => {
     const { caption, pop, settled } = fx.get();
     const stir = tilt.get();
+    const hang = captionHang(caption.side);
     return {
       opacity: Math.min(1, settled * 4),
-      // Hung off the corner by the side it stands on, most of it clear of the cover.
       transform: [
-        { translateX: caption.x + stir.x * 2 },
-        { translateY: caption.y - stir.y * 1.5 },
-        { translateX: caption.side < 0 ? '-34%' : '-66%' },
-        { translateY: '-38%' },
+        { translateX: caption.x + stir.x * 3 },
+        { translateY: caption.y - stir.y * 2 },
+        { translateX: `${-hang.x * 100}%` },
+        { translateY: `${-hang.y * 100}%` },
         { scale: pop },
-        { rotate: `${lean + stir.x}deg` },
+        { rotate: `${lean + stir.x * 1.5}deg` },
       ],
     };
   });
   return (
-    <Animated.View style={[styles.caption, style]}>
+    <Animated.View
+      style={[styles.caption, style]}
+      testID="home-bookshelf.resume"
+      onLayout={({ nativeEvent }) => onSize(nativeEvent.layout.width, nativeEvent.layout.height)}>
       <ToneShadow id="bookshelf-caption-tone" colour={tone} />
       <View style={styles.captionBox}>
-        <Text style={styles.captionLabel}>CONTINUE!</Text>
+        <Text style={styles.captionLabel}>{label}</Text>
         {where ? (
           <Text style={styles.captionWhere} numberOfLines={1}>
             {where}
@@ -209,11 +227,40 @@ function UnreadTab({ fx, index, count, tone }: { fx: SharedValue<ShelfCallouts>;
 }
 
 /**
+ * The shelf before it is drawn: the renderer, its shaders and the spines' face take a moment to
+ * start when the app does, and the stage was a blank band until they had. A cover and a few spines
+ * where the books will stand, in the feed's own placeholder grey.
+ */
+function ShelfPlaceholder({ stage, coverWidth }: { stage: { height: number; centre: number }; coverWidth: number }) {
+  const foot = SHELF.floor - 8;
+  const height = coverWidth / SHELF_ASPECT.unknown;
+  const spines = [0.94, 1, 0.9, 0.97];
+  return (
+    <View style={styles.placeholder} pointerEvents="none">
+      <Skeleton style={[styles.placeholderBook, { left: stage.centre - coverWidth / 2, bottom: foot, width: coverWidth, height }]} />
+      {spines.map((tall, i) => (
+        <Skeleton
+          key={i}
+          style={[styles.placeholderBook, { left: stage.centre + coverWidth / 2 + 8 + i * 26, bottom: foot + 6, width: 22, height: height * 0.9 * tall }]}
+        />
+      ))}
+      {spines.slice(0, 2).map((tall, i) => (
+        <Skeleton
+          key={i}
+          style={[styles.placeholderBook, { left: stage.centre - coverWidth / 2 - 30 - i * 26, bottom: foot + 6, width: 22, height: height * 0.9 * tall }]}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
  * What Comical Home opens on: what you are reading, as books on a shelf. They stand spine out; the
  * one in the middle comes forward and turns to show its cover, in colour against a shelf drawn in
  * the app's screentone, and wears where you stopped and how many chapters are new. A drag runs
- * along the shelf, a tap on a spine brings that book forward, and a tap on the front book — or
- * Resume — opens it where the History tab would.
+ * along the shelf, a tap on a spine brings that book forward, and a tap on the front book or its
+ * caption opens it: where the History tab's row would for one that has been read, and where the
+ * Activity tab's would for one that has only its new chapters.
  *
  * The books are lit geometry (`ShelfScene`), drawn through one camera that `lib/bookshelf` also
  * projects with, which is how the callouts — plain views over the canvas — stand on a book's
@@ -247,15 +294,17 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
 
   const specs = useMemo((): ShelfBookSpec[] => {
     const coverWidth = shelfCoverWidth(width);
-    return entries.map(({ key, history, chapters }) => {
+    return entries.map(({ key, bridgeId, seriesId, title, history, news, chapters }) => {
       const picture = pictures[key];
       const aspect = clamp(picture?.aspect ?? SHELF_ASPECT.unknown, SHELF_ASPECT.tall, SHELF_ASPECT.wide);
-      const cover = coverOf({ bridgeId: history.bridgeId, seriesId: history.seriesId, direct: directOf(history.bridgeId), aspect });
+      const cover = coverOf({ bridgeId, seriesId, direct: directOf(bridgeId), aspect });
       const board = picture?.board ?? NEUTRAL_BOARD;
+      // The chapter the book opens at: where it was left, else the new one its Activity row reads.
+      const opensAt = history ? (history.chapterId === DIRECT_CHAPTER_ID ? undefined : history.chapterName) : (news?.chapterName ?? news?.number?.toString());
       return {
         key,
-        title: history.title,
-        number: history.chapterId === DIRECT_CHAPTER_ID ? undefined : spineNumber(history.chapterName),
+        title,
+        number: spineNumber(opensAt),
         cover,
         width: coverWidth,
         height: coverWidth / aspect,
@@ -344,11 +393,10 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     };
   }, []);
   useEffect(() => {
-    for (const { key, history } of entries) {
-      const url = history.thumbnailUrl;
+    for (const { key, bridgeId, seriesId, thumbnailUrl: url } of entries) {
       if (!url || asked.current.has(key)) continue;
       asked.current.add(key);
-      const { binding } = coverOf({ bridgeId: history.bridgeId, seriesId: history.seriesId, direct: false, aspect: SHELF_ASPECT.unknown });
+      const { binding } = coverOf({ bridgeId, seriesId, direct: false, aspect: SHELF_ASPECT.unknown });
       void (async () => {
         const { loadCover } = await import('./engine');
         const picture = await loadCover(await resolveAssetSourceCached(url), binding);
@@ -364,17 +412,35 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   }, [entries, coverOf, driver]);
 
   const shown = entries[Math.min(front, entries.length - 1)];
-  const titleFont = useTitleFontFor(shown?.history.title ?? '');
+  const titleFont = useTitleFontFor(shown?.title ?? '');
+  const captionSize = useSharedValue({ width: 0, height: 0 });
   if (!shown) return null;
 
+  const bridgeName = nameOf(shown.bridgeId);
   const resume = () => {
-    const h = shown.history;
-    const direct = h.chapterId === DIRECT_CHAPTER_ID || !h.chapterId;
-    warmPages(h.bridgeId, h.seriesId, direct ? undefined : h.chapterId, h.lastPage ?? 0);
-    // The cover swings open and the page is pushed as it does: the fetch above has that long a start.
-    driver.openFront(() => router.push({ pathname: '/series', params: withZoomSource(historyResumeParams(h, nameOf(h.bridgeId)), null) }));
+    const { history: h, news: g, bridgeId, seriesId } = shown;
+    // What the History tab's row opens for a series that has been read, and the Activity tab's for
+    // one that has only its new chapters — warmed with the same values the push carries.
+    let params: Record<string, string>;
+    if (h) {
+      const direct = h.chapterId === DIRECT_CHAPTER_ID || !h.chapterId;
+      warmPages(bridgeId, seriesId, direct ? undefined : h.chapterId, h.lastPage ?? 0);
+      params = historyResumeParams(h, bridgeName);
+    } else if (g) {
+      if (g.chapterId !== undefined) warmPages(bridgeId, seriesId, g.chapterId, 0);
+      params = activityReadParams(g, { name: bridgeName, direct: directOf(bridgeId) });
+    } else return;
+    // The book opens and the page is pushed once it has: the fetch above has that long a start.
+    driver.openFront(() => router.push({ pathname: '/series', params: withZoomSource(params, null) }));
   };
   const tap = (x: number, y: number) => {
+    // The caption is drawn over the stage, not in it, so a tap on it is told by where it hangs.
+    const { caption, settled } = fx.get();
+    const { width: w, height: h } = captionSize.get();
+    const hang = captionHang(caption.side);
+    const left = caption.x - w * hang.x;
+    const top = caption.y - h * hang.y;
+    if (settled > 0.5 && x > left - 6 && x < left + w + 6 && y > top - 6 && y < top + h + 6) return resume();
     const index = driver.bookAt(x, y);
     if (index < 0) return;
     if (index === driver.focused) resume();
@@ -396,7 +462,9 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
       if (landed) tap(e.x, e.y);
     });
   const tone = dark ? TONE.dark : TONE.light;
-  const where = historySub(shown.history, { withTime: false, long: false });
+  const { history, news } = shown;
+  const where = history ? historySub(history, { withTime: false, long: false }) : news ? activityLabel(news, bridgeName) : '';
+  const detail = history ? historySub(history, { withTime: true, long: true }) : where;
 
   return (
     <View style={{ height: homeBookshelfHeight(width) }} testID="home-bookshelf">
@@ -407,7 +475,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
           style={{ width: stage.width, height: stage.height, marginLeft: -sides.left }}
           accessible
           accessibilityRole="adjustable"
-          accessibilityLabel={`Continue reading: ${shown.history.title}`}
+          accessibilityLabel={`Continue reading: ${shown.title}`}
           accessibilityValue={{ text: `${front + 1} of ${entries.length}` }}
           accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }, { name: 'activate' }]}
           onAccessibilityAction={({ nativeEvent }) => {
@@ -422,31 +490,31 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
           </Fallible>
           <LinearGradient pointerEvents="none" style={styles.fadeTop} colors={[theme.background, `${theme.background}00`]} />
           <LinearGradient pointerEvents="none" style={styles.fadeBottom} colors={[`${theme.background}00`, theme.background]} />
+          {!drawn && <ShelfPlaceholder stage={stage} coverWidth={shelfCoverWidth(width)} />}
           <View style={[styles.callouts, !drawn && styles.unseen]} pointerEvents="none">
             {entries.map((entry, index) =>
               entry.unread ? <UnreadTab key={entry.key} fx={fx} index={index} count={entry.unread} tone={tone} /> : null,
             )}
-            <Caption fx={fx} tilt={tilt} where={where} lean={stuck.lean} tone={tone} />
+            <Caption
+              fx={fx}
+              tilt={tilt}
+              label={history ? 'RESUME' : 'READ'}
+              where={where}
+              lean={stuck.lean}
+              tone={tone}
+              onSize={(w, h) => captionSize.set({ width: w, height: h })}
+            />
             <Burst fx={fx} tilt={tilt} count={shown.unread} turn={stuck.turn} tone={tone} />
           </View>
         </Animated.View>
       </GestureDetector>
       <View style={styles.under}>
-        <View style={styles.underText}>
-          <ThemedText numberOfLines={1} style={[styles.title, titleFont ? { fontFamily: titleFont } : undefined]}>
-            {shown.history.title}
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-            {[nameOf(shown.history.bridgeId), historySub(shown.history, { withTime: true, long: true })].filter(Boolean).join(' · ')}
-          </ThemedText>
-        </View>
-        <Pressable
-          testID="home-bookshelf.resume"
-          accessibilityRole="button"
-          onPress={resume}
-          style={({ pressed }) => [styles.resume, { backgroundColor: pressed ? theme.accentHover : theme.accent }]}>
-          <Text style={[styles.resumeLabel, { color: theme.accentOn }]}>Resume</Text>
-        </Pressable>
+        <ThemedText numberOfLines={1} style={[styles.title, titleFont ? { fontFamily: titleFont } : undefined]}>
+          {shown.title}
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+          {[bridgeName, detail].filter(Boolean).join(' · ')}
+        </ThemedText>
       </View>
       <PageDots count={entries.length} page={Math.min(front, entries.length - 1)} onPage={(page) => driver.goTo(page)} />
     </View>
@@ -454,7 +522,9 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
 }
 
 const styles = StyleSheet.create({
-  callouts: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, overflow: 'hidden' },
+  callouts: { position: 'absolute', left: 0, top: 0, right: 0, bottom: -CALLOUT_OVERHANG, overflow: 'hidden' },
+  placeholder: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, overflow: 'hidden' },
+  placeholderBook: { position: 'absolute', borderRadius: 3 },
   burst: { position: 'absolute', left: 0, top: 0, width: 96, height: 96 },
   burstLabel: {
     position: 'absolute',
@@ -494,13 +564,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabCount: { color: STICKER.ink, fontSize: 11, lineHeight: 13, fontWeight: '900' },
-  under: { height: CAPTION_HEIGHT, paddingHorizontal: TopLevelGutter, flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
-  underText: { flex: 1, minWidth: 0 },
+  under: { height: CAPTION_HEIGHT, paddingHorizontal: TopLevelGutter, justifyContent: 'center' },
   title: { fontSize: 20, lineHeight: 26 },
   unseen: { opacity: 0 },
   // The scene comes out of the page and goes back into it: no edge where the canvas starts or ends.
   fadeTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 48 },
   fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 34 },
-  resume: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 999 },
-  resumeLabel: { fontSize: 15, fontWeight: '600' },
 });

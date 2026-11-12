@@ -3,6 +3,7 @@ import type * as THREE from 'three/webgpu';
 import {
   SHELF,
   driftAt,
+  openEase,
   openedPlace,
   placeShelf,
   rubberBand,
@@ -17,8 +18,10 @@ import type { ShelfBookSpec, ShelfScene } from './scene';
 
 const STIFFNESS = 190;
 const DAMPING = 25;
-/** Per second: how fast a cover swings toward open or shut. Most of the way in a third of one. */
-const SWING = 9;
+/** How long a book takes to open, and to shut again, in milliseconds. Short: it is on the way to
+ *  the page, not a thing to watch. */
+const OPEN_MS = 240;
+const SHUT_MS = 300;
 
 /**
  * The shelf in motion, outside React: where along it the reader is, the drag and the spring that
@@ -56,7 +59,9 @@ export class ShelfDriver {
   private touched = false;
   private last = 0;
   private front = -1;
-  /** How far the front book's cover has swung, where it is headed, and who to tell on arrival. */
+  /** How far through its opening the front book is (`swing`, at an even rate) and how far open
+   *  that has it (`open`, eased), where it is headed, and who to tell on arrival. */
+  private swing = 0;
   private open = 0;
   private openTo = 0;
   private onOpened: (() => void) | null = null;
@@ -124,7 +129,7 @@ export class ShelfDriver {
 
   setBooks(specs: readonly ShelfBookSpec[]) {
     this.specs = specs;
-    this.books = specs.map((s) => ({ width: s.width, height: s.height, depth: s.depth, binding: s.cover.binding }));
+    this.books = specs.map((s) => ({ width: s.width, height: s.height, depth: s.depth, binding: s.cover.binding, form: s.cover.form }));
     const last = Math.max(0, specs.length - 1);
     this.target = Math.min(this.target, last);
     this.pos = Math.min(this.pos, last);
@@ -179,15 +184,18 @@ export class ShelfDriver {
   }
 
   /**
-   * Swings the front book's cover open and calls `then` when it has — at once where there is no
-   * swing to wait for: nothing drawn yet, Reduce Motion, or a form with no cover to open (the
-   * scene swings what it can; a slab or a set of prints simply stands).
+   * Opens the front book and calls `then` once it is open and that frame is drawn — at once where
+   * there is nothing to wait for: nothing drawn yet, or Reduce Motion. Never before: what `then`
+   * starts (a page being pushed) takes the thread these frames are drawn on, and started mid-swing
+   * it froze the cover part way round.
    */
   openFront(then: () => void) {
     if (!this.scene || this.still) {
       then();
       return;
     }
+    // Picked up from however far shut it had got, on the opening's curve.
+    if (!this.openTo) this.swing = 1 - Math.cbrt(1 - this.open);
     this.openTo = 1;
     this.onOpened = then;
     this.kick();
@@ -196,7 +204,8 @@ export class ShelfDriver {
   /** Swings it shut again: the reader is back. */
   shut() {
     this.onOpened = null;
-    if (!this.open && !this.openTo) return;
+    if (!this.swing && !this.openTo) return;
+    if (this.openTo) this.swing = Math.cbrt(this.open);
     this.openTo = 0;
     this.kick();
   }
@@ -232,21 +241,27 @@ export class ShelfDriver {
           this.velocity = 0;
         }
       }
-      this.open += (this.openTo - this.open) * Math.min(1, dt * SWING);
-      if (Math.abs(this.openTo - this.open) < 0.004) this.open = this.openTo;
-      // Told while the cover still has a little way to swing: the page that opens covers the rest.
-      if (this.open >= 0.9 && this.onOpened) {
-        const arrived = this.onOpened;
-        this.onOpened = null;
-        arrived();
+      // Either way it starts fast and eases into place: shutting is the opening's curve run from
+      // the other end.
+      if (this.openTo) {
+        this.swing = Math.min(1, this.swing + dt / (OPEN_MS / 1000));
+        this.open = openEase(this.swing);
+      } else {
+        this.swing = Math.max(0, this.swing - dt / (SHUT_MS / 1000));
+        this.open = 1 - openEase(1 - this.swing);
       }
       // Under a finger the next frame is asked for by the finger's next move.
-      if (this.open === this.openTo && (this.held || (this.pos === this.target && this.velocity === 0))) {
+      if (this.swing === this.openTo && (this.held || (this.pos === this.target && this.velocity === 0))) {
         this.moving = false;
         this.frames.stop();
       }
     }
     this.draw();
+    if (this.swing === 1 && this.onOpened) {
+      const arrived = this.onOpened;
+      this.onOpened = null;
+      arrived();
+    }
   };
 
   private draw() {

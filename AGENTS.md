@@ -905,7 +905,8 @@ those menus are too, `OptionRow`'s `titleFace`, since a pick becomes the title),
 bar's copy of it), the feeds' section headings and the empty screens' headlines. The heavier
 mincho and gothic faces were tried and read too serious for a comics app. Text that is read
 or tapped — cards, rows, buttons, settings, the reader — stays in the system face: at card sizes
-a display face loses its shape. The bundled file is cut down to Latin, so a heading whose words
+a display face loses its shape. (The home bookshelf's spines are the one exception, in a face of their
+own: see there.) The bundled file is cut down to Latin, so a heading whose words
 aren't ours (a series' name, a bridge's section) takes it through `useTitleFontFor`, which falls
 back to the system face for a title it can't set whole; iOS would otherwise fill the missing
 letters from the system face one by one, one title in two typefaces.
@@ -1059,10 +1060,16 @@ for that reason).
 
 Comical Home opens on what you are reading as books on a shelf (`components/home-bookshelf`): spine
 out, the one in the middle pulled forward and turned to show its cover, in colour against a shelf
-drawn in screentone. It is the History tab's rows with the Activity tab's unread counts
-(`useBookshelfEntries`), and a tap on the front book or Resume pushes what a History row pushes
-(`historyResumeParams`), so the shelf cannot say or open something those tabs don't. Settings →
-General → Home bookshelf turns it off.
+drawn in screentone. Half its books are the History tab's newest rows and half the Activity tab's
+unread ones, each making up the number where the other runs short, alternating behind the book read
+last (`pickShelf`, `useBookshelfEntries`); a series in both is one book. A tap on the front book or
+on its caption — the caption is the button, there is no other — pushes what the History row pushes
+for a series that has been read (`historyResumeParams`, the caption RESUME) and what the Activity
+row pushes for one that has only its new chapters (`activityReadParams`, READ), so the shelf cannot
+say or open something those tabs don't. The caption is a view over the canvas, so a tap on it is
+told by where it hangs (`captionHang`), not by a touch target of its own. Until the renderer has
+started the stage shows a placeholder of a cover and spines. Settings → General → Home bookshelf
+turns it off.
 
 **The books are real geometry under a real light, drawn by three.js on WebGPU.** On iOS and Android
 that is `react-native-webgpu` (Dawn, over Metal and Vulkan); on the web it is the browser's own
@@ -1111,7 +1118,7 @@ depth rather than sampled, and the shadow is cast again only when a book has mov
 that only drifts casts none. Merge by hand (`merged`): three's own merge is an addon, which imports
 bare `three`.
 
-**The view drifts, and the phone only adds to it.** A degree or so of turn over seconds
+**The view drifts, and the phone only adds to it.** A couple of degrees of turn over seconds
 (`driftAt`), with the device's tilt (`useDeviceTilt`: gravity's direction, measured from how the
 phone is being held, so a tip eases back to nothing) laid on top at less than the drift's own
 size. The stickers ride the drift through the camera and take a few points more from the tilt.
@@ -1119,23 +1126,35 @@ Each is put on afresh for each book that comes forward: the caption leaning one 
 the burst's star turned at random under lettering that stays level. A book the reader brings
 forward ticks (`hapticSelection`); the one the shelf opens on does not.
 
-**A tap opens the book before it opens the page.** The front board swings on its binding edge and
-three leaves lift and bow under it (`setOpen`), the push is made as it nears open, and it swings
-shut when the screen has the focus again. The board is the book's own and the leaves exist only
-while one book is open, so a shut shelf pays nothing for it. The fetch is warmed first, so the
-swing is time the page would have spent loading.
+**A tap opens the book before it opens the page.** In a quarter of a second the front board
+swings round until its inside and the first page lie as a spread of comic panels (`setOpen`,
+`OPENING`), and it shuts when the screen has the focus again. The push is made only once the book
+is open and that frame is drawn: what the push starts takes the thread the frames are drawn on,
+and made as the cover neared open it froze the cover part way round. The spread is one picture for
+every book (`pages.ts`, plain arithmetic into a buffer) on one pair of sheets that follows whichever
+bound book is in front, always drawn behind its shut cover, so the first book to open has nothing
+to build and no shader to compile — leaves made at the tap were a stall of their own. A CG set has
+no cover: its two prints fan apart. A slab comes forward. The fetch is warmed first, so the opening
+is time the page would have spent loading.
 
-**Spines are read.** They are lettered in the heading face from its own FILE (`prepare`): asked
-for by name, a Skia paragraph looks in the system's fonts, where a bundled face is not, and every
-spine was set in the system's. The chapter the book opens at is at its foot, two digits at least
-(`spineNumber`). And a shelved spine's tone is cut to eight steps where a cover's is cut to four:
-at four the dither ate the strokes of lettering a few points high.
+**Spines are read.** They are lettered in Dela Gothic One (`SPINE_FONT` in `lib/title-font.ts`), a
+heavy gothic that stays a title a few points high where the heading face's thin strokes broke up —
+the one place it is used, and the one heading not in the title typeface. It is loaded from its own
+FILE (`prepare`): asked for by name, a Skia paragraph looks in the system's fonts, where a bundled
+face is not, and every spine was set in the system's. The chapter the book opens at is at its
+foot, two digits at least (`spineNumber`). A shelved spine's cloth is cut to the covers' own coarse
+steps, but its lettering is laid on SOLID, light on cloth that comes out dark and dark on light
+(`lettered` in `scene.ts`, which tells lettering from cloth by the picture's own colour): cut to
+tone with the cloth the dither ate the strokes, and at steps fine enough to keep them (eight was
+tried) the spine stopped reading as tone at all.
 
 **A cover has its relief, and a CG set is its card.** The hinge's groove and lip, the catch of
 light on the fore-edge and head (`emboss`) are the card's own shading (`SPINE`, `FOLD`, `EDGES` in
-lib/book-cover) laid over the picture in the material. A CG set is the card's print in its white
-border with another tipped behind (`PRINT`), and a few more behind that: on a shelf it is seen
-edge on, where two sheets are nothing and a small stack is a set of prints.
+lib/book-cover) laid over the picture in the material. A CG set is the card's two prints (`PRINT`)
+as two cards with the book's depth between them, each leaning its own way on a corner and the one
+behind set to the side, further than the card tips it (`PRINT_LEAN`), the picture on the one behind
+dimmed as the card dims it. A stack of sheets one behind the other was tried first and read as a
+thin white book.
 
 **The dots under it are the system's on iOS** (`modules/page-dots`, UIPageControl, which takes a
 tap or a scrub); elsewhere they only tell. The scene's top and bottom fade into the page, so the

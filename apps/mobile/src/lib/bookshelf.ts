@@ -9,7 +9,7 @@
 import type { CoverBinding, CoverForm } from '@/lib/book-cover';
 import { leadingChapterNumber } from '@/lib/chapter-label';
 
-export type ShelfBook = { width: number; height: number; depth: number; binding: CoverBinding };
+export type ShelfBook = { width: number; height: number; depth: number; binding: CoverBinding; form?: CoverForm };
 
 /** `ink` is how far the book is from the one in front, 0 to 1: what the shelf draws in tone. */
 export type ShelfPlace = { x: number; z: number; yaw: number; ink: number };
@@ -25,8 +25,9 @@ export const SHELF = {
   /** The eye's distance from the shelf, and the angle it looks down from. */
   lens: 760,
   look: 9,
-  /** The shelf's top, up from the stage's bottom edge. */
-  floor: 46,
+  /** The shelf's top, up from the stage's bottom edge: room under it for the caption that hangs off
+   *  the front book's foot. */
+  floor: 58,
   /** Room over the tallest book, for the callout that stands on its corner. */
   headroom: 76,
   /** A finger's travel for one book. */
@@ -40,15 +41,31 @@ export const smoothstep = (v: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** How far a bound book's cover swings as it opens, and what the book does to make room for it:
- *  slides off its binding's side and turns most of the way square. */
-export const OPENING = { swing: 152, slide: 0.44, square: 0.8 } as const;
+/**
+ * How the front book opens. A bound one's cover swings round, short of flat, until its inside and
+ * the first page lie as a spread, and the book slides half its width off its binding's side so the
+ * spread stands where the cover stood. A set of prints has no cover: its prints fan apart, each
+ * `fan` of the width to its side and `turn` degrees further over. Either turns square on, and what
+ * has nothing to open comes `reach` toward the reader instead. A cover half way round points
+ * straight at the reader, a cover's width nearer the eye and drawn that much larger, so the book
+ * steps `back` under it for the middle of the swing: without that it ran off the stage's foot.
+ */
+export const OPENING = { swing: 168, slide: 0.5, back: 70, fan: 0.2, turn: 9, reach: 26 } as const;
 
-/** The front book's place with its cover `open` (0 to 1). */
+/** The front book's place with it `open` (0 to 1). */
 export function openedPlace(place: ShelfPlace, book: ShelfBook, open: number): ShelfPlace {
   if (!open) return place;
+  const square = { ...place, yaw: place.yaw * (1 - open) };
+  if (book.form === 'sheets' || book.form === 'scroll') return { ...square, z: place.z + OPENING.reach * open };
   const away = book.binding === 'left' ? 1 : -1;
-  return { ...place, x: place.x + away * book.width * OPENING.slide * open, yaw: place.yaw * (1 - OPENING.square * open) };
+  return { ...square, x: place.x + away * book.width * OPENING.slide * open, z: place.z - OPENING.back * Math.sin(Math.PI * open) };
+}
+
+/** A cover's swing, or a fan's spread, `elapsed` of the way through its time: quick off the mark
+ *  and easing into place. */
+export function openEase(elapsed: number): number {
+  const left = 1 - clamp(elapsed, 0, 1);
+  return 1 - left * left * left;
 }
 
 /**
@@ -157,7 +174,7 @@ export type ShelfStage = { width: number; height: number; centre?: number; yaw?:
 
 /** How far the view drifts by itself while the shelf stands, in degrees each way, and how much of
  *  that again a tipped phone adds. Small on purpose: it is the shelf breathing, not turning. */
-export const DRIFT = { yaw: 1.4, pitch: 0.8, tiltYaw: 0.9, tiltPitch: 0.5 } as const;
+export const DRIFT = { yaw: 2.1, pitch: 1.2, tiltYaw: 1.4, tiltPitch: 0.8 } as const;
 
 /** The view's drift at `now` milliseconds, with the device tipped `tilt` (-1 to 1 each way). */
 export function driftAt(now: number, tilt: { x: number; y: number }): { yaw: number; pitch: number } {
@@ -294,3 +311,30 @@ export function inkOn(board: Rgb): Rgb {
 }
 
 export const cssRgb = ([r, g, b]: Rgb) => `rgb(${r},${g},${b})`;
+
+/**
+ * Which series stand on the shelf, and in what order. `read` is what was read, most recent first,
+ * and `news` what has chapters waiting, as the Activity tab orders it: half the shelf from each, and
+ * where one has too few the other makes up the number. A series in both is one book, counted with
+ * the news. They alternate along the shelf, news first, behind the one read most recently: that is
+ * the book the shelf opens on, whichever half it came from.
+ */
+export function pickShelf(read: readonly string[], news: readonly string[], count: number): string[] {
+  const take = (newsCount: number) => {
+    const fromNews = news.slice(0, newsCount);
+    const taken = new Set(fromNews);
+    return { fromNews, fromRead: read.filter((key) => !taken.has(key)).slice(0, count - fromNews.length) };
+  };
+  let picked = take(Math.min(news.length, Math.floor(count / 2)));
+  const short = count - picked.fromNews.length - picked.fromRead.length;
+  if (short > 0) picked = take(Math.min(news.length, picked.fromNews.length + short));
+  const { fromNews, fromRead } = picked;
+  const order: string[] = [];
+  for (let i = 0; i < Math.max(fromNews.length, fromRead.length); i++) {
+    if (i < fromNews.length) order.push(fromNews[i]);
+    if (i < fromRead.length) order.push(fromRead[i]);
+  }
+  const chosen = new Set(order);
+  const last = read.find((key) => chosen.has(key));
+  return last === undefined ? order : [last, ...order.filter((key) => key !== last)];
+}

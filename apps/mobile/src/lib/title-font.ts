@@ -15,7 +15,16 @@ export function useTitleFont(): string | undefined {
   return loaded ? TITLE_FONT : undefined;
 }
 
-// What the cut-down file holds — keep in step with the subset it was cut to: printable ASCII,
+/**
+ * The home bookshelf's spines: Dela Gothic One, a heavy Japanese gothic of the kind a manga
+ * magazine sets its masthead in (SIL Open Font License; `assets/fonts/DelaGothicOne-OFL.txt`), cut
+ * to the same Latin as the title face. Blunt and wide enough to stay a title a few points high and
+ * drawn in tone, where the title face's thin strokes broke up. Only the shelf draws with it, into
+ * pictures of its own, so nothing registers it with the system.
+ */
+export const SPINE_FONT = 'DelaGothicOne-Regular';
+
+// What the cut-down files hold — keep in step with the subset it was cut to: printable ASCII,
 // Latin-1, dashes, curly quotes and the ellipsis.
 const COVERED = /^[ -~ -ÿ–—‘-‟…]*$/;
 

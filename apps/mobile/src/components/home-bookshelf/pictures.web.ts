@@ -1,8 +1,9 @@
+import { loadAsync } from 'expo-font';
 import * as THREE from 'three/webgpu';
 
 import { boardColour, cssRgb, type Rgb } from '@/lib/bookshelf';
 import type { CoverBinding } from '@/lib/book-cover';
-import { TITLE_FONT, titleFontCovers } from '@/lib/title-font';
+import { SPINE_FONT, titleFontCovers } from '@/lib/title-font';
 
 import type { SpinePicture } from './scene';
 
@@ -15,10 +16,12 @@ const SYSTEM_FACE = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans
 /** What the spines are lettered with, loaded before the first is drawn: a canvas sets text in a
  *  face only once the page has it, and says nothing when it hasn't. */
 export function prepare(): Promise<void> {
-  return document.fonts.load(`16px "${TITLE_FONT}"`).then(
-    () => {},
-    () => {},
-  );
+  return loadAsync({ [SPINE_FONT]: require('@/assets/fonts/DelaGothicOne-Regular.ttf') })
+    .then(() => document.fonts.load(`16px "${SPINE_FONT}"`))
+    .then(
+      () => {},
+      () => {},
+    );
 }
 
 function textureOf(canvas: HTMLCanvasElement): THREE.Texture {
@@ -66,11 +69,11 @@ export function drawSpine({ title, number, board, ink, width, height }: SpinePic
   if (width > 13) {
     g.textAlign = 'center';
     if (number) {
-      g.font = `${Math.min(w * 0.42, 12 * SPINE_SCALE)}px ${SYSTEM_FACE}`;
+      g.font = `${Math.min(w * 0.4, 12 * SPINE_SCALE)}px "${SPINE_FONT}", ${SYSTEM_FACE}`;
       g.textBaseline = 'alphabetic';
       g.fillText(number, w / 2, h * 0.935);
     }
-    g.font = `${Math.min(w * 0.5, 15 * SPINE_SCALE)}px ${titleFontCovers(title) ? `"${TITLE_FONT}", ` : ''}${SYSTEM_FACE}`;
+    g.font = `${Math.min(w * 0.46, 14 * SPINE_SCALE)}px ${titleFontCovers(title) ? `"${SPINE_FONT}", ` : ''}${SYSTEM_FACE}`;
     g.textBaseline = 'middle';
     const run = h * 0.76;
     let shown = title;

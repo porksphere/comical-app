@@ -1,9 +1,9 @@
 appId: com.porksphere.comical
 ---
-# Comical Home opens on the bookshelf — the reader's history as books on a shelf — and Resume
-# opens the front book in the reader, as a History row would. Demo data has history, and Comical is
-# the bridge the app lands on, so nothing has to be picked first (and no tab is tapped: iOS's
-# system tab bar has no testIDs).
+# Comical Home opens on the bookshelf — what the reader is in the middle of, as books on a shelf —
+# and the caption on the front book (RESUME) opens it in the reader, as its History row would. Demo
+# data has history, and Comical is the bridge the app lands on, so nothing has to be picked first
+# (and no tab is tapped: iOS's system tab bar has no testIDs).
 #
 # The shelf is drawn on WebGPU. An emulator without a hardware adapter may not start it, in which
 # case the app shows the rails alone and this flow fails at the first assertion: that is the
