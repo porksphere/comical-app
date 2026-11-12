@@ -21,8 +21,8 @@ export function useTitleFont(): string | undefined {
  * same Latin as the title face. It was the tabs' title face before the antique one, and read too
  * serious there; down a spine it is what a book looks like. Its regular and medium weights
  * lose their hairlines at a spine's size, its heaviest was more than a spine wants, and Dela
- * Gothic One, a masthead's gothic, was far too bold for a row of them. Only the shelf draws with it, into pictures of its own, so nothing registers it
- * with the system.
+ * Gothic One, a masthead's gothic, was far too bold for a row of them. Only the shelf draws with
+ * it, into pictures of its own, so nothing registers it with the system.
  */
 export const SPINE_FONT = 'ShipporiMinchoB1-Bold';
 
