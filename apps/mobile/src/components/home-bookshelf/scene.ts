@@ -523,7 +523,10 @@ export class ShelfScene {
           normals.push(nx / nl, 0, nz / nl, nx / nl, 0, nz / nl);
           uvs.push(u, 0, u, 1);
           outline.push(new THREE.Vector2(x, -z));
-          if (j < segments) index.push(j * 2, j * 2 + 1, j * 2 + 2, j * 2 + 1, j * 2 + 3, j * 2 + 2);
+          // Wound to face out on whichever side the book is bound: wound one way for both, a book
+          // bound on its right had its back facing in, and three lights a face seen from behind
+          // as if it looked the other way, so half the shelf's spines were lit from the back.
+          if (j < segments) index.push(...(side < 0 ? [j * 2, j * 2 + 1, j * 2 + 2, j * 2 + 1, j * 2 + 3, j * 2 + 2] : [j * 2, j * 2 + 2, j * 2 + 1, j * 2 + 1, j * 2 + 2, j * 2 + 3]));
         }
         const hull = new THREE.BufferGeometry();
         hull.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
