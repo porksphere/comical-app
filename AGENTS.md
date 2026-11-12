@@ -1106,6 +1106,17 @@ this. The stage runs under the safe area's sides (the bar the wide iPhones stand
 content), and the camera looks square on to the middle of what is left (`ShelfStage.centre`), so
 the shelf crosses the whole screen while the book in front stands where the rest of the page is.
 
+**A book's room along the shelf is the room it has at rest** (`placeShelf`): what it has with the
+book before the place in front, and with the book after, and the share of each the shelf is
+between them. So the spines beside the two books trading places move once, one way. It was the
+room each takes at its own angle at that instant, which swells half way through a turn and is
+least exactly edge-on, and the book leaving the front turns a little past edge-on: every step
+pushed the spines out, drew them in and pushed them out again, three times as far as they ended
+up moving. The turn and how far forward a book stands are not part of this, so the flip is what
+it was, and at rest nothing differs. Two books bound on opposite sides turn toward each other and
+would meet inside that room, so a turning book is moved along just far enough to clear the two
+before it (`shelfOverlap`), which for such a pair comes to about what the old room gave.
+
 **Everything that moves is `ShelfDriver`'s, outside React.** Where along the shelf the reader is,
 the drag, the spring, the press of a tap, the view's drift, and the only place a frame is
 drawn from. It keeps what the scene is to show until there is a scene: the renderer starts after

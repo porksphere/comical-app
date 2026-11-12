@@ -20,6 +20,7 @@ import {
   settleOn,
   shelfCallouts,
   shelfMiddle,
+  shelfOverlap,
   shelfStageHeight,
   spineNumber,
   type ShelfBook,
@@ -54,14 +55,41 @@ describe('placeShelf', () => {
     expect(places[0].z).toBeCloseTo(-shelf[0].width / 2);
   });
 
-  test('no two books overlap, at rest or between two books', () => {
-    for (const pos of [0, 0.25, 0.5, 0.75, 1, 2.4, 3.5, 5, -0.3, 5.3]) {
+  test('at rest every book stands a gap from the next', () => {
+    for (const pos of [0, 1, 2, 3, 5]) {
       const places = placeShelf(shelf, pos);
       for (let i = 1; i < shelf.length; i++) {
         const [, rightOfPrev] = span(shelf[i - 1], places[i - 1].x, places[i - 1].yaw);
         const [left] = span(shelf[i], places[i].x, places[i].yaw);
         expect(left - rightOfPrev).toBeCloseTo(SHELF.gap, 5);
       }
+    }
+  });
+
+  test('no two books run into each other between two rests, whichever way they are bound', () => {
+    const shelves = [shelf, shelf.map((b) => ({ ...b, binding: 'right' as const })), shelf.map((b, i) => ({ ...b, binding: i % 2 ? ('left' as const) : ('right' as const) }))];
+    for (const books of shelves) {
+      for (let pos = -0.4; pos <= 5.4; pos += 0.02) {
+        const places = placeShelf(books, pos);
+        for (let i = 0; i < books.length; i++) {
+          for (const j of [i + 1, i + 2]) if (j < books.length) expect(shelfOverlap(books[i], places[i], books[j], places[j])).toBe(0);
+        }
+      }
+    }
+  });
+
+  test('the books beside the two trading places move once, one way', () => {
+    const books = Array.from({ length: 9 }, () => book('right'));
+    for (const who of [1, 2, 6, 7]) {
+      let travelled = 0;
+      let before = placeShelf(books, 4)[who].x;
+      const from = before;
+      for (let step = 1; step <= 100; step++) {
+        const x = placeShelf(books, 4 + step / 100)[who].x;
+        travelled += Math.abs(x - before);
+        before = x;
+      }
+      expect(travelled).toBeCloseTo(Math.abs(before - from), 3);
     }
   });
 

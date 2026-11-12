@@ -96,46 +96,112 @@ export function bookDepth(form: CoverForm, width: number, chapters: number | und
   }
 }
 
+/** A book's turn, how far forward it stands and the room it takes along the shelf at that turn,
+ *  with `pos` in front. */
+function stance(book: ShelfBook, index: number, pos: number) {
+  const offset = index - pos;
+  const away = Math.abs(offset);
+  const side = offset < 0 ? -1 : 1;
+  // A spine faces the reader at +90 for a book bound on its left and -90 for one bound on its right.
+  const spine = book.binding === 'left' ? 90 : -90;
+  const front = smoothstep(1 - away);
+  const yaw =
+    away >= 1
+      ? spine + side * SHELF.peel * Math.exp(-(away - 1) / 1.3)
+      : (spine + side * SHELF.peel) * (1 - front) + Math.sign(spine) * SHELF.coverYaw * front;
+  return {
+    yaw,
+    front,
+    foot: book.width * Math.abs(Math.cos(rad(yaw))) + book.depth * Math.abs(Math.sin(rad(yaw))),
+    z: (-book.width / 2) * (1 - front) + (SHELF.pull + book.depth / 2) * front,
+  };
+}
+
+/** The air kept between two books that would otherwise touch as they turn. */
+const CLEARANCE = 1.5;
+
+/**
+ * How far two placed books run into each other, seen from above (0 when they are clear): the
+ * least of their overlaps along each one's own two axes. `air` is a margin added round both.
+ */
+export function shelfOverlap(a: ShelfBook, at: ShelfPlace, b: ShelfBook, bt: ShelfPlace, air = 0): number {
+  const box = (book: ShelfBook, place: ShelfPlace) => {
+    const c = Math.cos(rad(place.yaw));
+    const s = Math.sin(rad(place.yaw));
+    const across = [c, -s] as const;
+    const through = [s, c] as const;
+    const w = (book.width + air) / 2;
+    const d = (book.depth + air) / 2;
+    const corners = [-1, 1].flatMap((i) => [-1, 1].map((j) => [place.x + i * w * across[0] + j * d * through[0], place.z + i * w * across[1] + j * d * through[1]] as const));
+    return { corners, axes: [across, through] };
+  };
+  const one = box(a, at);
+  const other = box(b, bt);
+  let least = Infinity;
+  for (const axis of [...one.axes, ...other.axes]) {
+    const along = (corners: readonly (readonly [number, number])[]) => corners.map(([x, z]) => x * axis[0] + z * axis[1]);
+    const p = along(one.corners);
+    const q = along(other.corners);
+    const shared = Math.min(Math.max(...p), Math.max(...q)) - Math.max(Math.min(...p), Math.min(...q));
+    if (shared <= 0) return 0;
+    least = Math.min(least, shared);
+  }
+  return least;
+}
+
 /**
  * Every book's place with `pos` in front (a fraction between two books mid-drag).
  *
- * Books stand spine out and are packed by the room each takes AT ITS OWN ANGLE, so the one turning
- * to show its cover pushes its neighbours aside as it turns rather than passing through them, and
- * a neighbour leaning away from it takes the little more room its lean needs. The front book is
- * held a little toward the side that has no more books, so the first and the last don't stand
- * beside an empty half.
+ * Books stand spine out, the one in front turned to show its cover and its neighbours leaning away
+ * from it. The room each is given along the shelf is the room it takes AT REST: what it has with
+ * the book before `pos` in front, and with the book after, and the share of each that `pos` is
+ * between them. So as the shelf steps along, every book beside the two that are trading places
+ * moves once, one way, by the difference between two rests.
+ *
+ * It was the room a book takes at its own angle at that instant, and that is not a steady thing: a
+ * turning book takes more half way round than at either end, and the one leaving the front turns a
+ * little past edge-on, so it takes least exactly edge-on. The spines beside it were pushed out,
+ * drawn back in and pushed out again on every step, three times as far as they ended up moving.
+ *
+ * Two books turning toward each other (bound on opposite sides) would meet inside the room of two
+ * rests, so a turning book is moved along just far enough to clear the two before it. The front
+ * book is held a little toward the side that has no more books, so the first and the last don't
+ * stand beside an empty half.
  */
 export function placeShelf(books: readonly ShelfBook[], pos: number): ShelfPlace[] {
   const n = books.length;
-  const centres = new Array<number>(n);
   const places = new Array<ShelfPlace>(n);
-  let cursor = 0;
-  for (let i = 0; i < n; i++) {
-    const { width, depth, binding } = books[i];
-    const offset = i - pos;
-    const away = Math.abs(offset);
-    const side = offset < 0 ? -1 : 1;
-    // A spine faces the reader at +90 for a book bound on its left and -90 for one bound on its right.
-    const spine = binding === 'left' ? 90 : -90;
-    const front = smoothstep(1 - away);
-    const yaw =
-      away >= 1
-        ? spine + side * SHELF.peel * Math.exp(-(away - 1) / 1.3)
-        : (spine + side * SHELF.peel) * (1 - front) + Math.sign(spine) * SHELF.coverYaw * front;
-    const foot = width * Math.abs(Math.cos(rad(yaw))) + depth * Math.abs(Math.sin(rad(yaw)));
-    centres[i] = cursor + foot / 2;
-    cursor += foot + SHELF.gap;
-    places[i] = { x: 0, z: (-width / 2) * (1 - front) + (SHELF.pull + depth / 2) * front, yaw, ink: 1 - front };
-  }
   if (n === 0) return places;
   const held = clamp(pos, 0, n - 1);
   const lower = Math.min(Math.max(0, n - 2), Math.floor(held));
   const between = held - lower;
   const upper = Math.min(n - 1, lower + 1);
+  let cursor = 0;
+  for (let i = 0; i < n; i++) {
+    const now = stance(books[i], i, pos);
+    const foot = stance(books[i], i, lower).foot * (1 - between) + stance(books[i], i, upper).foot * between;
+    const place = { x: cursor + foot / 2, z: now.z, yaw: now.yaw, ink: 1 - now.front };
+    // Only a book that is turning reaches past its room, and only as far as the two before it.
+    if (now.front > 0 || (i > 0 && places[i - 1].ink < 1)) {
+      const meets = (x: number) => [i - 1, i - 2].some((j) => j >= 0 && shelfOverlap(books[j], places[j], books[i], { ...place, x }, CLEARANCE) > 0);
+      if (meets(place.x)) {
+        let clear = place.x + now.foot;
+        let touching = place.x;
+        for (let step = 0; step < 14; step++) {
+          const middle = (clear + touching) / 2;
+          if (meets(middle)) touching = middle;
+          else clear = middle;
+        }
+        place.x = clear;
+      }
+    }
+    places[i] = place;
+    cursor = place.x + foot / 2 + SHELF.gap;
+  }
   const lean = n > 1 ? 46 * ((2 * held) / (n - 1) - 1) : 0;
   // Past either end the whole shelf follows the finger, at the resistance `rubberBand` gave it.
-  const focus = centres[lower] * (1 - between) + centres[upper] * between - lean + (pos - held) * 110;
-  for (let i = 0; i < n; i++) places[i].x = centres[i] - focus;
+  const focus = places[lower].x * (1 - between) + places[upper].x * between - lean + (pos - held) * 110;
+  for (let i = 0; i < n; i++) places[i].x -= focus;
   return places;
 }
 
