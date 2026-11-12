@@ -47,15 +47,38 @@ const unit = (a: P3): P3 => {
   return [a[0] / length, a[1] / length, a[2] / length];
 };
 
-class Triangles {
-  readonly data: number[] = [];
+/** A run of a book's vertices: what one draw takes. */
+export type Run = { first: number; count: number };
 
-  get count() {
-    return this.data.length / VERTEX_FLOATS;
-  }
+/** Which shader a surface is drawn by: one with no picture, a cover's, or a spine's. */
+const partOf = (material: number) => (material === MATERIAL.cover || material === MATERIAL.behind ? 'cover' : material === MATERIAL.spine ? 'spine' : 'plain');
+
+/**
+ * Triangles gathered by what draws them and whether they cast the book's shadow, and handed over in
+ * an order that leaves each of those one run: what has no picture, the cover, the spine — and, across
+ * the join of the first two, what casts.
+ */
+class Triangles {
+  /** Whether what is added next casts the book's shadow. */
+  casts = false;
+  private readonly held = { plain: [] as number[], plainCasting: [] as number[], coverCasting: [] as number[], cover: [] as number[], spine: [] as number[] };
 
   private vertex(at: P3, normal: P3, uv: P2, material: number) {
-    this.data.push(at[0], at[1], at[2], normal[0], normal[1], normal[2], uv[0], uv[1], material);
+    const part = partOf(material);
+    const into = part === 'spine' ? this.held.spine : part === 'cover' ? (this.casts ? this.held.coverCasting : this.held.cover) : this.casts ? this.held.plainCasting : this.held.plain;
+    into.push(at[0], at[1], at[2], normal[0], normal[1], normal[2], uv[0], uv[1], material);
+  }
+
+  finish() {
+    const { plain, plainCasting, coverCasting, cover, spine } = this.held;
+    const of = (floats: readonly number[]) => floats.length / VERTEX_FLOATS;
+    return {
+      vertices: new Float32Array([...plain, ...plainCasting, ...coverCasting, ...cover, ...spine]),
+      plain: { first: 0, count: of(plain) + of(plainCasting) },
+      casting: { first: of(plain), count: of(plainCasting) + of(coverCasting) },
+      cover: { first: of(plain) + of(plainCasting), count: of(coverCasting) + of(cover) },
+      spine: { first: of(plain) + of(plainCasting) + of(coverCasting) + of(cover), count: of(spine) },
+    };
   }
 
   /** A flat triangle, or one with a normal of its own at each corner. */
@@ -174,13 +197,16 @@ function rounded(from: P2, corner: P2, to: P2): P2[] {
 
 export type BookGeometry = {
   vertices: Float32Array;
-  /** The first so many vertices are what casts the book's shadow. */
-  casting: number;
+  /** The runs of it each shader draws, and the run that casts the book's shadow. */
+  plain: Run;
+  cover: Run;
+  spine: Run;
+  casting: Run;
   /** A hard cover's rounded back, for its lettering: its length round, in points. */
-  spine?: { width: number; height: number };
+  back?: { width: number; height: number };
 };
 
-/** A book's triangles, what casts its shadow first (`scene.ts`'s `build`, shape for shape). */
+/** A book's triangles (`scene.ts`'s `build`, shape for shape). */
 export function buildBook(spec: ShelfBookSpec): BookGeometry {
   const { width: w, height: h, depth: d } = spec;
   const { form, binding } = spec.cover;
@@ -188,13 +214,13 @@ export function buildBook(spec: ShelfBookSpec): BookGeometry {
   const hinge = (side * w) / 2;
   const half = d / 2;
   const out = new Triangles();
-  let casting = 0;
-  let spine: BookGeometry['spine'];
+  let back: BookGeometry['back'];
 
   if (form === 'scroll') {
     // Nothing bound: a slab with rounded corners and a bevelled rim, its picture on both faces.
     const r = 5;
     const bevel = Math.min(0.9, d * 0.3);
+    out.casts = true;
     const outline = outlineOf([
       ...rounded([w / 2 - r, -h / 2], [w / 2, -h / 2], [w / 2, -h / 2 + r]),
       ...rounded([w / 2, h / 2 - r], [w / 2, h / 2], [w / 2 - r, h / 2]),
@@ -212,7 +238,6 @@ export function buildBook(spec: ShelfBookSpec): BookGeometry {
       uv: ([x, y]) => [x / w + 0.5, y / h + 0.5],
       place: ([x, y, z]) => [x, y + h / 2, z],
     });
-    casting = out.count;
   } else if (form === 'sheets') {
     // A print in a white paper border with another tipped behind it: two cards with the book's
     // depth between them, each leaning its own way on a corner.
@@ -230,8 +255,9 @@ export function buildBook(spec: ShelfBookSpec): BookGeometry {
       { z: half - card / 2, picture: MATERIAL.cover, lean: -side * PRINT_LEAN.front, along: 0 },
       { z: -half + card / 2, picture: MATERIAL.behind, lean: -side * PRINT_LEAN.behind, along: side * w * PRINT_LEAN.aside },
     ].map((p) => ({ ...p, place: print(p.z, p.lean, p.along) }));
+    out.casts = true;
     for (const { place } of prints) out.box([0, 0, 0], [w, h, card], MATERIAL.print, place);
-    casting = out.count;
+    out.casts = false;
     for (const { place, picture } of prints) {
       const x = w / 2 - border;
       const y = h / 2 - border;
@@ -244,8 +270,9 @@ export function buildBook(spec: ShelfBookSpec): BookGeometry {
     const overhang = hard ? 2.4 : 0;
     // The page block, set back from the boards on three sides. It alone casts the book's shadow.
     const blockDepth = Math.max(0.3, d - 2 * thick - 0.3);
+    out.casts = true;
     out.box([(side * overhang) / 2, h / 2, 0], [w - overhang, h - 2 * overhang, blockDepth], MATERIAL.edges, undefined, MATERIAL.page);
-    casting = out.count;
+    out.casts = false;
 
     out.box([0, h / 2, -half + thick / 2], [w, h, thick], MATERIAL.board);
     // The front board, cut to a cover's own outline — its two free corners rounded, the bound ones
@@ -303,7 +330,7 @@ export function buildBook(spec: ShelfBookSpec): BookGeometry {
       }
       // Its head, closed over in cloth.
       out.cap(outlineOf(lid), 0, MATERIAL.board, () => [0, 0], ([x, y]) => [x, h - 0.5, -y]);
-      spine = { width: Math.PI * Math.sqrt((bulge * bulge + half * half) / 2), height: h };
+      back = { width: Math.PI * Math.sqrt((bulge * bulge + half * half) / 2), height: h };
     } else {
       const wire = h * 0.07;
       for (const along of [0.205, 0.725]) {
@@ -323,7 +350,7 @@ export function buildBook(spec: ShelfBookSpec): BookGeometry {
       }
     }
   }
-  return { vertices: new Float32Array(out.data), casting, spine };
+  return { ...out.finish(), back };
 }
 
 /** The plank the books stand on: its top, the edge it shows the reader, and the line along it. */
@@ -332,5 +359,5 @@ export function buildPlank(): Float32Array {
   out.quad([-1500, 0, 80], [1500, 0, 80], [1500, 0, -160], [-1500, 0, -160], MATERIAL.plankTop);
   out.quad([-1500, -12, 80], [1500, -12, 80], [1500, 0, 80], [-1500, 0, 80], MATERIAL.plankFront);
   out.box([0, -0.8, 80.4], [3000, 1.6, 1.6], MATERIAL.rim);
-  return new Float32Array(out.data);
+  return out.finish().vertices;
 }

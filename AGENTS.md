@@ -1086,10 +1086,10 @@ turns it off.
 Settings → General → Bookshelf renderer). three's (`scene.ts`, below) came first. The other
 (`direct/`) is the same scene written straight on WebGPU with no engine between: its camera as
 matrices (`direct/camera.ts`), each book's triangles (`direct/geometry.ts`), and three's node
-materials written out as one WGSL shader (`direct/shader.ts`), sum for sum, so a change to the
+materials written out in WGSL (`direct/shader.ts`), sum for sum, so a change to the
 shelf's look is made in both. It is there because of what a frame costs through three (below): a
-book is one draw where three's is four and a walk of its scene, its place is a row of one uniform
-block, and a frame is a few dozen calls whatever stands on the shelf — measured in a browser,
+book is three draws at the most and no walk of a scene, its place is a row of one uniform
+block, and a frame is a hundred calls or so whatever stands on the shelf — measured in a browser,
 about a twentieth of the script three runs a frame. Nothing of three is in its chunk. It draws through
 `react-native-webgpu` on iOS and Android and the browser's WebGPU on the web; where there is
 none, or its device will not take the shaders, it hands the shelf to three's for the session
@@ -1097,6 +1097,14 @@ none, or its device will not take the shaders, it hands the shelf to three's for
 renderer it started with, since its driver holds that renderer's pictures: the component is
 keyed by it. Its spines on books bound on the right are lit from behind ON PURPOSE (`buildBook`):
 three's are, by the way its back is wound, and that is the tone a shelf of manga was tuned at.
+Each kind of surface has a pipeline of its own (cloth and paper, a bound cover, a loose picture, a
+spine, the plank), and no face turned from the eye is drawn. It began as ONE shader that chose by
+the surface, with every face drawn: every pixel then paid for a cover's relief, a spine's lettering
+and both their pictures, since a GPU works both sides of a choice more often than not, and it ran
+near three times three's cost a pixel — fewer frames on a phone than three, for all its script was
+a twentieth. Script is the half of a frame a browser's clock shows; the other half is seen only
+with the GPU's work waited for (`queue.onSubmittedWorkDone`), which is how this was found, and
+split as it is now it is under three's there too.
 Its shadow goes with the shelf (`sunOverShelf`): cast in the shelf's space, with the light where it
 stands over a shelf that is not drifting, so it is cast only when a book has moved, as three's is,
 and never crawls along its edge as the view drifts. And a frame of it makes nothing: its matrices

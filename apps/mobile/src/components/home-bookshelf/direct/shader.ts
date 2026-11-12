@@ -237,18 +237,20 @@ fn rubbedEnds(cloth: vec3f, at: vec2f, shape: f32) -> vec3f {
   return mix(cloth, RUBBED, rubbedEdge(ends, grained(at)) * RUB);
 }
 
-// How much of the key light reaches a point: the shadow map read at nine places round it.
-fn sunlit(at: vec3f) -> f32 {
+// How much of the key light reaches a point: the shadow map read at five places round it, on a
+// disc turned by where the pixel is, as three reads it.
+fn sunlit(at: vec3f, pixel: vec2f) -> f32 {
   if (at.x < 0.0 || at.x > 1.0 || at.y < 0.0 || at.y > 1.0 || at.z > 1.0) {
     return 1.0;
   }
+  let turn = fract(52.9829189 * fract(dot(pixel, vec2f(0.06711056, 0.00583715)))) * 6.28318530718;
   var sum = 0.0;
-  for (var y = -1; y <= 1; y++) {
-    for (var x = -1; x <= 1; x++) {
-      sum += textureSampleCompareLevel(shadowMap, shadowSampler, at.xy + vec2f(f32(x), f32(y)) / ${SHADOW_SIZE}.0, at.z + SHADOW_BIAS);
-    }
+  for (var n = 0; n < 5; n++) {
+    let out = sqrt((f32(n) + 0.5) / 5.0);
+    let round = f32(n) * 2.399963229728653 + turn;
+    sum += textureSampleCompareLevel(shadowMap, shadowSampler, at.xy + vec2f(cos(round), sin(round)) * out / ${SHADOW_SIZE}.0, at.z + SHADOW_BIAS);
   }
-  return sum / 9.0;
+  return sum / 5.0;
 }
 
 // The key light and the sky's fill on a surface, as three's standard material sums them.
@@ -286,34 +288,33 @@ fn shaded(albedo: vec3f, roughness: f32, metal: f32, n: vec3f, v: vec3f, sun: f3
   return direct * (diffuse / PI * (1.0 - fresnel) + fresnel * facets * masked * compensation) + sky * diffuse / PI * (1.0 - single - multiple);
 }
 
-@fragment
-fn fragment(in: Varyings) -> @location(0) vec4f {
-  let book = books[in.book];
-  let cell = floor(in.clip.xy / frame.eye.w);
-  // The pictures first: a picture is read at every pixel of a face or at none.
-  let coverAt = vec2f(in.uv.x * book.crop.x + book.crop.z, 1.0 - (in.uv.y * book.crop.y + book.crop.w));
-  let cover = textureSample(coverPicture, pictureSampler, coverAt).rgb;
-  let spine = textureSample(spinePicture, pictureSampler, vec2f(in.uv.x, 1.0 - in.uv.y)).rgb;
-  let sun = sunlit(in.shadow);
-  let n = normalize(in.normal);
-  let v = normalize(frame.eye.xyz - in.world);
-  let form = book.kind.x;
+fn lighted(in: Varyings, albedo: vec3f, roughness: f32, metal: f32) -> vec3f {
+  return shaded(albedo, roughness, metal, normalize(in.normal), normalize(frame.eye.xyz - in.world), sunlit(in.shadow, in.clip.xy));
+}
 
+fn cellOf(in: Varyings) -> vec2f {
+  return floor(in.clip.xy / frame.eye.w);
+}
+
+fn coverOf(in: Varyings, book: Book) -> vec3f {
+  let at = vec2f(in.uv.x * book.crop.x + book.crop.z, 1.0 - (in.uv.y * book.crop.y + book.crop.w));
+  return textureSample(coverPicture, pictureSampler, at).rgb;
+}
+
+// A shader to each kind of surface, and each doing its own work alone. As one shader that chose by
+// the surface, every pixel of the shelf paid for a cover's relief, a spine's lettering and both
+// their pictures, a GPU working both sides of a choice more often than not: near three times
+// three's cost a pixel, and fewer frames on a phone for it.
+
+// Cloth, paper, a print's border, a staple: what has no picture.
+@fragment
+fn plainFragment(in: Varyings) -> @location(0) vec4f {
+  let book = books[in.book];
   var albedo = book.board.rgb;
-  // What a spine is before its wear, which is what its lettering is told from its cloth by.
-  var surface = albedo;
   var roughness = 0.62;
   var metal = 0.0;
+  var ink = book.place.w;
   switch (in.material) {
-    case ${M.cover}u, ${M.behind}u: {
-      roughness = select(0.5, 0.8, form == 2.0);
-      if (book.board.w > 0.5) {
-        albedo = cover * select(1.0, BEHIND, in.material == ${M.behind}u);
-      }
-      if (form < 1.5) {
-        albedo = embossed(albedo, in.uv, (form < 0.5), (book.kind.y > 0.5), book.letter.w);
-      }
-    }
     case ${M.edges}u: {
       // Cut paper seen edge on: sheets stacked through the book's thickness.
       albedo = mix(PAPER, PAPER_CUT, step(0.5, fract(in.local.z / 1.6)));
@@ -323,11 +324,6 @@ fn fragment(in: Varyings) -> @location(0) vec4f {
       albedo = PAPER;
       roughness = 0.95;
     }
-    case ${M.spine}u: {
-      surface = select(book.board.rgb, spine, book.cloth.w > 0.5);
-      albedo = rubbedEnds(surface, in.uv, book.letter.w);
-      roughness = 0.5;
-    }
     case ${M.print}u: {
       albedo = PRINT;
       roughness = 0.85;
@@ -336,38 +332,54 @@ fn fragment(in: Varyings) -> @location(0) vec4f {
       albedo = STAPLE;
       roughness = 0.3;
       metal = 1.0;
-    }
-    case ${M.plankTop}u: {
-      albedo = frame.plank.rgb;
-      roughness = 1.0;
-    }
-    case ${M.plankFront}u: {
-      albedo = frame.plankFront.rgb;
-      roughness = 1.0;
+      ink = 0.0;
     }
     default: {}
   }
+  return vec4f(encode(inked(lighted(in, albedo, roughness, metal), ink, frame.bookTone, cellOf(in))), 1.0);
+}
 
-  var lit = shaded(albedo, roughness, metal, n, v, sun);
-  switch (in.material) {
-    case ${M.rim}u: {
-      lit = frame.rim.rgb;
-    }
-    case ${M.staple}u: {}
-    case ${M.plankTop}u: {
-      lit = inked(lit, 1.0, frame.plankTone, cell);
-    }
-    case ${M.plankFront}u: {
-      lit = inked(lit, 1.0, frame.frontTone, cell);
-    }
-    case ${M.spine}u: {
-      lit = lettered(lit, surface, book.cloth.rgb, book.letter.rgb, book.place.w, frame.bookTone, cell);
-    }
-    default: {
-      lit = inked(lit, book.place.w, frame.bookTone, cell);
-    }
+// A bound cover: its picture under its relief and its wear.
+@fragment
+fn boundCoverFragment(in: Varyings) -> @location(0) vec4f {
+  let book = books[in.book];
+  let picture = select(book.board.rgb, coverOf(in, book), book.board.w > 0.5);
+  let albedo = embossed(picture, in.uv, (book.kind.x < 0.5), (book.kind.y > 0.5), book.letter.w);
+  return vec4f(encode(inked(lighted(in, albedo, 0.5, 0.0), book.place.w, frame.bookTone, cellOf(in))), 1.0);
+}
+
+// A picture with nothing over it: a set's two prints, the one behind dimmed, and a slab's faces.
+@fragment
+fn looseCoverFragment(in: Varyings) -> @location(0) vec4f {
+  let book = books[in.book];
+  let picture = coverOf(in, book) * select(1.0, BEHIND, in.material == ${M.behind}u);
+  let albedo = select(book.board.rgb, picture, book.board.w > 0.5);
+  let roughness = select(0.5, 0.8, book.kind.x == 2.0);
+  return vec4f(encode(inked(lighted(in, albedo, roughness, 0.0), book.place.w, frame.bookTone, cellOf(in))), 1.0);
+}
+
+// A hard cover's back: its lettering, its wear, and the lettering's own tone.
+@fragment
+fn spineFragment(in: Varyings) -> @location(0) vec4f {
+  let book = books[in.book];
+  let lettering = textureSample(spinePicture, pictureSampler, vec2f(in.uv.x, 1.0 - in.uv.y)).rgb;
+  // What the spine is before its wear, which is what its lettering is told from its cloth by.
+  let surface = select(book.board.rgb, lettering, book.cloth.w > 0.5);
+  let lit = lighted(in, rubbedEnds(surface, in.uv, book.letter.w), 0.5, 0.0);
+  return vec4f(encode(lettered(lit, surface, book.cloth.rgb, book.letter.rgb, book.place.w, frame.bookTone, cellOf(in))), 1.0);
+}
+
+// The plank: always tone, its top and its front each cut their own way, and the line along it.
+@fragment
+fn plankFragment(in: Varyings) -> @location(0) vec4f {
+  var albedo = frame.plank.rgb;
+  var tone = frame.plankTone;
+  if (in.material == ${M.plankFront}u) {
+    albedo = frame.plankFront.rgb;
+    tone = frame.frontTone;
   }
-  return vec4f(encode(lit), 1.0);
+  let toned = inked(lighted(in, albedo, 1.0, 0.0), 1.0, tone, cellOf(in));
+  return vec4f(encode(select(toned, frame.rim.rgb, in.material == ${M.rim}u)), 1.0);
 }
 
 @vertex

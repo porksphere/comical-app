@@ -1,9 +1,10 @@
 /**
  * The home bookshelf drawn straight on WebGPU, with no engine between: the shelf `scene.ts` draws
- * with three, to the same measurements and through the same camera, as a handful of buffers and one
- * shader. A draw through three is a walk of its scene and a material's upkeep in an interpreter,
- * four times a book and again for the shadow; here a book is one draw, its place one row of a
- * uniform block, and a frame a few dozen calls whatever stands on the shelf.
+ * with three, to the same measurements and through the same camera, as a handful of buffers and a
+ * pipeline to each kind of surface. A draw through three is a walk of its scene and a material's
+ * upkeep in an interpreter, four times a book and again for the shadow; here a book is three draws
+ * at the most, its place one row of a uniform block, and a frame a hundred calls or so whatever
+ * stands on the shelf.
  *
  * Knows nothing of React or of the platform — `ShelfCanvas` hands it a context, and `pixels` the
  * pictures only a platform can make.
@@ -14,7 +15,7 @@ import type { Rgb, ShelfPlace } from '@/lib/bookshelf';
 import type { Pixels } from '../pixels';
 import type { ShelfBookSpec, ShelfPicture, ShelfRenderer, SpinePicture } from '../spec';
 import { eyeOf, pickBook, sunOverShelf, sunward, viewProjection, writeShelfToWorld, type StageView } from './camera';
-import { VERTEX_FLOATS, buildBook, buildPlank } from './geometry';
+import { VERTEX_FLOATS, buildBook, buildPlank, type Run } from './geometry';
 import { BOOK_FLOATS, FRAME_FLOATS, MAX_BOOKS, SHADER, SHADOW_SIZE, SHRINK_SHADER, linear } from './shader';
 
 /** One cell of the dither, in points (`DOT_POINTS` in the other scene). */
@@ -58,12 +59,14 @@ type Built = {
   shape: string;
   lettering: string;
   vertices: GPUBuffer;
-  count: number;
-  casting: number;
+  /** The runs of its vertices each pipeline draws, and the run that casts its shadow. */
+  runs: Record<'plain' | 'cover' | 'spine' | 'casting', Run>;
   spine: Picture | null;
-  spineSize?: { width: number; height: number };
+  back?: { width: number; height: number };
   pictures: GPUBindGroup;
 };
+
+type Pipelines = Record<'cast' | 'plain' | 'boundCover' | 'looseCover' | 'spine' | 'plank' | 'backdrop' | 'shrink', GPURenderPipeline>;
 
 const hexRgb = (colour: number): Rgb => [colour >> 16, (colour >> 8) & 255, colour & 255];
 
@@ -89,7 +92,6 @@ export class DirectScene implements ShelfRenderer {
   private readonly lean: GPUBindGroup;
   private readonly full: GPUBindGroup;
   private readonly pictureLayout: GPUBindGroupLayout;
-  private readonly plankPictures: GPUBindGroup;
   private readonly shrinkSampler: GPUSampler;
   private targets: { width: number; height: number; colour: GPUTexture; depth: GPUTexture } | null = null;
   private books: Built[] = [];
@@ -146,7 +148,19 @@ export class DirectScene implements ShelfRenderer {
       },
     ];
     const lean = device.createPipelineLayout({ bindGroupLayouts: [leanLayout] });
-    const [cast, draw, backdrop, shrink] = await Promise.all([
+    const unpictured = device.createPipelineLayout({ bindGroupLayouts: [fullLayout] });
+    const pictured = device.createPipelineLayout({ bindGroupLayouts: [fullLayout, pictureLayout] });
+    // One pipeline to each kind of surface (`shader.ts`), and none draws a face turned from the eye.
+    const drawing = (layout: GPUPipelineLayout, entryPoint: string) =>
+      device.createRenderPipelineAsync({
+        layout,
+        vertex: { module: shader, entryPoint: 'vertex', buffers },
+        fragment: { module: shader, entryPoint, targets: [{ format }] },
+        primitive: { topology: 'triangle-list', cullMode: 'back' },
+        depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+        multisample: { count: SAMPLES },
+      });
+    const [cast, plain, boundCover, looseCover, spine, plank, backdrop, shrink] = await Promise.all([
       // Only the faces turned from the light are cast: a face it lights then never shadows itself.
       device.createRenderPipelineAsync({
         layout: lean,
@@ -154,14 +168,11 @@ export class DirectScene implements ShelfRenderer {
         primitive: { topology: 'triangle-list', cullMode: 'front' },
         depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less' },
       }),
-      device.createRenderPipelineAsync({
-        layout: device.createPipelineLayout({ bindGroupLayouts: [fullLayout, pictureLayout] }),
-        vertex: { module: shader, entryPoint: 'vertex', buffers },
-        fragment: { module: shader, entryPoint: 'fragment', targets: [{ format }] },
-        primitive: { topology: 'triangle-list', cullMode: 'none' },
-        depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
-        multisample: { count: SAMPLES },
-      }),
+      drawing(unpictured, 'plainFragment'),
+      drawing(pictured, 'boundCoverFragment'),
+      drawing(pictured, 'looseCoverFragment'),
+      drawing(pictured, 'spineFragment'),
+      drawing(unpictured, 'plankFragment'),
       device.createRenderPipelineAsync({
         layout: lean,
         vertex: { module: shader, entryPoint: 'backdropVertex' },
@@ -177,7 +188,8 @@ export class DirectScene implements ShelfRenderer {
         primitive: { topology: 'triangle-list' },
       }),
     ]);
-    const scene = new DirectScene(surface, device, format, { cast, draw, backdrop, shrink }, { leanLayout, fullLayout, pictureLayout });
+    const pipelines = { cast, plain, boundCover, looseCover, spine, plank, backdrop, shrink };
+    const scene = new DirectScene(surface, device, format, pipelines, { leanLayout, fullLayout, pictureLayout });
     const refused = await device.popErrorScope();
     if (refused) {
       scene.dispose();
@@ -190,7 +202,7 @@ export class DirectScene implements ShelfRenderer {
     private readonly surface: DirectSurface,
     private readonly device: GPUDevice,
     private readonly format: GPUTextureFormat,
-    private readonly pipelines: { cast: GPURenderPipeline; draw: GPURenderPipeline; backdrop: GPURenderPipeline; shrink: GPURenderPipeline },
+    private readonly pipelines: Pipelines,
     layouts: { leanLayout: GPUBindGroupLayout; fullLayout: GPUBindGroupLayout; pictureLayout: GPUBindGroupLayout },
   ) {
     this.pictureLayout = layouts.pictureLayout;
@@ -200,7 +212,6 @@ export class DirectScene implements ShelfRenderer {
     this.plank = this.vertices(buildPlank());
     this.shrinkSampler = device.createSampler({ minFilter: 'linear', magFilter: 'linear' });
     this.blank = this.pictureOf({ pixels: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 });
-    this.plankPictures = this.picturesOf(null, null);
     const shadow = device.createTexture({
       size: [SHADOW_SIZE, SHADOW_SIZE],
       format: 'depth32float',
@@ -340,15 +351,15 @@ export class DirectScene implements ShelfRenderer {
       const had = kept.get(spec.key);
       kept.delete(spec.key);
       if (had && had.shape === shape && had.lettering === lettering) return { ...had, spec };
-      let geometry: Pick<Built, 'vertices' | 'count' | 'casting' | 'spineSize'> | undefined = had?.shape === shape ? had : undefined;
+      let geometry: Pick<Built, 'vertices' | 'runs' | 'back'> | undefined = had?.shape === shape ? had : undefined;
       if (!geometry) {
         had?.vertices.destroy();
-        const made = buildBook(spec);
-        geometry = { ...this.vertices(made.vertices), casting: made.casting, spineSize: made.spine };
+        const { vertices, back, ...runs } = buildBook(spec);
+        geometry = { vertices: this.vertices(vertices).vertices, runs, back };
       }
       had?.spine?.texture.destroy();
       const { title, number, board, ink } = spec;
-      const drawn = geometry.spineSize ? this.surface.drawSpine({ title, number, board, ink, ...geometry.spineSize }) : null;
+      const drawn = geometry.back ? this.surface.drawSpine({ title, number, board, ink, ...geometry.back }) : null;
       const spine = drawn ? this.pictureOf(drawn) : null;
       return { ...geometry, spec, shape, lettering, spine, pictures: this.picturesOf(this.covers.get(spec.key) ?? null, spine) };
     });
@@ -460,7 +471,7 @@ export class DirectScene implements ShelfRenderer {
       for (const index of seen) {
         const book = this.books[index];
         cast.setVertexBuffer(0, book.vertices);
-        cast.draw(book.casting, 1, 0, index);
+        cast.draw(book.runs.casting.count, 1, book.runs.casting.first, index);
       }
       cast.end();
     }
@@ -472,17 +483,26 @@ export class DirectScene implements ShelfRenderer {
     pass.setPipeline(this.pipelines.backdrop);
     pass.setBindGroup(0, this.lean);
     pass.draw(3);
-    pass.setPipeline(this.pipelines.draw);
+    pass.setPipeline(this.pipelines.plank);
     pass.setBindGroup(0, this.full);
-    pass.setBindGroup(1, this.plankPictures);
     pass.setVertexBuffer(0, this.plank.vertices);
     pass.draw(this.plank.count, 1, 0, PLANK);
-    for (const index of seen) {
-      const book = this.books[index];
-      pass.setBindGroup(1, book.pictures);
-      pass.setVertexBuffer(0, book.vertices);
-      pass.draw(book.count, 1, 0, index);
-    }
+    // A pipeline at a time across the books, not a book at a time across the pipelines.
+    const each = (pipeline: GPURenderPipeline, run: 'plain' | 'cover' | 'spine', pictured: boolean, bound?: boolean) => {
+      pass.setPipeline(pipeline);
+      for (const index of seen) {
+        const book = this.books[index];
+        const { first, count } = book.runs[run];
+        if (!count || (bound !== undefined && bound !== FORMS[book.spec.cover.form] < 2)) continue;
+        if (pictured) pass.setBindGroup(1, book.pictures);
+        pass.setVertexBuffer(0, book.vertices);
+        pass.draw(count, 1, first, index);
+      }
+    };
+    each(this.pipelines.plain, 'plain', false);
+    each(this.pipelines.boundCover, 'cover', true, true);
+    each(this.pipelines.looseCover, 'cover', true, false);
+    each(this.pipelines.spine, 'spine', true);
     pass.end();
     device.queue.submit([encoder.finish()]);
     this.surface.present?.();

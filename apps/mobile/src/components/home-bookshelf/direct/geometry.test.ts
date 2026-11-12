@@ -92,18 +92,33 @@ describe('a book’s triangles', () => {
     }
   });
 
-  test('put what casts the shadow first', () => {
+  test('hand each shader one run, and the shadow one', () => {
     for (const form of FORMS) {
-      const { vertices, casting } = buildBook(spec(form, 'left'));
-      expect(casting).toBeGreaterThan(0);
-      expect(casting % 3).toBe(0);
-      expect(casting).toBeLessThanOrEqual(vertices.length / VERTEX_FLOATS);
+      const book = buildBook(spec(form, 'left'));
+      const all = triangles(book.vertices).flat();
+      const within = ({ first, count }: { first: number; count: number }) => all.slice(first, first + count);
+      expect(book.plain.count + book.cover.count + book.spine.count).toBe(all.length);
+      for (const run of [book.plain, book.cover, book.spine, book.casting]) expect(run.count % 3).toBe(0);
+      expect(within(book.cover).every(({ material }) => material === MATERIAL.cover || material === MATERIAL.behind)).toBe(true);
+      expect(within(book.spine).every(({ material }) => material === MATERIAL.spine)).toBe(true);
+      expect(within(book.plain).some(({ material }) => material === MATERIAL.cover || material === MATERIAL.spine)).toBe(false);
+      expect(book.casting.count).toBeGreaterThan(0);
+      expect(book.casting.first + book.casting.count).toBeLessThanOrEqual(all.length);
     }
+    // A slab casts its whole self, its pictured faces with its rim; a bound book its page block alone.
+    const slab = buildBook(spec('scroll', 'left'));
+    expect(slab.casting.count).toBe(slab.vertices.length / VERTEX_FLOATS);
+    const bound = buildBook(spec('volume', 'left'));
+    expect(bound.casting.count).toBe(36);
   });
 
   test('letter only a hard cover’s back', () => {
-    expect(buildBook(spec('volume', 'right')).spine).toBeDefined();
-    for (const form of ['issue', 'sheets', 'scroll'] as const) expect(buildBook(spec(form, 'right')).spine).toBeUndefined();
+    expect(buildBook(spec('volume', 'right')).back).toBeDefined();
+    expect(buildBook(spec('volume', 'right')).spine.count).toBeGreaterThan(0);
+    for (const form of ['issue', 'sheets', 'scroll'] as const) {
+      expect(buildBook(spec(form, 'right')).back).toBeUndefined();
+      expect(buildBook(spec(form, 'right')).spine.count).toBe(0);
+    }
   });
 });
 
