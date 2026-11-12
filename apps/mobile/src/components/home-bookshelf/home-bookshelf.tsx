@@ -34,8 +34,8 @@ import { useTitleFontFor } from '@/lib/title-font';
 import { ShelfDriver } from './driver';
 import type { ShelfBookSpec } from './scene';
 
-// Its own chunk on the web: three and the scene are most of a megabyte that only this row needs.
-const ShelfCanvas = lazy(() => import('./shelf-canvas').then((m) => ({ default: m.ShelfCanvas })));
+// Its own chunk on the web: three and the scene are most of a megabyte that only the shelf needs.
+const ShelfCanvas = lazy(() => import('./engine').then((m) => ({ default: m.ShelfCanvas })));
 
 /** The title, where the reader stopped, and Resume, under the stage. */
 const CAPTION_HEIGHT = 60;
@@ -239,7 +239,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
       asked.current.add(key);
       const { binding } = coverOf({ bridgeId: history.bridgeId, seriesId: history.seriesId, direct: false, aspect: SHELF_ASPECT.unknown });
       void (async () => {
-        const { loadCover } = await import('./pictures');
+        const { loadCover } = await import('./engine');
         const picture = await loadCover(await resolveAssetSourceCached(url), binding);
         if (!picture) return;
         if (!alive.current) {
