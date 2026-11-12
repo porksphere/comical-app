@@ -16,7 +16,7 @@ const SYSTEM_FACE = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans
 /** What the spines are lettered with, loaded before the first is drawn: a canvas sets text in a
  *  face only once the page has it, and says nothing when it hasn't. */
 export function prepare(): Promise<void> {
-  return loadAsync({ [SPINE_FONT]: require('@/assets/fonts/ShipporiMinchoB1-Bold.ttf') })
+  return loadAsync({ [SPINE_FONT]: require('@/assets/fonts/ShipporiMinchoB1-Medium.ttf') })
     .then(() => document.fonts.load(`16px "${SPINE_FONT}"`))
     .then(
       () => {},
