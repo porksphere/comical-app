@@ -1079,8 +1079,9 @@ reader: it is 2D, and a book is not.
 - **`three` and `react-native-webgpu` are pinned exactly, together.** The renderer reaches into
   the canvas and the device the package hands it. Skia 2 has no part in this; Skia 3 draws through
   the same Dawn, and from then the two packages must be a pair their docs list as compatible.
-- **Nothing here is imported until the shelf is on screen** (`lazy`, and `import('./pictures')`):
-  three is most of a megabyte, and its own chunk on the web.
+- **Nothing here is imported until the shelf is on screen**, and all of it through `engine.ts`:
+  three is most of a megabyte. Asked for from two places it was two chunks on the web, and three,
+  shared by both, went to the main bundle.
 
 **One camera, written twice.** `ShelfScene.resize` sets it for the renderer and `projectToStage`
 (`lib/bookshelf`) is the same camera as arithmetic, which is how the callouts — the burst for new
