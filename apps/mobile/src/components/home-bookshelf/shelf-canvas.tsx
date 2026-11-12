@@ -4,7 +4,7 @@ import { Canvas, type CanvasRef } from 'react-native-webgpu';
 import * as THREE from 'three/webgpu';
 
 import type { ShelfDriver } from './driver';
-import { drawSpine } from './pictures';
+import { drawSpine, prepare } from './pictures';
 import { ShelfScene } from './scene';
 
 export type ShelfCanvasProps = {
@@ -33,7 +33,7 @@ export function ShelfCanvas({ style, driver, onUnavailable }: ShelfCanvasProps) 
         canvas: context.canvas as unknown as HTMLCanvasElement,
         context: context as unknown as GPUCanvasContext,
       });
-      await renderer.init();
+      await Promise.all([renderer.init(), prepare()]);
       if (gone) return;
       scene = new ShelfScene(renderer, drawSpine, () => context.present());
       driver.attach(scene);

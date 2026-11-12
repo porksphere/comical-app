@@ -2,6 +2,8 @@ import type * as THREE from 'three/webgpu';
 
 import {
   SHELF,
+  driftAt,
+  openedPlace,
   placeShelf,
   rubberBand,
   settleOn,
@@ -15,16 +17,24 @@ import type { ShelfBookSpec, ShelfScene } from './scene';
 
 const STIFFNESS = 190;
 const DAMPING = 25;
+/** Per second: how fast a cover swings toward open or shut. Most of the way in a third of one. */
+const SWING = 9;
 
 /**
  * The shelf in motion, outside React: where along it the reader is, the drag and the spring that
- * settles it, and the one place a frame is drawn from. It holds what the scene is to show until
- * there is a scene to show it — the renderer starts later than the first books arrive — and its
- * frames are driven by `requestAnimationFrame` only while something is moving.
+ * settles it, the cover that opens, the view's drift, and the one place a frame is drawn from. It
+ * holds what the scene is to show until there is a scene to show it — the renderer starts later
+ * than the first books arrive.
+ *
+ * It keeps no clock of its own. Whoever owns the frames calls `step` with each, and is told through
+ * `setFrames` when the shelf NEEDS them (something is moving) and when it has stopped needing them;
+ * a frame handed over while nothing moves is still drawn, which is how the idle drift is paced from
+ * outside. The frames are the display's own, since React Native's `requestAnimationFrame` ticks at
+ * 60 whatever the screen does.
  */
 export class ShelfDriver {
   private onFrame: (callouts: ShelfCallouts) => void = () => {};
-  private onFront: (index: number) => void = () => {};
+  private onFront: (index: number, byHand: boolean) => void = () => {};
   private onDrawn: (drawn: boolean) => void = () => {};
   private still = false;
 
@@ -40,18 +50,31 @@ export class ShelfDriver {
   private target = 0;
   private held = false;
   private grabbedAt = 0;
-  private frame = 0;
+  private frames = { start: () => {}, stop: () => {} };
+  private moving = false;
+  /** The reader has moved the shelf at least once: what came forward before that came by itself. */
+  private touched = false;
   private last = 0;
   private front = -1;
+  /** How far the front book's cover has swung, where it is headed, and who to tell on arrival. */
+  private open = 0;
+  private openTo = 0;
+  private onOpened: (() => void) | null = null;
+  private drift = { yaw: 0, pitch: 0 };
 
   get focused(): number {
     return this.target;
   }
 
   /** `onFrame` is given each frame's callouts, for the views drawn over the stage; `onFront` the
-   *  book in front when it changes; `onDrawn` whether there are books on screen for the callouts to
-   *  stand on, which there are not until the renderer has started. */
-  listen(to: { onFrame: (callouts: ShelfCallouts) => void; onFront: (index: number) => void; onDrawn: (drawn: boolean) => void }) {
+   *  book in front when it changes, and whether the reader brought it there; `onDrawn` whether
+   *  there are books on screen for the callouts to stand on, which there are not until the renderer
+   *  has started. */
+  listen(to: {
+    onFrame: (callouts: ShelfCallouts) => void;
+    onFront: (index: number, byHand: boolean) => void;
+    onDrawn: (drawn: boolean) => void;
+  }) {
     this.onFrame = to.onFrame;
     this.onFront = to.onFront;
     this.onDrawn = to.onDrawn;
@@ -59,16 +82,25 @@ export class ShelfDriver {
     this.draw();
   }
 
-  /** Reduce Motion: a release lands at once, with no spring. */
+  /** `start` is called when the shelf begins to need a frame every frame, `stop` when it no longer
+   *  does. */
+  setFrames(frames: { start: () => void; stop: () => void }) {
+    this.frames = frames;
+    if (this.moving) frames.start();
+  }
+
+  /** Reduce Motion: a release lands at once with no spring, a cover does not swing, and the view
+   *  holds still. */
   setStill(still: boolean) {
     this.still = still;
+    if (still) this.drift = { yaw: 0, pitch: 0 };
   }
 
   attach(scene: ShelfScene | null) {
     this.scene = scene;
     this.onDrawn(!!scene);
     if (!scene) return;
-    scene.resize(this.stage.width, this.stage.height, this.pixelRatio);
+    scene.resize(this.stage.width, this.stage.height, this.pixelRatio, this.stage.centre);
     scene.setTheme(this.theme.dark, this.theme.background);
     scene.setBooks(this.specs);
     // The scene keeps a cover from here on, and frees it with itself.
@@ -80,7 +112,7 @@ export class ShelfDriver {
   setStage(stage: ShelfStage, pixelRatio: number) {
     this.stage = stage;
     this.pixelRatio = pixelRatio;
-    this.scene?.resize(stage.width, stage.height, pixelRatio);
+    this.scene?.resize(stage.width, stage.height, pixelRatio, stage.centre);
     this.draw();
   }
 
@@ -110,9 +142,11 @@ export class ShelfDriver {
   }
 
   grab() {
+    this.touched = true;
     this.held = true;
     this.grabbedAt = this.pos;
     this.velocity = 0;
+    this.shut();
   }
 
   /** The finger's travel since `grab`, in points: right is toward the shelf's start. */
@@ -129,7 +163,9 @@ export class ShelfDriver {
   }
 
   goTo(index: number) {
+    this.touched = true;
     this.target = Math.min(Math.max(0, index), Math.max(0, this.books.length - 1));
+    if (this.target !== Math.round(this.pos)) this.shut();
     if (this.still) {
       this.pos = this.target;
       this.velocity = 0;
@@ -142,45 +178,92 @@ export class ShelfDriver {
     return this.scene?.pick(x, y) ?? -1;
   }
 
+  /**
+   * Swings the front book's cover open and calls `then` when it has — at once where there is no
+   * swing to wait for: nothing drawn yet, Reduce Motion, or a form with no cover to open (the
+   * scene swings what it can; a slab or a set of prints simply stands).
+   */
+  openFront(then: () => void) {
+    if (!this.scene || this.still) {
+      then();
+      return;
+    }
+    this.openTo = 1;
+    this.onOpened = then;
+    this.kick();
+  }
+
+  /** Swings it shut again: the reader is back. */
+  shut() {
+    this.onOpened = null;
+    if (!this.open && !this.openTo) return;
+    this.openTo = 0;
+    this.kick();
+  }
+
   dispose() {
-    if (this.frame) cancelAnimationFrame(this.frame);
-    this.frame = 0;
+    this.frames.stop();
+    this.moving = false;
     this.scene = null;
     for (const cover of this.covers.values()) cover.texture.dispose();
     this.covers.clear();
   }
 
   private kick() {
-    if (this.frame) return;
-    this.last = 0;
-    this.frame = requestAnimationFrame(this.tick);
+    if (this.moving) return;
+    this.moving = true;
+    this.frames.start();
   }
 
-  private tick = (now: number) => {
-    this.frame = 0;
+  /**
+   * One frame, at `now` milliseconds on the frames' own clock, with the device tipped `tilt` (-1 to
+   * 1 each way; level where there is nothing to read it).
+   */
+  step = (now: number, tiltX = 0, tiltY = 0) => {
     const dt = this.last ? Math.min(0.032, (now - this.last) / 1000) : 1 / 60;
     this.last = now;
-    if (!this.held) {
-      this.velocity += (-STIFFNESS * (this.pos - this.target) - DAMPING * this.velocity) * dt;
-      this.pos += this.velocity * dt;
-      if (Math.abs(this.pos - this.target) < 0.0008 && Math.abs(this.velocity) < 0.01) {
-        this.pos = this.target;
-        this.velocity = 0;
+    if (!this.still) this.drift = driftAt(now, { x: tiltX, y: tiltY });
+    if (this.moving) {
+      if (!this.held) {
+        this.velocity += (-STIFFNESS * (this.pos - this.target) - DAMPING * this.velocity) * dt;
+        this.pos += this.velocity * dt;
+        if (Math.abs(this.pos - this.target) < 0.0008 && Math.abs(this.velocity) < 0.01) {
+          this.pos = this.target;
+          this.velocity = 0;
+        }
+      }
+      this.open += (this.openTo - this.open) * Math.min(1, dt * SWING);
+      if (Math.abs(this.openTo - this.open) < 0.004) this.open = this.openTo;
+      // Told while the cover still has a little way to swing: the page that opens covers the rest.
+      if (this.open >= 0.9 && this.onOpened) {
+        const arrived = this.onOpened;
+        this.onOpened = null;
+        arrived();
+      }
+      // Under a finger the next frame is asked for by the finger's next move.
+      if (this.open === this.openTo && (this.held || (this.pos === this.target && this.velocity === 0))) {
+        this.moving = false;
+        this.frames.stop();
       }
     }
     this.draw();
-    if (!this.held && (this.pos !== this.target || this.velocity !== 0)) this.frame = requestAnimationFrame(this.tick);
   };
 
   private draw() {
     if (!this.books.length || !this.stage.width) return;
     const places = placeShelf(this.books, this.pos);
-    this.scene?.render(places, true);
-    const callouts = shelfCallouts(this.books, places, this.pos, this.stage);
+    const front = Math.min(Math.max(0, Math.round(this.pos)), this.books.length - 1);
+    if (this.open) places[front] = openedPlace(places[front], this.books[front], this.open);
+    if (this.scene) {
+      this.scene.setView(this.drift.yaw, this.drift.pitch);
+      this.scene.setOpen(front, this.open);
+      this.scene.render(places, true);
+    }
+    const callouts = shelfCallouts(this.books, places, this.pos, { ...this.stage, ...this.drift }, this.open);
     this.onFrame(callouts);
     if (callouts.front !== this.front) {
       this.front = callouts.front;
-      this.onFront(callouts.front);
+      this.onFront(callouts.front, this.touched);
     }
   }
 }

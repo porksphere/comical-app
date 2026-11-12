@@ -12,6 +12,15 @@ const COVER_WIDTH = 384;
 const SPINE_SCALE = 3;
 const SYSTEM_FACE = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
+/** What the spines are lettered with, loaded before the first is drawn: a canvas sets text in a
+ *  face only once the page has it, and says nothing when it hasn't. */
+export function prepare(): Promise<void> {
+  return document.fonts.load(`16px "${TITLE_FONT}"`).then(
+    () => {},
+    () => {},
+  );
+}
+
 function textureOf(canvas: HTMLCanvasElement): THREE.Texture {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;

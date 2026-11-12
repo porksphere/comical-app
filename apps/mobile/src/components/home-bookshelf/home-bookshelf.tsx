@@ -1,7 +1,18 @@
+import { LinearGradient } from 'expo-linear-gradient';
+import { useIsFocused } from 'expo-router';
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { PixelRatio, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  measure,
+  runOnJS,
+  useAnimatedRef,
+  useAnimatedStyle,
+  useFrameCallback,
+  useReducedMotion,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 import Svg, { Circle, Defs, Pattern, Polygon, Rect } from 'react-native-svg';
 
 import { FeedHeading, SECTION_HEAD_ROW_HEIGHT } from '@/components/content-feed';
@@ -13,6 +24,8 @@ import { useWarmChapterPages } from '@/data/prefetch';
 import { DIRECT_CHAPTER_ID } from '@/data/types';
 import { useBookCoverResolver } from '@/hooks/use-book-covers';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useSideInsets } from '@/hooks/use-content-width';
+import { useDeviceTilt, type Tilt } from '@/hooks/use-device-tilt';
 import { markHomeBookshelfUnavailable, type BookshelfEntry } from '@/hooks/use-home-bookshelf';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import {
@@ -23,19 +36,26 @@ import {
   shelfCallouts,
   shelfCoverWidth,
   shelfStageHeight,
+  spineNumber,
   type Rgb,
   type ShelfCallouts,
 } from '@/lib/bookshelf';
+import { createTickHaptic, hapticSelection } from '@/lib/haptics';
 import { historySub } from '@/lib/history-sub';
 import { useRouter } from '@/lib/nav';
 import { historyResumeParams } from '@/lib/series-links';
 import { useTitleFontFor } from '@/lib/title-font';
 
 import { ShelfDriver } from './driver';
+import { PAGE_DOTS_HEIGHT, PageDots } from './page-dots';
 import type { ShelfBookSpec } from './scene';
 
 // Its own chunk on the web: three and the scene are most of a megabyte that only the shelf needs.
 const ShelfCanvas = lazy(() => import('./engine').then((m) => ({ default: m.ShelfCanvas })));
+
+/** The least time between two frames of a shelf that only stands and drifts, in milliseconds:
+ *  half the rate of one that is moving, which a turn of a degree or so over seconds doesn't miss. */
+const IDLE_FRAME_MS = 30;
 
 /** The title, where the reader stopped, and Resume, under the stage. */
 const CAPTION_HEIGHT = 60;
@@ -43,28 +63,20 @@ const CAPTION_HEIGHT = 60;
 /** Its height in a feed `width` wide, heading and all — known ahead of it, so the feed's offsets
  *  below never wait on a measurement. */
 export function homeBookshelfHeight(width: number): number {
-  return SECTION_HEAD_ROW_HEIGHT + shelfStageHeight(width) + CAPTION_HEIGHT + Spacing.two;
+  return SECTION_HEAD_ROW_HEIGHT + shelfStageHeight(width) + CAPTION_HEIGHT + PAGE_DOTS_HEIGHT + Spacing.two;
 }
 
 // A sticker is ink on paper whatever the theme; only the tone it casts follows the page.
 const STICKER = { paper: '#ffffff', ink: '#1c1c1e' } as const;
 const TONE = { light: '#1c1c1e', dark: '#8a8a8f' } as const;
 
-/** The burst's outline: thirteen uneven points, the same every time. */
-const BURST = (() => {
-  let seed = 11;
-  const random = () => {
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-  const points: string[] = [];
-  for (let k = 0; k < 26; k++) {
-    const angle = (k / 26) * Math.PI * 2 + (random() - 0.5) * 0.12;
-    const reach = k % 2 ? 28 + random() * 4 : 39 + random() * 7;
-    points.push(`${(Math.cos(angle) * reach).toFixed(1)},${(Math.sin(angle) * reach).toFixed(1)}`);
-  }
-  return points.join(' ');
-})();
+/** The burst's outline: sixteen even points, every other one a little longer. Even, because the
+ *  first cut's uneven ones read as a mistake at this size rather than as a hand's. */
+const BURST = Array.from({ length: 32 }, (_, k) => {
+  const angle = (k / 32) * Math.PI * 2 - Math.PI / 2;
+  const reach = k % 2 ? 31 : k % 4 ? 40 : 45;
+  return `${(Math.cos(angle) * reach).toFixed(1)},${(Math.sin(angle) * reach).toFixed(1)}`;
+}).join(' ');
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -96,24 +108,39 @@ function ToneShadow({ id, colour }: { id: string; colour: string }) {
   );
 }
 
-function Burst({ fx, count, tone }: { fx: SharedValue<ShelfCallouts>; count: number; tone: string }) {
+function Burst({
+  fx,
+  tilt,
+  count,
+  turn,
+  tone,
+}: {
+  fx: SharedValue<ShelfCallouts>;
+  tilt: SharedValue<Tilt>;
+  count: number;
+  /** The star's turn, in degrees: its lettering stays level whichever way its points fall. */
+  turn: number;
+  tone: string;
+}) {
   const style = useAnimatedStyle(() => {
     const { burst, pop, settled } = fx.get();
+    const stir = tilt.get();
     return {
       opacity: count ? Math.min(1, settled * 4) : 0,
-      transform: [{ translateX: burst.x - 48 }, { translateY: burst.y - 48 }, { scale: pop * burst.scale }, { rotate: '-10deg' }],
+      transform: [
+        { translateX: burst.x - 48 + stir.x * 3 },
+        { translateY: burst.y - 48 - stir.y * 2 },
+        { scale: pop * burst.scale },
+        { rotate: `${stir.x * 2}deg` },
+      ],
     };
   });
   return (
     <Animated.View style={[styles.burst, style]}>
       <Svg width={96} height={96} viewBox="-50 -50 100 100">
-        <Defs>
-          <Pattern id="bookshelf-burst-tone" patternUnits="userSpaceOnUse" width={4} height={4}>
-            <Circle cx={2} cy={2} r={1.15} fill={tone} />
-          </Pattern>
-        </Defs>
-        <Polygon points={BURST} fill="url(#bookshelf-burst-tone)" transform="translate(5 6)" />
-        <Polygon points={BURST} fill={STICKER.paper} stroke={STICKER.ink} strokeWidth={2.6} strokeLinejoin="miter" />
+        {/* A hard shadow, as the tabs cast: tone dotted into a margin this thin was only fragments. */}
+        <Polygon points={BURST} fill={tone} transform={`translate(3 4) rotate(${turn})`} />
+        <Polygon points={BURST} fill={STICKER.paper} stroke={STICKER.ink} strokeWidth={2.4} strokeLinejoin="miter" transform={`rotate(${turn})`} />
       </Svg>
       <View style={styles.burstLabel}>
         <Text style={styles.burstCount}>{count}</Text>
@@ -123,19 +150,33 @@ function Burst({ fx, count, tone }: { fx: SharedValue<ShelfCallouts>; count: num
   );
 }
 
-function Caption({ fx, where, tone }: { fx: SharedValue<ShelfCallouts>; where: string; tone: string }) {
+function Caption({
+  fx,
+  tilt,
+  where,
+  lean,
+  tone,
+}: {
+  fx: SharedValue<ShelfCallouts>;
+  tilt: SharedValue<Tilt>;
+  where: string;
+  /** The way it was slapped on, in degrees: one way or the other, a little or a little more. */
+  lean: number;
+  tone: string;
+}) {
   const style = useAnimatedStyle(() => {
     const { caption, pop, settled } = fx.get();
+    const stir = tilt.get();
     return {
       opacity: Math.min(1, settled * 4),
       // Hung off the corner by the side it stands on, most of it clear of the cover.
       transform: [
-        { translateX: caption.x },
-        { translateY: caption.y },
+        { translateX: caption.x + stir.x * 2 },
+        { translateY: caption.y - stir.y * 1.5 },
         { translateX: caption.side < 0 ? '-34%' : '-66%' },
         { translateY: '-38%' },
         { scale: pop },
-        { rotate: caption.side < 0 ? '-3deg' : '3deg' },
+        { rotate: `${lean + stir.x}deg` },
       ],
     };
   });
@@ -187,9 +228,19 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   const { nameOf, directOf } = useBridgeMap();
   const coverOf = useBookCoverResolver();
   const warmPages = useWarmChapterPages();
-  const stage = useMemo(() => ({ width, height: shelfStageHeight(width) }), [width]);
+  // The shelf runs under the safe area's sides — the bar the wide iPhones stand beside the content —
+  // while the book in front stands in the middle of what is left, where the rest of the page is.
+  const sides = useSideInsets();
+  const stage = useMemo(
+    () => ({ width: width + sides.left + sides.right, height: shelfStageHeight(width), centre: sides.left + width / 2 }),
+    [width, sides.left, sides.right],
+  );
+  const tilt = useDeviceTilt(!reduceMotion);
   const [front, setFront] = useState(0);
   const [drawn, setDrawn] = useState(false);
+  // How the stickers went on this time: each book that comes forward gets them afresh.
+  const [stuck, setStuck] = useState({ lean: -3, turn: 0 });
+  const [tick] = useState(() => createTickHaptic(hapticSelection));
   // What each cover turned out to be once its picture loaded: its shape, and the cloth read off it.
   const [pictures, setPictures] = useState<Record<string, { aspect: number; board: Rgb }>>({});
   const fx = useSharedValue<ShelfCallouts>(shelfCallouts([], [], 0, stage));
@@ -204,6 +255,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
       return {
         key,
         title: history.title,
+        number: history.chapterId === DIRECT_CHAPTER_ID ? undefined : spineNumber(history.chapterName),
         cover,
         width: coverWidth,
         height: coverWidth / aspect,
@@ -215,10 +267,69 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   }, [entries, pictures, width, coverOf, directOf]);
 
   useEffect(() => {
-    driver.listen({ onFront: setFront, onFrame: (callouts) => fx.set(callouts), onDrawn: setDrawn });
+    driver.listen({
+      onFront: (index, byHand) => {
+        setFront(index);
+        setStuck({ lean: (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3), turn: Math.random() * 45 });
+        // A book the reader brought forward clicks into place; the one the shelf opens on does not.
+        if (byHand) tick();
+      },
+      onFrame: (callouts) => fx.set(callouts),
+      onDrawn: setDrawn,
+    });
     return () => driver.dispose();
-  }, [driver, fx]);
+  }, [driver, fx, tick]);
   useEffect(() => driver.setStill(reduceMotion), [driver, reduceMotion]);
+
+  // The shelf's frames come off the display's own callback, on the UI thread, and are drawn here on
+  // the JS thread where three runs. One is in hand at a time: a frame that arrives while the last
+  // is still being drawn is let go, so a slow frame costs that frame and never a queue of them.
+  // A shelf that is moving takes every frame. One that only stands takes about every other, for
+  // its drift, and none once it has scrolled off the top, lost the screen, or under Reduce Motion.
+  const focused = useIsFocused();
+  const mayDrift = focused && !reduceMotion;
+  const stageView = useAnimatedRef<Animated.View>();
+  const drawing = useSharedValue(false);
+  const moving = useSharedValue(false);
+  const drifting = useSharedValue(false);
+  const driftedAt = useSharedValue(0);
+  const [draw] = useState(() => (now: number, tiltX: number, tiltY: number) => {
+    try {
+      driver.step(now, tiltX, tiltY);
+    } finally {
+      drawing.set(false);
+    }
+  });
+  const frames = useFrameCallback((frame) => {
+    if (drawing.get()) return;
+    if (!moving.get()) {
+      if (!drifting.get() || frame.timestamp - driftedAt.get() < IDLE_FRAME_MS) return;
+      const at = measure(stageView);
+      if (!at || at.pageY + at.height <= 0) return;
+      driftedAt.set(frame.timestamp);
+    }
+    drawing.set(true);
+    const stir = tilt.get();
+    runOnJS(draw)(frame.timestamp, stir.x, stir.y);
+  }, false);
+  useEffect(() => {
+    drifting.set(mayDrift);
+    frames.setActive(mayDrift);
+    driver.setFrames({
+      start: () => {
+        moving.set(true);
+        frames.setActive(true);
+      },
+      stop: () => {
+        moving.set(false);
+        if (!mayDrift) frames.setActive(false);
+      },
+    });
+  }, [driver, frames, mayDrift, drifting, moving]);
+  // Back from the book it opened: its cover swings shut.
+  useEffect(() => {
+    if (focused) driver.shut();
+  }, [driver, focused]);
   useEffect(() => driver.setStage(stage, Math.min(3, PixelRatio.get())), [driver, stage]);
   useEffect(() => driver.setTheme(dark, theme.background), [driver, dark, theme.background]);
   useEffect(() => driver.setBooks(specs), [driver, specs]);
@@ -260,7 +371,8 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     const h = shown.history;
     const direct = h.chapterId === DIRECT_CHAPTER_ID || !h.chapterId;
     warmPages(h.bridgeId, h.seriesId, direct ? undefined : h.chapterId, h.lastPage ?? 0);
-    router.push({ pathname: '/series', params: withZoomSource(historyResumeParams(h, nameOf(h.bridgeId)), null) });
+    // The cover swings open and the page is pushed as it does: the fetch above has that long a start.
+    driver.openFront(() => router.push({ pathname: '/series', params: withZoomSource(historyResumeParams(h, nameOf(h.bridgeId)), null) }));
   };
   const tap = (x: number, y: number) => {
     const index = driver.bookAt(x, y);
@@ -290,8 +402,9 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     <View style={{ height: homeBookshelfHeight(width) }} testID="home-bookshelf">
       <FeedHeading title="Continue reading" />
       <GestureDetector gesture={Gesture.Race(pan, press)}>
-        <View
-          style={{ width, height: stage.height }}
+        <Animated.View
+          ref={stageView}
+          style={{ width: stage.width, height: stage.height, marginLeft: -sides.left }}
           accessible
           accessibilityRole="adjustable"
           accessibilityLabel={`Continue reading: ${shown.history.title}`}
@@ -307,14 +420,16 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
               <ShelfCanvas style={StyleSheet.absoluteFill} driver={driver} onUnavailable={markHomeBookshelfUnavailable} />
             </Suspense>
           </Fallible>
+          <LinearGradient pointerEvents="none" style={styles.fadeTop} colors={[theme.background, `${theme.background}00`]} />
+          <LinearGradient pointerEvents="none" style={styles.fadeBottom} colors={[`${theme.background}00`, theme.background]} />
           <View style={[styles.callouts, !drawn && styles.unseen]} pointerEvents="none">
             {entries.map((entry, index) =>
               entry.unread ? <UnreadTab key={entry.key} fx={fx} index={index} count={entry.unread} tone={tone} /> : null,
             )}
-            <Caption fx={fx} where={where} tone={tone} />
-            <Burst fx={fx} count={shown.unread} tone={tone} />
+            <Caption fx={fx} tilt={tilt} where={where} lean={stuck.lean} tone={tone} />
+            <Burst fx={fx} tilt={tilt} count={shown.unread} turn={stuck.turn} tone={tone} />
           </View>
-        </View>
+        </Animated.View>
       </GestureDetector>
       <View style={styles.under}>
         <View style={styles.underText}>
@@ -333,6 +448,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
           <Text style={[styles.resumeLabel, { color: theme.accentOn }]}>Resume</Text>
         </Pressable>
       </View>
+      <PageDots count={entries.length} page={Math.min(front, entries.length - 1)} onPage={(page) => driver.goTo(page)} />
     </View>
   );
 }
@@ -340,9 +456,18 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
 const styles = StyleSheet.create({
   callouts: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, overflow: 'hidden' },
   burst: { position: 'absolute', left: 0, top: 0, width: 96, height: 96 },
-  burstLabel: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  burstCount: { color: STICKER.ink, fontSize: 25, lineHeight: 27, fontWeight: '900' },
-  burstNew: { color: STICKER.ink, fontSize: 10, lineHeight: 11, fontWeight: '900', letterSpacing: 0.6 },
+  burstLabel: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-8deg' }],
+  },
+  burstCount: { color: STICKER.ink, fontSize: 24, lineHeight: 24, fontWeight: '900', marginTop: -1 },
+  burstNew: { color: STICKER.ink, fontSize: 9.5, lineHeight: 10, fontWeight: '900', letterSpacing: 0.5 },
   caption: { position: 'absolute', left: 0, top: 0 },
   captionBox: {
     paddingHorizontal: 10,
@@ -373,6 +498,9 @@ const styles = StyleSheet.create({
   underText: { flex: 1, minWidth: 0 },
   title: { fontSize: 20, lineHeight: 26 },
   unseen: { opacity: 0 },
+  // The scene comes out of the page and goes back into it: no edge where the canvas starts or ends.
+  fadeTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 48 },
+  fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 34 },
   resume: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 999 },
   resumeLabel: { fontSize: 15, fontWeight: '600' },
 });

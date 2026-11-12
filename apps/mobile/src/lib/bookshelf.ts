@@ -7,6 +7,7 @@
  * yaw is degrees about the vertical, positive turning a book's right edge away.
  */
 import type { CoverBinding, CoverForm } from '@/lib/book-cover';
+import { leadingChapterNumber } from '@/lib/chapter-label';
 
 export type ShelfBook = { width: number; height: number; depth: number; binding: CoverBinding };
 
@@ -38,6 +39,29 @@ export const smoothstep = (v: number) => {
   const t = clamp(v, 0, 1);
   return t * t * (3 - 2 * t);
 };
+
+/** How far a bound book's cover swings as it opens, and what the book does to make room for it:
+ *  slides off its binding's side and turns most of the way square. */
+export const OPENING = { swing: 152, slide: 0.44, square: 0.8 } as const;
+
+/** The front book's place with its cover `open` (0 to 1). */
+export function openedPlace(place: ShelfPlace, book: ShelfBook, open: number): ShelfPlace {
+  if (!open) return place;
+  const away = book.binding === 'left' ? 1 : -1;
+  return { ...place, x: place.x + away * book.width * OPENING.slide * open, yaw: place.yaw * (1 - OPENING.square * open) };
+}
+
+/**
+ * What is lettered at the foot of a spine: the number of the chapter the book opens at, two
+ * digits at the least as a volume's number is printed ("07", "12", "104", "12.5"). None for a
+ * chapter whose name leads with words.
+ */
+export function spineNumber(chapterName: string | undefined): string | undefined {
+  const number = chapterName ? leadingChapterNumber(chapterName) : undefined;
+  if (!number) return undefined;
+  const [whole, part] = number.split('.');
+  return whole.padStart(2, '0') + (part ? `.${part}` : '');
+}
 
 /** A cover's width for a stage this wide: about a third of a phone, and no larger on a wide one. */
 export function shelfCoverWidth(stageWidth: number): number {
@@ -126,7 +150,22 @@ export function settleOn(pos: number, velocity: number, count: number): number {
   return clamp(clamp(Math.round(pos + velocity * 0.2), near - 3, near + 3), 0, Math.max(0, count - 1));
 }
 
-export type ShelfStage = { width: number; height: number };
+/** `centre` is where along the stage's width the shelf's middle stands: its own middle unless the
+ *  stage runs under something the selection should not sit behind (a bar down one side). `yaw` and
+ *  `pitch` are the view's drift, in degrees: the shelf turned a little about the stage's middle. */
+export type ShelfStage = { width: number; height: number; centre?: number; yaw?: number; pitch?: number };
+
+/** How far the view drifts by itself while the shelf stands, in degrees each way, and how much of
+ *  that again a tipped phone adds. Small on purpose: it is the shelf breathing, not turning. */
+export const DRIFT = { yaw: 1.4, pitch: 0.8, tiltYaw: 0.9, tiltPitch: 0.5 } as const;
+
+/** The view's drift at `now` milliseconds, with the device tipped `tilt` (-1 to 1 each way). */
+export function driftAt(now: number, tilt: { x: number; y: number }): { yaw: number; pitch: number } {
+  return {
+    yaw: Math.sin(now / 2300) * DRIFT.yaw + tilt.x * DRIFT.tiltYaw,
+    pitch: Math.sin(now / 3100 + 1) * DRIFT.pitch + tilt.y * DRIFT.tiltPitch,
+  };
+}
 
 /**
  * Where a point of the shelf's space lands on the stage, from its top left, and the scale things
@@ -136,12 +175,15 @@ export type ShelfStage = { width: number; height: number };
  */
 export function projectToStage(stage: ShelfStage, x: number, y: number, z: number): { x: number; y: number; scale: number } {
   const pivot = stage.height / 2 - SHELF.floor;
-  const tip = rad(SHELF.look);
-  const tippedY = (y - pivot) * Math.cos(tip) - z * Math.sin(tip) + pivot;
-  const tippedZ = (y - pivot) * Math.sin(tip) + z * Math.cos(tip);
+  const turn = rad(stage.yaw ?? 0);
+  const turnedX = x * Math.cos(turn) + z * Math.sin(turn);
+  const turnedZ = -x * Math.sin(turn) + z * Math.cos(turn);
+  const tip = rad(SHELF.look + (stage.pitch ?? 0));
+  const tippedY = (y - pivot) * Math.cos(tip) - turnedZ * Math.sin(tip) + pivot;
+  const tippedZ = (y - pivot) * Math.sin(tip) + turnedZ * Math.cos(tip);
   const eye = 0.56 * stage.height - SHELF.floor;
   const scale = SHELF.lens / (SHELF.lens - tippedZ);
-  return { x: stage.width / 2 + x * scale, y: stage.height - SHELF.floor - (eye + (tippedY - eye) * scale), scale };
+  return { x: (stage.centre ?? stage.width / 2) + turnedX * scale, y: stage.height - SHELF.floor - (eye + (tippedY - eye) * scale), scale };
 }
 
 /** A point of a placed book, given from its base's middle (`along` its width from the middle,
@@ -173,7 +215,14 @@ export function popIn(settled: number): number {
   return Math.max(0, 1 + (overshoot + 1) * u * u * u + overshoot * u * u);
 }
 
-export function shelfCallouts(books: readonly ShelfBook[], places: readonly ShelfPlace[], pos: number, stage: ShelfStage): ShelfCallouts {
+/** `open` is how far the front book's cover has swung, 0 to 1: its stickers leave as it opens. */
+export function shelfCallouts(
+  books: readonly ShelfBook[],
+  places: readonly ShelfPlace[],
+  pos: number,
+  stage: ShelfStage,
+  open = 0,
+): ShelfCallouts {
   const front = clamp(Math.round(pos), 0, Math.max(0, books.length - 1));
   const none = { x: 0, y: 0 };
   if (!books.length) return { front, settled: 0, pop: 0, burst: { ...none, scale: 0 }, caption: { ...none, side: 1 }, tabs: [] };
@@ -186,12 +235,12 @@ export function shelfCallouts(books: readonly ShelfBook[], places: readonly Shel
   const free = binding === 'left' ? 1 : -1;
   const corner = on(front, (free * width) / 2, height, depth / 2);
   const foot = on(front, (-free * width) / 2, height * 0.05, depth / 2);
-  const settled = clamp(1 - 2 * Math.abs(pos - front), 0, 1);
+  const settled = clamp(1 - 2 * Math.abs(pos - front), 0, 1) * (1 - smoothstep(open * 2));
   return {
     front,
     settled,
     pop: popIn(settled),
-    burst: { x: clamp(corner.x + free * 16, 50, stage.width - 50), y: Math.max(50, corner.y - 14), scale: corner.scale },
+    burst: { x: clamp(corner.x + free * 6, 50, stage.width - 50), y: Math.max(50, corner.y - 8), scale: corner.scale },
     caption: { x: foot.x, y: foot.y, side: free === 1 ? -1 : 1 },
     tabs: books.map((b, i) => {
       const head = on(i, ((b.binding === 'left' ? -1 : 1) * b.width) / 2, b.height, 0);

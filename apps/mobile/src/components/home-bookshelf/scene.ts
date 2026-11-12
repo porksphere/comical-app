@@ -10,11 +10,16 @@ import {
   clamp,
   dot,
   float,
+  abs,
   floor,
+  fract,
   length,
+  materialColor,
   mix,
   mod,
+  normalLocal,
   output,
+  positionLocal,
   sRGBTransferEOTF,
   sRGBTransferOETF,
   screenCoordinate,
@@ -23,14 +28,15 @@ import {
   step,
   uniform,
   userData,
+  uv,
   vec2,
   vec3,
   vec4,
 } from 'three/tsl';
 import * as THREE from 'three/webgpu';
 
-import { SHELF, cssRgb, type Rgb, type ShelfPlace } from '@/lib/bookshelf';
-import type { BookCover } from '@/lib/book-cover';
+import { OPENING, SHELF, cssRgb, type Rgb, type ShelfPlace } from '@/lib/bookshelf';
+import { PRINT, type BookCover } from '@/lib/book-cover';
 
 export type ShelfBookSpec = {
   key: string;
@@ -68,6 +74,35 @@ const lit = output as unknown as THREE.Node<'vec4'>;
 const pixel = screenCoordinate as unknown as THREE.Node<'vec2'>;
 const vec3Of = (node: THREE.Node) => node as unknown as THREE.Node<'vec3'>;
 
+/**
+ * Several pieces as one geometry, so what is one material is one draw. A draw is cheap for the
+ * GPU and dear here: each is a trip through three in an interpreter, twice a frame with the
+ * shadow's pass, and a book of loose boxes with a material a face was sixteen of them.
+ */
+function merged(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const flat = parts.map((part) => (part.index ? part.toNonIndexed() : part));
+  const out = new THREE.BufferGeometry();
+  for (const [name, size] of [['position', 3], ['normal', 3], ['uv', 2]] as const) {
+    const data = new Float32Array(flat.reduce((n, g) => n + g.attributes[name].count * size, 0));
+    let at = 0;
+    for (const g of flat) {
+      data.set(g.attributes[name].array, at);
+      at += g.attributes[name].count * size;
+    }
+    out.setAttribute(name, new THREE.BufferAttribute(data, size));
+  }
+  for (const g of new Set([...parts, ...flat])) g.dispose();
+  return out;
+}
+
+/** A book as built: `lid` is a bound book's front board, hung on its binding edge, with what its
+ *  leaves need to be cut to size; an unbound form has nothing to open. */
+type Built = {
+  group: THREE.Group;
+  coverMaterial: THREE.MeshStandardNodeMaterial | null;
+  lid: { board: THREE.Group; side: number; hinge: number; width: number; height: number; foot: number; front: number } | null;
+};
+
 export class ShelfScene {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(30, 1, 20, 6000);
@@ -82,12 +117,18 @@ export class ShelfScene {
   private readonly plankTop: THREE.MeshStandardNodeMaterial;
   private readonly plankEdge: THREE.MeshStandardNodeMaterial;
   private readonly rim = new THREE.MeshBasicNodeMaterial();
-  private readonly shared: { paper: THREE.Material; staple: THREE.Material; linesAcross: THREE.DataTexture; linesUp: THREE.DataTexture };
+  private readonly shared: { print: THREE.Material; block: THREE.Material; leaf: THREE.Material; staple: THREE.Material };
   private readonly inkedBook: ReturnType<ShelfScene['inked']>;
+  private readonly inkedSpine: ReturnType<ShelfScene['inked']>;
   private readonly ray = new THREE.Raycaster();
-  private books: { spec: ShelfBookSpec; signature: string; group: THREE.Group; coverMaterial: THREE.MeshStandardNodeMaterial | null }[] = [];
+  private books: (Built & { spec: ShelfBookSpec; signature: string })[] = [];
+  /** The leaves lifting under an opening cover: made for the one book that is opening, and gone
+   *  again when it has shut. */
+  private leaves: { of: THREE.Group; meshes: THREE.Mesh[] } | null = null;
   private covers = new Map<string, { texture: THREE.Texture; aspect: number }>();
   private size = { width: 1, height: 1 };
+  /** Where the books stood when their shadow was last cast. */
+  private cast = '';
 
   constructor(
     private readonly renderer: THREE.WebGPURenderer,
@@ -101,6 +142,9 @@ export class ShelfScene {
     this.pivot.add(this.floor);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x9a948a, 1.7));
     this.key.castShadow = true;
+    // Cast again only when a book has moved (`render`): half of a frame's draws are the shadow's,
+    // and a shelf that stands and drifts would cast the same one thirty times a second.
+    this.key.shadow.autoUpdate = false;
     this.key.shadow.mapSize.set(1024, 1024);
     this.key.shadow.bias = -0.0006;
     this.key.shadow.normalBias = 0.6;
@@ -109,28 +153,25 @@ export class ShelfScene {
     this.key.target.position.set(0, 100, 0);
     this.scene.add(this.key, this.key.target);
 
-    this.inkedBook = this.inked(userData('ink', 'float') as unknown as THREE.Node<'float'>, this.bookTone);
-    const lines = (across: boolean) => {
-      // Cut paper seen edge on: sheets a hair apart, no two the same grey.
-      const cells = 64;
-      const data = new Uint8Array(cells * 4);
-      let seed = across ? 7 : 8;
-      for (let i = 0; i < cells; i++) {
-        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-        const dark = i % 2 ? 0.12 + (seed / 4294967296) * 0.22 : 0;
-        data.set([241 - dark * 171, 235 - dark * 183, 221 - dark * 197, 255], i * 4);
-      }
-      const texture = new THREE.DataTexture(data, across ? cells : 1, across ? 1 : cells);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      texture.needsUpdate = true;
-      return texture;
-    };
+    const shelved = userData('ink', 'float') as unknown as THREE.Node<'float'>;
+    this.inkedBook = this.inked(shelved, this.bookTone);
+    // A spine is read, and its lettering is a few points high: cut to the covers' four steps the
+    // dither ate the strokes. At eight it is still tone, and the title is still a title.
+    this.inkedSpine = this.inked(shelved, { ...this.bookTone, levels: uniform(8) });
+    // Cut paper seen edge on: sheets stacked through the book's thickness, which is the block's own
+    // depth on its fore-edge and on its head and foot alike, so one rule draws all three.
+    const block = this.matte({});
+    block.colorNode = Fn(() => {
+      const through = (positionLocal as unknown as THREE.Node<'vec3'>).z;
+      const cut = mix(uniform(new THREE.Color(PAPER)), uniform(new THREE.Color('#CFC4AA')), step(0.5, fract(through.div(1.6))));
+      // Its front and back are the first and last page, which an opening cover shows.
+      return mix(cut, uniform(new THREE.Color(PAPER)), step(0.5, abs((normalLocal as unknown as THREE.Node<'vec3'>).z)));
+    })();
     this.shared = {
-      paper: this.matte({ color: new THREE.Color(PAPER) }),
+      print: this.matte({ color: new THREE.Color('#FBFAF7'), roughness: 0.85 }),
+      block,
+      leaf: this.matte({ color: new THREE.Color(PAPER), side: THREE.DoubleSide }),
       staple: new THREE.MeshStandardNodeMaterial({ color: 0xd8dde4, metalness: 1, roughness: 0.3 }),
-      linesAcross: lines(true),
-      linesUp: lines(false),
     };
 
     // The shelf is always ink: its light is the page and the shadows the books cast on it are tone.
@@ -139,19 +180,14 @@ export class ShelfScene {
     const edgeTone = { ...this.plankTone, from: uniform(0), to: uniform(1) };
     this.plankEdge = new THREE.MeshStandardNodeMaterial({ roughness: 1 });
     this.plankEdge.outputNode = this.inked(float(1), edgeTone);
-    const plank = new THREE.Mesh(new THREE.BoxGeometry(3000, 12, 240), [
-      this.plankEdge,
-      this.plankEdge,
-      this.plankTop,
-      this.plankEdge,
-      this.plankEdge,
-      this.plankEdge,
-    ]);
-    plank.position.set(0, -6, -40);
-    plank.receiveShadow = true;
+    const top = new THREE.Mesh(new THREE.PlaneGeometry(3000, 240).rotateX(-Math.PI / 2), this.plankTop);
+    top.position.set(0, 0, -40);
+    top.receiveShadow = true;
+    const edge = new THREE.Mesh(new THREE.PlaneGeometry(3000, 12), this.plankEdge);
+    edge.position.set(0, -6, 80);
     const rim = new THREE.Mesh(new THREE.BoxGeometry(3000, 1.6, 1.6), this.rim);
     rim.position.set(0, -0.8, 80.4);
-    this.floor.add(plank, rim);
+    this.floor.add(top, edge, rim);
 
     // Behind everything, a tone that thickens toward the stage's edges, in the books' own dither at
     // a point to a cell. Drawn in the scene rather than under it: a canvas is opaque on Android.
@@ -208,9 +244,10 @@ export class ShelfScene {
     return material;
   }
 
-  /** The stage's size in points. The camera is `projectToStage`'s: the eye `lens` back and level
-   *  with 44% down the stage, which `setViewOffset` takes as a window on a taller, centred view. */
-  resize(width: number, height: number, pixelRatio: number) {
+  /** The stage's size in points, and where along its width the shelf's middle stands. The camera
+   *  is `projectToStage`'s: the eye `lens` back, level with 44% down the stage and square on to
+   *  `centre`, which `setViewOffset` takes as a window on a larger view centred on that line. */
+  resize(width: number, height: number, pixelRatio: number, centre = width / 2) {
     if (!width || !height) return;
     this.size = { width, height };
     this.renderer.setPixelRatio(pixelRatio);
@@ -218,13 +255,20 @@ export class ShelfScene {
     this.dot.value = Math.max(1, Math.floor(DOT_POINTS * pixelRatio + 0.25));
     const { camera } = this;
     camera.fov = (2 * Math.atan((0.56 * height) / SHELF.lens) * 180) / Math.PI;
-    camera.aspect = width / (1.12 * height);
+    const reach = Math.max(centre, width - centre);
+    camera.aspect = (2 * reach) / (1.12 * height);
     camera.position.set(0, 0.56 * height - SHELF.floor, SHELF.lens);
-    camera.setViewOffset(width, 1.12 * height, 0, 0.12 * height, width, height);
+    camera.setViewOffset(2 * reach, 1.12 * height, reach - centre, 0.12 * height, width, height);
     const middle = height / 2 - SHELF.floor;
     this.pivot.position.set(0, middle, 0);
-    this.pivot.rotation.set(rad(SHELF.look), 0, 0);
+    this.setView(0, 0);
     this.floor.position.set(0, -middle, 0);
+  }
+
+  /** The view's drift, in degrees: the shelf turned about the stage's middle, as `projectToStage`
+   *  turns it for the callouts. */
+  setView(yaw: number, pitch: number) {
+    this.pivot.rotation.set(rad(SHELF.look + pitch), rad(yaw), 0);
   }
 
   setTheme(dark: boolean, background: string) {
@@ -280,8 +324,9 @@ export class ShelfScene {
     const cover = this.covers.get(book.spec.key);
     if (!cover || !book.coverMaterial) return;
     const { width, height, cover: kind } = book.spec;
+    const border = kind.form === 'sheets' ? PRINT.border * width : 0;
     // Cropped to the face about its middle, never stretched to it.
-    const face = width / height;
+    const face = (width - 2 * border) / (height - 2 * border);
     const across = Math.min(1, face / cover.aspect);
     const up = Math.min(1, cover.aspect / face);
     const { texture } = cover;
@@ -298,7 +343,7 @@ export class ShelfScene {
     book.coverMaterial.needsUpdate = true;
   }
 
-  private build(spec: ShelfBookSpec): { group: THREE.Group; coverMaterial: THREE.MeshStandardNodeMaterial | null } {
+  private build(spec: ShelfBookSpec): Built {
     const { width: w, height: h, depth: d } = spec;
     const { form, binding } = spec.cover;
     const group = new THREE.Group();
@@ -308,7 +353,7 @@ export class ShelfScene {
     const board = this.matte({ color: colour(spec.board), roughness: 0.62 });
     // Its cloth's colour until its picture arrives.
     const coverMaterial = this.glossy({ color: colour(spec.board) });
-    const { paper } = this.shared;
+    let lid: Built['lid'] = null;
 
     if (form === 'scroll') {
       // Nothing bound: a slab with rounded corners and a bevelled rim.
@@ -333,52 +378,56 @@ export class ShelfScene {
         curveSegments: 6,
       });
       slab.translate(0, h / 2, -half + bevel);
-      group.add(new THREE.Mesh(slab, [coverMaterial, board]));
+      const mesh = new THREE.Mesh(slab, [coverMaterial, board]);
+      mesh.castShadow = mesh.receiveShadow = true;
+      group.add(mesh);
     } else if (form === 'sheets') {
-      // Loose prints, each with a little curl of its own.
-      coverMaterial.side = THREE.DoubleSide;
+      // The card's own picture of a CG set (`PRINT` in lib/book-cover): a print in a white paper
+      // border with another tipped behind it — and here a few more behind that, since on a shelf it
+      // is seen edge on, where two sheets of paper are nothing and a small stack is a set of prints.
+      const border = PRINT.border * w;
+      const sheet = 0.7;
+      const lift = (w / 2) * Math.sin(rad(Math.abs(PRINT.tilt)));
+      const paper = [0, PRINT.tilt, 2, -1.5, 3].map((lean, i) =>
+        new THREE.BoxGeometry(w, h, sheet)
+          .rotateZ(rad(lean))
+          .translate(0, h / 2 + lift, half - sheet / 2 - i * ((d - sheet) / 4)),
+      );
+      const prints = new THREE.Mesh(merged(paper), this.shared.print);
+      prints.castShadow = prints.receiveShadow = true;
+      const picture = new THREE.Mesh(
+        new THREE.PlaneGeometry(w - 2 * border, h - 2 * border).translate(0, h / 2 + lift, half + 0.05),
+        coverMaterial,
+      );
+      picture.receiveShadow = true;
       coverMaterial.roughness = 0.8;
-      [
-        [0, 0.03],
-        [3.5, 0.055],
-        [-3, 0.015],
-      ].forEach(([lean, curl], i) => {
-        const sheet = new THREE.PlaneGeometry(w, h, 10, 1);
-        const at = sheet.attributes.position;
-        for (let n = 0; n < at.count; n++) at.setZ(n, -curl * w * (at.getX(n) / w) ** 2 * 4);
-        sheet.computeVertexNormals();
-        const mesh = new THREE.Mesh(sheet, i === 0 ? coverMaterial : paper);
-        mesh.position.set(0, h / 2 + (i ? 4 : 0), 3 - i * 3);
-        mesh.rotation.z = rad(lean);
-        group.add(mesh);
-      });
+      group.add(prints, picture);
     } else {
       const hard = form === 'volume';
       const thick = hard ? 1.6 : 0.5;
       const overhang = hard ? 2.4 : 0;
-      const back = new THREE.Mesh(new THREE.BoxGeometry(w, h, thick), board);
-      back.position.set(0, h / 2, -half + thick / 2);
-      const front = new THREE.Mesh(new THREE.BoxGeometry(w, h, thick), [board, board, board, board, coverMaterial, board]);
-      front.position.set(0, h / 2, half - thick / 2);
-      group.add(back, front);
+      this.emboss(coverMaterial, form, binding);
+      const cloth: THREE.BufferGeometry[] = [new THREE.BoxGeometry(w, h, thick).translate(0, h / 2, -half + thick / 2)];
+      // The front board hangs on its binding edge, so it can swing. Its picture is a sheet of its
+      // own just proud of it, which leaves the board itself all cloth.
+      const board3 = new THREE.Group();
+      board3.position.set(hinge, 0, half - thick / 2);
+      const front = new THREE.Mesh(new THREE.BoxGeometry(w, h, thick).translate(-hinge, h / 2, 0), board);
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h).translate(-hinge, h / 2, thick / 2 + 0.05), coverMaterial);
+      front.receiveShadow = face.receiveShadow = true;
+      board3.add(front, face);
+      group.add(board3);
 
-      // The page block, set back from the boards on three sides.
+      // The page block, set back from the boards on three sides. It alone casts the book's shadow:
+      // the boards are a hair larger and would only cast the same one again.
       const blockDepth = Math.max(0.3, d - 2 * thick - 0.3);
-      const sheets = Math.max(0.05, blockDepth / 1.6 / 32);
-      const edge = (across: boolean) => {
-        const map = (across ? this.shared.linesAcross : this.shared.linesUp).clone();
-        if (across) map.repeat.set(sheets, 1);
-        else map.repeat.set(1, sheets);
-        return this.matte({ map });
-      };
-      const fore = edge(true);
-      const ends = edge(false);
-      const block = new THREE.Mesh(
-        new THREE.BoxGeometry(w - overhang, h - 2 * overhang, blockDepth),
-        side < 0 ? [fore, paper, ends, ends, paper, paper] : [paper, fore, ends, ends, paper, paper],
+      const pages = new THREE.Mesh(
+        new THREE.BoxGeometry(w - overhang, h - 2 * overhang, blockDepth).translate((side * overhang) / 2, h / 2, 0),
+        this.shared.block,
       );
-      block.position.set((side * overhang) / 2, h / 2, 0);
-      group.add(block);
+      pages.castShadow = pages.receiveShadow = true;
+      group.add(pages);
+      lid = { board: board3, side, hinge, width: w - overhang, height: h - 2 * overhang, foot: overhang, front: blockDepth / 2 };
 
       if (hard) {
         // A rounded back: half an ellipse from board to board, lettered down its length.
@@ -416,41 +465,119 @@ export class ShelfScene {
           width: Math.PI * Math.sqrt((bulge * bulge + half * half) / 2),
           height: h,
         });
-        const spine = this.glossy(lettering ? { map: lettering } : { color: colour(spec.board) });
-        spine.side = THREE.DoubleSide;
-        group.add(new THREE.Mesh(hull, spine));
-        const cap = this.matte({ color: colour(spec.board).multiplyScalar(0.55), side: THREE.DoubleSide });
-        for (const y of [0.5, h - 0.5]) {
-          const lid = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(outline)).rotateX(-Math.PI / 2), cap);
-          lid.position.y = y;
-          group.add(lid);
-        }
+        const back = this.glossy(lettering ? { map: lettering } : { color: colour(spec.board) });
+        back.outputNode = this.inkedSpine;
+        back.side = THREE.DoubleSide;
+        const spine = new THREE.Mesh(hull, back);
+        spine.receiveShadow = true;
+        group.add(spine);
+        cloth.push(new THREE.ShapeGeometry(new THREE.Shape(outline)).rotateX(-Math.PI / 2).translate(0, h - 0.5, 0));
       } else {
-        for (const at of [0.205, 0.725]) {
-          const length = h * 0.07;
-          const staple = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, length, 6), this.shared.staple);
-          staple.position.set(hinge + side * 0.25, h * (1 - at) - length / 2, 0);
-          group.add(staple);
-        }
+        const wire = h * 0.07;
+        group.add(
+          new THREE.Mesh(
+            merged([0.205, 0.725].map((at) => new THREE.CylinderGeometry(0.6, 0.6, wire, 6).translate(hinge + side * 0.25, h * (1 - at) - wire / 2, 0))),
+            this.shared.staple,
+          ),
+        );
       }
+      const boards = new THREE.Mesh(merged(cloth), board);
+      boards.receiveShadow = true;
+      group.add(boards);
     }
 
-    group.traverse((o) => {
-      if (o instanceof THREE.Mesh) o.castShadow = o.receiveShadow = true;
+    return { group, coverMaterial, lid };
+  }
+
+  /**
+   * The cover's relief, as the card draws it flat (`SPINE`, `FOLD` and `EDGES` in lib/book-cover):
+   * the board rolling away at the binding, the groove of the hinge and its lip, a catch of light
+   * on the fore-edge and the head, the foot turning away. Laid over the picture in the material,
+   * where the light then falls across it too.
+   */
+  private emboss(material: THREE.MeshStandardNodeMaterial, form: BookCover['form'], binding: BookCover['binding']) {
+    material.colorNode = Fn(() => {
+      const at = uv() as unknown as THREE.Node<'vec2'>;
+      const fromBinding = binding === 'left' ? at.x : at.x.oneMinus();
+      const band = (from: number, peak: number, to: number) => smoothstep(from, peak, fromBinding).mul(smoothstep(peak, to, fromBinding).oneMinus());
+      const [shade, light] =
+        form === 'volume'
+          ? [
+              smoothstep(0.011, 0, fromBinding).mul(0.36).add(band(0.026, 0.037, 0.048).mul(0.2)),
+              band(0.011, 0.014, 0.023).mul(0.16).add(band(0.048, 0.054, 0.065).mul(0.09)),
+            ]
+          : [band(0.006, 0.011, 0.042).mul(0.3), smoothstep(0.0085, 0, fromBinding).mul(0.3)];
+      const dark = shade.add(smoothstep(0.02, 0, at.y).mul(0.28));
+      const lit = light.add(smoothstep(0.988, 1, fromBinding).mul(0.08)).add(smoothstep(0.986, 1, at.y).mul(0.13));
+      const picture = materialColor as unknown as THREE.Node<'vec4'>;
+      return vec4(picture.xyz.mul(dark.oneMinus()).add(lit), picture.w);
+    })();
+  }
+
+  /**
+   * The front book's cover swung `amount` of the way open (0 to 1), with three leaves lifting and
+   * bowing under it. Costs nothing shut: the board is the book's own, and the leaves exist only
+   * while one book is open.
+   */
+  setOpen(index: number, amount: number) {
+    const book = this.books[index];
+    const lid = book?.lid;
+    if (this.leaves && (this.leaves.of !== book?.group || !lid || amount <= 0)) {
+      for (const leaf of this.leaves.meshes) {
+        this.leaves.of.remove(leaf);
+        leaf.geometry.dispose();
+      }
+      this.leaves = null;
+    }
+    for (const other of this.books) if (other.lid && other !== book) other.lid.board.rotation.y = 0;
+    if (!book || !lid) return;
+    const swing = lid.side * rad(OPENING.swing);
+    lid.board.rotation.y = swing * amount;
+    if (amount <= 0) return;
+    // How far each leaf turns of the cover's swing, when it starts after it, and how much it bows.
+    const LEAVES = [
+      [0.92, 0.1, 0.05],
+      [0.62, 0.28, 0.2],
+      [0.22, 0.45, 0.16],
+    ] as const;
+    if (!this.leaves) {
+      const meshes = LEAVES.map(([, , bow], i) => {
+        const sheet = new THREE.PlaneGeometry(lid.width, lid.height, 14, 1);
+        const at = sheet.attributes.position;
+        for (let n = 0; n < at.count; n++) {
+          const along = at.getX(n) + lid.width / 2;
+          at.setXYZ(n, -lid.side * along, at.getY(n) + lid.height / 2, (-bow * along * along) / lid.width);
+        }
+        sheet.computeVertexNormals();
+        const leaf = new THREE.Mesh(sheet, this.shared.leaf);
+        leaf.position.set(lid.hinge, lid.foot, lid.front + 0.25 * (3 - i));
+        leaf.receiveShadow = true;
+        book.group.add(leaf);
+        return leaf;
+      });
+      this.leaves = { of: book.group, meshes };
+    }
+    this.leaves.meshes.forEach((leaf, i) => {
+      const [reach, lag] = LEAVES[i];
+      const t = THREE.MathUtils.smoothstep((amount - lag) / (1 - lag), 0, 1);
+      leaf.rotation.y = swing * reach * t;
+      // Flat against the block until it lifts and flat on the cover once it lands: bowed between.
+      leaf.scale.z = Math.max(0.001, Math.sin(Math.PI * reach * t));
+      leaf.userData.ink = 0;
     });
-    return { group, coverMaterial };
   }
 
   private discard(group: THREE.Group) {
+    if (this.leaves?.of === group) this.leaves = null;
     this.floor.remove(group);
-    const { paper, staple, linesAcross, linesUp } = this.shared;
-    // A cover's picture outlives its book (`covers`), and the page lines are every book's.
-    const kept = new Set<THREE.Texture>([linesAcross, linesUp, ...[...this.covers.values()].map((c) => c.texture)]);
+    const shared = new Set<THREE.Material>(Object.values(this.shared));
+    // A cover's picture outlives its book (`covers`).
+    const kept = new Set<THREE.Texture>([...this.covers.values()].map((c) => c.texture));
     group.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
       o.geometry.dispose();
       for (const material of [o.material].flat() as THREE.MeshStandardNodeMaterial[]) {
-        if (material === paper || material === staple) continue;
+        if (shared.has(material)) continue;
         if (material.map && !kept.has(material.map)) material.map.dispose();
         material.dispose();
       }
@@ -459,16 +586,22 @@ export class ShelfScene {
 
   /** Draws the shelf with each book at its place; `ink` off leaves every book in colour. */
   render(places: readonly ShelfPlace[], ink: boolean) {
-    this.books.forEach(({ group }, i) => {
+    let stand = '';
+    this.books.forEach(({ group, lid }, i) => {
       const place = places[i];
       if (!place) return;
       group.position.set(place.x, 0, place.z);
       group.rotation.y = rad(place.yaw);
+      stand += `${place.x.toFixed(1)},${place.z.toFixed(1)},${place.yaw.toFixed(1)},${(lid?.board.rotation.y ?? 0).toFixed(2)};`;
       const tone = ink ? place.ink : 0;
       group.traverse((o) => {
         o.userData.ink = tone;
       });
     });
+    if (stand !== this.cast) {
+      this.cast = stand;
+      this.key.shadow.needsUpdate = true;
+    }
     this.renderer.render(this.scene, this.camera);
     this.present();
   }
@@ -493,7 +626,5 @@ export class ShelfScene {
     this.books = [];
     for (const cover of this.covers.values()) cover.texture.dispose();
     this.covers.clear();
-    this.shared.linesAcross.dispose();
-    this.shared.linesUp.dispose();
   }
 }

@@ -1083,17 +1083,63 @@ reader: it is 2D, and a book is not.
   three is most of a megabyte. Asked for from two places it was two chunks on the web, and three,
   shared by both, went to the main bundle.
 
-**One camera, written twice.** `ShelfScene.resize` sets it for the renderer and `projectToStage`
-(`lib/bookshelf`) is the same camera as arithmetic, which is how the callouts — the burst for new
-chapters, the caption for where you stopped, the tab over each shelved book with something new —
-stand on a book's corners while being plain views over the canvas. Change one and change the
-other; `bookshelf.test.ts` holds the arithmetic, and nothing holds the two together but this.
+**One camera, written twice.** `ShelfScene.resize` and `setView` set it for the renderer and
+`projectToStage` (`lib/bookshelf`) is the same camera as arithmetic, which is how the callouts — the
+burst for new chapters, the caption for where you stopped, the tab over each shelved book with
+something new — stand on a book's corners while being plain views over the canvas. Change one and
+change the other; `bookshelf.test.ts` holds the arithmetic, and nothing holds the two together but
+this. The stage runs under the safe area's sides (the bar the wide iPhones stand beside the
+content), and the camera looks square on to the middle of what is left (`ShelfStage.centre`), so
+the shelf crosses the whole screen while the book in front stands where the rest of the page is.
 
 **Everything that moves is `ShelfDriver`'s, outside React.** Where along the shelf the reader is,
-the drag, the spring, and the only place a frame is drawn from. It asks for frames only while
-something is moving, so a shelf at rest costs nothing, and it keeps what the scene is to show until
-there is a scene: the renderer starts after the first books arrive. It runs on the JS thread, as
-three does.
+the drag, the spring, the cover that swings open, the view's drift, and the only place a frame is
+drawn from. It keeps what the scene is to show until there is a scene: the renderer starts after
+the first books arrive. It runs on the JS thread, as three does, but it keeps no clock: its frames
+are the display's own (`useFrameCallback`, handed across one at a time, so a slow frame is a
+dropped frame and never a queue), because React Native's `requestAnimationFrame` ticks at 60
+whatever the screen does. A shelf that is moving takes every frame. One that stands takes about
+every other, for its drift, and none once it has scrolled off the top, lost the screen, or under
+Reduce Motion.
+
+**A draw is the cost, not a triangle.** Each is a trip through three in an interpreter, and a book
+built of loose boxes with a material a face was sixteen of them, twice over with the shadow's
+pass: that was the shelf at half its frame rate on a phone. A bound book is five (its boards and
+lid as one piece of cloth, the swinging front board, its picture, its page block, its back), the
+block alone casts its shadow, the cut-paper edge is drawn by the material from the block's own
+depth rather than sampled, and the shadow is cast again only when a book has moved, so a shelf
+that only drifts casts none. Merge by hand (`merged`): three's own merge is an addon, which imports
+bare `three`.
+
+**The view drifts, and the phone only adds to it.** A degree or so of turn over seconds
+(`driftAt`), with the device's tilt (`useDeviceTilt`: gravity's direction, measured from how the
+phone is being held, so a tip eases back to nothing) laid on top at less than the drift's own
+size. The stickers ride the drift through the camera and take a few points more from the tilt.
+Each is put on afresh for each book that comes forward: the caption leaning one way or the other,
+the burst's star turned at random under lettering that stays level. A book the reader brings
+forward ticks (`hapticSelection`); the one the shelf opens on does not.
+
+**A tap opens the book before it opens the page.** The front board swings on its binding edge and
+three leaves lift and bow under it (`setOpen`), the push is made as it nears open, and it swings
+shut when the screen has the focus again. The board is the book's own and the leaves exist only
+while one book is open, so a shut shelf pays nothing for it. The fetch is warmed first, so the
+swing is time the page would have spent loading.
+
+**Spines are read.** They are lettered in the heading face from its own FILE (`prepare`): asked
+for by name, a Skia paragraph looks in the system's fonts, where a bundled face is not, and every
+spine was set in the system's. The chapter the book opens at is at its foot, two digits at least
+(`spineNumber`). And a shelved spine's tone is cut to eight steps where a cover's is cut to four:
+at four the dither ate the strokes of lettering a few points high.
+
+**A cover has its relief, and a CG set is its card.** The hinge's groove and lip, the catch of
+light on the fore-edge and head (`emboss`) are the card's own shading (`SPINE`, `FOLD`, `EDGES` in
+lib/book-cover) laid over the picture in the material. A CG set is the card's print in its white
+border with another tipped behind (`PRINT`), and a few more behind that: on a shelf it is seen
+edge on, where two sheets are nothing and a small stack is a set of prints.
+
+**The dots under it are the system's on iOS** (`modules/page-dots`, UIPageControl, which takes a
+tap or a scrub); elsewhere they only tell. The scene's top and bottom fade into the page, so the
+canvas has no edge.
 
 **The shelf is the feed's header, not a row of it** (`ContentFeed`'s `hero`). A row is unmounted a
 little way off screen, and a renderer is costly to start again, and every restart was a new device

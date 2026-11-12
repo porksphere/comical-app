@@ -6,7 +6,9 @@ import {
   boardColour,
   bookDepth,
   bookPoint,
+  driftAt,
   inkOn,
+  openedPlace,
   placeShelf,
   popIn,
   projectToStage,
@@ -14,6 +16,7 @@ import {
   settleOn,
   shelfCallouts,
   shelfStageHeight,
+  spineNumber,
   type ShelfBook,
 } from './bookshelf';
 
@@ -199,4 +202,61 @@ describe('shelfCallouts', () => {
   test('an empty shelf', () => {
     expect(shelfCallouts([], [], 0, stage).tabs).toEqual([]);
   });
+});
+
+test('a stage whose middle is off its centre projects about that line', () => {
+  const plain = { width: 390, height: shelfStageHeight(390) };
+  const underBar = { width: 450, height: plain.height, centre: 60 + 195 };
+  const a = projectToStage(plain, 40, 100, 20);
+  const b = projectToStage(underBar, 40, 100, 20);
+  expect(b.x - a.x).toBeCloseTo(60);
+  expect(b.y).toBeCloseTo(a.y);
+  expect(b.scale).toBeCloseTo(a.scale);
+});
+
+test('the view drifts a little, and a tipped phone adds a little to it', () => {
+  for (let now = 0; now < 20000; now += 137) {
+    const { yaw, pitch } = driftAt(now, { x: 0, y: 0 });
+    expect(Math.abs(yaw)).toBeLessThanOrEqual(1.4);
+    expect(Math.abs(pitch)).toBeLessThanOrEqual(0.8);
+  }
+  const level = driftAt(5000, { x: 0, y: 0 });
+  const tipped = driftAt(5000, { x: 1, y: -1 });
+  expect(tipped.yaw - level.yaw).toBeCloseTo(0.9);
+  expect(tipped.pitch - level.pitch).toBeCloseTo(-0.5);
+});
+
+test('a drifted view moves what stands off the middle and leaves the middle where it was', () => {
+  const stage = { width: 390, height: shelfStageHeight(390) };
+  const turned = { ...stage, yaw: 1.4 };
+  const pivot = stage.height / 2 - SHELF.floor;
+  expect(projectToStage(turned, 0, pivot, 0).x).toBeCloseTo(projectToStage(stage, 0, pivot, 0).x);
+  expect(projectToStage(turned, 0, 100, 60).x).not.toBeCloseTo(projectToStage(stage, 0, 100, 60).x, 1);
+});
+
+test('an opening book slides off its binding and turns square', () => {
+  const place = { x: 0, z: 50, yaw: 12, ink: 0 };
+  expect(openedPlace(place, book('left'), 0)).toBe(place);
+  const left = openedPlace(place, book('left'), 1);
+  expect(left.x).toBeGreaterThan(0);
+  expect(left.yaw).toBeCloseTo(2.4);
+  expect(openedPlace({ ...place, yaw: -12 }, book('right'), 1).x).toBeLessThan(0);
+});
+
+test('the stickers leave as the cover opens', () => {
+  const stage = { width: 390, height: shelfStageHeight(390) };
+  const places = placeShelf(shelf, 3);
+  expect(shelfCallouts(shelf, places, 3, stage, 0).settled).toBe(1);
+  expect(shelfCallouts(shelf, places, 3, stage, 0.25).settled).toBeCloseTo(0.5);
+  expect(shelfCallouts(shelf, places, 3, stage, 0.6).settled).toBe(0);
+});
+
+test('spineNumber: the chapter the book opens at, two digits at least', () => {
+  expect(spineNumber('Chapter 7')).toBe('07');
+  expect(spineNumber('Ch. 12 - The Coast Road')).toBe('12');
+  expect(spineNumber('Episode 104')).toBe('104');
+  expect(spineNumber('Chapter 12.5')).toBe('12.5');
+  expect(spineNumber('3')).toBe('03');
+  expect(spineNumber('Prologue')).toBeUndefined();
+  expect(spineNumber(undefined)).toBeUndefined();
 });

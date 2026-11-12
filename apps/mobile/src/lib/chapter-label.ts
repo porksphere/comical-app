@@ -7,6 +7,12 @@
  */
 const LEADING_NUMBER = /^\s*(?:(?:chapter|chap|ch|episode|ep|vol\.?\s*\d+\s*(?:ch|chapter))\.?\s*)?#?(\d+(?:\.\d+)?)\b/i;
 
+/** The number a chapter's name leads with, as written ("176", "12.5"); none for a name that leads
+ *  with words. */
+export function leadingChapterNumber(name: string): string | undefined {
+  return LEADING_NUMBER.exec(name)?.[1];
+}
+
 export function shortChapterName(name: string): string {
   const m = LEADING_NUMBER.exec(name);
   if (!m) return name.trim();

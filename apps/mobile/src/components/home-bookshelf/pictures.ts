@@ -1,4 +1,4 @@
-import { AlphaType, ColorType, Skia, TextAlign } from '@shopify/react-native-skia';
+import { AlphaType, ColorType, Skia, TextAlign, loadData, type SkTypefaceFontProvider } from '@shopify/react-native-skia';
 import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as THREE from 'three/webgpu';
@@ -16,6 +16,27 @@ const COVER_WIDTH = 384;
 /** Pixels per point a spine is lettered at. */
 const SPINE_SCALE = 3;
 const RGBA = { colorType: ColorType.RGBA_8888, alphaType: AlphaType.Unpremul } as const;
+
+let titleFace: SkTypefaceFontProvider | null = null;
+let preparing: Promise<void> | undefined;
+
+/**
+ * What the spines are lettered with, loaded once before the first is drawn: the heading face, from
+ * its own file. Asked for by name it was not found — a paragraph looks a family up in the system's
+ * fonts, where an app's bundled face is filed under a name of its own on iOS and not at all on
+ * Android — and every spine was set in the system's face.
+ */
+export function prepare(): Promise<void> {
+  preparing ??= loadData(require('@/assets/fonts/ShipporiAntiqueB1-Regular.ttf'), (data) => Skia.Typeface.MakeFreeTypeFaceFromData(data))
+    .then((typeface) => {
+      if (!typeface) return;
+      const provider = Skia.TypefaceFontProvider.Make();
+      provider.registerFont(typeface, TITLE_FONT);
+      titleFace = provider;
+    })
+    .catch(() => {});
+  return preparing;
+}
 
 function textureOf(pixels: Uint8Array, width: number, height: number): THREE.Texture {
   const texture = new THREE.DataTexture(pixels, width, height, THREE.RGBAFormat);
@@ -66,8 +87,8 @@ export async function loadCover(uri: string, binding: CoverBinding): Promise<Cov
 
 /**
  * A spine's lettering: the title down its length, reading from the head, and a volume's number at
- * its foot. Set as a paragraph, so a title the heading face has no letters for falls back a glyph
- * at a time to the system's, as a drawn text run would not.
+ * its foot. A title the heading face can set whole is set in it (`prepare`); any other is a
+ * paragraph in the system's fonts, which fall back a glyph at a time as a drawn text run would not.
  */
 export function drawSpine({ title, number, board, ink, width, height }: SpinePicture): THREE.Texture | null {
   const w = Math.max(8, Math.round(width * SPINE_SCALE));
@@ -85,23 +106,25 @@ export function drawSpine({ title, number, board, ink, width, height }: SpinePic
     canvas.drawRect(Skia.XYWHRect(0, h * 0.955, w, 2), rule);
     // Too thin a spine to letter is left as cloth.
     if (width > 13) {
-      const lettered = (text: string, fontSize: number, fontFamilies: string[] | undefined, run: number) => {
-        const paragraph = Skia.ParagraphBuilder.Make({ textAlign: TextAlign.Center, maxLines: 1, ellipsis: '…' })
-          .pushStyle({ color: colour, fontSize, ...(fontFamilies ? { fontFamilies } : {}) })
+      const lettered = (text: string, fontSize: number, heading: boolean, run: number) => {
+        const face = heading && titleFontCovers(text) ? titleFace : null;
+        const layout = { textAlign: TextAlign.Center, maxLines: 1, ellipsis: '…' };
+        const paragraph = (face ? Skia.ParagraphBuilder.Make(layout, face) : Skia.ParagraphBuilder.Make(layout))
+          .pushStyle({ color: colour, fontSize, ...(face ? { fontFamilies: [TITLE_FONT] } : {}) })
           .addText(text)
           .build();
         paragraph.layout(run);
         return paragraph;
       };
       const run = h * 0.76;
-      const name = lettered(title, Math.min(w * 0.5, 15 * SPINE_SCALE), titleFontCovers(title) ? [TITLE_FONT] : undefined, run);
+      const name = lettered(title, Math.min(w * 0.5, 15 * SPINE_SCALE), true, run);
       canvas.save();
       // Turned a quarter clockwise the paragraph runs down the spine and its lines stack leftward.
       canvas.translate(w / 2 + name.getHeight() / 2, h * 0.08);
       canvas.rotate(90, 0, 0);
       name.paint(canvas, 0, 0);
       canvas.restore();
-      if (number) lettered(number, Math.min(w * 0.42, 12 * SPINE_SCALE), undefined, w).paint(canvas, 0, h * 0.875);
+      if (number) lettered(number, Math.min(w * 0.42, 12 * SPINE_SCALE), false, w).paint(canvas, 0, h * 0.875);
     }
     surface.flush();
     const picture = surface.makeImageSnapshot();
