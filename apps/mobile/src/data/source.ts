@@ -447,12 +447,7 @@ function toLibraryItem(e: api.ApiCollectedSeries): LibraryItem {
   };
 }
 
-/** A history row as a host answers once it keeps a series' cover hints with the row. The host this
- *  app is built against may predate them (its type does until the submodule moves), and a remote
- *  one may too: either way the fields are simply absent and the row is drawn as it was. */
-type HistoryItemWithHints = api.ApiHistoryItem & Pick<HistoryEntry, 'coverForm' | 'readingDirection'>;
-
-function toHistoryEntry(h: HistoryItemWithHints): HistoryEntry {
+function toHistoryEntry(h: api.ApiHistoryItem): HistoryEntry {
   return {
     bridgeId: h.bridgeId,
     seriesId: h.seriesId,
