@@ -158,7 +158,10 @@ function Burst({
 
 /** Where the caption hangs from the point the shelf gives it: most of it clear of the cover, by
  *  the side it stands on. Fractions of its own size, which a tap is tested against too. */
-const captionHang = (side: 1 | -1) => ({ x: side < 0 ? 0.34 : 0.66, y: 0.38 });
+const captionHang = (side: 1 | -1) => {
+  'worklet';
+  return { x: side < 0 ? 0.34 : 0.66, y: 0.38 };
+};
 
 function Caption({
   fx,
