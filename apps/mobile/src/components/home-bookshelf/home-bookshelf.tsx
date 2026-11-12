@@ -29,7 +29,7 @@ import { DIRECT_CHAPTER_ID } from '@/data/types';
 import { useBookCoverResolver } from '@/hooks/use-book-covers';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSideInsets } from '@/hooks/use-content-width';
-import { useDeviceTilt, type Tilt } from '@/hooks/use-device-tilt';
+import { DeviceTilt, LEVEL, type Tilt } from '@/hooks/use-device-tilt';
 import { homeBookshelfStats, markHomeBookshelfUnavailable, useHomeBookshelfStats, type BookshelfEntry } from '@/hooks/use-home-bookshelf';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import {
@@ -314,7 +314,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     () => ({ width: width + sides.left + sides.right, height: shelfStageHeight(width), centre: sides.left + width / 2 }),
     [width, sides.left, sides.right],
   );
-  const tilt = useDeviceTilt(!reduceMotion);
+  const tilt = useSharedValue<Tilt>(LEVEL);
   // The book in front, by what it is: where it stands changes when the shelf is put in a new order.
   const [frontKey, setFrontKey] = useState<string>();
   const [drawn, setDrawn] = useState(false);
@@ -573,6 +573,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
 
   return (
     <View style={{ height: homeBookshelfHeight(width) }} testID="home-bookshelf">
+      {mayDrift && <DeviceTilt tilt={tilt} />}
       <FeedHeading title="Continue reading" />
       <GestureDetector gesture={Gesture.Race(pan, press)}>
         <Animated.View
