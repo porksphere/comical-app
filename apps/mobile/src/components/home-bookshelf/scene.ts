@@ -16,6 +16,7 @@ import {
   length,
   materialColor,
   max,
+  min,
   mix,
   mod,
   normalLocal,
@@ -25,6 +26,7 @@ import {
   sRGBTransferOETF,
   screenCoordinate,
   screenUV,
+  sin,
   smoothstep,
   step,
   uniform,
@@ -36,10 +38,8 @@ import {
 } from 'three/tsl';
 import * as THREE from 'three/webgpu';
 
-import { OPENING, SHELF, cssRgb, type Rgb, type ShelfPlace } from '@/lib/bookshelf';
+import { SHELF, cssRgb, type Rgb, type ShelfPlace } from '@/lib/bookshelf';
 import { PRINT, type BookCover } from '@/lib/book-cover';
-
-import { spreadPixels } from './pages';
 
 export type ShelfBookSpec = {
   key: string;
@@ -103,28 +103,12 @@ function merged(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
  *  further and pulled apart, since on a shelf it has a row of books to be told from. */
 const PRINT_LEAN = { front: -3, behind: 8.5, aside: 0.07 } as const;
 
-/**
- * A book as built. `lid` is a bound book's front board, hung on its binding edge, with where the
- * spread it opens to lies; `fan` a set's two prints, each turning about its own middle; a slab has
- * neither. `behind` is the picture on a set's second print.
- */
+/** A book as built; `behind` is the picture on a set's second print. */
 type Built = {
   group: THREE.Group;
   coverMaterial: THREE.MeshStandardNodeMaterial | null;
   behind: THREE.MeshStandardNodeMaterial | null;
-  lid: { board: THREE.Group; side: number; hinge: number; width: number; height: number; foot: number; front: number; thick: number } | null;
-  fan: { front: THREE.Group; behind: THREE.Group; side: number; width: number; height: number } | null;
 };
-
-/** A page of the spread as a unit sheet from its binding edge, which is `u` 0 of its half of the
- *  picture; `toward` is the way it runs from there. Two of each, never one mirrored by its scale. */
-function pageSheet(toward: 1 | -1, from: number): THREE.BufferGeometry {
-  const sheet = new THREE.PlaneGeometry(1, 1).translate(toward / 2, 0.5, 0);
-  const at = sheet.attributes.position;
-  const uvs = sheet.attributes.uv;
-  for (let n = 0; n < at.count; n++) uvs.setX(n, from + 0.5 * Math.abs(at.getX(n)));
-  return sheet;
-}
 
 export class ShelfScene {
   private readonly scene = new THREE.Scene();
@@ -140,16 +124,11 @@ export class ShelfScene {
   private readonly plankTop: THREE.MeshStandardNodeMaterial;
   private readonly plankEdge: THREE.MeshStandardNodeMaterial;
   private readonly rim = new THREE.MeshBasicNodeMaterial();
-  private readonly shared: { print: THREE.Material; block: THREE.Material; page: THREE.Material; staple: THREE.Material };
+  private readonly shared: { print: THREE.Material; block: THREE.Material; staple: THREE.Material };
   private readonly inkedBook: ReturnType<ShelfScene['inked']>;
   private readonly inkedSpine: ReturnType<ShelfScene['inked']>;
   private readonly ray = new THREE.Raycaster();
   private books: (Built & { spec: ShelfBookSpec; signature: string })[] = [];
-  /** The two pages an opening cover shows, on whichever bound book is in front: its first page and
-   *  the inside of its cover. One pair for the shelf, always drawn (the shut cover hides both), so
-   *  the first book to open has nothing to build and no shader to wait for. */
-  private readonly spread: { first: THREE.Mesh; inside: THREE.Mesh; sheets: Record<'first' | 'inside', Record<1 | -1, THREE.BufferGeometry>>; of: THREE.Group | null };
-  private opened = 0;
   private covers = new Map<string, { texture: THREE.Texture; aspect: number }>();
   private size = { width: 1, height: 1 };
   /** Where the books stood when their shadow was last cast. */
@@ -193,19 +172,8 @@ export class ShelfScene {
     this.shared = {
       print: this.matte({ color: new THREE.Color('#FBFAF7'), roughness: 0.85 }),
       block,
-      page: this.sheet(this.pages()),
       staple: new THREE.MeshStandardNodeMaterial({ color: 0xd8dde4, metalness: 1, roughness: 0.3 }),
     };
-
-    const sheets = {
-      first: { 1: pageSheet(1, 0), [-1]: pageSheet(-1, 0) },
-      inside: { 1: pageSheet(1, 0.5), [-1]: pageSheet(-1, 0.5) },
-    } as const;
-    const first = new THREE.Mesh(sheets.first[1], this.shared.page);
-    const inside = new THREE.Mesh(sheets.inside[1], this.shared.page);
-    // Turned to face the block while the cover is shut, and the reader once it has swung round.
-    inside.rotation.y = Math.PI;
-    this.spread = { first, inside, sheets, of: null };
 
     // The shelf is always ink: its light is the page and the shadows the books cast on it are tone.
     this.plankTop = new THREE.MeshStandardNodeMaterial({ roughness: 1 });
@@ -292,26 +260,6 @@ export class ShelfScene {
       const tone = mix(toned, step(light, 0.5), lettering);
       return vec4(mix(lit.xyz, vec3Of(sRGBTransferEOTF(mix(t.lo, t.hi, tone))), ink), lit.w);
     })();
-  }
-
-  /** The spread's picture (`spreadPixels`), its rows already the way a data texture reads them. */
-  private pages(): THREE.Texture {
-    const { pixels, width, height } = spreadPixels();
-    const texture = new THREE.DataTexture(pixels, width, height, THREE.RGBAFormat);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.generateMipmaps = true;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.needsUpdate = true;
-    return texture;
-  }
-
-  /** The spread's pages, at the paper's own colour whatever light falls on them: lit like the rest
-   *  they came out a dull brown beside the page they stand for. Their gutter is in the picture. */
-  private sheet(map: THREE.Texture) {
-    const material = new THREE.MeshBasicNodeMaterial({ map });
-    material.outputNode = this.inkedBook;
-    return material;
   }
 
   private matte(parameters: THREE.MeshStandardNodeMaterialParameters) {
@@ -441,8 +389,6 @@ export class ShelfScene {
     const board = this.matte({ color: colour(spec.board), roughness: 0.62 });
     // Its cloth's colour until its picture arrives.
     const coverMaterial = this.glossy({ color: colour(spec.board) });
-    let lid: Built['lid'] = null;
-    let fan: Built['fan'] = null;
     let behind: Built['behind'] = null;
 
     if (form === 'scroll') {
@@ -480,33 +426,62 @@ export class ShelfScene {
       const card = 0.9;
       behind = this.glossy({ color: colour(spec.board), roughness: 0.8 });
       coverMaterial.roughness = 0.8;
-      const print = (z: number, material: THREE.Material) => {
+      // Each turned about its own middle and stood on whichever corner is then lowest.
+      const print = (z: number, material: THREE.Material, lean: number, along: number) => {
+        const turn = rad(lean);
         const paper = new THREE.Mesh(new THREE.BoxGeometry(w, h, card), this.shared.print);
         const picture = new THREE.Mesh(new THREE.PlaneGeometry(w - 2 * border, h - 2 * border).translate(0, 0, card / 2 + 0.05), material);
         paper.castShadow = paper.receiveShadow = picture.receiveShadow = true;
         const sheet = new THREE.Group();
-        sheet.position.z = z;
+        sheet.position.set(along, (h / 2) * Math.cos(turn) + (w / 2) * Math.abs(Math.sin(turn)), z);
+        sheet.rotation.z = turn;
         sheet.add(paper, picture);
         group.add(sheet);
-        return sheet;
       };
-      fan = { front: print(half - card / 2, coverMaterial), behind: print(-half + card / 2, behind), side, width: w, height: h };
-      this.fanOut(fan, 0);
+      print(half - card / 2, coverMaterial, -side * PRINT_LEAN.front, 0);
+      print(-half + card / 2, behind, -side * PRINT_LEAN.behind, side * w * PRINT_LEAN.aside);
     } else {
       const hard = form === 'volume';
       const thick = hard ? 1.6 : 0.5;
       const overhang = hard ? 2.4 : 0;
-      this.emboss(coverMaterial, form, binding);
+      this.emboss(coverMaterial, form, binding, w / h);
       const cloth: THREE.BufferGeometry[] = [new THREE.BoxGeometry(w, h, thick).translate(0, h / 2, -half + thick / 2)];
-      // The front board hangs on its binding edge, so it can swing. Its picture is a sheet of its
-      // own just proud of it, which leaves the board itself all cloth.
-      const board3 = new THREE.Group();
-      board3.position.set(hinge, 0, half - thick / 2);
-      const front = new THREE.Mesh(new THREE.BoxGeometry(w, h, thick).translate(-hinge, h / 2, 0), board);
-      const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h).translate(-hinge, h / 2, thick / 2 + 0.05), coverMaterial);
-      front.receiveShadow = face.receiveShadow = true;
-      board3.add(front, face);
-      group.add(board3);
+      // The front board's picture is a sheet of its own just proud of it, which leaves the board
+      // itself all cloth. Both are cut to a cover's own outline — its two free corners rounded,
+      // the bound ones square — and the board's edge is rolled over, where the picture stops short
+      // of it: a rectangle with a razor's edge was a picture pasted on a box, and the line of
+      // light along a rolled edge is most of what says the cover has a thickness.
+      const toward = -side;
+      const corner = hard ? 3 : 2;
+      const roll = hard ? 0.5 : 0.2;
+      const outline = new THREE.Shape();
+      outline.moveTo(0, 0);
+      outline.lineTo(toward * (w - corner), 0);
+      outline.quadraticCurveTo(toward * w, 0, toward * w, corner);
+      outline.lineTo(toward * w, h - corner);
+      outline.quadraticCurveTo(toward * w, h, toward * (w - corner), h);
+      outline.lineTo(0, h);
+      outline.closePath();
+      const slab = new THREE.ExtrudeGeometry(outline, {
+        depth: thick - 2 * roll,
+        bevelEnabled: true,
+        bevelThickness: roll,
+        bevelSize: roll,
+        // The roll comes out of the board's own size, not on top of it.
+        bevelOffset: -roll,
+        bevelSegments: 3,
+        curveSegments: 6,
+      }).translate(hinge, 0, half - thick + roll);
+      const sheet = new THREE.ShapeGeometry(outline, 6);
+      // A shape's own texture coordinates are its points; the picture wants the face's, from its
+      // left edge and its foot, whichever side it is bound on.
+      const at = sheet.attributes.position;
+      for (let n = 0; n < at.count; n++) sheet.attributes.uv.setXY(n, toward > 0 ? at.getX(n) / w : at.getX(n) / w + 1, at.getY(n) / h);
+      sheet.scale((w - roll) / w, (h - 2 * roll) / h, 1).translate(hinge, roll, half + 0.05);
+      const face = new THREE.Mesh(sheet, coverMaterial);
+      face.receiveShadow = true;
+      group.add(face);
+      cloth.push(slab);
 
       // The page block, set back from the boards on three sides. It alone casts the book's shadow:
       // the boards are a hair larger and would only cast the same one again.
@@ -517,7 +492,6 @@ export class ShelfScene {
       );
       pages.castShadow = pages.receiveShadow = true;
       group.add(pages);
-      lid = { board: board3, side, hinge, width: w - overhang, height: h - 2 * overhang, foot: overhang, front: blockDepth / 2, thick };
 
       if (hard) {
         // A rounded back: half an ellipse from board to board, lettered down its length.
@@ -578,16 +552,18 @@ export class ShelfScene {
       group.add(boards);
     }
 
-    return { group, coverMaterial, behind, lid, fan };
+    return { group, coverMaterial, behind };
   }
 
   /**
    * The cover's relief, as the card draws it flat (`SPINE`, `FOLD` and `EDGES` in lib/book-cover):
    * the board rolling away at the binding, the groove of the hinge and its lip, a catch of light
    * on the fore-edge and the head, the foot turning away. Laid over the picture in the material,
-   * where the light then falls across it too.
+   * where the light then falls across it too. And its wear: the laminate rubbed through to paper
+   * along the free edges and most at the two free corners, where a book is handled, in a grain so
+   * it is not a drawn line. `shape` is the cover's width over its height.
    */
-  private emboss(material: THREE.MeshStandardNodeMaterial, form: BookCover['form'], binding: BookCover['binding']) {
+  private emboss(material: THREE.MeshStandardNodeMaterial, form: BookCover['form'], binding: BookCover['binding'], shape: number) {
     material.colorNode = Fn(() => {
       const at = uv() as unknown as THREE.Node<'vec2'>;
       const fromBinding = binding === 'left' ? at.x : at.x.oneMinus();
@@ -602,69 +578,24 @@ export class ShelfScene {
       const dark = shade.add(smoothstep(0.02, 0, at.y).mul(0.28));
       const lit = light.add(smoothstep(0.988, 1, fromBinding).mul(0.08)).add(smoothstep(0.986, 1, at.y).mul(0.13));
       const picture = materialColor as unknown as THREE.Node<'vec4'>;
-      return vec4(picture.xyz.mul(dark.oneMinus()).add(lit), picture.w);
+      const fromFree = fromBinding.oneMinus();
+      // Distances in cover widths, so the wear is as wide down the fore-edge as along head and foot.
+      const up = at.y.div(shape);
+      const down = at.y.oneMinus().div(shape);
+      const edge = min(fromFree, min(up, down));
+      const corner = fromFree.add(min(up, down));
+      const grain = fract(sin(dot(at.mul(vec2(311.7, 183.3)), vec2(12.9898, 78.233))).mul(43758.5453));
+      const rubbed = clamp(
+        smoothstep(0.002, 0.012, edge).oneMinus().mul(grain.mul(0.7).add(0.3)).add(smoothstep(0.008, 0.035, corner).oneMinus().mul(grain.mul(0.5).add(0.5))),
+        0,
+        1,
+      );
+      const printed = vec3Of(picture.xyz.mul(dark.oneMinus()).add(lit));
+      return vec4(mix(printed, vec3(0.93, 0.91, 0.86), rubbed.mul(0.55)), picture.w);
     })();
   }
 
-  /** A set's two prints `amount` of the way fanned apart: each off to its own side and turned a
-   *  little further over, standing on whichever corner is then lowest. */
-  private fanOut(fan: NonNullable<Built['fan']>, amount: number) {
-    const stand = (sheet: THREE.Group, lean: number, along: number) => {
-      const turn = rad(lean);
-      sheet.rotation.z = turn;
-      sheet.position.x = along;
-      sheet.position.y = (fan.height / 2) * Math.cos(turn) + (fan.width / 2) * Math.abs(Math.sin(turn));
-    };
-    const reach = -fan.side * fan.width * OPENING.fan * amount;
-    stand(fan.front, -fan.side * PRINT_LEAN.front + fan.side * OPENING.turn * amount, reach);
-    stand(fan.behind, -fan.side * PRINT_LEAN.behind - fan.side * OPENING.turn * amount, fan.side * fan.width * PRINT_LEAN.aside - reach);
-  }
-
-  /**
-   * The book in front `amount` of the way open (0 to 1), and every other shut. A bound book's
-   * cover swings round to lie beside its first page; a set's prints fan apart; a slab has nothing
-   * to open. Costs nothing shut: the board and the prints are the book's own, and the spread is
-   * one pair of sheets that follows whichever book is in front.
-   */
-  setOpen(index: number, amount: number) {
-    const book = this.books[index];
-    for (const other of this.books) {
-      if (other === book) continue;
-      if (other.lid) other.lid.board.rotation.y = 0;
-      if (other.fan) this.fanOut(other.fan, 0);
-    }
-    this.opened = book ? amount : 0;
-    const { first, inside, sheets } = this.spread;
-    const lid = book?.lid ?? null;
-    const on = lid ? book.group : null;
-    if (this.spread.of !== on) {
-      first.removeFromParent();
-      inside.removeFromParent();
-      this.spread.of = on;
-      if (lid && on) {
-        const toward = lid.side < 0 ? 1 : -1;
-        first.geometry = sheets.first[toward];
-        first.position.set(lid.hinge, lid.foot, lid.front + 0.08);
-        first.scale.set(lid.width, lid.height, 1);
-        // Turned about, so it runs the other way in its own space to run the same way in the board's.
-        inside.geometry = sheets.inside[lid.side < 0 ? -1 : 1];
-        inside.position.set(0, lid.foot, -lid.thick / 2 - 0.08);
-        inside.scale.set(lid.width, lid.height, 1);
-        on.add(first);
-        lid.board.add(inside);
-      }
-    }
-    if (!book) return;
-    if (lid) lid.board.rotation.y = lid.side * rad(OPENING.swing) * amount;
-    if (book.fan) this.fanOut(book.fan, amount);
-  }
-
   private discard(group: THREE.Group) {
-    if (this.spread.of === group) {
-      this.spread.first.removeFromParent();
-      this.spread.inside.removeFromParent();
-      this.spread.of = null;
-    }
     this.floor.remove(group);
     const shared = new Set<THREE.Material>(Object.values(this.shared));
     // A cover's picture outlives its book (`covers`).
@@ -682,7 +613,7 @@ export class ShelfScene {
 
   /** Draws the shelf with each book at its place; `ink` off leaves every book in colour. */
   render(places: readonly ShelfPlace[], ink: boolean) {
-    let stand = this.opened.toFixed(2);
+    let stand = '';
     this.books.forEach(({ group }, i) => {
       const place = places[i];
       if (!place) return;

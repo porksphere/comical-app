@@ -9,7 +9,7 @@
 import type { CoverBinding, CoverForm } from '@/lib/book-cover';
 import { leadingChapterNumber } from '@/lib/chapter-label';
 
-export type ShelfBook = { width: number; height: number; depth: number; binding: CoverBinding; form?: CoverForm };
+export type ShelfBook = { width: number; height: number; depth: number; binding: CoverBinding };
 
 /** `ink` is how far the book is from the one in front, 0 to 1: what the shelf draws in tone. */
 export type ShelfPlace = { x: number; z: number; yaw: number; ink: number };
@@ -42,32 +42,16 @@ export const smoothstep = (v: number) => {
 };
 
 /**
- * How the front book opens. A bound one's cover swings round, short of flat, until its inside and
- * the first page lie as a spread, and the book slides half its width off its binding's side so the
- * spread stands where the cover stood. A set of prints has no cover: its prints fan apart, each
- * `fan` of the width to its side and `turn` degrees further over. Whatever it is, it turns square
- * on and comes `closer` to the reader as it opens, and the stage comes `zoom` nearer over it (a
- * scale of the canvas, which goes on while the page that follows is being made). A cover half way
- * round points straight at the reader, a cover's width nearer the eye and drawn that much larger,
- * so the book steps `back` under it for the middle of the swing: without that it ran off the
- * stage's foot.
+ * A book under a finger gives: it goes `back` as it is pressed and comes `forward` of where it
+ * stood as it is let go, further than it went back for the same push, since coming toward the
+ * reader is the part that is seen.
  */
-export const OPENING = { swing: 168, slide: 0.5, back: 70, closer: 24, zoom: 1.05, fan: 0.2, turn: 9 } as const;
+export const PRESS = { back: 16, forward: 40 } as const;
 
-/** The front book's place with it `open` (0 to 1). */
-export function openedPlace(place: ShelfPlace, book: ShelfBook, open: number): ShelfPlace {
-  if (!open) return place;
-  const square = { ...place, yaw: place.yaw * (1 - open), z: place.z + OPENING.closer * open };
-  if (book.form === 'sheets' || book.form === 'scroll') return square;
-  const away = book.binding === 'left' ? 1 : -1;
-  return { ...square, x: place.x + away * book.width * OPENING.slide * open, z: square.z - OPENING.back * Math.sin(Math.PI * open) };
-}
-
-/** A cover's swing, or a fan's spread, `elapsed` of the way through its time: quick off the mark
- *  and easing into place. */
-export function openEase(elapsed: number): number {
-  const left = 1 - clamp(elapsed, 0, 1);
-  return 1 - left * left * left;
+/** A book's place pressed `depth` of the way in (1 is fully; below 0 it has sprung out past rest). */
+export function pressedPlace(place: ShelfPlace, depth: number): ShelfPlace {
+  if (!depth) return place;
+  return { ...place, z: place.z - (depth > 0 ? PRESS.back : PRESS.forward) * depth };
 }
 
 /**
@@ -234,14 +218,7 @@ export function popIn(settled: number): number {
   return Math.max(0, 1 + (overshoot + 1) * u * u * u + overshoot * u * u);
 }
 
-/** `open` is how far the front book's cover has swung, 0 to 1: its stickers leave as it opens. */
-export function shelfCallouts(
-  books: readonly ShelfBook[],
-  places: readonly ShelfPlace[],
-  pos: number,
-  stage: ShelfStage,
-  open = 0,
-): ShelfCallouts {
+export function shelfCallouts(books: readonly ShelfBook[], places: readonly ShelfPlace[], pos: number, stage: ShelfStage): ShelfCallouts {
   const front = clamp(Math.round(pos), 0, Math.max(0, books.length - 1));
   const none = { x: 0, y: 0 };
   if (!books.length) return { front, settled: 0, pop: 0, burst: { ...none, scale: 0 }, caption: { ...none, side: 1 }, tabs: [] };
@@ -254,7 +231,7 @@ export function shelfCallouts(
   const free = binding === 'left' ? 1 : -1;
   const corner = on(front, (free * width) / 2, height, depth / 2);
   const foot = on(front, (-free * width) / 2, height * 0.05, depth / 2);
-  const settled = clamp(1 - 2 * Math.abs(pos - front), 0, 1) * (1 - smoothstep(open * 2));
+  const settled = clamp(1 - 2 * Math.abs(pos - front), 0, 1);
   return {
     front,
     settled,

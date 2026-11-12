@@ -1107,7 +1107,7 @@ content), and the camera looks square on to the middle of what is left (`ShelfSt
 the shelf crosses the whole screen while the book in front stands where the rest of the page is.
 
 **Everything that moves is `ShelfDriver`'s, outside React.** Where along the shelf the reader is,
-the drag, the spring, the cover that swings open, the view's drift, and the only place a frame is
+the drag, the spring, the press of a tap, the view's drift, and the only place a frame is
 drawn from. It keeps what the scene is to show until there is a scene: the renderer starts after
 the first books arrive. It runs on the JS thread, as three does, but it keeps no clock: its frames
 are the display's own (`useFrameCallback`, handed across one at a time, so a slow frame is a
@@ -1118,8 +1118,8 @@ Reduce Motion.
 
 **A draw is the cost, not a triangle.** Each is a trip through three in an interpreter, and a book
 built of loose boxes with a material a face was sixteen of them, twice over with the shadow's
-pass: that was the shelf at half its frame rate on a phone. A bound book is five (its boards and
-lid as one piece of cloth, the swinging front board, its picture, its page block, its back), the
+pass: that was the shelf at half its frame rate on a phone. A bound book is four (both boards and
+its lid as one piece of cloth, its picture, its page block, its back), the
 block alone casts its shadow, the cut-paper edge is drawn by the material from the block's own
 depth rather than sampled, and the shadow is cast again only when a book has moved, so a shelf
 that only drifts casts none. Merge by hand (`merged`): three's own merge is an addon, which imports
@@ -1130,25 +1130,21 @@ bare `three`.
 phone is being held, so a tip eases back to nothing) laid on top at less than the drift's own
 size. The stickers ride the drift through the camera and take a few points more from the tilt.
 Each is put on afresh for each book that comes forward: the caption leaning one way or the other,
-the burst's star turned at random under lettering that stays level. A book the reader brings
+the burst's star turned at random under lettering that stays level — a star wider than it is
+tall, since an even round one looks the same whichever way it is turned. A book the reader brings
 forward ticks (`hapticSelection`); the one the shelf opens on does not.
 
-**A tap opens the book before it opens the page.** In a quarter of a second the front board
-swings round until its inside and the first page lie as a spread of empty panel frames (`setOpen`,
-`OPENING`), the book coming a little nearer as it does, and it shuts when the screen has the focus
-again. The push is made only once the book is open and that frame is drawn: what the push starts
-takes the thread the frames are drawn on, and made as the cover neared open it froze the cover
-part way round. That wait is still there after the book has opened — it is the reader's page being
-made, the same wait a History row's tap has, and several times longer in a development build — and
-nothing in the scene can move through it. So the stage itself comes nearer over the opening
-(`nearer` in `home-bookshelf.tsx`, a scale of the canvas on the UI thread), which does go on
-through it, and the shelf does not stop dead between the book opening and the page arriving. The
-spread is one picture for every book (`pages.ts`, plain arithmetic into a buffer) on one pair of
-sheets that follows whichever bound book is in front, always drawn behind its shut cover, so the
-first book to open has nothing to build and no shader to compile — leaves made at the tap were a
-stall of their own. The sheets are unlit, the paper's own colour: lit like the rest they came out
-a dull brown. A CG set has no cover: its two prints fan apart. A slab only comes nearer. The fetch
-is warmed first, so the opening is time the page would have spent loading.
+**A tap presses the book before it opens the page.** The front book gives under the finger —
+back into the shelf on a stiff spring as the finger comes down (`pressIn`, which is also when the
+fetch is warmed) — and springs out past where it stood as it lifts (`pressOut`, `PRESS`), and the
+page is pushed at the furthest it comes. Never sooner: what the push starts takes the thread the
+frames are drawn on, so the book stops wherever it is when that begins, and the end of its move is
+the place to stop. A finger that goes on to drag, or holds too long to be a tap, lets the book
+back out and opens nothing. Before this a tap opened the book: its cover swung round to a spread
+of panels, a CG set fanned its prints, and the stage zoomed in over the wait for the reader's page.
+It was taken out for the press — a board hung to swing, a pair of page sheets and the spread's
+picture were what the shelf carried for a quarter of a second of it, and the wait showed however
+it was dressed.
 
 **Spines are read.** They are lettered in Shippori Mincho B1 at its medium weight (`SPINE_FONT` in
 `lib/title-font.ts`), the serif a volume's spine is set in — the one place it is used, and the one
@@ -1164,7 +1160,12 @@ tried) the spine stopped reading as tone at all.
 
 **A cover has its relief, and a CG set is its card.** The hinge's groove and lip, the catch of
 light on the fore-edge and head (`emboss`) are the card's own shading (`SPINE`, `FOLD`, `EDGES` in
-lib/book-cover) laid over the picture in the material. A CG set is the card's two prints (`PRINT`)
+lib/book-cover) laid over the picture in the material. A bound cover is cut to a cover's outline,
+its two free corners rounded and the bound ones square, with the board's edge rolled over and the
+picture stopping short of it, and its laminate is rubbed pale along the free edges and at those
+corners: a rectangle with a razor's edge was a picture pasted on a box. (The picture carried
+round onto the spine, and a band of gloss sliding with the drift, were drawn up beside these and
+not taken.) A CG set is the card's two prints (`PRINT`)
 as two cards with the book's depth between them, each leaning its own way on a corner and the one
 behind set to the side, further than the card tips it (`PRINT_LEAN`), the picture on the one behind
 dimmed as the card dims it. A stack of sheets one behind the other was tried first and read as a

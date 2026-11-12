@@ -4,7 +4,6 @@ import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type R
 import { PixelRatio, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  Easing,
   measure,
   runOnJS,
   useAnimatedRef,
@@ -12,7 +11,6 @@ import Animated, {
   useFrameCallback,
   useReducedMotion,
   useSharedValue,
-  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, Pattern, Polygon, Rect } from 'react-native-svg';
@@ -34,7 +32,6 @@ import { markHomeBookshelfUnavailable, type BookshelfEntry } from '@/hooks/use-h
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import {
   NEUTRAL_BOARD,
-  OPENING,
   SHELF,
   SHELF_ASPECT,
   bookDepth,
@@ -81,12 +78,17 @@ const STICKER = { paper: '#ffffff', ink: '#1c1c1e' } as const;
 const TONE = { light: '#1c1c1e', dark: '#8a8a8f' } as const;
 
 /** The burst's outline: sixteen even points, every other one a little longer. Even, because the
- *  first cut's uneven ones read as a mistake at this size rather than as a hand's. */
+ *  first cut's uneven ones read as a mistake at this size rather than as a hand's; and wider than
+ *  it is tall, because a round star looks the same whichever way it is turned, and this one is
+ *  turned afresh for each book. */
 const BURST = Array.from({ length: 32 }, (_, k) => {
   const angle = (k / 32) * Math.PI * 2 - Math.PI / 2;
   const reach = k % 2 ? 31 : k % 4 ? 40 : 45;
-  return `${(Math.cos(angle) * reach).toFixed(1)},${(Math.sin(angle) * reach).toFixed(1)}`;
+  return `${(Math.cos(angle) * reach * 1.08).toFixed(1)},${(Math.sin(angle) * reach * 0.84).toFixed(1)}`;
 }).join(' ');
+/** How far the burst is turned either way, in degrees: enough to be seen, and its long side still
+ *  under its lettering. */
+const BURST_TURN = 26;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -266,7 +268,7 @@ function ShelfPlaceholder({ stage, coverWidth }: { stage: { height: number; cent
  * one in the middle comes forward and turns to show its cover, in colour against a shelf drawn in
  * the app's screentone, and wears where you stopped and how many chapters are new. A drag runs
  * along the shelf, a tap on a spine brings that book forward, and a tap on the front book or its
- * caption opens it: where the History tab's row would for one that has been read, and where the
+ * caption — it gives under the finger and springs back out — opens it: where the History tab's row would for one that has been read, and where the
  * Activity tab's would for one that has only its new chapters.
  *
  * The books are lit geometry (`ShelfScene`), drawn through one camera that `lib/bookshelf` also
@@ -327,7 +329,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     driver.listen({
       onFront: (key, byHand) => {
         setFrontKey(key);
-        setStuck({ lean: (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3), turn: Math.random() * 45 });
+        setStuck({ lean: (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3), turn: (Math.random() * 2 - 1) * BURST_TURN });
         // A book the reader brought forward clicks into place; the one the shelf opens on does not.
         if (byHand) tick();
       },
@@ -383,18 +385,6 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
       },
     });
   }, [driver, frames, mayDrift, drifting, moving]);
-  // The stage comes a little nearer as a book opens. On the UI thread, unlike the book: the page
-  // that is pushed next is made on the thread the scene is drawn on, and for as long as that takes
-  // nothing in the scene can move. This goes on through it, so the shelf doesn't stop dead between
-  // the book opening and the page arriving.
-  const nearer = useSharedValue(1);
-  const stageStyle = useAnimatedStyle(() => ({ transform: [{ scale: nearer.get() }] }));
-  // Back from the book it opened: it shuts, and the stage steps back.
-  useEffect(() => {
-    if (!focused) return;
-    driver.shut();
-    nearer.set(withTiming(1, { duration: 300 }));
-  }, [driver, focused, nearer]);
   useEffect(() => driver.setStage(stage, Math.min(3, PixelRatio.get())), [driver, stage]);
   useEffect(() => driver.setTheme(dark, theme.background), [driver, dark, theme.background]);
   useEffect(() => driver.setBooks(specs), [driver, specs]);
@@ -446,35 +436,50 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   if (!shown) return null;
 
   const bridgeName = nameOf(shown.bridgeId);
-  const resume = () => {
+  // What the front book opens, worked out once for the press that warms it and the tap that pushes
+  // it: what the History tab's row opens for a series that has been read, and the Activity tab's
+  // for one that has only its new chapters.
+  const opening = () => {
     const { history: h, news: g, bridgeId, seriesId } = shown;
-    // What the History tab's row opens for a series that has been read, and the Activity tab's for
-    // one that has only its new chapters — warmed with the same values the push carries.
-    let params: Record<string, string>;
     if (h) {
       const direct = h.chapterId === DIRECT_CHAPTER_ID || !h.chapterId;
-      warmPages(bridgeId, seriesId, direct ? undefined : h.chapterId, h.lastPage ?? 0);
-      params = historyResumeParams(h, bridgeName);
-    } else if (g) {
-      if (g.chapterId !== undefined) warmPages(bridgeId, seriesId, g.chapterId, 0);
-      params = activityReadParams(g, { name: bridgeName, direct: directOf(bridgeId) });
-    } else return;
-    // The book opens and the page is pushed once it has: the fetch above has that long a start.
-    if (!reduceMotion) nearer.set(withTiming(OPENING.zoom, { duration: 900, easing: Easing.out(Easing.cubic) }));
-    driver.openFront(() => router.push({ pathname: '/series', params: withZoomSource(params, null) }));
+      return { warm: () => warmPages(bridgeId, seriesId, direct ? undefined : h.chapterId, h.lastPage ?? 0), params: historyResumeParams(h, bridgeName) };
+    }
+    if (!g) return null;
+    return {
+      warm: () => (g.chapterId === undefined ? undefined : warmPages(bridgeId, seriesId, g.chapterId, 0)),
+      params: activityReadParams(g, { name: bridgeName, direct: directOf(bridgeId) }),
+    };
   };
-  const tap = (x: number, y: number) => {
-    // The caption is drawn over the stage, not in it, so a tap on it is told by where it hangs.
+  /** Whether a point of the stage is on the front book or on its caption, which is drawn over the
+   *  stage and not in it, so a touch on it is told by where it hangs. */
+  const onFront = (x: number, y: number) => {
     const { caption, settled } = fx.get();
     const { width: w, height: h } = captionSize.get();
     const hang = captionHang(caption.side);
     const left = caption.x - w * hang.x;
     const top = caption.y - h * hang.y;
-    if (settled > 0.5 && x > left - 6 && x < left + w + 6 && y > top - 6 && y < top + h + 6) return resume();
+    if (settled > 0.5 && x > left - 6 && x < left + w + 6 && y > top - 6 && y < top + h + 6) return true;
+    return driver.bookAt(x, y) === driver.focused;
+  };
+  // The book gives under the finger and springs out as it lifts, and the page is pushed once it
+  // has: the fetch, begun as the finger came down, has that long a start.
+  const pressIn = (x: number, y: number) => {
+    if (!onFront(x, y)) return;
+    opening()?.warm();
+    driver.pressIn();
+  };
+  const resume = () => {
+    const opens = opening();
+    if (!opens) return;
+    opens.warm();
+    driver.pressOut(() => router.push({ pathname: '/series', params: withZoomSource(opens.params, null) }));
+  };
+  const tap = (x: number, y: number) => {
+    if (onFront(x, y)) return resume();
+    driver.pressOut();
     const index = driver.bookAt(x, y);
-    if (index < 0) return;
-    if (index === driver.focused) resume();
-    else driver.goTo(index);
+    if (index >= 0) driver.goTo(index);
   };
   const pan = Gesture.Pan()
     .runOnJS(true)
@@ -488,8 +493,12 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   const press = Gesture.Tap()
     .runOnJS(true)
     .maxDistance(8)
+    .onBegin((e) => pressIn(e.x, e.y))
     .onEnd((e, landed) => {
       if (landed) tap(e.x, e.y);
+    })
+    .onFinalize((_e, landed) => {
+      if (!landed) driver.pressOut();
     });
   const tone = dark ? TONE.dark : TONE.light;
   const { history, news } = shown;
@@ -502,7 +511,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
       <GestureDetector gesture={Gesture.Race(pan, press)}>
         <Animated.View
           ref={stageView}
-          style={[{ width: stage.width, height: stage.height, marginLeft: -sides.left, transformOrigin: `${stage.centre}px 60%` }, stageStyle]}
+          style={{ width: stage.width, height: stage.height, marginLeft: -sides.left }}
           accessible
           accessibilityRole="adjustable"
           accessibilityLabel={`Continue reading: ${shown.title}`}

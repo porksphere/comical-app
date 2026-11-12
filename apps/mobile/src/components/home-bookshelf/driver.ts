@@ -3,9 +3,8 @@ import type * as THREE from 'three/webgpu';
 import {
   SHELF,
   driftAt,
-  openEase,
-  openedPlace,
   placeShelf,
+  pressedPlace,
   rubberBand,
   settleOn,
   shelfMiddle,
@@ -19,14 +18,18 @@ import type { ShelfBookSpec, ShelfScene } from './scene';
 
 const STIFFNESS = 190;
 const DAMPING = 25;
-/** How long a book takes to open, and to shut again, in milliseconds. Short: it is on the way to
- *  the page, not a thing to watch. */
-const OPEN_MS = 240;
-const SHUT_MS = 300;
+/** The press: a stiff spring into the shelf under a finger, and a looser one out of it that
+ *  overshoots, which is the book coming forward. `knock` is the speed a tap gives a book that has
+ *  not had time to be pressed, per second, and `wait` the longest the tap's page is held for the
+ *  book to come out, in milliseconds. */
+const PRESS_IN = { stiffness: 1500, damping: 60 };
+const PRESS_OUT = { stiffness: 620, damping: 21 };
+const PRESS_KNOCK = 9;
+const PRESS_WAIT = 260;
 
 /**
  * The shelf in motion, outside React: where along it the reader is, the drag and the spring that
- * settles it, the cover that opens, the view's drift, and the one place a frame is drawn from. It
+ * settles it, the press of a tap, the view's drift, and the one place a frame is drawn from. It
  * holds what the scene is to show until there is a scene to show it — the renderer starts later
  * than the first books arrive.
  *
@@ -60,12 +63,13 @@ export class ShelfDriver {
   private touched = false;
   private last = 0;
   private front = -1;
-  /** How far through its opening the front book is (`swing`, at an even rate) and how far open
-   *  that has it (`open`, eased), where it is headed, and who to tell on arrival. */
-  private swing = 0;
-  private open = 0;
-  private openTo = 0;
-  private onOpened: (() => void) | null = null;
+  /** How far the front book is pressed into the shelf (below 0 it has sprung out past rest), how
+   *  fast, whether a finger is on it, and what its tap opens once it has come back out. */
+  private press = 0;
+  private pressVelocity = 0;
+  private pressing = false;
+  private onPressed: (() => void) | null = null;
+  private releasedAt = 0;
   private drift = { yaw: 0, pitch: 0 };
 
   get focused(): number {
@@ -95,8 +99,8 @@ export class ShelfDriver {
     if (this.moving) frames.start();
   }
 
-  /** Reduce Motion: a release lands at once with no spring, a cover does not swing, and the view
-   *  holds still. */
+  /** Reduce Motion: a release lands at once with no spring, a book does not give under a tap, and
+   *  the view holds still. */
   setStill(still: boolean) {
     this.still = still;
     if (still) this.drift = { yaw: 0, pitch: 0 };
@@ -138,7 +142,7 @@ export class ShelfDriver {
     const had = this.specs.length;
     const front = this.specs[this.target]?.key;
     this.specs = specs;
-    this.books = specs.map((s) => ({ width: s.width, height: s.height, depth: s.depth, binding: s.cover.binding, form: s.cover.form }));
+    this.books = specs.map((s) => ({ width: s.width, height: s.height, depth: s.depth, binding: s.cover.binding }));
     const last = Math.max(0, specs.length - 1);
     if (!had) this.pos = this.target = shelfMiddle(specs.length);
     const now = specs.findIndex((s) => s.key === front);
@@ -167,7 +171,7 @@ export class ShelfDriver {
     this.held = true;
     this.grabbedAt = this.pos;
     this.velocity = 0;
-    this.shut();
+    this.pressOut();
   }
 
   /** The finger's travel since `grab`, in points: right is toward the shelf's start. */
@@ -186,7 +190,6 @@ export class ShelfDriver {
   goTo(index: number) {
     this.touched = true;
     this.target = Math.min(Math.max(0, index), Math.max(0, this.books.length - 1));
-    if (this.target !== Math.round(this.pos)) this.shut();
     if (this.still) {
       this.pos = this.target;
       this.velocity = 0;
@@ -199,30 +202,39 @@ export class ShelfDriver {
     return this.scene?.pick(x, y) ?? -1;
   }
 
-  /**
-   * Opens the front book and calls `then` once it is open and that frame is drawn — at once where
-   * there is nothing to wait for: nothing drawn yet, or Reduce Motion. Never before: what `then`
-   * starts (a page being pushed) takes the thread these frames are drawn on, and started mid-swing
-   * it froze the cover part way round.
-   */
-  openFront(then: () => void) {
-    if (!this.scene || this.still) {
-      then();
-      return;
-    }
-    // Picked up from however far shut it had got, on the opening's curve.
-    if (!this.openTo) this.swing = 1 - Math.cbrt(1 - this.open);
-    this.openTo = 1;
-    this.onOpened = then;
+  /** A finger is down on the front book: it gives under it. */
+  pressIn() {
+    if (!this.scene || this.still) return;
+    this.pressing = true;
+    this.onPressed = null;
     this.kick();
   }
 
-  /** Swings it shut again: the reader is back. */
-  shut() {
-    this.onOpened = null;
-    if (!this.swing && !this.openTo) return;
-    if (this.openTo) this.swing = Math.cbrt(this.open);
-    this.openTo = 0;
+  /**
+   * The finger is up. With `then`, it was a tap: the book springs out past where it stood and
+   * `then` is called at the furthest it comes — at once where there is nothing to wait for
+   * (nothing drawn yet, Reduce Motion). Never sooner: what `then` starts, a page being pushed,
+   * takes the thread these frames are drawn on, so the book stops wherever it is when that begins,
+   * and the place to stop is at the end of its move. Without `then` the finger went elsewhere, and
+   * the book only comes back.
+   */
+  pressOut(then?: () => void) {
+    this.pressing = false;
+    if (!this.scene || this.still) {
+      this.press = this.pressVelocity = 0;
+      this.onPressed = null;
+      then?.();
+      return;
+    }
+    if (!then) {
+      this.onPressed = null;
+      if (this.press || this.pressVelocity) this.kick();
+      return;
+    }
+    // A tap is over before the spring has taken the book far: it takes the knock all the same.
+    this.pressVelocity = Math.max(this.pressVelocity, PRESS_KNOCK);
+    this.onPressed = then;
+    this.releasedAt = -1;
     this.kick();
   }
 
@@ -257,26 +269,29 @@ export class ShelfDriver {
           this.velocity = 0;
         }
       }
-      // Either way it starts fast and eases into place: shutting is the opening's curve run from
-      // the other end.
-      if (this.openTo) {
-        this.swing = Math.min(1, this.swing + dt / (OPEN_MS / 1000));
-        this.open = openEase(this.swing);
-      } else {
-        this.swing = Math.max(0, this.swing - dt / (SHUT_MS / 1000));
-        this.open = 1 - openEase(1 - this.swing);
+      const { stiffness, damping } = this.pressing ? PRESS_IN : PRESS_OUT;
+      const to = this.pressing ? 1 : 0;
+      this.pressVelocity += (-stiffness * (this.press - to) - damping * this.pressVelocity) * dt;
+      this.press += this.pressVelocity * dt;
+      if (Math.abs(this.press - to) < 0.003 && Math.abs(this.pressVelocity) < 0.05) {
+        this.press = to;
+        this.pressVelocity = 0;
       }
       // Under a finger the next frame is asked for by the finger's next move.
-      if (this.swing === this.openTo && (this.held || (this.pos === this.target && this.velocity === 0))) {
+      const pressed = this.pressVelocity === 0 && this.press === (this.pressing ? 1 : 0);
+      if (pressed && (this.held || (this.pos === this.target && this.velocity === 0))) {
         this.moving = false;
         this.frames.stop();
       }
     }
     this.draw();
-    if (this.swing === 1 && this.onOpened) {
-      const arrived = this.onOpened;
-      this.onOpened = null;
-      arrived();
+    // Out past where it stood and turning back, or back at rest, or long enough.
+    if (this.releasedAt < 0) this.releasedAt = now;
+    const out = (this.press <= 0 && this.pressVelocity >= 0) || now - this.releasedAt > PRESS_WAIT;
+    if (this.onPressed && !this.pressing && out) {
+      const tapped = this.onPressed;
+      this.onPressed = null;
+      tapped();
     }
   };
 
@@ -284,13 +299,12 @@ export class ShelfDriver {
     if (!this.books.length || !this.stage.width) return;
     const places = placeShelf(this.books, this.pos);
     const front = Math.min(Math.max(0, Math.round(this.pos)), this.books.length - 1);
-    if (this.open) places[front] = openedPlace(places[front], this.books[front], this.open);
+    if (this.press) places[front] = pressedPlace(places[front], this.press);
     if (this.scene) {
       this.scene.setView(this.drift.yaw, this.drift.pitch);
-      this.scene.setOpen(front, this.open);
       this.scene.render(places, true);
     }
-    const callouts = shelfCallouts(this.books, places, this.pos, { ...this.stage, ...this.drift }, this.open);
+    const callouts = shelfCallouts(this.books, places, this.pos, { ...this.stage, ...this.drift });
     this.onFrame(callouts);
     if (callouts.front !== this.front) {
       this.front = callouts.front;

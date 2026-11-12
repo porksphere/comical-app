@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   DRIFT,
-  OPENING,
+  PRESS,
   SHELF,
   arrangeShelf,
   bayer4,
@@ -11,11 +11,10 @@ import {
   bookPoint,
   driftAt,
   inkOn,
-  openEase,
-  openedPlace,
   pickShelf,
   placeShelf,
   popIn,
+  pressedPlace,
   projectToStage,
   rubberBand,
   settleOn,
@@ -243,24 +242,16 @@ test('a drifted view moves what stands off the middle and leaves the middle wher
   expect(projectToStage(turned, 0, 100, 60).x).not.toBeCloseTo(projectToStage(stage, 0, 100, 60).x, 1);
 });
 
-test('an opening book slides off its binding and turns square', () => {
-  const place = { x: 0, z: 50, yaw: 12, ink: 0 };
-  expect(openedPlace(place, book('left'), 0)).toBe(place);
-  const left = openedPlace(place, book('left'), 1);
-  expect(left.x).toBeCloseTo(65);
-  expect(left.yaw).toBeCloseTo(0);
-  // Nearer the reader once open, and further back half way, while the cover points at them.
-  expect(left.z).toBeCloseTo(50 + OPENING.closer);
-  expect(openedPlace(place, book('left'), 0.5).z).toBeLessThan(50);
-  expect(openedPlace({ ...place, yaw: -12 }, book('right'), 1).x).toBeLessThan(0);
-});
-
-test('a set of prints opens where it stands, toward the reader', () => {
-  const place = { x: 10, z: 50, yaw: 12, ink: 0 };
-  const fanned = openedPlace(place, { ...book('left', 6), form: 'sheets' }, 1);
-  expect(fanned.x).toBe(10);
-  expect(fanned.yaw).toBeCloseTo(0);
-  expect(fanned.z).toBeCloseTo(50 + OPENING.closer);
+test('a pressed book goes back, and springs out further than it went in', () => {
+  const place = { x: 4, z: 50, yaw: 12, ink: 0 };
+  expect(pressedPlace(place, 0)).toBe(place);
+  const pressed = pressedPlace(place, 1);
+  expect(pressed.z).toBeCloseTo(50 - PRESS.back);
+  expect(pressed.x).toBe(4);
+  expect(pressed.yaw).toBe(12);
+  const sprung = pressedPlace(place, -0.2);
+  expect(sprung.z).toBeGreaterThan(50);
+  expect(sprung.z - 50).toBeGreaterThan(0.2 * PRESS.back);
 });
 
 test('what matters most stands in the middle, and less to either side by turns', () => {
@@ -272,13 +263,6 @@ test('what matters most stands in the middle, and less to either side by turns',
     expect(arrangeShelf(ranked)[shelfMiddle(count)]).toBe(0);
   }
   expect(shelfMiddle(0)).toBe(0);
-});
-
-test('an opening starts fast and lands exactly', () => {
-  expect(openEase(0)).toBe(0);
-  expect(openEase(1)).toBe(1);
-  expect(openEase(0.5)).toBeGreaterThan(0.8);
-  expect(openEase(2)).toBe(1);
 });
 
 describe('pickShelf', () => {
@@ -302,14 +286,6 @@ describe('pickShelf', () => {
     expect(picked.filter((key) => key === 'x')).toHaveLength(1);
     expect(picked).toHaveLength(6);
   });
-});
-
-test('the stickers leave as the cover opens', () => {
-  const stage = { width: 390, height: shelfStageHeight(390) };
-  const places = placeShelf(shelf, 3);
-  expect(shelfCallouts(shelf, places, 3, stage, 0).settled).toBe(1);
-  expect(shelfCallouts(shelf, places, 3, stage, 0.25).settled).toBeCloseTo(0.5);
-  expect(shelfCallouts(shelf, places, 3, stage, 0.6).settled).toBe(0);
 });
 
 test('spineNumber: the chapter the book opens at, two digits at least', () => {
