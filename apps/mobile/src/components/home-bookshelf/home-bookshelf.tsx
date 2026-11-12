@@ -1,3 +1,5 @@
+import { observable } from '@legendapp/state';
+import { useSelector } from '@legendapp/state/react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from 'expo-router';
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -28,7 +30,14 @@ import { useBookCoverResolver } from '@/hooks/use-book-covers';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSideInsets } from '@/hooks/use-content-width';
 import { useDeviceTilt, type Tilt } from '@/hooks/use-device-tilt';
-import { markHomeBookshelfRendererFailed, useHomeBookshelfRenderer, type BookshelfEntry, type BookshelfRenderer } from '@/hooks/use-home-bookshelf';
+import {
+  homeBookshelfStats,
+  markHomeBookshelfRendererFailed,
+  useHomeBookshelfRenderer,
+  useHomeBookshelfStats,
+  type BookshelfEntry,
+  type BookshelfRenderer,
+} from '@/hooks/use-home-bookshelf';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import {
   NEUTRAL_BOARD,
@@ -44,6 +53,7 @@ import {
   type Rgb,
   type ShelfCallouts,
 } from '@/lib/bookshelf';
+import { logDiagnostic } from '@/lib/diagnostics';
 import { createTickHaptic, hapticSelection } from '@/lib/haptics';
 import { historySub } from '@/lib/history-sub';
 import { useRouter } from '@/lib/nav';
@@ -51,6 +61,7 @@ import { activityReadParams, historyResumeParams } from '@/lib/series-links';
 import { useTitleFontFor } from '@/lib/title-font';
 
 import { ShelfDriver } from './driver';
+import { FrameStats, describeFrames } from './frame-stats';
 import { PAGE_DOTS_HEIGHT, PageDots } from './page-dots';
 import type { ShelfBookSpec } from './spec';
 
@@ -72,6 +83,9 @@ const FAILED = {
 /** The least time between two frames of a shelf that only stands and drifts, in milliseconds:
  *  half the rate of one that is moving, which a turn of a degree or so over seconds doesn't miss. */
 const IDLE_FRAME_MS = 30;
+
+/** How long the shelf stands before a move counts as over, for the frame stats' log. */
+const MOVE_OVER_MS = 500;
 
 /** The title and where the reader stopped, under the stage. */
 const CAPTION_HEIGHT = 52;
@@ -105,6 +119,21 @@ const BURST_TURN = 720 / BURST_POINTS;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** A renderer that throws as it starts takes the shelf away, not the screen. */
+// In a store of its own, read by one small view: set in the shelf's own state, a line a second
+// would render the whole shelf a second, on the thread whose frames it is counting.
+const readout$ = observable('');
+
+function FrameReadout({ left }: { left: number }) {
+  const theme = useTheme();
+  const line = useSelector(() => readout$.get());
+  if (!line) return null;
+  return (
+    <Text pointerEvents="none" style={[styles.readout, { left, color: theme.text, backgroundColor: theme.backgroundElement }]}>
+      {line}
+    </Text>
+  );
+}
+
 class Fallible extends Component<{ onError: () => void; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
@@ -296,6 +325,7 @@ export function HomeBookshelf(props: { entries: readonly BookshelfEntry[]; width
 function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[]; width: number; renderer: BookshelfRenderer }) {
   const [driver] = useState(() => new ShelfDriver());
   const ShelfCanvas = CANVASES[renderer];
+  const showStats = useHomeBookshelfStats();
   const theme = useTheme();
   const dark = useActiveColorScheme() === 'dark';
   const reduceMotion = useReducedMotion();
@@ -371,15 +401,41 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
   const moving = useSharedValue(false);
   const drifting = useSharedValue(false);
   const driftedAt = useSharedValue(0);
-  const [draw] = useState(() => (now: number, tiltX: number, tiltY: number) => {
+  // How the frames are going, for telling the two renderers apart on a device (Settings →
+  // Developer): the last second's for the line over the stage, and each move's for the log.
+  const skipped = useSharedValue(0);
+  const [meter] = useState(() => ({ second: new FrameStats(), move: new FrameStats(), moving: false, movedAt: 0 }));
+  const [draw] = useState(() => (now: number, tiltX: number, tiltY: number, missed: number) => {
+    // Before the step, which may end the move: under a finger the shelf stops after every frame.
+    const moving = meter.moving;
+    const began = performance.now();
     try {
       driver.step(now, tiltX, tiltY);
     } finally {
       drawing.set(false);
+      if (homeBookshelfStats()) {
+        const script = performance.now() - began;
+        // A move is over once the shelf has stood this long, which a drag's frames never do.
+        if (now - meter.movedAt > MOVE_OVER_MS) {
+          const moved = meter.move.take();
+          // A tap's few frames say nothing about a renderer.
+          if (moved && moved.frames >= 20) logDiagnostic('bookshelf', describeFrames(renderer, moved));
+        }
+        if (moving) {
+          meter.move.add(now, script, missed);
+          meter.movedAt = now;
+        }
+        meter.second.add(now, script, missed);
+        if (meter.second.span >= 1000) readout$.set(describeFrames(renderer, meter.second.take()!));
+      }
     }
   });
   const frames = useFrameCallback((frame) => {
-    if (drawing.get()) return;
+    if (drawing.get()) {
+      // A frame the display offered while the last was still being drawn.
+      if (moving.get()) skipped.set(skipped.get() + 1);
+      return;
+    }
     if (!moving.get()) {
       if (!drifting.get() || frame.timestamp - driftedAt.get() < IDLE_FRAME_MS) return;
       const at = measure(stageView);
@@ -388,7 +444,8 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
     }
     drawing.set(true);
     const stir = tilt.get();
-    runOnJS(draw)(frame.timestamp, stir.x, stir.y);
+    runOnJS(draw)(frame.timestamp, stir.x, stir.y, skipped.get());
+    skipped.set(0);
   }, false);
   useEffect(() => {
     drifting.set(mayDrift);
@@ -396,14 +453,16 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
     driver.setFrames({
       start: () => {
         moving.set(true);
+        meter.moving = true;
         frames.setActive(true);
       },
       stop: () => {
         moving.set(false);
+        meter.moving = false;
         if (!mayDrift) frames.setActive(false);
       },
     });
-  }, [driver, frames, mayDrift, drifting, moving]);
+  }, [driver, frames, mayDrift, drifting, moving, meter, renderer]);
   useEffect(() => driver.setStage(stage, Math.min(3, PixelRatio.get())), [driver, stage]);
   useEffect(() => driver.setTheme(dark, theme.background), [driver, dark, theme.background]);
   useEffect(() => driver.setBooks(specs), [driver, specs]);
@@ -549,6 +608,7 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
           <LinearGradient pointerEvents="none" style={styles.fadeTop} colors={[theme.background, `${theme.background}00`]} />
           <LinearGradient pointerEvents="none" style={styles.fadeBottom} colors={[`${theme.background}00`, theme.background]} />
           {!drawn && <ShelfPlaceholder stage={stage} coverWidth={shelfCoverWidth(width)} />}
+          {showStats && <FrameReadout left={sides.left + TopLevelGutter} />}
           <View style={[styles.callouts, !drawn && styles.unseen]} pointerEvents="none">
             {entries.map((entry, index) =>
               entry.unread ? <UnreadTab key={entry.key} fx={fx} index={index} count={entry.unread} tone={tone} /> : null,
@@ -625,6 +685,7 @@ const styles = StyleSheet.create({
   under: { height: CAPTION_HEIGHT, paddingHorizontal: TopLevelGutter, justifyContent: 'center' },
   title: { fontSize: 20, lineHeight: 26 },
   unseen: { opacity: 0 },
+  readout: { position: 'absolute', top: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 10, fontVariant: ['tabular-nums'], overflow: 'hidden' },
   // The scene comes out of the page and goes back into it: no edge where the canvas starts or ends.
   fadeTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 48 },
   fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 34 },

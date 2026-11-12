@@ -14,7 +14,7 @@ import { persisted$ } from '@/lib/observable';
 
 /** Persisted as an OBJECT, not a bare boolean — see lib/dev-profiler-flag for why a bare `false`
  *  breaks Legend State's persistence. */
-const bookshelf$ = persisted$<{ on: boolean; renderer?: BookshelfRenderer }>('comical:homeBookshelf', { on: true });
+const bookshelf$ = persisted$<{ on: boolean; renderer?: BookshelfRenderer; stats?: boolean }>('comical:homeBookshelf', { on: true });
 
 /** What draws the shelf: `direct` is the renderer written straight on WebGPU, `three` the one that
  *  draws through three.js. The same shelf either way (`ShelfRenderer`). */
@@ -48,6 +48,19 @@ export function setHomeBookshelfRenderer(renderer: BookshelfRenderer): void {
  *  to start on this device, which a browser without WebGPU always does. */
 export function useHomeBookshelfRenderer(): BookshelfRenderer {
   return useSelector(() => (directFailed$.get() ? 'three' : (bookshelf$.renderer.get() ?? 'direct')));
+}
+
+/** Whether the shelf says how its frames are going (Settings → Developer): a line over the stage,
+ *  and one in the Diagnostics log for each time it has moved. How the two renderers are told apart
+ *  on a device, where nothing else measures them. */
+export function useHomeBookshelfStats(): boolean {
+  return useSelector(() => bookshelf$.stats.get() ?? false);
+}
+
+export const homeBookshelfStats = () => bookshelf$.stats.peek() ?? false;
+
+export function setHomeBookshelfStats(on: boolean): void {
+  bookshelf$.stats.set(on);
 }
 
 /** A renderer could not start. The direct one hands the shelf to three's; three's failing takes

@@ -1099,7 +1099,12 @@ keyed by it. Its spines on books bound on the right are lit from behind ON PURPO
 three's are, by the way its back is wound, and that is the tone a shelf of manga was tuned at.
 `camera.test.ts` holds its matrices to `projectToStage`, and `geometry.test.ts` its faces to their
 winding, which the shadow's pass culls by. Its shader is checked nowhere but in a browser: paste
-`SHADER` into `createShaderModule` and read `getCompilationInfo`.
+`SHADER` into `createShaderModule` and read `getCompilationInfo`. On a device the two are told
+apart by Settings → Developer → Bookshelf frame stats (`frame-stats.ts`): a line over the stage for
+the last second — frames a second, the script each took, and the display's frames that went by
+while one was still in hand — and a line in the Diagnostics log for each time the shelf has moved.
+The line is a view of its own over a store of its own: set in the shelf's state it rendered the
+shelf every second, on the thread whose frames it counts.
 
 **The books are real geometry under a real light, drawn by three.js on WebGPU.** On iOS and Android
 that is `react-native-webgpu` (Dawn, over Metal and Vulkan); on the web it is the browser's own
