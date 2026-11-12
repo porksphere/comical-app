@@ -1,5 +1,5 @@
 import { observable } from '@legendapp/state';
-import { use$ } from '@legendapp/state/react';
+import { use$, useSelector } from '@legendapp/state/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -14,7 +14,11 @@ import { persisted$ } from '@/lib/observable';
 
 /** Persisted as an OBJECT, not a bare boolean — see lib/dev-profiler-flag for why a bare `false`
  *  breaks Legend State's persistence. */
-const bookshelf$ = persisted$('comical:homeBookshelf', { on: true });
+const bookshelf$ = persisted$<{ on: boolean; renderer?: BookshelfRenderer }>('comical:homeBookshelf', { on: true });
+
+/** What draws the shelf: `direct` is the renderer written straight on WebGPU, `three` the one that
+ *  draws through three.js. The same shelf either way (`ShelfRenderer`). */
+export type BookshelfRenderer = 'direct' | 'three';
 
 /** Whether Comical Home opens on the bookshelf (Settings → General; on unless turned off). A
  *  `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
@@ -29,14 +33,33 @@ export function setHomeBookshelf(on: boolean): void {
 // For the session, not persisted: a renderer that could not start once is not asked again until
 // the app is next opened, by which time it may be a build or a driver that can.
 const unavailable$ = observable(false);
+const directFailed$ = observable(false);
+
+/** The renderer chosen in Settings → General, `direct` unless three's was chosen. */
+export function useHomeBookshelfRendererChoice(): BookshelfRenderer {
+  return useSelector(() => bookshelf$.renderer.get() ?? 'direct');
+}
+
+export function setHomeBookshelfRenderer(renderer: BookshelfRenderer): void {
+  bookshelf$.renderer.set(renderer);
+}
+
+/** The renderer the shelf is drawn with: the one chosen, or three's once the direct one has failed
+ *  to start on this device, which a browser without WebGPU always does. */
+export function useHomeBookshelfRenderer(): BookshelfRenderer {
+  return useSelector(() => (directFailed$.get() ? 'three' : (bookshelf$.renderer.get() ?? 'direct')));
+}
+
+/** A renderer could not start. The direct one hands the shelf to three's; three's failing takes
+ *  the shelf away, and the rails begin the page as they did. */
+export function markHomeBookshelfRendererFailed(renderer: BookshelfRenderer): void {
+  if (renderer === 'direct') directFailed$.set(true);
+  else unavailable$.set(true);
+}
 
 /** False once the shelf's renderer has failed to start on this device. */
 export function useHomeBookshelfAvailable(): boolean {
   return !use$(unavailable$);
-}
-
-export function markHomeBookshelfUnavailable(): void {
-  unavailable$.set(true);
 }
 
 /** As many books as the shelf holds; the tabs hold the rest. Only those near the front are drawn,

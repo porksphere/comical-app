@@ -1082,6 +1082,25 @@ told by where it hangs (`captionHang`), not by a touch target of its own. Until 
 started the stage shows a placeholder of a cover and spines. Settings → General → Home bookshelf
 turns it off.
 
+**There are two renderers, and they draw the same shelf** (`ShelfRenderer` in `spec.ts`;
+Settings → General → Bookshelf renderer). three's (`scene.ts`, below) came first. The other
+(`direct/`) is the same scene written straight on WebGPU with no engine between: its camera as
+matrices (`direct/camera.ts`), each book's triangles (`direct/geometry.ts`), and three's node
+materials written out as one WGSL shader (`direct/shader.ts`), sum for sum, so a change to the
+shelf's look is made in both. It is there because of what a frame costs through three (below): a
+book is one draw where three's is four and a walk of its scene, its place is a row of one uniform
+block, and a frame is a few dozen calls whatever stands on the shelf — measured in a browser,
+about a twentieth of the script three runs a frame. Nothing of three is in its chunk. It draws through
+`react-native-webgpu` on iOS and Android and the browser's WebGPU on the web; where there is
+none, or its device will not take the shaders, it hands the shelf to three's for the session
+(`markHomeBookshelfRendererFailed`), which has WebGL to fall back on. A shelf keeps to the
+renderer it started with, since its driver holds that renderer's pictures: the component is
+keyed by it. Its spines on books bound on the right are lit from behind ON PURPOSE (`buildBook`):
+three's are, by the way its back is wound, and that is the tone a shelf of manga was tuned at.
+`camera.test.ts` holds its matrices to `projectToStage`, and `geometry.test.ts` its faces to their
+winding, which the shadow's pass culls by. Its shader is checked nowhere but in a browser: paste
+`SHADER` into `createShaderModule` and read `getCompilationInfo`.
+
 **The books are real geometry under a real light, drawn by three.js on WebGPU.** On iOS and Android
 that is `react-native-webgpu` (Dawn, over Metal and Vulkan); on the web it is the browser's own
 WebGPU, or WebGL 2 where there is none, which three's renderer falls back to by itself — the reason
@@ -1097,11 +1116,12 @@ reader: it is 2D, and a book is not.
 - **`three` and `react-native-webgpu` are pinned exactly, together.** The renderer reaches into
   the canvas and the device the package hands it. Skia 2 has no part in this; Skia 3 draws through
   the same Dawn, and from then the two packages must be a pair their docs list as compatible.
-- **Nothing here is imported until the shelf is on screen**, and all of it through `engine.ts`:
-  three is most of a megabyte. Asked for from two places it was two chunks on the web, and three,
-  shared by both, went to the main bundle.
+- **Nothing here is imported until the shelf is on screen**, and all of it through `engine.ts`
+  (`direct/engine.ts` for the other renderer): three is most of a megabyte. Asked for from two
+  places it was two chunks on the web, and three, shared by both, went to the main bundle.
 
-**One camera, written twice.** `ShelfScene.resize` and `setView` set it for the renderer and
+**One camera, written twice** (a third time for the direct renderer, whose test holds it to the
+arithmetic). `ShelfScene.resize` and `setView` set it for the renderer and
 `projectToStage` (`lib/bookshelf`) is the same camera as arithmetic, which is how the callouts — the
 burst for new chapters, the caption for where you stopped, the tab over each shelved book with
 something new — stand on a book's corners while being plain views over the canvas. Change one and
@@ -1207,7 +1227,9 @@ ink and a paper (`inked` in `scene.ts`, the matrix of `page-curl-shader.ts`), cu
 as it is shown on screen, after lighting; the shelf itself is always tone, so the shadows the
 books cast on it are screentone and not a blur. A sticker is ink on paper whatever the theme.
 
-**Textures are made where each platform can make them** (`pictures.ts`, `pictures.web.ts`), a few
+**Pictures are made where each platform can make them** (`pixels.ts`, `pixels.web.ts`: RGBA rows
+that either renderer makes its texture of — `pictures.ts` for three, the scene itself for the
+direct one, which also draws each picture's smaller copies), a few
 covers at a time from the middle of the shelf outward: only the books near the front are drawn,
 so a long shelf costs a picture a book and little else, but a shelf's worth decoded at once was a
 stall as the app started. A cover is expo-image's own copy on disk, shrunk by the platform's decoder and read back through
@@ -1217,8 +1239,9 @@ paragraph, so a title the heading face has no letters for falls back a glyph at 
 cloth is the colour of its cover beside the binding (`boardColour`). A cover that can't be had
 leaves the book in plain cloth.
 
-**A renderer that cannot start takes the shelf away, not the screen** (`markHomeBookshelfUnavailable`):
-the rails begin the page as they did, until the app is next opened.
+**A renderer that cannot start takes the shelf away, not the screen**
+(`markHomeBookshelfRendererFailed`): the direct one hands over to three's, and when three's cannot
+start either the rails begin the page as they did, until the app is next opened.
 
 # Testing: new screens need a flow
 

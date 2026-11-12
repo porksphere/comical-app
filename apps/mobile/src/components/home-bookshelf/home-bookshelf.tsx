@@ -28,7 +28,7 @@ import { useBookCoverResolver } from '@/hooks/use-book-covers';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSideInsets } from '@/hooks/use-content-width';
 import { useDeviceTilt, type Tilt } from '@/hooks/use-device-tilt';
-import { markHomeBookshelfUnavailable, type BookshelfEntry } from '@/hooks/use-home-bookshelf';
+import { markHomeBookshelfRendererFailed, useHomeBookshelfRenderer, type BookshelfEntry, type BookshelfRenderer } from '@/hooks/use-home-bookshelf';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import {
   NEUTRAL_BOARD,
@@ -52,10 +52,22 @@ import { useTitleFontFor } from '@/lib/title-font';
 
 import { ShelfDriver } from './driver';
 import { PAGE_DOTS_HEIGHT, PageDots } from './page-dots';
-import type { ShelfBookSpec } from './scene';
+import type { ShelfBookSpec } from './spec';
 
-// Its own chunk on the web: three and the scene are most of a megabyte that only the shelf needs.
-const ShelfCanvas = lazy(() => import('./engine').then((m) => ({ default: m.ShelfCanvas })));
+// The two renderers, each its own chunk on the web and neither loaded until a shelf wants it:
+// three and its scene are most of a megabyte, the one written straight on WebGPU a few kilobytes.
+const ENGINES = {
+  three: () => import('./engine'),
+  direct: () => import('./direct/engine'),
+} satisfies Record<BookshelfRenderer, unknown>;
+const CANVASES = {
+  three: lazy(() => ENGINES.three().then((m) => ({ default: m.ShelfCanvas }))),
+  direct: lazy(() => ENGINES.direct().then((m) => ({ default: m.ShelfCanvas }))),
+};
+const FAILED = {
+  three: () => markHomeBookshelfRendererFailed('three'),
+  direct: () => markHomeBookshelfRendererFailed('direct'),
+};
 
 /** The least time between two frames of a shelf that only stands and drifts, in milliseconds:
  *  half the rate of one that is moving, which a turn of a degree or so over seconds doesn't miss. */
@@ -271,12 +283,19 @@ function ShelfPlaceholder({ stage, coverWidth }: { stage: { height: number; cent
  * caption — it gives under the finger and springs back out — opens it: where the History tab's row would for one that has been read, and where the
  * Activity tab's would for one that has only its new chapters.
  *
- * The books are lit geometry (`ShelfScene`), drawn through one camera that `lib/bookshelf` also
- * projects with, which is how the callouts — plain views over the canvas — stand on a book's
+ * The books are lit geometry (a `ShelfRenderer`), drawn through one camera that `lib/bookshelf`
+ * also projects with, which is how the callouts — plain views over the canvas — stand on a book's
  * corners. Everything that moves is `ShelfDriver`'s.
  */
-export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfEntry[]; width: number }) {
+export function HomeBookshelf(props: { entries: readonly BookshelfEntry[]; width: number }) {
+  const renderer = useHomeBookshelfRenderer();
+  // A shelf keeps to the renderer it started with: its driver holds that renderer's pictures.
+  return <Shelf key={renderer} renderer={renderer} {...props} />;
+}
+
+function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[]; width: number; renderer: BookshelfRenderer }) {
   const [driver] = useState(() => new ShelfDriver());
+  const ShelfCanvas = CANVASES[renderer];
   const theme = useTheme();
   const dark = useActiveColorScheme() === 'dark';
   const reduceMotion = useReducedMotion();
@@ -410,24 +429,24 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     for (const { key } of wanted) asked.current.add(key);
     let next = 0;
     const work = async () => {
-      const { loadCover } = await import('./engine');
+      const { loadCover } = await ENGINES[renderer]();
       while (alive.current && next < wanted.length) {
         const { key, bridgeId, seriesId, thumbnailUrl, coverForm, readingDirection } = wanted[next++];
         const { binding } = coverOf({ bridgeId, seriesId, direct: false, aspect: SHELF_ASPECT.unknown, coverForm, readingDirection });
-        const picture = await resolveAssetSourceCached(thumbnailUrl!)
+        const cover = await resolveAssetSourceCached(thumbnailUrl!)
           .then((source) => loadCover(source, binding))
           .catch(() => null);
-        if (!picture) continue;
+        if (!cover) continue;
         if (!alive.current) {
-          picture.texture.dispose();
+          cover.picture.dispose();
           return;
         }
-        driver.setCover(key, picture.texture, picture.aspect);
-        setPictures((known) => ({ ...known, [key]: { aspect: picture.aspect, board: picture.board } }));
+        driver.setCover(key, cover.picture, cover.aspect);
+        setPictures((known) => ({ ...known, [key]: { aspect: cover.aspect, board: cover.board } }));
       }
     };
     for (let worker = 0; worker < 3; worker++) void work().catch(() => {});
-  }, [entries, coverOf, driver]);
+  }, [entries, coverOf, driver, renderer]);
 
   const shown = entries.find((entry) => entry.key === frontKey) ?? entries[shelfMiddle(entries.length)];
   const front = shown ? entries.indexOf(shown) : 0;
@@ -522,9 +541,9 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
             else if (nativeEvent.actionName === 'decrement') driver.goTo(driver.focused - 1);
             else resume();
           }}>
-          <Fallible onError={markHomeBookshelfUnavailable}>
+          <Fallible onError={FAILED[renderer]}>
             <Suspense fallback={null}>
-              <ShelfCanvas style={StyleSheet.absoluteFill} driver={driver} onUnavailable={markHomeBookshelfUnavailable} />
+              <ShelfCanvas style={StyleSheet.absoluteFill} driver={driver} onUnavailable={FAILED[renderer]} />
             </Suspense>
           </Fallible>
           <LinearGradient pointerEvents="none" style={styles.fadeTop} colors={[theme.background, `${theme.background}00`]} />

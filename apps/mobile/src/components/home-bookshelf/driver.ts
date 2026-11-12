@@ -1,5 +1,3 @@
-import type * as THREE from 'three/webgpu';
-
 import {
   SHELF,
   driftAt,
@@ -14,7 +12,7 @@ import {
   type ShelfStage,
 } from '@/lib/bookshelf';
 
-import type { ShelfBookSpec, ShelfScene } from './scene';
+import type { ShelfBookSpec, ShelfPicture, ShelfRenderer } from './spec';
 
 const STIFFNESS = 190;
 const DAMPING = 25;
@@ -45,10 +43,10 @@ export class ShelfDriver {
   private onDrawn: (drawn: boolean) => void = () => {};
   private still = false;
 
-  private scene: ShelfScene | null = null;
+  private scene: ShelfRenderer | null = null;
   private specs: readonly ShelfBookSpec[] = [];
   private books: readonly ShelfBook[] = [];
-  private covers = new Map<string, { texture: THREE.Texture; aspect: number }>();
+  private covers = new Map<string, { picture: ShelfPicture; aspect: number }>();
   private stage: ShelfStage = { width: 0, height: 0 };
   private pixelRatio = 1;
   private theme = { dark: false, background: '#ffffff' };
@@ -106,7 +104,7 @@ export class ShelfDriver {
     if (still) this.drift = { yaw: 0, pitch: 0 };
   }
 
-  attach(scene: ShelfScene | null) {
+  attach(scene: ShelfRenderer | null) {
     this.scene = scene;
     this.onDrawn(!!scene);
     if (!scene) return;
@@ -114,7 +112,7 @@ export class ShelfDriver {
     scene.setTheme(this.theme.dark, this.theme.background);
     scene.setBooks(this.specs);
     // The scene keeps a cover from here on, and frees it with itself.
-    for (const [key, cover] of this.covers) scene.setCover(key, cover.texture, cover.aspect);
+    for (const [key, cover] of this.covers) scene.setCover(key, cover.picture, cover.aspect);
     this.covers.clear();
     this.draw();
   }
@@ -157,11 +155,11 @@ export class ShelfDriver {
     this.draw();
   }
 
-  setCover(key: string, texture: THREE.Texture, aspect: number) {
-    if (this.scene) this.scene.setCover(key, texture, aspect);
+  setCover(key: string, picture: ShelfPicture, aspect: number) {
+    if (this.scene) this.scene.setCover(key, picture, aspect);
     else {
-      this.covers.get(key)?.texture.dispose();
-      this.covers.set(key, { texture, aspect });
+      this.covers.get(key)?.picture.dispose();
+      this.covers.set(key, { picture, aspect });
     }
     this.draw();
   }
@@ -242,7 +240,7 @@ export class ShelfDriver {
     this.frames.stop();
     this.moving = false;
     this.scene = null;
-    for (const cover of this.covers.values()) cover.texture.dispose();
+    for (const cover of this.covers.values()) cover.picture.dispose();
     this.covers.clear();
   }
 

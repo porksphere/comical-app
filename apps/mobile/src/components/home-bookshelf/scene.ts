@@ -41,20 +41,7 @@ import * as THREE from 'three/webgpu';
 import { SHELF, cssRgb, type Rgb, type ShelfPlace } from '@/lib/bookshelf';
 import { PRINT, type BookCover } from '@/lib/book-cover';
 
-export type ShelfBookSpec = {
-  key: string;
-  title: string;
-  /** A volume's number, lettered at the foot of its spine. */
-  number?: string;
-  cover: BookCover;
-  width: number;
-  height: number;
-  depth: number;
-  board: Rgb;
-  ink: Rgb;
-};
-
-export type SpinePicture = { title: string; number?: string; board: Rgb; ink: Rgb; width: number; height: number };
+import type { ShelfBookSpec, ShelfRenderer, SpinePicture } from './spec';
 
 const PAPER = '#F1EBDD';
 /** One cell of the dither, in points — half again the page curl's on a 3× screen, where its own
@@ -112,7 +99,7 @@ type Built = {
   behind: THREE.MeshStandardNodeMaterial | null;
 };
 
-export class ShelfScene {
+export class ShelfScene implements ShelfRenderer {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(30, 1, 20, 6000);
   private readonly pivot = new THREE.Group();
