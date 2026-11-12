@@ -249,6 +249,8 @@ export interface DataSource {
       seriesId: string;
       title: string;
       thumbnailUrl?: string;
+      coverForm?: HistoryEntry['coverForm'];
+      readingDirection?: HistoryEntry['readingDirection'];
       chapterId?: string;
       chapterName?: string;
       lastPage?: number;
@@ -445,12 +447,19 @@ function toLibraryItem(e: api.ApiCollectedSeries): LibraryItem {
   };
 }
 
-function toHistoryEntry(h: api.ApiHistoryItem): HistoryEntry {
+/** A history row as a host answers once it keeps a series' cover hints with the row. The host this
+ *  app is built against may predate them (its type does until the submodule moves), and a remote
+ *  one may too: either way the fields are simply absent and the row is drawn as it was. */
+type HistoryItemWithHints = api.ApiHistoryItem & Pick<HistoryEntry, 'coverForm' | 'readingDirection'>;
+
+function toHistoryEntry(h: HistoryItemWithHints): HistoryEntry {
   return {
     bridgeId: h.bridgeId,
     seriesId: h.seriesId,
     title: h.title,
     ...(h.thumbnailUrl !== undefined && { thumbnailUrl: h.thumbnailUrl }),
+    ...(h.coverForm !== undefined && { coverForm: h.coverForm }),
+    ...(h.readingDirection !== undefined && { readingDirection: h.readingDirection }),
     ...(h.lastReadChapterId !== undefined && { chapterId: h.lastReadChapterId }),
     ...(h.lastReadChapterName !== undefined && { chapterName: h.lastReadChapterName }),
     ...(h.lastPage !== undefined && { lastPage: h.lastPage }),

@@ -1737,6 +1737,8 @@ export function recordReadingHistory(
     seriesId: string;
     title: string;
     thumbnailUrl?: string;
+    coverForm?: CoverForm;
+    readingDirection?: ReadingDirection;
     chapterId?: string;
     chapterName?: string;
     lastPage?: number;

@@ -356,7 +356,7 @@ function HistoryItem({
             enabled={!!item.bridgeId}
             bridgeId={item.bridgeId}
             bridge={bridge}
-            entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
+            entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '', coverForm: item.coverForm, readingDirection: item.readingDirection }}
             direct={direct}
             coverAspect={2 / 3}
             startRadius={6} // matches HistoryRow's thumbnail corner

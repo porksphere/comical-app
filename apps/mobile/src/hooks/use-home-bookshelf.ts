@@ -69,10 +69,10 @@ export type BookshelfEntry = {
  * short (`pickShelf`), stood with what matters most in the middle (`arrangeShelf`). The same
  * queries those tabs read, so the shelf cannot say something they don't.
  *
- * Neither a History nor an Activity row says what its series is as an object, and without that a
- * CG set from a bridge of doujinshi stood on the shelf as a doujinshi. A collected series' row in
- * the library does; one that isn't collected is asked of its details, where they have been read
- * (a series on this shelf has been opened, or is collected).
+ * A History row says what its series is as an object (`coverForm`), written with the read that
+ * made it. Without that a CG set from a bridge of doujinshi stood on the shelf as a doujinshi: the
+ * details that knew are not kept past the session. A row older than the hints, and an Activity
+ * row, are asked of the library, then of the details where they have been read.
  */
 export function useBookshelfEntries(enabled: boolean): BookshelfEntry[] {
   const ds = useDataSource();
@@ -97,7 +97,10 @@ export function useBookshelfEntries(enabled: boolean): BookshelfEntry[] {
       const h = left.get(key);
       const g = waiting.get(key);
       const { bridgeId, seriesId, title, thumbnailUrl } = (h ?? g)!;
+      // Its history row says since rows kept it; a row older than that is asked of the library,
+      // then of the details where they have been read this session.
       const says =
+        (h?.coverForm !== undefined || h?.readingDirection !== undefined ? h : undefined) ??
         kept.get(key) ??
         [true, false].map((direct) => cache.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId, seriesId, direct))).find(Boolean);
       return {

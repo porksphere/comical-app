@@ -1345,6 +1345,8 @@ export function SeriesDetailsPage({
               seriesId={id}
               seriesTitle={seriesTitle}
               seriesCover={series?.cover}
+              seriesCoverForm={series?.coverForm}
+              seriesReadingDirection={series?.readingDirection}
               chapterId={target.chapterId}
               chapterName={target.chapterName}
               picked={!!target.picked}

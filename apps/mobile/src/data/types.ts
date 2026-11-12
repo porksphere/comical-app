@@ -258,6 +258,10 @@ export type HistoryEntry = {
   seriesId: string;
   title: string;
   thumbnailUrl?: string;
+  /** The bridge's word on what the series is as an object and how it reads, kept with the row so
+   *  it is drawn as that without asking the bridge again. Absent on a row older than the hints. */
+  coverForm?: CoverForm;
+  readingDirection?: ReadingDirection;
   /** Last-read chapter (the resume target). `DIRECT_CHAPTER_ID` for a chapterless series. */
   chapterId?: string;
   chapterName?: string;

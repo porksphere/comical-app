@@ -1066,10 +1066,14 @@ unread ones, each making up the number where the other runs short (`pickShelf`,
 MIDDLE — the book read last, then the two halves by turns to either side of it (`arrangeShelf`) —
 and the shelf opens on the middle, so the least of them is furthest out whichever way the reader
 goes. The book in front is kept by what it is, not where it stands (`ShelfDriver.setBooks`): the
-one just read moves to the middle while the reader is away in it. Neither tab's row says what its
-series is as an object, so a collected series is asked of its library row and any other of its
-details where they have been read; without that a CG set from a bridge of doujinshi stood on the
-shelf as a doujinshi. A tap on the front book or
+one just read moves to the middle while the reader is away in it. A History row says what its
+series is as an object (`coverForm`, `readingDirection`), written by the reader with the read that
+made it and kept with the row by a host that knows the fields (comical's "History rows keep each
+series' cover hints"; an older host drops them and answers without); a row without them, and an
+Activity row, are asked of the library and then of the details where they have been read this
+session. The details alone
+were not enough: they are not kept past the session, and a CG set from a bridge of doujinshi
+stood on the shelf as a doujinshi again after every restart. A tap on the front book or
 on its caption — the caption is the button, there is no other — pushes what the History row pushes
 for a series that has been read (`historyResumeParams`, the caption RESUME) and what the Activity
 row pushes for one that has only its new chapters (`activityReadParams`, READ), so the shelf cannot
