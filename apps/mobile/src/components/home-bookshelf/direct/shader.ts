@@ -76,6 +76,8 @@ const PRINT = ${hex('#FBFAF7')};
 const STAPLE = ${hex('#d8dde4')};
 const BEHIND = ${linear(0xb4).toFixed(6)};
 const LETTER_GRAIN = 0.5;
+const RUBBED = vec3f(0.93, 0.91, 0.86);
+const RUB = 0.55;
 const SHADOW_BIAS = -0.0006;
 const NORMAL_BIAS = 0.6;
 
@@ -186,6 +188,15 @@ fn lettered(lit: vec3f, surface: vec3f, cloth: vec3f, letter: vec3f, ink: f32, t
   return mix(lit, decode(mix(tone.lo.rgb, tone.hi.rgb, cut)), ink);
 }
 
+fn grained(at: vec2f) -> f32 {
+  return fract(sin(dot(at * vec2f(311.7, 183.3), vec2f(12.9898, 78.233))) * 43758.5453);
+}
+
+// How far an edge is rubbed through, 'edge' cover widths in from it.
+fn rubbedEdge(edge: f32, grain: f32) -> f32 {
+  return (1.0 - smoothstep(0.002, 0.012, edge)) * (grain * 0.7 + 0.3);
+}
+
 fn band(low: f32, peak: f32, high: f32, x: f32) -> f32 {
   return smoothstep(low, peak, x) * (1.0 - smoothstep(peak, high, x));
 }
@@ -211,14 +222,16 @@ fn embossed(picture: vec3f, at: vec2f, hard: bool, left: bool, shape: f32) -> ve
   let down = (1.0 - at.y) / shape;
   let edge = min(fromFree, min(up, down));
   let corner = fromFree + min(up, down);
-  let grain = fract(sin(dot(at * vec2f(311.7, 183.3), vec2f(12.9898, 78.233))) * 43758.5453);
-  let rubbed = clamp(
-    (1.0 - smoothstep(0.002, 0.012, edge)) * (grain * 0.7 + 0.3) + (1.0 - smoothstep(0.008, 0.035, corner)) * (grain * 0.5 + 0.5),
-    0.0,
-    1.0,
-  );
+  let grain = grained(at);
+  let rubbed = clamp(rubbedEdge(edge, grain) + (1.0 - smoothstep(0.008, 0.035, corner)) * (grain * 0.5 + 0.5), 0.0, 1.0);
   let printed = picture * (1.0 - dark) + caught;
-  return mix(printed, vec3f(0.93, 0.91, 0.86), rubbed * 0.55);
+  return mix(printed, RUBBED, rubbed * RUB);
+}
+
+// The cover's wear carried on round the back: the same rub along the spine's head and foot.
+fn rubbedEnds(cloth: vec3f, at: vec2f, shape: f32) -> vec3f {
+  let ends = min(at.y, 1.0 - at.y) / shape;
+  return mix(cloth, RUBBED, rubbedEdge(ends, grained(at)) * RUB);
 }
 
 // How much of the key light reaches a point: the shadow map read at nine places round it.
@@ -284,6 +297,8 @@ fn fragment(in: Varyings) -> @location(0) vec4f {
   let form = book.kind.x;
 
   var albedo = book.board.rgb;
+  // What a spine is before its wear, which is what its lettering is told from its cloth by.
+  var surface = albedo;
   var roughness = 0.62;
   var metal = 0.0;
   switch (in.material) {
@@ -306,7 +321,8 @@ fn fragment(in: Varyings) -> @location(0) vec4f {
       roughness = 0.95;
     }
     case ${M.spine}u: {
-      albedo = select(book.board.rgb, spine, book.cloth.w > 0.5);
+      surface = select(book.board.rgb, spine, book.cloth.w > 0.5);
+      albedo = rubbedEnds(surface, in.uv, book.letter.w);
       roughness = 0.5;
     }
     case ${M.print}u: {
@@ -342,7 +358,7 @@ fn fragment(in: Varyings) -> @location(0) vec4f {
       lit = inked(lit, 1.0, frame.frontTone, cell);
     }
     case ${M.spine}u: {
-      lit = lettered(lit, albedo, book.cloth.rgb, book.letter.rgb, book.place.w, frame.bookTone, cell);
+      lit = lettered(lit, surface, book.cloth.rgb, book.letter.rgb, book.place.w, frame.bookTone, cell);
     }
     default: {
       lit = inked(lit, book.place.w, frame.bookTone, cell);
