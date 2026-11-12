@@ -27,7 +27,7 @@ let preparing: Promise<void> | undefined;
  * not at all on Android — and every spine was set in the system's face.
  */
 export function prepare(): Promise<void> {
-  preparing ??= loadData(require('@/assets/fonts/DelaGothicOne-Regular.ttf'), (data) => Skia.Typeface.MakeFreeTypeFaceFromData(data))
+  preparing ??= loadData(require('@/assets/fonts/ShipporiMinchoB1-ExtraBold.ttf'), (data) => Skia.Typeface.MakeFreeTypeFaceFromData(data))
     .then((typeface) => {
       if (!typeface) return;
       const provider = Skia.TypefaceFontProvider.Make();
@@ -117,14 +117,14 @@ export function drawSpine({ title, number, board, ink, width, height }: SpinePic
         return paragraph;
       };
       const run = h * 0.76;
-      const name = lettered(title, Math.min(w * 0.46, 14 * SPINE_SCALE), run);
+      const name = lettered(title, Math.min(w * 0.52, 15 * SPINE_SCALE), run);
       canvas.save();
       // Turned a quarter clockwise the paragraph runs down the spine and its lines stack leftward.
       canvas.translate(w / 2 + name.getHeight() / 2, h * 0.08);
       canvas.rotate(90, 0, 0);
       name.paint(canvas, 0, 0);
       canvas.restore();
-      if (number) lettered(number, Math.min(w * 0.4, 12 * SPINE_SCALE), w).paint(canvas, 0, h * 0.875);
+      if (number) lettered(number, Math.min(w * 0.44, 12 * SPINE_SCALE), w).paint(canvas, 0, h * 0.875);
     }
     surface.flush();
     const picture = surface.makeImageSnapshot();

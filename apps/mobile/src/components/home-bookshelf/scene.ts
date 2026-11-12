@@ -193,7 +193,7 @@ export class ShelfScene {
     this.shared = {
       print: this.matte({ color: new THREE.Color('#FBFAF7'), roughness: 0.85 }),
       block,
-      page: this.matte({ map: this.pages() }),
+      page: this.sheet(this.pages()),
       staple: new THREE.MeshStandardNodeMaterial({ color: 0xd8dde4, metalness: 1, roughness: 0.3 }),
     };
 
@@ -203,7 +203,6 @@ export class ShelfScene {
     } as const;
     const first = new THREE.Mesh(sheets.first[1], this.shared.page);
     const inside = new THREE.Mesh(sheets.inside[1], this.shared.page);
-    first.receiveShadow = inside.receiveShadow = true;
     // Turned to face the block while the cover is shut, and the reader once it has swung round.
     inside.rotation.y = Math.PI;
     this.spread = { first, inside, sheets, of: null };
@@ -305,6 +304,14 @@ export class ShelfScene {
     texture.magFilter = THREE.LinearFilter;
     texture.needsUpdate = true;
     return texture;
+  }
+
+  /** The spread's pages, at the paper's own colour whatever light falls on them: lit like the rest
+   *  they came out a dull brown beside the page they stand for. Their gutter is in the picture. */
+  private sheet(map: THREE.Texture) {
+    const material = new THREE.MeshBasicNodeMaterial({ map });
+    material.outputNode = this.inkedBook;
+    return material;
   }
 
   private matte(parameters: THREE.MeshStandardNodeMaterialParameters) {

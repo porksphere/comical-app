@@ -45,20 +45,22 @@ export const smoothstep = (v: number) => {
  * How the front book opens. A bound one's cover swings round, short of flat, until its inside and
  * the first page lie as a spread, and the book slides half its width off its binding's side so the
  * spread stands where the cover stood. A set of prints has no cover: its prints fan apart, each
- * `fan` of the width to its side and `turn` degrees further over. Either turns square on, and what
- * has nothing to open comes `reach` toward the reader instead. A cover half way round points
- * straight at the reader, a cover's width nearer the eye and drawn that much larger, so the book
- * steps `back` under it for the middle of the swing: without that it ran off the stage's foot.
+ * `fan` of the width to its side and `turn` degrees further over. Whatever it is, it turns square
+ * on and comes `closer` to the reader as it opens, and the stage comes `zoom` nearer over it (a
+ * scale of the canvas, which goes on while the page that follows is being made). A cover half way
+ * round points straight at the reader, a cover's width nearer the eye and drawn that much larger,
+ * so the book steps `back` under it for the middle of the swing: without that it ran off the
+ * stage's foot.
  */
-export const OPENING = { swing: 168, slide: 0.5, back: 70, fan: 0.2, turn: 9, reach: 26 } as const;
+export const OPENING = { swing: 168, slide: 0.5, back: 70, closer: 24, zoom: 1.05, fan: 0.2, turn: 9 } as const;
 
 /** The front book's place with it `open` (0 to 1). */
 export function openedPlace(place: ShelfPlace, book: ShelfBook, open: number): ShelfPlace {
   if (!open) return place;
-  const square = { ...place, yaw: place.yaw * (1 - open) };
-  if (book.form === 'sheets' || book.form === 'scroll') return { ...square, z: place.z + OPENING.reach * open };
+  const square = { ...place, yaw: place.yaw * (1 - open), z: place.z + OPENING.closer * open };
+  if (book.form === 'sheets' || book.form === 'scroll') return square;
   const away = book.binding === 'left' ? 1 : -1;
-  return { ...square, x: place.x + away * book.width * OPENING.slide * open, z: place.z - OPENING.back * Math.sin(Math.PI * open) };
+  return { ...square, x: place.x + away * book.width * OPENING.slide * open, z: square.z - OPENING.back * Math.sin(Math.PI * open) };
 }
 
 /** A cover's swing, or a fan's spread, `elapsed` of the way through its time: quick off the mark
@@ -316,8 +318,8 @@ export const cssRgb = ([r, g, b]: Rgb) => `rgb(${r},${g},${b})`;
  * Which series stand on the shelf, and in what order. `read` is what was read, most recent first,
  * and `news` what has chapters waiting, as the Activity tab orders it: half the shelf from each, and
  * where one has too few the other makes up the number. A series in both is one book, counted with
- * the news. They alternate along the shelf, news first, behind the one read most recently: that is
- * the book the shelf opens on, whichever half it came from.
+ * the news. The answer is in order of how much each matters: the one read most recently, whichever
+ * half it came from, then the two halves alternating, news first. `arrangeShelf` stands them.
  */
 export function pickShelf(read: readonly string[], news: readonly string[], count: number): string[] {
   const take = (newsCount: number) => {
@@ -338,3 +340,19 @@ export function pickShelf(read: readonly string[], news: readonly string[], coun
   const last = read.find((key) => chosen.has(key));
   return last === undefined ? order : [last, ...order.filter((key) => key !== last)];
 }
+
+/**
+ * Books in order of how much they matter, stood along the shelf: the first in the middle and the
+ * rest to either side of it by turns, so what matters least is furthest out whichever way the
+ * reader goes. `shelfMiddle` is where the first one stands, which is where the shelf opens.
+ */
+export function arrangeShelf<T>(ranked: readonly T[]): T[] {
+  const stood: T[] = [];
+  ranked.forEach((book, i) => {
+    if (i % 2) stood.push(book);
+    else stood.unshift(book);
+  });
+  return stood;
+}
+
+export const shelfMiddle = (count: number) => Math.max(0, (count - 1) >> 1);

@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   DRIFT,
+  OPENING,
   SHELF,
+  arrangeShelf,
   bayer4,
   boardColour,
   bookDepth,
@@ -18,6 +20,7 @@ import {
   rubberBand,
   settleOn,
   shelfCallouts,
+  shelfMiddle,
   shelfStageHeight,
   spineNumber,
   type ShelfBook,
@@ -246,6 +249,9 @@ test('an opening book slides off its binding and turns square', () => {
   const left = openedPlace(place, book('left'), 1);
   expect(left.x).toBeCloseTo(65);
   expect(left.yaw).toBeCloseTo(0);
+  // Nearer the reader once open, and further back half way, while the cover points at them.
+  expect(left.z).toBeCloseTo(50 + OPENING.closer);
+  expect(openedPlace(place, book('left'), 0.5).z).toBeLessThan(50);
   expect(openedPlace({ ...place, yaw: -12 }, book('right'), 1).x).toBeLessThan(0);
 });
 
@@ -254,7 +260,18 @@ test('a set of prints opens where it stands, toward the reader', () => {
   const fanned = openedPlace(place, { ...book('left', 6), form: 'sheets' }, 1);
   expect(fanned.x).toBe(10);
   expect(fanned.yaw).toBeCloseTo(0);
-  expect(fanned.z).toBeGreaterThan(50);
+  expect(fanned.z).toBeCloseTo(50 + OPENING.closer);
+});
+
+test('what matters most stands in the middle, and less to either side by turns', () => {
+  expect(arrangeShelf(['a'])).toEqual(['a']);
+  expect(arrangeShelf(['a', 'b'])).toEqual(['a', 'b']);
+  expect(arrangeShelf(['a', 'b', 'c', 'd', 'e', 'f'])).toEqual(['e', 'c', 'a', 'b', 'd', 'f']);
+  for (const count of [1, 2, 3, 6, 7, 30]) {
+    const ranked = Array.from({ length: count }, (_, i) => i);
+    expect(arrangeShelf(ranked)[shelfMiddle(count)]).toBe(0);
+  }
+  expect(shelfMiddle(0)).toBe(0);
 });
 
 test('an opening starts fast and lands exactly', () => {

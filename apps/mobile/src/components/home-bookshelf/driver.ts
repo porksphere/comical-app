@@ -8,6 +8,7 @@ import {
   placeShelf,
   rubberBand,
   settleOn,
+  shelfMiddle,
   shelfCallouts,
   type ShelfBook,
   type ShelfCallouts,
@@ -37,7 +38,7 @@ const SHUT_MS = 300;
  */
 export class ShelfDriver {
   private onFrame: (callouts: ShelfCallouts) => void = () => {};
-  private onFront: (index: number, byHand: boolean) => void = () => {};
+  private onFront: (key: string, byHand: boolean) => void = () => {};
   private onDrawn: (drawn: boolean) => void = () => {};
   private still = false;
 
@@ -77,7 +78,7 @@ export class ShelfDriver {
    *  has started. */
   listen(to: {
     onFrame: (callouts: ShelfCallouts) => void;
-    onFront: (index: number, byHand: boolean) => void;
+    onFront: (key: string, byHand: boolean) => void;
     onDrawn: (drawn: boolean) => void;
   }) {
     this.onFrame = to.onFrame;
@@ -127,10 +128,25 @@ export class ShelfDriver {
     this.draw();
   }
 
+  /**
+   * The books, in the shelf's order. The first set opens on the middle one, which is where the
+   * shelf stands what matters most. After that the book in front stays in front wherever a new
+   * order puts it — the one just read moves to the middle while the reader is away in it, and
+   * coming back to a different book in front would be coming back to the wrong shelf.
+   */
   setBooks(specs: readonly ShelfBookSpec[]) {
+    const had = this.specs.length;
+    const front = this.specs[this.target]?.key;
     this.specs = specs;
     this.books = specs.map((s) => ({ width: s.width, height: s.height, depth: s.depth, binding: s.cover.binding, form: s.cover.form }));
     const last = Math.max(0, specs.length - 1);
+    if (!had) this.pos = this.target = shelfMiddle(specs.length);
+    const now = specs.findIndex((s) => s.key === front);
+    if (now >= 0 && now !== this.target) {
+      this.pos += now - this.target;
+      this.target = now;
+      this.front = now;
+    }
     this.target = Math.min(this.target, last);
     this.pos = Math.min(this.pos, last);
     this.scene?.setBooks(specs);
@@ -278,7 +294,8 @@ export class ShelfDriver {
     this.onFrame(callouts);
     if (callouts.front !== this.front) {
       this.front = callouts.front;
-      this.onFront(callouts.front, this.touched);
+      const key = this.specs[callouts.front]?.key;
+      if (key !== undefined) this.onFront(key, this.touched);
     }
   }
 }

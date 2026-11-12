@@ -128,17 +128,27 @@ export function useBookCover({
  * reader mode is read as it stands rather than followed, and a book is returned with book covers
  * off too, since what asks is drawing books either way.
  */
-export function useBookCoverResolver(): (series: { bridgeId: string; seriesId: string; direct: boolean; aspect: number }) => BookCover {
+export function useBookCoverResolver(): (series: {
+  bridgeId: string;
+  seriesId: string;
+  direct: boolean;
+  aspect: number;
+  coverForm?: CoverForm;
+  readingDirection?: ReadingDirection;
+}) => BookCover {
   const { defaults, bridgeHints } = use(CoverSourceContext);
   return useCallback(
-    ({ bridgeId, seriesId, direct, aspect }) => {
+    ({ bridgeId, seriesId, direct, aspect, coverForm, readingDirection }) => {
       const key = `${bridgeId}:${seriesId}`;
       const [bridgeForm, bridgeDirection] = (bridgeHints.get(bridgeId) || '|').split('|');
       const reader = readerDefaults();
       const [readerMode, readerDirection, shuffle] = defaults === 'off' ? [reader.mode, reader.direction, ''] : defaults.split(':');
       const hints = shuffle
         ? shuffledHints(key)
-        : { form: (bridgeForm || undefined) as CoverForm | undefined, direction: (bridgeDirection || undefined) as ReadingDirection | undefined };
+        : {
+            form: coverForm ?? ((bridgeForm || undefined) as CoverForm | undefined),
+            direction: readingDirection ?? ((bridgeDirection || undefined) as ReadingDirection | undefined),
+          };
       return resolveCover({
         form: hints.form,
         direction: hints.direction,

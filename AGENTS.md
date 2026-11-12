@@ -1061,8 +1061,15 @@ for that reason).
 Comical Home opens on what you are reading as books on a shelf (`components/home-bookshelf`): spine
 out, the one in the middle pulled forward and turned to show its cover, in colour against a shelf
 drawn in screentone. Half its books are the History tab's newest rows and half the Activity tab's
-unread ones, each making up the number where the other runs short, alternating behind the book read
-last (`pickShelf`, `useBookshelfEntries`); a series in both is one book. A tap on the front book or
+unread ones, each making up the number where the other runs short (`pickShelf`,
+`useBookshelfEntries`); a series in both is one book. They stand with what matters most in the
+MIDDLE — the book read last, then the two halves by turns to either side of it (`arrangeShelf`) —
+and the shelf opens on the middle, so the least of them is furthest out whichever way the reader
+goes. The book in front is kept by what it is, not where it stands (`ShelfDriver.setBooks`): the
+one just read moves to the middle while the reader is away in it. Neither tab's row says what its
+series is as an object, so a collected series is asked of its library row and any other of its
+details where they have been read; without that a CG set from a bridge of doujinshi stood on the
+shelf as a doujinshi. A tap on the front book or
 on its caption — the caption is the button, there is no other — pushes what the History row pushes
 for a series that has been read (`historyResumeParams`, the caption RESUME) and what the Activity
 row pushes for one that has only its new chapters (`activityReadParams`, READ), so the shelf cannot
@@ -1127,19 +1134,26 @@ the burst's star turned at random under lettering that stays level. A book the r
 forward ticks (`hapticSelection`); the one the shelf opens on does not.
 
 **A tap opens the book before it opens the page.** In a quarter of a second the front board
-swings round until its inside and the first page lie as a spread of comic panels (`setOpen`,
-`OPENING`), and it shuts when the screen has the focus again. The push is made only once the book
-is open and that frame is drawn: what the push starts takes the thread the frames are drawn on,
-and made as the cover neared open it froze the cover part way round. The spread is one picture for
-every book (`pages.ts`, plain arithmetic into a buffer) on one pair of sheets that follows whichever
-bound book is in front, always drawn behind its shut cover, so the first book to open has nothing
-to build and no shader to compile — leaves made at the tap were a stall of their own. A CG set has
-no cover: its two prints fan apart. A slab comes forward. The fetch is warmed first, so the opening
-is time the page would have spent loading.
+swings round until its inside and the first page lie as a spread of empty panel frames (`setOpen`,
+`OPENING`), the book coming a little nearer as it does, and it shuts when the screen has the focus
+again. The push is made only once the book is open and that frame is drawn: what the push starts
+takes the thread the frames are drawn on, and made as the cover neared open it froze the cover
+part way round. That wait is still there after the book has opened — it is the reader's page being
+made, the same wait a History row's tap has, and several times longer in a development build — and
+nothing in the scene can move through it. So the stage itself comes nearer over the opening
+(`nearer` in `home-bookshelf.tsx`, a scale of the canvas on the UI thread), which does go on
+through it, and the shelf does not stop dead between the book opening and the page arriving. The
+spread is one picture for every book (`pages.ts`, plain arithmetic into a buffer) on one pair of
+sheets that follows whichever bound book is in front, always drawn behind its shut cover, so the
+first book to open has nothing to build and no shader to compile — leaves made at the tap were a
+stall of their own. The sheets are unlit, the paper's own colour: lit like the rest they came out
+a dull brown. A CG set has no cover: its two prints fan apart. A slab only comes nearer. The fetch
+is warmed first, so the opening is time the page would have spent loading.
 
-**Spines are read.** They are lettered in Dela Gothic One (`SPINE_FONT` in `lib/title-font.ts`), a
-heavy gothic that stays a title a few points high where the heading face's thin strokes broke up —
-the one place it is used, and the one heading not in the title typeface. It is loaded from its own
+**Spines are read.** They are lettered in Shippori Mincho B1 at its heaviest (`SPINE_FONT` in
+`lib/title-font.ts`), the serif a volume's spine is set in — the one place it is used, and the one
+heading not in the title typeface. Its lighter weights lose their hairlines at a spine's size, and
+Dela Gothic One, tried first, was far too bold for a row of spines. It is loaded from its own
 FILE (`prepare`): asked for by name, a Skia paragraph looks in the system's fonts, where a bundled
 face is not, and every spine was set in the system's. The chapter the book opens at is at its
 foot, two digits at least (`spineNumber`). A shelved spine's cloth is cut to the covers' own coarse
@@ -1174,8 +1188,10 @@ ink and a paper (`inked` in `scene.ts`, the matrix of `page-curl-shader.ts`), cu
 as it is shown on screen, after lighting; the shelf itself is always tone, so the shadows the
 books cast on it are screentone and not a blur. A sticker is ink on paper whatever the theme.
 
-**Textures are made where each platform can make them** (`pictures.ts`, `pictures.web.ts`). A
-cover is expo-image's own copy on disk, shrunk by the platform's decoder and read back through
+**Textures are made where each platform can make them** (`pictures.ts`, `pictures.web.ts`), a few
+covers at a time from the middle of the shelf outward: only the books near the front are drawn,
+so a long shelf costs a picture a book and little else, but a shelf's worth decoded at once was a
+stall as the app started. A cover is expo-image's own copy on disk, shrunk by the platform's decoder and read back through
 Skia, as the cover glow reads its tints; on the web it is drawn to a canvas, asked for with CORS,
 since a picture a canvas can't read back can't be a texture. A spine is lettered with a Skia
 paragraph, so a title the heading face has no letters for falls back a glyph at a time. A book's

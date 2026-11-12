@@ -4,6 +4,7 @@ import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type R
 import { PixelRatio, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   measure,
   runOnJS,
   useAnimatedRef,
@@ -11,6 +12,7 @@ import Animated, {
   useFrameCallback,
   useReducedMotion,
   useSharedValue,
+  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, Pattern, Polygon, Rect } from 'react-native-svg';
@@ -32,12 +34,14 @@ import { markHomeBookshelfUnavailable, type BookshelfEntry } from '@/hooks/use-h
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import {
   NEUTRAL_BOARD,
+  OPENING,
   SHELF,
   SHELF_ASPECT,
   bookDepth,
   inkOn,
   shelfCallouts,
   shelfCoverWidth,
+  shelfMiddle,
   shelfStageHeight,
   spineNumber,
   type Rgb,
@@ -286,7 +290,8 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     [width, sides.left, sides.right],
   );
   const tilt = useDeviceTilt(!reduceMotion);
-  const [front, setFront] = useState(0);
+  // The book in front, by what it is: where it stands changes when the shelf is put in a new order.
+  const [frontKey, setFrontKey] = useState<string>();
   const [drawn, setDrawn] = useState(false);
   // How the stickers went on this time: each book that comes forward gets them afresh.
   const [stuck, setStuck] = useState({ lean: -3, turn: 0 });
@@ -297,10 +302,10 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
 
   const specs = useMemo((): ShelfBookSpec[] => {
     const coverWidth = shelfCoverWidth(width);
-    return entries.map(({ key, bridgeId, seriesId, title, history, news, chapters }) => {
+    return entries.map(({ key, bridgeId, seriesId, title, history, news, chapters, coverForm, readingDirection }) => {
       const picture = pictures[key];
       const aspect = clamp(picture?.aspect ?? SHELF_ASPECT.unknown, SHELF_ASPECT.tall, SHELF_ASPECT.wide);
-      const cover = coverOf({ bridgeId, seriesId, direct: directOf(bridgeId), aspect });
+      const cover = coverOf({ bridgeId, seriesId, direct: directOf(bridgeId), aspect, coverForm, readingDirection });
       const board = picture?.board ?? NEUTRAL_BOARD;
       // The chapter the book opens at: where it was left, else the new one its Activity row reads.
       const opensAt = history ? (history.chapterId === DIRECT_CHAPTER_ID ? undefined : history.chapterName) : (news?.chapterName ?? news?.number?.toString());
@@ -320,8 +325,8 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
 
   useEffect(() => {
     driver.listen({
-      onFront: (index, byHand) => {
-        setFront(index);
+      onFront: (key, byHand) => {
+        setFrontKey(key);
         setStuck({ lean: (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3), turn: Math.random() * 45 });
         // A book the reader brought forward clicks into place; the one the shelf opens on does not.
         if (byHand) tick();
@@ -378,10 +383,18 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
       },
     });
   }, [driver, frames, mayDrift, drifting, moving]);
-  // Back from the book it opened: its cover swings shut.
+  // The stage comes a little nearer as a book opens. On the UI thread, unlike the book: the page
+  // that is pushed next is made on the thread the scene is drawn on, and for as long as that takes
+  // nothing in the scene can move. This goes on through it, so the shelf doesn't stop dead between
+  // the book opening and the page arriving.
+  const nearer = useSharedValue(1);
+  const stageStyle = useAnimatedStyle(() => ({ transform: [{ scale: nearer.get() }] }));
+  // Back from the book it opened: it shuts, and the stage steps back.
   useEffect(() => {
-    if (focused) driver.shut();
-  }, [driver, focused]);
+    if (!focused) return;
+    driver.shut();
+    nearer.set(withTiming(1, { duration: 300 }));
+  }, [driver, focused, nearer]);
   useEffect(() => driver.setStage(stage, Math.min(3, PixelRatio.get())), [driver, stage]);
   useEffect(() => driver.setTheme(dark, theme.background), [driver, dark, theme.background]);
   useEffect(() => driver.setBooks(specs), [driver, specs]);
@@ -396,25 +409,38 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     };
   }, []);
   useEffect(() => {
-    for (const { key, bridgeId, seriesId, thumbnailUrl: url } of entries) {
-      if (!url || asked.current.has(key)) continue;
-      asked.current.add(key);
-      const { binding } = coverOf({ bridgeId, seriesId, direct: false, aspect: SHELF_ASPECT.unknown });
-      void (async () => {
-        const { loadCover } = await import('./engine');
-        const picture = await loadCover(await resolveAssetSourceCached(url), binding);
-        if (!picture) return;
+    // From the middle outward, a few at a time: the shelf opens on its middle, and a shelf's worth
+    // of pictures decoded at once was a stall as the app started.
+    const middle = shelfMiddle(entries.length);
+    const wanted = entries
+      .map((entry, index) => ({ entry, away: Math.abs(index - middle) }))
+      .filter(({ entry }) => entry.thumbnailUrl && !asked.current.has(entry.key))
+      .sort((a, b) => a.away - b.away)
+      .map(({ entry }) => entry);
+    for (const { key } of wanted) asked.current.add(key);
+    let next = 0;
+    const work = async () => {
+      const { loadCover } = await import('./engine');
+      while (alive.current && next < wanted.length) {
+        const { key, bridgeId, seriesId, thumbnailUrl, coverForm, readingDirection } = wanted[next++];
+        const { binding } = coverOf({ bridgeId, seriesId, direct: false, aspect: SHELF_ASPECT.unknown, coverForm, readingDirection });
+        const picture = await resolveAssetSourceCached(thumbnailUrl!)
+          .then((source) => loadCover(source, binding))
+          .catch(() => null);
+        if (!picture) continue;
         if (!alive.current) {
           picture.texture.dispose();
           return;
         }
         driver.setCover(key, picture.texture, picture.aspect);
         setPictures((known) => ({ ...known, [key]: { aspect: picture.aspect, board: picture.board } }));
-      })().catch(() => {});
-    }
+      }
+    };
+    for (let worker = 0; worker < 3; worker++) void work().catch(() => {});
   }, [entries, coverOf, driver]);
 
-  const shown = entries[Math.min(front, entries.length - 1)];
+  const shown = entries.find((entry) => entry.key === frontKey) ?? entries[shelfMiddle(entries.length)];
+  const front = shown ? entries.indexOf(shown) : 0;
   const titleFont = useTitleFontFor(shown?.title ?? '');
   const captionSize = useSharedValue({ width: 0, height: 0 });
   if (!shown) return null;
@@ -434,6 +460,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
       params = activityReadParams(g, { name: bridgeName, direct: directOf(bridgeId) });
     } else return;
     // The book opens and the page is pushed once it has: the fetch above has that long a start.
+    if (!reduceMotion) nearer.set(withTiming(OPENING.zoom, { duration: 900, easing: Easing.out(Easing.cubic) }));
     driver.openFront(() => router.push({ pathname: '/series', params: withZoomSource(params, null) }));
   };
   const tap = (x: number, y: number) => {
@@ -475,7 +502,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
       <GestureDetector gesture={Gesture.Race(pan, press)}>
         <Animated.View
           ref={stageView}
-          style={{ width: stage.width, height: stage.height, marginLeft: -sides.left }}
+          style={[{ width: stage.width, height: stage.height, marginLeft: -sides.left, transformOrigin: `${stage.centre}px 60%` }, stageStyle]}
           accessible
           accessibilityRole="adjustable"
           accessibilityLabel={`Continue reading: ${shown.title}`}
@@ -519,7 +546,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
           {[bridgeName, detail].filter(Boolean).join(' · ')}
         </ThemedText>
       </View>
-      <PageDots count={entries.length} page={Math.min(front, entries.length - 1)} onPage={(page) => driver.goTo(page)} />
+      <PageDots count={entries.length} page={front} onPage={(page) => driver.goTo(page)} />
     </View>
   );
 }

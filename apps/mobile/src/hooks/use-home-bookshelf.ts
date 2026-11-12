@@ -1,14 +1,15 @@
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { coalesceActivity, type SeriesActivity } from '@/data/activity/feed-rows';
-import { activityQuery, historyQuery, libraryQuery } from '@/data/queries';
+import { activityQuery, historyQuery, libraryQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import type { HistoryEntry } from '@/data/types';
+import type { HistoryEntry, SeriesDetail } from '@/data/types';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
-import { pickShelf } from '@/lib/bookshelf';
+import type { CoverForm, ReadingDirection } from '@/lib/book-cover';
+import { arrangeShelf, pickShelf } from '@/lib/bookshelf';
 import { persisted$ } from '@/lib/observable';
 
 /** Persisted as an OBJECT, not a bare boolean — see lib/dev-profiler-flag for why a bare `false`
@@ -38,8 +39,9 @@ export function markHomeBookshelfUnavailable(): void {
   unavailable$.set(true);
 }
 
-/** As many books as read as a shelf rather than a library; the tabs hold the rest. */
-const SHELF_BOOKS = 12;
+/** As many books as the shelf holds; the tabs hold the rest. Only those near the front are drawn,
+ *  so the number costs a cover's picture each and little else. */
+const SHELF_BOOKS = 30;
 
 export type BookshelfEntry = {
   /** `bridgeId:seriesId`. */
@@ -56,13 +58,21 @@ export type BookshelfEntry = {
   unread: number;
   /** Chapters known, for a collected series: how thick its book is. */
   chapters: number | undefined;
+  /** What the series says it is as an object, and how it reads: its card's own hints. */
+  coverForm?: CoverForm;
+  readingDirection?: ReadingDirection;
 };
 
 /**
  * The shelf's books: half what was read last (the History tab's rows) and half what has new
  * chapters waiting (the Activity tab's unread rows), each making up the number where the other runs
- * short (`pickShelf`). The same queries those tabs read, so the shelf cannot say something they
- * don't.
+ * short (`pickShelf`), stood with what matters most in the middle (`arrangeShelf`). The same
+ * queries those tabs read, so the shelf cannot say something they don't.
+ *
+ * Neither a History nor an Activity row says what its series is as an object, and without that a
+ * CG set from a bridge of doujinshi stood on the shelf as a doujinshi. A collected series' row in
+ * the library does; one that isn't collected is asked of its details, where they have been read
+ * (a series on this shelf has been opened, or is collected).
  */
 export function useBookshelfEntries(enabled: boolean): BookshelfEntry[] {
   const ds = useDataSource();
@@ -72,6 +82,7 @@ export function useBookshelfEntries(enabled: boolean): BookshelfEntry[] {
   const { data: collected } = useQuery({ ...libraryQuery(ds, mock, '', 'lastRead'), enabled });
   const read = useVisibleByBridge(history);
   const news = useVisibleByBridge(activity);
+  const cache = useQueryClient();
   return useMemo(() => {
     const keyOf = (s: { bridgeId: string; seriesId: string }) => `${s.bridgeId}:${s.seriesId}`;
     const left = new Map<string, HistoryEntry>(read.map((h) => [keyOf(h), h]));
@@ -80,13 +91,28 @@ export function useBookshelfEntries(enabled: boolean): BookshelfEntry[] {
         .filter((g) => g.newCount > 0)
         .map((g) => [keyOf(g), g]),
     );
-    const known = new Map<string, number>((collected ?? []).map((e) => [keyOf(e), e.known]));
+    const kept = new Map((collected ?? []).map((e) => [keyOf(e), e]));
     const shown = read.filter((h) => !h.hidden).map(keyOf);
-    return pickShelf(shown, [...waiting.keys()], SHELF_BOOKS).map((key) => {
+    return arrangeShelf(pickShelf(shown, [...waiting.keys()], SHELF_BOOKS)).map((key) => {
       const h = left.get(key);
       const g = waiting.get(key);
       const { bridgeId, seriesId, title, thumbnailUrl } = (h ?? g)!;
-      return { key, bridgeId, seriesId, title, thumbnailUrl, history: h, news: g, unread: g?.newCount ?? 0, chapters: known.get(key) || undefined };
+      const says =
+        kept.get(key) ??
+        [true, false].map((direct) => cache.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId, seriesId, direct))).find(Boolean);
+      return {
+        key,
+        bridgeId,
+        seriesId,
+        title,
+        thumbnailUrl,
+        history: h,
+        news: g,
+        unread: g?.newCount ?? 0,
+        chapters: kept.get(key)?.known || undefined,
+        coverForm: says?.coverForm,
+        readingDirection: says?.readingDirection,
+      };
     });
-  }, [read, news, collected]);
+  }, [read, news, collected, cache, mock]);
 }
