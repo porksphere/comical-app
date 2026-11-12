@@ -62,7 +62,8 @@ export class ShelfDriver {
   /** The reader has moved the shelf at least once: what came forward before that came by itself. */
   private touched = false;
   private last = 0;
-  private front = -1;
+  /** The book last told to `onFront`, by its key: where it stands changes with the shelf's order. */
+  private front: string | undefined;
   /** How far the front book is pressed into the shelf (below 0 it has sprung out past rest), how
    *  fast, whether a finger is on it, and what its tap opens once it has come back out. */
   private press = 0;
@@ -88,7 +89,7 @@ export class ShelfDriver {
     this.onFrame = to.onFrame;
     this.onFront = to.onFront;
     this.onDrawn = to.onDrawn;
-    this.front = -1;
+    this.front = undefined;
     this.draw();
   }
 
@@ -133,27 +134,29 @@ export class ShelfDriver {
   }
 
   /**
-   * The books, in the shelf's order. The first set opens on the middle one, which is where the
-   * shelf stands what matters most. After that the book in front stays in front wherever a new
-   * order puts it — the one just read moves to the middle while the reader is away in it, and
-   * coming back to a different book in front would be coming back to the wrong shelf.
+   * The books, in the shelf's order. Until the reader has moved the shelf it opens on the middle
+   * one, which is where the shelf stands what matters most — of every set, since the first is
+   * whichever of the shelf's two halves answered first, and its middle is not the shelf's. After
+   * that the book in front stays in front wherever a new order puts it — the one just read moves
+   * to the middle while the reader is away in it, and coming back to a different book in front
+   * would be coming back to the wrong shelf. A front book that has left the shelf gives its place
+   * to the one that now stands there.
    */
   setBooks(specs: readonly ShelfBookSpec[]) {
-    const had = this.specs.length;
     const front = this.specs[this.target]?.key;
     this.specs = specs;
     this.books = specs.map((s) => ({ width: s.width, height: s.height, depth: s.depth, binding: s.cover.binding }));
     const last = Math.max(0, specs.length - 1);
-    if (!had) this.pos = this.target = shelfMiddle(specs.length);
     const now = specs.findIndex((s) => s.key === front);
-    if (now >= 0 && now !== this.target) {
+    if (!this.touched) this.pos = this.target = shelfMiddle(specs.length);
+    else if (now >= 0 && now !== this.target) {
       this.pos += now - this.target;
       this.target = now;
-      this.front = now;
     }
     this.target = Math.min(this.target, last);
     this.pos = Math.min(this.pos, last);
     this.scene?.setBooks(specs);
+    this.announce(Math.round(this.pos), false);
     this.draw();
   }
 
@@ -311,10 +314,13 @@ export class ShelfDriver {
     }
     const callouts = shelfCallouts(this.books, places, this.pos, { ...this.stage, ...this.drift });
     this.onFrame(callouts);
-    if (callouts.front !== this.front) {
-      this.front = callouts.front;
-      const key = this.specs[callouts.front]?.key;
-      if (key !== undefined) this.onFront(key, this.touched);
-    }
+    this.announce(callouts.front, this.touched);
+  }
+
+  private announce(index: number, byHand: boolean) {
+    const key = this.specs[Math.min(Math.max(0, index), this.specs.length - 1)]?.key;
+    if (key === this.front) return;
+    this.front = key;
+    if (key !== undefined) this.onFront(key, byHand);
   }
 }
