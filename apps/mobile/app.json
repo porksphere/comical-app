@@ -102,6 +102,7 @@
         }
       ],
       "expo-image",
+      "react-native-webgpu",
       "expo-status-bar",
       "expo-web-browser"
     ],

@@ -1,0 +1,21 @@
+url: http://localhost:4000/comical-app
+---
+# Comical Home opens on the bookshelf — the reader's history as books on a shelf — and Resume
+# opens the front book in the reader, as a History row would. Demo data has history, and Comical is
+# the bridge the app lands on, so nothing has to be picked first.
+#
+# Resume carries a testID and no accessibilityLabel, so it is selected by that id here as on
+# mobile (see smoke.yaml for the web quirk that would otherwise apply).
+#
+# Kept in sync BY HAND with ../mobile/home-bookshelf.yaml (same journey).
+
+- launchApp
+
+- assertVisible:
+    id: "home-bookshelf"
+
+- tapOn:
+    id: "home-bookshelf.resume"
+
+- assertVisible:
+    id: "Close reader"

@@ -1,10 +1,10 @@
 import { use$ } from '@legendapp/state/react';
 import { useQuery } from '@tanstack/react-query';
-import { createContext, createElement, use, useMemo, type ReactNode } from 'react';
+import { createContext, createElement, use, useCallback, useMemo, type ReactNode } from 'react';
 
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import { readerDefaults, useSeriesReaderMode } from '@/hooks/use-reader-settings';
+import { peekSeriesReaderMode, readerDefaults, useSeriesReaderMode } from '@/hooks/use-reader-settings';
 import { resolveCover, shuffledHints, type BookCover, type CoverForm, type ReadingDirection } from '@/lib/book-cover';
 import { persisted$ } from '@/lib/observable';
 
@@ -120,4 +120,34 @@ export function useBookCover({
     direct,
     aspect,
   });
+}
+
+/**
+ * `useBookCover`'s answer for any series, for a place that draws a list of books in one component
+ * (the home bookshelf) where a hook apiece can't be called. It differs in two ways: a series' own
+ * reader mode is read as it stands rather than followed, and a book is returned with book covers
+ * off too, since what asks is drawing books either way.
+ */
+export function useBookCoverResolver(): (series: { bridgeId: string; seriesId: string; direct: boolean; aspect: number }) => BookCover {
+  const { defaults, bridgeHints } = use(CoverSourceContext);
+  return useCallback(
+    ({ bridgeId, seriesId, direct, aspect }) => {
+      const key = `${bridgeId}:${seriesId}`;
+      const [bridgeForm, bridgeDirection] = (bridgeHints.get(bridgeId) || '|').split('|');
+      const reader = readerDefaults();
+      const [readerMode, readerDirection, shuffle] = defaults === 'off' ? [reader.mode, reader.direction, ''] : defaults.split(':');
+      const hints = shuffle
+        ? shuffledHints(key)
+        : { form: (bridgeForm || undefined) as CoverForm | undefined, direction: (bridgeDirection || undefined) as ReadingDirection | undefined };
+      return resolveCover({
+        form: hints.form,
+        direction: hints.direction,
+        readsVertically: (peekSeriesReaderMode(key)?.mode ?? readerMode) === 'webtoon',
+        readerRightToLeft: readerDirection === 'rtl',
+        direct,
+        aspect,
+      });
+    },
+    [defaults, bridgeHints],
+  );
 }

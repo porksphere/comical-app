@@ -43,7 +43,7 @@ import { useRouter } from '@/lib/nav';
 // of the base unit; even Spacing.half read as too much air, and no Spacing token goes this small.
 const SECTION_GAP = 1;
 const HEADING_GAP = Spacing.two;
-const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
+export const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
 // iOS draws the ambient colour inside the list's own content, behind its rows. The screen holding
 // the navigation bar finds the list to put its scroll-edge effect on by walking each first subview
 // down from itself, and a backdrop laid first, behind the list, is where that walk stops.
@@ -85,6 +85,15 @@ function SectionHeadRow({
   );
 }
 
+/** A section's heading as the feed sets one, for what stands in the feed without being a row of it. */
+export function FeedHeading({ title }: { title: string }) {
+  return (
+    <View style={styles.sectionHead}>
+      <SectionHead title={title} />
+    </View>
+  );
+}
+
 /**
  * THE heterogeneous content feed: rails, non-terminal grid blocks, section headings, and the terminal
  * infinite-scroll grid rows all live as typed `ContentRow` items in ONE virtualized list, so off-screen
@@ -104,6 +113,7 @@ export function ContentFeed({
   listRef,
   scrollRef,
   header,
+  hero,
   terminalLoading,
   paddingTop,
   paddingBottom,
@@ -130,6 +140,13 @@ export function ContentFeed({
   listRef?: RefObject<LegendListRef | null>;
   /** Passed through to `RecyclerList` — see the doc there (the sliding bar's lockstep scroll). */
   scrollRef?: AnimatedRef<Animated.ScrollView>;
+  /**
+   * What the page opens on, above the first row and of a height known ahead of it. It is the list's
+   * header, which the list never unmounts, so it suits a thing that is costly to start again (the
+   * home bookshelf's renderer); and unlike `header` its height is given, so the sticky heading and
+   * the tint bands below it keep their offsets. No band is laid behind it.
+   */
+  hero?: { element: ReactElement; height: number } | null;
   /** Above the first row — the error-retry block (the back banner never shows on composed Home). */
   header?: ReactElement | null;
   /** Render the terminal-grid first-load skeleton as the list footer (rows padded to match cells). */
@@ -266,7 +283,7 @@ export function ContentFeed({
     // A list header (the error-retry block) sits above the rows and shifts every offset by its
     // unmeasured height — no sticky while one is up; a pinned heading matters least mid-error.
     if (header) return { sections: out, bands };
-    let y = paddingTop;
+    let y = paddingTop + (hero?.height ?? 0);
     for (const row of rows) {
       // A band is a heading and everything under it, up to the next heading. A loading rail is
       // self-headed, so it opens one too — the colours are there before the covers are.
@@ -301,7 +318,7 @@ export function ContentFeed({
       if (band) band.bottom = y;
     }
     return { sections: out, bands };
-  }, [rows, header, stickyHeaderTop, ambient, paddingTop, getFixedItemSize, measuredHeights, bridgeId, bridgeOrder]);
+  }, [rows, header, hero?.height, stickyHeaderTop, ambient, paddingTop, getFixedItemSize, measuredHeights, bridgeId, bridgeOrder]);
 
   // The heading the pinned copy is currently standing in for — that row keeps its space but drops
   // its content, so one heading is never drawn twice.
@@ -381,9 +398,10 @@ export function ContentFeed({
       // than the default 250 — fewer off-screen rails alive at once = fewer simultaneous image loads.
       drawDistance={120}
       header={
-        BACKDROP_IN_LIST && backdrop ? (
+        (BACKDROP_IN_LIST && backdrop) || hero ? (
           <>
-            {backdrop}
+            {BACKDROP_IN_LIST && backdrop}
+            {hero?.element}
             {header}
           </>
         ) : (

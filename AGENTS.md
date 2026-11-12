@@ -1055,6 +1055,70 @@ binary has none, and the group is never registered. Only the group is in it. Don
 entitlement a free Apple ID can't be given (push is already in the generated file, and is left out
 for that reason).
 
+# Home bookshelf: lit geometry on WebGPU, the same scene on every platform
+
+Comical Home opens on what you are reading as books on a shelf (`components/home-bookshelf`): spine
+out, the one in the middle pulled forward and turned to show its cover, in colour against a shelf
+drawn in screentone. It is the History tab's rows with the Activity tab's unread counts
+(`useBookshelfEntries`), and a tap on the front book or Resume pushes what a History row pushes
+(`historyResumeParams`), so the shelf cannot say or open something those tabs don't. Settings →
+General → Home bookshelf turns it off.
+
+**The books are real geometry under a real light, drawn by three.js on WebGPU.** On iOS and Android
+that is `react-native-webgpu` (Dawn, over Metal and Vulkan); on the web it is the browser's own
+WebGPU, or WebGL 2 where there is none, which three's renderer falls back to by itself — the reason
+`shelf-canvas.web.tsx` is a plain canvas and not react-native-webgpu's, whose web build has only
+the first. One scene (`scene.ts`) and one shader, written in three's node language, which compiles
+to WGSL or GLSL as the backend needs. Filament is the faster engine and was passed over for having
+no web build and shaders compiled ahead of time; expo-gl is OpenGL ES. Skia stays what draws the
+reader: it is 2D, and a book is not.
+
+- **Import `three/webgpu` and `three/tsl`, never bare `three`.** They are different builds of the
+  same classes, and one of each in a bundle is two libraries that don't recognise each other's
+  objects.
+- **`three` and `react-native-webgpu` are pinned exactly, together.** The renderer reaches into
+  the canvas and the device the package hands it. Skia 2 has no part in this; Skia 3 draws through
+  the same Dawn, and from then the two packages must be a pair their docs list as compatible.
+- **Nothing here is imported until the shelf is on screen** (`lazy`, and `import('./pictures')`):
+  three is most of a megabyte, and its own chunk on the web.
+
+**One camera, written twice.** `ShelfScene.resize` sets it for the renderer and `projectToStage`
+(`lib/bookshelf`) is the same camera as arithmetic, which is how the callouts — the burst for new
+chapters, the caption for where you stopped, the tab over each shelved book with something new —
+stand on a book's corners while being plain views over the canvas. Change one and change the
+other; `bookshelf.test.ts` holds the arithmetic, and nothing holds the two together but this.
+
+**Everything that moves is `ShelfDriver`'s, outside React.** Where along the shelf the reader is,
+the drag, the spring, and the only place a frame is drawn from. It asks for frames only while
+something is moving, so a shelf at rest costs nothing, and it keeps what the scene is to show until
+there is a scene: the renderer starts after the first books arrive. It runs on the JS thread, as
+three does.
+
+**The shelf is the feed's header, not a row of it** (`ContentFeed`'s `hero`). A row is unmounted a
+little way off screen, and a renderer is costly to start again, and every restart was a new device
+and its pipelines; the list never unmounts its header. Its height is given rather than measured, so
+the sticky heading and the tint bands below keep their offsets.
+
+**The canvas is opaque and paints the page's own colour.** A canvas cannot be transparent on
+Android, so the scene draws the background itself, tone and all, and no tint band is laid behind
+the shelf: one would only show as a frame around it.
+
+**The tone is the page curl's.** Books off the front are drawn in a 4×4 ordered dither between an
+ink and a paper (`inked` in `scene.ts`, the matrix of `page-curl-shader.ts`), cut from the colour
+as it is shown on screen, after lighting; the shelf itself is always tone, so the shadows the
+books cast on it are screentone and not a blur. A sticker is ink on paper whatever the theme.
+
+**Textures are made where each platform can make them** (`pictures.ts`, `pictures.web.ts`). A
+cover is expo-image's own copy on disk, shrunk by the platform's decoder and read back through
+Skia, as the cover glow reads its tints; on the web it is drawn to a canvas, asked for with CORS,
+since a picture a canvas can't read back can't be a texture. A spine is lettered with a Skia
+paragraph, so a title the heading face has no letters for falls back a glyph at a time. A book's
+cloth is the colour of its cover beside the binding (`boardColour`). A cover that can't be had
+leaves the book in plain cloth.
+
+**A renderer that cannot start takes the shelf away, not the screen** (`markHomeBookshelfUnavailable`):
+the rails begin the page as they did, until the app is next opened.
+
 # Testing: new screens need a flow
 
 A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.

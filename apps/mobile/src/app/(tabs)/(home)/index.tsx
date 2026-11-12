@@ -12,6 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { HomeBookshelf, homeBookshelfHeight } from '@/components/home-bookshelf/home-bookshelf';
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { GridSkeleton } from '@/components/grid-skeleton';
@@ -61,6 +62,7 @@ import type { Bridge, BridgeList } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { useHasSidebar } from '@/hooks/use-content-width';
 import { useGridLayout } from '@/hooks/use-grid-layout';
+import { useBookshelfEntries, useHomeBookshelf, useHomeBookshelfAvailable } from '@/hooks/use-home-bookshelf';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
@@ -599,7 +601,7 @@ export default function BrowseScreen() {
   const openSearch = () => router.push('/search');
   // Column count for the terminal-grid row chunking + skeletons (buildHomeRows). ContentFeed/SeriesGrid
   // derive their own full layout (incl. the rail viewport) from the same hook, so nothing can disagree.
-  const { numColumns } = useGridLayout();
+  const { numColumns, railViewport } = useGridLayout();
   // Logical scope string — drives ONLY the header/scroll reset effect below (not the list key), so
   // the collapsing top bar snaps back and the persisted list scrolls to top on a real scope change.
   const gridScope = [
@@ -782,6 +784,21 @@ export default function BrowseScreen() {
     </View>
   ) : null;
 
+  // Comical Home opens on the bookshelf: what the reader is in the middle of, ahead of the rails. Not
+  // on Favorites or a custom page, which are the reader's own arrangements, and not once its
+  // renderer has failed to start, when the rails simply begin the page as before.
+  const bookshelfOn = useHomeBookshelf();
+  const bookshelfAvailable = useHomeBookshelfAvailable();
+  const bookshelfShown = bookshelfOn && bookshelfAvailable && isComical && !activeFavoritesPage && !activeCustomPage;
+  const bookshelf = useBookshelfEntries(bookshelfShown);
+  const bookshelfHero = useMemo(
+    () =>
+      bookshelfShown && bookshelf.length
+        ? { element: <HomeBookshelf entries={bookshelf} width={railViewport} />, height: homeBookshelfHeight(railViewport) }
+        : null,
+    [bookshelfShown, bookshelf, railViewport],
+  );
+
   // The composed Home flattened into a typed row list for ContentFeed's virtualization. Same rail/grid
   // partition (and loading-skeleton shape) the old listHeader rendered inline, just as data. Only built
   // for the composed-Home surface; homeError shows a retry in the header instead (rows empty).
@@ -890,6 +907,7 @@ export default function BrowseScreen() {
           scopeKey={gridScope}
           listRef={listRef}
           header={homeHeader}
+          hero={bookshelfHero}
           // Terminal-grid first-load skeleton (footer). During homeLoading the terminal rows aren't
           // built yet; this fills that gap the way GridSkeleton did for the old shared list.
           terminalLoading={homeLoading && !!terminalGridPreview}
