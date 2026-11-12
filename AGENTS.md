@@ -1114,8 +1114,12 @@ drawn on.
 winding, which the shadow's pass culls by. Its shader is checked nowhere but in a browser: paste
 `SHADER` into `createShaderModule` and read `getCompilationInfo`. On a device the two are told
 apart by Settings → Developer → Bookshelf frame stats (`frame-stats.ts`): a line over the stage for
-the last second — frames a second, the script each took, and the display's frames that went by
-while one was still in hand — and a line in the Diagnostics log for each time the shelf has moved.
+the last second, and a line in the Diagnostics log for each time the shelf has moved. It gives the
+three numbers that say what holds a shelf back: the frames the display OFFERED a second against
+those drawn (on iOS the frames come from react-native-worklets' display link, which lowers its own
+rate — 120, 60, 30 — by how long the UI thread's frame work has been taking: its
+`IOS_DYNAMIC_FRAMERATE_ENABLED` flag, on by default), the frames skipped at the hand-off between
+the threads, and how long after a frame's script the GPU was done with it (`ShelfRenderer.drawn`).
 The line is a view of its own over a store of its own: set in the shelf's state it rendered the
 shelf every second, on the thread whose frames it counts.
 

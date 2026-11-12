@@ -660,6 +660,10 @@ export class ShelfScene implements ShelfRenderer {
     return -1;
   }
 
+  drawn() {
+    return (this.renderer.backend as { device?: GPUDevice }).device?.queue.onSubmittedWorkDone();
+  }
+
   dispose() {
     for (const b of this.books) this.discard(b.group);
     this.books = [];

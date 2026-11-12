@@ -36,4 +36,7 @@ export interface ShelfRenderer {
   setCover(key: string, picture: ShelfPicture, aspect: number): void;
   render(places: readonly ShelfPlace[], ink: boolean): void;
   pick(x: number, y: number): number;
+  /** Settles once the GPU has done all it has been handed so far, for timing its share of a frame;
+   *  nothing where that can't be told (three on WebGL). */
+  drawn(): Promise<unknown> | undefined;
 }

@@ -519,6 +519,10 @@ export class DirectScene implements ShelfRenderer {
     );
   }
 
+  drawn() {
+    return this.gone ? undefined : this.device.queue.onSubmittedWorkDone();
+  }
+
   dispose() {
     this.gone = true;
     this.device.destroy();

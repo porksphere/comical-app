@@ -404,7 +404,7 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
   // How the frames are going, for telling the two renderers apart on a device (Settings →
   // Developer): the last second's for the line over the stage, and each move's for the log.
   const skipped = useSharedValue(0);
-  const [meter] = useState(() => ({ second: new FrameStats(), move: new FrameStats(), moving: false, movedAt: 0 }));
+  const [meter] = useState(() => ({ second: new FrameStats(), move: new FrameStats(), moving: false, movedAt: 0, timingGpu: false }));
   const [draw] = useState(() => (now: number, tiltX: number, tiltY: number, missed: number) => {
     // Before the step, which may end the move: under a finger the shelf stops after every frame.
     const moving = meter.moving;
@@ -426,6 +426,20 @@ function Shelf({ entries, width, renderer }: { entries: readonly BookshelfEntry[
           meter.movedAt = now;
         }
         meter.second.add(now, script, missed);
+        // One frame's GPU work is timed at a time: the answer comes back on this thread, and a
+        // wait asked for every frame would time the waits.
+        const done = meter.timingGpu ? undefined : driver.drawn();
+        if (done) {
+          meter.timingGpu = true;
+          const handed = performance.now();
+          const timed = () => {
+            meter.timingGpu = false;
+            const after = performance.now() - handed;
+            meter.second.addGpu(after);
+            if (moving) meter.move.addGpu(after);
+          };
+          done.then(timed, () => (meter.timingGpu = false));
+        }
         if (meter.second.span >= 1000) readout$.set(describeFrames(renderer, meter.second.take()!));
       }
     }

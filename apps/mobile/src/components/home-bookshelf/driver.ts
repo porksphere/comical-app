@@ -200,6 +200,11 @@ export class ShelfDriver {
     return this.scene?.pick(x, y) ?? -1;
   }
 
+  /** Settles once the GPU has done what it has been handed so far (`ShelfRenderer.drawn`). */
+  drawn(): Promise<unknown> | undefined {
+    return this.scene?.drawn();
+  }
+
   /** A finger is down on the front book: it gives under it. */
   pressIn() {
     if (!this.scene || this.still) return;
