@@ -31,21 +31,27 @@ function textureOf(canvas: HTMLCanvasElement): THREE.Texture {
 }
 
 /**
- * A cover as a texture and the cloth its book is bound in. Asked for with CORS, since a picture a
- * canvas can't read back can't be a texture either; `null` when the host won't allow it, which
- * leaves the book in plain cloth.
+ * A cover as a texture and the cloth its book is bound in. FETCHED, as the cover glow reads its
+ * tints, and not loaded as a cross-origin `<img>`: a canvas can only be read back (and so be a
+ * texture) when the picture's host allows it, and the desktop shell grants that allowance to what
+ * the page fetches and not to its images, so every cover asked for as an image stayed plain cloth
+ * there. `null` when the host won't allow it, which leaves the book in plain cloth.
  */
 export async function loadCover(uri: string, binding: CoverBinding): Promise<CoverPicture | null> {
-  const image = new window.Image();
-  image.crossOrigin = 'anonymous';
-  image.src = uri;
-  await image.decode();
+  const response = await fetch(uri);
+  if (!response.ok) return null;
+  const whole = await createImageBitmap(await response.blob());
   const canvas = document.createElement('canvas');
-  canvas.width = Math.min(COVER_WIDTH, image.naturalWidth);
-  canvas.height = Math.round((canvas.width * image.naturalHeight) / image.naturalWidth);
+  canvas.width = Math.min(COVER_WIDTH, whole.width);
+  canvas.height = Math.round((canvas.width * whole.height) / whole.width);
   const into = canvas.getContext('2d', { willReadFrequently: true });
-  if (!into || !canvas.width || !canvas.height) return null;
-  into.drawImage(image, 0, 0, canvas.width, canvas.height);
+  if (!into || !canvas.width || !canvas.height) {
+    whole.close();
+    return null;
+  }
+  into.imageSmoothingQuality = 'high';
+  into.drawImage(whole, 0, 0, canvas.width, canvas.height);
+  whole.close();
   const { data } = into.getImageData(0, 0, canvas.width, canvas.height);
   return { texture: textureOf(canvas), aspect: canvas.width / canvas.height, board: boardColour(data, canvas.width, canvas.height, binding) };
 }
