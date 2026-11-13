@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  SPINE_FOOT,
   DRIFT,
   PRESS,
   SHELF,
@@ -25,6 +26,7 @@ import {
   shelfOverlap,
   shelfStageHeight,
   spineNumber,
+  spineNumberFit,
   type ShelfBook,
 } from './bookshelf';
 
@@ -332,6 +334,30 @@ describe('pickShelf', () => {
     expect(picked.filter((key) => key === 'x')).toHaveLength(1);
     expect(picked).toHaveLength(6);
   });
+});
+
+test('spineNumberFit: a number always fits its spine, turned down it when that is larger', () => {
+  const at = (em: number, width: number) => spineNumberFit({ em, width, length: 585, cap: 36, least: 9 });
+  // "07" across a thick spine, at the cap or under it, and never wider than the spine.
+  const wide = at(1.1, 72)!;
+  expect(wide.turned).toBe(false);
+  expect(wide.size * 1.1).toBeLessThan(72);
+  // "104.5" on a narrow spine turns, and fits the foot's slot.
+  const narrow = at(2.7, 40)!;
+  expect(narrow.turned).toBe(true);
+  expect(narrow.size * 2.7).toBeLessThanOrEqual(585 * SPINE_FOOT.length + 0.001);
+  expect(narrow.size).toBeLessThanOrEqual(40 * 0.6);
+  // Whatever the length of the number, set across it fits the width.
+  for (const em of [0.6, 1.1, 1.7, 2.7, 4]) {
+    for (const width of [18, 30, 48, 72]) {
+      const fit = at(em, width);
+      if (fit && !fit.turned) expect(fit.size * em).toBeLessThanOrEqual(width * 0.8 + 0.001);
+      if (fit?.turned) expect(fit.size * em).toBeLessThanOrEqual(585 * SPINE_FOOT.length + 0.001);
+    }
+  }
+  // Too thin to read is not drawn.
+  expect(at(2.7, 6)).toBeNull();
+  expect(at(0, 40)).toBeNull();
 });
 
 test('spineNumber: the chapter the book opens at, two digits at least', () => {

@@ -87,6 +87,30 @@ export function spineNumber(chapterName: string | undefined): string | undefined
   return whole.padStart(2, '0') + (part ? `.${part}` : '');
 }
 
+/** Where a spine's number stands, as fractions of the spine's length: the middle of its slot at
+ *  the foot, under the title and over the foot's rule, and the slot's length. */
+export const SPINE_FOOT = { middle: 0.902, length: 0.09 } as const;
+
+/**
+ * How a spine's number is set so that all of it shows, in the spine picture's pixels: across the
+ * spine as large as its width allows, or, where that would be smaller than turning it, down the
+ * spine the way a thin volume's number is printed. `em` is the number's width at a size of 1, `cap`
+ * the largest it is ever set, and `least` the smallest worth drawing — under it, `null`.
+ */
+export function spineNumberFit({ em, width, length, cap, least }: { em: number; width: number; length: number; cap: number; least: number }): {
+  size: number;
+  turned: boolean;
+} | null {
+  if (!(em > 0)) return null;
+  const slot = length * SPINE_FOOT.length;
+  const across = Math.min(cap, width * 0.44, slot * 0.8, (width * 0.8) / em);
+  const along = Math.min(cap, width * 0.6, (slot * 0.9) / em);
+  // Across reads without turning the head, so it is kept until turning is clearly larger.
+  const turned = along > across * 1.15;
+  const size = turned ? along : across;
+  return size < least ? null : { size, turned };
+}
+
 /** A cover's width for a stage this wide: about a third of a phone, and no larger on a wide one. */
 export function shelfCoverWidth(stageWidth: number): number {
   return clamp(stageWidth * 0.34, 96, 136);
