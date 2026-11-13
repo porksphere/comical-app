@@ -8,9 +8,10 @@ import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 
-// The series actions column buttons. `primary` is the accent Read button; the
-// rest are subtle filled buttons (Library, Sources ▾, Trackers ▾, Favorite).
-// Mirrors `.read-primary` / `#lib-toggle` etc. in the reference.
+// The series page's actions. `primary` is the Read button, in ink: the page's text colour, so the
+// cover is the only colour on the page. The system blue it had was most of what made it look like
+// any app's button. The rest are subtle filled buttons (Library, Download, Favorite, Sources,
+// Trackers), and one that is on turns to ink too.
 
 /**
  * The shape an `ActionButton` takes, set by the layout around it, so the buttons drawn inside other
@@ -25,6 +26,9 @@ export function ActionButton({
   variant = 'default',
   caret,
   leading,
+  detail,
+  progress,
+  active,
   onPress,
   disabled,
   accessibilityLabel,
@@ -38,6 +42,14 @@ export function ActionButton({
    *  one centred group, the way a button reads everywhere; an icon pinned to the edge with the
    *  text centred on its own is the shape of a list row, and looked like one. */
   leading?: ReactNode;
+  /** Set quietly after the label: the number of the chapter Read resumes. */
+  detail?: string;
+  /** How far into that chapter the reader is, 0 to 1: the `hero` capsule is the chapter, ink as far
+   *  as it has been read. Absent, the capsule is solid. */
+  progress?: number;
+  /** A `round` button whose thing is on (saved, downloaded, favorited): its face is ink, and the
+   *  caller draws `leading` in `theme.background` to stand on it. */
+  active?: boolean;
   onPress?: () => void;
   /** Dim and ignore presses (e.g. Read while a chaptered series' list still loads). */
   disabled?: boolean;
@@ -50,7 +62,10 @@ export function ActionButton({
   const primary = variant === 'primary';
   const shape = use(ActionShapeContext);
   const { hovered, onHoverIn, onHoverOut } = useHovered();
-  const fill = primary ? (hovered ? theme.accentHover : theme.accent) : hovered ? theme.backgroundSelected : theme.backgroundElement;
+  const subtle = hovered ? theme.backgroundSelected : theme.backgroundElement;
+  const fill = primary ? theme.text : subtle;
+  const onFill = primary ? theme.background : theme.text;
+  const partRead = primary && progress !== undefined && progress > 0 && progress < 1;
   if (shape === 'round') {
     return (
       <Pressable
@@ -63,7 +78,7 @@ export function ActionButton({
         accessibilityLabel={accessibilityLabel ?? label}
         accessibilityState={{ disabled: !!disabled }}
         style={({ pressed }) => [styles.round, disabled && styles.disabled, pressed && styles.pressed]}>
-        <View style={[styles.roundFace, { backgroundColor: fill }]}>
+        <View style={[styles.roundFace, { backgroundColor: active ? theme.text : subtle }, active && hovered && styles.inkHovered]}>
           <View style={styles.roundIcon}>{leading}</View>
         </View>
         <ThemedText numberOfLines={1} style={[styles.roundLabel, { color: theme.textSecondary }]}>
@@ -84,14 +99,25 @@ export function ActionButton({
         accessibilityLabel={accessibilityLabel}
         accessibilityState={{ disabled: !!disabled }}
         style={({ pressed }) => [styles.heroBtn, disabled && styles.disabled, pressed && styles.pressed]}>
-        <View style={[styles.heroFill, { backgroundColor: fill }]}>
+        <View
+          style={[
+            styles.heroFill,
+            { backgroundColor: partRead ? theme.inkUnread : fill },
+            primary && hovered && styles.inkHovered,
+          ]}>
+          {partRead && (
+            <View style={[styles.heroRead, { width: `${progress * 100}%`, backgroundColor: theme.text }]} />
+          )}
           {leading}
-          <ThemedText
-            numberOfLines={1}
-            style={[styles.label, styles.heroLabel, { color: primary ? theme.accentOn : theme.text }]}>
+          <ThemedText numberOfLines={1} style={[styles.label, styles.heroLabel, { color: onFill }]}>
             {label}
           </ThemedText>
-          {caret && <ChevronDownIcon color={primary ? theme.accentOn : theme.textSecondary} size={14} />}
+          {detail !== undefined && (
+            <ThemedText numberOfLines={1} style={[styles.heroDetail, { color: onFill }]}>
+              {detail}
+            </ThemedText>
+          )}
+          {caret && <ChevronDownIcon color={primary ? onFill : theme.textSecondary} size={14} />}
         </View>
       </Pressable>
     );
@@ -189,6 +215,22 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 22,
     fontWeight: '600',
+  },
+  heroDetail: {
+    fontSize: 15,
+    lineHeight: 22,
+    opacity: 0.8,
+    fontVariant: ['tabular-nums'],
+  },
+  // The part of the chapter already read, from the capsule's leading edge.
+  heroRead: {
+    position: 'absolute',
+    start: 0,
+    top: 0,
+    bottom: 0,
+  },
+  inkHovered: {
+    opacity: 0.85,
   },
   // A round button with its label under it: the series page's other actions.
   round: {

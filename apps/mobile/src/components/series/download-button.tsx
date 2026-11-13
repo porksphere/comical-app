@@ -105,7 +105,7 @@ export function SeriesDownloadButton({
   };
   const openSelect = () => openSeriesDownloads(true);
 
-  const check = <CheckIcon color={theme.text} size={ACTION_ICON_SIZE} />;
+  const check = <CheckIcon color={theme.background} size={ACTION_ICON_SIZE} />;
   const download = <DownloadsIcon color={theme.text} size={ACTION_ICON_SIZE} />;
   let button;
   if (inProgress) {
@@ -120,7 +120,7 @@ export function SeriesDownloadButton({
       />
     );
   } else if (state === 'complete' && !partial) {
-    button = <ActionButton testID="series.action.download" label="Downloaded" leading={check} onPress={openDownloads} />;
+    button = <ActionButton testID="series.action.download" label="Downloaded" leading={check} active onPress={openDownloads} />;
   } else if (partial) {
     button = (
       <ActionButton

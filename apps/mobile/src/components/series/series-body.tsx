@@ -51,6 +51,7 @@ import { useSeriesSave } from '@/hooks/use-series-save';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { leadingChapterNumber } from '@/lib/chapter-label';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
 import { focusMarks, focusSkip } from '@/lib/focus-nav';
 import { isTypingTarget } from '@/lib/key-hold';
@@ -512,7 +513,7 @@ export function SeriesBody({
   //
   // Read never waits on the deferred chapter list: with no resume point the reader is handed an
   // unspecified chapter and picks the first one itself, so the button is live immediately.
-  const { label: readingLabel } = useStartReading({
+  const { label: readingLabel, resume } = useStartReading({
     bridgeId,
     seriesId: series.id,
     title: series.title,
@@ -528,6 +529,16 @@ export function SeriesBody({
   const readState = collected?.readState;
   const settled = readState === 'caught-up' || readState === 'finished';
   const primaryLabel = readState === 'finished' ? 'Finished' : readState === 'caught-up' ? 'Caught up' : readingLabel;
+  // On this page the capsule says where Read resumes as the chapter's number alone, set after the
+  // word, and is filled as far into that chapter as the reader is. A name that leads with no
+  // number keeps the label the menus use.
+  const resumeNumber = !settled && resume?.chapterName ? leadingChapterNumber(resume.chapterName) : undefined;
+  const firstNumber = !settled && !resume && readLabel ? leadingChapterNumber(readLabel) : undefined;
+  const readNumber = resumeNumber ?? firstNumber;
+  const readProgress =
+    !settled && resume?.lastPage !== undefined && resume.pageCount
+      ? Math.min(1, (resume.lastPage + 1) / resume.pageCount)
+      : undefined;
 
   // Some bridges hand back a Referer-gated, server-relative `/img-proxy?…` cover that
   // `<Image>` can't load raw — resolve it the same way the browse card and the loading
@@ -636,16 +647,18 @@ export function SeriesBody({
     <>
       <ActionButton
         testID="series.action.read"
-        label={primaryLabel}
+        label={resumeNumber !== undefined ? 'Resume' : firstNumber !== undefined ? 'Read' : primaryLabel}
+        {...(readNumber !== undefined && { detail: readNumber })}
+        {...(readProgress !== undefined && { progress: readProgress })}
         leading={
           settled ? (
             <CheckIcon color={theme.text} size={ACTION_ICON_SIZE} />
           ) : (
-            <PlayIcon color={theme.accentOn} size={ACTION_ICON_SIZE} />
+            <PlayIcon color={theme.background} size={ACTION_ICON_SIZE} />
           )
         }
         variant={settled ? 'default' : 'primary'}
-        accessibilityLabel={settled ? `${primaryLabel} — ${readingLabel.toLowerCase()}` : undefined}
+        accessibilityLabel={settled ? `${primaryLabel} — ${readingLabel.toLowerCase()}` : primaryLabel}
         onPress={startReading}
       />
     </>
@@ -660,12 +673,13 @@ export function SeriesBody({
         label={save.label}
         leading={
           save.saved ? (
-            <CheckIcon color={theme.text} size={ACTION_ICON_SIZE} />
+            <CheckIcon color={theme.background} size={ACTION_ICON_SIZE} />
           ) : (
             <PlusIcon color={theme.text} size={ACTION_ICON_SIZE} />
           )
         }
         caret
+        active={!!save.saved}
         onPress={save.onPress}
       />
     </>
@@ -712,8 +726,9 @@ export function SeriesBody({
           testID="series.action.favorite"
           label={favorited ? 'Favorited' : 'Favorite'}
           leading={
-            <StarIcon color={favorited ? theme.badgeNew : theme.text} size={ACTION_ICON_SIZE} filled={!!favorited} />
+            <StarIcon color={favorited ? theme.background : theme.text} size={ACTION_ICON_SIZE} filled={!!favorited} />
           }
+          active={!!favorited}
           onPress={toggleFavorite}
         />
       ) : null}

@@ -46,6 +46,8 @@ export const Colors = {
     textSecondary: '#60646C',
     // Shared accent + chrome tokens (mirrored in `dark`). Used by cards, badges,
     // chips and the series action buttons so colors aren't re-hardcoded per file.
+    // The unread part of the series page's Read capsule: `text` a little way toward the page.
+    inkUnread: '#666666',
     accent: '#3478F6',
     // Lighter tint of `accent` for hovering a solid accent-filled surface (the
     // primary action button) — brightens toward white rather than dimming via
@@ -107,6 +109,7 @@ export const Colors = {
     overlaySelected: '#47474A',
     overlayHairline: '#404042',
     textSecondary: '#B0B4BA',
+    inkUnread: '#999999',
     accent: '#3478F6',
     accentHover: '#5A90FF',
     accentOn: '#ffffff',
