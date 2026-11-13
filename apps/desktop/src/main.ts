@@ -349,7 +349,11 @@ async function openWindow(): Promise<void> {
   const hidden = startInTray;
   startInTray = false;
   win.once("ready-to-show", () => {
-    if (!hidden) reveal(win);
+    if (!hidden) return reveal(win);
+    // A window made hidden and never shown still tells its page it is visible, and the page goes on
+    // being handed a frame a second (the home shelf draws on each). Hidden outright, it hears it
+    // isn't, and gets none until it is shown — unless the tray already showed it.
+    if (!win.isVisible()) win.hide();
   });
   mainWindow = win;
   win.on("closed", () => {
