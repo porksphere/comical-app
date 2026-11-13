@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as THREE from 'three/webgpu';
 
-import { boardColour, cssRgb, type Rgb } from '@/lib/bookshelf';
+import { SPINE_FOOT, boardColour, cssRgb, spineNumberFit, type Rgb } from '@/lib/bookshelf';
 import type { CoverBinding } from '@/lib/book-cover';
 import { SPINE_FONT, titleFontCovers } from '@/lib/title-font';
 
@@ -103,18 +103,33 @@ export function drawSpine({ title, number, board, ink, width, height }: SpinePic
     rule.setAlphaf(0.5);
     canvas.drawRect(Skia.XYWHRect(0, h * 0.04, w, 2), rule);
     canvas.drawRect(Skia.XYWHRect(0, h * 0.955, w, 2), rule);
-    // Too thin a spine to letter is left as cloth.
+    const lettered = (text: string, fontSize: number, run: number) => {
+      const face = titleFontCovers(text) ? spineFace : null;
+      const layout = { textAlign: TextAlign.Center, maxLines: 1, ellipsis: '…' };
+      const paragraph = (face ? Skia.ParagraphBuilder.Make(layout, face) : Skia.ParagraphBuilder.Make(layout))
+        .pushStyle({ color: colour, fontSize, ...(face ? { fontFamilies: [SPINE_FONT] } : {}) })
+        .addText(text)
+        .build();
+      paragraph.layout(run);
+      return paragraph;
+    };
+    // Measured large and scaled down: a paragraph at a pixel or two measures by its hinting.
+    const fit = number
+      ? spineNumberFit({ em: lettered(number, 100, 1e5).getMaxIntrinsicWidth() / 100, width: w, length: h, cap: 12 * SPINE_SCALE, least: 3 * SPINE_SCALE })
+      : null;
+    if (number && fit) {
+      const slot = h * SPINE_FOOT.length;
+      const mark = lettered(number, fit.size, fit.turned ? slot : w);
+      if (fit.turned) {
+        canvas.save();
+        canvas.translate(w / 2 + mark.getHeight() / 2, h * SPINE_FOOT.middle - slot / 2);
+        canvas.rotate(90, 0, 0);
+        mark.paint(canvas, 0, 0);
+        canvas.restore();
+      } else mark.paint(canvas, 0, h * SPINE_FOOT.middle - mark.getHeight() / 2);
+    }
+    // Too thin a spine for a title is left as cloth under its number.
     if (width > 13) {
-      const lettered = (text: string, fontSize: number, run: number) => {
-        const face = titleFontCovers(text) ? spineFace : null;
-        const layout = { textAlign: TextAlign.Center, maxLines: 1, ellipsis: '…' };
-        const paragraph = (face ? Skia.ParagraphBuilder.Make(layout, face) : Skia.ParagraphBuilder.Make(layout))
-          .pushStyle({ color: colour, fontSize, ...(face ? { fontFamilies: [SPINE_FONT] } : {}) })
-          .addText(text)
-          .build();
-        paragraph.layout(run);
-        return paragraph;
-      };
       const run = h * 0.76;
       const name = lettered(title, Math.min(w * 0.52, 15 * SPINE_SCALE), run);
       canvas.save();
@@ -123,7 +138,6 @@ export function drawSpine({ title, number, board, ink, width, height }: SpinePic
       canvas.rotate(90, 0, 0);
       name.paint(canvas, 0, 0);
       canvas.restore();
-      if (number) lettered(number, Math.min(w * 0.44, 12 * SPINE_SCALE), w).paint(canvas, 0, h * 0.875);
     }
     surface.flush();
     const picture = surface.makeImageSnapshot();

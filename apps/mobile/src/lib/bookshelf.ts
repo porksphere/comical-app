@@ -11,8 +11,10 @@ import { leadingChapterNumber } from '@/lib/chapter-label';
 
 export type ShelfBook = { width: number; height: number; depth: number; binding: CoverBinding };
 
-/** `ink` is how far the book is from the one in front, 0 to 1: what the shelf draws in tone. */
-export type ShelfPlace = { x: number; z: number; yaw: number; ink: number };
+/** `ink` is how far the book is from the one in front, 0 to 1: what the shelf draws in tone. `tip`
+ *  is degrees the book leans toward the reader about the shelf's run, after its yaw, and `y` how far
+ *  its foot is raised to keep it on the shelf as it does. */
+export type ShelfPlace = { x: number; z: number; yaw: number; ink: number; y?: number; tip?: number };
 
 export const SHELF = {
   /** The front book's turn toward the reader, short of square on so its spine still shows. */
@@ -54,6 +56,25 @@ export function pressedPlace(place: ShelfPlace, depth: number): ShelfPlace {
   return { ...place, z: place.z - (depth > 0 ? PRESS.back : PRESS.forward) * depth };
 }
 
+/** A spine under the pointer is drawn part way out, as a finger hooked over its head would: `pull`
+ *  toward the reader, well short of the front book's `SHELF.pull`, and tipped `tip` degrees. */
+export const HOVER = { pull: 16, tip: 5 } as const;
+
+/** A book's place with the pointer's pull `amount` of the way on (0 to 1). It tips on the front
+ *  edge of its foot, so the back of the foot lifts and nothing sinks into the shelf. */
+export function hoveredPlace(place: ShelfPlace, book: ShelfBook, amount: number): ShelfPlace {
+  if (!amount) return place;
+  const turn = rad(place.yaw);
+  const reach = Math.abs((book.width / 2) * Math.sin(turn)) + Math.abs((book.depth / 2) * Math.cos(turn));
+  const tip = rad(HOVER.tip * amount);
+  return {
+    ...place,
+    z: place.z + HOVER.pull * amount + reach * (1 - Math.cos(tip)),
+    y: (place.y ?? 0) + reach * Math.sin(tip),
+    tip: (place.tip ?? 0) + HOVER.tip * amount,
+  };
+}
+
 /**
  * What is lettered at the foot of a spine: the number of the chapter the book opens at, two
  * digits at the least as a volume's number is printed ("07", "12", "104", "12.5"). None for a
@@ -64,6 +85,30 @@ export function spineNumber(chapterName: string | undefined): string | undefined
   if (!number) return undefined;
   const [whole, part] = number.split('.');
   return whole.padStart(2, '0') + (part ? `.${part}` : '');
+}
+
+/** Where a spine's number stands, as fractions of the spine's length: the middle of its slot at
+ *  the foot, under the title and over the foot's rule, and the slot's length. */
+export const SPINE_FOOT = { middle: 0.902, length: 0.09 } as const;
+
+/**
+ * How a spine's number is set so that all of it shows, in the spine picture's pixels: across the
+ * spine as large as its width allows, or, where that would be smaller than turning it, down the
+ * spine the way a thin volume's number is printed. `em` is the number's width at a size of 1, `cap`
+ * the largest it is ever set, and `least` the smallest worth drawing — under it, `null`.
+ */
+export function spineNumberFit({ em, width, length, cap, least }: { em: number; width: number; length: number; cap: number; least: number }): {
+  size: number;
+  turned: boolean;
+} | null {
+  if (!(em > 0)) return null;
+  const slot = length * SPINE_FOOT.length;
+  const across = Math.min(cap, width * 0.44, slot * 0.8, (width * 0.8) / em);
+  const along = Math.min(cap, width * 0.6, (slot * 0.9) / em);
+  // Across reads without turning the head, so it is kept until turning is clearly larger.
+  const turned = along > across * 1.15;
+  const size = turned ? along : across;
+  return size < least ? null : { size, turned };
 }
 
 /** A cover's width for a stage this wide: about a third of a phone, and no larger on a wide one. */
@@ -271,7 +316,10 @@ export function projectToStage(stage: ShelfStage, x: number, y: number, z: numbe
 export function bookPoint(place: ShelfPlace, along: number, up: number, out: number): { x: number; y: number; z: number } {
   const c = Math.cos(rad(place.yaw));
   const s = Math.sin(rad(place.yaw));
-  return { x: place.x + along * c + out * s, y: up, z: place.z - along * s + out * c };
+  const z = -along * s + out * c;
+  const tc = Math.cos(rad(place.tip ?? 0));
+  const ts = Math.sin(rad(place.tip ?? 0));
+  return { x: place.x + along * c + out * s, y: (place.y ?? 0) + up * tc - z * ts, z: place.z + up * ts + z * tc };
 }
 
 /** Where the callouts drawn over the shelf stand, in the stage's points. */

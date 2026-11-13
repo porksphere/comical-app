@@ -3,8 +3,8 @@ import { useSelector } from '@legendapp/state/react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from 'expo-router';
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { PixelRatio, StyleSheet, Text, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { PixelRatio, Platform, StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector, PointerType } from 'react-native-gesture-handler';
 import Animated, {
   measure,
   runOnJS,
@@ -345,6 +345,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   const [tick] = useState(() => createTickHaptic(hapticSelection));
   // What each cover turned out to be once its picture loaded: its shape, and the cloth read off it.
   const [pictures, setPictures] = useState<Record<string, { aspect: number; board: Rgb }>>({});
+  const [pointing, setPointing] = useState(false);
   const fx = useSharedValue<ShelfCallouts>(shelfCallouts([], [], 0, stage));
 
   const specs = useMemo((): ShelfBookSpec[] => {
@@ -593,6 +594,19 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     .onFinalize((_e, landed) => {
       if (!landed) driver.pressOut();
     });
+  const unpoint = () => {
+    driver.hover(-1);
+    setPointing(false);
+  };
+  // A mouse or trackpad only: a browser reports a finger's tap as a hover too, and an iPad an Apple
+  // Pencil held over the glass, and neither should pull a book out.
+  const point = ({ x, y, pointerType }: { x: number; y: number; pointerType: PointerType }) => {
+    if (pointerType !== PointerType.MOUSE) return unpoint();
+    const index = driver.bookAt(x, y);
+    driver.hover(index);
+    setPointing(index >= 0 || onFront(x, y));
+  };
+  const hover = Gesture.Hover().runOnJS(true).onBegin(point).onUpdate(point).onFinalize(unpoint);
   const tone = dark ? TONE.dark : TONE.light;
   const { history, news } = shown;
   const where = history ? historySub(history, { withTime: false, long: false }) : news ? activityLabel(news, bridgeName) : '';
@@ -602,10 +616,10 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     <View style={{ height: homeBookshelfHeight(width) }} testID="home-bookshelf">
       {mayDrift && <DeviceTilt tilt={tilt} />}
       <FeedHeading title="Continue reading" />
-      <GestureDetector gesture={Gesture.Race(pan, press)}>
+      <GestureDetector gesture={Gesture.Simultaneous(hover, Gesture.Race(pan, press))}>
         <Animated.View
           ref={stageView}
-          style={{ width: stage.width, height: stage.height, marginLeft: -lead }}
+          style={[{ width: stage.width, height: stage.height, marginLeft: -lead }, pointing && styles.pointing]}
           accessible
           accessibilityRole="adjustable"
           accessibilityLabel={`Continue reading: ${shown.title}`}
@@ -702,6 +716,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, lineHeight: 26 },
   unseen: { opacity: 0 },
   readout: { position: 'absolute', top: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 10, fontVariant: ['tabular-nums'], overflow: 'hidden' },
+  pointing: Platform.OS === 'web' ? { cursor: 'pointer' } : {},
   // The scene comes out of the page and goes back into it: no edge where the canvas starts or ends.
   fadeTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 48 },
   fadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 34 },

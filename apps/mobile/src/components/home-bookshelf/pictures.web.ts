@@ -1,7 +1,7 @@
 import { loadAsync } from 'expo-font';
 import * as THREE from 'three/webgpu';
 
-import { boardColour, cssRgb, type Rgb } from '@/lib/bookshelf';
+import { SPINE_FOOT, boardColour, cssRgb, spineNumberFit, type Rgb } from '@/lib/bookshelf';
 import type { CoverBinding } from '@/lib/book-cover';
 import { SPINE_FONT, titleFontCovers } from '@/lib/title-font';
 
@@ -71,14 +71,23 @@ export function drawSpine({ title, number, board, ink, width, height }: SpinePic
   g.fillRect(0, h * 0.04, w, 2);
   g.fillRect(0, h * 0.955, w, 2);
   g.globalAlpha = 1;
-  // Too thin a spine to letter is left as cloth.
-  if (width > 13) {
-    g.textAlign = 'center';
-    if (number) {
-      g.font = `${Math.min(w * 0.44, 12 * SPINE_SCALE)}px "${SPINE_FONT}", ${SYSTEM_FACE}`;
-      g.textBaseline = 'alphabetic';
-      g.fillText(number, w / 2, h * 0.935);
+  g.textAlign = 'center';
+  if (number) {
+    const face = (size: number) => `${size}px "${SPINE_FONT}", ${SYSTEM_FACE}`;
+    g.font = face(100);
+    const fit = spineNumberFit({ em: g.measureText(number).width / 100, width: w, length: h, cap: 12 * SPINE_SCALE, least: 3 * SPINE_SCALE });
+    if (fit) {
+      g.font = face(fit.size);
+      g.textBaseline = 'middle';
+      g.save();
+      g.translate(w / 2, h * SPINE_FOOT.middle);
+      if (fit.turned) g.rotate(Math.PI / 2);
+      g.fillText(number, 0, 0);
+      g.restore();
     }
+  }
+  // Too thin a spine for a title is left as cloth under its number.
+  if (width > 13) {
     g.font = `${Math.min(w * 0.52, 15 * SPINE_SCALE)}px ${titleFontCovers(title) ? `"${SPINE_FONT}", ` : ''}${SYSTEM_FACE}`;
     g.textBaseline = 'middle';
     const run = h * 0.76;

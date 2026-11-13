@@ -1182,6 +1182,15 @@ It was taken out for the press — a board hung to swing, a pair of page sheets 
 picture were what the shelf carried for a quarter of a second of it, and the wait showed however
 it was dressed.
 
+**A mouse draws out the spine it is over** (a mouse or trackpad on any platform; never a finger or a
+Pencil, which `Gesture.Hover` also reports, so its `pointerType` is checked): `ShelfDriver.hover`
+eases that spine part way out (`HOVER`: pulled toward the reader and tipped forward on the front
+edge of its foot, as a finger hooked over its head would; an easing, not the press's spring, so a
+pointer sweeping the shelf doesn't set a row of them ringing), and the web cursor turns to a pointer
+over anything a click does something to. The tip is a place's `tip` and `y`, which `bookPoint`
+follows too, so a tab stays on a tipped spine. The book in front doesn't move, and nothing does
+while the shelf is being dragged.
+
 **Spines are read.** They are lettered in Shippori Mincho B1 at its medium weight (`SPINE_FONT` in
 `lib/title-font.ts`), the serif a volume's spine is set in — the one place it is used, and the one
 heading not in the title typeface. Its bolder weights were more than a spine wants, and
