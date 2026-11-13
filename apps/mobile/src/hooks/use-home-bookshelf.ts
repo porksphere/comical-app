@@ -15,7 +15,7 @@ import { PROFILING_ENABLED } from '@/lib/profiling';
 
 /** Persisted as an OBJECT, not a bare boolean — see lib/dev-profiler-flag for why a bare `false`
  *  breaks Legend State's persistence. */
-const bookshelf$ = persisted$<{ on: boolean; stats?: boolean }>('comical:homeBookshelf', { on: true });
+const bookshelf$ = persisted$<{ on: boolean; stats?: boolean; seriesSticker?: boolean }>('comical:homeBookshelf', { on: true });
 
 /** Whether Comical Home opens on the bookshelf (Settings → General; on unless turned off). A
  *  `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
@@ -43,6 +43,16 @@ export const homeBookshelfStats = () => PROFILING_ENABLED && (bookshelf$.stats.p
 
 export function setHomeBookshelfStats(on: boolean): void {
   bookshelf$.stats.set(on);
+}
+
+/** A trial (Settings → Developer): the series page's Read as the shelf's sticker, hung on the
+ *  cover. Only in a build that has that screen, as the stats are. */
+export function useSeriesStickerRead(): boolean {
+  return useSelector(() => PROFILING_ENABLED && (bookshelf$.seriesSticker.get() ?? false));
+}
+
+export function setSeriesStickerRead(on: boolean): void {
+  bookshelf$.seriesSticker.set(on);
 }
 
 /** False once the shelf's renderer has failed to start on this device. */

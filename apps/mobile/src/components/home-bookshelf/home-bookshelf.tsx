@@ -15,10 +15,10 @@ import Animated, {
   useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
-import Svg, { Circle, Defs, Pattern, Polygon, Rect } from 'react-native-svg';
 
 import { FeedHeading, SECTION_HEAD_ROW_HEIGHT } from '@/components/content-feed';
 import { Skeleton } from '@/components/skeleton';
+import { BURST_SIZE, BURST_TURN, BurstStar, STICKER, StickerBox, stickerTone, ToneShadow } from '@/components/sticker';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { activityLabel } from '@/data/activity/feed-rows';
@@ -85,23 +85,6 @@ export function homeBookshelfHeight(width: number): number {
  *  desktop app's window, read from further off on a larger screen, it stood small. */
 const SHELF_ZOOM = desktopShell() ? 1.5 : 1;
 
-// A sticker is ink on paper whatever the theme; only the tone it casts follows the page.
-const STICKER = { paper: '#ffffff', ink: '#1c1c1e' } as const;
-const TONE = { light: '#1c1c1e', dark: '#8a8a8f' } as const;
-
-/** The burst's outline: twelve even points, every other one a little longer. Even, because the
- *  first cut's uneven ones read as a mistake at this size rather than as a hand's. Twelve, because
- *  it is turned afresh for each book: sixteen were too fine for the turn to show, and a star made
- *  wider than it is tall, so that it would, only looked slanted. */
-const BURST_POINTS = 12;
-const BURST = Array.from({ length: BURST_POINTS * 2 }, (_, k) => {
-  const angle = (k / (BURST_POINTS * 2)) * Math.PI * 2 - Math.PI / 2;
-  const reach = k % 2 ? 30 : k % 4 ? 40 : 46;
-  return `${(Math.cos(angle) * reach).toFixed(1)},${(Math.sin(angle) * reach).toFixed(1)}`;
-}).join(' ');
-/** The turn after which the burst is the same shape again, in degrees: a long point and a short. */
-const BURST_TURN = 720 / BURST_POINTS;
-
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 // In a store of its own, read by one small view: set in the shelf's own state, a line a second
@@ -133,20 +116,6 @@ class Fallible extends Component<{ onError: () => void; children: ReactNode }, {
   }
 }
 
-/** The tone a sticker casts: dots, never a blur. */
-function ToneShadow({ id, colour }: { id: string; colour: string }) {
-  return (
-    <Svg style={styles.toneShadow} width="100%" height="100%">
-      <Defs>
-        <Pattern id={id} patternUnits="userSpaceOnUse" width={4} height={4}>
-          <Circle cx={2} cy={2} r={1.1} fill={colour} />
-        </Pattern>
-      </Defs>
-      <Rect width="100%" height="100%" fill={`url(#${id})`} />
-    </Svg>
-  );
-}
-
 function Burst({
   fx,
   tilt,
@@ -176,15 +145,7 @@ function Burst({
   });
   return (
     <Animated.View style={[styles.burst, style]}>
-      <Svg width={96} height={96} viewBox="-50 -50 100 100">
-        {/* A hard shadow, as the tabs cast: tone dotted into a margin this thin was only fragments. */}
-        <Polygon points={BURST} fill={tone} transform={`translate(3 4) rotate(${turn})`} />
-        <Polygon points={BURST} fill={STICKER.paper} stroke={STICKER.ink} strokeWidth={2.4} strokeLinejoin="miter" transform={`rotate(${turn})`} />
-      </Svg>
-      <View style={styles.burstLabel}>
-        <Text style={styles.burstCount}>{count}</Text>
-        <Text style={styles.burstNew}>NEW!</Text>
-      </View>
+      <BurstStar count={count} turn={turn} tone={tone} />
     </Animated.View>
   );
 }
@@ -237,14 +198,7 @@ function Caption({
       testID="home-bookshelf.resume"
       onLayout={({ nativeEvent }) => onSize(nativeEvent.layout.width, nativeEvent.layout.height)}>
       <ToneShadow id="bookshelf-caption-tone" colour={tone} />
-      <View style={styles.captionBox}>
-        <Text style={styles.captionLabel}>{label}</Text>
-        {where ? (
-          <Text style={styles.captionWhere} numberOfLines={1}>
-            {where}
-          </Text>
-        ) : null}
-      </View>
+      <StickerBox label={label} where={where} />
     </Animated.View>
   );
 }
@@ -607,7 +561,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     setPointing(index >= 0 || onFront(x, y));
   };
   const hover = Gesture.Hover().runOnJS(true).onBegin(point).onUpdate(point).onFinalize(unpoint);
-  const tone = dark ? TONE.dark : TONE.light;
+  const tone = stickerTone(dark);
   const { history, news } = shown;
   const where = history ? historySub(history, { withTime: false, long: false }) : news ? activityLabel(news, bridgeName) : '';
   const detail = history ? historySub(history, { withTime: true, long: true }) : where;
@@ -673,31 +627,8 @@ const styles = StyleSheet.create({
   callouts: { position: 'absolute', left: 0, top: 0, right: 0, bottom: -CALLOUT_OVERHANG, overflow: 'hidden' },
   placeholder: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, overflow: 'hidden' },
   placeholderBook: { position: 'absolute', borderRadius: 3 },
-  burst: { position: 'absolute', left: 0, top: 0, width: 96, height: 96 },
-  burstLabel: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ rotate: '-8deg' }],
-  },
-  burstCount: { color: STICKER.ink, fontSize: 24, lineHeight: 24, fontWeight: '900', marginTop: -1 },
-  burstNew: { color: STICKER.ink, fontSize: 9.5, lineHeight: 10, fontWeight: '900', letterSpacing: 0.5 },
+  burst: { position: 'absolute', left: 0, top: 0, width: BURST_SIZE, height: BURST_SIZE },
   caption: { position: 'absolute', left: 0, top: 0 },
-  captionBox: {
-    paddingHorizontal: 10,
-    paddingTop: 5,
-    paddingBottom: 6,
-    backgroundColor: STICKER.paper,
-    borderColor: STICKER.ink,
-    borderWidth: 2.5,
-  },
-  captionLabel: { color: STICKER.ink, fontSize: 13, lineHeight: 15, fontWeight: '900', letterSpacing: 0.6 },
-  captionWhere: { color: STICKER.ink, fontSize: 11.5, lineHeight: 14 },
-  toneShadow: { position: 'absolute', left: 6, top: 6 },
   tab: {
     position: 'absolute',
     left: 0,

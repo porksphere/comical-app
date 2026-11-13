@@ -7,7 +7,12 @@ import { TopBar } from '@/components/top-bar';
 import { useApiBase } from '@/data/api';
 import { useMockDataToggle } from '@/data/source';
 import { setBookCoverShuffle, useBookCoverShuffle } from '@/hooks/use-book-covers';
-import { setHomeBookshelfStats, useHomeBookshelfStats } from '@/hooks/use-home-bookshelf';
+import {
+  setHomeBookshelfStats,
+  setSeriesStickerRead,
+  useHomeBookshelfStats,
+  useSeriesStickerRead,
+} from '@/hooks/use-home-bookshelf';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 
 /** Dev-build-only: lets local development iterate against mock data without a running backend, and
@@ -20,6 +25,7 @@ export default function DeveloperSettingsScreen() {
   const profilerOn = useDevProfilerEnabled();
   const shuffleCovers = useBookCoverShuffle();
   const shelfStats = useHomeBookshelfStats();
+  const stickerRead = useSeriesStickerRead();
 
   const sections: SettingsFormSection[] = [
     {
@@ -54,6 +60,14 @@ export default function DeveloperSettingsScreen() {
             'Shows over the home bookshelf how its frames are going — how many a second of those the display offered, the script and the GPU time each takes, and how many were skipped — and logs a line to Diagnostics each time the shelf has moved.',
           value: shelfStats,
           onChange: setHomeBookshelfStats,
+        },
+        {
+          kind: 'toggle',
+          label: 'Series page: Read as a sticker',
+          description:
+            'A trial. On a phone, the series page reads from the home bookshelf’s sticker, hung on the cover’s corner with the new-chapter burst on the other, in place of the Read capsule.',
+          value: stickerRead,
+          onChange: setSeriesStickerRead,
         },
         { kind: 'value', label: 'Server', description: apiBase, selectable: true },
       ],

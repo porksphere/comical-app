@@ -29,6 +29,7 @@ import { Rail, RailSkeleton } from '@/components/rail';
 import { ACTION_ICON_SIZE, ActionButton, ActionShapeContext, NewBadge, ROUND_SIDE_SPACE } from '@/components/series/action-button';
 import { ChapterScrollList, Disclosure, PageThumbList, TurningChevron } from '@/components/series/chapters-section';
 import { SeriesDownloadButton } from '@/components/series/download-button';
+import { BURST_SIZE, BURST_TURN, BurstStar, StickerButton, stickerTone } from '@/components/sticker';
 import { SeriesRemovedNotice } from '@/components/series/series-removed';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
@@ -50,8 +51,10 @@ import { useHovered } from '@/hooks/use-hovered';
 import { useSeriesSave } from '@/hooks/use-series-save';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useStartReading } from '@/hooks/use-start-reading';
+import { useSeriesStickerRead } from '@/hooks/use-home-bookshelf';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { leadingChapterNumber } from '@/lib/chapter-label';
+import { historySub } from '@/lib/history-sub';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
 import { focusMarks, focusSkip } from '@/lib/focus-nav';
 import { isTypingTarget } from '@/lib/key-hold';
@@ -526,6 +529,8 @@ export function SeriesBody({
   // chapter has nothing to resume, so the button turns muted and says so (a tap rereads the last
   // chapter). Outside the library (or with no library store) there is no state and the button is
   // the plain Read/Resume.
+  const stickerRead = useSeriesStickerRead();
+  const dark = useActiveColorScheme() === 'dark';
   const readState = collected?.readState;
   const settled = readState === 'caught-up' || readState === 'finished';
   const primaryLabel = readState === 'finished' ? 'Finished' : readState === 'caught-up' ? 'Caught up' : readingLabel;
@@ -614,16 +619,19 @@ export function SeriesBody({
   // Placeholder actions/content shown while `loading` (real hero already up).
   // Kept in sync with SeriesSkeleton's pieces — same styles, same shapes — so the
   // only thing that changes when data lands is the content, not the layout.
+  const roundSkel = (
+    <View style={styles.roundRow}>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <View key={i} style={styles.skelRoundSlot}>
+          <Skeleton style={styles.skelRound} />
+        </View>
+      ))}
+    </View>
+  );
   const actionsSkel = (
     <View style={styles.actionsStack}>
       <Skeleton style={styles.skelHero} />
-      <View style={styles.roundRow}>
-        {Array.from({ length: 4 }).map((_, i) => (
-          <View key={i} style={styles.skelRoundSlot}>
-            <Skeleton style={styles.skelRound} />
-          </View>
-        ))}
-      </View>
+      {roundSkel}
     </View>
   );
   const contentSkel = (
@@ -760,25 +768,65 @@ export function SeriesBody({
   // One large capsule to read and the rest as labelled round buttons under it, under the cover on a
   // phone: the shape Apple's detail pages share (Books, TV). A column of full-width bars beside the
   // cover gave one main action and five lesser ones the same weight, each as wide as the column.
+  const roundRow = (
+    <ActionShapeContext.Provider value="round">
+      <View style={styles.roundRow}>
+        {saveButton}
+        {downloadButton}
+        {favoriteButton}
+        {sourcesButton}
+        {trackerButton}
+      </View>
+    </ActionShapeContext.Provider>
+  );
   const actionsEl = (
     <View {...actionsMarks} style={styles.actionsStack}>
       <ActionShapeContext.Provider value="hero">{readButton}</ActionShapeContext.Provider>
-      <ActionShapeContext.Provider value="round">
-        <View style={styles.roundRow}>
-          {saveButton}
-          {downloadButton}
-          {favoriteButton}
-          {sourcesButton}
-          {trackerButton}
-        </View>
-      </ActionShapeContext.Provider>
+      {roundRow}
       {newBadge}
     </View>
+  );
+  // The trial (Settings → Developer): the home shelf's sticker hung on the cover's lower corner is
+  // what reads, with the new chapters' burst on the upper one, as on the shelf's front book. The
+  // compact header only; the two-column ones keep the capsule.
+  const stickerOnCover = (
+    <>
+      {series.newCount ? (
+        <View pointerEvents="none" style={styles.stickerBurst}>
+          <BurstStar count={series.newCount} turn={BURST_TURN / 3} tone={stickerTone(dark)} />
+        </View>
+      ) : null}
+      <View style={styles.stickerRead}>
+        <StickerButton
+          testID="series.action.read"
+          label={(settled ? primaryLabel : resume ? 'Resume' : 'Read').toUpperCase()}
+          where={
+            settled ? '' : resume ? historySub(resume, { withTime: false, long: false }) : firstNumber !== undefined ? `Chapter ${firstNumber}` : ''
+          }
+          tone={stickerTone(dark)}
+          toneId="series-read-tone"
+          accessibilityLabel={settled ? `${primaryLabel} — ${readingLabel.toLowerCase()}` : primaryLabel}
+          onPress={startReading}
+        />
+      </View>
+    </>
   );
   // The compact header (the large one is two columns): the cover centred, the actions under it,
   // each held to a phone's width so a wide compact window (the open iPhone Duo) doesn't spread them.
   const actionsOrSkel = loading ? actionsSkel : actionsEl;
-  const compactHero = (
+  const compactHero = stickerRead ? (
+    <>
+      <View style={styles.hero}>
+        <View style={styles.coverCentered}>
+          {coverEl}
+          {stickerOnCover}
+        </View>
+      </View>
+      <View style={[styles.actionsCapped, styles.underSticker]}>
+        {loading ? roundSkel : <View style={styles.actionsStack}>{roundRow}</View>}
+      </View>
+    </>
+  ) : (
     <>
       <View style={styles.hero}>
         <View style={styles.coverCentered}>{coverEl}</View>
@@ -1198,6 +1246,25 @@ const styles = StyleSheet.create({
     marginHorizontal: -ROUND_SIDE_SPACE
   },
   // The cover alone in the hero row, centred, when the actions run under it.
+  // The sticker leans off the cover's lower trailing corner, most of it on the cover.
+  stickerRead: {
+    position: 'absolute',
+    right: -44,
+    bottom: -18,
+    transform: [{ rotate: '-3deg' }]
+  },
+  stickerBurst: {
+    position: 'absolute',
+    left: -BURST_SIZE / 2 + 6,
+    top: -BURST_SIZE / 2 + 10,
+    width: BURST_SIZE,
+    height: BURST_SIZE,
+    transform: [{ scale: 0.75 }]
+  },
+  // Room for the sticker hanging below the cover.
+  underSticker: {
+    marginTop: Spacing.two
+  },
   coverCentered: {
     width: '56%',
     maxWidth: 300,
