@@ -15,7 +15,17 @@ export function useTitleFont(): string | undefined {
   return loaded ? TITLE_FONT : undefined;
 }
 
-// What the cut-down file holds — keep in step with the subset it was cut to: printable ASCII,
+/**
+ * The home bookshelf's spines: Shippori Mincho B1 at its medium weight, the Japanese serif a
+ * volume's spine is set in (SIL Open Font License; `assets/fonts/ShipporiMinchoB1-OFL.txt`), cut
+ * to the same Latin as the title face. It was the tabs' title face before the antique one, and
+ * read too serious there; down a spine it is what a book looks like. Its bolder weights were
+ * more than a spine wants, and Dela Gothic One, a masthead's gothic, far more. Only the shelf
+ * draws with it, into pictures of its own, so nothing registers it with the system.
+ */
+export const SPINE_FONT = 'ShipporiMinchoB1-Medium';
+
+// What the cut-down files hold — keep in step with the subset it was cut to: printable ASCII,
 // Latin-1, dashes, curly quotes and the ellipsis.
 const COVERED = /^[ -~ -ÿ–—‘-‟…]*$/;
 

@@ -126,6 +126,10 @@ export const ReaderPane = forwardRef<
     seriesId?: string;
     seriesTitle: string;
     seriesCover?: string;
+    /** What the series is as an object and how it reads, once its details say: written with the
+     *  history row, so the row is drawn as that after the details are forgotten. */
+    seriesCoverForm?: HistoryEntry['coverForm'];
+    seriesReadingDirection?: HistoryEntry['readingDirection'];
     chapterId?: string;
     chapterName?: string;
     /** The target was picked from the details card. That lands while the pane is still in standby
@@ -185,6 +189,8 @@ export const ReaderPane = forwardRef<
     seriesId,
     seriesTitle,
     seriesCover,
+    seriesCoverForm,
+    seriesReadingDirection,
     chapterId,
     chapterName,
     picked = false,
@@ -775,12 +781,14 @@ export const ReaderPane = forwardRef<
       seriesId,
       title: seriesTitle,
       ...(seriesCover ? { thumbnailUrl: seriesCover } : {}),
+      ...(seriesCoverForm ? { coverForm: seriesCoverForm } : {}),
+      ...(seriesReadingDirection ? { readingDirection: seriesReadingDirection } : {}),
       chapterId: chapterId ?? DIRECT_CHAPTER_ID,
       ...(chapterName ? { chapterName } : {}),
       lastPage: currentRef.current,
       pageCount: pages.length,
     };
-  }, [recordProgress, bridgeId, seriesId, pages, chapterId, chapterName, seriesTitle, seriesCover]);
+  }, [recordProgress, bridgeId, seriesId, pages, chapterId, chapterName, seriesTitle, seriesCover, seriesCoverForm, seriesReadingDirection]);
   // Patched ahead of the write as well as after it: the series page's strip reads this row, and on a
   // closing reader it has to move before the zoom lands, not once the queue gets round to the write.
   // The patch after the write stays, so a refetch that raced the write can't leave the row behind.

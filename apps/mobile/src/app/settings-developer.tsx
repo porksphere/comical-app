@@ -7,6 +7,7 @@ import { TopBar } from '@/components/top-bar';
 import { useApiBase } from '@/data/api';
 import { useMockDataToggle } from '@/data/source';
 import { setBookCoverShuffle, useBookCoverShuffle } from '@/hooks/use-book-covers';
+import { setHomeBookshelfStats, useHomeBookshelfStats } from '@/hooks/use-home-bookshelf';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 
 /** Dev-build-only: lets local development iterate against mock data without a running backend, and
@@ -18,6 +19,7 @@ export default function DeveloperSettingsScreen() {
   const [apiBase] = useApiBase();
   const profilerOn = useDevProfilerEnabled();
   const shuffleCovers = useBookCoverShuffle();
+  const shelfStats = useHomeBookshelfStats();
 
   const sections: SettingsFormSection[] = [
     {
@@ -44,6 +46,14 @@ export default function DeveloperSettingsScreen() {
             'Draws every series as a random kind of book — volume, issue, webtoon or CG set, bound on either side — the same one each time, so each style shows on real covers.',
           value: shuffleCovers,
           onChange: setBookCoverShuffle,
+        },
+        {
+          kind: 'toggle',
+          label: 'Bookshelf frame stats',
+          description:
+            'Shows over the home bookshelf how its frames are going — how many a second of those the display offered, the script and the GPU time each takes, and how many were skipped — and logs a line to Diagnostics each time the shelf has moved.',
+          value: shelfStats,
+          onChange: setHomeBookshelfStats,
         },
         { kind: 'value', label: 'Server', description: apiBase, selectable: true },
       ],

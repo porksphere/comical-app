@@ -903,7 +903,7 @@ export async function mockRemoveFavorite(seriesId: string): Promise<void> {
 // the real series item: a collected series always has one.
 type MockLibEntry = Pick<SeriesEntry, 'coverForm' | 'readingDirection'> & { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; thumbnailAspect?: number; author?: string; unread: number; known: number; readState: ReadState; collectedAt: number; lastReadAt?: number };
 type MockCollection = { id: string; name: string; order: number };
-type MockHist = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; chapterId?: string; chapterName?: string; lastPage?: number; pageCount?: number; lastReadAt: number; hidden?: boolean };
+type MockHist = Pick<SeriesEntry, 'coverForm' | 'readingDirection'> & { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; chapterId?: string; chapterName?: string; lastPage?: number; pageCount?: number; lastReadAt: number; hidden?: boolean };
 type MockActivity = { bridgeId: string; seriesId: string; chapterId: string; title: string; thumbnailUrl: string; chapterName?: string; number?: number; detectedAt: number; read: boolean };
 
 type MockSnapshot = Pick<SeriesEntry, 'coverForm' | 'readingDirection'> & { seriesTitle?: string; thumbnailUrl?: string; thumbnailAspect?: number; author?: string };
@@ -1744,6 +1744,8 @@ export async function mockRecordReadingHistory(entry: {
   seriesId: string;
   title: string;
   thumbnailUrl?: string;
+  coverForm?: SeriesEntry['coverForm'];
+  readingDirection?: SeriesEntry['readingDirection'];
   chapterId?: string;
   chapterName?: string;
   lastPage?: number;
@@ -1754,6 +1756,8 @@ export async function mockRecordReadingHistory(entry: {
     seriesId: entry.seriesId,
     title: entry.title,
     thumbnailUrl: entry.thumbnailUrl ?? cover(entry.seriesId),
+    ...(entry.coverForm !== undefined && { coverForm: entry.coverForm }),
+    ...(entry.readingDirection !== undefined && { readingDirection: entry.readingDirection }),
     ...(entry.chapterId !== undefined && { chapterId: entry.chapterId }),
     ...(entry.chapterName !== undefined && { chapterName: entry.chapterName }),
     ...(entry.lastPage !== undefined && { lastPage: entry.lastPage }),

@@ -249,6 +249,8 @@ export interface DataSource {
       seriesId: string;
       title: string;
       thumbnailUrl?: string;
+      coverForm?: HistoryEntry['coverForm'];
+      readingDirection?: HistoryEntry['readingDirection'];
       chapterId?: string;
       chapterName?: string;
       lastPage?: number;
@@ -451,6 +453,8 @@ function toHistoryEntry(h: api.ApiHistoryItem): HistoryEntry {
     seriesId: h.seriesId,
     title: h.title,
     ...(h.thumbnailUrl !== undefined && { thumbnailUrl: h.thumbnailUrl }),
+    ...(h.coverForm !== undefined && { coverForm: h.coverForm }),
+    ...(h.readingDirection !== undefined && { readingDirection: h.readingDirection }),
     ...(h.lastReadChapterId !== undefined && { chapterId: h.lastReadChapterId }),
     ...(h.lastReadChapterName !== undefined && { chapterName: h.lastReadChapterName }),
     ...(h.lastPage !== undefined && { lastPage: h.lastPage }),

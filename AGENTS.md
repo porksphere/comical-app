@@ -905,7 +905,8 @@ those menus are too, `OptionRow`'s `titleFace`, since a pick becomes the title),
 bar's copy of it), the feeds' section headings and the empty screens' headlines. The heavier
 mincho and gothic faces were tried and read too serious for a comics app. Text that is read
 or tapped — cards, rows, buttons, settings, the reader — stays in the system face: at card sizes
-a display face loses its shape. The bundled file is cut down to Latin, so a heading whose words
+a display face loses its shape. (The home bookshelf's spines are the one exception, in a face of their
+own: see there.) The bundled file is cut down to Latin, so a heading whose words
 aren't ours (a series' name, a bridge's section) takes it through `useTitleFontFor`, which falls
 back to the system face for a title it can't set whole; iOS would otherwise fill the missing
 letters from the system face one by one, one title in two typefaces.
@@ -1054,6 +1055,188 @@ packaging step). A signer learns what an app asks for from the binary's signatur
 binary has none, and the group is never registered. Only the group is in it. Don't add an
 entitlement a free Apple ID can't be given (push is already in the generated file, and is left out
 for that reason).
+
+# Home bookshelf: lit geometry on WebGPU, the same scene on every platform
+
+Comical Home opens on what you are reading as books on a shelf (`components/home-bookshelf`): spine
+out, the one in the middle pulled forward and turned to show its cover, in colour against a shelf
+drawn in screentone. Half its books are the History tab's newest rows and half the Activity tab's
+unread ones, each making up the number where the other runs short (`pickShelf`,
+`useBookshelfEntries`); a series in both is one book. They stand with what matters most in the
+MIDDLE — the book read last, then the two halves by turns to either side of it (`arrangeShelf`) —
+and the shelf opens on the middle, so the least of them is furthest out whichever way the reader
+goes. Once the reader has moved the shelf, the book in front is kept by what it is, not where it
+stands (`ShelfDriver.setBooks`): the one just read moves to the middle while the reader is away in
+it. Until then every new set opens on its middle: the first is whichever half answered first. A History row says what its
+series is as an object (`coverForm`, `readingDirection`), written by the reader with the read that
+made it and kept with the row by a host that knows the fields (comical's "History rows keep each
+series' cover hints"; an older host drops them and answers without); a row without them, and an
+Activity row, are asked of the library and then of the details where they have been read this
+session. The details alone
+were not enough: they are not kept past the session, and a CG set from a bridge of doujinshi
+stood on the shelf as a doujinshi again after every restart. A tap on the front book or
+on its caption — the caption is the button, there is no other — pushes what the History row pushes
+for a series that has been read (`historyResumeParams`, the caption RESUME) and what the Activity
+row pushes for one that has only its new chapters (`activityReadParams`, READ), so the shelf cannot
+say or open something those tabs don't. The caption is a view over the canvas, so a tap on it is
+told by where it hangs (`captionHang`), not by a touch target of its own. Until the renderer has
+started the stage shows a placeholder of a cover and spines. Settings → General → Home bookshelf
+turns it off.
+
+**The books are real geometry under a real light, drawn by three.js on WebGPU.** On iOS and Android
+that is `react-native-webgpu` (Dawn, over Metal and Vulkan); on the web it is the browser's own
+WebGPU, or WebGL 2 where there is none, which three's renderer falls back to by itself — the reason
+`shelf-canvas.web.tsx` is a plain canvas and not react-native-webgpu's, whose web build has only
+the first. One scene (`scene.ts`) and one shader, written in three's node language, which compiles
+to WGSL or GLSL as the backend needs. Filament is the faster engine and was passed over for having
+no web build and shaders compiled ahead of time; expo-gl is OpenGL ES. Skia stays what draws the
+reader: it is 2D, and a book is not. (The same scene written straight on WebGPU, with no engine —
+its own matrices, triangles and WGSL — was built beside three's and taken out. It ran a twentieth
+of the script a frame and still drew fewer frames on a phone: its first cut, one shader that chose
+by the surface with every face drawn, cost three times three's GPU time a pixel, and split into a
+shader a surface it was still the slower on a device. Script is the half of a frame a browser's
+clock shows.)
+
+- **Import `three/webgpu` and `three/tsl`, never bare `three`.** They are different builds of the
+  same classes, and one of each in a bundle is two libraries that don't recognise each other's
+  objects.
+- **`three` and `react-native-webgpu` are pinned exactly, together.** The renderer reaches into
+  the canvas and the device the package hands it. Skia 2 has no part in this; Skia 3 draws through
+  the same Dawn, and from then the two packages must be a pair their docs list as compatible.
+- **Nothing here is imported until the shelf is on screen**, and all of it through `engine.ts`:
+  three is most of a megabyte. Asked for from two places it was two chunks on the web, and three,
+  shared by both, went to the main bundle.
+
+**One camera, written twice.** `ShelfScene.resize` and `setView` set it for the renderer and
+`projectToStage` (`lib/bookshelf`) is the same camera as arithmetic, which is how the callouts — the
+burst for new chapters, the caption for where you stopped, the tab over each shelved book with
+something new — stand on a book's corners while being plain views over the canvas. Change one and
+change the other; `bookshelf.test.ts` holds the arithmetic, and nothing holds the two together but
+this. The stage runs under the safe area's sides (the bar the wide iPhones stand beside the
+content), and the camera looks square on to the middle of what is left (`ShelfStage.centre`), so
+the shelf crosses the whole screen while the book in front stands where the rest of the page is.
+
+**A book's room along the shelf is the room it has at rest** (`placeShelf`): what it has with the
+book before the place in front, and with the book after, and the share of each the shelf is
+between them. So the spines beside the two books trading places move once, one way. It was the
+room each takes at its own angle at that instant, which swells half way through a turn and is
+least exactly edge-on, and the book leaving the front turns a little past edge-on: every step
+pushed the spines out, drew them in and pushed them out again, three times as far as they ended
+up moving. The turn and how far forward a book stands are not part of this, so the flip is what
+it was, and at rest nothing differs. Two books bound on opposite sides turn toward each other and
+would meet inside that room, so a turning book is moved along just far enough to clear the two
+before it (`shelfOverlap`), which for such a pair comes to about what the old room gave.
+
+**Everything that moves is `ShelfDriver`'s, outside React.** Where along the shelf the reader is,
+the drag, the spring, the press of a tap, the view's drift, and the only place a frame is
+drawn from. It keeps what the scene is to show until there is a scene: the renderer starts after
+the first books arrive. It runs on the JS thread, as three does, but it keeps no clock: its frames
+are the display's own (`useFrameCallback`, handed across one at a time, so a slow frame is a
+dropped frame and never a queue), because React Native's `requestAnimationFrame` ticks at 60
+whatever the screen does. A shelf that is moving takes every frame. One that stands takes about
+every other, for its drift, and none once it has scrolled off the top, lost the screen, or under
+Reduce Motion. How the frames are going is told by Settings → Developer → Bookshelf frame stats
+(`frame-stats.ts`): a line over the stage for the last second and one in the Diagnostics log for
+each time the shelf has moved, giving the frames the display OFFERED a second against those drawn
+(on iOS they come from react-native-worklets' display link, which lowers its own rate — 120, 60,
+30 — by how long the UI thread's frame work has been taking: `IOS_DYNAMIC_FRAMERATE_ENABLED`, on by
+default), the frames skipped at the hand-off, a frame's script, and how long after it the GPU was
+done (`ShelfScene.drawn`). The line is a view of its own over a store of its own: set in the
+shelf's state it rendered the shelf every second, on the thread whose frames it counts.
+
+**A draw is the cost, not a triangle.** Each is a trip through three in an interpreter, and a book
+built of loose boxes with a material a face was sixteen of them, twice over with the shadow's
+pass: that was the shelf at half its frame rate on a phone. A bound book is four (both boards and
+its lid as one piece of cloth, its picture, its page block, its back), the
+block alone casts its shadow, the cut-paper edge is drawn by the material from the block's own
+depth rather than sampled, and the shadow is cast again only when a book has moved, so a shelf
+that only drifts casts none. Merge by hand (`merged`): three's own merge is an addon, which imports
+bare `three`.
+
+**The view drifts, and the phone only adds to it.** A couple of degrees of turn over seconds
+(`driftAt`), with the device's tilt (`DeviceTilt`: gravity's direction, measured from how the
+phone is being held, so a tip eases back to nothing) laid on top at less than the drift's own
+size. It is a component, mounted only while the shelf may drift: the sensor runs for as long as
+its hook is mounted, and as a hook of the shelf's it ran under every other tab and the reader. The stickers ride the drift through the camera and take a few points more from the tilt.
+Each is put on afresh for each book that comes forward: the caption leaning one way or the other,
+the burst's star turned at random under lettering that stays level — twelve points, since
+sixteen were too fine for the turn to show and a star stretched so that it would only looked
+slanted. A book the reader brings
+forward ticks (`hapticSelection`); the one the shelf opens on does not.
+
+**A tap presses the book before it opens the page.** The front book gives under the finger —
+back into the shelf on a stiff spring as the finger comes down (`pressIn`, which is also when the
+fetch is warmed) — and springs out past where it stood as it lifts (`pressOut`, `PRESS`), and the
+page is pushed at the furthest it comes. Never sooner: what the push starts takes the thread the
+frames are drawn on, so the book stops wherever it is when that begins, and the end of its move is
+the place to stop. A finger that goes on to drag, or holds too long to be a tap, lets the book
+back out and opens nothing. Before this a tap opened the book: its cover swung round to a spread
+of panels, a CG set fanned its prints, and the stage zoomed in over the wait for the reader's page.
+It was taken out for the press — a board hung to swing, a pair of page sheets and the spread's
+picture were what the shelf carried for a quarter of a second of it, and the wait showed however
+it was dressed.
+
+**Spines are read.** They are lettered in Shippori Mincho B1 at its medium weight (`SPINE_FONT` in
+`lib/title-font.ts`), the serif a volume's spine is set in — the one place it is used, and the one
+heading not in the title typeface. Its bolder weights were more than a spine wants, and
+Dela Gothic One, tried first, was far too bold for a row of spines. It is loaded from its own
+FILE (`prepare`): asked for by name, a Skia paragraph looks in the system's fonts, where a bundled
+face is not, and every spine was set in the system's. The chapter the book opens at is at its
+foot, two digits at least (`spineNumber`). A shelved spine's cloth is cut to the covers' own coarse
+steps, and its lettering is half that tone and half laid on SOLID, light on cloth that comes out
+dark and dark on light (`lettered` and `LETTER_GRAIN` in `scene.ts`, which tells lettering from
+cloth by the picture's own colour). All tone, the dither ate the strokes, and turning the dither
+down did not bring them back: under the shelf's light the lettering falls on a middle step, hard
+by the cloth's. At steps fine enough to keep them (eight was tried) the spine stopped reading as
+tone at all, and all solid the lettering lay on the spine like a label.
+
+**A cover has its relief, and a CG set is its card.** The hinge's groove and lip, the catch of
+light on the fore-edge and head (`emboss`) are the card's own shading (`SPINE`, `FOLD`, `EDGES` in
+lib/book-cover) laid over the picture in the material. A bound cover is cut to a cover's outline,
+its two free corners rounded and the bound ones square, with the board's edge rolled over and the
+picture stopping short of it, and its laminate is rubbed pale along the free edges and at those
+corners: a rectangle with a razor's edge was a picture pasted on a box. The rub along its head and
+foot carries on round a hard cover's back (`rubbedEnds`), as wide and as strong as where the two
+meet and starting where the cover's picture does, inside the board's rolled edge: stopping at the
+hinge it was a seam down any book whose cover it shows up on, and begun at the back's very rim it
+was a bright ring round the spine's ends, half a point off the cover's band. (The picture carried
+round onto the spine, and a band of gloss sliding with the drift, were drawn up beside these and
+not taken.) A CG set is the card's two prints (`PRINT`)
+as two cards with the book's depth between them, each leaning its own way on a corner and the one
+behind set to the side, further than the card tips it (`PRINT_LEAN`), the picture on the one behind
+dimmed as the card dims it. A stack of sheets one behind the other was tried first and read as a
+thin white book.
+
+**The dots under it are the system's on iOS** (`modules/page-dots`, UIPageControl, which takes a
+tap or a scrub); elsewhere they only tell. The scene's top and bottom fade into the page, so the
+canvas has no edge.
+
+**The shelf is the feed's header, not a row of it** (`ContentFeed`'s `hero`). A row is unmounted a
+little way off screen, and a renderer is costly to start again, and every restart was a new device
+and its pipelines; the list never unmounts its header. Its height is given rather than measured, so
+the sticky heading and the tint bands below keep their offsets.
+
+**The canvas is opaque and paints the page's own colour.** A canvas cannot be transparent on
+Android, so the scene draws the background itself, tone and all, and no tint band is laid behind
+the shelf: one would only show as a frame around it.
+
+**The tone is the page curl's.** Books off the front are drawn in a 4×4 ordered dither between an
+ink and a paper (`inked` in `scene.ts`, the matrix of `page-curl-shader.ts`), cut from the colour
+as it is shown on screen, after lighting; the shelf itself is always tone, so the shadows the
+books cast on it are screentone and not a blur. A sticker is ink on paper whatever the theme.
+
+**Textures are made where each platform can make them** (`pictures.ts`, `pictures.web.ts`), a few
+covers at a time from the middle of the shelf outward: only the books near the front are drawn,
+so a long shelf costs a picture a book and little else, but a shelf's worth decoded at once was a
+stall as the app started. A cover is expo-image's own copy on disk, shrunk by the platform's decoder and read back through
+Skia, as the cover glow reads its tints; on the web it is drawn to a canvas, asked for with CORS,
+since a picture a canvas can't read back can't be a texture. A spine is lettered with a Skia
+paragraph, so a title the heading face has no letters for falls back a glyph at a time. A book's
+cloth is the colour of its cover beside the binding (`boardColour`). A cover that can't be had
+leaves the book in plain cloth.
+
+**A renderer that cannot start takes the shelf away, not the screen** (`markHomeBookshelfUnavailable`):
+the rails begin the page as they did, until the app is next opened.
 
 # Testing: new screens need a flow
 
