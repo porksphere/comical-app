@@ -27,10 +27,11 @@ import { useWarmChapterPages } from '@/data/prefetch';
 import { DIRECT_CHAPTER_ID } from '@/data/types';
 import { useBookCoverResolver } from '@/hooks/use-book-covers';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useSideInsets } from '@/hooks/use-content-width';
+import { useCenterInset, useSideInsets } from '@/hooks/use-content-width';
 import { DeviceTilt, LEVEL, type Tilt } from '@/hooks/use-device-tilt';
 import { homeBookshelfStats, markHomeBookshelfUnavailable, useHomeBookshelfStats, type BookshelfEntry } from '@/hooks/use-home-bookshelf';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
 import {
   NEUTRAL_BOARD,
   SHELF,
@@ -308,10 +309,14 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   const warmPages = useWarmChapterPages();
   // The shelf runs under the safe area's sides — the bar the wide iPhones stand beside the content —
   // while the book in front stands in the middle of what is left, where the rest of the page is.
+  // On the web that page is a column centred in its pane, and this row stands in the column: the
+  // stage starts back at the pane's edge (`lead`), or it began at the column's and ran off the right.
   const sides = useSideInsets();
+  const lead = sides.left + useCenterInset(sides);
+  const gutter = useScrollbarGutter();
   const stage = useMemo(
-    () => ({ width: width + sides.left + sides.right, height: shelfStageHeight(width), centre: sides.left + width / 2 }),
-    [width, sides.left, sides.right],
+    () => ({ width: width + sides.left + sides.right - gutter, height: shelfStageHeight(width), centre: sides.left + (width - gutter) / 2 }),
+    [width, sides.left, sides.right, gutter],
   );
   const tilt = useSharedValue<Tilt>(LEVEL);
   // The book in front, by what it is: where it stands changes when the shelf is put in a new order.
@@ -581,7 +586,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
       <GestureDetector gesture={Gesture.Race(pan, press)}>
         <Animated.View
           ref={stageView}
-          style={{ width: stage.width, height: stage.height, marginLeft: -sides.left }}
+          style={{ width: stage.width, height: stage.height, marginLeft: -lead }}
           accessible
           accessibilityRole="adjustable"
           accessibilityLabel={`Continue reading: ${shown.title}`}
@@ -600,7 +605,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
           <LinearGradient pointerEvents="none" style={styles.fadeTop} colors={[theme.background, `${theme.background}00`]} />
           <LinearGradient pointerEvents="none" style={styles.fadeBottom} colors={[`${theme.background}00`, theme.background]} />
           {!drawn && <ShelfPlaceholder stage={stage} coverWidth={shelfCoverWidth(width)} />}
-          {showStats && <FrameReadout left={sides.left + TopLevelGutter} />}
+          {showStats && <FrameReadout left={lead + TopLevelGutter} />}
           <View style={[styles.callouts, !drawn && styles.unseen]} pointerEvents="none">
             {entries.map((entry, index) =>
               entry.unread ? <UnreadTab key={entry.key} fx={fx} index={index} count={entry.unread} tone={tone} /> : null,

@@ -1115,6 +1115,9 @@ change the other; `bookshelf.test.ts` holds the arithmetic, and nothing holds th
 this. The stage runs under the safe area's sides (the bar the wide iPhones stand beside the
 content), and the camera looks square on to the middle of what is left (`ShelfStage.centre`), so
 the shelf crosses the whole screen while the book in front stands where the rest of the page is.
+On the web the page is a column centred in its pane and the shelf's row stands in that column, so
+the stage is pulled back by the centre inset too (`lead`): without it the stage began at the
+column's edge and ran off the right of a wide window.
 
 **A book's room along the shelf is the room it has at rest** (`placeShelf`): what it has with the
 book before the place in front, and with the book after, and the share of each the shelf is
@@ -1229,8 +1232,10 @@ books cast on it are screentone and not a blur. A sticker is ink on paper whatev
 covers at a time from the middle of the shelf outward: only the books near the front are drawn,
 so a long shelf costs a picture a book and little else, but a shelf's worth decoded at once was a
 stall as the app started. A cover is expo-image's own copy on disk, shrunk by the platform's decoder and read back through
-Skia, as the cover glow reads its tints; on the web it is drawn to a canvas, asked for with CORS,
-since a picture a canvas can't read back can't be a texture. A spine is lettered with a Skia
+Skia, as the cover glow reads its tints; on the web it is FETCHED and drawn to a canvas, since a
+picture a canvas can't read back can't be a texture, and the desktop shell grants that read to what
+the page fetches and not to its images: asked for as a cross-origin `<img>`, every cover on desktop
+stayed plain cloth. A spine is lettered with a Skia
 paragraph, so a title the heading face has no letters for falls back a glyph at a time. A book's
 cloth is the colour of its cover beside the binding (`boardColour`). A cover that can't be had
 leaves the book in plain cloth.
