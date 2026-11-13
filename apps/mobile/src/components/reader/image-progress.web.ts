@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
 
 import { getApiBase } from '@/data/api';
@@ -66,21 +65,56 @@ const IMAGE_ACCEPT = 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*
 
 /** Warm the browser's HTTP cache for a page the reader is expected to reach, asking THE WAY THE
  *  READER WILL: by XHR where `useImageProgress` would read the bytes (the shape matches by
- *  construction, whatever Accept a future Chromium puts on an <img>), and as the <img> that
- *  `Image.prefetch` makes where the page would be handed to <Image> whole. */
-export function warmImage(uri: string): void {
+ *  construction, whatever Accept a future Chromium puts on an <img>), and as an <img> where the
+ *  page would be handed to <Image> whole.
+ *
+ *  Returns a cancel: a warm still waiting on our server holds one of the browser's six connections
+ *  to it, and every other request the app makes there queues behind it, so the warm-ahead cancels
+ *  what the reader has moved away from (`data/warm-pages.ts`). `onDone` runs once, when the warm
+ *  has settled or been cancelled. */
+export function warmImage(uri: string, onDone?: () => void): () => void {
+  let settled = false;
+  const done = () => {
+    if (settled) return;
+    settled = true;
+    onDone?.();
+  };
+  let cancelCurrent: () => void;
+  // Our own <img> rather than expo-image's `prefetch`, which keeps no handle to stop it by.
+  const asImg = () => {
+    const img = new window.Image();
+    img.onload = done;
+    img.onerror = done;
+    img.src = uri;
+    cancelCurrent = () => {
+      img.onload = null;
+      img.onerror = null;
+      img.src = '';
+    };
+  };
   if (!measurable(uri)) {
-    void Image.prefetch(uri);
-    return;
+    asImg();
+  } else {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', uri, true);
+    xhr.setRequestHeader('Accept', IMAGE_ACCEPT);
+    xhr.responseType = 'blob';
+    xhr.onload = done;
+    // Whether this origin refuses reads is the page's own attempt to learn; the warm just falls back
+    // to the <img> that page would end up with.
+    xhr.onerror = asImg;
+    xhr.send();
+    cancelCurrent = () => {
+      xhr.onload = null;
+      xhr.onerror = null;
+      xhr.abort();
+    };
   }
-  const xhr = new XMLHttpRequest();
-  xhr.open('GET', uri, true);
-  xhr.setRequestHeader('Accept', IMAGE_ACCEPT);
-  xhr.responseType = 'blob';
-  // Whether this origin refuses reads is the page's own attempt to learn; the warm just falls back
-  // to the <img> that page would end up with.
-  xhr.onerror = () => void Image.prefetch(uri);
-  xhr.send();
+  return () => {
+    if (settled) return;
+    cancelCurrent();
+    done();
+  };
 }
 
 /** See `image-progress.ts` — scopes a download's state to the URI+attempt that produced it, so a

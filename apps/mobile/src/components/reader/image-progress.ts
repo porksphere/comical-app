@@ -27,9 +27,14 @@ export type ImageProgress = {
 const keyOf = (uri: string | null, attempt: number) => `${uri ?? ''}#${attempt}`;
 
 /** Warm the cache a page will later be read from — on native expo-image's own, which `prefetch`
- *  fills exactly as `<Image>` would. The web copy has to match the reader's request instead. */
-export function warmImage(uri: string): void {
-  void Image.prefetch(uri);
+ *  fills exactly as `<Image>` would. The web copy has to match the reader's request instead.
+ *  `onDone` runs once it has settled either way; the returned cancel is a no-op here, since
+ *  expo-image's prefetch can't be stopped. */
+export function warmImage(uri: string, onDone?: () => void): () => void {
+  void Image.prefetch(uri)
+    .catch(() => false)
+    .then(() => onDone?.());
+  return () => {};
 }
 
 /** How much the percentage has to move to be worth a render. expo-image reports every chunk, which
