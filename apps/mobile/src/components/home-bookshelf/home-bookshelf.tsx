@@ -47,6 +47,7 @@ import {
   type ShelfCallouts,
 } from '@/lib/bookshelf';
 import { logDiagnostic } from '@/lib/diagnostics';
+import { desktopShell } from '@/lib/desktop-shell';
 import { createTickHaptic, hapticSelection } from '@/lib/haptics';
 import { historySub } from '@/lib/history-sub';
 import { useRouter } from '@/lib/nav';
@@ -77,8 +78,12 @@ const CALLOUT_OVERHANG = 20;
 /** Its height in a feed `width` wide, heading and all — known ahead of it, so the feed's offsets
  *  below never wait on a measurement. */
 export function homeBookshelfHeight(width: number): number {
-  return SECTION_HEAD_ROW_HEIGHT + shelfStageHeight(width) + CAPTION_HEIGHT + PAGE_DOTS_HEIGHT + Spacing.two;
+  return SECTION_HEAD_ROW_HEIGHT + shelfStageHeight(width, SHELF_ZOOM) + CAPTION_HEIGHT + PAGE_DOTS_HEIGHT + Spacing.two;
 }
+
+/** How many times life size the scene is drawn. The shelf is built to a phone's stage, and in the
+ *  desktop app's window, read from further off on a larger screen, it stood small. */
+const SHELF_ZOOM = desktopShell() ? 1.5 : 1;
 
 // A sticker is ink on paper whatever the theme; only the tone it casts follows the page.
 const STICKER = { paper: '#ffffff', ink: '#1c1c1e' } as const;
@@ -262,23 +267,31 @@ function UnreadTab({ fx, index, count, tone }: { fx: SharedValue<ShelfCallouts>;
  * start when the app does, and the stage was a blank band until they had. A cover and a few spines
  * where the books will stand, in the feed's own placeholder grey.
  */
-function ShelfPlaceholder({ stage, coverWidth }: { stage: { height: number; centre: number }; coverWidth: number }) {
-  const foot = SHELF.floor - 8;
-  const height = coverWidth / SHELF_ASPECT.unknown;
+function ShelfPlaceholder({ stage, coverWidth }: { stage: { height: number; centre: number; zoom: number }; coverWidth: number }) {
+  const z = stage.zoom;
+  const width = coverWidth * z;
+  const foot = (SHELF.floor - 8) * z;
+  const height = width / SHELF_ASPECT.unknown;
   const spines = [0.94, 1, 0.9, 0.97];
   return (
     <View style={styles.placeholder} pointerEvents="none">
-      <Skeleton style={[styles.placeholderBook, { left: stage.centre - coverWidth / 2, bottom: foot, width: coverWidth, height }]} />
+      <Skeleton style={[styles.placeholderBook, { left: stage.centre - width / 2, bottom: foot, width, height }]} />
       {spines.map((tall, i) => (
         <Skeleton
           key={i}
-          style={[styles.placeholderBook, { left: stage.centre + coverWidth / 2 + 8 + i * 26, bottom: foot + 6, width: 22, height: height * 0.9 * tall }]}
+          style={[
+            styles.placeholderBook,
+            { left: stage.centre + width / 2 + (8 + i * 26) * z, bottom: foot + 6 * z, width: 22 * z, height: height * 0.9 * tall },
+          ]}
         />
       ))}
       {spines.slice(0, 2).map((tall, i) => (
         <Skeleton
           key={i}
-          style={[styles.placeholderBook, { left: stage.centre - coverWidth / 2 - 30 - i * 26, bottom: foot + 6, width: 22, height: height * 0.9 * tall }]}
+          style={[
+            styles.placeholderBook,
+            { left: stage.centre - width / 2 - (30 + i * 26) * z, bottom: foot + 6 * z, width: 22 * z, height: height * 0.9 * tall },
+          ]}
         />
       ))}
     </View>
@@ -315,7 +328,12 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   const lead = sides.left + useCenterInset(sides);
   const gutter = useScrollbarGutter();
   const stage = useMemo(
-    () => ({ width: width + sides.left + sides.right - gutter, height: shelfStageHeight(width), centre: sides.left + (width - gutter) / 2 }),
+    () => ({
+      width: width + sides.left + sides.right - gutter,
+      height: shelfStageHeight(width, SHELF_ZOOM),
+      centre: sides.left + (width - gutter) / 2,
+      zoom: SHELF_ZOOM,
+    }),
     [width, sides.left, sides.right, gutter],
   );
   const tilt = useSharedValue<Tilt>(LEVEL);
@@ -330,7 +348,8 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   const fx = useSharedValue<ShelfCallouts>(shelfCallouts([], [], 0, stage));
 
   const specs = useMemo((): ShelfBookSpec[] => {
-    const coverWidth = shelfCoverWidth(width);
+    // In the shelf's own points, which the stage draws `SHELF_ZOOM` times over.
+    const coverWidth = shelfCoverWidth(width / SHELF_ZOOM);
     return entries.map(({ key, bridgeId, seriesId, title, history, news, chapters, coverForm, readingDirection }) => {
       const picture = pictures[key];
       const aspect = clamp(picture?.aspect ?? SHELF_ASPECT.unknown, SHELF_ASPECT.tall, SHELF_ASPECT.wide);
@@ -604,7 +623,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
           </Fallible>
           <LinearGradient pointerEvents="none" style={styles.fadeTop} colors={[theme.background, `${theme.background}00`]} />
           <LinearGradient pointerEvents="none" style={styles.fadeBottom} colors={[`${theme.background}00`, theme.background]} />
-          {!drawn && <ShelfPlaceholder stage={stage} coverWidth={shelfCoverWidth(width)} />}
+          {!drawn && <ShelfPlaceholder stage={stage} coverWidth={shelfCoverWidth(width / SHELF_ZOOM)} />}
           {showStats && <FrameReadout left={lead + TopLevelGutter} />}
           <View style={[styles.callouts, !drawn && styles.unseen]} pointerEvents="none">
             {entries.map((entry, index) =>

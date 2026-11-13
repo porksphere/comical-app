@@ -111,7 +111,7 @@ export class ShelfDriver {
     this.scene = scene;
     this.onDrawn(!!scene);
     if (!scene) return;
-    scene.resize(this.stage.width, this.stage.height, this.pixelRatio, this.stage.centre);
+    scene.resize(this.stage.width, this.stage.height, this.pixelRatio, this.stage.centre, this.stage.zoom);
     scene.setTheme(this.theme.dark, this.theme.background);
     scene.setBooks(this.specs);
     // The scene keeps a cover from here on, and frees it with itself.
@@ -123,7 +123,7 @@ export class ShelfDriver {
   setStage(stage: ShelfStage, pixelRatio: number) {
     this.stage = stage;
     this.pixelRatio = pixelRatio;
-    this.scene?.resize(stage.width, stage.height, pixelRatio, stage.centre);
+    this.scene?.resize(stage.width, stage.height, pixelRatio, stage.centre, stage.zoom);
     this.draw();
   }
 
@@ -179,14 +179,14 @@ export class ShelfDriver {
 
   /** The finger's travel since `grab`, in points: right is toward the shelf's start. */
   drag(dx: number) {
-    this.pos = rubberBand(this.grabbedAt - dx / SHELF.dragUnit, this.books.length);
+    this.pos = rubberBand(this.grabbedAt - dx / this.dragUnit(), this.books.length);
     this.kick();
   }
 
   release(velocityX: number) {
     if (!this.held) return;
     this.held = false;
-    this.velocity = -velocityX / SHELF.dragUnit;
+    this.velocity = -velocityX / this.dragUnit();
     this.goTo(settleOn(this.pos, this.velocity, this.books.length));
   }
 
@@ -198,6 +198,11 @@ export class ShelfDriver {
       this.velocity = 0;
     }
     this.kick();
+  }
+
+  /** A finger's travel for one book, as large as the books are drawn. */
+  private dragUnit(): number {
+    return SHELF.dragUnit * (this.stage.zoom ?? 1);
   }
 
   /** The book under a point of the stage, or -1. */

@@ -285,13 +285,17 @@ export class ShelfScene {
 
   /** The stage's size in points, and where along its width the shelf's middle stands. The camera
    *  is `projectToStage`'s: the eye `lens` back, level with 44% down the stage and square on to
-   *  `centre`, which `setViewOffset` takes as a window on a larger view centred on that line. */
-  resize(width: number, height: number, pixelRatio: number, centre = width / 2) {
-    if (!width || !height) return;
-    this.size = { width, height };
+   *  `centre`, which `setViewOffset` takes as a window on a larger view centred on that line. With
+   *  `zoom` the camera frames the stage a `zoom`th the size, which the canvas draws life size. */
+  resize(stageWidth: number, stageHeight: number, pixelRatio: number, stageCentre = stageWidth / 2, zoom = 1) {
+    if (!stageWidth || !stageHeight) return;
+    this.size = { width: stageWidth, height: stageHeight };
     this.renderer.setPixelRatio(pixelRatio);
-    this.renderer.setSize(width, height, false);
+    this.renderer.setSize(stageWidth, stageHeight, false);
     this.dot.value = Math.max(1, Math.floor(DOT_POINTS * pixelRatio + 0.25));
+    const width = stageWidth / zoom;
+    const height = stageHeight / zoom;
+    const centre = stageCentre / zoom;
     const { camera } = this;
     camera.fov = (2 * Math.atan((0.56 * height) / SHELF.lens) * 180) / Math.PI;
     const reach = Math.max(centre, width - centre);

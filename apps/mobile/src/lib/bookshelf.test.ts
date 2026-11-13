@@ -325,3 +325,21 @@ test('spineNumber: the chapter the book opens at, two digits at least', () => {
   expect(spineNumber('Prologue')).toBeUndefined();
   expect(spineNumber(undefined)).toBeUndefined();
 });
+
+test('a zoomed stage is the same shelf, every point and scale that many times over', () => {
+  const zoom = 1.5;
+  const life = { width: 700, height: shelfStageHeight(700), centre: 340, yaw: 1.2, pitch: -0.6 };
+  const zoomed = { ...life, width: life.width * zoom, height: life.height * zoom, centre: life.centre * zoom, zoom };
+  for (const [x, y, z] of [
+    [0, 0, 0],
+    [60, 180, 40],
+    [-220, 90, -30],
+  ] as const) {
+    const a = projectToStage(life, x, y, z);
+    const b = projectToStage(zoomed, x, y, z);
+    expect(b.x).toBeCloseTo(a.x * zoom, 6);
+    expect(b.y).toBeCloseTo(a.y * zoom, 6);
+    expect(b.scale).toBeCloseTo(a.scale * zoom, 6);
+  }
+  expect(Math.abs(shelfStageHeight(700 * zoom, zoom) - shelfStageHeight(700) * zoom)).toBeLessThanOrEqual(1);
+});

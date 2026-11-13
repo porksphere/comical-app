@@ -75,8 +75,9 @@ export function shelfCoverWidth(stageWidth: number): number {
  *  the nearer one, so one odd cover never sets the height of the row. */
 export const SHELF_ASPECT = { tall: 0.64, wide: 0.8, unknown: 2 / 3 } as const;
 
-export function shelfStageHeight(stageWidth: number): number {
-  return Math.round(shelfCoverWidth(stageWidth) / SHELF_ASPECT.tall + SHELF.floor + SHELF.headroom);
+/** The stage's height in points for a stage this wide, its scene drawn `zoom` times life size. */
+export function shelfStageHeight(stageWidth: number, zoom = 1): number {
+  return Math.round((shelfCoverWidth(stageWidth / zoom) / SHELF_ASPECT.tall + SHELF.floor + SHELF.headroom) * zoom);
 }
 
 /**
@@ -222,7 +223,10 @@ export function settleOn(pos: number, velocity: number, count: number): number {
 /** `centre` is where along the stage's width the shelf's middle stands: its own middle unless the
  *  stage runs under something the selection should not sit behind (a bar down one side). `yaw` and
  *  `pitch` are the view's drift, in degrees: the shelf turned a little about the stage's middle. */
-export type ShelfStage = { width: number; height: number; centre?: number; yaw?: number; pitch?: number };
+/** The stage in points. `zoom` draws the scene that many times life size: the shelf is built in
+ *  points of a phone's stage, and a stage `zoom` times as large in every direction shows the same
+ *  shelf, books, gaps and camera all scaled together. */
+export type ShelfStage = { width: number; height: number; centre?: number; yaw?: number; pitch?: number; zoom?: number };
 
 /** How far the view drifts by itself while the shelf stands, in degrees each way, and how much of
  *  that again a tipped phone adds. Small on purpose: it is the shelf breathing, not turning. */
@@ -243,16 +247,23 @@ export function driftAt(now: number, tilt: { x: number; y: number }): { yaw: num
  * middle.
  */
 export function projectToStage(stage: ShelfStage, x: number, y: number, z: number): { x: number; y: number; scale: number } {
-  const pivot = stage.height / 2 - SHELF.floor;
+  const zoom = stage.zoom ?? 1;
+  const height = stage.height / zoom;
+  const centre = (stage.centre ?? stage.width / 2) / zoom;
+  const pivot = height / 2 - SHELF.floor;
   const turn = rad(stage.yaw ?? 0);
   const turnedX = x * Math.cos(turn) + z * Math.sin(turn);
   const turnedZ = -x * Math.sin(turn) + z * Math.cos(turn);
   const tip = rad(SHELF.look + (stage.pitch ?? 0));
   const tippedY = (y - pivot) * Math.cos(tip) - turnedZ * Math.sin(tip) + pivot;
   const tippedZ = (y - pivot) * Math.sin(tip) + turnedZ * Math.cos(tip);
-  const eye = 0.56 * stage.height - SHELF.floor;
+  const eye = 0.56 * height - SHELF.floor;
   const scale = SHELF.lens / (SHELF.lens - tippedZ);
-  return { x: (stage.centre ?? stage.width / 2) + turnedX * scale, y: stage.height - SHELF.floor - (eye + (tippedY - eye) * scale), scale };
+  return {
+    x: (centre + turnedX * scale) * zoom,
+    y: (height - SHELF.floor - (eye + (tippedY - eye) * scale)) * zoom,
+    scale: scale * zoom,
+  };
 }
 
 /** A point of a placed book, given from its base's middle (`along` its width from the middle,

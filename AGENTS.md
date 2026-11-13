@@ -1117,7 +1117,10 @@ content), and the camera looks square on to the middle of what is left (`ShelfSt
 the shelf crosses the whole screen while the book in front stands where the rest of the page is.
 On the web the page is a column centred in its pane and the shelf's row stands in that column, so
 the stage is pulled back by the centre inset too (`lead`): without it the stage began at the
-column's edge and ran off the right of a wide window.
+column's edge and ran off the right of a wide window. In the desktop app the scene is drawn at 1.5×
+(`SHELF_ZOOM`, `ShelfStage.zoom`): the shelf is built in a phone stage's points, and both copies of
+the camera frame a stage a zoomth the size, so the books, the gaps between them and the callouts
+grow together, and so does a finger's travel for one book.
 
 **A book's room along the shelf is the room it has at rest** (`placeShelf`): what it has with the
 book before the place in front, and with the book after, and the share of each the shelf is
