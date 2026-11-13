@@ -11,8 +11,10 @@ import { leadingChapterNumber } from '@/lib/chapter-label';
 
 export type ShelfBook = { width: number; height: number; depth: number; binding: CoverBinding };
 
-/** `ink` is how far the book is from the one in front, 0 to 1: what the shelf draws in tone. */
-export type ShelfPlace = { x: number; z: number; yaw: number; ink: number };
+/** `ink` is how far the book is from the one in front, 0 to 1: what the shelf draws in tone. `tip`
+ *  is degrees the book leans toward the reader about the shelf's run, after its yaw, and `y` how far
+ *  its foot is raised to keep it on the shelf as it does. */
+export type ShelfPlace = { x: number; z: number; yaw: number; ink: number; y?: number; tip?: number };
 
 export const SHELF = {
   /** The front book's turn toward the reader, short of square on so its spine still shows. */
@@ -52,6 +54,25 @@ export const PRESS = { back: 16, forward: 40 } as const;
 export function pressedPlace(place: ShelfPlace, depth: number): ShelfPlace {
   if (!depth) return place;
   return { ...place, z: place.z - (depth > 0 ? PRESS.back : PRESS.forward) * depth };
+}
+
+/** A spine under the pointer is drawn part way out, as a finger hooked over its head would: `pull`
+ *  toward the reader, well short of the front book's `SHELF.pull`, and tipped `tip` degrees. */
+export const HOVER = { pull: 16, tip: 5 } as const;
+
+/** A book's place with the pointer's pull `amount` of the way on (0 to 1). It tips on the front
+ *  edge of its foot, so the back of the foot lifts and nothing sinks into the shelf. */
+export function hoveredPlace(place: ShelfPlace, book: ShelfBook, amount: number): ShelfPlace {
+  if (!amount) return place;
+  const turn = rad(place.yaw);
+  const reach = Math.abs((book.width / 2) * Math.sin(turn)) + Math.abs((book.depth / 2) * Math.cos(turn));
+  const tip = rad(HOVER.tip * amount);
+  return {
+    ...place,
+    z: place.z + HOVER.pull * amount + reach * (1 - Math.cos(tip)),
+    y: (place.y ?? 0) + reach * Math.sin(tip),
+    tip: (place.tip ?? 0) + HOVER.tip * amount,
+  };
 }
 
 /**
@@ -271,7 +292,10 @@ export function projectToStage(stage: ShelfStage, x: number, y: number, z: numbe
 export function bookPoint(place: ShelfPlace, along: number, up: number, out: number): { x: number; y: number; z: number } {
   const c = Math.cos(rad(place.yaw));
   const s = Math.sin(rad(place.yaw));
-  return { x: place.x + along * c + out * s, y: up, z: place.z - along * s + out * c };
+  const z = -along * s + out * c;
+  const tc = Math.cos(rad(place.tip ?? 0));
+  const ts = Math.sin(rad(place.tip ?? 0));
+  return { x: place.x + along * c + out * s, y: (place.y ?? 0) + up * tc - z * ts, z: place.z + up * ts + z * tc };
 }
 
 /** Where the callouts drawn over the shelf stand, in the stage's points. */

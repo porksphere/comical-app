@@ -3,6 +3,7 @@ import type * as THREE from 'three/webgpu';
 import {
   SHELF,
   driftAt,
+  hoveredPlace,
   placeShelf,
   pressedPlace,
   rubberBand,
@@ -26,6 +27,9 @@ const PRESS_IN = { stiffness: 1500, damping: 60 };
 const PRESS_OUT = { stiffness: 620, damping: 21 };
 const PRESS_KNOCK = 9;
 const PRESS_WAIT = 260;
+/** How fast a spine comes off the shelf under the pointer and goes back, per second: an easing, not
+ *  a spring — a pointer crossing the shelf would set a row of springs ringing. */
+const HOVER_RATE = 18;
 
 /**
  * The shelf in motion, outside React: where along it the reader is, the drag and the spring that
@@ -72,6 +76,10 @@ export class ShelfDriver {
   private onPressed: (() => void) | null = null;
   private releasedAt = 0;
   private drift = { yaw: 0, pitch: 0 };
+  /** The book under the pointer (web, or a pointer on a tablet), or -1; and how far each book has
+   *  come off the shelf for it, 0 to 1. */
+  private hovered = -1;
+  private lifts: number[] = [];
 
   get focused(): number {
     return this.target;
@@ -146,6 +154,9 @@ export class ShelfDriver {
     const front = this.specs[this.target]?.key;
     this.specs = specs;
     this.books = specs.map((s) => ({ width: s.width, height: s.height, depth: s.depth, binding: s.cover.binding }));
+    // A new order moves the books out from under the pointer: its next move finds the one there.
+    this.hovered = -1;
+    this.lifts = specs.map(() => 0);
     const last = Math.max(0, specs.length - 1);
     const now = specs.findIndex((s) => s.key === front);
     if (!this.touched) this.pos = this.target = shelfMiddle(specs.length);
@@ -174,7 +185,23 @@ export class ShelfDriver {
     this.held = true;
     this.grabbedAt = this.pos;
     this.velocity = 0;
+    this.hover(-1);
     this.pressOut();
+  }
+
+  /** The book under the pointer, or -1 when it is over none or has left the stage. A spine under it
+   *  comes a little way off the shelf; the book in front, already out, does not. Nothing lifts while
+   *  the shelf is held: the books are running under a pointer that is dragging them. */
+  hover(index: number) {
+    if (this.held && index >= 0) return;
+    if (index === this.hovered) return;
+    this.hovered = index;
+    if (this.still) {
+      this.lifts = this.lifts.map((_, i) => (i === index && i !== this.target ? 1 : 0));
+      this.draw();
+      return;
+    }
+    this.kick();
   }
 
   /** The finger's travel since `grab`, in points: right is toward the shelf's start. */
@@ -290,9 +317,20 @@ export class ShelfDriver {
         this.press = to;
         this.pressVelocity = 0;
       }
+      let lifted = true;
+      const ease = 1 - Math.exp(-HOVER_RATE * dt);
+      const front = Math.round(this.target);
+      for (let i = 0; i < this.lifts.length; i++) {
+        const to = i === this.hovered && i !== front ? 1 : 0;
+        const lift = this.lifts[i];
+        if (lift === to) continue;
+        const next = lift + (to - lift) * ease;
+        this.lifts[i] = Math.abs(next - to) < 0.004 ? to : next;
+        if (this.lifts[i] !== to) lifted = false;
+      }
       // Under a finger the next frame is asked for by the finger's next move.
       const pressed = this.pressVelocity === 0 && this.press === (this.pressing ? 1 : 0);
-      if (pressed && (this.held || (this.pos === this.target && this.velocity === 0))) {
+      if (pressed && lifted && (this.held || (this.pos === this.target && this.velocity === 0))) {
         this.moving = false;
         this.frames.stop();
       }
@@ -312,6 +350,7 @@ export class ShelfDriver {
     if (!this.books.length || !this.stage.width) return;
     const places = placeShelf(this.books, this.pos);
     const front = Math.min(Math.max(0, Math.round(this.pos)), this.books.length - 1);
+    for (let i = 0; i < places.length; i++) if (this.lifts[i]) places[i] = hoveredPlace(places[i], this.books[i], this.lifts[i]);
     if (this.press) places[front] = pressedPlace(places[front], this.press);
     if (this.scene) {
       this.scene.setView(this.drift.yaw, this.drift.pitch);

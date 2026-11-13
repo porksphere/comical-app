@@ -655,9 +655,10 @@ export class ShelfScene {
     this.books.forEach(({ group }, i) => {
       const place = places[i];
       if (!place) return;
-      group.position.set(place.x, 0, place.z);
-      group.rotation.y = rad(place.yaw);
-      stand += `;${place.x.toFixed(1)},${place.z.toFixed(1)},${place.yaw.toFixed(1)}`;
+      group.position.set(place.x, place.y ?? 0, place.z);
+      // Three's default XYZ order applies the yaw first, so the tip is about the shelf's run.
+      group.rotation.set(rad(place.tip ?? 0), rad(place.yaw), 0);
+      stand += `;${place.x.toFixed(1)},${place.z.toFixed(1)},${place.yaw.toFixed(1)},${(place.tip ?? 0).toFixed(1)}`;
       const tone = ink ? place.ink : 0;
       group.traverse((o) => {
         o.userData.ink = tone;

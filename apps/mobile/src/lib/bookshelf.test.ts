@@ -12,6 +12,8 @@ import {
   driftAt,
   inkOn,
   pickShelf,
+  HOVER,
+  hoveredPlace,
   placeShelf,
   popIn,
   pressedPlace,
@@ -280,6 +282,22 @@ test('a pressed book goes back, and springs out further than it went in', () => 
   const sprung = pressedPlace(place, -0.2);
   expect(sprung.z).toBeGreaterThan(50);
   expect(sprung.z - 50).toBeGreaterThan(0.2 * PRESS.back);
+});
+
+test('a spine under the pointer comes part way out, tipped on its front edge', () => {
+  const b = book();
+  const place = { x: 4, z: 0, yaw: -88, ink: 1 };
+  expect(hoveredPlace(place, b, 0)).toBe(place);
+  const out = hoveredPlace(place, b, 1);
+  expect(out.x).toBe(4);
+  expect(out.yaw).toBe(-88);
+  expect(out.tip).toBe(HOVER.tip);
+  expect(out.z).toBeGreaterThan(HOVER.pull);
+  expect(HOVER.pull).toBeLessThan(SHELF.pull);
+  // The head comes toward the reader, and no corner of the foot goes below the shelf.
+  expect(bookPoint(out, 0, b.height, 0).z - bookPoint(place, 0, b.height, 0).z).toBeGreaterThan(HOVER.pull);
+  for (const along of [-b.width / 2, b.width / 2])
+    for (const across of [-b.depth / 2, b.depth / 2]) expect(bookPoint(out, along, 0, across).y).toBeGreaterThan(-0.01);
 });
 
 test('what matters most stands in the middle, and less to either side by turns', () => {
