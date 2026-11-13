@@ -109,14 +109,16 @@ export function ActionButton({
             <View style={[styles.heroRead, { width: `${progress * 100}%`, backgroundColor: theme.text }]} />
           )}
           {leading}
-          <ThemedText numberOfLines={1} style={[styles.label, styles.heroLabel, { color: onFill }]}>
-            {label}
-          </ThemedText>
-          {detail !== undefined && (
-            <ThemedText numberOfLines={1} style={[styles.heroDetail, { color: onFill }]}>
-              {detail}
+          <View style={styles.heroWords}>
+            <ThemedText numberOfLines={1} style={[styles.label, styles.heroLabel, { color: onFill }]}>
+              {label}
             </ThemedText>
-          )}
+            {detail !== undefined && (
+              <ThemedText numberOfLines={1} style={[styles.heroDetail, { color: onFill }]}>
+                {detail}
+              </ThemedText>
+            )}
+          </View>
           {caret && <ChevronDownIcon color={primary ? onFill : theme.textSecondary} size={14} />}
         </View>
       </Pressable>
@@ -215,6 +217,14 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 22,
     fontWeight: '600',
+  },
+  // The label and the number after it stand on one baseline: centred, the smaller number rode high.
+  heroWords: {
+    flexShrink: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: Spacing.two,
   },
   heroDetail: {
     fontSize: 15,
