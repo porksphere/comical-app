@@ -261,9 +261,9 @@ test('the view drifts a little, and a tipped phone adds a little to it', () => {
   const tipped = driftAt(5000, { x: 1, y: -1 });
   expect(tipped.yaw - level.yaw).toBeCloseTo(DRIFT.tiltYaw);
   expect(tipped.pitch - level.pitch).toBeCloseTo(-DRIFT.tiltPitch);
-  // The phone adds to the drift and never outweighs it.
-  expect(DRIFT.tiltYaw).toBeLessThanOrEqual(DRIFT.yaw);
-  expect(DRIFT.tiltPitch).toBeLessThanOrEqual(DRIFT.pitch);
+  // The drift stays smaller than what the reader's own tip can do.
+  expect(DRIFT.yaw).toBeLessThan(DRIFT.tiltYaw);
+  expect(DRIFT.pitch).toBeLessThan(DRIFT.tiltPitch);
 });
 
 test('a drifted view moves what stands off the middle and leaves the middle where it was', () => {

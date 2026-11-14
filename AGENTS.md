@@ -1159,10 +1159,10 @@ depth rather than sampled, and the shadow is cast again only when a book has mov
 that only drifts casts none. Merge by hand (`merged`): three's own merge is an addon, which imports
 bare `three`.
 
-**The view drifts, and the phone only adds to it.** A couple of degrees of turn over seconds
+**The view drifts, and the phone only adds to it.** A degree or so of turn over seconds
 (`driftAt`), with the device's tilt (`DeviceTilt`: gravity's direction, measured from how the
-phone is being held, so a tip eases back to nothing) laid on top at no more than the drift's own
-size. It is a component, mounted only while the shelf may drift: the sensor runs for as long as
+phone is being held, so a tip eases back to nothing) laid on top at half as much again as the
+drift's own size: the drift moves unbidden, so it stays the smaller. It is a component, mounted only while the shelf may drift: the sensor runs for as long as
 its hook is mounted, and as a hook of the shelf's it ran under every other tab and the reader. The stickers ride the drift through the camera and take a few points more from the tilt.
 Each is put on afresh for each book that comes forward: the caption leaning one way or the other,
 the burst's star turned at random under lettering that stays level — twelve points, since

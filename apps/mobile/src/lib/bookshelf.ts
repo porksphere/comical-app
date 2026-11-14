@@ -274,8 +274,10 @@ export function settleOn(pos: number, velocity: number, count: number): number {
 export type ShelfStage = { width: number; height: number; centre?: number; yaw?: number; pitch?: number; zoom?: number };
 
 /** How far the view drifts by itself while the shelf stands, in degrees each way, and how much a
- *  tipped phone adds, as much again at the most. Small on purpose: it is the shelf breathing, not turning. */
-export const DRIFT = { yaw: 2.1, pitch: 1.2, tiltYaw: 2.1, tiltPitch: 1.2 } as const;
+ *  tipped phone adds. The drift is small on purpose: it is the shelf breathing, not turning, and at
+ *  half as much again it read as the shelf swaying. A tip is the reader's own move, so it carries
+ *  further. */
+export const DRIFT = { yaw: 1.4, pitch: 0.8, tiltYaw: 2.1, tiltPitch: 1.2 } as const;
 
 /** The view's drift at `now` milliseconds, with the device tipped `tilt` (-1 to 1 each way). */
 export function driftAt(now: number, tilt: { x: number; y: number }): { yaw: number; pitch: number } {
