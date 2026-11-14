@@ -28,8 +28,8 @@ import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from 
 import { Rail, RailSkeleton } from '@/components/rail';
 import { ACTION_ICON_SIZE, ActionButton, ActionShapeContext, NewBadge, ROUND_SIDE_SPACE } from '@/components/series/action-button';
 import { ChapterScrollList, Disclosure, PageThumbList, TurningChevron } from '@/components/series/chapters-section';
+import { CoverSticker } from '@/components/series/cover-sticker';
 import { SeriesDownloadButton } from '@/components/series/download-button';
-import { BURST_SIZE, BURST_TURN, BurstStar, StickerButton, stickerTone } from '@/components/sticker';
 import { SeriesRemovedNotice } from '@/components/series/series-removed';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
@@ -530,7 +530,6 @@ export function SeriesBody({
   // chapter). Outside the library (or with no library store) there is no state and the button is
   // the plain Read/Resume.
   const stickerRead = useSeriesStickerRead();
-  const dark = useActiveColorScheme() === 'dark';
   const readState = collected?.readState;
   const settled = readState === 'caught-up' || readState === 'finished';
   const primaryLabel = readState === 'finished' ? 'Finished' : readState === 'caught-up' ? 'Caught up' : readingLabel;
@@ -786,29 +785,32 @@ export function SeriesBody({
       {newBadge}
     </View>
   );
-  // The trial (Settings → Developer): the home shelf's sticker hung on the cover's lower corner is
-  // what reads, with the new chapters' burst on the upper one, as on the shelf's front book. The
-  // compact header only; the two-column ones keep the capsule.
+  // The trial (Settings → Developer): the sticker on the cover reads, and the capsule goes.
   const stickerOnCover = (
+    <CoverSticker
+      label={(settled ? primaryLabel : resume ? 'Resume' : 'Read').toUpperCase()}
+      where={
+        settled ? '' : resume ? historySub(resume, { withTime: false, long: false }) : firstNumber !== undefined ? `Chapter ${firstNumber}` : ''
+      }
+      {...(series.newCount != null && { newCount: series.newCount })}
+      wide={isLarge}
+      accessibilityLabel={settled ? `${primaryLabel} — ${readingLabel.toLowerCase()}` : primaryLabel}
+      onPress={startReading}
+    />
+  );
+  const stickerActions = loading ? roundSkel : <View style={styles.actionsStack}>{roundRow}</View>;
+  const largeHero = stickerRead ? (
     <>
-      {series.newCount ? (
-        <View pointerEvents="none" style={styles.stickerBurst}>
-          <BurstStar count={series.newCount} turn={BURST_TURN / 3} tone={stickerTone(dark)} />
-        </View>
-      ) : null}
-      <View style={styles.stickerRead}>
-        <StickerButton
-          testID="series.action.read"
-          label={(settled ? primaryLabel : resume ? 'Resume' : 'Read').toUpperCase()}
-          where={
-            settled ? '' : resume ? historySub(resume, { withTime: false, long: false }) : firstNumber !== undefined ? `Chapter ${firstNumber}` : ''
-          }
-          tone={stickerTone(dark)}
-          toneId="series-read-tone"
-          accessibilityLabel={settled ? `${primaryLabel} — ${readingLabel.toLowerCase()}` : primaryLabel}
-          onPress={startReading}
-        />
+      <View style={styles.coverWrapLarge}>
+        {coverEl}
+        {stickerOnCover}
       </View>
+      <View style={styles.underSticker}>{stickerActions}</View>
+    </>
+  ) : (
+    <>
+      {coverEl}
+      {loading ? actionsSkel : actionsEl}
     </>
   );
   // The compact header (the large one is two columns): the cover centred, the actions under it,
@@ -822,9 +824,7 @@ export function SeriesBody({
           {stickerOnCover}
         </View>
       </View>
-      <View style={[styles.actionsCapped, styles.underSticker]}>
-        {loading ? roundSkel : <View style={styles.actionsStack}>{roundRow}</View>}
-      </View>
+      <View style={[styles.actionsCapped, styles.underSticker]}>{stickerActions}</View>
     </>
   ) : (
     <>
@@ -996,10 +996,7 @@ export function SeriesBody({
       {isLarge ? (
         /* Large screen: two-column layout — cover+actions left, content right. */
         <View style={styles.twoCol}>
-          <View style={[styles.leftCol, heroSticky && styles.leftColSticky]}>
-            {coverEl}
-            {loading ? actionsSkel : actionsEl}
-          </View>
+          <View style={[styles.leftCol, stickerRead && styles.leftColOver, heroSticky && styles.leftColSticky]}>{largeHero}</View>
           <View {...columnMark} style={styles.rightCol}>{loading ? contentSkel : contentEl}</View>
         </View>
       ) : (
@@ -1070,10 +1067,7 @@ export function SeriesBody({
   // screens the hero stacks (cover row, then meta). ChapterScrollList renders the title itself.
   const chapterHeader = isLarge ? (
     <View style={styles.twoCol}>
-      <View style={styles.leftCol}>
-        {coverEl}
-        {loading ? actionsSkel : actionsEl}
-      </View>
+      <View style={[styles.leftCol, stickerRead && styles.leftColOver]}>{largeHero}</View>
       <View {...columnMark} style={styles.rightCol}>{loading ? contentSkel : contentEl}</View>
     </View>
   ) : (
@@ -1193,6 +1187,10 @@ const styles = StyleSheet.create({
     width: LARGE_COVER_WIDTH,
     gap: Spacing.three
   },
+  // The sticker hangs out of the column, over the edge of the one beside it.
+  leftColOver: {
+    zIndex: 1
+  },
   // Web-only: pin the cover+actions column as the page scrolls. `position:
   // 'sticky'` isn't in RN's ViewStyle union but react-native-web passes it
   // straight to the DOM, so the cast is safe. The sticky region is bounded by
@@ -1246,21 +1244,6 @@ const styles = StyleSheet.create({
     marginHorizontal: -ROUND_SIDE_SPACE
   },
   // The cover alone in the hero row, centred, when the actions run under it.
-  // The sticker leans off the cover's lower trailing corner, most of it on the cover.
-  stickerRead: {
-    position: 'absolute',
-    right: -44,
-    bottom: -18,
-    transform: [{ rotate: '-3deg' }]
-  },
-  stickerBurst: {
-    position: 'absolute',
-    left: -BURST_SIZE / 2 + 6,
-    top: -BURST_SIZE / 2 + 10,
-    width: BURST_SIZE,
-    height: BURST_SIZE,
-    transform: [{ scale: 0.75 }]
-  },
   // Room for the sticker hanging below the cover.
   underSticker: {
     marginTop: Spacing.two
