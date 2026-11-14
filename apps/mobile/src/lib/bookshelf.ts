@@ -304,12 +304,13 @@ export function settleOn(pos: number, velocity: number, count: number): number {
 
 /**
  * How the shelf answers a swipe (Settings → General → Bookshelf motion). `carousel` turns every
- * book it passes to face the reader and stands the row round the one in front (`placeShelf`);
- * `display` leaves the row spine out, slides each spine a little way out as the swipe passes over
- * it, and brings out only the book the swipe lands on, face out and leaning back on the spines
- * (`placeDisplay`).
+ * book it passes to face the reader and stands the row round the one in front (`placeShelf`).
+ * The other two leave the row spine out and bring a book off it, face out and leaning back on the
+ * spines (`placeDisplay`): `display` only the book the swipe lands on, once it has landed, each
+ * spine sliding a little way out as the swipe passes over it; `display-swipe` every book the swipe
+ * passes, as it passes, the display following the swipe the way the carousel's turn does.
  */
-export type ShelfMotion = 'carousel' | 'display';
+export type ShelfMotion = 'carousel' | 'display' | 'display-swipe';
 
 export const DISPLAY = {
   /** How far a spine comes out under the swipe. */
@@ -400,6 +401,17 @@ export function displayPose(book: ShelfBook, near: number, shown: number, x: num
   };
 }
 
+/**
+ * Under `display-swipe`, the book on display and how far its display has played, from where the
+ * swipe is alone: all of it on the book the swipe is over, none half way to the next. Only the
+ * book within half a step plays it, so two never stand out at once: two did, and one stood out
+ * spine first in front of the other's cover.
+ */
+export function displayScrubbed(pos: number, count: number): { index: number; amount: number } {
+  const index = clamp(Math.round(pos), 0, Math.max(0, count - 1));
+  return { index, amount: smoothstep((smoothstep(1 - Math.abs(index - pos)) - 0.5) * 2) };
+}
+
 /** A spine-out book leaning `degrees` along the shelf, on the edge of its foot it leans toward. */
 export function settledPlace(place: ShelfPlace, book: ShelfBook, degrees: number): ShelfPlace {
   if (!degrees) return place;
@@ -409,12 +421,13 @@ export function settledPlace(place: ShelfPlace, book: ShelfBook, degrees: number
 }
 
 /** How far each book wants to lean, in degrees: the two beside the one on display, into the gap it
- *  left, once it is out of it; none that the swipe is drawing out itself. */
-export function displaySettles(count: number, pos: number, shown: { index: number; amount: number }): number[] {
+ *  left, once it is out of it; none that the swipe is drawing out itself (`nudged`, as for
+ *  `placeDisplay`). */
+export function displaySettles(count: number, pos: number, shown: { index: number; amount: number }, nudged = true): number[] {
   const settles = new Array<number>(count).fill(0);
   const gap = smoothstep((shown.amount - 0.34) / 0.16) * DISPLAY.settle;
   if (!gap) return settles;
-  const free = (j: number) => j >= 0 && j < count && j !== shown.index && Math.abs(j - pos) >= 1;
+  const free = (j: number) => j >= 0 && j < count && j !== shown.index && (!nudged || Math.abs(j - pos) >= 1);
   if (free(shown.index - 1)) settles[shown.index - 1] = gap;
   if (free(shown.index + 1)) settles[shown.index + 1] = -gap;
   return settles;
@@ -424,6 +437,8 @@ export function displaySettles(count: number, pos: number, shown: { index: numbe
  * Every book's place on a display row with `pos` under the swipe and `shown` the book on display.
  * The row stands round `pos`, held a little toward the side that has no more books, as
  * `placeShelf` holds it; `settles` is each book's lean along the shelf, which the driver springs.
+ * `nudged` slides out the spines the swipe passes over; not under `display-swipe`, where the
+ * display itself follows the swipe and plays within half a step of spines it would draw out.
  */
 export function placeDisplay(
   books: readonly ShelfBook[],
@@ -431,6 +446,7 @@ export function placeDisplay(
   pos: number,
   shown: { index: number; amount: number },
   settles: readonly number[],
+  nudged = true,
 ): ShelfPlace[] {
   const n = books.length;
   const held = clamp(pos, 0, Math.max(0, n - 1));
@@ -438,7 +454,8 @@ export function placeDisplay(
   const focus = rowAt(row, pos) - toward;
   const clear = displayClear(books, row, shown.index);
   return books.map((book, i) => {
-    const place = displayPose(book, smoothstep(1 - Math.abs(i - pos)), i === shown.index ? shown.amount : 0, row[i] - focus, clear);
+    const near = nudged ? smoothstep(1 - Math.abs(i - pos)) : 0;
+    const place = displayPose(book, near, i === shown.index ? shown.amount : 0, row[i] - focus, clear);
     return settledPlace(place, book, settles[i] ?? 0);
   });
 }

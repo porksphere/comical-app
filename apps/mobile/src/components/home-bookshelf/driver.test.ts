@@ -133,3 +133,49 @@ describe('ShelfDriver on a display row', () => {
     expect(seen.callouts?.settled).toBe(1);
   });
 });
+
+describe('ShelfDriver with the display played by the swipe', () => {
+  function swiping() {
+    const driver = new ShelfDriver();
+    const seen: { callouts: ShelfCallouts | null; fronts: string[] } = { callouts: null, fronts: [] };
+    driver.setStage({ width: 390, height: 300 }, 1);
+    driver.listen({ onFrame: (callouts) => (seen.callouts = callouts), onFront: (key) => seen.fronts.push(key), onDrawn: () => {} });
+    driver.setMotion('display-swipe');
+    driver.setBooks(shelf('a', 'b', 'c', 'd', 'e'));
+    let now = 0;
+    const run = (ms: number) => {
+      for (const end = now + ms; now < end; ) driver.step((now += 16));
+    };
+    return { driver, seen, run };
+  }
+
+  test('every book the swipe passes comes out as it passes, a carousel step a book', () => {
+    const { driver, seen, run } = swiping();
+    run(16);
+    expect(seen.callouts?.front).toBe(2);
+    expect(seen.callouts?.settled).toBe(1);
+    driver.grab();
+    driver.drag(-SHELF.dragUnit / 2);
+    run(16);
+    expect(seen.callouts?.settled).toBe(0);
+    driver.drag(-SHELF.dragUnit);
+    run(16);
+    expect(seen.callouts?.front).toBe(3);
+    expect(seen.callouts?.settled).toBeCloseTo(1);
+    driver.drag(-SHELF.dragUnit * 2);
+    run(16);
+    expect(seen.callouts?.front).toBe(4);
+    expect(seen.fronts.slice(-2)).toEqual(['d', 'e']);
+  });
+
+  test('a release lands on a book with its display all the way out, on no clock of its own', () => {
+    const { driver, seen, run } = swiping();
+    run(16);
+    driver.grab();
+    driver.drag(-SHELF.dragUnit * 1.3);
+    driver.release(0);
+    run(1000);
+    expect(seen.callouts?.front).toBe(3);
+    expect(seen.callouts?.settled).toBe(1);
+  });
+});

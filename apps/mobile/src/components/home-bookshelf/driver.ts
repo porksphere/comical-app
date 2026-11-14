@@ -4,6 +4,7 @@ import {
   DISPLAY,
   SHELF,
   displayRow,
+  displayScrubbed,
   displaySettles,
   driftAt,
   hoveredPlace,
@@ -246,8 +247,9 @@ export class ShelfDriver {
     this.kick();
   }
 
-  /** The finger's travel since `grab`, in points: right is toward the shelf's start. A display row
-   *  moves under it point for point; the carousel takes `dragUnit` of it a book. */
+  /** The finger's travel since `grab`, in points: right is toward the shelf's start. Under
+   *  `display` the row moves under it point for point; the others take `dragUnit` of it a book,
+   *  which under `display-swipe` is the room each book has to come out and go back. */
   drag(dx: number) {
     const books = this.books.length;
     if (this.motion === 'display') this.pos = rubberBand(posAtRow(this.row, this.grabbedRow - dx / (this.stage.zoom ?? 1)), books);
@@ -362,7 +364,12 @@ export class ShelfDriver {
         this.press = to;
         this.pressVelocity = 0;
       }
-      const shown = this.motion === 'display' ? this.stepDisplay(dt) : true;
+      const shown =
+        this.motion === 'display'
+          ? this.stepDisplay(dt)
+          : this.motion === 'display-swipe'
+            ? this.stepSettles(dt, displayScrubbed(this.pos, this.books.length))
+            : true;
       let lifted = true;
       const ease = 1 - Math.exp(-HOVER_RATE * dt);
       const front = Math.round(this.target);
@@ -409,9 +416,15 @@ export class ShelfDriver {
     // Back in on this frame: the next is handed the display now, or a shelf that came to rest as
     // the last went back would stop asking for frames with the next still on the shelf.
     if (this.shown.index !== front && this.shown.amount === 0) this.shown.index = front;
-    let rest = this.shown.amount === (landed && this.shown.index === front ? 1 : 0);
-    const goals = displaySettles(n, this.pos, this.shown);
-    for (let i = 0; i < n; i++) {
+    const rest = this.shown.amount === (landed && this.shown.index === front ? 1 : 0);
+    return this.stepSettles(dt, this.shown) && rest;
+  }
+
+  /** The books beside the one on display settling into its gap, or back upright. Whether they have. */
+  private stepSettles(dt: number, shown: { index: number; amount: number }): boolean {
+    let rest = true;
+    const goals = displaySettles(this.books.length, this.pos, shown, this.motion === 'display');
+    for (let i = 0; i < goals.length; i++) {
       const goal = goals[i];
       if (this.settles[i] === goal && this.settleVelocities[i] === 0) continue;
       if (this.still) {
@@ -431,8 +444,10 @@ export class ShelfDriver {
 
   private draw() {
     if (!this.books.length || !this.stage.width) return;
-    const display = this.motion === 'display';
-    const places = display ? placeDisplay(this.books, this.row, this.pos, this.shown, this.settles) : placeShelf(this.books, this.pos);
+    const display = this.motion !== 'carousel';
+    // Played by the swipe itself under `display-swipe`, so worked out from where it is.
+    const shown = this.motion === 'display-swipe' ? displayScrubbed(this.pos, this.books.length) : this.shown;
+    const places = display ? placeDisplay(this.books, this.row, this.pos, shown, this.settles, this.motion === 'display') : placeShelf(this.books, this.pos);
     const front = Math.min(Math.max(0, Math.round(this.pos)), this.books.length - 1);
     for (let i = 0; i < places.length; i++) if (this.lifts[i]) places[i] = hoveredPlace(places[i], this.books[i], this.lifts[i]);
     if (this.press) places[front] = pressedPlace(places[front], this.press);
@@ -442,7 +457,7 @@ export class ShelfDriver {
     }
     // On a display row the callouts stand on the book on display, as far as it has come out, and
     // only after it has gone back on the one the swipe is over.
-    const lead = display ? (this.shown.amount > 0 ? { index: this.shown.index, settled: this.shown.amount } : { index: front, settled: 0 }) : undefined;
+    const lead = display ? (shown.amount > 0 ? { index: shown.index, settled: shown.amount } : { index: front, settled: 0 }) : undefined;
     const callouts = shelfCallouts(this.books, places, this.pos, { ...this.stage, ...this.drift }, lead);
     this.onFrame(callouts);
     this.announce(callouts.front, this.touched);

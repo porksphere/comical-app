@@ -14,6 +14,7 @@ import {
   displayClear,
   displayPose,
   displayRow,
+  displayScrubbed,
   displaySettles,
   driftAt,
   inkOn,
@@ -524,5 +525,58 @@ describe('a display row', () => {
     expect(edge.y).toBeCloseTo(0);
     const head = bookPoint(leaning, 0, b.height, 0);
     expect(head.x).toBeGreaterThan(b.height * Math.sin(rad(3.9)));
+  });
+});
+
+describe('a display row played by the swipe', () => {
+  test('the book the swipe is over is all the way out, and none is half way to the next', () => {
+    expect(displayScrubbed(3, 6)).toEqual({ index: 3, amount: 1 });
+    expect(displayScrubbed(2.5, 6).amount).toBe(0);
+    expect(displayScrubbed(3.49, 6).index).toBe(3);
+    expect(displayScrubbed(3.51, 6).index).toBe(4);
+    // Past either end it is the end book's, as far as the swipe is from it.
+    expect(displayScrubbed(-0.2, 6).index).toBe(0);
+    expect(displayScrubbed(5.3, 6).index).toBe(5);
+  });
+
+  test('the display hands from book to book with no jump', () => {
+    let last = displayScrubbed(0, 6);
+    for (let pos = 0.002; pos <= 5; pos += 0.002) {
+      const now = displayScrubbed(pos, 6);
+      if (now.index !== last.index) {
+        expect(last.amount).toBeLessThan(0.001);
+        expect(now.amount).toBeLessThan(0.001);
+      } else expect(Math.abs(now.amount - last.amount)).toBeLessThan(0.02);
+      last = now;
+    }
+  });
+
+  test('swept along the whole shelf it never runs into a book beside it, nor through what they reach out', () => {
+    const books: ShelfBook[] = [book(), { ...book('left', 6), form: 'sheets' }, book('right'), { ...book('left', 5), form: 'issue' }, book('left', 40), book()];
+    const row = displayRow(books);
+    for (let pos = 0; pos <= books.length - 1; pos += 0.01) {
+      const shown = displayScrubbed(pos, books.length);
+      const places = placeDisplay(books, row, pos, shown, [], false);
+      const at = places[shown.index];
+      places.forEach((place, j) => {
+        if (j === shown.index) return;
+        // Every other book stands where it stands at rest, spine out on the line.
+        expect(Math.abs(place.yaw)).toBe(90);
+        expect(place.z).toBeCloseTo(-books[j].width / 2);
+        expect(shelfOverlap(books[shown.index], at, books[j], place)).toBe(0);
+      });
+      if (Math.abs(at.yaw) < 89.99) {
+        const proud = Math.max(...[shown.index - 1, shown.index + 1].filter((j) => j >= 0 && j < books.length).map((j) => shelvedProud(books[j])));
+        const c = Math.cos(rad(at.yaw));
+        const s = Math.sin(rad(at.yaw));
+        const b = books[shown.index];
+        for (const i of [-1, 1]) for (const k of [-1, 1]) expect(at.z - (i * b.width * s) / 2 + (k * b.depth * c) / 2).toBeGreaterThan(proud);
+      }
+    }
+  });
+
+  test('the books beside it settle into its gap evenly, even as the swipe nears one of them', () => {
+    expect(displaySettles(6, 2.3, { index: 2, amount: 1 }, false)).toEqual([0, DISPLAY.settle, 0, -DISPLAY.settle, 0, 0]);
+    expect(displaySettles(6, 2.3, { index: 2, amount: 1 })[3]).toBe(0);
   });
 });

@@ -81,8 +81,13 @@ const SHELF_MOTION_OPTIONS: SettingsOption<ShelfMotion>[] = [
   { value: 'carousel', label: 'Carousel', description: 'The row slides round to the book you stop on, and every book it passes turns to face you on the way.' },
   {
     value: 'display',
-    label: 'Display',
+    label: 'Display when you stop',
     description: 'The books stay spine out, each sliding a little way out as your swipe passes over it, and the one you stop on comes off the shelf and leans back on the others, face out.',
+  },
+  {
+    value: 'display-swipe',
+    label: 'Display as you swipe',
+    description: 'Each book your swipe passes comes off the shelf, faces you and leans back on the others, and goes back as you move on.',
   },
 ];
 
@@ -169,7 +174,7 @@ export default function GeneralSettingsScreen() {
     {
       title: 'Display',
       footer:
-        'Book covers draws each series as the thing it is: a bound volume (spine on the right when you read right to left), a stapled issue, a set of loose sheets, or an unbound webtoon. Shelf alignment stands the covers in a row on one line, so covers of different shapes sit like books on a shelf, with their titles in line beneath them. Home bookshelf opens the Comical home on what you are reading, as books on a shelf, and Bookshelf motion is how they move as you swipe: Carousel turns every book it passes to face you, Display leaves them standing and brings out only the one you stop on. Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.',
+        'Book covers draws each series as the thing it is: a bound volume (spine on the right when you read right to left), a stapled issue, a set of loose sheets, or an unbound webtoon. Shelf alignment stands the covers in a row on one line, so covers of different shapes sit like books on a shelf, with their titles in line beneath them. Home bookshelf opens the Comical home on what you are reading, as books on a shelf, and Bookshelf motion is how they move as you swipe: Carousel turns every book it passes to face you; the Display motions leave them standing and bring a book off the shelf, face out, either the one you stop on or each one as your swipe passes it. Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.',
       fields: fields(
         select({ label: 'Appearance', value: themePref, options: THEME_OPTIONS, onChange: setThemePref }),
         { kind: 'toggle', label: 'Book covers', value: bookCovers, onChange: setBookCovers },

@@ -1133,7 +1133,7 @@ it was, and at rest nothing differs. Two books bound on opposite sides turn towa
 would meet inside that room, so a turning book is moved along just far enough to clear the two
 before it (`shelfOverlap`), which for such a pair comes to about what the old room gave.
 
-**Two motions, chosen in Settings → General → Bookshelf motion** (`ShelfMotion`, kept with the
+**Three motions, chosen in Settings → General → Bookshelf motion** (`ShelfMotion`, kept with the
 shelf's other choices). The carousel is what the paragraphs around this describe. `display` leaves
 the row standing spine out and moves it under the finger point for point (`displayRow`, `rowAt`:
 the carousel's 64 points a book would have the finger run ahead of the spines it is over), a spine
@@ -1150,7 +1150,14 @@ which the rounded backs stand 6 points proud of: a cover leaned on the line ran 
 callouts stand on the book on display as far as it has come out (`shelfCallouts`' `lead`), so the
 caption leaves with it rather than jumping to the book the swipe is over. A shelf that comes to rest
 in the frame the last book goes back hands the display on in that same frame (`stepDisplay`), or it
-stops asking for frames with the next book still on the shelf.
+stops asking for frames with the next book still on the shelf. `display-swipe` plays the same
+display on every book the swipe passes, from where the swipe is alone (`displayScrubbed`), as the
+carousel's turn is: all of it on the book the swipe is over and none half way to the next, so only
+one book is ever out (two at once had one standing out spine first in front of the other's cover).
+Its swipe takes the carousel's `dragUnit` a book, not the row point for point: at that a book's
+whole slide, swing and lean would fit in fifteen points of finger, a flicker. It draws no spine
+out (`nudged`), since the display plays within half a step of the spines it would draw out and
+its cover would cut into them, and both books beside it settle evenly.
 
 **Everything that moves is `ShelfDriver`'s, outside React.** Where along the shelf the reader is,
 the drag, the spring, the press of a tap, the view's drift, and the only place a frame is
