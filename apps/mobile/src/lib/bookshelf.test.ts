@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   SPINE_FOOT,
+  DISPLAY,
   DRIFT,
   PRESS,
   SHELF,
@@ -10,25 +11,35 @@ import {
   boardColour,
   bookDepth,
   bookPoint,
-  driftAt,
   KNOCK,
   leanedPlace,
   restingKnocks,
   stepKnocks,
+  displayClear,
+  displayPose,
+  displayRow,
+  displayScrubbed,
+  displaySettles,
+  driftAt,
   inkOn,
   pickShelf,
   HOVER,
   hoveredPlace,
+  placeDisplay,
   placeShelf,
   popIn,
+  posAtRow,
   pressedPlace,
   projectToStage,
+  rowAt,
   rubberBand,
   settleOn,
+  settledPlace,
   shelfCallouts,
   shelfMiddle,
   shelfOverlap,
   shelfStageHeight,
+  shelvedProud,
   spineNumber,
   spineNumberFit,
   type ShelfBook,
@@ -265,9 +276,9 @@ test('the view drifts a little, and a tipped phone adds a little to it', () => {
   const tipped = driftAt(5000, { x: 1, y: -1 });
   expect(tipped.yaw - level.yaw).toBeCloseTo(DRIFT.tiltYaw);
   expect(tipped.pitch - level.pitch).toBeCloseTo(-DRIFT.tiltPitch);
-  // The phone adds to the drift and never outweighs it.
-  expect(DRIFT.tiltYaw).toBeLessThanOrEqual(DRIFT.yaw);
-  expect(DRIFT.tiltPitch).toBeLessThanOrEqual(DRIFT.pitch);
+  // The drift stays smaller than what the reader's own tip can do.
+  expect(DRIFT.yaw).toBeLessThan(DRIFT.tiltYaw);
+  expect(DRIFT.pitch).toBeLessThan(DRIFT.tiltPitch);
 });
 
 test('a drifted view moves what stands off the middle and leaves the middle where it was', () => {
@@ -390,6 +401,188 @@ test('a zoomed stage is the same shelf, every point and scale that many times ov
     expect(b.scale).toBeCloseTo(a.scale * zoom, 6);
   }
   expect(Math.abs(shelfStageHeight(700 * zoom, zoom) - shelfStageHeight(700) * zoom)).toBeLessThanOrEqual(1);
+});
+
+describe('a display row', () => {
+  const row = displayRow(shelf);
+  /** Every corner of a placed book's foot, seen from above. */
+  const corners = (b: ShelfBook, at: { x: number; z: number; yaw: number }) => {
+    const c = Math.cos(rad(at.yaw));
+    const s = Math.sin(rad(at.yaw));
+    return [-1, 1].flatMap((i) => [-1, 1].map((j) => ({ x: at.x + (i * b.width * c) / 2 + (j * b.depth * s) / 2, z: at.z - (i * b.width * s) / 2 + (j * b.depth * c) / 2 })));
+  };
+
+  test('stands spine out and packed, with nothing on display', () => {
+    const places = placeDisplay(shelf, row, 2, { index: 2, amount: 0 }, []);
+    places.forEach((place, i) => {
+      expect(Math.abs(place.yaw)).toBe(90);
+      expect(place.ink).toBe(i === 2 ? 0 : 1);
+    });
+    for (let i = 1; i < shelf.length; i++) expect(places[i].x - places[i - 1].x).toBeCloseTo((shelf[i].depth + shelf[i - 1].depth) / 2 + SHELF.gap);
+  });
+
+  test('a swipe moves the row point for point, and back', () => {
+    for (const pos of [0, 0.4, 1, 2.7, 5]) expect(posAtRow(row, rowAt(row, pos))).toBeCloseTo(pos);
+    expect(rowAt(row, 1) - rowAt(row, 0)).toBeCloseTo((shelf[0].depth + shelf[1].depth) / 2 + SHELF.gap);
+    // The row stands round where the swipe is: the book under it is where it was when it was in front.
+    const a = placeDisplay(shelf, row, 3, { index: 3, amount: 0 }, []);
+    const b = placeDisplay(shelf, row, 3.5, { index: 3, amount: 0 }, []);
+    expect(a[3].x - b[3].x).toBeGreaterThan(0);
+  });
+
+  test('the swipe draws out the spine it is over, and puts it back as it passes', () => {
+    const over = placeDisplay(shelf, row, 1, { index: 1, amount: 0 }, []);
+    const half = placeDisplay(shelf, row, 1.5, { index: 1, amount: 0 }, []);
+    expect(over[1].z).toBeCloseTo(-shelf[1].width / 2 + DISPLAY.nudge);
+    expect(over[2].z).toBeCloseTo(-shelf[2].width / 2);
+    expect(half[1].z).toBeCloseTo(half[2].z - (shelf[1].width - shelf[2].width) / 2);
+  });
+
+  test('the book on display comes out, faces the reader and leans back on the spines', () => {
+    for (const b of [book(), book('right'), book('left', 5)]) {
+      const shown = displayPose(b, 1, 1, 0);
+      expect(shown.yaw).toBeCloseTo(Math.sign(b.binding === 'left' ? 1 : -1) * DISPLAY.yaw);
+      expect(shown.tip).toBeCloseTo(-DISPLAY.lean);
+      expect(shown.ink).toBe(0);
+      // Its back's top edge rests just clear of the line of spines.
+      const top = bookPoint(shown, 0, b.height, -b.depth / 2);
+      expect(top.z).toBeGreaterThan(DISPLAY.clear - 1);
+      expect(top.z).toBeLessThan(DISPLAY.clear + 6);
+    }
+  });
+
+  test('it never runs into the books beside it, and once it turns stands clear of all they reach out', () => {
+    const sheets: ShelfBook = { ...book('left', 6), form: 'sheets' };
+    const issue: ShelfBook = { ...book('left', 5), form: 'issue' };
+    for (const b of [book(), book('right'), book('left', 40)]) {
+      for (const neighbour of [book(), sheets, issue]) {
+        const books = [neighbour, b, neighbour];
+        const clear = displayClear(books, displayRow(books), 1);
+        const beside = b.depth / 2 + SHELF.gap + neighbour.depth / 2;
+        for (let t = 0; t <= 1.0001; t += 0.005) {
+          const at = displayPose(b, 1, t, 0, clear);
+          for (const side of [-1, 1]) {
+            const next = { x: side * beside, z: -neighbour.width / 2, yaw: 90, ink: 1 };
+            expect(shelfOverlap(b, at, neighbour, next)).toBe(0);
+          }
+          if (Math.abs(at.yaw) < 89.99) for (const corner of corners(b, at)) expect(corner.z).toBeGreaterThan(shelvedProud(neighbour));
+        }
+      }
+    }
+  });
+
+  test('a CG set reaches well out of the line of spines, a hard cover by its back, an issue not at all', () => {
+    const sheets = shelvedProud({ ...book('left', 6), form: 'sheets' });
+    expect(sheets).toBeGreaterThan(20);
+    expect(shelvedProud(book())).toBeCloseTo(6);
+    expect(shelvedProud({ ...book('left', 5), form: 'issue' })).toBe(0);
+    // Only what stands behind the book on display moves it out.
+    const far = [{ ...book('left', 6), form: 'sheets' as const }, ...Array.from({ length: 6 }, () => book()), book()];
+    expect(displayClear(far, displayRow(far), far.length - 1)).toBe(DISPLAY.clear);
+    expect(displayClear(far, displayRow(far), 1)).toBeCloseTo(sheets + DISPLAY.air);
+  });
+
+  test('the tabs on the spines behind the book on display go as it comes out', () => {
+    const books = Array.from({ length: 9 }, () => book());
+    const row = displayRow(books);
+    const stage = { width: 390, height: 341 };
+    const out = shelfCallouts(books, placeDisplay(books, row, 4, { index: 4, amount: 1 }, []), 4, stage, { index: 4, settled: 1 });
+    expect(out.tabs[3].shelved).toBe(0);
+    expect(out.tabs[5].shelved).toBe(0);
+    expect(out.tabs[0].shelved).toBe(1);
+    expect(out.tabs[8].shelved).toBe(1);
+    // Still coming out spine first, it stands across nothing yet; turned, the tabs fade as it settles.
+    const sliding = shelfCallouts(books, placeDisplay(books, row, 4, { index: 4, amount: 0.25 }, []), 4, stage, { index: 4, settled: 0.25 });
+    expect(sliding.tabs[3].shelved).toBe(1);
+    const turned = shelfCallouts(books, placeDisplay(books, row, 4, { index: 4, amount: 0.9 }, []), 4, stage, { index: 4, settled: 0.9 });
+    expect(turned.tabs[3].shelved).toBeCloseTo(0.1);
+  });
+
+  test('its three moves run as one, with no jump between them', () => {
+    const b = book();
+    let last = displayPose(b, 1, 0, 0);
+    for (let t = 0.001; t <= 1.0001; t += 0.001) {
+      const at = displayPose(b, 1, t, 0);
+      expect(Math.abs(at.z - last.z)).toBeLessThan(1);
+      expect(Math.abs(at.yaw - last.yaw)).toBeLessThan(1);
+      expect(Math.abs((at.tip ?? 0) - (last.tip ?? 0))).toBeLessThan(0.2);
+      last = at;
+    }
+  });
+
+  test('the books beside it settle into its gap once it is out of it, and nothing else leans', () => {
+    expect(displaySettles(6, 2, { index: 2, amount: 0.2 }).every((d) => d === 0)).toBe(true);
+    const settles = displaySettles(6, 2, { index: 2, amount: 1 });
+    expect(settles).toEqual([0, DISPLAY.settle, 0, -DISPLAY.settle, 0, 0]);
+    // A neighbour the swipe is drawing out is left to it.
+    expect(displaySettles(6, 2.6, { index: 2, amount: 1 })[3]).toBe(0);
+    expect(displaySettles(6, 0, { index: 0, amount: 1 })).toEqual([0, -DISPLAY.settle, 0, 0, 0, 0]);
+  });
+
+  test('a book leaning into the gap tips on the edge of its foot, and its head follows', () => {
+    const b = book();
+    const upright = { x: 0, z: -b.width / 2, yaw: 90, ink: 1 };
+    const leaning = settledPlace(upright, b, 4);
+    // The edge it leans toward stays where it was, on the shelf.
+    const edge = bookPoint(leaning, 0, 0, b.depth / 2);
+    expect(edge.x).toBeCloseTo(b.depth / 2);
+    expect(edge.y).toBeCloseTo(0);
+    const head = bookPoint(leaning, 0, b.height, 0);
+    expect(head.x).toBeGreaterThan(b.height * Math.sin(rad(3.9)));
+  });
+});
+
+describe('a display row played by the swipe', () => {
+  test('the book the swipe is over is all the way out, and none is half way to the next', () => {
+    expect(displayScrubbed(3, 6)).toEqual({ index: 3, amount: 1 });
+    expect(displayScrubbed(2.5, 6).amount).toBe(0);
+    expect(displayScrubbed(3.49, 6).index).toBe(3);
+    expect(displayScrubbed(3.51, 6).index).toBe(4);
+    // Past either end it is the end book's, as far as the swipe is from it.
+    expect(displayScrubbed(-0.2, 6).index).toBe(0);
+    expect(displayScrubbed(5.3, 6).index).toBe(5);
+  });
+
+  test('the display hands from book to book with no jump', () => {
+    let last = displayScrubbed(0, 6);
+    for (let pos = 0.002; pos <= 5; pos += 0.002) {
+      const now = displayScrubbed(pos, 6);
+      if (now.index !== last.index) {
+        expect(last.amount).toBeLessThan(0.001);
+        expect(now.amount).toBeLessThan(0.001);
+      } else expect(Math.abs(now.amount - last.amount)).toBeLessThan(0.02);
+      last = now;
+    }
+  });
+
+  test('swept along the whole shelf it never runs into a book beside it, nor through what they reach out', () => {
+    const books: ShelfBook[] = [book(), { ...book('left', 6), form: 'sheets' }, book('right'), { ...book('left', 5), form: 'issue' }, book('left', 40), book()];
+    const row = displayRow(books);
+    for (let pos = 0; pos <= books.length - 1; pos += 0.01) {
+      const shown = displayScrubbed(pos, books.length);
+      const places = placeDisplay(books, row, pos, shown, [], false);
+      const at = places[shown.index];
+      places.forEach((place, j) => {
+        if (j === shown.index) return;
+        // Every other book stands where it stands at rest, spine out on the line.
+        expect(Math.abs(place.yaw)).toBe(90);
+        expect(place.z).toBeCloseTo(-books[j].width / 2);
+        expect(shelfOverlap(books[shown.index], at, books[j], place)).toBe(0);
+      });
+      if (Math.abs(at.yaw) < 89.99) {
+        const proud = Math.max(...[shown.index - 1, shown.index + 1].filter((j) => j >= 0 && j < books.length).map((j) => shelvedProud(books[j])));
+        const c = Math.cos(rad(at.yaw));
+        const s = Math.sin(rad(at.yaw));
+        const b = books[shown.index];
+        for (const i of [-1, 1]) for (const k of [-1, 1]) expect(at.z - (i * b.width * s) / 2 + (k * b.depth * c) / 2).toBeGreaterThan(proud);
+      }
+    }
+  });
+
+  test('the books beside it settle into its gap evenly, even as the swipe nears one of them', () => {
+    expect(displaySettles(6, 2.3, { index: 2, amount: 1 }, false)).toEqual([0, DISPLAY.settle, 0, -DISPLAY.settle, 0, 0]);
+    expect(displaySettles(6, 2.3, { index: 2, amount: 1 })[3]).toBe(0);
+  });
 });
 
 describe('the knocks', () => {

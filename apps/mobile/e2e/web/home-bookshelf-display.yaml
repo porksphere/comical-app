@@ -1,0 +1,54 @@
+url: http://localhost:4000/comical-app
+---
+# Settings → General → Bookshelf motion turns the home bookshelf's Display motion on, and the shelf
+# still opens what it shows: the caption on the book on display (RESUME) opens it in the reader, as
+# it does on the carousel. Put back to Carousel at the end, so the flows after this one see the
+# default.
+#
+# The tab bar, the General row and the back button set accessibilityLabels, so they are selected by
+# those ("Settings", "General", "Browse", "Go back") as in settings-walkthrough.yaml; the select row,
+# its options and the caption carry testIDs alone and are selected by id, as on mobile.
+#
+# Kept in sync BY HAND with ../mobile/home-bookshelf-display.yaml (same journey).
+
+- launchApp
+
+- tapOn:
+    id: "Settings"
+- tapOn:
+    id: "General"
+- scrollUntilVisible:
+    element:
+      id: "settings.select.bookshelf-motion"
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: "settings.select.bookshelf-motion"
+- tapOn:
+    id: "settings.select.bookshelf-motion.option.display"
+- tapOn:
+    id: "Go back"
+
+- tapOn:
+    id: "Browse"
+- assertVisible:
+    id: "home-bookshelf"
+- tapOn:
+    id: "home-bookshelf.resume"
+- assertVisible:
+    id: "Close reader"
+
+- launchApp
+- tapOn:
+    id: "Settings"
+- tapOn:
+    id: "General"
+- scrollUntilVisible:
+    element:
+      id: "settings.select.bookshelf-motion"
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: "settings.select.bookshelf-motion"
+- tapOn:
+    id: "settings.select.bookshelf-motion.option.carousel"

@@ -1,0 +1,53 @@
+appId: com.porksphere.comical
+---
+# Settings → General → Bookshelf motion turns the home bookshelf's Display motion on, and the shelf
+# still opens what it shows: the caption on the book on display (RESUME) opens it in the reader, as
+# it does on the carousel. Put back to Carousel at the end, so the flows after this one see the
+# default.
+#
+# Android only on mobile: the tabs are tapped by testID, which iOS's system tab bar does not have.
+# The shelf is drawn on WebGPU; see home-bookshelf.yaml for a machine that cannot start it.
+#
+# Kept in sync BY HAND with ../web/home-bookshelf-display.yaml (same journey).
+
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.general"
+- scrollUntilVisible:
+    element:
+      id: "settings.select.bookshelf-motion"
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: "settings.select.bookshelf-motion"
+- tapOn:
+    id: "settings.select.bookshelf-motion.option.display"
+- tapOn:
+    id: "top-bar.back"
+
+- tapOn:
+    id: "tab.browse"
+- assertVisible:
+    id: "home-bookshelf"
+- tapOn:
+    id: "home-bookshelf.resume"
+- assertVisible:
+    id: "reader.toolbar.back"
+
+- launchApp
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.general"
+- scrollUntilVisible:
+    element:
+      id: "settings.select.bookshelf-motion"
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: "settings.select.bookshelf-motion"
+- tapOn:
+    id: "settings.select.bookshelf-motion.option.carousel"

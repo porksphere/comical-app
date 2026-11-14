@@ -1144,6 +1144,34 @@ A lean pivots on the edge of the foot it leans toward (`leanedPlace`, a place's 
 scene and `bookPoint` follow), and nothing knocks under Reduce Motion. The frames go on until the
 last spine has stopped rocking, under a finger as well.
 
+**Three motions, chosen in Settings → General → Bookshelf motion** (`ShelfMotion`, kept with the
+shelf's other choices). The carousel is what the paragraphs around this describe. `display` leaves
+the row standing spine out and moves it under the finger point for point (`displayRow`, `rowAt`:
+the carousel's 64 points a book would have the finger run ahead of the spines it is over), a spine
+sliding a little way out as the swipe passes over it (`DISPLAY.nudge`); only the book the swipe
+lands on comes off the shelf: straight out until it clears the row, round to face the reader, and
+leaning back on the spines (`displayPose`), the two beside it settling into the gap on a loose
+spring (`displaySettles`, `settledPlace`, a place's `roll`). The three moves run as one — the swing
+leaves the top of the slide already moving and the lean starts before the swing ends — since eased
+to a stop between them they read as three moves, and slow at any length. It plays on its own clock
+(`DISPLAY.out`, `.back`) once the shelf is within `DISPLAY.landing` of the book, never under a
+finger, and on one book at a time: the last goes back before the next comes out, because a cover
+swinging back sweeps the slot beside it. It stands `DISPLAY.clear` in front of the line of spines,
+which the rounded backs stand 6 points proud of: a cover leaned on the line ran through them. The
+callouts stand on the book on display as far as it has come out (`shelfCallouts`' `lead`), so the
+caption leaves with it rather than jumping to the book the swipe is over. A shelf that comes to rest
+in the frame the last book goes back hands the display on in that same frame (`stepDisplay`), or it
+stops asking for frames with the next book still on the shelf. `display-swipe` plays the same
+display on every book the swipe passes, from where the swipe is alone (`displayScrubbed`), as the
+carousel's turn is: all of it on the book the swipe is over and none half way to the next, so only
+one book is ever out (two at once had one standing out spine first in front of the other's cover).
+Its swipe takes the carousel's `dragUnit` a book, not the row point for point: at that a book's
+whole slide, swing and lean would fit in fifteen points of finger, a flicker. It draws no spine
+out (`nudged`), since the display plays within half a step of the spines it would draw out and
+its cover would cut into them, and both books beside it settle evenly. Nothing knocks on a
+display row: its row slides whole or stands, and the books beside the one on display settle
+instead.
+
 **Everything that moves is `ShelfDriver`'s, outside React.** Where along the shelf the reader is,
 the drag, the spring, the press of a tap, the view's drift, and the only place a frame is
 drawn from. It keeps what the scene is to show until there is a scene: the renderer starts after
@@ -1170,10 +1198,10 @@ depth rather than sampled, and the shadow is cast again only when a book has mov
 that only drifts casts none. Merge by hand (`merged`): three's own merge is an addon, which imports
 bare `three`.
 
-**The view drifts, and the phone only adds to it.** A couple of degrees of turn over seconds
+**The view drifts, and the phone only adds to it.** A degree or so of turn over seconds
 (`driftAt`), with the device's tilt (`DeviceTilt`: gravity's direction, measured from how the
-phone is being held, so a tip eases back to nothing) laid on top at no more than the drift's own
-size. It is a component, mounted only while the shelf may drift: the sensor runs for as long as
+phone is being held, so a tip eases back to nothing) laid on top at half as much again as the
+drift's own size: the drift moves unbidden, so it stays the smaller. It is a component, mounted only while the shelf may drift: the sensor runs for as long as
 its hook is mounted, and as a hook of the shelf's it ran under every other tab and the reader. The stickers ride the drift through the camera and take a few points more from the tilt.
 Each is put on afresh for each book that comes forward: the caption leaning one way or the other,
 the burst's star turned at random under lettering that stays level — twelve points, since
