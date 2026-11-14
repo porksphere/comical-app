@@ -288,6 +288,73 @@ export function placeShelf(books: readonly ShelfBook[], pos: number): ShelfPlace
   return places;
 }
 
+/**
+ * How the carousel's spines knock into each other: a spine shoved along the shelf to make room for
+ * the book in front leans back against the push, swings past upright as the push stops and rocks
+ * to rest, and pulls on the ones beside it, so a knock runs a few books down the row. `gain` is
+ * degrees of lean for each point a second it is shoved, `max` the most it leans, `coupling` how
+ * hard it pulls its neighbours, and `follow` how quickly the speed it leans by follows its own.
+ */
+export const KNOCK = { gain: 0.028, max: 4, stiffness: 170, damping: 6, coupling: 90, follow: 18 } as const;
+
+/** Each book's lean along the shelf in degrees and how fast it is rocking, how fast it is being
+ *  shoved, and where it stood last frame (none before the first). */
+export type Knocks = { x: number[] | null; speed: number[]; lean: number[]; spin: number[] };
+
+export function restingKnocks(count: number): Knocks {
+  return { x: null, speed: new Array<number>(count).fill(0), lean: new Array<number>(count).fill(0), spin: new Array<number>(count).fill(0) };
+}
+
+/**
+ * One frame of the knocks, `dt` seconds on, the books at `places` and the shelf at `pos`; whether
+ * every book has come to rest. Only the room round the book in front knocks: the row's own slide,
+ * read off the books three and more from the front, which only ever slide, is taken out, or every
+ * move would rock the whole shelf like a carriage. The front book is shoved in its tone's measure
+ * (`ink`), so the one turned to the reader stands still.
+ */
+export function stepKnocks(knocks: Knocks, places: readonly ShelfPlace[], pos: number, dt: number): boolean {
+  const n = places.length;
+  const was = knocks.x;
+  knocks.x = places.map((p) => p.x);
+  if (!was || was.length !== n || dt <= 0) return knocks.lean.every((lean) => lean === 0);
+  const moved = places.map((p, i) => p.x - was[i]);
+  const far = moved.filter((_, i) => Math.abs(i - pos) >= 3);
+  const ride = far.length ? far : moved;
+  const slide = ride.reduce((sum, d) => sum + d, 0) / ride.length;
+  const follow = 1 - Math.exp(-dt * KNOCK.follow);
+  for (let i = 0; i < n; i++) knocks.speed[i] += ((moved[i] - slide) / dt - knocks.speed[i]) * follow;
+  for (let i = 0; i < n; i++) {
+    const want = clamp(-KNOCK.gain * knocks.speed[i], -KNOCK.max, KNOCK.max) * clamp(places[i].ink, 0, 1);
+    const beside = (i > 0 ? knocks.lean[i - 1] : 0) + (i < n - 1 ? knocks.lean[i + 1] : 0) - 2 * knocks.lean[i];
+    knocks.spin[i] += (-KNOCK.stiffness * (knocks.lean[i] - want) - KNOCK.damping * knocks.spin[i] + KNOCK.coupling * beside) * dt;
+  }
+  let rest = true;
+  for (let i = 0; i < n; i++) {
+    knocks.lean[i] += knocks.spin[i] * dt;
+    if (Math.abs(knocks.speed[i]) < 0.5) knocks.speed[i] = 0;
+    if (knocks.speed[i] === 0 && Math.abs(knocks.lean[i]) < 0.002 && Math.abs(knocks.spin[i]) < 0.01) {
+      knocks.lean[i] = 0;
+      knocks.spin[i] = 0;
+    } else rest = false;
+  }
+  return rest;
+}
+
+/** A book leaning `degrees` along the shelf, on the edge of its foot it leans toward, so nothing
+ *  sinks into the shelf: the foot's run along the shelf at its turn. */
+export function leanedPlace(place: ShelfPlace, book: ShelfBook, degrees: number): ShelfPlace {
+  if (!degrees) return place;
+  const turn = rad(place.yaw);
+  const run = book.width * Math.abs(Math.cos(turn)) + book.depth * Math.abs(Math.sin(turn));
+  const fall = rad(Math.abs(degrees));
+  return {
+    ...place,
+    x: place.x + Math.sign(degrees) * (run / 2) * (1 - Math.cos(fall)),
+    y: (place.y ?? 0) + (run / 2) * Math.sin(fall),
+    roll: (place.roll ?? 0) + degrees,
+  };
+}
+
 /** A drag carried past either end of the shelf: it follows, less and less. */
 export function rubberBand(raw: number, count: number): number {
   const last = Math.max(0, count - 1);

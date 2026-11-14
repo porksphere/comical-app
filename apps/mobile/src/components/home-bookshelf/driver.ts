@@ -8,19 +8,24 @@ import {
   displaySettles,
   driftAt,
   hoveredPlace,
+  leanedPlace,
   placeDisplay,
   placeShelf,
   posAtRow,
   pressedPlace,
+  restingKnocks,
   rowAt,
   rowSpacing,
   rubberBand,
   settleOn,
   shelfMiddle,
   shelfCallouts,
+  stepKnocks,
+  type Knocks,
   type ShelfBook,
   type ShelfCallouts,
   type ShelfMotion,
+  type ShelfPlace,
   type ShelfStage,
 } from '@/lib/bookshelf';
 
@@ -100,6 +105,8 @@ export class ShelfDriver {
   private shown = { index: 0, amount: 0 };
   private settles: number[] = [];
   private settleVelocities: number[] = [];
+  /** How the spines shoved to make room are rocking (`stepKnocks`). */
+  private knocks: Knocks = restingKnocks(0);
 
   get focused(): number {
     return this.target;
@@ -132,7 +139,10 @@ export class ShelfDriver {
    *  the view holds still. */
   setStill(still: boolean) {
     this.still = still;
-    if (still) this.drift = { yaw: 0, pitch: 0 };
+    if (still) {
+      this.drift = { yaw: 0, pitch: 0 };
+      this.knocks = restingKnocks(this.books.length);
+    }
   }
 
   attach(scene: ShelfScene | null) {
@@ -162,6 +172,7 @@ export class ShelfDriver {
     this.shown = { index: Math.round(this.target), amount: 0 };
     this.settles = this.books.map(() => 0);
     this.settleVelocities = this.books.map(() => 0);
+    this.knocks = restingKnocks(this.books.length);
     this.kick();
     this.draw();
   }
@@ -189,6 +200,7 @@ export class ShelfDriver {
     // A new order moves the books out from under the pointer: its next move finds the one there.
     this.hovered = -1;
     this.lifts = specs.map(() => 0);
+    this.knocks = restingKnocks(specs.length);
     const last = Math.max(0, specs.length - 1);
     const now = specs.findIndex((s) => s.key === front);
     if (!this.touched) this.pos = this.target = shelfMiddle(specs.length);
@@ -347,6 +359,7 @@ export class ShelfDriver {
     const dt = this.last ? Math.min(0.032, (now - this.last) / 1000) : 1 / 60;
     this.last = now;
     if (!this.still) this.drift = driftAt(now, { x: tiltX, y: tiltY });
+    let shelf: ShelfPlace[] | undefined;
     if (this.moving) {
       if (!this.held) {
         this.velocity += (-STIFFNESS * (this.pos - this.target) - DAMPING * this.velocity) * dt;
@@ -381,14 +394,18 @@ export class ShelfDriver {
         this.lifts[i] = Math.abs(next - to) < 0.004 ? to : next;
         if (this.lifts[i] !== to) lifted = false;
       }
-      // Under a finger the next frame is asked for by the finger's next move.
+      // Only the carousel shoves its spines along; a display row slides whole, or stands.
+      if (this.motion === 'carousel') shelf = placeShelf(this.books, this.pos);
+      const knocked = !shelf || this.still || stepKnocks(this.knocks, shelf, this.pos, dt);
+      // Under a finger the next frame is asked for by the finger's next move, once the spines it
+      // knocked have stopped rocking.
       const pressed = this.pressVelocity === 0 && this.press === (this.pressing ? 1 : 0);
-      if (pressed && lifted && shown && (this.held || (this.pos === this.target && this.velocity === 0))) {
+      if (pressed && lifted && shown && knocked && (this.held || (this.pos === this.target && this.velocity === 0))) {
         this.moving = false;
         this.frames.stop();
       }
     }
-    this.draw();
+    this.draw(shelf);
     // Out past where it stood and turning back, or back at rest, or long enough.
     if (this.releasedAt < 0) this.releasedAt = now;
     const out = (this.press <= 0 && this.pressVelocity >= 0) || now - this.releasedAt > PRESS_WAIT;
@@ -442,13 +459,21 @@ export class ShelfDriver {
     return rest;
   }
 
-  private draw() {
+  /** `shelf` is the carousel's places this frame, where `step` has already worked them out. */
+  private draw(shelf?: ShelfPlace[]) {
     if (!this.books.length || !this.stage.width) return;
     const display = this.motion !== 'carousel';
     // Played by the swipe itself under `display-swipe`, so worked out from where it is.
     const shown = this.motion === 'display-swipe' ? displayScrubbed(this.pos, this.books.length) : this.shown;
-    const places = display ? placeDisplay(this.books, this.row, this.pos, shown, this.settles, this.motion === 'display') : placeShelf(this.books, this.pos);
+    const places = display
+      ? placeDisplay(this.books, this.row, this.pos, shown, this.settles, this.motion === 'display')
+      : (shelf ?? placeShelf(this.books, this.pos));
     const front = Math.min(Math.max(0, Math.round(this.pos)), this.books.length - 1);
+    // A knock runs on through the book in front, but that book, turned to the reader, never leans.
+    for (let i = 0; i < places.length; i++) {
+      const lean = (this.knocks.lean[i] ?? 0) * Math.min(1, Math.max(0, places[i].ink));
+      if (lean) places[i] = leanedPlace(places[i], this.books[i], lean);
+    }
     for (let i = 0; i < places.length; i++) if (this.lifts[i]) places[i] = hoveredPlace(places[i], this.books[i], this.lifts[i]);
     if (this.press) places[front] = pressedPlace(places[front], this.press);
     if (this.scene) {
