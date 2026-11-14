@@ -38,7 +38,7 @@ import {
 } from 'three/tsl';
 import * as THREE from 'three/webgpu';
 
-import { SHELF, cssRgb, type Rgb, type ShelfPlace } from '@/lib/bookshelf';
+import { PRINT_LEAN, SHELF, cssRgb, spineBulge, type Rgb, type ShelfPlace } from '@/lib/bookshelf';
 import { PRINT, type BookCover } from '@/lib/book-cover';
 
 export type ShelfBookSpec = {
@@ -103,10 +103,6 @@ function merged(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   return out;
 }
 
-/** How a set's two prints stand: each one's lean in degrees, and how far the one behind sits
- *  toward the binding's side, of the width. The card's own picture of a set (`PRINT.tilt`) turned
- *  further and pulled apart, since on a shelf it has a row of books to be told from. */
-const PRINT_LEAN = { front: -3, behind: 8.5, aside: 0.07 } as const;
 
 /** A book as built; `behind` is the picture on a set's second print. */
 type Built = {
@@ -510,7 +506,7 @@ export class ShelfScene {
 
       if (hard) {
         // A rounded back: half an ellipse from board to board, lettered down its length.
-        const bulge = THREE.MathUtils.clamp(d * 0.24, 2, 6);
+        const bulge = spineBulge(d);
         const segments = 14;
         const positions: number[] = [];
         const normals: number[] = [];
@@ -656,9 +652,9 @@ export class ShelfScene {
       const place = places[i];
       if (!place) return;
       group.position.set(place.x, place.y ?? 0, place.z);
-      // Three's default XYZ order applies the yaw first, so the tip is about the shelf's run.
-      group.rotation.set(rad(place.tip ?? 0), rad(place.yaw), 0);
-      stand += `;${place.x.toFixed(1)},${place.z.toFixed(1)},${place.yaw.toFixed(1)},${(place.tip ?? 0).toFixed(1)}`;
+      // ZXY applies the yaw first, then the tip about the shelf's run, then the roll along it.
+      group.rotation.set(rad(place.tip ?? 0), rad(place.yaw), -rad(place.roll ?? 0), 'ZXY');
+      stand += `;${place.x.toFixed(1)},${(place.y ?? 0).toFixed(1)},${place.z.toFixed(1)},${place.yaw.toFixed(1)},${(place.tip ?? 0).toFixed(1)},${(place.roll ?? 0).toFixed(1)}`;
       const tone = ink ? place.ink : 0;
       group.traverse((o) => {
         o.userData.ink = tone;

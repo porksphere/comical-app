@@ -1133,6 +1133,25 @@ it was, and at rest nothing differs. Two books bound on opposite sides turn towa
 would meet inside that room, so a turning book is moved along just far enough to clear the two
 before it (`shelfOverlap`), which for such a pair comes to about what the old room gave.
 
+**Two motions, chosen in Settings → General → Bookshelf motion** (`ShelfMotion`, kept with the
+shelf's other choices). The carousel is what the paragraphs around this describe. `display` leaves
+the row standing spine out and moves it under the finger point for point (`displayRow`, `rowAt`:
+the carousel's 64 points a book would have the finger run ahead of the spines it is over), a spine
+sliding a little way out as the swipe passes over it (`DISPLAY.nudge`); only the book the swipe
+lands on comes off the shelf: straight out until it clears the row, round to face the reader, and
+leaning back on the spines (`displayPose`), the two beside it settling into the gap on a loose
+spring (`displaySettles`, `settledPlace`, a place's `roll`). The three moves run as one — the swing
+leaves the top of the slide already moving and the lean starts before the swing ends — since eased
+to a stop between them they read as three moves, and slow at any length. It plays on its own clock
+(`DISPLAY.out`, `.back`) once the shelf is within `DISPLAY.landing` of the book, never under a
+finger, and on one book at a time: the last goes back before the next comes out, because a cover
+swinging back sweeps the slot beside it. It stands `DISPLAY.clear` in front of the line of spines,
+which the rounded backs stand 6 points proud of: a cover leaned on the line ran through them. The
+callouts stand on the book on display as far as it has come out (`shelfCallouts`' `lead`), so the
+caption leaves with it rather than jumping to the book the swipe is over. A shelf that comes to rest
+in the frame the last book goes back hands the display on in that same frame (`stepDisplay`), or it
+stops asking for frames with the next book still on the shelf.
+
 **Everything that moves is `ShelfDriver`'s, outside React.** Where along the shelf the reader is,
 the drag, the spring, the press of a tap, the view's drift, and the only place a frame is
 drawn from. It keeps what the scene is to show until there is a scene: the renderer starts after

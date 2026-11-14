@@ -9,13 +9,13 @@ import { useDataSource, useMockActive } from '@/data/source';
 import type { HistoryEntry, SeriesDetail } from '@/data/types';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import type { CoverForm, ReadingDirection } from '@/lib/book-cover';
-import { arrangeShelf, pickShelf } from '@/lib/bookshelf';
+import { arrangeShelf, pickShelf, type ShelfMotion } from '@/lib/bookshelf';
 import { persisted$ } from '@/lib/observable';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 
 /** Persisted as an OBJECT, not a bare boolean — see lib/dev-profiler-flag for why a bare `false`
  *  breaks Legend State's persistence. */
-const bookshelf$ = persisted$<{ on: boolean; stats?: boolean; seriesSticker?: boolean }>('comical:homeBookshelf', { on: true });
+const bookshelf$ = persisted$<{ on: boolean; stats?: boolean; seriesSticker?: boolean; motion?: ShelfMotion }>('comical:homeBookshelf', { on: true });
 
 /** Whether Comical Home opens on the bookshelf (Settings → General; on unless turned off). A
  *  `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
@@ -25,6 +25,15 @@ export function useHomeBookshelf(): boolean {
 
 export function setHomeBookshelf(on: boolean): void {
   bookshelf$.on.set(on);
+}
+
+/** How the shelf answers a swipe (Settings → General → Bookshelf motion; the carousel unless changed). */
+export function useHomeBookshelfMotion(): ShelfMotion {
+  return use$(bookshelf$.motion) ?? 'carousel';
+}
+
+export function setHomeBookshelfMotion(motion: ShelfMotion): void {
+  bookshelf$.motion.set(motion);
 }
 
 // For the session, not persisted: a renderer that could not start once is not asked again until

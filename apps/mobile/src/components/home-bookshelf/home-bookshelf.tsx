@@ -29,7 +29,13 @@ import { useBookCoverResolver } from '@/hooks/use-book-covers';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCenterInset, useSideInsets } from '@/hooks/use-content-width';
 import { DeviceTilt, LEVEL, type Tilt } from '@/hooks/use-device-tilt';
-import { homeBookshelfStats, markHomeBookshelfUnavailable, useHomeBookshelfStats, type BookshelfEntry } from '@/hooks/use-home-bookshelf';
+import {
+  homeBookshelfStats,
+  markHomeBookshelfUnavailable,
+  useHomeBookshelfMotion,
+  useHomeBookshelfStats,
+  type BookshelfEntry,
+} from '@/hooks/use-home-bookshelf';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { useScrollbarGutter } from '@/lib/scrollbar-gutter';
 import {
@@ -340,6 +346,8 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
     return () => driver.dispose();
   }, [driver, fx, tick]);
   useEffect(() => driver.setStill(reduceMotion), [driver, reduceMotion]);
+  const motion = useHomeBookshelfMotion();
+  useEffect(() => driver.setMotion(motion), [driver, motion]);
 
   // The shelf's frames come off the display's own callback, on the UI thread, and are drawn here on
   // the JS thread where three runs. One is in hand at a time: a frame that arrives while the last

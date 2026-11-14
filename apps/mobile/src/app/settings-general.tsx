@@ -34,13 +34,14 @@ import { useDataSource, useMockActive, useNsfwMode, type NsfwMode } from '@/data
 import { connectServer } from '@/data/switch-server';
 import { setBookCovers, useBookCoversEnabled } from '@/hooks/use-book-covers';
 import { setCoverShelf, useCoverShelf } from '@/hooks/use-cover-shelf';
-import { setHomeBookshelf, useHomeBookshelf } from '@/hooks/use-home-bookshelf';
+import { setHomeBookshelf, setHomeBookshelfMotion, useHomeBookshelf, useHomeBookshelfMotion } from '@/hooks/use-home-bookshelf';
 import { setFeedTint, useFeedTint } from '@/hooks/use-feed-tint';
 import { setLibraryMarker, useLibraryMarker } from '@/hooks/use-library-marker';
 import { setKeepTabPanes, useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
 import { useHydrated } from '@/hooks/use-responsive';
 import { useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { desktopDataDir, desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
+import type { ShelfMotion } from '@/lib/bookshelf';
 import { friendlyError } from '@/lib/friendly-error';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 import { useSeriesPaneAvailable } from '@/lib/series-pane';
@@ -76,6 +77,15 @@ const HOLD_ACTION_OPTIONS: SettingsOption<BrowseHoldAction>[] = [
   },
 ];
 
+const SHELF_MOTION_OPTIONS: SettingsOption<ShelfMotion>[] = [
+  { value: 'carousel', label: 'Carousel', description: 'The row slides round to the book you stop on, and every book it passes turns to face you on the way.' },
+  {
+    value: 'display',
+    label: 'Display',
+    description: 'The books stay spine out, each sliding a little way out as your swipe passes over it, and the one you stop on comes off the shelf and leans back on the others, face out.',
+  },
+];
+
 const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
   { value: 'system', label: 'System', description: 'Follow the device’s light or dark setting.' },
   { value: 'light', label: 'Light', description: 'Always use the light theme.' },
@@ -99,6 +109,7 @@ export default function GeneralSettingsScreen() {
   const bookCovers = useBookCoversEnabled();
   const coverShelf = useCoverShelf();
   const homeBookshelf = useHomeBookshelf();
+  const shelfMotion = useHomeBookshelfMotion();
   const lightCards = useLightCards();
   const feedTint = useFeedTint();
   const libraryMarker = useLibraryMarker();
@@ -158,16 +169,17 @@ export default function GeneralSettingsScreen() {
     {
       title: 'Display',
       footer:
-        'Book covers draws each series as the thing it is: a bound volume (spine on the right when you read right to left), a stapled issue, a set of loose sheets, or an unbound webtoon. Shelf alignment stands the covers in a row on one line, so covers of different shapes sit like books on a shelf, with their titles in line beneath them. Home bookshelf opens the Comical home on what you are reading, as books on a shelf. Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.',
-      fields: [
+        'Book covers draws each series as the thing it is: a bound volume (spine on the right when you read right to left), a stapled issue, a set of loose sheets, or an unbound webtoon. Shelf alignment stands the covers in a row on one line, so covers of different shapes sit like books on a shelf, with their titles in line beneath them. Home bookshelf opens the Comical home on what you are reading, as books on a shelf, and Bookshelf motion is how they move as you swipe: Carousel turns every book it passes to face you, Display leaves them standing and brings out only the one you stop on. Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.',
+      fields: fields(
         select({ label: 'Appearance', value: themePref, options: THEME_OPTIONS, onChange: setThemePref }),
         { kind: 'toggle', label: 'Book covers', value: bookCovers, onChange: setBookCovers },
         { kind: 'toggle', label: 'Shelf alignment', value: coverShelf, onChange: setCoverShelf },
         { kind: 'toggle', label: 'Home bookshelf', value: homeBookshelf, onChange: setHomeBookshelf },
+        homeBookshelf && select({ label: 'Bookshelf motion', value: shelfMotion, options: SHELF_MOTION_OPTIONS, onChange: setHomeBookshelfMotion }),
         { kind: 'toggle', label: 'Lightweight cards', value: lightCards, onChange: (v) => lightCards$.light.set(v) },
         { kind: 'toggle', label: 'Tinted backgrounds', value: feedTint, onChange: setFeedTint },
         { kind: 'toggle', label: 'Mark saved series', value: libraryMarker, onChange: setLibraryMarker },
-      ],
+      ),
     },
     // The hold row sits with NSFW because that is what it acts on, and its footer is the gesture's
     // only documentation — nothing on screen says a title or an icon is holdable.

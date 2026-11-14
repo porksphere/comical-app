@@ -9,12 +9,15 @@
 import type { CoverBinding, CoverForm } from '@/lib/book-cover';
 import { leadingChapterNumber } from '@/lib/chapter-label';
 
-export type ShelfBook = { width: number; height: number; depth: number; binding: CoverBinding };
+/** `form` is what the book is, where that changes how it stands (`shelvedProud`); a book without
+ *  one is taken for a bound volume. */
+export type ShelfBook = { width: number; height: number; depth: number; binding: CoverBinding; form?: CoverForm };
 
 /** `ink` is how far the book is from the one in front, 0 to 1: what the shelf draws in tone. `tip`
  *  is degrees the book leans toward the reader about the shelf's run, after its yaw, and `y` how far
- *  its foot is raised to keep it on the shelf as it does. */
-export type ShelfPlace = { x: number; z: number; yaw: number; ink: number; y?: number; tip?: number };
+ *  its foot is raised to keep it on the shelf as it does. `roll` is degrees it leans along the
+ *  shelf, toward +x, after the tip. */
+export type ShelfPlace = { x: number; z: number; yaw: number; ink: number; y?: number; tip?: number; roll?: number };
 
 export const SHELF = {
   /** The front book's turn toward the reader, short of square on so its spine still shows. */
@@ -142,6 +145,40 @@ export function bookDepth(form: CoverForm, width: number, chapters: number | und
   }
 }
 
+/** How far a hard cover's rounded back bulges past its boards. */
+export function spineBulge(depth: number): number {
+  return clamp(depth * 0.24, 2, 6);
+}
+
+/** How a set's two prints stand: each one's lean in degrees, and how far the one behind sits
+ *  toward the binding's side, of the width. The card's own picture of a set (`PRINT.tilt`) turned
+ *  further and pulled apart, since on a shelf it has a row of books to be told from. */
+export const PRINT_LEAN = { front: -3, behind: 8.5, aside: 0.07 } as const;
+
+/**
+ * How far a book standing spine out reaches in front of the line of spines: a hard cover by its
+ * rounded back, and a CG set by the corner of a print, since a print leaning across the shelf
+ * leans toward the reader. The rest stand flush.
+ */
+export function shelvedProud(book: ShelfBook): number {
+  switch (book.form ?? 'volume') {
+    case 'volume':
+      return spineBulge(book.depth);
+    case 'sheets':
+      return Math.max(
+        ...[
+          [PRINT_LEAN.front, 0],
+          [PRINT_LEAN.behind, PRINT_LEAN.aside],
+        ].map(([lean, aside]) => {
+          const turn = rad(lean);
+          return book.width * aside + (book.width / 2) * Math.cos(turn) + (book.height / 2) * Math.abs(Math.sin(turn)) - book.width / 2;
+        }),
+      );
+    default:
+      return 0;
+  }
+}
+
 /** A book's turn, how far forward it stands and the room it takes along the shelf at that turn,
  *  with `pos` in front. */
 function stance(book: ShelfBook, index: number, pos: number) {
@@ -265,6 +302,160 @@ export function settleOn(pos: number, velocity: number, count: number): number {
   return clamp(clamp(Math.round(pos + velocity * 0.2), near - 3, near + 3), 0, Math.max(0, count - 1));
 }
 
+/**
+ * How the shelf answers a swipe (Settings → General → Bookshelf motion). `carousel` turns every
+ * book it passes to face the reader and stands the row round the one in front (`placeShelf`);
+ * `display` leaves the row spine out, slides each spine a little way out as the swipe passes over
+ * it, and brings out only the book the swipe lands on, face out and leaning back on the spines
+ * (`placeDisplay`).
+ */
+export type ShelfMotion = 'carousel' | 'display';
+
+export const DISPLAY = {
+  /** How far a spine comes out under the swipe. */
+  nudge: 24,
+  /** How far the book in front stands clear of whatever stands proudest of the line of spines
+   *  behind it (`shelvedProud`), and the least it stands clear of the line itself. */
+  air: 2,
+  clear: 8,
+  /** Its turn short of square on, so its spine still shows, and how far back it leans. */
+  yaw: 4,
+  lean: 8,
+  /** How far the books on either side settle into the gap it left, in degrees. */
+  settle: 3.2,
+  /** Seconds it takes to come out, and to go back. */
+  out: 0.5,
+  back: 0.3,
+  /** How near the shelf has to be to the book it is landing on for that book to start coming out. */
+  landing: 0.4,
+} as const;
+
+/** Where each book stands along a display row, spine out and packed: its middle, from the row's start. */
+export function displayRow(books: readonly ShelfBook[]): number[] {
+  const row: number[] = [];
+  let cursor = 0;
+  for (const book of books) {
+    row.push(cursor + book.depth / 2);
+    cursor += book.depth + SHELF.gap;
+  }
+  return row;
+}
+
+/** The point along the row a place on the shelf stands at, carried on past either end. A finger's
+ *  travel is measured in it, so under a swipe the row moves exactly as far as the finger does. */
+export function rowAt(row: readonly number[], pos: number): number {
+  if (row.length < 2) return row[0] ?? 0;
+  const k = clamp(Math.floor(pos), 0, row.length - 2);
+  return row[k] + (row[k + 1] - row[k]) * (pos - k);
+}
+
+export function posAtRow(row: readonly number[], at: number): number {
+  if (row.length < 2) return 0;
+  let k = 0;
+  while (k < row.length - 2 && at > row[k + 1]) k++;
+  return k + (at - row[k]) / (row[k + 1] - row[k]);
+}
+
+/** Points of row per book where `pos` stands, for turning a fling's speed into books. */
+export function rowSpacing(row: readonly number[], pos: number): number {
+  if (row.length < 2) return 1;
+  const k = clamp(Math.floor(pos), 0, row.length - 2);
+  return row[k + 1] - row[k];
+}
+
+const backOut = (t: number) => {
+  const c = 1.9;
+  const u = t - 1;
+  return 1 + (c + 1) * u * u * u + c * u * u;
+};
+
+/**
+ * A book on a display row: `near` how close the swipe is to it (0 to 1), `shown` how far its
+ * display has played (0 to 1). The display is three moves run as one: it slides straight out
+ * until it is clear of the row, swings round to face the reader, and leans back on the spines,
+ * pivoting on the back of its foot. The swing leaves the top of the slide already moving and the
+ * lean starts before the swing ends: eased to a stop between them, the three read as three moves.
+ */
+export function displayPose(book: ShelfBook, near: number, shown: number, x: number, clear: number = DISPLAY.clear): ShelfPlace {
+  const spine = book.binding === 'left' ? 90 : -90;
+  const pulled = -book.width / 2 + DISPLAY.nudge * near;
+  if (shown <= 0) return { x, z: pulled, yaw: spine, ink: 1 - near };
+  const slide = smoothstep(shown / 0.36);
+  const along = clamp((shown - 0.36) / 0.42, 0, 1);
+  const turn = 1 - (1 - along) * (1 - along);
+  const lean = backOut(clamp((shown - 0.64) / 0.36, 0, 1));
+  const ink = Math.min(1 - near, 1 - slide);
+  if (turn <= 0) return { x, z: pulled + slide * (clear + book.width / 2 - pulled), yaw: spine, ink };
+  const yaw = spine * (1 - turn) + Math.sign(spine) * DISPLAY.yaw * turn;
+  // Half its footprint toward the row at this turn: its back stays that far clear.
+  const reach = (book.width / 2) * Math.abs(Math.sin(rad(yaw))) + (book.depth / 2) * Math.abs(Math.cos(rad(yaw)));
+  const back = rad(DISPLAY.lean * lean);
+  return {
+    x,
+    z: clear + book.height * Math.sin(back) + reach * Math.cos(back),
+    y: reach * Math.sin(back),
+    yaw,
+    tip: -DISPLAY.lean * lean,
+    ink,
+  };
+}
+
+/** A spine-out book leaning `degrees` along the shelf, on the edge of its foot it leans toward. */
+export function settledPlace(place: ShelfPlace, book: ShelfBook, degrees: number): ShelfPlace {
+  if (!degrees) return place;
+  const half = book.depth / 2;
+  const fall = rad(Math.abs(degrees));
+  return { ...place, x: place.x + Math.sign(degrees) * half * (1 - Math.cos(fall)), y: (place.y ?? 0) + half * Math.sin(fall), roll: degrees };
+}
+
+/** How far each book wants to lean, in degrees: the two beside the one on display, into the gap it
+ *  left, once it is out of it; none that the swipe is drawing out itself. */
+export function displaySettles(count: number, pos: number, shown: { index: number; amount: number }): number[] {
+  const settles = new Array<number>(count).fill(0);
+  const gap = smoothstep((shown.amount - 0.34) / 0.16) * DISPLAY.settle;
+  if (!gap) return settles;
+  const free = (j: number) => j >= 0 && j < count && j !== shown.index && Math.abs(j - pos) >= 1;
+  if (free(shown.index - 1)) settles[shown.index - 1] = gap;
+  if (free(shown.index + 1)) settles[shown.index + 1] = -gap;
+  return settles;
+}
+
+/**
+ * Every book's place on a display row with `pos` under the swipe and `shown` the book on display.
+ * The row stands round `pos`, held a little toward the side that has no more books, as
+ * `placeShelf` holds it; `settles` is each book's lean along the shelf, which the driver springs.
+ */
+export function placeDisplay(
+  books: readonly ShelfBook[],
+  row: readonly number[],
+  pos: number,
+  shown: { index: number; amount: number },
+  settles: readonly number[],
+): ShelfPlace[] {
+  const n = books.length;
+  const held = clamp(pos, 0, Math.max(0, n - 1));
+  const toward = n > 1 ? 46 * ((2 * held) / (n - 1) - 1) : 0;
+  const focus = rowAt(row, pos) - toward;
+  const clear = displayClear(books, row, shown.index);
+  return books.map((book, i) => {
+    const place = displayPose(book, smoothstep(1 - Math.abs(i - pos)), i === shown.index ? shown.amount : 0, row[i] - focus, clear);
+    return settledPlace(place, book, settles[i] ?? 0);
+  });
+}
+
+/** How far in front of the line of spines the book on display stands: clear of all that stands
+ *  proud of it behind the book (a CG set's print reaches a good way out), and never nearer than
+ *  `DISPLAY.clear`. */
+export function displayClear(books: readonly ShelfBook[], row: readonly number[], index: number): number {
+  const shown = books[index];
+  if (!shown) return DISPLAY.clear;
+  let proud = 0;
+  books.forEach((book, j) => {
+    if (j !== index && Math.abs(row[j] - row[index]) < shown.width / 2 + book.depth / 2 + SHELF.gap) proud = Math.max(proud, shelvedProud(book));
+  });
+  return Math.max(DISPLAY.clear, proud + DISPLAY.air);
+}
+
 /** `centre` is where along the stage's width the shelf's middle stands: its own middle unless the
  *  stage runs under something the selection should not sit behind (a bar down one side). `yaw` and
  *  `pitch` are the view's drift, in degrees: the shelf turned a little about the stage's middle. */
@@ -321,7 +512,11 @@ export function bookPoint(place: ShelfPlace, along: number, up: number, out: num
   const z = -along * s + out * c;
   const tc = Math.cos(rad(place.tip ?? 0));
   const ts = Math.sin(rad(place.tip ?? 0));
-  return { x: place.x + along * c + out * s, y: (place.y ?? 0) + up * tc - z * ts, z: place.z + up * ts + z * tc };
+  const x = along * c + out * s;
+  const y = up * tc - z * ts;
+  const rc = Math.cos(rad(place.roll ?? 0));
+  const rs = Math.sin(rad(place.roll ?? 0));
+  return { x: place.x + x * rc + y * rs, y: (place.y ?? 0) - x * rs + y * rc, z: place.z + up * ts + z * tc };
 }
 
 /** Where the callouts drawn over the shelf stand, in the stage's points. */
@@ -345,8 +540,16 @@ export function popIn(settled: number): number {
   return Math.max(0, 1 + (overshoot + 1) * u * u * u + overshoot * u * u);
 }
 
-export function shelfCallouts(books: readonly ShelfBook[], places: readonly ShelfPlace[], pos: number, stage: ShelfStage): ShelfCallouts {
-  const front = clamp(Math.round(pos), 0, Math.max(0, books.length - 1));
+/** `lead` names the book the callouts stand on and how nearly it has arrived, where that is not
+ *  simply the one `pos` is nearest: on a display row, the one on display, as far as it has come out. */
+export function shelfCallouts(
+  books: readonly ShelfBook[],
+  places: readonly ShelfPlace[],
+  pos: number,
+  stage: ShelfStage,
+  lead?: { index: number; settled: number },
+): ShelfCallouts {
+  const front = clamp(lead?.index ?? Math.round(pos), 0, Math.max(0, books.length - 1));
   const none = { x: 0, y: 0 };
   if (!books.length) return { front, settled: 0, pop: 0, burst: { ...none, scale: 0 }, caption: { ...none, side: 1 }, tabs: [] };
   const on = (i: number, along: number, up: number, out: number) => {
@@ -358,7 +561,11 @@ export function shelfCallouts(books: readonly ShelfBook[], places: readonly Shel
   const free = binding === 'left' ? 1 : -1;
   const corner = on(front, (free * width) / 2, height, depth / 2);
   const foot = on(front, (-free * width) / 2, height * 0.05, depth / 2);
-  const settled = clamp(1 - 2 * Math.abs(pos - front), 0, 1);
+  const settled = clamp(lead?.settled ?? 1 - 2 * Math.abs(pos - front), 0, 1);
+  // On a display row the book on display stands across the spines behind it, and their tabs go
+  // with them as it comes out.
+  const across = lead ? [on(front, -width / 2, height, depth / 2).x, on(front, width / 2, height, depth / 2).x] : null;
+  const behind = across ? [Math.min(...across), Math.max(...across)] : null;
   return {
     front,
     settled,
@@ -367,7 +574,8 @@ export function shelfCallouts(books: readonly ShelfBook[], places: readonly Shel
     caption: { x: foot.x, y: foot.y, side: free === 1 ? -1 : 1 },
     tabs: books.map((b, i) => {
       const head = on(i, ((b.binding === 'left' ? -1 : 1) * b.width) / 2, b.height, 0);
-      return { x: head.x, y: head.y - 15, shelved: places[i].ink };
+      const hidden = behind && i !== front && head.x > behind[0] && head.x < behind[1];
+      return { x: head.x, y: head.y - 15, shelved: places[i].ink * (hidden ? 1 - settled : 1) };
     }),
   };
 }
