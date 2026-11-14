@@ -273,9 +273,9 @@ export function settleOn(pos: number, velocity: number, count: number): number {
  *  shelf, books, gaps and camera all scaled together. */
 export type ShelfStage = { width: number; height: number; centre?: number; yaw?: number; pitch?: number; zoom?: number };
 
-/** How far the view drifts by itself while the shelf stands, in degrees each way, and how much of
- *  that again a tipped phone adds. Small on purpose: it is the shelf breathing, not turning. */
-export const DRIFT = { yaw: 2.1, pitch: 1.2, tiltYaw: 1.4, tiltPitch: 0.8 } as const;
+/** How far the view drifts by itself while the shelf stands, in degrees each way, and how much a
+ *  tipped phone adds, as much again at the most. Small on purpose: it is the shelf breathing, not turning. */
+export const DRIFT = { yaw: 2.1, pitch: 1.2, tiltYaw: 2.1, tiltPitch: 1.2 } as const;
 
 /** The view's drift at `now` milliseconds, with the device tipped `tilt` (-1 to 1 each way). */
 export function driftAt(now: number, tilt: { x: number; y: number }): { yaw: number; pitch: number } {

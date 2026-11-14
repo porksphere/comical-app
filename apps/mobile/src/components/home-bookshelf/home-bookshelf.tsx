@@ -136,10 +136,10 @@ function Burst({
     return {
       opacity: count ? Math.min(1, settled * 4) : 0,
       transform: [
-        { translateX: burst.x - 48 + stir.x * 4.5 },
-        { translateY: burst.y - 48 - stir.y * 3 },
+        { translateX: burst.x - 48 + stir.x * 6.75 },
+        { translateY: burst.y - 48 - stir.y * 4.5 },
         { scale: pop * burst.scale },
-        { rotate: `${stir.x * 3}deg` },
+        { rotate: `${stir.x * 4.5}deg` },
       ],
     };
   });
@@ -183,12 +183,12 @@ function Caption({
     return {
       opacity: Math.min(1, settled * 4),
       transform: [
-        { translateX: caption.x + stir.x * 3 },
-        { translateY: caption.y - stir.y * 2 },
+        { translateX: caption.x + stir.x * 4.5 },
+        { translateY: caption.y - stir.y * 3 },
         { translateX: `${-hang.x * 100}%` },
         { translateY: `${-hang.y * 100}%` },
         { scale: pop },
-        { rotate: `${lean + stir.x * 1.5}deg` },
+        { rotate: `${lean + stir.x * 2.25}deg` },
       ],
     };
   });

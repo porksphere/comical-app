@@ -44,17 +44,17 @@ export function CoverSticker({
   const read = useAnimatedStyle(() => {
     const stir = tilt.get();
     return {
-      transform: [{ translateX: stir.x * 3 }, { translateY: -stir.y * 2 }, { rotate: `${LEAN + stir.x * 1.5}deg` }],
+      transform: [{ translateX: stir.x * 4.5 }, { translateY: -stir.y * 3 }, { rotate: `${LEAN + stir.x * 2.25}deg` }],
     };
   });
   const burst = useAnimatedStyle(() => {
     const stir = tilt.get();
     return {
       transform: [
-        { translateX: stir.x * 4.5 },
-        { translateY: -stir.y * 3 },
+        { translateX: stir.x * 6.75 },
+        { translateY: -stir.y * 4.5 },
         { scale: BURST_SCALE },
-        { rotate: `${stir.x * 3}deg` },
+        { rotate: `${stir.x * 4.5}deg` },
       ],
     };
   });

@@ -1161,7 +1161,7 @@ bare `three`.
 
 **The view drifts, and the phone only adds to it.** A couple of degrees of turn over seconds
 (`driftAt`), with the device's tilt (`DeviceTilt`: gravity's direction, measured from how the
-phone is being held, so a tip eases back to nothing) laid on top at less than the drift's own
+phone is being held, so a tip eases back to nothing) laid on top at no more than the drift's own
 size. It is a component, mounted only while the shelf may drift: the sensor runs for as long as
 its hook is mounted, and as a hook of the shelf's it ran under every other tab and the reader. The stickers ride the drift through the camera and take a few points more from the tilt.
 Each is put on afresh for each book that comes forward: the caption leaning one way or the other,
