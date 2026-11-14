@@ -1133,6 +1133,17 @@ it was, and at rest nothing differs. Two books bound on opposite sides turn towa
 would meet inside that room, so a turning book is moved along just far enough to clear the two
 before it (`shelfOverlap`), which for such a pair comes to about what the old room gave.
 
+**Spines shoved to make room knock into each other** (`stepKnocks`, `KNOCK`). A spine the row
+pushes along to make room for the book in front leans back against the push, swings past upright
+as the push stops and rocks to rest on a loose spring, and pulls on the ones beside it, so a knock
+runs two or three books down the row and dies away. It leans by how fast it is shoved RELATIVE to
+the row: the row's own slide, read off the books three and more from the front, which only ever
+slide, is taken out, or every move rocked the whole shelf like a carriage. The book turned to the
+reader leans in its tone's measure (`ink`), so it stands still while the knock runs on through it.
+A lean pivots on the edge of the foot it leans toward (`leanedPlace`, a place's `roll`, which the
+scene and `bookPoint` follow), and nothing knocks under Reduce Motion. The frames go on until the
+last spine has stopped rocking, under a finger as well.
+
 **Everything that moves is `ShelfDriver`'s, outside React.** Where along the shelf the reader is,
 the drag, the spring, the press of a tap, the view's drift, and the only place a frame is
 drawn from. It keeps what the scene is to show until there is a scene: the renderer starts after

@@ -11,6 +11,10 @@ import {
   bookDepth,
   bookPoint,
   driftAt,
+  KNOCK,
+  leanedPlace,
+  restingKnocks,
+  stepKnocks,
   inkOn,
   pickShelf,
   HOVER,
@@ -386,4 +390,88 @@ test('a zoomed stage is the same shelf, every point and scale that many times ov
     expect(b.scale).toBeCloseTo(a.scale * zoom, 6);
   }
   expect(Math.abs(shelfStageHeight(700 * zoom, zoom) - shelfStageHeight(700) * zoom)).toBeLessThanOrEqual(1);
+});
+
+describe('the knocks', () => {
+  /** Eight spines out, the shelf on the sixth, every book where it stands at rest. */
+  const row = () => Array.from({ length: 8 }, (_, i) => ({ x: i * 31, z: -65, yaw: 90, ink: 1 }));
+  const dt = 1 / 60;
+
+  test('a spine shoved to make room leans back against the push, swings past upright, and comes to rest', () => {
+    const knocks = restingKnocks(8);
+    const places = row();
+    stepKnocks(knocks, places, 5, dt);
+    let back = 0;
+    for (let f = 0; f < 12; f++) {
+      places[6] = { ...places[6], x: places[6].x + 3 };
+      stepKnocks(knocks, places, 5, dt);
+      back = Math.min(back, knocks.lean[6]);
+    }
+    expect(back).toBeLessThan(-1);
+    expect(back).toBeGreaterThanOrEqual(-KNOCK.max);
+    let past = 0;
+    let rest = false;
+    for (let f = 0; f < 600 && !rest; f++) {
+      rest = stepKnocks(knocks, places, 5, dt);
+      past = Math.max(past, knocks.lean[6]);
+    }
+    expect(past).toBeGreaterThan(0.2);
+    expect(rest).toBe(true);
+    expect(knocks.lean.every((lean) => lean === 0)).toBe(true);
+  });
+
+  test('the knock runs on to the books beside it', () => {
+    const knocks = restingKnocks(8);
+    const places = row();
+    stepKnocks(knocks, places, 5, dt);
+    let reached = 0;
+    for (let f = 0; f < 40; f++) {
+      if (f < 12) places[6] = { ...places[6], x: places[6].x + 3 };
+      stepKnocks(knocks, places, 5, dt);
+      reached = Math.max(reached, Math.abs(knocks.lean[7]));
+    }
+    expect(reached).toBeGreaterThan(0.2);
+  });
+
+  test("the row's own slide knocks nothing", () => {
+    const knocks = restingKnocks(8);
+    let places = row();
+    stepKnocks(knocks, places, 5, dt);
+    for (let f = 0; f < 30; f++) {
+      places = places.map((p) => ({ ...p, x: p.x + 4 }));
+      expect(stepKnocks(knocks, places, 5, dt)).toBe(true);
+    }
+    expect(knocks.lean.every((lean) => lean === 0)).toBe(true);
+  });
+
+  test('the book turned to the reader is not shoved however it moves', () => {
+    const knocks = restingKnocks(8);
+    const places = row();
+    places[5] = { ...places[5], ink: 0 };
+    stepKnocks(knocks, places, 5, dt);
+    for (let f = 0; f < 20; f++) {
+      places[5] = { ...places[5], x: places[5].x + 5 };
+      stepKnocks(knocks, places, 5, dt);
+    }
+    expect(knocks.lean.every((lean) => lean === 0)).toBe(true);
+  });
+
+  test('a leaning book tips on the edge of its foot, at whatever turn it stands', () => {
+    // Spine out, the edge of its foot it leans toward stays on the shelf where it stood.
+    const upright = { x: 0, z: -65, yaw: 90, ink: 1 };
+    const tipped = leanedPlace(upright, book(), 3);
+    expect(bookPoint(tipped, 0, 0, book().depth / 2).x).toBeCloseTo(book().depth / 2);
+    expect(bookPoint(tipped, 0, 0, book().depth / 2).y).toBeCloseTo(0);
+    for (const yaw of [90, 99, -81]) {
+      const b = book();
+      const place = { x: 0, z: -65, yaw, ink: 1 };
+      const leaning = leanedPlace(place, b, 3);
+      const run = b.width * Math.abs(Math.cos(rad(yaw))) + b.depth * Math.abs(Math.sin(rad(yaw)));
+      expect(leaning.roll).toBe(3);
+      expect(leaning.y).toBeCloseTo((run / 2) * Math.sin(rad(3)));
+      expect(leaning.x).toBeCloseTo((run / 2) * (1 - Math.cos(rad(3))));
+      // Its head goes the way it leans.
+      expect(bookPoint(leaning, 0, b.height, 0).x).toBeGreaterThan(b.height * Math.sin(rad(2.9)));
+    }
+  });
 });
