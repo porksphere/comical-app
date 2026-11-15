@@ -15,7 +15,7 @@ type WebCheck = { url: string; userAgent?: string; storage?: string[] };
 type Result = { cookies: Cookie[]; userAgent: string; values?: Record<string, string> };
 type Cookie = { name: string; value: string; domain?: string; path?: string; expires?: number };
 
-const CLEARANCE = ["cf_clearance", "__ddg1_", "__ddg2_", "__ddgid_", "__ddgmark_", "__ddg8_", "__ddg9_", "__ddg10_", "waf_pass"];
+const CLEARANCE = ["cf_clearance", "__ddg1_", "__ddg2_", "__ddgid_", "__ddgmark_", "__ddg8_", "__ddg9_", "__ddg10_", "waf_pass", "__guard_trust"];
 const HIDDEN_MS = 7000;
 const POLL_MS = 1000;
 // What a check waiting on a person puts on the page: Cloudflare's Turnstile frame.

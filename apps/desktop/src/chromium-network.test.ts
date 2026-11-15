@@ -1,6 +1,6 @@
 import { createBunNetwork } from "@comical/host-bun";
 import { describe, expect, test } from "bun:test";
-import { fetchOver, requestHeaders, toResponse } from "./chromium-network.ts";
+import { fetchOver, type RawRequest, type RawResponse, requestHeaders, toResponse, withSetCookies } from "./chromium-network.ts";
 
 describe("chromium network", () => {
   test("a bridge's headers go as set, less the ones the stack owns", () => {
@@ -46,5 +46,54 @@ describe("chromium network", () => {
     });
     await expect(f(new Request("https://s.test/"))).rejects.toThrow(/pass a URL/);
     await expect(f("https://s.test/", { method: "POST", body: new Blob(["x"]) })).rejects.toThrow(/string or bytes/);
+  });
+
+  describe("redirects, followed here because Chromium drops the Cookie header on each hop", () => {
+    const hop = (url: string, status: number, headers: Record<string, string | string[]> = {}): RawResponse => ({ url, status, statusText: "", headers, body: new Uint8Array() });
+
+    test("same origin keeps the session and adds the hop's cookies; the final response carries them all", async () => {
+      const sent: RawRequest[] = [];
+      const f = fetchOver(async (req) => {
+        sent.push(req);
+        if (req.url === "https://s.test/search/q/") return hop(req.url, 302, { location: "/search/q", "set-cookie": ["hop=1; Path=/"] });
+        return { ...hop(req.url, 200, { "set-cookie": "last=2" }), body: new TextEncoder().encode("ok") };
+      });
+      const res = await f("https://s.test/search/q/", { headers: { Cookie: "trust=t; old=x", Referer: "https://s.test/" } });
+      expect(sent.map((r) => r.url)).toEqual(["https://s.test/search/q/", "https://s.test/search/q"]);
+      expect(sent[1]!.headers).toContainEqual(["cookie", "trust=t; old=x; hop=1"]);
+      expect(sent[1]!.headers).toContainEqual(["referer", "https://s.test/"]);
+      expect(res.url).toBe("https://s.test/search/q");
+      expect(res.headers.getSetCookie()).toEqual(["hop=1; Path=/", "last=2"]);
+      expect(await res.text()).toBe("ok");
+    });
+
+    test("cross origin drops Cookie and Authorization; a POST after 302 or any 303 goes on as a GET without its body", async () => {
+      const sent: RawRequest[] = [];
+      const f = fetchOver(async (req) => {
+        sent.push(req);
+        if (req.url === "https://s.test/form") return hop(req.url, 302, { location: "https://cdn.test/done" });
+        return hop(req.url, 200);
+      });
+      await f("https://s.test/form", { method: "POST", body: "a=1", headers: { Cookie: "c=1", Authorization: "Bearer x", "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "UA" } });
+      expect(sent[1]).toEqual({ url: "https://cdn.test/done", method: "GET", headers: [["user-agent", "UA"]] });
+    });
+
+    test("307 keeps the method and body; too many hops and redirect: error throw; manual hands the redirect back", async () => {
+      const sent: RawRequest[] = [];
+      const f = fetchOver(async (req) => {
+        sent.push(req);
+        return req.url.endsWith("/a") ? hop(req.url, 307, { location: "/b" }) : req.url.endsWith("/loop") ? hop(req.url, 302, { location: "/loop" }) : hop(req.url, 200);
+      });
+      await f("https://s.test/a", { method: "PUT", body: "x" });
+      expect(sent[1]).toMatchObject({ url: "https://s.test/b", method: "PUT", body: "x" });
+      await expect(f("https://s.test/loop")).rejects.toThrow(/too many redirects/);
+      await expect(f("https://s.test/a", { redirect: "error" })).rejects.toThrow(/redirected/);
+      expect((await f("https://s.test/a", { redirect: "manual" })).status).toBe(307);
+    });
+
+    test("a hop's expired cookie leaves the Cookie header", () => {
+      expect(withSetCookies("a=1; b=2", ["a=; Max-Age=0", "c=3; Path=/"])).toBe("b=2; c=3");
+      expect(withSetCookies(undefined, ["x=1; Expires=Thu, 01 Jan 1970 00:00:00 GMT"])).toBeUndefined();
+    });
   });
 });

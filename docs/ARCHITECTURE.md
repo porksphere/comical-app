@@ -169,7 +169,8 @@ carrying the challenge, and `RetryBlock` offers to run it again. The runners:
   routed images) go through Chromium's network (`apps/desktop/src/chromium-network.ts`), so the
   clearance is used from the stack that earned it, and sites that turn Node's TLS fingerprint
   away let it through. It's `net.request`, not `session.fetch`: the latter refuses a request that
-  sets `Referer` or `Origin`. Cookies stay core's; the session keeps none. `COMICAL_CHROMIUM_NETWORK=0`
+  sets `Referer` or `Origin`. Cookies stay core's; the session keeps none. Redirects are followed
+  in our code, since Chromium drops a caller's `Cookie` header on every hop. `COMICAL_CHROMIUM_NETWORK=0`
   goes back to Node's `fetch`.
 - **Web**: a page can't read another site's cookies, so there's no runner and no Verify button.
 

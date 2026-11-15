@@ -2,7 +2,7 @@
 import { net, session } from "electron";
 import { fetchOver, type Sender } from "./chromium-network.ts";
 
-/** The sender over Electron's `net.request`, on a session of its own. */
+/** The sender over Electron's `net.request`, on a session of its own. One hop: a redirect comes back as is. */
 export function chromiumSender(partition = "comical-host-network"): Sender {
   const ses = session.fromPartition(partition);
   return (req) =>
@@ -13,19 +13,19 @@ export function chromiumSender(partition = "comical-host-network"): Sender {
         session: ses,
         credentials: "omit",
         useSessionCookies: false,
-        redirect: "follow",
+        redirect: "manual",
         referrerPolicy: "unsafe-url",
         cache: "no-store",
       });
-      let url = req.url;
-      request.on("redirect", (_status, _method, to) => {
-        url = to;
+      request.on("redirect", (status, _method, to, headers) => {
+        resolve({ url: req.url, status, statusText: "", headers: { ...headers, location: to }, body: new Uint8Array() });
+        request.abort();
       });
       for (const [name, value] of req.headers) request.setHeader(name, value);
       request.on("response", (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c) => chunks.push(c));
-        res.on("end", () => resolve({ url, status: res.statusCode, statusText: res.statusMessage, headers: res.headers, body: Buffer.concat(chunks) }));
+        res.on("end", () => resolve({ url: req.url, status: res.statusCode, statusText: res.statusMessage, headers: res.headers, body: Buffer.concat(chunks) }));
         res.on("error", reject);
       });
       request.on("error", reject);

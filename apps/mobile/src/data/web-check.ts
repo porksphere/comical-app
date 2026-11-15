@@ -119,10 +119,11 @@ export function cookiesFromHeader(header: string, url: string): ImportedCookie[]
 }
 
 /**
- * The cookies anti-bot vendors set once a check is passed. A runner treats any of them changing
+ * The cookies anti-bot services set once a check is passed (Cloudflare, DDoS-Guard, a WAF's, and
+ * DataLife Engine's guard module). A runner treats any of them changing
  * from its value before the check as "through".
  */
-export const CLEARANCE_COOKIES = ['cf_clearance', '__ddg1_', '__ddg2_', '__ddgid_', '__ddgmark_', '__ddg8_', '__ddg9_', '__ddg10_', 'waf_pass'];
+export const CLEARANCE_COOKIES = ['cf_clearance', '__ddg1_', '__ddg2_', '__ddgid_', '__ddgmark_', '__ddg8_', '__ddg9_', '__ddg10_', 'waf_pass', '__guard_trust'];
 
 /** The clearance cookies in a header string, by name. */
 export function clearanceOf(header: string): Map<string, string> {
