@@ -27,6 +27,7 @@ import { shellSettings, updateShellSettings } from "./shell-settings.ts";
 import { setTray, trayNotice } from "./tray.ts";
 import { startAutoUpdate, updatesSupported } from "./updater.ts";
 import { savedWindowState, trackWindowState } from "./window-state.ts";
+import { registerWebCheck } from "./web-check.ts";
 import { registerWebLogin } from "./web-login.ts";
 
 /** The web export, which `scripts/build-web.ts` writes to `build/web` beside the bundled main.
@@ -263,6 +264,11 @@ async function boot(): Promise<void> {
       syncedSeries.push(...addedSeries);
       mainWindow?.webContents.send("synced", tables);
     },
+    // Chromium's network instead of Node's: a site that checks TLS fingerprints turns Node away,
+    // and honours a web check's clearance only from the stack that earned it. Opt-in until it has
+    // been tried on a build: sources that rely on response cookies need Set-Cookie to come
+    // through it. Cookies stay core's (`credentials: "omit"`), never this session's own.
+    ...(process.env.COMICAL_CHROMIUM_NETWORK === "1" ? { fetch: chromiumFetch() } : {}),
   });
   if (shellSettings().networkSync) void applyNetworkSync();
 
@@ -580,6 +586,7 @@ ipcMain.handle("sync-device-unlink", (_e, id: unknown) => typeof id === "string"
 
 registerDataLocation();
 registerWebLogin(() => mainWindow);
+registerWebCheck(() => mainWindow);
 
 if (primary) {
   app
@@ -628,3 +635,8 @@ app.on("before-quit", () => {
   void server?.close();
   void syncListener?.close();
 });
+
+function chromiumFetch(): typeof fetch {
+  const ses = session.fromPartition("comical-host-network");
+  return ((input: string | URL | Request, init?: RequestInit) => ses.fetch(input instanceof URL ? input.href : input, { ...init, credentials: "omit" })) as typeof fetch;
+}

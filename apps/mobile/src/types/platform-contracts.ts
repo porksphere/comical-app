@@ -36,6 +36,8 @@ import type * as SettingsList from '@/components/settings/settings-list';
 import type * as SettingsListIos from '@/components/settings/settings-list.ios';
 import type * as WebLoginSheet from '@/components/settings/web-login-sheet';
 import type * as WebLoginSheetWeb from '@/components/settings/web-login-sheet.web';
+import type * as WebCheckHost from '@/components/web-check-host';
+import type * as WebCheckHostWeb from '@/components/web-check-host.web';
 import type * as SplashGate from '@/components/splash-gate';
 import type * as SplashGateWeb from '@/components/splash-gate.web';
 import type * as TabStack from '@/components/tab-stack';
@@ -167,6 +169,7 @@ export type PlatformContracts = [
   Conforms<Drift<typeof RangeSlider, typeof RangeSliderWeb>>,
   Conforms<Drift<typeof SettingsList, typeof SettingsListIos>>,
   Conforms<Drift<typeof WebLoginSheet, typeof WebLoginSheetWeb>>,
+  Conforms<Drift<typeof WebCheckHost, typeof WebCheckHostWeb>>,
   Conforms<Drift<typeof SplashGate, typeof SplashGateWeb>>,
   Conforms<Drift<typeof TabStack, typeof TabStackIos>>,
   Conforms<Drift<typeof BackupFile, typeof BackupFileWeb>>,

@@ -943,6 +943,20 @@ Which generator fills a channel is set by whether it is TAGGED: `changelog-secti
 `CHANGELOG.md`, `rolling-changelog.sh` lists the commits since the channel's last publish. See
 `docs/DEVELOPMENT.md` → "Release notes reach four places" for the full table.
 
+# Web checks run with the request's User-Agent, and only the transport starts one
+
+A 403 with a `challenge` is a site's anti-bot check; `data/web-check.ts` runs it and the transport
+retries once (see `docs/ARCHITECTURE.md` → "Web checks"). Rules:
+
+- **The web view takes the challenged request's User-Agent.** Never the other way round: a
+  clearance is tied to the User-Agent that earned it, and the host replays it with that one.
+- **Don't clear the web view's cookies before a check** (the sign-in sheet does; this mustn't), and
+  **never import through `transport`**: the import goes straight through the active transport, so
+  it can't start a check of its own.
+- **One runner per platform.** The phone's is `WebCheckHost`, the desktop shell's `webCheck`;
+  a new surface asks `canRunWebCheck()` and calls `verifyChallenge`, never a web view of its own.
+- **Nothing here names a source.** The clearance cookies listed are anti-bot vendors', not sites'.
+
 # A processed page is drawn once, where it is resolved
 
 A page marked `Page.process` comes from the host's image route with a layout (`Comical-Page-Layout`)

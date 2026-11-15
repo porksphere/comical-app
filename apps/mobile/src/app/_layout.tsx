@@ -47,6 +47,7 @@ import { RequestOverlay } from '@/components/request-overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
 import { SystemContextMenuHost } from '@/components/system-context-menu';
 import { ToastHost } from '@/components/toast';
+import { WebCheckHost } from '@/components/web-check-host';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
 import { installHomeWidgets } from '@/data/home-widgets/publish';
 import { installDesktopChapterCheck } from '@/data/activity/desktop-check';
@@ -277,6 +278,8 @@ function RootNavigation() {
         <CollectionPickerHost />
         {/* Root host for the destructive-action confirmation popup (openConfirm). */}
         <ConfirmPopupHost />
+        {/* Runs a site's anti-bot check when a request meets one (data/web-check). */}
+        <WebCheckHost />
         {/* Root host for the transient notice pill (showToast). */}
         <ToastHost />
         {/* Corner panel of requests in flight / recent timeouts; null unless Settings → General turns it on. */}

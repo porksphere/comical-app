@@ -27,6 +27,8 @@ export interface DesktopHostOptions {
   baseUrl: string;
   /** Another device's changes have just landed in this library or its bridges. */
   onSynced?: HostOptions["onSynced"];
+  /** The `fetch` bridges' requests and routed images go out through (see `HostOptions.fetch`). */
+  fetch?: typeof fetch;
 }
 
 /** `router.fetch(Request)` is the whole API surface; `fetch(path)` drives it with no socket;
@@ -47,5 +49,6 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
     sync: true,
     ...(opts.onSynced ? { onSynced: opts.onSynced } : {}),
     downloads: true,
+    ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
 }

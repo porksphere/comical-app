@@ -50,6 +50,7 @@ import { isProcessed, layoutCopies, unmarked } from './page-process';
 import type { Bridge, BridgeList, MissingBridge } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { persisted$ } from '@/lib/observable';
+import { type Challenge, type ImportedCookie, runWebCheck } from '@/data/web-check';
 
 // JSON-owned key for the Legend State store; the old store wrote a bare URL string
 // under `comical:remoteServerUrl`, which we migrate off of once (below).
@@ -554,7 +555,7 @@ const transport: Transport = (path, init) => {
   return activeTransport(path, init).then(
     (res) => {
       settled();
-      return res;
+      return res.status === 403 ? passWebCheck(path, init, res) : res;
     },
     (e: unknown) => {
       settled();
@@ -563,12 +564,57 @@ const transport: Transport = (path, init) => {
   );
 };
 
+/**
+ * A request that met a site's anti-bot check: the check runs (hidden first, shown if it needs the
+ * person) and, once the cookies are in, the request goes again, once. Anything else, or a check
+ * given up on, hands back the 403 as it was.
+ */
+async function passWebCheck(path: string, init: RequestInit | undefined, res: Response): Promise<Response> {
+  const bridgeId = bridgeOfPath(path);
+  if (!bridgeId || /^\/bridges\/[^/]+\/cookies/.test(path)) return res;
+  const challenge = await challengeIn(res.clone());
+  if (!challenge) return res;
+  const passed = await runWebCheck(bridgeId, challenge, (body) => importBridgeCookies(bridgeId, body));
+  return passed ? activeTransport(path, init) : res;
+}
+
+async function challengeIn(res: Response): Promise<Challenge | undefined> {
+  const body = (await res.json().catch(() => ({}))) as { challenge?: Partial<Challenge> };
+  const c = body.challenge;
+  if (typeof c?.url !== 'string') return undefined;
+  return { url: c.url, reason: c.reason || 'The site wants to check you are a person', ...(c.userAgent ? { userAgent: c.userAgent } : {}) };
+}
+
+/** Straight through the active transport: an import never runs a check of its own. */
+async function importBridgeCookies(bridgeId: string, body: { url: string; userAgent?: string; cookies: ImportedCookie[] }): Promise<void> {
+  const res = await activeTransport(`/bridges/${encodeURIComponent(bridgeId)}/cookies`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await responseError(res);
+}
+
+/** Run the check a failed request was waiting on again; true once the person is through. */
+export function verifyChallenge(e: unknown): Promise<boolean> {
+  const c = challengeOf(e);
+  if (!c?.bridgeId) return Promise.resolve(false);
+  const { bridgeId, ...challenge } = c;
+  return runWebCheck(bridgeId, challenge, (body) => importBridgeCookies(bridgeId, body));
+}
+
 /** A bridge that can't go on until someone signs in: the setting that does it, and on which bridge. */
 export type LoginRequired = { key: string; reason: string; bridgeId?: string };
 
 /** A failed response's error, carrying its status — and, on a 410, the source's word that the series
  *  no longer exists there; on a 401, the sign-in that would let it through. */
-export type ResponseError = Error & { status: number; gone?: { reason: string }; loginRequired?: LoginRequired };
+export type ResponseError = Error & {
+  status: number;
+  gone?: { reason: string };
+  loginRequired?: LoginRequired;
+  /** On a 403, the site's anti-bot check the request met (one the person gave up on, or a platform that can't run it). */
+  challenge?: Challenge & { bridgeId?: string };
+};
 
 /** The removal a failed request reported, if that's why it failed. */
 export function seriesGoneReason(e: unknown): string | undefined {
@@ -578,6 +624,11 @@ export function seriesGoneReason(e: unknown): string | undefined {
 /** The sign-in a failed request is waiting on, if that's why it failed. */
 export function loginRequiredOf(e: unknown): LoginRequired | undefined {
   return (e as Partial<ResponseError> | null)?.loginRequired;
+}
+
+/** The anti-bot check a failed request met, if that's why it failed. */
+export function challengeOf(e: unknown): (Challenge & { bridgeId?: string }) | undefined {
+  return (e as Partial<ResponseError> | null)?.challenge;
 }
 
 function bridgeOfPath(path?: string): string | undefined {
@@ -591,15 +642,26 @@ async function responseError(res: Response, path?: string): Promise<Error> {
     error?: string;
     gone?: { reason?: string };
     loginRequired?: { key?: string; reason?: string };
+    challenge?: { url?: string; userAgent?: string; reason?: string };
   };
   const login =
     res.status === 401 && body.loginRequired?.key
       ? { key: body.loginRequired.key, reason: body.loginRequired.reason || 'Sign in to continue', bridgeId: bridgeOfPath(path) }
       : undefined;
-  const error: ResponseError = Object.assign(new Error(login?.reason ?? body.error ?? `${res.status} ${res.statusText}`), {
+  const challenge =
+    res.status === 403 && typeof body.challenge?.url === 'string'
+      ? {
+          url: body.challenge.url,
+          reason: body.challenge.reason || 'The site wants to check you are a person',
+          ...(body.challenge.userAgent ? { userAgent: body.challenge.userAgent } : {}),
+          bridgeId: bridgeOfPath(path),
+        }
+      : undefined;
+  const error: ResponseError = Object.assign(new Error(login?.reason ?? challenge?.reason ?? body.error ?? `${res.status} ${res.statusText}`), {
     status: res.status,
     ...(res.status === 410 && { gone: { reason: body.gone?.reason || 'Removed from the source' } }),
     ...(login && { loginRequired: login }),
+    ...(challenge && { challenge }),
   });
   return reportRequestError(error, path);
 }

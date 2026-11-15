@@ -142,6 +142,34 @@ hand-rolled are `lib/tab-bar-visibility.ts` (a per-frame scroll value driven on 
 thread) and `lib/diagnostics.ts` (its own ring buffer) — neither is a preference, and both have
 reasons not to go through the observable path.
 
+## Web checks
+
+Some sources answer with an anti-bot check only a person can pass. The host's network layer
+recognizes one and fails the call with a 403 carrying `challenge: { url, userAgent }`: the page to
+open and the User-Agent the request sent. A site's clearance is tied to the User-Agent (and
+network) that earned it, so **the check runs with the request's own User-Agent**; the app never
+captures the web view's and imposes it on requests. The cookies the page leaves go to
+`POST /bridges/:id/cookies` and into the bridge's cookie jar, which the host keeps and replays on
+every later request and routed image. That's how the established readers do it: one cookie store,
+detection in the network layer, done when a clearance cookie changes.
+
+`data/web-check.ts` coordinates and knows no UI. `api.ts`'s transport hands it any 403 with a
+challenge, it runs the platform's runner (one check per bridge and site at a time), imports the
+cookies, and the transport sends the request again, once. A check given up on leaves the error
+carrying the challenge, and `RetryBlock` offers to run it again. The runners:
+
+- **Phone** (`components/web-check-host.tsx`, mounted at the root): the page loads in a web view
+  nobody sees, so a check that needs no person passes by itself; if it needs one (Cloudflare's own
+  `interactiveBegin` message, or a few seconds gone by), the same web view comes up full screen,
+  so nothing reloads. Cookies come from the `web-cookies` module, which hands out a header string;
+  they're imported scoped to the site's host without `www.`.
+- **Desktop** (`apps/desktop/src/web-check.ts`): a hidden window on a fresh session with the
+  request's User-Agent, shown when the page puts up a challenge frame or after a few seconds;
+  Electron's cookie API gives real domains and expiry. The host's own requests can go through
+  Chromium's network (`COMICAL_CHROMIUM_NETWORK=1`, opt-in until tried on a build), so the
+  clearance is used from the stack that earned it.
+- **Web**: a page can't read another site's cookies, so there's no runner and no Verify button.
+
 ## Web vs. native chrome
 
 Web uses a top nav bar instead of the native Liquid Glass tab bar (see the `.web.tsx` splits in

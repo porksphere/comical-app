@@ -47,6 +47,8 @@ export function friendlyError(err: unknown, fallback = "This couldn't load right
   // A bridge asking for a sign-in wrote its reason for the user (see `ResponseError.loginRequired`).
   const login = (err as { loginRequired?: { reason?: string } } | null)?.loginRequired;
   if (login?.reason) return login.reason;
+  // A site's anti-bot check the person gave up on, or one this platform can't run.
+  if ((err as { challenge?: unknown } | null)?.challenge) return 'This site wants to check you are a person before it shows this.';
   const raw = (err instanceof Error ? err.message : String(err ?? '')).toLowerCase();
   if (!raw) return fallback;
   // Match against the message with URLs removed. Several of the checks below key off a bare word

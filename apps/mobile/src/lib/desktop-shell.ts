@@ -8,6 +8,7 @@ import type { PairedDevice } from '@comical/sync';
 import { Platform } from 'react-native';
 
 import { UserFacingError } from '@/lib/friendly-error';
+import type { ImportedCookie } from '@/data/web-check';
 
 export type ShellCommand = { type: 'open'; route: string } | { type: 'navigate'; dir: 'back' | 'forward' };
 
@@ -66,6 +67,11 @@ type DesktopShell = {
   showDataDir?(): void;
   /** Absent before the shell could sign in on a site for a bridge. */
   webLogin?(login: { url: string; cookies: string[]; cookieUrls: string[] }): Promise<string | null>;
+  /**
+   * Absent before the shell could run a web check: opens `url` in a window with `userAgent`, waits
+   * until the person is through the site's check, and hands back the site's cookies.
+   */
+  webCheck?(check: { url: string; userAgent?: string }): Promise<{ cookies: ImportedCookie[]; userAgent?: string } | null>;
   setRunInTray(on: boolean): void;
   setOpenAtLogin(on: boolean): void;
   dimCaptionButtons(dim: boolean): void;
