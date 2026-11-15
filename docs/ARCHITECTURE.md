@@ -165,9 +165,12 @@ carrying the challenge, and `RetryBlock` offers to run it again. The runners:
   they're imported scoped to the site's host without `www.`.
 - **Desktop** (`apps/desktop/src/web-check.ts`): a hidden window on a fresh session with the
   request's User-Agent, shown when the page puts up a challenge frame or after a few seconds;
-  Electron's cookie API gives real domains and expiry. The host's own requests can go through
-  Chromium's network (`COMICAL_CHROMIUM_NETWORK=1`, opt-in until tried on a build), so the
-  clearance is used from the stack that earned it.
+  Electron's cookie API gives real domains and expiry. The host's own requests (bridge calls and
+  routed images) go through Chromium's network (`apps/desktop/src/chromium-network.ts`), so the
+  clearance is used from the stack that earned it, and sites that turn Node's TLS fingerprint
+  away let it through. It's `net.request`, not `session.fetch`: the latter refuses a request that
+  sets `Referer` or `Origin`. Cookies stay core's; the session keeps none. `COMICAL_CHROMIUM_NETWORK=0`
+  goes back to Node's `fetch`.
 - **Web**: a page can't read another site's cookies, so there's no runner and no Verify button.
 
 Some sites leave their clearance in the page's localStorage, for their own script to send, rather

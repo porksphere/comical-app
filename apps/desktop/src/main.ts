@@ -27,6 +27,7 @@ import { shellSettings, updateShellSettings } from "./shell-settings.ts";
 import { setTray, trayNotice } from "./tray.ts";
 import { startAutoUpdate, updatesSupported } from "./updater.ts";
 import { savedWindowState, trackWindowState } from "./window-state.ts";
+import { hostFetch } from "./chromium-sender.ts";
 import { registerWebCheck } from "./web-check.ts";
 import { registerWebLogin } from "./web-login.ts";
 
@@ -252,6 +253,7 @@ async function boot(): Promise<void> {
     port: askedPort,
   });
   if (!process.env.COMICAL_PORT && server.port !== shellSettings().port) updateShellSettings({ port: server.port });
+  const chromium = hostFetch();
   host = createDesktopHost({
     dataDir,
     // Registry-installed bridges land in {dataDir}/bridge-cache regardless. This extra scan dir is
@@ -264,11 +266,9 @@ async function boot(): Promise<void> {
       syncedSeries.push(...addedSeries);
       mainWindow?.webContents.send("synced", tables);
     },
-    // Chromium's network instead of Node's: a site that checks TLS fingerprints turns Node away,
-    // and honours a web check's clearance only from the stack that earned it. Opt-in until it has
-    // been tried on a build: sources that rely on response cookies need Set-Cookie to come
-    // through it. Cookies stay core's (`credentials: "omit"`), never this session's own.
-    ...(process.env.COMICAL_CHROMIUM_NETWORK === "1" ? { fetch: chromiumFetch() } : {}),
+    // Chromium's network instead of Node's (see chromium-network.ts); `COMICAL_CHROMIUM_NETWORK=0`
+    // goes back to Node's.
+    ...(chromium ? { fetch: chromium } : {}),
   });
   if (shellSettings().networkSync) void applyNetworkSync();
 
@@ -635,8 +635,3 @@ app.on("before-quit", () => {
   void server?.close();
   void syncListener?.close();
 });
-
-function chromiumFetch(): typeof fetch {
-  const ses = session.fromPartition("comical-host-network");
-  return ((input: string | URL | Request, init?: RequestInit) => ses.fetch(input instanceof URL ? input.href : input, { ...init, credentials: "omit" })) as typeof fetch;
-}
