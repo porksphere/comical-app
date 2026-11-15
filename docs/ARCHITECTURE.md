@@ -61,7 +61,45 @@ plus Ed25519 when signed), and cached from **user-managed registries** — add/r
 `index.json` URLs in **Settings → Bridge registries**. Nothing is hardcoded: published builds ship
 with no registry (for local dev, seed one via a gitignored `.env.local`'s `EXPO_PUBLIC_COMICAL_REGISTRY`).
 
-## State management
+## Processed page images
+
+Some sources serve page images that can't be shown as fetched: encrypted, or cut into pieces and
+reassembled out of order. Comical handles them the way other sandboxed readers do — the bridge
+holds the logic, the client the pixels — and the app's half is drawing.
+
+**The split.** A bridge marks such a page `Page.process` and implements the processing hooks it
+declares in `BridgeInfo.images.process`. The host's image route fetches the page, runs the bridge's
+byte transforms (data, applied by core in plain JS), reads the decoded image's size, asks the bridge
+for a layout — an output size and a list of draw operations, today only `copy` one rectangle to
+another — checks it, and serves the decoded bytes with the layout in the `Comical-Page-Layout`
+header (`encodePageLayout` / `decodePageLayout` in `@comical/contract`). The host never touches a
+pixel; the bridge never sees one. Pixels in a bridge would mean decoding images in plain JS on
+JavaScriptCore and QuickJS, which run without a JIT inside an app — seconds a page, and no decoder
+at all for some formats sources serve.
+
+**Drawn once, where it's decoded.** `resolveAssetSource` (`src/data/api.ts`) is where every page
+the reader shows already turns into something `<Image>` can load. A response carrying a layout is
+drawn there, once — Skia on device, a canvas on web (`src/data/draw-layout.ts`, `.web.ts`) — and
+handed on as a `data:` URI, so every surface that shows the page (paged and webtoon readers, zoom,
+the page curl's texture, spread fill, slicing, thumbnails) gets one ordinary bitmap. Drawing per
+surface instead would mean teaching each of them to composite pieces, and several treat the page
+as a single bitmap.
+
+**The page says so in its URL.** Page lists are plain URI strings from the query layer to the
+reader to downloads, so a processed page carries a `#comical-process` fragment (`markProcessed` in
+`src/data/page-process.ts`), added where the page list is read (`source.ts`). It holds no data and
+never reaches a server; it only tells the resolver to read the bytes itself under either transport,
+and the synchronous `peekResolvedAssetSource` never to treat such a URL as already resolved. On the
+embedded transport the image route's bytes pass through the resolver anyway, so a layout is drawn
+there whether or not the URL is marked — which is what makes the device's downloader store pages
+already drawn.
+
+**Downloads.** A page downloaded on this device is stored drawn (the downloader resolves it like the
+reader does), so offline it is an ordinary file. A server's download engine stores the decoded bytes
+with the layout beside them and serves a downloaded page's file with the same header; its chapter
+summary says `processed`, which is how the remote offline index knows to mark those pages. A layout
+holding an operation this client doesn't know is shown as it came, never guessed at.
+
 
 Two layers, split by what the state *is* — not by screen. **Reach for the layer that owns the
 kind of state you have; don't hand-roll a third one.**

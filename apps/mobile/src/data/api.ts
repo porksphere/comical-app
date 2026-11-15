@@ -43,8 +43,10 @@
 import { use$ } from '@legendapp/state/react';
 import type { Pairing } from '@comical/sync';
 
+import { decodePageLayout, PAGE_LAYOUT_HEADER } from '@comical/contract';
 import { getResolvedModeSync } from './embedded/preference';
 import { noteRequestFailure, trackRequest } from './request-monitor';
+import { isProcessed, layoutCopies, unmarked } from './page-process';
 import type { Bridge, BridgeList, MissingBridge } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { persisted$ } from '@/lib/observable';
@@ -161,6 +163,15 @@ async function responseToDataUri(res: Response): Promise<string> {
  *   no second URL to hand `<Image>` for a route that proxies bytes rather than redirecting.
  */
 export async function resolveAssetSource(url: string): Promise<string> {
+  if (isProcessed(url)) {
+    const bare = unmarked(url);
+    try {
+      return await processedSource(bare, wantsFreshResolve.delete(url));
+    } catch (e) {
+      logDiagnostic('resolve-asset-processed', (e as Error).message || String(e), { url: bare });
+      throw e;
+    }
+  }
   if (!url.startsWith('/')) return url;
   const path = wantsFreshResolve.delete(url) ? withRefresh(url) : url;
   if (getResolvedModeSync() !== 'embedded') return `${getApiBase()}${path}`;
@@ -170,21 +181,50 @@ export async function resolveAssetSource(url: string): Promise<string> {
     const res = await activeTransport(path);
     const location = res.headers.get('Location');
     if (location && res.status >= 300 && res.status < 400) return location;
-    if (!res.ok) {
-      // Error routes answer with a JSON `{ error }` body; surface it so the diagnostic shows the
-      // bridge's real failure reason instead of a bare status (statusText is empty in-process).
-      const detail = await res.text().catch(() => '');
-      // Status and Retry-After ride along so a download can tell "slow down" from a real failure.
-      throw Object.assign(new Error(`${res.status} ${detail || res.statusText}`.trim()), {
-        status: res.status,
-        headers: res.headers,
-      });
-    }
-    return await responseToDataUri(res);
+    if (!res.ok) throw await failedResolve(res);
+    return await responseToSource(res);
   } catch (e) {
     logDiagnostic('resolve-asset-embedded', (e as Error).message || String(e), { url });
     throw e;
   }
+}
+
+/** Error routes answer with a JSON `{ error }` body: surface it, with the status and Retry-After, so
+ *  a download can tell "slow down" from a real failure (statusText is empty in-process). */
+async function failedResolve(res: Response): Promise<Error> {
+  const detail = await res.text().catch(() => '');
+  return Object.assign(new Error(`${res.status} ${detail || res.statusText}`.trim()), { status: res.status, headers: res.headers });
+}
+
+/**
+ * A page marked for processing, from wherever its URL points. Unlike any other image it is always
+ * read here, under either transport: handed to `<Image>` as a URL, it would be drawn as served.
+ */
+async function processedSource(url: string, fresh: boolean): Promise<string> {
+  // A downloaded page on this device was stored as drawn by the resolve that fetched it.
+  if (url.startsWith('file://')) return url;
+  let res: Response;
+  if (url.startsWith('/')) {
+    const path = fresh ? withRefresh(url) : url;
+    res = getResolvedModeSync() === 'embedded' ? await activeTransport(path) : await fetch(`${getApiBase()}${path}`);
+    const location = res.headers.get('Location');
+    if (location && res.status >= 300 && res.status < 400) res = await fetch(location);
+  } else {
+    res = await fetch(url);
+  }
+  if (!res.ok) throw await failedResolve(res);
+  return responseToSource(res);
+}
+
+/** Bytes an `<Image>` can show: drawn by the response's page layout when it carries one this client can draw. */
+async function responseToSource(res: Response): Promise<string> {
+  const layout = decodePageLayout(res.headers.get(PAGE_LAYOUT_HEADER));
+  const copies = layout && layoutCopies(layout);
+  if (!layout || !copies) return responseToDataUri(res);
+  // Loaded on first use: it brings Skia, which nothing else here needs.
+  const { drawLayout } = await import('./draw-layout');
+  const png = (res.headers.get('Content-Type') ?? '').includes('png');
+  return drawLayout(new Uint8Array(await res.arrayBuffer()), layout, copies, png);
 }
 
 /**
@@ -265,6 +305,7 @@ const resolveQueue = new Map<string, QueuedResolve>();
  *  latency. Mirrors that function's own first two lines — deliberately, since the whole point is to
  *  keep the free cases out of a queue built for the expensive one. */
 function resolvesImmediately(url: string): boolean {
+  if (isProcessed(url)) return false;
   return !url.startsWith('/') || getResolvedModeSync() !== 'embedded';
 }
 
@@ -446,14 +487,14 @@ export function releaseAssetResolve(url: string): void {
  * An absolute URL (the overwhelmingly common case) resolves to itself — no map lookup even needed.
  */
 export function peekResolvedAssetSource(url: string): string | undefined {
-  if (!url.startsWith('/')) return url;
+  if (!url.startsWith('/') && !isProcessed(url)) return url;
   return assetResolvedValues.get(url);
 }
 
 /** Drop a cached resolution so the next `resolveAssetSourceCached` re-runs it (retry after a stale/
  *  expired resolved URL fails to load). */
 export function invalidateAssetSource(url: string): void {
-  if (url.startsWith('/')) wantsFreshResolve.add(url);
+  if (url.startsWith('/') || isProcessed(url)) wantsFreshResolve.add(url);
   const queued = resolveQueue.get(url);
   if (queued) {
     resolveQueue.delete(url);

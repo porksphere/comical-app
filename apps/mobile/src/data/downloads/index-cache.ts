@@ -21,6 +21,7 @@ import { getResolvedModeSync } from '../embedded/preference';
 import { queryClient } from '../query-client';
 import { downloadsStore as store } from './async-store';
 import { uriFor } from './blob-store';
+import { markProcessed } from '../page-process';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './constants';
 
 /** `bridgeId:seriesId:chapterId`. */
@@ -87,10 +88,9 @@ async function hydrate(): Promise<void> {
     for (const series of usage.bySeries) {
       for (const chapter of series.chapters) {
         if (chapter.state !== 'complete' || chapter.onlyPages || chapter.pageCount === 0) continue;
-        cache.set(
-          key(series.bridgeId, series.seriesId, chapter.chapterId),
-          remotePageUrls(series.bridgeId, series.seriesId, chapter.chapterId, chapter.pageCount),
-        );
+        const urls = remotePageUrls(series.bridgeId, series.seriesId, chapter.chapterId, chapter.pageCount);
+        // The server stored these pages decoded but not drawn, and serves each with its layout.
+        cache.set(key(series.bridgeId, series.seriesId, chapter.chapterId), chapter.processed ? urls.map(markProcessed) : urls);
       }
     }
   } catch {

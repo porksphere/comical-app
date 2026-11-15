@@ -42,6 +42,8 @@ import type * as TabStack from '@/components/tab-stack';
 import type * as TabStackIos from '@/components/tab-stack.ios';
 import type * as BackupFile from '@/data/backup-file';
 import type * as BackupFileWeb from '@/data/backup-file.web';
+import type * as DrawLayout from '@/data/draw-layout';
+import type * as DrawLayoutWeb from '@/data/draw-layout.web';
 import type * as Startup from '@/data/embedded/startup';
 import type * as StartupWeb from '@/data/embedded/startup.web';
 import type * as UseColorScheme from '@/hooks/use-color-scheme';
@@ -124,6 +126,7 @@ export type PlatformContracts = [
   Conforms<Drift<typeof FloatOver, typeof FloatOverWeb>>,
   Conforms<Drift<typeof OverflowMenu, typeof OverflowMenuAndroid>>,
   Conforms<Drift<typeof ImageProgress, typeof ImageProgressWeb>>,
+  Conforms<Drift<typeof DrawLayout, typeof DrawLayoutWeb>>,
   Conforms<Drift<typeof IntStepper, typeof IntStepperAndroid>>,
   Conforms<Drift<typeof IntStepper, typeof IntStepperIos>>,
   Conforms<Drift<typeof SettingsPanel, typeof SettingsPanelIos>>,

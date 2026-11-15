@@ -23,6 +23,7 @@ import { logDiagnostic } from '@/lib/diagnostics';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { persisted$ } from '@/lib/observable';
 import * as api from './api';
+import { markProcessed } from './page-process';
 import { queryClient } from './query-client';
 import * as mock from './mock';
 import { feedCounts } from './activity/feed-counts';
@@ -926,7 +927,7 @@ const realDataSource: DataSource = {
     if (local) return local;
     try {
       const pages = await api.getChapterPages(bridgeId, seriesId, chapterId, signal);
-      return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
+      return [...pages].sort((a, b) => a.index - b.index).map((p) => (p.process ? markProcessed(p.imageUrl) : p.imageUrl));
     } catch (e) {
       const fallback = localChapterPages(bridgeId, seriesId, chapterId);
       if (fallback) return fallback;
@@ -948,7 +949,7 @@ const realDataSource: DataSource = {
       // resolves each lazily via resolveAssetSourceCached as it scrolls into the render window, so only
       // visible pages pay that cost. Absolute URLs pass straight through, so bridges that already return
       // direct CDN URLs behave exactly as before.
-      return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
+      return [...pages].sort((a, b) => a.index - b.index).map((p) => (p.process ? markProcessed(p.imageUrl) : p.imageUrl));
     } catch (e) {
       const fallback = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
       if (fallback) return fallback;

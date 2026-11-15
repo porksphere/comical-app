@@ -943,6 +943,28 @@ Which generator fills a channel is set by whether it is TAGGED: `changelog-secti
 `CHANGELOG.md`, `rolling-changelog.sh` lists the commits since the channel's last publish. See
 `docs/DEVELOPMENT.md` → "Release notes reach four places" for the full table.
 
+# A processed page is drawn once, where it is resolved
+
+A page marked `Page.process` comes from the host's image route with a layout (`Comical-Page-Layout`)
+the bridge worked out; the app draws it in `resolveAssetSource`, once, with Skia (a canvas on web,
+`data/draw-layout.ts`), and every surface gets the drawn bitmap. The page's URL carries a
+`#comical-process` mark (`data/page-process.ts`) so the resolver reads its bytes under either
+transport and `peekResolvedAssetSource` never answers it synchronously. Rules that keep it working:
+
+- **Never hand a marked URL to `<Image>`, `Image.prefetch` or a cache lookup directly.** It would
+  show the image as served. Go through `resolveAssetSourceCached` like every page does.
+- **Don't draw a layout anywhere else.** Not per surface, not in a component: the page curl, spread
+  fill and slicing read the page as one bitmap, and they get one only because it is drawn before
+  any of them sees it.
+- **`draw-layout` is imported lazily.** It brings Skia, and `api.ts` is loaded by plain-JS tests.
+- **The device's downloads are stored drawn; a server's are not.** A page saved on the device came
+  through the resolver; a server keeps decoded bytes plus the layout and sends the header with the
+  file. Don't mark device downloads; do mark a server's processed chapters (`index-cache.ts`).
+- **An operation the client doesn't know shows the page as it came** (`layoutCopies` returns
+  undefined). Adding one is a contract variant first, then a case in `layoutCopies` and both drawers.
+
+See `docs/ARCHITECTURE.md` → "Processed page images" for why the split is where it is.
+
 # Downsampling is the reader's choice, not expo-image's default
 
 `allowDownscaling` defaults to TRUE, so every page was already being decoded at the size of its box
