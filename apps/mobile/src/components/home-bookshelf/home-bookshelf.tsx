@@ -51,7 +51,7 @@ import { desktopShell } from '@/lib/desktop-shell';
 import { createTickHaptic, hapticSelection } from '@/lib/haptics';
 import { historySub } from '@/lib/history-sub';
 import { useRouter } from '@/lib/nav';
-import { activityReadParams, historyResumeParams } from '@/lib/series-links';
+import { activityReadParams, historyResumeParams, seriesDetailParams } from '@/lib/series-links';
 import { useTitleFontFor } from '@/lib/title-font';
 
 import { ShelfDriver } from './driver';
@@ -499,32 +499,41 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
       params: activityReadParams(g, { name: bridgeName, direct: directOf(bridgeId) }),
     };
   };
-  /** Whether a point of the stage is on the front book or on its caption, which is drawn over the
-   *  stage and not in it, so a touch on it is told by where it hangs. */
-  const onFront = (x: number, y: number) => {
+  /** Whether a point of the stage is on the front book's caption, which is drawn over the stage and
+   *  not in it, so a touch on it is told by where it hangs. */
+  const onCaption = (x: number, y: number) => {
     const { caption, settled } = fx.get();
     const { width: w, height: h } = captionSize.get();
     const hang = captionHang(caption.side);
     const left = caption.x - w * hang.x;
     const top = caption.y - h * hang.y;
-    if (settled > 0.5 && x > left - 6 && x < left + w + 6 && y > top - 6 && y < top + h + 6) return true;
-    return driver.bookAt(x, y) === driver.focused;
+    return settled > 0.5 && x > left - 6 && x < left + w + 6 && y > top - 6 && y < top + h + 6;
   };
+  /** Whether a point of the stage is on the front book's cover, the caption over it aside. */
+  const onCover = (x: number, y: number) => !onCaption(x, y) && driver.bookAt(x, y) === driver.focused;
+  const onFront = (x: number, y: number) => onCaption(x, y) || driver.bookAt(x, y) === driver.focused;
   // The book gives under the finger and springs out as it lifts, and the page is pushed once it
-  // has: the fetch, begun as the finger came down, has that long a start.
+  // has: the fetch, begun as the finger came down on the caption, has that long a start.
   const pressIn = (x: number, y: number) => {
     if (!onFront(x, y)) return;
-    opening()?.warm();
+    if (onCaption(x, y)) opening()?.warm();
     driver.pressIn();
   };
+  /** The caption: back into the reader where the series was left, or onto its new chapter. */
   const resume = () => {
     const opens = opening();
     if (!opens) return;
     opens.warm();
     driver.pressOut(() => router.push({ pathname: '/series', params: opens.params }));
   };
+  /** The cover: the series' details page, as the History tab's cover opens it. */
+  const details = () => {
+    const params = seriesDetailParams(shown, { name: bridgeName, direct: directOf(shown.bridgeId) });
+    driver.pressOut(() => router.push({ pathname: '/series', params }));
+  };
   const tap = (x: number, y: number) => {
-    if (onFront(x, y)) return resume();
+    if (onCaption(x, y)) return resume();
+    if (onCover(x, y)) return details();
     driver.pressOut();
     const index = driver.bookAt(x, y);
     if (index >= 0) driver.goTo(index);
