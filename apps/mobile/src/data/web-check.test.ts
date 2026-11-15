@@ -20,6 +20,7 @@ const {
   storageComplete,
   storageReadScript,
   storageValues,
+  webViewUserAgent,
 } = await import('./web-check');
 
 const challenged = () =>
@@ -48,6 +49,15 @@ describe('cookies from a web view', () => {
     expect(clearanceChanged(before, clearanceOf('cf_clearance=old; other=2'))).toBe(false);
     expect(clearanceChanged(before, clearanceOf('cf_clearance=new'))).toBe(true);
     expect(clearanceChanged(new Map(), clearanceOf('__ddg2_=x'))).toBe(true);
+  });
+});
+
+describe('the web view User-Agent', () => {
+  test('left alone when the bridge already sends the platform one, set otherwise', () => {
+    expect(webViewUserAgent('Mozilla/5.0 (iPhone) Mobile/15E148', 'Mozilla/5.0 (iPhone) Mobile/15E148')).toBeUndefined();
+    expect(webViewUserAgent(undefined, 'Mozilla/5.0 (iPhone)')).toBeUndefined();
+    expect(webViewUserAgent('Mozilla/5.0 (Windows NT 10.0) Chrome/130.0', 'Mozilla/5.0 (iPhone)')).toBe('Mozilla/5.0 (Windows NT 10.0) Chrome/130.0');
+    expect(webViewUserAgent('UA/1', null)).toBe('UA/1');
   });
 });
 

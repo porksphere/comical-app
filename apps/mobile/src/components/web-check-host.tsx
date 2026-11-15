@@ -25,8 +25,10 @@ import {
   storageReadScript,
   storageValues,
   type WebCheckResult,
+  webViewUserAgent,
 } from '@/data/web-check';
 import { useTheme } from '@/hooks/use-theme';
+import { platformUserAgent } from '../../modules/comical-runtime';
 import webCookies from '../../modules/web-cookies';
 
 const POLL_MS = 1000;
@@ -98,6 +100,8 @@ function CheckView({ check }: { check: Active }) {
   const storageBefore = useRef<Record<string, string> | null>(null);
   const storageNow = useRef<Record<string, string>>({});
   const { url, userAgent, storage = [] } = check.challenge;
+  // Left alone when the bridge already sends the web view's own User-Agent (see webViewUserAgent).
+  const override = webViewUserAgent(userAgent, platformUserAgent());
 
   const finish = async (force: boolean): Promise<void> => {
     if (!webCookies || !settle || before.current === null) return;
@@ -155,7 +159,7 @@ function CheckView({ check }: { check: Active }) {
       )}
       <WebView
         source={{ uri: url }}
-        {...(userAgent ? { userAgent } : {})}
+        {...(override ? { userAgent: override } : {})}
         injectedJavaScriptBeforeContentLoaded={storage.length ? `${LISTENER}\n${storageWatcher(storage)}` : LISTENER}
         onMessage={(e) => {
           let msg: { challengeEvent?: string; storageBefore?: string; storage?: string };

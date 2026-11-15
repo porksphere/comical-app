@@ -178,9 +178,11 @@ carrying the challenge, and `RetryBlock` offers to run it again. The runners:
 its engine reports about itself, and overriding a web view's User-Agent (even with a near-identical
 string) costs its client hints, so the check loops. So each platform gives bridges its web view's
 own User-Agent (`getDefaultUserAgent`); bridges behind such checks send it, and the web check then
-leaves the web view's User-Agent untouched. Desktop does this (`apps/desktop/src/user-agent.ts`:
-Electron's default, unchanged). The native hosts still report a non-browser User-Agent, so their
-bridges fall back to a fixed desktop Chrome one; until that changes, a phone's check may loop.
+leaves the web view's User-Agent untouched. Desktop: Electron's default, unchanged
+(`apps/desktop/src/user-agent.ts`). Android: the system WebView's (`WebSettings.getDefaultUserAgent`,
+in host-android). iOS: WKWebView's `navigator.userAgent`, read once at launch by the
+`comical-runtime` module (`ComicalPlatform.webViewUserAgent`); bridges started before it lands use
+the host's fallback. The module's `platformUserAgent()` is what the phone's web check compares with.
 
 Some sites leave their clearance in the page's localStorage, for their own script to send, rather
 than in a cookie. The challenge then names the keys (`storage`). The check is done once they're all

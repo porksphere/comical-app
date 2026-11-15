@@ -166,3 +166,12 @@ export function storageValues(raw: unknown): Record<string, string> {
 export function storageComplete(keys: readonly string[], before: Record<string, string>, now: Record<string, string>): boolean {
   return keys.length > 0 && keys.every((k) => !!now[k]) && keys.some((k) => before[k] !== now[k]);
 }
+
+/**
+ * The User-Agent a check's web view must be given: none, leaving the web view's own, when the bridge
+ * already sends the platform's. Overriding a web view's User-Agent, even with the same string, can
+ * cost its client hints, and Cloudflare's check then asks again forever.
+ */
+export function webViewUserAgent(requested: string | undefined, platform: string | null | undefined): string | undefined {
+  return requested && requested !== platform ? requested : undefined;
+}

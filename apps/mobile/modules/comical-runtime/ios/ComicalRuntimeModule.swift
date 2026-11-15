@@ -1,4 +1,5 @@
 import ExpoModulesCore
+import WebKit
 
 // ComicalBridgeContext / ComicalTrackerContext are compiled into this same pod (see
 // ComicalRuntime.podspec source_files), so they're referenced directly without an
@@ -120,6 +121,24 @@ public final class ComicalRuntimeModule: Module {
     // the JS thread waits), which stalled the Storage/Downloads screens on open. Same walk, off-thread.
     AsyncFunction("directorySize") { (url: URL) -> Double in
       Self.directorySize(at: url)
+    }
+
+    // The web view's own User-Agent, which the contexts report to bridges as the platform's
+    // (`ComicalPlatform`). Reading it needs the main thread and a live web view, so it's read once
+    // here at launch; bridges started before it lands use the contexts' fallback.
+    OnCreate {
+      Task { @MainActor in
+        let webView = WKWebView(frame: .zero)
+        if let ua = try? await webView.evaluateJavaScript("navigator.userAgent") as? String {
+          ComicalPlatform.webViewUserAgent = ua
+        }
+      }
+    }
+
+    /// The platform User-Agent, or null until it has been read. The web check leaves its web view's
+    /// User-Agent alone when a bridge already uses this one.
+    Function("platformUserAgent") { () -> String? in
+      ComicalPlatform.webViewUserAgent
     }
   }
 

@@ -3,6 +3,7 @@ package expo.modules.comicalruntime
 import android.content.Context
 import dev.comical.host.ComicalBridgeContext
 import dev.comical.host.ComicalTrackerContext
+import dev.comical.host.PlatformUserAgent
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
@@ -36,6 +37,12 @@ class ComicalRuntimeModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("ComicalRuntime")
+
+    // The system WebView's own User-Agent, which the contexts report to bridges as the platform's.
+    // The web check leaves its web view's User-Agent alone when a bridge already uses this one.
+    Function("platformUserAgent") {
+      appContext.reactContext?.let { PlatformUserAgent.of(it) }
+    }
 
     AsyncFunction("initBridge") Coroutine { id: String, code: String, settingsJson: String, networkJson: String? ->
       val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()

@@ -22,6 +22,8 @@ import { requireOptionalNativeModule } from 'expo';
 interface ComicalRuntimeFs {
   /** Logical bytes of every file under the `file://` directory URI, recursively; 0 for a missing path. */
   directorySize(uri: string): Promise<number>;
+  /** The platform web view's own User-Agent (what bridges are told is the platform's), or null until known. Absent on older builds. */
+  platformUserAgent?(): string | null;
 }
 
 const comicalRuntime = requireOptionalNativeModule<NativeBridgeRuntime & NativeTrackerRuntime & ComicalRuntimeFs>(
@@ -34,4 +36,13 @@ export default comicalRuntime;
 /** Recursive on-disk size of a directory, measured off the JS thread. 0 where the module isn't linked (web). */
 export function directorySize(uri: string): Promise<number> {
   return comicalRuntime ? comicalRuntime.directorySize(uri) : Promise.resolve(0);
+}
+
+/** The platform web view's own User-Agent, or null where it isn't known (web, older builds, not read yet). */
+export function platformUserAgent(): string | null {
+  try {
+    return comicalRuntime?.platformUserAgent?.() ?? null;
+  } catch {
+    return null;
+  }
 }
