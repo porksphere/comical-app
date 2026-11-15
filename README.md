@@ -93,6 +93,15 @@ Bridges run against [**comical**](https://github.com/porksphere/comical), the Ty
 which is written to embed in any JS environment. For the full picture, see
 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
+### Official registries
+
+**[Your own servers](https://github.com/porksphere/comical-opds-bridges)**: got a Komga, Kavita,
+Suwayomi or LANraragi server, or an OPDS catalog? Add this and read from it in Comical.
+[Add it](https://porksphere.github.io/comical-app/demo/add-registry?url=https%3A%2F%2Fraw.githubusercontent.com%2Fporksphere%2Fcomical-opds-bridges%2Fmain%2Findex.json)
+
+**[Trackers](https://github.com/porksphere/comical-trackers)**: AniList and MyAnimeList.
+[Add it](https://porksphere.github.io/comical-app/demo/add-registry?url=https%3A%2F%2Fraw.githubusercontent.com%2Fporksphere%2Fcomical-trackers%2Fmain%2Findex.json)
+
 ## Sync
 
 Phones sync their library, progress and installed bridges with the **desktop app** over your
