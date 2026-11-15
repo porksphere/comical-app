@@ -28,6 +28,7 @@ export default defineConfig({
           label: 'Guides',
           items: [
             { label: 'Browse and search', slug: 'guides/browse' },
+            { label: 'Your own servers', slug: 'guides/servers' },
             { label: 'Reader', slug: 'guides/reader' },
             { label: 'Library', slug: 'guides/library' },
             { label: 'Downloads', slug: 'guides/downloads' },

@@ -3,8 +3,14 @@ title: Tracking
 description: Keeping AniList or MyAnimeList in step with what you read.
 ---
 
-Trackers come from registries, like bridges. A registry that carries them lists them under
-**Settings → Trackers**; sign in to one there and it's available on every series.
+Trackers come from registries, like bridges. AniList and MyAnimeList are in the official
+[tracker registry](https://github.com/porksphere/comical-trackers):
+[add it](../../demo/add-registry?url=https%3A%2F%2Fraw.githubusercontent.com%2Fporksphere%2Fcomical-trackers%2Fmain%2Findex.json), or paste
+`https://raw.githubusercontent.com/porksphere/comical-trackers/main/index.json` under **Settings →
+Bridges → Add registry**.
+
+A registry that carries trackers lists them under **Settings → Trackers**; sign in to one there and
+it's available on every series.
 
 ## Linking a series
 

@@ -8,8 +8,9 @@ description: Registries, bridges, series and trackers — the four words the res
 ## Registry
 
 A registry is a catalog of bridges: a static `index.json` and the bridge bundles it points at,
-hosted anywhere static files can live. You add registries in **Settings → Bridges**; Comical
-operates none of its own.
+hosted anywhere static files can live. You add registries in **Settings → Bridges**. The Comical
+project publishes two of its own, one for [your own servers](../guides/servers/) and one for
+[trackers](../guides/tracking/); anything else comes from whoever publishes it.
 
 A registry can be **signed**. Comical records the signing key when you add it, and every bridge
 served under that key is checked before it runs. If a registry's key ever changes you're asked
@@ -21,7 +22,8 @@ see [Publishing a registry](../developers/registries/).
 
 ## Bridge
 
-A bridge is an adapter for one source: a server you run (a Komga or Kavita library, an OPDS feed),
+A bridge is an adapter for one source: a server you run (a Komga or Kavita library, an OPDS feed;
+see [Your own servers](../guides/servers/)),
 a service you have an account with, or a site. It translates that backend into the neutral model
 the app understands — lists of series, chapters, pages — and nothing else. A bridge never carries
 content; it carries the knowledge of how to fetch it.

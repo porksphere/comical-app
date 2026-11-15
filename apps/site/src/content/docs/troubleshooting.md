@@ -30,6 +30,13 @@ The registry's signing key changed since you added it, which means either its pu
 keys or something is impersonating it. If you trust the publisher's explanation, confirm; if not,
 don't — nothing from it installs until you do.
 
+## A bridge warns my password is sent unencrypted
+
+The server's address is plain `http://` and it isn't on your home network or Tailscale, so the
+password or key would cross the internet readable by anyone on the way. Give the bridge an
+`https://` address for the server, or reach it over your home network or Tailscale. See
+[Your own servers](../guides/servers/#reaching-your-server).
+
 ## My server uses its own certificate
 
 Comical connects to your server over plain `http://` as well as `https://`, so a server on your

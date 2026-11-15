@@ -11,6 +11,14 @@ from a **registry** you choose to add. Five minutes covers it.
 Open **Settings → Bridges** and tap **Add registry**. Paste the registry's URL — the address of its
 `index.json`, which the registry's own page will give you.
 
+Two registries come from the Comical project itself:
+
+- **[Your own servers](https://github.com/porksphere/comical-opds-bridges)**: Komga, Kavita,
+  Suwayomi, LANraragi and any OPDS catalog.
+  [Add it](../demo/add-registry?url=https%3A%2F%2Fraw.githubusercontent.com%2Fporksphere%2Fcomical-opds-bridges%2Fmain%2Findex.json), then see [Your own servers](../guides/servers/).
+- **[Trackers](https://github.com/porksphere/comical-trackers)**: AniList and MyAnimeList.
+  [Add it](../demo/add-registry?url=https%3A%2F%2Fraw.githubusercontent.com%2Fporksphere%2Fcomical-trackers%2Fmain%2Findex.json).
+
 Registries published on GitHub tag themselves with the
 [`comical-registry`](https://github.com/topics/comical-registry) topic, which is the easiest way
 to find them. The topic is self-applied, so it's a directory, not an endorsement: read a
@@ -47,5 +55,6 @@ From here:
 - [Library](../guides/library/) — collections, groups, filters
 - [Downloads](../guides/downloads/) — reading offline, auto-download
 - [Activity](../guides/activity/) — new-chapter feed and notifications
+- [Your own servers](../guides/servers/) — Komga, Kavita, Suwayomi, LANraragi, OPDS
 - [Tracking](../guides/tracking/) — AniList and MyAnimeList
 - [Sync](../guides/sync/) — pairing a phone with the desktop app
