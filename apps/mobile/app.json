@@ -70,6 +70,7 @@
       "./plugins/with-cmake-long-paths.js",
       "./plugins/with-comical-ios-sources.js",
       "./plugins/with-devclient-variant.js",
+      "./plugins/with-user-server-network.js",
       "./plugins/with-ios-orientations.js",
       "./plugins/with-widget-shared-sources.js",
       "@bacons/apple-targets",

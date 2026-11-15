@@ -30,6 +30,18 @@ The registry's signing key changed since you added it, which means either its pu
 keys or something is impersonating it. If you trust the publisher's explanation, confirm; if not,
 don't — nothing from it installs until you do.
 
+## My server uses its own certificate
+
+Comical connects to your server over plain `http://` as well as `https://`, so a server on your
+home network or your Tailscale network needs no certificate at all. If it does serve HTTPS with a
+certificate your phone doesn't trust — a self-signed one, a NAS's default, or one from your own
+certificate authority — install that certificate authority on the device:
+
+- **iOS:** install the profile, then turn it on under **Settings → General → About → Certificate
+  Trust Settings**.
+- **Android:** **Settings → Security → Encryption & credentials → Install a certificate → CA
+  certificate** (the path varies a little by manufacturer).
+
 ## Downloads are stuck on "waiting"
 
 The source is rate-limiting and the bridge is honouring it. The download continues when the source

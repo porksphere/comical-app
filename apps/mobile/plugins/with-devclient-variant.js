@@ -31,44 +31,10 @@ function applyLabel(config, label) {
   return { ...config, name: config.name ? `${config.name} (${label})` : config.name };
 }
 
-// Pure transforms (exported for unit testing).
-//
-// The dev-client also opts out of App Transport Security. It loads its JS over plain HTTP from a
-// Metro server, and iOS blocks cleartext unless told otherwise. Expo's default grants
-// NSAllowsLocalNetworking, which covers RFC1918 (10/8, 172.16/12, 192.168/16) and .local — enough
-// for a Metro box on your LAN, and NOT enough for one reached over a VPN or overlay network, whose
-// addresses commonly live in 100.64.0.0/10 (RFC6598 shared address space, outside RFC1918 and so
-// outside what local networking grants). iOS then refuses the load before opening a
-// socket: the launcher reports "failed to connect" and a packet capture on the server sees nothing
-// at all, because nothing was ever sent.
-//
-// Scoped to COMICAL_DEVCLIENT so no release, PR or profiling build ever ships arbitrary loads —
-// this is a Debug shell that only ever talks to a dev server you point it at.
-//
-// Verify a change here against the BUILT binary, not the source: unzip the IPA and read
-// Payload/*.app/Info.plist. The first attempt at this looked correct in both the plugin and the
-// plist and still blocked every connection, because of the iOS 10 cancellation rule above.
+// Pure transforms (exported for unit testing). The dev-client loads its JS over plain HTTP from a
+// Metro server; `with-user-server-network.js` allows that in every build, so it needs nothing here.
 function applyDevClientVariant(config, enabled) {
-  if (!enabled) return config;
-  const labeled = applyLabel(config, 'dev');
-  return {
-    ...labeled,
-    ios: {
-      ...labeled.ios,
-      infoPlist: {
-        ...labeled.ios?.infoPlist,
-        // Replaced wholesale, NOT merged, and NSAllowsLocalNetworking is deliberately absent.
-        // On iOS 10+ the value of NSAllowsArbitraryLoads is IGNORED — effective NO — if
-        // NSAllowsLocalNetworking (or NSAllowsArbitraryLoadsForMedia / ...InWebContent) is also
-        // present. Setting both, which is Apple's recommendation for pre-iOS-10 compatibility,
-        // yields a plist that reads as permissive and behaves exactly as restrictive as before.
-        // Arbitrary loads already cover the RFC1918 case that NSAllowsLocalNetworking existed for.
-        NSAppTransportSecurity: {
-          NSAllowsArbitraryLoads: true,
-        },
-      },
-    },
-  };
+  return enabled ? applyLabel(config, 'dev') : config;
 }
 
 function applyProfilingVariant(config, enabled) {

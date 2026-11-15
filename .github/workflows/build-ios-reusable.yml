@@ -30,8 +30,8 @@ on:
         required: false
       dev_client:
         # When true, sets COMICAL_DEVCLIENT=1 for `expo prebuild` and `pod install`:
-        # with-devclient-variant labels the app " (dev)" and opts it out of App Transport
-        # Security (it loads JS over plain HTTP from Metro), and react-native.config.js links
+        # with-devclient-variant labels the app " (dev)" (plain HTTP to Metro needs nothing
+        # extra: with-user-server-network allows it in every build), and react-native.config.js links
         # the dev-only native modules. The bundle id is deliberately UNCHANGED — see the
         # plugin's header for why sharing the data container beats coexisting. Only
         # build-ios-devclient.yml passes this.
