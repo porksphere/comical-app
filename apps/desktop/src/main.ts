@@ -28,6 +28,7 @@ import { setTray, trayNotice } from "./tray.ts";
 import { startAutoUpdate, updatesSupported } from "./updater.ts";
 import { savedWindowState, trackWindowState } from "./window-state.ts";
 import { hostFetch } from "./chromium-sender.ts";
+import { platformUserAgent } from "./user-agent.ts";
 import { registerWebCheck } from "./web-check.ts";
 import { registerWebLogin } from "./web-login.ts";
 
@@ -269,6 +270,8 @@ async function boot(): Promise<void> {
     // Chromium's network instead of Node's (see chromium-network.ts); `COMICAL_CHROMIUM_NETWORK=0`
     // goes back to Node's.
     ...(chromium ? { fetch: chromium } : {}),
+    // Bridges that adopt the platform User-Agent then meet sites as the web check window does.
+    userAgent: platformUserAgent(app.userAgentFallback),
   });
   if (shellSettings().networkSync) void applyNetworkSync();
 

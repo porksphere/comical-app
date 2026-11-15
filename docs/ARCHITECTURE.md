@@ -174,6 +174,14 @@ carrying the challenge, and `RetryBlock` offers to run it again. The runners:
   goes back to Node's `fetch`.
 - **Web**: a page can't read another site's cookies, so there's no runner and no Verify button.
 
+**The platform User-Agent.** A check only passes when the web view's User-Agent agrees with what
+its engine reports about itself, and overriding a web view's User-Agent (even with a near-identical
+string) costs its client hints, so the check loops. So each platform gives bridges its web view's
+own User-Agent (`getDefaultUserAgent`); bridges behind such checks send it, and the web check then
+leaves the web view's User-Agent untouched. Desktop does this (`apps/desktop/src/user-agent.ts`:
+Electron's default, unchanged). The native hosts still report a non-browser User-Agent, so their
+bridges fall back to a fixed desktop Chrome one; until that changes, a phone's check may loop.
+
 Some sites leave their clearance in the page's localStorage, for their own script to send, rather
 than in a cookie. The challenge then names the keys (`storage`). The check is done once they're all
 set, and at least one is new since the check began. Their values go to the import with the cookies

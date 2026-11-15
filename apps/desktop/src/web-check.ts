@@ -10,6 +10,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { app, BrowserWindow, ipcMain, session } from "electron";
+import { needsOverride, platformUserAgent } from "./user-agent.ts";
 
 type WebCheck = { url: string; userAgent?: string; storage?: string[] };
 type Result = { cookies: Cookie[]; userAgent: string; values?: Record<string, string> };
@@ -52,8 +53,11 @@ function storageRead(keys: readonly string[]): string {
 function runCheck(check: WebCheck, parent: BrowserWindow): Promise<Result | null> {
   const keys = check.storage ?? [];
   const ses = session.fromPartition(`web-check-${randomUUID()}`);
-  const userAgent = check.userAgent ?? app.userAgentFallback.replace(/ (?!Chrome\/|Safari\/|AppleWebKit\/)[^\s()/]+\/\S+/g, "");
-  ses.setUserAgent(userAgent);
+  // Left untouched unless the bridge asked for another User-Agent: an override costs the client
+  // hints, and the check then never passes (see user-agent.ts).
+  const platform = platformUserAgent(app.userAgentFallback);
+  if (needsOverride(check.userAgent, platform)) ses.setUserAgent(check.userAgent);
+  const userAgent = check.userAgent ?? platform;
   const win = new BrowserWindow({
     parent,
     show: false,

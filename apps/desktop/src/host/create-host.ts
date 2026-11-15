@@ -29,6 +29,8 @@ export interface DesktopHostOptions {
   onSynced?: HostOptions["onSynced"];
   /** The `fetch` bridges' requests and routed images go out through (see `HostOptions.fetch`). */
   fetch?: typeof fetch;
+  /** The platform User-Agent bridges are given (see `HostOptions.userAgent`). */
+  userAgent?: string;
 }
 
 /** `router.fetch(Request)` is the whole API surface; `fetch(path)` drives it with no socket;
@@ -50,5 +52,6 @@ export function createDesktopHost(opts: DesktopHostOptions): DesktopHost {
     ...(opts.onSynced ? { onSynced: opts.onSynced } : {}),
     downloads: true,
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
+    ...(opts.userAgent ? { userAgent: opts.userAgent } : {}),
   });
 }
