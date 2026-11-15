@@ -19,8 +19,11 @@ type Cookie = { name: string; value: string; domain?: string; path?: string; exp
 const CLEARANCE = ["cf_clearance", "__ddg1_", "__ddg2_", "__ddgid_", "__ddgmark_", "__ddg8_", "__ddg9_", "__ddg10_", "waf_pass", "__guard_trust"];
 const HIDDEN_MS = 7000;
 const POLL_MS = 1000;
-// What a check waiting on a person puts on the page: Cloudflare's Turnstile frame.
-const ASKS_FOR_A_PERSON = `!!document.querySelector('iframe[src*="challenges.cloudflare.com"]')`;
+// Cloudflare's challenge reports its progress to the page with `postMessage`; `interactiveBegin`
+// means it is waiting on a person (the signal the phone and Mihon read too; a check that passes by
+// itself never sends it). The widget sits in a closed shadow root, so it can't be found in the DOM.
+const LISTEN = `if (!window.__comicalCheck) { window.__comicalCheck = { asks: false }; addEventListener("message", function (e) { var d = e && e.data; if (d && d.source === "cloudflare-challenge" && d.event === "interactiveBegin") window.__comicalCheck.asks = true; }); } true;`;
+const ASKS_FOR_A_PERSON = `!!(window.__comicalCheck && window.__comicalCheck.asks)`;
 
 export function registerWebCheck(mainWindow: () => BrowserWindow | null): void {
   ipcMain.handle("web-check", (e, raw: unknown) => {
@@ -101,6 +104,7 @@ function runCheck(check: WebCheck, parent: BrowserWindow): Promise<Result | null
       if (!win.isVisible()) void win.webContents.executeJavaScript(ASKS_FOR_A_PERSON, false).then((asks) => asks && reveal(), () => {});
     }, POLL_MS);
     win.on("closed", () => finish(null));
+    win.webContents.on("dom-ready", () => void win.webContents.executeJavaScript(LISTEN, false).catch(() => {}));
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     void win.loadURL(check.url);
   });
