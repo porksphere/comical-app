@@ -956,6 +956,8 @@ retries once (see `docs/ARCHITECTURE.md` → "Web checks"). Rules:
 - **One runner per platform.** The phone's is `WebCheckHost`, the desktop shell's `webCheck`;
   a new surface asks `canRunWebCheck()` and calls `verifyChallenge`, never a web view of its own.
 - **Nothing here names a source.** The clearance cookies listed are anti-bot vendors', not sites'.
+- **Page storage is what the challenge names, nothing more.** A runner reads only the `storage`
+  keys a challenge lists, and only from the check's own page.
 
 # A processed page is drawn once, where it is resolved
 

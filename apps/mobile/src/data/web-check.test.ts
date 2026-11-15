@@ -9,7 +9,18 @@ mock.module('./embedded/preference', () => ({ getResolvedModeSync: () => 'remote
 mock.module('./request-monitor', () => ({ trackRequest: () => () => {}, noteRequestFailure: () => {} }));
 
 const { challengeOf, getBridgeLists, setTransport, verifyChallenge } = await import('./api');
-const { canRunWebCheck, clearanceChanged, clearanceOf, cookiesFromHeader, registerWebCheckRunner, runWebCheck } = await import('./web-check');
+const {
+  canRunWebCheck,
+  challengeFrom,
+  clearanceChanged,
+  clearanceOf,
+  cookiesFromHeader,
+  registerWebCheckRunner,
+  runWebCheck,
+  storageComplete,
+  storageReadScript,
+  storageValues,
+} = await import('./web-check');
 
 const challenged = () =>
   new Response(
@@ -37,6 +48,42 @@ describe('cookies from a web view', () => {
     expect(clearanceChanged(before, clearanceOf('cf_clearance=old; other=2'))).toBe(false);
     expect(clearanceChanged(before, clearanceOf('cf_clearance=new'))).toBe(true);
     expect(clearanceChanged(new Map(), clearanceOf('__ddg2_=x'))).toBe(true);
+  });
+});
+
+describe('page storage', () => {
+  test('a host challenge naming storage keys keeps them; junk is dropped', () => {
+    expect(challengeFrom({ url: 'https://s.test/', storage: ['clearance', 3, ''], reason: '' })).toEqual({
+      url: 'https://s.test/',
+      storage: ['clearance'],
+      reason: 'The site wants to check you are a person',
+    });
+    expect(challengeFrom({ url: 'javascript:1' })).toBeUndefined();
+    expect(challengeFrom(null)).toBeUndefined();
+  });
+
+  test('the read script reports the keys that are set', () => {
+    const store = new Map([['clearance', 'tok'], ['other', 'x']]);
+    const localStorage = { getItem: (k: string) => store.get(k) ?? null };
+    const report = new Function('localStorage', `return ${storageReadScript(['clearance', 'missing'])}`)(localStorage) as string;
+    expect(storageValues(report)).toEqual({ clearance: 'tok' });
+    expect(storageValues('not json')).toEqual({});
+    expect(storageValues({ a: 1, b: 'y' })).toEqual({ b: 'y' });
+  });
+
+  test('done once every key is set and one is new or changed', () => {
+    expect(storageComplete(['a', 'b'], {}, { a: '1' })).toBe(false);
+    expect(storageComplete(['a', 'b'], {}, { a: '1', b: '2' })).toBe(true);
+    expect(storageComplete(['a'], { a: 'old' }, { a: 'old' })).toBe(false);
+    expect(storageComplete(['a'], { a: 'old' }, { a: 'new' })).toBe(true);
+    expect(storageComplete([], {}, {})).toBe(false);
+  });
+
+  test('values the runner read go to the import with the cookies', async () => {
+    uninstall = registerWebCheckRunner(async () => ({ cookies: [], values: { clearance: 'tok' } }));
+    const imports: unknown[] = [];
+    expect(await runWebCheck('b', { url: 'https://s.test/', storage: ['clearance'], reason: 'r' }, async (body) => void imports.push(body))).toBe(true);
+    expect(imports).toEqual([{ url: 'https://s.test/', cookies: [], values: { clearance: 'tok' } }]);
   });
 });
 

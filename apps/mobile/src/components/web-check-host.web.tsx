@@ -10,7 +10,11 @@ import { desktopShell } from '@/lib/desktop-shell';
 export function WebCheckHost() {
   useEffect(() => {
     const webCheck = desktopShell()?.webCheck;
-    return webCheck ? registerWebCheckRunner((c) => webCheck(c.userAgent ? { url: c.url, userAgent: c.userAgent } : { url: c.url })) : undefined;
+    return webCheck
+      ? registerWebCheckRunner(({ url, userAgent, storage }) =>
+          webCheck({ url, ...(userAgent ? { userAgent } : {}), ...(storage?.length ? { storage } : {}) }),
+        )
+      : undefined;
   }, []);
   return null;
 }

@@ -50,7 +50,7 @@ import { isProcessed, layoutCopies, unmarked } from './page-process';
 import type { Bridge, BridgeList, MissingBridge } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { persisted$ } from '@/lib/observable';
-import { type Challenge, type ImportedCookie, runWebCheck } from '@/data/web-check';
+import { type Challenge, challengeFrom, type CookieImport, runWebCheck } from '@/data/web-check';
 
 // JSON-owned key for the Legend State store; the old store wrote a bare URL string
 // under `comical:remoteServerUrl`, which we migrate off of once (below).
@@ -579,14 +579,12 @@ async function passWebCheck(path: string, init: RequestInit | undefined, res: Re
 }
 
 async function challengeIn(res: Response): Promise<Challenge | undefined> {
-  const body = (await res.json().catch(() => ({}))) as { challenge?: Partial<Challenge> };
-  const c = body.challenge;
-  if (typeof c?.url !== 'string') return undefined;
-  return { url: c.url, reason: c.reason || 'The site wants to check you are a person', ...(c.userAgent ? { userAgent: c.userAgent } : {}) };
+  const body = (await res.json().catch(() => ({}))) as { challenge?: unknown };
+  return challengeFrom(body.challenge);
 }
 
 /** Straight through the active transport: an import never runs a check of its own. */
-async function importBridgeCookies(bridgeId: string, body: { url: string; userAgent?: string; cookies: ImportedCookie[] }): Promise<void> {
+async function importBridgeCookies(bridgeId: string, body: CookieImport): Promise<void> {
   const res = await activeTransport(`/bridges/${encodeURIComponent(bridgeId)}/cookies`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -642,21 +640,14 @@ async function responseError(res: Response, path?: string): Promise<Error> {
     error?: string;
     gone?: { reason?: string };
     loginRequired?: { key?: string; reason?: string };
-    challenge?: { url?: string; userAgent?: string; reason?: string };
+    challenge?: unknown;
   };
   const login =
     res.status === 401 && body.loginRequired?.key
       ? { key: body.loginRequired.key, reason: body.loginRequired.reason || 'Sign in to continue', bridgeId: bridgeOfPath(path) }
       : undefined;
-  const challenge =
-    res.status === 403 && typeof body.challenge?.url === 'string'
-      ? {
-          url: body.challenge.url,
-          reason: body.challenge.reason || 'The site wants to check you are a person',
-          ...(body.challenge.userAgent ? { userAgent: body.challenge.userAgent } : {}),
-          bridgeId: bridgeOfPath(path),
-        }
-      : undefined;
+  const parsed = res.status === 403 ? challengeFrom(body.challenge) : undefined;
+  const challenge = parsed ? { ...parsed, bridgeId: bridgeOfPath(path) } : undefined;
   const error: ResponseError = Object.assign(new Error(login?.reason ?? challenge?.reason ?? body.error ?? `${res.status} ${res.statusText}`), {
     status: res.status,
     ...(res.status === 410 && { gone: { reason: body.gone?.reason || 'Removed from the source' } }),

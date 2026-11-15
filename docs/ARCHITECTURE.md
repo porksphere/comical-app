@@ -170,6 +170,13 @@ carrying the challenge, and `RetryBlock` offers to run it again. The runners:
   clearance is used from the stack that earned it.
 - **Web**: a page can't read another site's cookies, so there's no runner and no Verify button.
 
+Some sites leave their clearance in the page's localStorage, for their own script to send, rather
+than in a cookie. The challenge then names the keys (`storage`). The check is done once they're all
+set, and at least one is new since the check began. Their values go to the import with the cookies
+(`values`), and the host keeps them where the bridge reads them. The phone reads the keys with a
+script injected before the page's own runs, so a value left from an earlier visit counts as
+"before". The desktop's session is fresh, so it reads them with `executeJavaScript`.
+
 ## Web vs. native chrome
 
 Web uses a top nav bar instead of the native Liquid Glass tab bar (see the `.web.tsx` splits in

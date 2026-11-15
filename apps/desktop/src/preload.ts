@@ -111,10 +111,11 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
    *  the window is closed first. */
   webLogin: (login: { url: string; cookies: string[]; cookieUrls: string[] }) =>
     ipcRenderer.invoke("web-login", login) as Promise<string | null>,
-  webCheck: (check: { url: string; userAgent?: string }) =>
+  webCheck: (check: { url: string; userAgent?: string; storage?: string[] }) =>
     ipcRenderer.invoke("web-check", check) as Promise<{
       cookies: { name: string; value: string; domain?: string; path?: string; expires?: number }[];
       userAgent?: string;
+      values?: Record<string, string>;
     } | null>,
   /** Fade the caption buttons' glyphs back, for a screen that has hidden its own chrome. */
   dimCaptionButtons: (dim: boolean) => ipcRenderer.send("caption-dim", dim === true),

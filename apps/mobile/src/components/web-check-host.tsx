@@ -3,7 +3,8 @@
  * in a web view no one can see, with the challenged request's own User-Agent, so a check that needs
  * no person passes on its own. If it needs one, the same view comes up full screen, so nothing
  * reloads. It's done when a clearance cookie changes from its value before the check (or the person
- * says so), and the site's cookies go back to be imported. Mounted once at the root.
+ * says so), and the site's cookies go back to be imported. A challenge that names page storage
+ * keys is done once they're all set instead, and their values go back too. Mounted once at the root.
  */
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
@@ -20,6 +21,9 @@ import {
   clearanceOf,
   cookiesFromHeader,
   registerWebCheckRunner,
+  storageComplete,
+  storageReadScript,
+  storageValues,
   type WebCheckResult,
 } from '@/data/web-check';
 import { useTheme } from '@/hooks/use-theme';
@@ -38,6 +42,21 @@ const LISTENER = `addEventListener("message", function (e) {
   }
 });
 true;`;
+
+/**
+ * For a challenge that names page storage keys: report them as the document starts (before the
+ * site's own script runs, so a value left from an earlier visit counts as "before") and every
+ * second after.
+ */
+function storageWatcher(keys: readonly string[]): string {
+  const read = storageReadScript(keys);
+  return `(function () {
+  function send(kind) { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ [kind]: ${read} })); }
+  send("storageBefore");
+  setInterval(function () { send("storage"); }, ${POLL_MS});
+})();
+true;`;
+}
 
 type Active = { id: number; challenge: Challenge; revealed: boolean };
 
@@ -76,13 +95,23 @@ function CheckView({ check }: { check: Active }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const before = useRef<Map<string, string> | null>(null);
-  const { url, userAgent } = check.challenge;
+  const storageBefore = useRef<Record<string, string> | null>(null);
+  const storageNow = useRef<Record<string, string>>({});
+  const { url, userAgent, storage = [] } = check.challenge;
 
   const finish = async (force: boolean): Promise<void> => {
     if (!webCookies || !settle || before.current === null) return;
     const header = await webCookies.getCookies(url);
-    if (!force && !clearanceChanged(before.current, clearanceOf(header))) return;
-    settle?.({ cookies: cookiesFromHeader(header, url), ...(userAgent ? { userAgent } : {}) });
+    const values = storageNow.current;
+    const through = storage.length
+      ? storageBefore.current !== null && storageComplete(storage, storageBefore.current, values)
+      : clearanceChanged(before.current, clearanceOf(header));
+    if (!force && !through) return;
+    settle?.({
+      cookies: cookiesFromHeader(header, url),
+      ...(userAgent ? { userAgent } : {}),
+      ...(storage.length && Object.keys(values).length ? { values } : {}),
+    });
   };
   const reveal = () => {
     if (active$.peek()) active$.revealed.set(true);
@@ -127,12 +156,23 @@ function CheckView({ check }: { check: Active }) {
       <WebView
         source={{ uri: url }}
         {...(userAgent ? { userAgent } : {})}
-        injectedJavaScriptBeforeContentLoaded={LISTENER}
+        injectedJavaScriptBeforeContentLoaded={storage.length ? `${LISTENER}\n${storageWatcher(storage)}` : LISTENER}
         onMessage={(e) => {
+          let msg: { challengeEvent?: string; storageBefore?: string; storage?: string };
           try {
-            if ((JSON.parse(e.nativeEvent.data) as { challengeEvent?: string }).challengeEvent === 'interactiveBegin') reveal();
+            msg = JSON.parse(e.nativeEvent.data) as typeof msg;
           } catch {
-            // Not our message.
+            return; // Not our message.
+          }
+          if (msg.challengeEvent === 'interactiveBegin') reveal();
+          // Only the first document's start is "before"; a page the check moves on to may already hold the values.
+          if (msg.storageBefore !== undefined) {
+            storageBefore.current ??= storageValues(msg.storageBefore);
+            storageNow.current = { ...storageNow.current, ...storageValues(msg.storageBefore) };
+          }
+          if (msg.storage !== undefined) {
+            storageNow.current = storageValues(msg.storage);
+            void finish(false);
           }
         }}
         onNavigationStateChange={(): void => {
