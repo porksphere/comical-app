@@ -37,11 +37,12 @@ import { useRouter } from '@/lib/nav';
 // The two knobs for the vertical rhythm now that EVERY heading is a shared standalone `sectionHead`
 // row: SECTION_GAP separates one section from the previous (the head's top pad), HEADING_GAP is the gap
 // from a heading to its own body (the head's bottom pad). Tune here in one place.
-// SECTION_GAP is deliberately tighter than HEADING_GAP: rail-to-rail spacing accumulates in the
-// many-rail aggregate/Comical home, where a larger gap read as too airy — so sections sit closer
-// together while each heading keeps its full breathing room above its own cards. 1px — a quarter
-// of the base unit; even Spacing.half read as too much air, and no Spacing token goes this small.
-const SECTION_GAP = 1;
+// A rail reserves room for its fullest card (two title lines and a subtitle), so SECTION_GAP is the
+// whole gap under a rail whose card fills it. It was 1px once, tuned against rails of short titles,
+// whose empty reserve read as plenty: a full card then ran almost into the next heading. Rails now
+// clamp titles to two lines (RAIL_TITLE_LINES), which keeps the empty reserve under a short card
+// small enough for a real gap here.
+const SECTION_GAP = 12;
 const HEADING_GAP = Spacing.two;
 export const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
 // iOS draws the ambient colour inside the list's own content, behind its rows. The screen holding

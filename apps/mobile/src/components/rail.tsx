@@ -11,6 +11,7 @@ import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import {
   coverStyles,
   estimatedCardHeight,
+  RAIL_TITLE_LINES,
   SeriesCard,
   type CardSize,
 } from '@/components/series-card';
@@ -187,11 +188,11 @@ export function railStripHeight(
       items === undefined || items.length === 0
         ? Array<number>(items === undefined ? GRID_ROWS : 1).fill(DEFAULT_THUMB_ASPECT)
         : rowCoverAspects(wideGridItems(kind, items, columns), columns);
-    const cards = rowAspects.reduce((sum, aspect) => sum + estimatedCardHeight(cardWidth, hasSub, aspect), 0);
+    const cards = rowAspects.reduce((sum, aspect) => sum + estimatedCardHeight(cardWidth, hasSub, aspect, RAIL_TITLE_LINES), 0);
     return Spacing.one * 2 + cards + (rowAspects.length - 1) * rowGap;
   }
   // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
-  return estimatedCardHeight(cardWidthFor(kind, viewportWidth, gutter, books), hasSub) + STRIP_PAD_V * 2;
+  return estimatedCardHeight(cardWidthFor(kind, viewportWidth, gutter, books), hasSub, undefined, RAIL_TITLE_LINES) + STRIP_PAD_V * 2;
 }
 
 /** Whole rail row INCLUDING its own heading — for callers where the rail renders its own head (a
@@ -275,7 +276,7 @@ export function Rail({
   // in. Shares the grid's own `estimatedCardHeight` math so the two can't drift. `minHeight` (not a
   // fixed height): titles clamp to 3 lines so a card can't exceed this, and a rail whose cards all
   // have short titles just reserves a little unused bottom space, consistently.
-  const stripMinHeight = estimatedCardHeight(cardWidth, hasSub) + STRIP_PAD_V * 2;
+  const stripMinHeight = estimatedCardHeight(cardWidth, hasSub, undefined, RAIL_TITLE_LINES) + STRIP_PAD_V * 2;
   // The strip scrolls under the safe area's sides, past the padding its host's content keeps clear
   // of them, and its cards rest inside them: a shelf runs to the glass, a heading does not.
   // `viewportWidth` is still the column inside them, so the cards it sizes fit there.
@@ -403,7 +404,7 @@ export function Rail({
               // instead of closing up under a short title.
               style={[
                 styles.gridRow,
-                { gap: grid.columnGap, height: estimatedCardHeight(cardWidth, hasSub, gridRowAspects[r]) },
+                { gap: grid.columnGap, height: estimatedCardHeight(cardWidth, hasSub, gridRowAspects[r], RAIL_TITLE_LINES) },
               ]}>
               {row.map((item, c) => {
                 const index = r * grid.columns + c;
@@ -418,6 +419,7 @@ export function Rail({
                     bridgeId={bridgeId}
                     direct={direct}
                     rowAspect={gridRowAspects[r]}
+                    titleLines={RAIL_TITLE_LINES}
                   />
                 );
               })}
@@ -520,6 +522,7 @@ export function Rail({
                 bridge={bridge}
                 bridgeId={bridgeId}
                 direct={direct}
+                titleLines={RAIL_TITLE_LINES}
               />
             </View>
           )}
@@ -580,7 +583,7 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
       {wide ? (
         <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: grid.rowGap }]}>
           {Array.from({ length: rows }).map((_, r) => (
-            <View key={r} style={[styles.gridRow, { gap: stripGap, height: estimatedCardHeight(cardWidth, false) }]}>
+            <View key={r} style={[styles.gridRow, { gap: stripGap, height: estimatedCardHeight(cardWidth, false, undefined, RAIL_TITLE_LINES) }]}>
               {cards}
             </View>
           ))}

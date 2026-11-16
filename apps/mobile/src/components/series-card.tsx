@@ -228,6 +228,9 @@ const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
 // Reference: `.clampable > span { -webkit-line-clamp: 3; }` — clamps to 3
 // lines before the full-title peek popover takes over, not 2.
 const MAX_TITLE_LINES = 3;
+/** A rail's cards clamp a line sooner: every rail reserves room for its fullest card, so the third
+ *  line was a band of empty space under nearly every rail. */
+export const RAIL_TITLE_LINES = 2;
 // Card title metrics mirror the reference's `.card-title`: 0.85rem desktop /
 // 0.8rem mobile (1rem = 16px), line-height 1.3 (rounded to whole px).
 const TITLE_FONT_SIZE = { regular: 13.6, compact: 12.8 };
@@ -258,9 +261,14 @@ const HOLD_RETENTION = { top: 1000, bottom: 1000, left: 1000, right: 1000 };
  * A hint, not an exact match — real cards vary with cover aspect (`fillFactor` backfills the
  * difference) and title line count, so this doesn't need to be exact.
  */
-export function estimatedCardHeight(cardWidth: number, hasSub: boolean, rowAspect = DEFAULT_THUMB_ASPECT): number {
+export function estimatedCardHeight(
+  cardWidth: number,
+  hasSub: boolean,
+  rowAspect = DEFAULT_THUMB_ASPECT,
+  titleLines = MAX_TITLE_LINES,
+): number {
   const coverHeight = cardWidth / rowAspect;
-  const titleHeight = MAX_TITLE_LINES * TITLE_LINE_HEIGHT.regular;
+  const titleHeight = titleLines * TITLE_LINE_HEIGHT.regular;
   const base = coverHeight + Spacing.two + titleHeight;
   if (!hasSub) return base;
   const titleToSubGap = Spacing.two - 5;
@@ -412,6 +420,7 @@ function SeriesCardBody({
   crossfading,
   rowAspect = DEFAULT_THUMB_ASPECT,
   markSaved = true,
+  titleLines = MAX_TITLE_LINES,
 }: {
   entry: SeriesEntry;
   size?: CardSize;
@@ -449,6 +458,9 @@ function SeriesCardBody({
   rowAspect?: number;
   /** Mark the card when the series is in the library. Off where every card is (the Library). */
   markSaved?: boolean;
+  /** Lines the title clamps to (`RAIL_TITLE_LINES` in a rail); the surface's reserved height
+   *  (`estimatedCardHeight`) must be given the same number. */
+  titleLines?: number;
 }) {
   // Perf toggle (Settings → "Lightweight cards") — see lib/perf-flags.
   const lightCards = useLightCards();
@@ -727,7 +739,7 @@ function SeriesCardBody({
     const titleText = (
       <ThemedText
         type="small"
-        numberOfLines={MAX_TITLE_LINES}
+        numberOfLines={titleLines}
         themeColor={entry.unavailable ? 'textSecondary' : undefined}
         style={[styles.title, titleSize]}>
         {saved && <TitleMark size={titleSize.fontSize} />}
@@ -745,7 +757,7 @@ function SeriesCardBody({
               type="small"
               style={[styles.title, titleSize, styles.measure]}
               onLayout={(e) =>
-                setTruncated(e.nativeEvent.layout.height > MAX_TITLE_LINES * titleLineHeight + 1)
+                setTruncated(e.nativeEvent.layout.height > titleLines * titleLineHeight + 1)
               }>
               {entry.title}
             </ThemedText>
