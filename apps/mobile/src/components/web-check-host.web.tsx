@@ -11,8 +11,8 @@ export function WebCheckHost() {
   useEffect(() => {
     const webCheck = desktopShell()?.webCheck;
     return webCheck
-      ? registerWebCheckRunner(({ url, userAgent, storage }) =>
-          webCheck({ url, ...(userAgent ? { userAgent } : {}), ...(storage?.length ? { storage } : {}) }),
+      ? registerWebCheckRunner(({ url, userAgent, storage }, { quiet }) =>
+          webCheck({ url, ...(userAgent ? { userAgent } : {}), ...(storage?.length ? { storage } : {}), ...(quiet ? { quiet } : {}) }),
         )
       : undefined;
   }, []);

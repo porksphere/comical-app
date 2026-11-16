@@ -1,4 +1,5 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
+import { useSelector } from '@legendapp/state/react';
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,6 +29,7 @@ import { PullIndicator } from '@/components/pull-indicator';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import { BrowseNativeToolbar } from '@/components/browse-native-toolbar';
 import { NativeTabHeader } from '@/components/native-tab-header';
+import { WebCheckPrompt } from '@/components/web-check-prompt';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import {
   bridgePageOptions,
@@ -59,6 +61,7 @@ import {
 import { COMICAL_BRIDGE_ID, COMICAL_ICON, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
 import type { Bridge, BridgeList } from '@/data/types';
+import { waitingChecks$ } from '@/data/web-check';
 import { friendlyError } from '@/lib/friendly-error';
 import { useHasSidebar } from '@/hooks/use-content-width';
 import { useGridLayout } from '@/hooks/use-grid-layout';
@@ -131,6 +134,7 @@ export default function BrowseScreen() {
     [realBridges, comicalExcluded],
   );
   const comicalRails = useCrossBridgeRails(isComical ? comicalRailBridges : NO_BRIDGES, { mode: 'home' });
+  const checksWaiting = useSelector(() => Object.keys(waitingChecks$.get()).length > 0);
   // User-composed custom pages surface in Comical's Page selector alongside the built-in "Home" (the
   // featured aggregate). `activeCustomPage`/`customPageRows` are resolved below, once `page` exists.
   const customPages = useCustomPages();
@@ -850,7 +854,14 @@ export default function BrowseScreen() {
       terminalGridPreview,
     ],
   );
-  const homeHeader = homeError ? <RetryBlock message={homeError} error={homeQuery.error} onRetry={() => homeQuery.refetch()} /> : null;
+  // Null unless something is up: any header turns off the feed's sticky headings and bands.
+  const homeHeader =
+    homeError || checksWaiting ? (
+      <>
+        {homeError ? <RetryBlock message={homeError} error={homeQuery.error} onRetry={() => homeQuery.refetch()} /> : null}
+        <WebCheckPrompt />
+      </>
+    ) : null;
 
   // No REAL bridges installed (a successful empty load — not an error). Comical is still shown (it's
   // always present), so instead of a full-screen takeover we render the "add a registry" onboarding as

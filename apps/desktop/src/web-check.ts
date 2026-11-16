@@ -12,12 +12,13 @@ import { randomUUID } from "node:crypto";
 import { app, BrowserWindow, ipcMain, session } from "electron";
 import { needsOverride, platformUserAgent } from "./user-agent.ts";
 
-type WebCheck = { url: string; userAgent?: string; storage?: string[] };
+type WebCheck = { url: string; userAgent?: string; storage?: string[]; quiet?: boolean };
 type Result = { cookies: Cookie[]; userAgent: string; values?: Record<string, string> };
 type Cookie = { name: string; value: string; domain?: string; path?: string; expires?: number };
 
 const CLEARANCE = ["cf_clearance", "__ddg1_", "__ddg2_", "__ddgid_", "__ddgmark_", "__ddg8_", "__ddg9_", "__ddg10_", "waf_pass", "__guard_trust"];
 const HIDDEN_MS = 7000;
+const QUIET_MS = 15000;
 const POLL_MS = 1000;
 // Cloudflare's challenge reports its progress to the page with `postMessage`; `interactiveBegin`
 // means it is waiting on a person (the signal the phone and Mihon read too; a check that passes by
@@ -37,7 +38,7 @@ export function registerWebCheck(mainWindow: () => BrowserWindow | null): void {
 
 function parseCheck(raw: unknown): WebCheck | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const { url, userAgent, storage } = raw as Record<string, unknown>;
+  const { url, userAgent, storage, quiet } = raw as Record<string, unknown>;
   if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return null;
   if (userAgent !== undefined && (typeof userAgent !== "string" || !userAgent)) return null;
   if (storage !== undefined && !(Array.isArray(storage) && storage.length <= 20 && storage.every((k) => typeof k === "string" && k && k.length <= 256))) return null;
@@ -45,6 +46,7 @@ function parseCheck(raw: unknown): WebCheck | null {
     url,
     ...(typeof userAgent === "string" ? { userAgent } : {}),
     ...(Array.isArray(storage) && storage.length ? { storage: storage as string[] } : {}),
+    ...(quiet === true ? { quiet: true } : {}),
   };
 }
 
@@ -72,7 +74,9 @@ function runCheck(check: WebCheck, parent: BrowserWindow): Promise<Result | null
   });
   return new Promise((resolve) => {
     let settled = false;
+    // A quiet check is never shown: where it would be, it gives up and waits for the person.
     const reveal = () => {
+      if (check.quiet) return finish(null);
       if (!win.isDestroyed() && !win.isVisible()) win.show();
     };
     const finish = (value: Result | null) => {
@@ -92,7 +96,7 @@ function runCheck(check: WebCheck, parent: BrowserWindow): Promise<Result | null
       through();
     };
     ses.cookies.on("changed", onChanged);
-    const show = setTimeout(reveal, HIDDEN_MS);
+    const show = setTimeout(reveal, check.quiet ? QUIET_MS : HIDDEN_MS);
     const poll = setInterval(() => {
       if (win.isDestroyed()) return;
       if (keys.length) {

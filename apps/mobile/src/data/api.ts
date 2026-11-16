@@ -50,7 +50,7 @@ import { isProcessed, layoutCopies, unmarked } from './page-process';
 import type { Bridge, BridgeList, MissingBridge } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { persisted$ } from '@/lib/observable';
-import { type Challenge, challengeFrom, type CookieImport, runWebCheck } from '@/data/web-check';
+import { type Challenge, challengeFrom, type CookieImport, isQuiet, runWebCheck, waitingChecks } from '@/data/web-check';
 
 // JSON-owned key for the Legend State store; the old store wrote a bare URL string
 // under `comical:remoteServerUrl`, which we migrate off of once (below).
@@ -574,8 +574,21 @@ async function passWebCheck(path: string, init: RequestInit | undefined, res: Re
   if (!bridgeId || /^\/bridges\/[^/]+\/cookies/.test(path)) return res;
   const challenge = await challengeIn(res.clone());
   if (!challenge) return res;
-  const passed = await runWebCheck(bridgeId, challenge, (body) => importBridgeCookies(bridgeId, body));
+  // A request the person didn't make themselves (a home rail, say) only tries out of sight.
+  const passed = await runWebCheck(bridgeId, challenge, (body) => importBridgeCookies(bridgeId, body), { quiet: isQuiet(init?.signal) });
   return passed ? activeTransport(path, init) : res;
+}
+
+/**
+ * Run the checks waiting for the person (ones quiet requests gave up on), one after another, now
+ * that they asked to. Resolves with the bridges whose checks passed, for the caller to refresh.
+ */
+export async function verifyWaitingChecks(): Promise<string[]> {
+  const passed: string[] = [];
+  for (const { bridgeId, challenge } of waitingChecks()) {
+    if (await runWebCheck(bridgeId, challenge, (body) => importBridgeCookies(bridgeId, body))) passed.push(bridgeId);
+  }
+  return passed;
 }
 
 async function challengeIn(res: Response): Promise<Challenge | undefined> {

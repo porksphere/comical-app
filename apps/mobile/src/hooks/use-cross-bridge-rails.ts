@@ -19,6 +19,7 @@ import { useQueries } from '@tanstack/react-query';
 import { buildCrossBridgeRows, type ContentRow, type CrossBridgeRailInput } from '@/data/content-rows';
 import { fetchBridgeFeaturedRail, fetchBrowseScope, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
+import { markQuiet } from '@/data/web-check';
 import type { Bridge, GridPage, RailSection } from '@/data/types';
 
 type CrossBridgeMode = { mode: 'home' } | { mode: 'search'; query: string } | { mode: 'favorites' };
@@ -33,12 +34,15 @@ export function useCrossBridgeRails(
   // Home/favorites always run; search only once there's a non-empty query (else a blank landing).
   const active = params.mode !== 'search' || query.length > 0;
 
+  // Every rail here is a request the person didn't make for that source themselves, so its requests
+  // are quiet: an anti-bot check runs out of sight only, and one that needs the person waits for them
+  // (the WebCheckPrompt) instead of putting a sheet up per source.
   const results = useQueries({
     queries: bridges.map((b) => {
       if (params.mode === 'home') {
         return {
           queryKey: queryKeys.bridgeFeaturedRail(mock, b.id),
-          queryFn: ({ signal }: { signal: AbortSignal }) => fetchBridgeFeaturedRail(ds, b.id, signal),
+          queryFn: ({ signal }: { signal: AbortSignal }) => fetchBridgeFeaturedRail(ds, b.id, markQuiet(signal)),
         };
       }
       if (params.mode === 'favorites') {
@@ -49,7 +53,7 @@ export function useCrossBridgeRails(
           queryKey: queryKeys.bridgeFavoritesRail(mock, b.id),
           // No cursor: a rail shows one page and never walks — "See all" hands the walk to the grid.
           queryFn: ({ signal }: { signal: AbortSignal }) =>
-            fetchBrowseScope(ds, b.id, { kind: 'favorites' }, undefined, signal),
+            fetchBrowseScope(ds, b.id, { kind: 'favorites' }, undefined, markQuiet(signal)),
         };
       }
       return {
@@ -60,7 +64,7 @@ export function useCrossBridgeRails(
         // the favorites rail avoids (see queries.ts). So this first-page rail gets its own key.
         queryKey: queryKeys.bridgeSearchRail(mock, b.id, query),
         queryFn: ({ signal }: { signal: AbortSignal }) =>
-          fetchBrowseScope(ds, b.id, { kind: 'search', query }, undefined, signal),
+          fetchBrowseScope(ds, b.id, { kind: 'search', query }, undefined, markQuiet(signal)),
         enabled: active,
       };
     }),

@@ -8,10 +8,14 @@ mock.module('@legendapp/state/react', () => ({ use$: (o: unknown) => o }));
 mock.module('./embedded/preference', () => ({ getResolvedModeSync: () => 'remote' }));
 mock.module('./request-monitor', () => ({ trackRequest: () => () => {}, noteRequestFailure: () => {} }));
 
-const { challengeOf, getBridgeLists, setTransport, verifyChallenge } = await import('./api');
+const { challengeOf, getBridgeLists, setTransport, verifyChallenge, verifyWaitingChecks } = await import('./api');
 const {
   canRunWebCheck,
   challengeFrom,
+  isQuiet,
+  markQuiet,
+  waitingChecks,
+  waitingChecks$,
   clearanceChanged,
   clearanceOf,
   cookiesFromHeader,
@@ -34,6 +38,7 @@ afterEach(() => {
   uninstall?.();
   uninstall = undefined;
   setTransport(null);
+  waitingChecks$.set({});
 });
 
 describe('cookies from a web view', () => {
@@ -171,5 +176,59 @@ describe('through the API', () => {
     expect((err as Error).message).toBe('check');
     passed = true;
     expect(await verifyChallenge(err)).toBe(true);
+  });
+});
+
+describe('quiet checks', () => {
+  const challenge = { url: 'https://www.site.test/list', userAgent: 'UA/1', reason: 'check' };
+
+  test('a quiet check that needs the person waits for them, and quiet requests stop asking', async () => {
+    const asked: boolean[] = [];
+    uninstall = registerWebCheckRunner(async (_c, { quiet }) => {
+      asked.push(!!quiet);
+      return null;
+    });
+    expect(await runWebCheck('b', challenge, async () => {}, { quiet: true })).toBe(false);
+    expect(waitingChecks()).toEqual([{ bridgeId: 'b', challenge }]);
+    expect(await runWebCheck('b', challenge, async () => {}, { quiet: true })).toBe(false);
+    expect(asked).toEqual([true]);
+  });
+
+  test("the person's own check runs, and passing clears the wait", async () => {
+    uninstall = registerWebCheckRunner(async (_c, { quiet }) => (quiet ? null : { cookies: [{ name: 'cf_clearance', value: 'ok' }] }));
+    await runWebCheck('b', challenge, async () => {}, { quiet: true });
+    expect(waitingChecks()).toHaveLength(1);
+    expect(await runWebCheck('b', challenge, async () => {})).toBe(true);
+    expect(waitingChecks()).toEqual([]);
+  });
+
+  test('a marked signal makes its requests quiet', () => {
+    const signal = new AbortController().signal;
+    expect(isQuiet(signal)).toBe(false);
+    expect(markQuiet(signal)).toBe(signal);
+    expect(isQuiet(signal)).toBe(true);
+    expect(isQuiet(undefined)).toBe(false);
+  });
+
+  test('through the API: a quiet request only tries out of sight; Check runs the waiting ones', async () => {
+    let cleared = false;
+    setTransport(async (path) => {
+      if (path.endsWith('/cookies')) {
+        cleared = true;
+        return new Response('{"ok":true}');
+      }
+      return cleared ? new Response('[]', { headers: { 'Content-Type': 'application/json' } }) : challenged();
+    });
+    const modes: boolean[] = [];
+    uninstall = registerWebCheckRunner(async (_c, { quiet }) => {
+      modes.push(!!quiet);
+      return quiet ? null : { cookies: [{ name: 'cf_clearance', value: 'ok' }] };
+    });
+    const err = await getBridgeLists('the-bridge', markQuiet(new AbortController().signal)).catch((e: unknown) => e);
+    expect(challengeOf(err)).toBeDefined();
+    expect(waitingChecks().map((w) => w.bridgeId)).toEqual(['the-bridge']);
+    expect(await verifyWaitingChecks()).toEqual(['the-bridge']);
+    expect(modes).toEqual([true, false]);
+    expect(waitingChecks()).toEqual([]);
   });
 });

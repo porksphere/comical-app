@@ -72,7 +72,7 @@ type DesktopShell = {
    * until the person is through the site's check, and hands back the site's cookies (and the
    * values of the `storage` keys from the page's localStorage, once they're all set).
    */
-  webCheck?(check: { url: string; userAgent?: string; storage?: string[] }): Promise<WebCheckResult>;
+  webCheck?(check: { url: string; userAgent?: string; storage?: string[]; quiet?: boolean }): Promise<WebCheckResult>;
   setRunInTray(on: boolean): void;
   setOpenAtLogin(on: boolean): void;
   dimCaptionButtons(dim: boolean): void;

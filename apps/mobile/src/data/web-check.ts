@@ -15,6 +15,8 @@
  * with the cookies (`values`).
  */
 
+import { observable } from '@legendapp/state';
+
 export type Challenge = { url: string; userAgent?: string; storage?: string[]; reason: string };
 
 const DEFAULT_REASON = 'The site wants to check you are a person';
@@ -41,10 +43,44 @@ export type WebCheckResult = { cookies: ImportedCookie[]; userAgent?: string; va
 /** What goes to `POST /bridges/:id/cookies`. */
 export type CookieImport = { url: string; userAgent?: string; cookies: ImportedCookie[]; values?: Record<string, string> };
 
-export type WebCheckRunner = (challenge: Challenge) => Promise<WebCheckResult>;
+/**
+ * `quiet`: the request wasn't the person's own (a home rail, a multi-source search, a background
+ * refresh). A quiet check runs out of sight only; if the site wants a person, it gives up rather than
+ * putting a sheet in front of them, and the check waits for them (`waitingChecks`).
+ */
+export type WebCheckOptions = { quiet?: boolean };
+
+export type WebCheckRunner = (challenge: Challenge, options: WebCheckOptions) => Promise<WebCheckResult>;
 
 let runner: WebCheckRunner | null = null;
 const inFlight = new Map<string, Promise<boolean>>();
+
+// ── Quiet requests ───────────────────────────────────────────────────────────
+
+const quietSignals = new WeakSet<AbortSignal>();
+
+/** Mark the requests made with `signal` as not the person's own (see `WebCheckOptions.quiet`). */
+export function markQuiet(signal: AbortSignal | undefined): AbortSignal | undefined {
+  if (signal) quietSignals.add(signal);
+  return signal;
+}
+
+/** Whether requests made with `signal` were marked quiet. */
+export function isQuiet(signal: AbortSignal | null | undefined): boolean {
+  return !!signal && quietSignals.has(signal);
+}
+
+// ── Checks waiting for the person ────────────────────────────────────────────
+
+/** A check a quiet request gave up on because the site wants a person. */
+export type WaitingCheck = { bridgeId: string; challenge: Challenge };
+
+/** The checks waiting for the person, keyed by bridge and site. */
+export const waitingChecks$ = observable<Record<string, WaitingCheck>>({});
+
+export function waitingChecks(): WaitingCheck[] {
+  return Object.values(waitingChecks$.peek());
+}
 
 /** Install the platform's runner; returns the uninstall. Only one is active. */
 export function registerWebCheckRunner(fn: WebCheckRunner): () => void {
@@ -76,19 +112,30 @@ export function runWebCheck(
   bridgeId: string,
   challenge: Challenge,
   importCookies: (body: CookieImport) => Promise<void>,
+  options: WebCheckOptions = {},
 ): Promise<boolean> {
-  const key = `${bridgeId}\n${siteOf(challenge.url)}`;
+  const site = `${bridgeId}\n${siteOf(challenge.url)}`;
+  const quiet = !!options.quiet;
+  // A quiet request doesn't start a check the person is already waiting on; it just fails.
+  if (quiet && waitingChecks$.peek()[site]) return Promise.resolve(false);
+  // Quiet and the person's own checks are kept apart: the person's must not wait on a quiet one
+  // that will give up.
+  const key = `${site}\n${quiet ? "quiet" : "asked"}`;
   const existing = inFlight.get(key);
   if (existing) return existing;
   const run = (async () => {
     const current = runner;
     if (!current) return false;
     try {
-      const result = await current(challenge);
-      if (!result) return false;
+      const result = await current(challenge, { quiet });
+      if (!result) {
+        if (quiet) waitingChecks$[site]!.set({ bridgeId, challenge });
+        return false;
+      }
       const userAgent = result.userAgent ?? challenge.userAgent;
       const values = result.values && Object.keys(result.values).length ? result.values : undefined;
       await importCookies({ url: challenge.url, cookies: result.cookies, ...(userAgent ? { userAgent } : {}), ...(values ? { values } : {}) });
+      waitingChecks$[site]!.delete();
       return true;
     } catch {
       return false;

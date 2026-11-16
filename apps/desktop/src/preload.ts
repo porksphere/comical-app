@@ -111,7 +111,7 @@ contextBridge.exposeInMainWorld("comicalDesktop", {
    *  the window is closed first. */
   webLogin: (login: { url: string; cookies: string[]; cookieUrls: string[] }) =>
     ipcRenderer.invoke("web-login", login) as Promise<string | null>,
-  webCheck: (check: { url: string; userAgent?: string; storage?: string[] }) =>
+  webCheck: (check: { url: string; userAgent?: string; storage?: string[]; quiet?: boolean }) =>
     ipcRenderer.invoke("web-check", check) as Promise<{
       cookies: { name: string; value: string; domain?: string; path?: string; expires?: number }[];
       userAgent?: string;
