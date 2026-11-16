@@ -67,6 +67,7 @@
         }
       ],
       "./plugins/with-kotlin-version.js",
+      "./plugins/with-android-build-limits.js",
       "./plugins/with-cmake-long-paths.js",
       "./plugins/with-comical-ios-sources.js",
       "./plugins/with-devclient-variant.js",
