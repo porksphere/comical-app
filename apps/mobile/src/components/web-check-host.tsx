@@ -7,8 +7,7 @@
  * keys is done once they're all set instead, and their values go back too. Mounted once at the root.
  */
 import { observable } from '@legendapp/state';
-import { use$ } from '@legendapp/state/react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -86,9 +85,21 @@ function runOnPhone(challenge: Challenge): Promise<WebCheckResult> {
   });
 }
 
+// Plain React, not Legend's `use$`: `use$` runs no hooks when a global "inside an observer" flag is
+// set and three when it isn't, so this component's hook count could change between renders
+// ("Rendered fewer hooks than expected") depending on what rendered before it. The store's snapshot is
+// the check itself, copied on every change (starting, ending, being revealed), so it is the hook's own
+// return value: React Compiler memoizes on those, and a value read beside the hook would be cached.
+let activeSnapshot: Active | null = null;
+active$.onChange(({ value }) => {
+  activeSnapshot = value ? { ...value } : null;
+});
+const subscribeActive = (onStoreChange: () => void) => active$.onChange(onStoreChange);
+const getActive = () => activeSnapshot;
+
 export function WebCheckHost() {
   useEffect(() => (webCookies ? registerWebCheckRunner(runOnPhone) : undefined), []);
-  const check = use$(active$);
+  const check = useSyncExternalStore(subscribeActive, getActive);
   if (!check || !webCookies) return null;
   return <CheckView key={check.id} check={check} />;
 }
@@ -159,6 +170,9 @@ function CheckView({ check }: { check: Active }) {
       )}
       <WebView
         source={{ uri: url }}
+        // Cloudflare's widget runs in an `about:srcdoc` frame; the default (http/https only) hands any
+        // other URL to the system to open, which breaks the check.
+        originWhitelist={['*']}
         {...(override ? { userAgent: override } : {})}
         injectedJavaScriptBeforeContentLoaded={storage.length ? `${LISTENER}\n${storageWatcher(storage)}` : LISTENER}
         onMessage={(e) => {
