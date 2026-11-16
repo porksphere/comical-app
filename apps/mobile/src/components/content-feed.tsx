@@ -465,7 +465,7 @@ export function ContentFeed({
             // Measured like a grid block: the offset walk stops at a row of unknown height.
             return (
               <View onLayout={(e) => onRowMeasured(item.key, e.nativeEvent.layout.height)}>
-                <RetryBlock message={item.message} onRetry={item.onRetry} />
+                <RetryBlock message={item.message} onRetry={item.onRetry} error={item.error} />
               </View>
             );
           case 'gridBlock':

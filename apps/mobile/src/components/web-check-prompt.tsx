@@ -2,11 +2,13 @@
  * The checks waiting for the person (`waitingChecks$`): sources whose anti-bot check wanted a person
  * while the app was loading them on its own, behind one row instead of a sheet each. A tap runs them
  * one after another, shown, then reloads what they hold up. Renders nothing while none wait.
+ *
+ * Every waiting source on the composite page; with `bridgeId`, only that bridge's (its own page).
  */
 import { useSelector } from '@legendapp/state/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet } from 'react-native';
 
 import { ChevronRightIcon, ShieldCheckIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -16,11 +18,17 @@ import { canRunWebCheck, waitingChecks$ } from '@/data/web-check';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useTheme } from '@/hooks/use-theme';
 
-export function WebCheckPrompt() {
+export function WebCheckPrompt({ bridgeId }: { bridgeId?: string }) {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { nameOf } = useBridgeMap();
-  const bridgeIds = useSelector(() => [...new Set(Object.values(waitingChecks$.get()).map((w) => w.bridgeId))]);
+  const bridgeIds = useSelector(() => [
+    ...new Set(
+      Object.values(waitingChecks$.get())
+        .map((w) => w.bridgeId)
+        .filter((id) => !bridgeId || id === bridgeId),
+    ),
+  ]);
   const [running, setRunning] = useState(false);
   if (bridgeIds.length === 0 || !canRunWebCheck()) return null;
 
@@ -30,7 +38,7 @@ export function WebCheckPrompt() {
     if (running) return;
     setRunning(true);
     try {
-      const passed = await verifyWaitingChecks();
+      const passed = await verifyWaitingChecks(bridgeId);
       if (passed.length) await queryClient.invalidateQueries({ predicate: (q) => q.queryKey.some((part) => passed.includes(part as string)) });
     } finally {
       setRunning(false);
@@ -45,14 +53,9 @@ export function WebCheckPrompt() {
       onPress={() => void verify()}
       style={({ pressed }) => [styles.row, { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement }]}>
       <ShieldCheckIcon color={theme.accent} size={22} />
-      <View style={styles.text}>
-        <ThemedText type="smallBold" numberOfLines={2}>
-          {title}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.sub}>
-          {one ? 'Tap to verify and load it' : 'Tap to verify and load them'}
-        </ThemedText>
-      </View>
+      <ThemedText type="smallBold" numberOfLines={2} style={styles.text}>
+        {title}
+      </ThemedText>
       {running ? <ActivityIndicator /> : <ChevronRightIcon color={theme.textSecondary} size={18} />}
     </Pressable>
   );
@@ -67,9 +70,8 @@ const styles = StyleSheet.create({
     marginTop: Spacing.one,
     marginBottom: Spacing.two,
     paddingHorizontal: Spacing.three,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 14,
   },
-  text: { flex: 1, minWidth: 0, gap: 1 },
-  sub: { fontSize: 13, lineHeight: 17, fontWeight: '400' },
+  text: { flex: 1, minWidth: 0 },
 });

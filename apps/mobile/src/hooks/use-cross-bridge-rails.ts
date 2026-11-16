@@ -16,6 +16,7 @@
 import { useCallback, useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 
+import { challengeOf } from '@/data/api';
 import { buildCrossBridgeRows, type ContentRow, type CrossBridgeRailInput } from '@/data/content-rows';
 import { fetchBridgeFeaturedRail, fetchBrowseScope, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -111,6 +112,8 @@ export function useCrossBridgeRails(
         // empty→full remount flash, and the crossfade reveals a skeleton rather than a blank list).
         loading: r.isPending,
         error: r.isError,
+        failure: r.error,
+        needsVerification: !!challengeOf(r.error),
         onRetry: () => void r.refetch(),
         section,
         listName,

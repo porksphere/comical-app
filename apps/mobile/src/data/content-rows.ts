@@ -53,7 +53,7 @@ export type ContentRow =
   | { type: 'railSkeleton'; key: string; title?: string; bridgeId?: string }
   // A rail whose fetch FAILED — a shared RetryBlock in the rail's slot (below its sectionHead), so one
   // bridge erroring in a cross-bridge feed shows an inline retry instead of silently vanishing.
-  | { type: 'railError'; key: string; message: string; onRetry: () => void }
+  | { type: 'railError'; key: string; message: string; onRetry: () => void; error?: unknown }
   // A non-terminal grid section BODY (own "Load more") — heading is the preceding `sectionHead` row.
   | ({ type: 'gridBlock'; key: string; section: HomeGridSection } & BridgeScope)
   // Loading placeholder for a non-terminal grid block — self-headed.
@@ -176,6 +176,10 @@ export type CrossBridgeRailInput = {
   loading: boolean;
   /** The bridge's query failed — render a retry in its slot instead of a rail. */
   error: boolean;
+  /** The failure itself, handed to the retry block (it offers Verify for a site's anti-bot check). */
+  failure?: unknown;
+  /** The failure is a check waiting on the person: the slot says so instead of "Couldn't load". */
+  needsVerification?: boolean;
   /** Refetch just this bridge's query (the railError's Retry). */
   onRetry: () => void;
   section: RailSection | null;
@@ -208,8 +212,9 @@ export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow
       rows.push({
         type: 'railError',
         key: `railerr:${b.bridgeId}`,
-        message: `Couldn't load ${b.bridgeName}.`,
+        message: b.needsVerification ? 'Waiting on verification.' : `Couldn't load ${b.bridgeName}.`,
         onRetry: b.onRetry,
+        error: b.failure,
       });
       continue;
     }

@@ -39,11 +39,14 @@ export function RetryBlock({ message, onRetry, error }: { message: string; onRet
             </ThemedText>
           </Pressable>
         )}
-        <Pressable testID="retry.button" onPress={onRetry} hitSlop={8}>
-          <ThemedText type="smallBold" style={{ color: theme.accent }}>
-            Retry
-          </ThemedText>
-        </Pressable>
+        {/* Under a check, Verify is the retry: the request alone would only be challenged again. */}
+        {!verify && (
+          <Pressable testID="retry.button" onPress={onRetry} hitSlop={8}>
+            <ThemedText type="smallBold" style={{ color: theme.accent }}>
+              Retry
+            </ThemedText>
+          </Pressable>
+        )}
       </View>
     </View>
   );

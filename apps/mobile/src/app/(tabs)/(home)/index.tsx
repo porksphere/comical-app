@@ -134,7 +134,8 @@ export default function BrowseScreen() {
     [realBridges, comicalExcluded],
   );
   const comicalRails = useCrossBridgeRails(isComical ? comicalRailBridges : NO_BRIDGES, { mode: 'home' });
-  const checksWaiting = useSelector(() => Object.keys(waitingChecks$.get()).length > 0);
+  // The composite page names every source waiting on verification; a bridge's own page only itself.
+  const checksWaiting = useSelector(() => Object.values(waitingChecks$.get()).some((w) => isComical || w.bridgeId === bridgeId));
   // User-composed custom pages surface in Comical's Page selector alongside the built-in "Home" (the
   // featured aggregate). `activeCustomPage`/`customPageRows` are resolved below, once `page` exists.
   const customPages = useCustomPages();
@@ -912,7 +913,7 @@ export default function BrowseScreen() {
           listRef={listRef}
           header={homeHeader}
           // Null unless a check waits: a banner turns off the feed's sticky headings and bands.
-          banner={checksWaiting ? <WebCheckPrompt /> : null}
+          banner={checksWaiting ? <WebCheckPrompt bridgeId={isComical ? undefined : bridgeId} /> : null}
           hero={bookshelfHero}
           // Terminal-grid first-load skeleton (footer). During homeLoading the terminal rows aren't
           // built yet; this fills that gap the way GridSkeleton did for the old shared list.

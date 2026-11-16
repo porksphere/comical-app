@@ -583,9 +583,10 @@ async function passWebCheck(path: string, init: RequestInit | undefined, res: Re
  * Run the checks waiting for the person (ones quiet requests gave up on), one after another, now
  * that they asked to. Resolves with the bridges whose checks passed, for the caller to refresh.
  */
-export async function verifyWaitingChecks(): Promise<string[]> {
+export async function verifyWaitingChecks(onlyBridgeId?: string): Promise<string[]> {
   const passed: string[] = [];
   for (const { bridgeId, challenge } of waitingChecks()) {
+    if (onlyBridgeId && bridgeId !== onlyBridgeId) continue;
     if (await runWebCheck(bridgeId, challenge, (body) => importBridgeCookies(bridgeId, body))) passed.push(bridgeId);
   }
   return passed;

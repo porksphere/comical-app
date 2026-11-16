@@ -232,3 +232,20 @@ describe('quiet checks', () => {
     expect(waitingChecks()).toEqual([]);
   });
 });
+
+test('Verify on a bridge runs only that bridge\'s waiting check', async () => {
+  const challenge = { url: 'https://www.site.test/list', userAgent: 'UA/1', reason: 'check' };
+  const other = { url: 'https://other.test/', userAgent: 'UA/1', reason: 'check' };
+  setTransport(async () => new Response('{"ok":true}'));
+  const asked: string[] = [];
+  uninstall = registerWebCheckRunner(async (c, { quiet }) => {
+    if (quiet) return null;
+    asked.push(c.url);
+    return { cookies: [{ name: 'cf_clearance', value: 'ok' }] };
+  });
+  await runWebCheck('a', challenge, async () => {}, { quiet: true });
+  await runWebCheck('b', other, async () => {}, { quiet: true });
+  expect(await verifyWaitingChecks('b')).toEqual(['b']);
+  expect(asked).toEqual([other.url]);
+  expect(waitingChecks().map((w) => w.bridgeId)).toEqual(['a']);
+});
