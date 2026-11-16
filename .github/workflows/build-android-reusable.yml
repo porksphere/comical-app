@@ -153,6 +153,26 @@ jobs:
 
       # ubuntu-latest doesn't reliably ship ccache preinstalled; apt has it. Zero stats so the
       # report below reflects just this run. CCACHE_EXE is read by android-ccache-init.gradle.
+      # The release build has outgrown the runner (4 cores, 16 GB, ~14 GB of free disk): most runs
+      # died with "the hosted runner lost communication", the agent killed when the machine ran out.
+      # Make room first: drop preinstalled toolchains nothing here uses, and add swap so a peak
+      # slows the build instead of taking the runner down.
+      - name: Make room (disk and swap)
+        run: |
+          set -uo pipefail
+          df -h / /mnt 2>/dev/null || df -h /
+          free -m
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost /usr/share/swift "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}/CodeQL" || true
+          SWAP=/mnt/comical-swap
+          [ -d /mnt ] || SWAP=/comical-swap
+          sudo fallocate -l 8G "$SWAP" && sudo chmod 600 "$SWAP" && sudo mkswap "$SWAP" >/dev/null && sudo swapon "$SWAP" || echo "::warning::could not add swap"
+          df -h / /mnt 2>/dev/null || df -h /
+          free -m
+      # Memory and disk every 30s, for the peaks printed after the build. A runner that dies loses
+      # this step's log, so it only reports on runs that survive: how close they came.
+      - name: Start resource log
+        run: |
+          nohup bash -c 'while :; do echo "$(date -u +%T) $(free -m | awk "/Mem:/{printf \"mem %d/%dMB avail %dMB\", \$3, \$2, \$7} /Swap:/{printf \" swap %d/%dMB\", \$3, \$2}") $(df -m / | awk "NR==2{printf \"disk free %dMB\", \$4}")"; sleep 30; done' > "$RUNNER_TEMP/resources.log" 2>&1 &
       - name: Install ccache
         run: |
           set -euo pipefail
@@ -239,11 +259,22 @@ jobs:
           EXPO_PUBLIC_COMICAL_BUILD_CHANNEL: ${{ inputs.channel }}
           # EXPO_PUBLIC_COMICAL_BUILD_COMMIT / _BUILD_TIME come from the stamps step above
           # ($GITHUB_ENV), which subsequent steps inherit.
-        run: ./gradlew assembleRelease --no-daemon --build-cache
+        # Two Gradle workers: each native (CMake) task already compiles on every core, and four of
+        # them at once (one per module and ABI) stacked their memory peaks past the runner's.
+        run: ./gradlew assembleRelease --no-daemon --build-cache --max-workers=2
         working-directory: apps/mobile/android
 
       # Hits climb once main has saved a warm cache; a cold run (e.g. bun.lock just changed)
       # shows mostly misses for that run only.
+      - name: Report resource peaks
+        if: always()
+        run: |
+          L="$RUNNER_TEMP/resources.log"
+          [ -s "$L" ] || { echo "no resource log"; exit 0; }
+          echo "least memory available: $(grep -o 'avail [0-9]*' "$L" | awk '{print $2}' | sort -n | head -1) MB"
+          echo "most swap used: $(grep -oE 'swap [0-9]+' "$L" | awk '{print $2}' | sort -n | tail -1) MB"
+          echo "least disk free: $(grep -oE 'disk free [0-9]+' "$L" | awk '{print $3}' | sort -n | head -1) MB"
+          tail -n 5 "$L"
       - name: Report ccache stats
         if: always()
         run: ccache -s -v 2>/dev/null || ccache -s
