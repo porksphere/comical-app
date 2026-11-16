@@ -520,6 +520,7 @@ export function ContentFeed({
                       cohort={scopeKey}
                       crossfading={crossfading}
                       rowAspect={rowAspect}
+                      showSub={subOf(bridgeId)}
                     />
                   </View>
                 ))}

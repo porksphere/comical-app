@@ -420,6 +420,7 @@ export function Rail({
                     direct={direct}
                     rowAspect={gridRowAspects[r]}
                     titleLines={RAIL_TITLE_LINES}
+                    showSub={hasSub}
                   />
                 );
               })}
@@ -523,6 +524,7 @@ export function Rail({
                 bridgeId={bridgeId}
                 direct={direct}
                 titleLines={RAIL_TITLE_LINES}
+                showSub={hasSub}
               />
             </View>
           )}

@@ -219,6 +219,7 @@ export function SeriesGrid({
                     crossfading={crossfading}
                     markSaved={markSaved}
                     rowAspect={rowAspect}
+                    showSub={sub}
                   />
                 </View>
               ))}
@@ -280,6 +281,7 @@ export function SeriesGrid({
             crossfading={crossfading}
             markSaved={markSaved}
             rowAspect={rowAspectAt(index)}
+            showSub={sub}
           />
         </View>
       )}

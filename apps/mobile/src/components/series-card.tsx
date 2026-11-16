@@ -421,6 +421,7 @@ function SeriesCardBody({
   rowAspect = DEFAULT_THUMB_ASPECT,
   markSaved = true,
   titleLines = MAX_TITLE_LINES,
+  showSub = true,
 }: {
   entry: SeriesEntry;
   size?: CardSize;
@@ -461,6 +462,10 @@ function SeriesCardBody({
   /** Lines the title clamps to (`RAIL_TITLE_LINES` in a rail); the surface's reserved height
    *  (`estimatedCardHeight`) must be given the same number. */
   titleLines?: number;
+  /** Whether the surface reserved a subtitle line (`estimatedCardHeight`'s `hasSub`). Off, an
+   *  entry's subtitle isn't drawn: a fixed-height row with no room for it would overflow into
+   *  whatever comes next. */
+  showSub?: boolean;
 }) {
   // Perf toggle (Settings → "Lightweight cards") — see lib/perf-flags.
   const lightCards = useLightCards();
@@ -768,7 +773,7 @@ function SeriesCardBody({
           titleText
         )}
         {/* Secondary line (author, latest chapter, …) — bridge-supplied, absent for many. */}
-        {entry.sub ? (
+        {entry.sub && showSub ? (
           <ThemedText
             type="small"
             themeColor="textSecondary"
