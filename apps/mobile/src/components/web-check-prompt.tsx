@@ -1,6 +1,6 @@
 /**
  * The checks waiting for the person (`waitingChecks$`): sources whose anti-bot check wanted a person
- * while the app was loading them on its own, behind one line instead of a sheet each. Check runs them
+ * while the app was loading them on its own, behind one line instead of a sheet each. Verify runs them
  * one after another, shown, then reloads what they hold up. Renders nothing while none wait.
  */
 import { useSelector } from '@legendapp/state/react';
@@ -23,7 +23,7 @@ export function WebCheckPrompt() {
   const [running, setRunning] = useState(false);
   if (bridgeIds.length === 0 || !canRunWebCheck()) return null;
 
-  const label = bridgeIds.length === 1 ? `${nameOf(bridgeIds[0]!)} needs a quick check` : `${bridgeIds.length} sources need a quick check`;
+  const label = bridgeIds.length === 1 ? `${nameOf(bridgeIds[0]!)} is waiting on verification` : `${bridgeIds.length} sources are waiting on verification`;
   const check = async () => {
     setRunning(true);
     try {
@@ -42,9 +42,9 @@ export function WebCheckPrompt() {
       {running ? (
         <ActivityIndicator />
       ) : (
-        <Pressable testID="web-check.prompt.check" onPress={() => void check()} hitSlop={8}>
+        <Pressable testID="web-check.prompt.verify" onPress={() => void check()} hitSlop={8}>
           <ThemedText type="smallBold" style={{ color: theme.accent }}>
-            Check
+            Verify
           </ThemedText>
         </Pressable>
       )}

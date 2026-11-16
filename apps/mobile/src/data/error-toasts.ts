@@ -1,10 +1,11 @@
 import { useSyncExternalStore } from 'react';
 
 import { showToast } from '@/components/toast';
-import { seriesGoneReason, setRequestErrorListener } from '@/data/api';
+import { challengeOf, seriesGoneReason, setRequestErrorListener } from '@/data/api';
 import { isMissingBridgeRequest } from '@/data/known-bridges';
 import { queryClient } from '@/data/query-client';
 import type { Bridge, MissingBridge } from '@/data/types';
+import { isWaiting } from '@/data/web-check';
 import { shortError } from '@/lib/friendly-error';
 import { persisted$ } from '@/lib/observable';
 
@@ -38,13 +39,16 @@ function cachedBridgeLists(): { installed: Bridge[]; missing: MissingBridge[] } 
  * several (a query and its retry, a screen's parallel requests to the same dead server), so a
  * message identical to the one still on screen is dropped rather than restarting the toast. Requests
  * to an uninstalled bridge, and for a series its source has removed, are skipped: the series page
- * says those itself.
+ * says those itself. So is a request held up by a web check that is waiting for the person: the
+ * prompt on Home says that.
  */
 export function installErrorToasts(): void {
   let last = { message: '', at: 0 };
   setRequestErrorListener((error, path) => {
     if (!errorToasts$.on.peek()) return;
     if (seriesGoneReason(error) !== undefined) return;
+    const challenge = challengeOf(error);
+    if (challenge && isWaiting(challenge)) return;
     const { installed, missing } = cachedBridgeLists();
     if (isMissingBridgeRequest(path, installed, missing)) return;
     const message = shortError(error);

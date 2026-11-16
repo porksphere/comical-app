@@ -854,14 +854,7 @@ export default function BrowseScreen() {
       terminalGridPreview,
     ],
   );
-  // Null unless something is up: any header turns off the feed's sticky headings and bands.
-  const homeHeader =
-    homeError || checksWaiting ? (
-      <>
-        {homeError ? <RetryBlock message={homeError} error={homeQuery.error} onRetry={() => homeQuery.refetch()} /> : null}
-        <WebCheckPrompt />
-      </>
-    ) : null;
+  const homeHeader = homeError ? <RetryBlock message={homeError} error={homeQuery.error} onRetry={() => homeQuery.refetch()} /> : null;
 
   // No REAL bridges installed (a successful empty load — not an error). Comical is still shown (it's
   // always present), so instead of a full-screen takeover we render the "add a registry" onboarding as
@@ -918,6 +911,8 @@ export default function BrowseScreen() {
           scopeKey={gridScope}
           listRef={listRef}
           header={homeHeader}
+          // Null unless a check waits: a banner turns off the feed's sticky headings and bands.
+          banner={checksWaiting ? <WebCheckPrompt /> : null}
           hero={bookshelfHero}
           // Terminal-grid first-load skeleton (footer). During homeLoading the terminal rows aren't
           // built yet; this fills that gap the way GridSkeleton did for the old shared list.

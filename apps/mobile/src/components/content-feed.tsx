@@ -113,6 +113,7 @@ export function ContentFeed({
   listRef,
   scrollRef,
   header,
+  banner,
   hero,
   terminalLoading,
   paddingTop,
@@ -149,6 +150,8 @@ export function ContentFeed({
   hero?: { element: ReactElement; height: number } | null;
   /** Above the first row — the error-retry block (the back banner never shows on composed Home). */
   header?: ReactElement | null;
+  /** The very top of the page, above the hero — a notice that matters more than what the page opens on. */
+  banner?: ReactElement | null;
   /** Render the terminal-grid first-load skeleton as the list footer (rows padded to match cells). */
   terminalLoading?: boolean;
   paddingTop: number;
@@ -280,9 +283,9 @@ export function ContentFeed({
     const out: FeedSection[] = [];
     const bands: FeedBand[] = [];
     if (stickyHeaderTop === undefined && !ambient) return { sections: out, bands };
-    // A list header (the error-retry block) sits above the rows and shifts every offset by its
-    // unmeasured height — no sticky while one is up; a pinned heading matters least mid-error.
-    if (header) return { sections: out, bands };
+    // A list header (the error-retry block) or banner sits above the rows and shifts every offset by
+    // its unmeasured height — no sticky while one is up; a pinned heading matters least then.
+    if (header || banner) return { sections: out, bands };
     let y = paddingTop + (hero?.height ?? 0);
     for (const row of rows) {
       // A band is a heading and everything under it, up to the next heading. A loading rail is
@@ -318,7 +321,7 @@ export function ContentFeed({
       if (band) band.bottom = y;
     }
     return { sections: out, bands };
-  }, [rows, header, hero?.height, stickyHeaderTop, ambient, paddingTop, getFixedItemSize, measuredHeights, bridgeId, bridgeOrder]);
+  }, [rows, header, banner, hero?.height, stickyHeaderTop, ambient, paddingTop, getFixedItemSize, measuredHeights, bridgeId, bridgeOrder]);
 
   // The heading the pinned copy is currently standing in for — that row keeps its space but drops
   // its content, so one heading is never drawn twice.
@@ -398,9 +401,10 @@ export function ContentFeed({
       // than the default 250 — fewer off-screen rails alive at once = fewer simultaneous image loads.
       drawDistance={120}
       header={
-        (BACKDROP_IN_LIST && backdrop) || hero ? (
+        (BACKDROP_IN_LIST && backdrop) || hero || banner ? (
           <>
             {BACKDROP_IN_LIST && backdrop}
+            {banner}
             {hero?.element}
             {header}
           </>

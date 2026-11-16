@@ -103,6 +103,12 @@ function siteOf(url: string): string {
   }
 }
 
+/** Whether a check of `challenge`'s site is waiting for the person (the prompt shows it). */
+export function isWaiting(challenge: Challenge): boolean {
+  const site = siteOf(challenge.url);
+  return Object.values(waitingChecks$.peek()).some((w) => siteOf(w.challenge.url) === site);
+}
+
 /**
  * Run `challenge` for `bridgeId` and import what the person earned. Resolves true when the cookies
  * are in (the caller retries), false when there's no runner, the person gave up, or the import
