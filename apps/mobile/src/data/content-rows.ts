@@ -212,7 +212,7 @@ export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow
       rows.push({
         type: 'railError',
         key: `railerr:${b.bridgeId}`,
-        message: b.needsVerification ? 'Waiting on verification.' : `Couldn't load ${b.bridgeName}.`,
+        message: b.needsVerification ? 'Waiting on verification' : `Couldn't load ${b.bridgeName}.`,
         onRetry: b.onRetry,
         error: b.failure,
       });
