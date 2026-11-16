@@ -1,5 +1,4 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useSelector } from '@legendapp/state/react';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Stack, useFocusEffect, useNavigation } from 'expo-router';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -23,7 +22,6 @@ import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebCheckPrompt } from '@/components/web-check-prompt';
 import { BarContentGap, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { useComicalExcludedIds } from '@/data/comical-home';
 import type { ContentRow } from '@/data/content-rows';
@@ -35,7 +33,6 @@ import { clearSearchIntent, peekSearchIntent, subscribeSearchIntent, takeSearchI
 import { COMICAL_BRIDGE_ID, isComicalBridge, useInheritedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Bridge } from '@/data/types';
-import { waitingChecks$ } from '@/data/web-check';
 import { friendlyError } from '@/lib/friendly-error';
 import { useBridgeFilters } from '@/hooks/use-bridge-filters';
 import { useBridgeMap } from '@/hooks/use-bridges';
@@ -175,7 +172,6 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
 
   // The cross-bridge search rows (one rail per bridge). Runs zero queries in single-bridge mode.
   const comicalSearch = useCrossBridgeRails(isComical ? realBridges : NO_BRIDGES, { mode: 'search', query });
-  const checksWaiting = useSelector(() => Object.keys(waitingChecks$.get()).length > 0);
 
   // What is in the field right now, ahead of `query`, which only moves on submit. The library answers
   // from it as you type — it is one local lookup, where a bridge search is a request to every source
@@ -769,7 +765,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
                 rows={comicalRows}
                 scopeKey={query || 'blank'}
                 listRef={listRef}
-                header={checksWaiting ? <>{comicalHint}<WebCheckPrompt /></> : comicalHint}
+                header={comicalHint}
                 paddingTop={topBarTotal + filtersBarH + BarContentGap}
                 paddingBottom={insets.bottom + Spacing.five}
                 sharedValues={sharedValues}

@@ -3,7 +3,8 @@
  * while the app was loading them on its own, behind one row instead of a sheet each. A tap runs them
  * one after another, shown, then reloads what they hold up. Renders nothing while none wait.
  *
- * Every waiting source on the composite page; with `bridgeId`, only that bridge's (its own page).
+ * A bridge's own page passes `bridgeId` and shows only its check. The composite pages show none: each
+ * held-up rail says "Waiting on verification" and verifies its own bridge.
  */
 import { useSelector } from '@legendapp/state/react';
 import { useQueryClient } from '@tanstack/react-query';
