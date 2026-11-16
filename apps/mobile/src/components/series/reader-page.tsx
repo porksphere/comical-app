@@ -235,6 +235,7 @@ export function SeriesReaderPage({
     refetch,
     series,
     error,
+    failure,
     missingBridge,
     pagesGone,
   } = useSeriesRead(params, { pinned: sequenceTarget ?? override, off: !!sequence });
@@ -1495,7 +1496,7 @@ export function SeriesReaderPage({
                 </View>
               ) : !missingBridge ? (
                 <View style={styles.centerFill}>
-                  <RetryBlock message={error} onRetry={refetch} />
+                  <RetryBlock message={error} onRetry={refetch} error={failure} />
                 </View>
               ) : (
                 <View style={styles.centerFill}>

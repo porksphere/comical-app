@@ -149,7 +149,7 @@ export function SeriesDetailsPage({
 
   // The strip shows where reading would resume. The reader page records its moves into the
   // history, so the strip follows them there.
-  const { inLibrary, resume, target, targetChapterId, pages, refetch, series, error, missingBridge, pagesGone } =
+  const { inLibrary, resume, target, targetChapterId, pages, refetch, series, error, failure, missingBridge, pagesGone } =
     useSeriesRead(params, { pinned: null, off: false });
 
   // True while a horizontal details gesture (back-swipe or webtoon reveal) is ACTIVE. The pans
@@ -1321,7 +1321,7 @@ export function SeriesDetailsPage({
               {/* A source or a bridge that is gone is the details page's to say. */}
               {!pagesGone && !missingBridge ? (
                 <View style={styles.centerFill}>
-                  <RetryBlock message={error} onRetry={refetch} />
+                  <RetryBlock message={error} onRetry={refetch} error={failure} />
                 </View>
               ) : null}
               {dimOverlays}

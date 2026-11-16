@@ -166,6 +166,8 @@ export function useSeriesRead(
     refetch,
     series,
     error,
+    /** The failure itself, for the retry block: a site's anti-bot check gets Verify there. */
+    failure: !off && queryError ? queryError : undefined,
     missingBridge,
     pagesGone,
   };

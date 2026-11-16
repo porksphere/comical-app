@@ -103,6 +103,14 @@ function siteOf(url: string): string {
   }
 }
 
+const passedListeners = new Set<(bridgeId: string) => void>();
+
+/** Hear each bridge whose check passed, wherever it ran, to reload what it held up. */
+export function onCheckPassed(listener: (bridgeId: string) => void): () => void {
+  passedListeners.add(listener);
+  return () => passedListeners.delete(listener);
+}
+
 /** Whether a check of `challenge`'s site is waiting for the person (the prompt shows it). */
 export function isWaiting(challenge: Challenge): boolean {
   const site = siteOf(challenge.url);
@@ -142,6 +150,7 @@ export function runWebCheck(
       const values = result.values && Object.keys(result.values).length ? result.values : undefined;
       await importCookies({ url: challenge.url, cookies: result.cookies, ...(userAgent ? { userAgent } : {}), ...(values ? { values } : {}) });
       waitingChecks$[site]!.delete();
+      for (const listener of passedListeners) listener(bridgeId);
       return true;
     } catch {
       return false;

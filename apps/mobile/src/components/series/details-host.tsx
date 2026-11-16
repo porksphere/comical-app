@@ -129,7 +129,7 @@ export function SeriesDetailsHost({
   if (queryError) {
     return (
       <View style={styles.centerFill}>
-        <RetryBlock message={(queryError as Error).message || 'Failed to load series'} onRetry={refetch} />
+        <RetryBlock message={(queryError as Error).message || 'Failed to load series'} onRetry={refetch} error={queryError} />
       </View>
     );
   }

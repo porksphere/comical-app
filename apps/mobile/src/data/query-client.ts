@@ -22,6 +22,7 @@ import { defaultShouldDehydrateQuery, MutationCache, QueryCache, QueryClient, ty
 import { getApiBase, isAbort } from './api';
 import { getResolvedModeSync } from './embedded/preference';
 import { queryRetry, queryRetryDelay } from './rate-limit-retry';
+import { onCheckPassed } from './web-check';
 import { logDiagnostic } from '@/lib/diagnostics';
 
 // Content (series detail, chapters, lists, pages) is effectively immutable for
@@ -178,3 +179,12 @@ export const PERSIST_MAX_AGE_MS = GC_TIME_MS;
  * and cached series ITEMS gained `updatedAt`/`knownChapters`. None of it is repairable in place.
  */
 export const PERSIST_BUSTER = `v6:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;
+
+// A check passed anywhere (a series page, the prompt, a rail's Verify) clears its site for every
+// request: reload the bridge's queries that failed meanwhile, such as a composite rail left saying
+// "Waiting on verification".
+onCheckPassed((bridgeId) => {
+  void queryClient.invalidateQueries({
+    predicate: (q) => q.state.status === 'error' && q.queryKey.includes(bridgeId),
+  });
+});

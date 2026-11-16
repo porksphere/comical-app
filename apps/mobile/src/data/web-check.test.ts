@@ -14,6 +14,7 @@ const {
   challengeFrom,
   isQuiet,
   markQuiet,
+  onCheckPassed,
   waitingChecks,
   waitingChecks$,
   clearanceChanged,
@@ -248,4 +249,17 @@ test('Verify on a bridge runs only that bridge\'s waiting check', async () => {
   expect(await verifyWaitingChecks('b')).toEqual(['b']);
   expect(asked).toEqual([other.url]);
   expect(waitingChecks().map((w) => w.bridgeId)).toEqual(['a']);
+});
+
+test('a passed check is announced with its bridge, a failed one is not', async () => {
+  const challenge = { url: 'https://www.site.test/list', userAgent: 'UA/1', reason: 'check' };
+  const heard: string[] = [];
+  const stop = onCheckPassed((id) => heard.push(id));
+  let pass = false;
+  uninstall = registerWebCheckRunner(async () => (pass ? { cookies: [{ name: 'cf_clearance', value: 'ok' }] } : null));
+  await runWebCheck('a', challenge, async () => {});
+  pass = true;
+  await runWebCheck('b', challenge, async () => {});
+  stop();
+  expect(heard).toEqual(['b']);
 });
