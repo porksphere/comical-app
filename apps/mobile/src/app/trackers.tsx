@@ -1,11 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/add-fab';
-
 import { openConfirm } from '@/components/confirm-popup';
-import { ArrowUpIcon, RefreshIcon, TrackersIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { ArrowUpIcon, CheckIcon, ClearIcon, RefreshIcon, TrackersIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { useSelectMode, useSelectToggle } from '@/components/multi-select/select-mode';
+import { SelectPillBar } from '@/components/multi-select/select-pill-bar';
+import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { RetryBlock } from '@/components/retry-block';
 import { useBrowseRegistry } from '@/components/settings/browse-registry';
 import { type SettingsField, type SettingsFormSection } from '@/components/settings/settings-form';
@@ -20,11 +23,11 @@ import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyOrder, setTrackerOrder, useTrackerOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
-import { usePackageUpdate, useUpdatingIds } from '@/data/use-package-update';
+import { PackageUpdateError, usePackageUpdate, useUpdatingIds } from '@/data/use-package-update';
 import { useRecheckRegistryUpdates, useTrackerUpdateMap } from '@/data/use-settings-badge';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
-import { friendlyError } from '@/lib/friendly-error';
+import { friendlyError, UserFacingError } from '@/lib/friendly-error';
 import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
@@ -95,6 +98,80 @@ export default function TrackersScreen() {
     }
   };
 
+  // ── Multi-select mode (the shared select-mode chrome), as on Bridges — bulk-update and
+  // bulk-uninstall. Only registry-installed trackers are selectable, the row's swipe's gate.
+  const mode = useSelectMode();
+  const selecting = mode.selecting;
+  const allKeys = useMemo(() => (Array.isArray(ordered) ? ordered : []).filter((t) => t.source === 'registry').map((t) => t.info.id), [ordered]);
+  const selectable = useMemo(() => new Set(allKeys), [allKeys]);
+  const ms = useMultiSelect(allKeys);
+  const toggleSelecting = () => {
+    if (selecting) ms.clear();
+    mode.toggle();
+  };
+  const selectToggle = useSelectToggle(selecting, toggleSelecting, 'trackers.select-toggle');
+  const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
+  const stagingRows = [
+    {
+      label: allSelected ? 'Deselect all' : 'Select all',
+      Icon: allSelected ? ClearIcon : CheckIcon,
+      symbol: allSelected ? ('xmark.circle' as const) : ('checkmark.circle' as const),
+      loading: false,
+      disabled: allKeys.length === 0,
+      onPress: allSelected ? ms.clear : ms.selectAll,
+      testID: testId('trackers.menu', 'all'),
+    },
+  ];
+  const names = new Map((Array.isArray(ordered) ? ordered : []).map((t) => [t.info.id, t.info.name]));
+
+  const toUpdate = (Array.isArray(ordered) ? ordered : []).filter((t) => ms.selected.has(t.info.id) && updateMap.has(t.info.id) && !updatingIds.has(t.info.id));
+  const updateSelected = async () => {
+    const ids = toUpdate.map((t) => t.info.id);
+    try {
+      await update.mutateAsync(ids);
+      showToast(ids.length === 1 ? `${names.get(ids[0]!)} updated` : `${ids.length} trackers updated`);
+    } catch (e) {
+      if (!(e instanceof PackageUpdateError)) return showToast(friendlyError(e, 'Failed to update trackers'));
+      ms.selectOnly(e.failed);
+      showToast(`Couldn't update ${e.failed.map((id) => names.get(id) ?? id).join(', ')}`);
+    }
+  };
+
+  // Retry re-runs the same `onConfirm`, so `pending` shrinks as trackers go: a retry only redoes the
+  // ones that failed.
+  const confirmUninstallSelected = () => {
+    let pending = allKeys.filter((id) => ms.selected.has(id));
+    const total = pending.length;
+    openConfirm({
+      message: `${total === 1 ? 'This tracker' : `These ${total} trackers`} will be uninstalled. Their settings are removed and they stop syncing your reading progress until you install them again.`,
+      confirmLabel: total === 1 ? 'Uninstall Tracker' : `Uninstall ${total} Trackers`,
+      pendingLabel: 'Uninstalling…',
+      errorFallback: 'Failed to uninstall trackers',
+      onConfirm: async () => {
+        const failed: string[] = [];
+        try {
+          for (const id of pending) {
+            try {
+              await ds.uninstallTracker(id);
+            } catch {
+              failed.push(id);
+            }
+          }
+        } finally {
+          pending = failed;
+          ms.selectOnly(failed);
+          bumpDataEpoch();
+          await queryClient.invalidateQueries();
+        }
+        if (failed.length > 0) {
+          throw new UserFacingError(`Couldn't uninstall ${failed.map((id) => names.get(id) ?? id).join(', ')}`);
+        }
+        mode.exit();
+        showToast(total === 1 ? 'Tracker uninstalled' : `${total} trackers uninstalled`);
+      },
+    });
+  };
+
   const row = (t: TrackerSummary): SettingsField => {
     const availableVersion = updateMap.get(t.info.id);
     const updating = updatingIds.has(t.info.id);
@@ -128,7 +205,13 @@ export default function TrackersScreen() {
           : undefined,
     };
   };
-  const sections: SettingsFormSection[] = [{ fields: Array.isArray(ordered) ? ordered.map(row) : [], onReorder: (keys) => setTrackerOrder(keys) }];
+  const sections: SettingsFormSection[] = [
+    {
+      fields: Array.isArray(ordered) ? ordered.map(row) : [],
+      onReorder: (keys) => setTrackerOrder(keys),
+      selection: { selecting, progress: mode.progress, selected: ms.selected, selectable, toggle: ms.toggle, rangeFill: ms.rangeFill },
+    },
+  ];
 
   const checkUpdates: TopBarAction = {
     label: 'Check for tracker updates',
@@ -140,15 +223,18 @@ export default function TrackersScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar
-        title="Trackers"
+        title={selecting ? `${ms.count} selected` : 'Trackers'}
         actions={
           trackers === null
             ? undefined
-            : [
-                // Web has no pull-to-refresh on this list, so the check gets a button there. The
-                // + install button is the add button below, as on Bridges.
-                ...(IS_WEB && Array.isArray(ordered) && ordered.length > 0 ? [checkUpdates] : []),
-              ]
+            : selecting
+              ? [selectToggle]
+              : [
+                  // Web has no pull-to-refresh on this list, so the check gets a button there. The
+                  // + install button is the add button below, as on Bridges.
+                  ...(IS_WEB && Array.isArray(ordered) && ordered.length > 0 ? [checkUpdates] : []),
+                  ...(allKeys.length > 0 ? [selectToggle] : []),
+                ]
         }
       />
       {isError ? (
@@ -178,13 +264,50 @@ export default function TrackersScreen() {
       )}
 
       {/* The + install affordance, where every other list keeps its add button. */}
-      {browseRegistry && trackers !== null && (
+      {browseRegistry && trackers !== null && !selecting && (
         <AddFab
           onPress={browseRegistry}
           testID="trackers.install"
           label="Install a tracker"
           right={contentPadding.paddingRight}
           bottom={Math.max(insets.bottom, Spacing.three)}
+        />
+      )}
+
+      {selecting && (
+        <SelectPillBar
+          left={contentPadding.paddingLeft}
+          right={contentPadding.paddingRight}
+          bottom={Math.max(insets.bottom, Spacing.three)}
+          options={stagingRows}
+          optionsTestID="trackers.select-options"
+          verbs={
+            ms.count > 0
+              ? [
+                  ...(toUpdate.length > 0
+                    ? [
+                        {
+                          key: 'update',
+                          label: `Update ${toUpdate.length === 1 ? '1 tracker' : `${toUpdate.length} trackers`}`,
+                          symbol: 'arrow.up' as const,
+                          Icon: ArrowUpIcon,
+                          onPress: () => void updateSelected(),
+                          testID: 'trackers.update-selected',
+                        },
+                      ]
+                    : []),
+                  {
+                    key: 'uninstall',
+                    label: `Uninstall ${ms.count === 1 ? '1 tracker' : `${ms.count} trackers`}`,
+                    symbol: 'trash' as const,
+                    Icon: TrashIcon,
+                    color: theme.danger,
+                    onPress: confirmUninstallSelected,
+                    testID: 'trackers.uninstall-selected',
+                  },
+                ]
+              : []
+          }
         />
       )}
     </ThemedView>

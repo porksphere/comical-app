@@ -23,7 +23,7 @@ import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyOrder, setBridgeOrder, useBridgeOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
-import { usePackageUpdate, useUpdatingIds } from '@/data/use-package-update';
+import { PackageUpdateError, usePackageUpdate, useUpdatingIds } from '@/data/use-package-update';
 import { useBridgeUpdateMap, useRecheckRegistryUpdates } from '@/data/use-settings-badge';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
@@ -93,7 +93,7 @@ export default function BridgesScreen() {
     showToast(n === 0 ? 'No bridge updates' : n === 1 ? '1 bridge update available' : `${n} bridge updates available`);
   };
 
-  // ── Multi-select mode (the shared select-mode chrome) — bulk-uninstall bridges ──
+  // ── Multi-select mode (the shared select-mode chrome) — bulk-update and bulk-uninstall bridges ──
   // Only REGISTRY-INSTALLED bridges are selectable (a server-built one has nothing to uninstall,
   // same `source` gate as the row's swipe); server rows keep their column.
   const mode = useSelectMode();
@@ -188,11 +188,27 @@ export default function BridgesScreen() {
     }
   };
 
+  // The live check wins over the summary's cached annotation, so a freshly-published update shows
+  // its dot/swipe without waiting for the annotation to be re-persisted; fall back to the annotation
+  // when the check hasn't resolved (or is offline) so a known update still surfaces.
+  const availableOf = (b: BridgeSummary) => updateMap.get(b.info.id) ?? b.availableVersion;
+  // The selected bridges an Update would reach: those with one waiting and not already updating.
+  const toUpdate = (visible ?? []).filter((b) => ms.selected.has(b.info.id) && !!availableOf(b) && !updatingIds.has(b.info.id));
+  const updateSelected = async () => {
+    const names = new Map(toUpdate.map((b) => [b.info.id, b.info.name]));
+    const total = toUpdate.length;
+    try {
+      await update.mutateAsync(toUpdate.map((b) => b.info.id));
+      showToast(total === 1 ? `${toUpdate[0]!.info.name} updated` : `${total} bridges updated`);
+    } catch (e) {
+      if (!(e instanceof PackageUpdateError)) return showToast(friendlyError(e, 'Failed to update bridges'));
+      ms.selectOnly(e.failed);
+      showToast(`Couldn't update ${e.failed.map((id) => names.get(id) ?? id).join(', ')}`);
+    }
+  };
+
   const row = (b: BridgeSummary): SettingsField => {
-    // The live check wins over the summary's cached annotation, so a freshly-published update shows
-    // its dot/swipe without waiting for the annotation to be re-persisted; fall back to the annotation
-    // when the check hasn't resolved (or is offline) so a known update still surfaces.
-    const availableVersion = updateMap.get(b.info.id) ?? b.availableVersion;
+    const availableVersion = availableOf(b);
     const updating = updatingIds.has(b.info.id);
     const status = bridgeStatus(b, availableVersion, updating);
     const hasUpdate = !!availableVersion && !updating;
@@ -293,7 +309,7 @@ export default function BridgesScreen() {
         />
       )}
 
-      {/* The floating select-mode chrome: staging "…" bottom-left, the Uninstall verb bottom-right. */}
+      {/* The floating select-mode chrome: staging "…" bottom-left, the Update and Uninstall verbs bottom-right. */}
       {selecting && (
         <SelectPillBar
           left={contentPadding.paddingLeft}
@@ -304,6 +320,18 @@ export default function BridgesScreen() {
           verbs={
             ms.count > 0
               ? [
+                  ...(toUpdate.length > 0
+                    ? [
+                        {
+                          key: 'update',
+                          label: `Update ${toUpdate.length === 1 ? '1 bridge' : `${toUpdate.length} bridges`}`,
+                          symbol: 'arrow.up' as const,
+                          Icon: ArrowUpIcon,
+                          onPress: () => void updateSelected(),
+                          testID: 'bridges.update-selected',
+                        },
+                      ]
+                    : []),
                   {
                     key: 'uninstall',
                     label: `Uninstall ${ms.count} bridges`,

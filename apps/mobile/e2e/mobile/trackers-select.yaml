@@ -1,0 +1,44 @@
+# Trackers settings screen: select mode (trackers.tsx), as on Bridges. Select starts it, a tap on a
+# registry tracker's row selects it, and the select-mode verbs act on the selection: Uninstall here,
+# guarded by the confirm popup, which this cancels so the tracker survives. Update shows beside it
+# only for a selected tracker with an update waiting; mock data serves none, so it isn't reached.
+#
+# Selectors (confirmed against source):
+#   - settings.category.trackers     settings.tsx category row
+#   - trackers.select-toggle         useSelectToggle (the custom bar; the iOS system bar has no ids)
+#   - trackers.row.anilist           testId('trackers.row', t.info.id) — first mock tracker (AniList)
+#   - trackers.uninstall-selected    the select-mode verb (SelectPillBar, `v.testID`)
+#   - confirm.confirm / confirm.cancel  confirm-popup.tsx
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.trackers"
+- assertVisible:
+    id: "trackers.row.anilist"
+
+- tapOn:
+    id: "trackers.select-toggle"
+# The add button gives way to the select-mode chrome.
+- assertNotVisible:
+    id: "trackers.install"
+- tapOn:
+    id: "trackers.row.anilist"
+- tapOn:
+    id: "trackers.uninstall-selected"
+- assertVisible:
+    id: "confirm.confirm"
+
+- tapOn:
+    id: "confirm.cancel"
+- assertNotVisible:
+    id: "confirm.confirm"
+- tapOn:
+    id: "trackers.select-toggle"
+- assertVisible:
+    id: "trackers.install"
+- assertVisible:
+    id: "trackers.row.anilist"

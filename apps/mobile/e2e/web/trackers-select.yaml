@@ -1,0 +1,40 @@
+# Same journey as ../mobile/trackers-select.yaml, kept in sync by hand. Selectors hitting the
+# web-only aria-label quirk (see ../README.md):
+#   - tab bar: "Settings"; the category row by its title, "Trackers".
+#   - trackers.select-toggle (SelectToggle) sets accessibilityLabel="Select items" while not
+#     selecting and "Exit selection" while selecting.
+#   - trackers.install (AddFab) sets accessibilityLabel="Install a tracker".
+#   - the Uninstall verb sets accessibilityLabel to its label, "Uninstall 1 tracker".
+# trackers.row.anilist and confirm.* carry no competing label — same selectors as mobile.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Settings"
+- tapOn:
+    id: "Trackers"
+- assertVisible:
+    id: "trackers.row.anilist"
+
+- tapOn:
+    id: "Select items"
+- assertNotVisible:
+    id: "Install a tracker"
+- tapOn:
+    id: "trackers.row.anilist"
+- tapOn:
+    id: "Uninstall 1 tracker"
+- assertVisible:
+    id: "confirm.confirm"
+
+- tapOn:
+    id: "confirm.cancel"
+- assertNotVisible:
+    id: "confirm.confirm"
+- tapOn:
+    id: "Exit selection"
+- assertVisible:
+    id: "Install a tracker"
+- assertVisible:
+    id: "trackers.row.anilist"
