@@ -48,6 +48,7 @@ import {
   Play,
   Plus,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Star,
   Terminal,
@@ -101,6 +102,8 @@ export const ReadingIcon = ({ color, size = 16 }: IconProps) => <BookOpen color=
 // Vertical 3-dot "more actions" trigger — the web series-card context-menu affordance.
 export const MoreVerticalIcon = ({ color, size = 16 }: IconProps) => <MoreVertical color={color} size={size} />;
 export const ChevronDownIcon = ({ color, size = 16 }: IconProps) => <ChevronDown color={color} size={size} />;
+/** A site's anti-bot check — the verification prompt. */
+export const ShieldCheckIcon = ({ color, size = 16 }: IconProps) => <ShieldCheck color={color} size={size} />;
 export const ChevronRightIcon = ({ color, size = 16, strokeWidth }: IconProps) => (
   <ChevronRight color={color} size={size} strokeWidth={strokeWidth} />
 );
