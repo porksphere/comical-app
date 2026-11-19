@@ -257,6 +257,7 @@ function RootNavigation() {
           <Stack.Screen name="gesture-trace" options={settingsScreen('Gesture trace')} />
           <Stack.Screen name="downloads" options={settingsScreen('Downloads')} />
           <Stack.Screen name="series-downloads" options={settingsScreen('Downloads')} />
+          <Stack.Screen name="series-comments" options={settingsScreen('Comments')} />
           <Stack.Screen name="storage" options={settingsScreen('Storage')} />
           <Stack.Screen name="favorites-import" options={settingsScreen('Import favorites')} />
           <Stack.Screen name="tracker-import" options={settingsScreen('Import')} />

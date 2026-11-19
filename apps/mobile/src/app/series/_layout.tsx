@@ -10,7 +10,7 @@ import { InSeriesPageStack, NESTED_SEARCH_BAR } from '@/lib/series-nav';
 // react-native-screens cannot push a plain root-stack card on top of a transparent modal — it
 // presents as a bottom sheet instead of a page. So the modal hosts its OWN native stack: the
 // details page is `index` (transparent content — its dismissal fade must reveal the screen
-// beneath the modal), and the download sub-pages have twin routes INSIDE this stack — real
+// beneath the modal), and the download and comments sub-pages have twin routes INSIDE this stack — real
 // native pushes, with the slide-from-right animation and the native left-edge swipe back.
 // `useSeriesSubPath` (lib/series-nav.ts) is what routes those pushes here instead of to the root
 // routes. The tag/author/type SEARCH is one of them on iOS — `search`, pushed by
@@ -52,6 +52,7 @@ export default function SeriesReaderLayout() {
         <Stack.Screen name="read" options={Platform.OS === 'ios' ? undefined : READ_OVER_DETAILS} />
         <Stack.Screen name="series-downloads" options={settingsScreen('Downloads')} />
         <Stack.Screen name="downloads" options={settingsScreen('Downloads')} />
+        <Stack.Screen name="series-comments" options={settingsScreen('Comments')} />
         <Stack.Screen name="search" options={NATIVE_HEADER ? NESTED_SEARCH_BAR : undefined} />
       </Stack>
     </InSeriesPageStack.Provider>

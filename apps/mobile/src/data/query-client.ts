@@ -133,6 +133,9 @@ const NO_PERSIST_KEYS = new Set([
   // aren't collected any more (and miss ones that are) until the refetch lands — the same class of
   // bug `isFavorite` is excluded for. It's one cheap request per chapter open; always ask.
   'chapterPageIndices',
+  // A thread grows a page at a time like `browseGrid`, and it is other people's words, which
+  // change: never the copy from a day ago.
+  'comments',
   // Its cached shape has changed twice in a few days of active development (plain number →
   // {bridges,trackers,total} counts → {bridges,trackers} arrays) — a stale persisted entry from
   // an older build crashes useRegistryUpdateCounts on cold start (data.bridges.filter is not a

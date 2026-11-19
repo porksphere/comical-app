@@ -91,6 +91,10 @@ export const queryKeys = {
     ['isFavorite', mock, bridgeId, seriesId] as const,
   relatedGroups: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['relatedGroups', mock, bridgeId, seriesId] as const,
+  /** One comment thread in one order, or one comment's replies (`parentId`). Every part is in the
+   *  key, so a sort change is a new thread rather than a refetch of the old one. */
+  comments: (mock: boolean, bridgeId: string, seriesId: string, query: api.CommentsQuery) =>
+    ['comments', mock, bridgeId, seriesId, query.chapterId ?? null, query.sort ?? null, query.parentId ?? null] as const,
   library: (mock: boolean, q: string, sort: api.LibrarySort, collection: CollectionFilter = null, readState: ReadState | null = null) =>
     ['library', mock, q, sort, collection, readState] as const,
   /** The user's collections. */
@@ -399,6 +403,29 @@ export function savedSeriesListQuery(
     queryKey: queryKeys.savedSeriesList(mock, bridgeId, seriesId),
     queryFn: ({ signal }) => ds.getSavedSeriesList(bridgeId, seriesId, signal),
     enabled: enabled && !!bridgeId && !!seriesId,
+  };
+}
+
+/**
+ * `useInfiniteQuery` options for a comment thread, or for one comment's replies. `retry` is off: a
+ * thread is asked for by a tap, and the block that reports a failure has its own Retry.
+ */
+export function commentsQuery(
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+  seriesId: string,
+  query: api.CommentsQuery,
+  enabled = true,
+) {
+  return {
+    queryKey: queryKeys.comments(mock, bridgeId, seriesId, query),
+    queryFn: ({ pageParam, signal }: { pageParam: api.Cursor | undefined; signal: AbortSignal }) =>
+      ds.getComments(bridgeId, seriesId, query, pageParam, signal),
+    initialPageParam: NO_CURSOR,
+    getNextPageParam: (last: api.ApiCommentPage): api.Cursor | undefined => last.nextCursor,
+    enabled: enabled && !!bridgeId && !!seriesId,
+    retry: false,
   };
 }
 
