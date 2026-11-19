@@ -91,6 +91,15 @@ export interface DataSource {
   isFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean>;
   addFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   removeFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
+  /** One page of a comment thread (the chapter's with `query.chapterId`, the series' without), or
+   *  of one comment's replies with `query.parentId`. Read-only: nothing here posts or votes. */
+  getComments(
+    bridgeId: string,
+    seriesId: string,
+    query: api.CommentsQuery,
+    cursor?: api.Cursor,
+    signal?: AbortSignal,
+  ): Promise<api.ApiCommentPage>;
 
   // ─── Local library / history / activity ─────────────────────────────────────
   // The host's own cross-bridge collection (distinct from a bridge's `favorites`). `getLibrary`
@@ -478,6 +487,7 @@ function toChapterList(list: api.ApiChapter[]): SeriesListResult {
     ...(c.group !== undefined && { group: c.group }),
     ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
     ...(c.pageCount !== undefined && { pageCount: c.pageCount }),
+    ...(c.commentCount !== undefined && { commentCount: c.commentCount }),
   }));
   // The Read label mirrors the Read button's target: the first chapter in reading
   // order (by number), not the raw array's first element (a newest-first layout the
@@ -669,6 +679,7 @@ const realDataSource: DataSource = {
   isFavorite: (bridgeId, seriesId, signal) => api.isFavorite(bridgeId, seriesId, signal),
   addFavorite: (bridgeId, seriesId, signal) => api.addFavorite(bridgeId, seriesId, signal),
   removeFavorite: (bridgeId, seriesId, signal) => api.removeFavorite(bridgeId, seriesId, signal),
+  getComments: (bridgeId, seriesId, query, cursor, signal) => api.getComments(bridgeId, seriesId, query, cursor, signal),
 
   async getLibrary(opts, signal) {
     const entries = await api.getLibrary(opts, signal);
@@ -815,6 +826,7 @@ const realDataSource: DataSource = {
       ...(info.coverForm !== undefined && { coverForm: info.coverForm }),
       ...(info.readingDirection !== undefined && { readingDirection: info.readingDirection }),
       bridge: opts.bridgeName ?? '',
+      ...(info.commentCount !== undefined && { commentCount: info.commentCount }),
       description: info.description,
       // Carry `kind` (so the genre group is identifiable — genres are just a `kind: "genre"` group)
       // plus the per-tag `tagIds`/`tagQueries` (index-parallel to `tags`) so a tapped chip can drive a
@@ -1081,6 +1093,7 @@ const mockDataSource: DataSource = {
   isFavorite: (bridgeId, seriesId) => mock.mockIsFavorite(seriesId),
   addFavorite: (bridgeId, seriesId) => mock.mockAddFavorite(seriesId),
   removeFavorite: (bridgeId, seriesId) => mock.mockRemoveFavorite(seriesId),
+  getComments: (bridgeId, seriesId, query, cursor) => mock.mockGetComments(bridgeId, seriesId, query, cursor),
 
   getLibrary: (opts) => mock.mockGetLibrary(opts),
   getCollections: () => mock.mockGetCollections(),

@@ -8,6 +8,7 @@ import {
   useBridgeAutoDownloadSection,
   useBridgeDownloadLibrarySection,
   useBridgePrefsSection,
+  useBridgeCommentsSection,
   useComicalHomeSection,
   useMaxContentRatingSection,
 } from '@/components/settings/bridge-extras';
@@ -250,6 +251,7 @@ export default function BridgeSettingsScreen() {
   const autoDownload = useBridgeAutoDownloadSection(id, capabilities.includes('direct'));
   const downloadLibrary = useBridgeDownloadLibrarySection(id);
   const comicalHome = useComicalHomeSection(id);
+  const comments = useBridgeCommentsSection(id, capabilities.includes('comments'));
 
   const sections: SettingsFormSection[] = isLoading
     ? [{ fields: [{ kind: 'custom', testID: 'settings.bridge.loading', render: () => <ActivityIndicator /> }] }]
@@ -335,6 +337,7 @@ export default function BridgeSettingsScreen() {
             prefs,
             autoDownload,
             downloadLibrary,
+            comments,
             comicalHome,
             {
               fields: fields(

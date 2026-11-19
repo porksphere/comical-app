@@ -9,7 +9,7 @@ import { claimNavigation, navTargetKey } from '@/lib/nav-guard';
 
 /** The sub-pages a series page (or its reader) can push. (The tag/author/type SEARCH is routed
  *  separately — see useOpenSeriesSearch.) */
-type SeriesSubPath = '/series-downloads' | '/downloads';
+type SeriesSubPath = '/series-downloads' | '/downloads' | '/series-comments';
 
 /**
  * `/series` is a contained transparent modal, and
@@ -195,7 +195,7 @@ export function useDrillRelatedSeries(): ((params: Record<string, string>) => vo
       // NAME, not the index, so a navigator with no sub-pages at all reads the same.
       const state = navigation.getState();
       const top = state?.routes[state.index]?.name;
-      if (top === 'downloads' || top === 'series-downloads' || top === 'search') {
+      if (top === 'downloads' || top === 'series-downloads' || top === 'series-comments' || top === 'search') {
         navigation.dispatch({ type: 'POP_TO_TOP' });
       }
       const handler = drillSeriesHandlers.current();

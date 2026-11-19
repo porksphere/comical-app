@@ -1,4 +1,6 @@
 import {
+  ArrowBigDown,
+  ArrowBigUp,
   ArrowDown,
   ArrowRight,
   ArrowUp,
@@ -13,6 +15,11 @@ import {
   CheckCheck,
   CircleArrowDown,
   CircleCheck,
+  CornerDownRight,
+  ExternalLink,
+  Heart,
+  MessageSquare,
+  Pin,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -176,3 +183,13 @@ export const TrashIcon = ({ color, size = 16 }: IconProps) => <Trash2 color={col
 export const SelectModeIcon = ({ color, size = 16 }: IconProps) => <CircleCheck color={color} size={size} />;
 // The selection-staging menu trigger (a bare three-dot ellipsis) — opens Select all / Select unread.
 export const SelectOptionsIcon = ({ color, size = 16 }: IconProps) => <Ellipsis color={color} size={size} />;
+
+/** A comment thread: the series page's row, the chapter menu's row, the reader's button. */
+export const CommentsIcon = ({ color, size = 16 }: IconProps) => <MessageSquare color={color} size={size} />;
+export const VoteUpIcon = ({ color, size = 16 }: IconProps) => <ArrowBigUp color={color} size={size} />;
+export const VoteDownIcon = ({ color, size = 16 }: IconProps) => <ArrowBigDown color={color} size={size} />;
+export const LikeIcon = ({ color, size = 16 }: IconProps) => <Heart color={color} size={size} />;
+export const PinnedIcon = ({ color, size = 16 }: IconProps) => <Pin color={color} size={size} />;
+/** The line a reply answers, when it is not the one directly above it. */
+export const ReplyToIcon = ({ color, size = 16 }: IconProps) => <CornerDownRight color={color} size={size} />;
+export const OpenExternalIcon = ({ color, size = 16 }: IconProps) => <ExternalLink color={color} size={size} />;

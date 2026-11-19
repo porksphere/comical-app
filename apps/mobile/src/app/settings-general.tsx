@@ -32,6 +32,7 @@ import { requestOverlay$, useRequestOverlayEnabled } from '@/data/request-monito
 import { useBrowseHoldAction, useBrowseHoldSound, type BrowseHoldAction } from '@/data/browse-hold-action';
 import { useDataSource, useMockActive, useNsfwMode, type NsfwMode } from '@/data/source';
 import { connectServer } from '@/data/switch-server';
+import { setCommentsEnabled, useCommentsEnabled } from '@/data/comments-prefs';
 import { setBookCovers, useBookCoversEnabled } from '@/hooks/use-book-covers';
 import { setCoverShelf, useCoverShelf } from '@/hooks/use-cover-shelf';
 import { setHomeBookshelf, useHomeBookshelf } from '@/hooks/use-home-bookshelf';
@@ -97,6 +98,7 @@ export default function GeneralSettingsScreen() {
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase] = useApiBase();
   const bookCovers = useBookCoversEnabled();
+  const commentsEnabled = useCommentsEnabled();
   const coverShelf = useCoverShelf();
   const homeBookshelf = useHomeBookshelf();
   const lightCards = useLightCards();
@@ -173,7 +175,7 @@ export default function GeneralSettingsScreen() {
     // only documentation — nothing on screen says a title or an icon is holdable.
     {
       title: 'Browsing',
-      footer: `NSFW content decides whether NSFW-flagged bridges are visible. ${HOLD_TARGETS} runs the chosen action; Hold sound clicks along with its countdown.${
+      footer: `NSFW content decides whether NSFW-flagged bridges are visible. ${HOLD_TARGETS} runs the chosen action; Hold sound clicks along with its countdown. Comments shows a source's own comment threads on its series and chapters; a bridge's settings can turn its off alone.${
         Platform.OS === 'web'
           ? ' Keep pages open per tab leaves a series or search you opened beside the sidebar open on its tab — and on its bridge or collection — while you visit another.'
           : ''
@@ -182,6 +184,7 @@ export default function GeneralSettingsScreen() {
         select({ label: 'NSFW content', value: nsfwMode, options: NSFW_MODE_OPTIONS, onChange: setNsfwMode }),
         select({ label: 'Hold bridge icon', value: holdAction, options: HOLD_ACTION_OPTIONS, onChange: setHoldAction }),
         { kind: 'toggle', label: 'Hold sound', value: holdSound, onChange: setHoldSound, disabled: holdAction === 'none' },
+        { kind: 'toggle', label: 'Comments', value: commentsEnabled, onChange: setCommentsEnabled },
         // Web only, like the panes themselves: a phone's series page covers the tab bar. Greyed out
         // below the sidebar's width, where there are no panes to keep.
         Platform.OS === 'web' && {

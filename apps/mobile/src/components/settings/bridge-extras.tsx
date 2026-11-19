@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { SettingsCardInset, Spacing } from '@/constants/theme';
 import { useComicalExcluded } from '@/data/comical-home';
+import { useBridgeCommentsShown, useCommentsEnabled } from '@/data/comments-prefs';
 import { autoDownloadLibrary, describeBackfill, librarySize } from '@/data/downloads/auto';
 import { useBridgeAutoDownload, useDownloadPrefs, type AutoDownloadKind } from '@/data/downloads/prefs';
 import type { ApiBridgeInfo, ContentRating } from '@/data/api';
@@ -308,6 +309,29 @@ export function useBridgeDownloadLibrarySection(bridgeId: string): SettingsFormS
         onPress: offer,
       },
     ],
+  };
+}
+
+/** App-local toggle: whether this bridge's comment threads are offered. A bridge without comments
+ *  has no row (and so no section); with them off everywhere the row is greyed, its own choice kept. */
+export function useBridgeCommentsSection(bridgeId: string, hasComments: boolean): SettingsFormSection {
+  const [shown, setShown] = useBridgeCommentsShown(bridgeId);
+  const enabled = useCommentsEnabled();
+  return {
+    title: 'Comments',
+    footer: enabled ? undefined : 'Comments are off for every bridge in Settings → General.',
+    fields: hasComments
+      ? [
+          {
+            kind: 'toggle',
+            label: 'Show comments',
+            description: "Offer this source's comment threads on its series and chapters.",
+            value: enabled && shown,
+            onChange: setShown,
+            disabled: !enabled,
+          },
+        ]
+      : [],
   };
 }
 
