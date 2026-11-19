@@ -39,6 +39,7 @@ import {
   CheckAllIcon,
   CheckIcon,
   ChevronDownIcon,
+  CommentsIcon,
   DownloadsIcon,
   EyeOffIcon,
   KeptOfflineIcon,
@@ -58,6 +59,7 @@ import { useZoomHref, useZoomId, ZoomSource } from '@/components/zoom-source';
 import { InlineSeriesTitle } from '@/components/series/inline-title';
 import { BarContentGap, ContinuousCorner, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useSideInsets } from '@/hooks/use-content-width';
+import { useBridgeMap } from '@/hooks/use-bridges';
 import { useHovered } from '@/hooks/use-hovered';
 import { useListLayout } from '@/hooks/use-list-layout';
 import { useReadsRightToLeft } from '@/hooks/use-reader-settings';
@@ -76,6 +78,8 @@ import { wholeChapters } from '@/data/downloads/derive';
 import { enqueueChapters } from '@/data/downloads/engine';
 import { forgetChapter } from '@/data/downloads/index-cache';
 import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
+import { commentsLabel } from '@/data/comments';
+import { useCommentScopes } from '@/data/comments-prefs';
 import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { stableScrollbarGutter, useScrollbarGutter } from '@/lib/scrollbar-gutter';
@@ -89,6 +93,8 @@ import { applyReadState, groupChapters, pickVersion, type ChapterGroup } from '@
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { hapticSelection } from '@/lib/haptics';
+import { useRouter } from '@/lib/nav';
+import { useSeriesSubPath } from '@/lib/series-nav';
 import { DISCLOSE_TIMING } from '@/lib/disclose';
 import { testId } from '@/lib/test-id';
 
@@ -683,9 +689,14 @@ export function ChapterScrollList({
   const manifest = useMemo(() => wholeChapters(dl?.chapters ?? []), [dl]);
   // What the rows read besides their group (see AGENTS.md on list rows): without it a download
   // finishing, or a page of one landing, never reached a row already on screen.
+  // A chapter's own comment thread, from its menu: only where the source keeps one per chapter.
+  const { byId: bridgeById } = useBridgeMap();
+  const chapterComments = useCommentScopes(bridgeId ? bridgeById.get(bridgeId) : undefined).chapter;
+  const router = useRouter();
+  const toSubPath = useSeriesSubPath();
   const rowsExtra = useMemo(
-    () => [dl, preferredGroup, offline, missingBridgeName, removed, theme],
-    [dl, preferredGroup, offline, missingBridgeName, removed, theme],
+    () => [dl, preferredGroup, offline, missingBridgeName, removed, theme, chapterComments],
+    [dl, preferredGroup, offline, missingBridgeName, removed, theme, chapterComments],
   );
   const chapterMenu = (g: ChapterGroup): MenuRowSpec[] => {
     if (!bridgeId) return [];
@@ -704,6 +715,21 @@ export function ChapterScrollList({
       collected: collectedChapterIds(),
       read: readArgs,
       canDownload: missingBridgeName === undefined && !removed,
+      ...(chapterComments &&
+        missingBridgeName === undefined &&
+        !removed && {
+          comments: (chapter: Chapter) =>
+            router.push({
+              pathname: toSubPath('/series-comments'),
+              params: {
+                bridgeId,
+                id: seed,
+                chapterId: chapter.id,
+                name: `${title} · ${g.name}`,
+                ...(chapter.commentCount !== undefined && { count: String(chapter.commentCount) }),
+              },
+            }),
+        }),
     });
   };
 
@@ -1160,6 +1186,8 @@ function chapterMenuRows(
   args: Parameters<typeof chapterMenuActions>[0] & {
     read: Parameters<typeof chapterReadActions>[0];
     canDownload: boolean;
+    /** Opens the chapter's comment thread; absent where the source has none per chapter. */
+    comments?: (chapter: Chapter) => void;
   },
 ): MenuRowSpec[] {
   const { entry, span, downloadedVersions, collected, collect, downloadThis, downloadFromHere, deleteDownload } =
@@ -1186,6 +1214,19 @@ function chapterMenuRows(
       onPress: () => void markUpTo(),
     },
   );
+  const { comments } = args;
+  if (comments) {
+    // The copy the row opens is the one whose thread this is: scanlators' copies have their own.
+    const chapter = pickVersion(args.group, args.preferredGroup);
+    rows.push({
+      label: commentsLabel(chapter.commentCount),
+      Icon: CommentsIcon,
+      symbol: 'bubble.left',
+      loading: false,
+      testID: testId('series.chapter-menu', 'comments'),
+      onPress: () => comments(chapter),
+    });
+  }
   rows.push(
     {
       label: collected ? 'Collections…' : 'Save chapter',

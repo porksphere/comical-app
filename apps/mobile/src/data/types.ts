@@ -7,7 +7,7 @@
  * so both the real API adapter (`api.ts`) and the mock generator (`mock.ts`)
  * target these same types.
  */
-import type { CoverForm, ReadingDirection } from '@comical/contract';
+import type { BridgeComments, CoverForm, ReadingDirection } from '@comical/contract';
 
 export type BadgePosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export type BadgeTone = 'info' | 'warn' | 'success' | 'neutral';
@@ -88,6 +88,8 @@ export type Chapter = {
   languageCode?: string;
   /** Page count, when the backend exposes it without opening the chapter. */
   pageCount?: number;
+  /** Comments on this chapter's own thread, when the source sent the number with the list. */
+  commentCount?: number;
 };
 
 /**
@@ -147,6 +149,8 @@ export type PageThumbSource = { kind: 'image'; url: string } | SpriteThumb;
 export type SeriesDetail = SeriesEntry & {
   bridge: string;
   chapterCount?: number;
+  /** Comments on the series' own thread, when the source sent the number with the details. */
+  commentCount?: number;
   /** Primary read affordance label (e.g. "Chapter 1 — …"); the button draws its own play glyph. */
   readLabel?: string;
   /** All taxonomies as labeled groups; genres are the `kind: "genre"` group (no separate field). */
@@ -344,6 +348,9 @@ export type Bridge = {
   coverForm?: CoverForm;
   /** How every series this bridge serves reads, unless an entry says otherwise (`readingDirection`). */
   readingDirection?: ReadingDirection;
+  /** Where the source's comment threads are and how they read (the contract's `info.comments`).
+   *  Unset for a bridge without comments. */
+  comments?: BridgeComments;
   thumbnail?: string;
   /** False for a bridge the library still references but that isn't installed (see
    *  `useBridgeMap().knownById`). Absent on the installed list. */

@@ -699,6 +699,7 @@ export async function getBridges(signal?: AbortSignal): Promise<Bridge[]> {
     ratings: b.info.ratings ?? false,
     ...(b.info.coverForm !== undefined && { coverForm: b.info.coverForm }),
     ...(b.info.readingDirection !== undefined && { readingDirection: b.info.readingDirection }),
+    ...(b.info.comments !== undefined && { comments: b.info.comments }),
     thumbnail: b.info.iconUrl,
   }));
 }
@@ -900,6 +901,32 @@ export function addFavorite(bridgeId: string, seriesId: string, signal?: AbortSi
 /** DELETE /bridges/{id}/favorites/{seriesId} → remove a series from favorites. */
 export function removeFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
   return fetchOk(`/bridges/${encodeURIComponent(bridgeId)}/favorites/${encodeURIComponent(seriesId)}`, 'DELETE', signal);
+}
+
+// ─── Comments (capability "comments") ────────────────────────────────────────
+
+import type { Comment as ApiComment, CommentNode as ApiCommentNode, CommentPage as ApiCommentPage } from '@comical/contract';
+
+export type { ApiComment, ApiCommentNode, ApiCommentPage };
+
+/** Which thread, and which part of it: the chapter's own thread with `chapterId`, the series' without;
+ *  one comment's replies with `parentId`. `sort` is one of the ids the bridge declared. */
+export type CommentsQuery = { chapterId?: string; sort?: string; parentId?: string };
+
+/** GET /bridges/{id}/series/{seriesId}/comments → one page of a thread, or of one comment's replies. */
+export function getComments(
+  bridgeId: string,
+  seriesId: string,
+  query: CommentsQuery,
+  cursor?: Cursor,
+  signal?: AbortSignal,
+): Promise<ApiCommentPage> {
+  const qs = new URLSearchParams();
+  if (query.chapterId) qs.set('chapterId', query.chapterId);
+  if (query.sort) qs.set('sort', query.sort);
+  if (query.parentId) qs.set('parentId', query.parentId);
+  if (cursor) qs.set('cursor', cursor);
+  return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/series/${encodeURIComponent(seriesId)}/comments?${qs}`, signal);
 }
 
 /** GET /bridges/{id}/series/{seriesId} → full series detail. */

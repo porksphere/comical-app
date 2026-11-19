@@ -28,6 +28,7 @@ import { claimReaderScope, isKey, keyActionOf } from '@/lib/keybindings';
 import { TAB_KEY_ACTIONS } from '@/lib/keymap';
 import { ReaderToolbar, TRAILING_SLOT_W } from '@/components/reader/reader-toolbar';
 import { ZOOM_CONTROL_W, ZoomControl, useZoomControlShown } from '@/components/reader/zoom-control';
+import { COMMENTS_CONTROL_W, CommentsControl, useReaderComments } from '@/components/comments/reader-comments';
 import { CollectPageControl, CollectPageShortcut } from '@/components/reader/collect-page-control';
 import { SettingsControl } from '@/components/reader/settings-panel';
 import { ReaderNativeToolbar } from '@/components/reader/reader-native-toolbar';
@@ -1294,6 +1295,18 @@ export function SeriesReaderPage({
         }),
       };
 
+  // The thread of what is on screen, so a stitched crossing or an album's next entry re-points it.
+  const comments = useReaderComments(
+    {
+      bridgeId: pageAction ? pageAction.bridgeId : bridgeId,
+      seriesId: pageAction ? pageAction.seriesId : id,
+      ...(pageAction?.chapterId !== undefined && { chapterId: pageAction.chapterId }),
+      ...(pageAction?.chapterName !== undefined && { chapterName: pageAction.chapterName }),
+    },
+    holdChrome,
+  );
+  const openComments = comments.open;
+
   // A sequence entry's page stands alone; the chapter reader can be showing a spread.
   const sourceUrlOf = (i: number) => (sequence ? pageAction?.sourceUrl : pages?.[i]);
   const pagesOnScreen =
@@ -1370,6 +1383,7 @@ export function SeriesReaderPage({
           barShown={chromeVisible}
           onHoldChrome={holdChrome}
           onPress={showChrome}
+          onOpenComments={openComments}
         />
       </>
     ) : null;
@@ -1411,10 +1425,24 @@ export function SeriesReaderPage({
               visible={chromeVisible}
               onBack={goBack}
               hideBack
-              trailingWidth={zoomControlShown ? TRAILING_SLOT_W + Spacing.two + ZOOM_CONTROL_W : undefined}
+              trailingWidth={
+                zoomControlShown || openComments
+                  ? TRAILING_SLOT_W +
+                    (zoomControlShown ? Spacing.two + ZOOM_CONTROL_W : 0) +
+                    (openComments ? Spacing.two + COMMENTS_CONTROL_W : 0)
+                  : undefined
+              }
               right={
                 <>
                   {zoomControlShown && <ZoomControl onPress={showChrome} />}
+                  {openComments && (
+                    <CommentsControl
+                      onPress={() => {
+                        showChrome();
+                        openComments();
+                      }}
+                    />
+                  )}
                   <CollectPageControl
                     bridgeId={pageAction ? pageAction.bridgeId : bridgeId}
                     seriesId={pageAction ? pageAction.seriesId : id}
