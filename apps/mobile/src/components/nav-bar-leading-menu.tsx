@@ -3,6 +3,7 @@ import { PixelRatio, StyleSheet, type ImageURISource, type NativeSyntheticEvent 
 
 import { useWindowPortrait } from '@/hooks/use-window-size';
 import type { SystemSymbol } from '@/lib/initial-symbol';
+import { useBarsVertical } from '@/lib/vertical-bar-edge';
 import { NavBarLeading, type NavBarLeadingSection } from '../../modules/nav-bar-leading';
 
 export type LeadingMenuRow = {
@@ -70,11 +71,16 @@ export function navBarLeadingMenuItem({ image, symbol, label, sections }: Leadin
 }
 
 /**
- * Whether the tab's menu leads the title: on a portrait window, where Android's and web's selector
- * sits. A landscape one (a phone on its side, the Duo folded or open) lays the bar out as a side
- * column, and the menu stays among the trailing items there.
+ * Whether the tab's menu leads the title: where the bar runs along the top, where Android's and
+ * web's selector sits. Where UIKit lays the bar out as a side column (a phone on its side, the Duo)
+ * the menu stays among the trailing items. UIKit's own answer where it gives one (iOS 27.1), and
+ * the window's shape until it has.
  */
-export const useMenuLeads = useWindowPortrait;
+export function useMenuLeads(): boolean {
+  const portrait = useWindowPortrait();
+  const vertical = useBarsVertical();
+  return vertical === undefined ? portrait : !vertical;
+}
 
 /** The menu as the bar's leading item, for a screen where `useMenuLeads`. */
 export function NavBarLeadingMenuToolbar(menu: LeadingMenuProps) {

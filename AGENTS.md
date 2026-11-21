@@ -139,8 +139,9 @@ name elsewhere; on every tab it is also the NSFW hold target, because the bars h
 items and a `UIBarButtonItem` has no long-press of its own (holding one opens its menu): the
 title is UIKit's text, so the local module `modules/nav-bar-hold` reads the bar's touches on its
 label and reports the press and its end to the same ramped hold (`useHoldAction`). Each has ONE
-`Stack.Toolbar.Menu`, leading the title on a portrait window, where Android's and web's
-selector sits (`useMenuLeads`), and elsewhere (a phone on its side, the Duo folded or open, all of
+`Stack.Toolbar.Menu`, leading the title where the bar runs along the top, where Android's and web's
+selector sits (`useMenuLeads`: UIKit's `verticalBarEdge` through the local module
+`modules/vertical-bar-edge`, the window's shape before iOS 27.1), and elsewhere (a phone on its side, the Duo folded or open, all of
 which lay the bar out as a side column) among the trailing items: Browse's in a glass group of its own, a zero-width
 `Stack.Toolbar.Spacer` splitting it from the search (UIKit splits one placement's shared glass at
 a fixed space), the Library's in one group with the arranging `⋯` menu, what the tab shows and

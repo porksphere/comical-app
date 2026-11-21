@@ -6,6 +6,7 @@ import { useHoldAction } from '@/components/hold-action-target';
 import type { TabFilter } from '@/components/tab-filter';
 import { HIDDEN_TOP_EDGE } from '@/lib/native-bar';
 import { useTitleFont } from '@/lib/title-font';
+import { VerticalBarEdgeReporter } from '@/lib/vertical-bar-edge';
 import { NavBarHold } from '../../modules/nav-bar-hold';
 import { NavBarLargeTitle } from '../../modules/nav-bar-large-title';
 
@@ -57,6 +58,7 @@ export function NativeTabHeader({ title, filter, placeholder }: { title: string;
       ) : null}
       {NavBarLargeTitle ? <NavBarLargeTitle mode="inline" style={styles.pin} pointerEvents="none" /> : null}
       {NavBarHold ? <TitleHold /> : null}
+      <VerticalBarEdgeReporter />
     </>
   );
 }
