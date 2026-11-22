@@ -115,8 +115,8 @@ function commentOf(thread: string, i: number, total: number, seriesThread: boole
   const h = hash(`${thread}:${i}`);
   const id = `${thread}:c${i}`;
   const replies = i % 4 === 1 ? 3 : i % 7 === 0 && i > 0 ? 14 : 0;
-  const up = 4 + ((h >> 3) % 240);
-  const down = (h >> 5) % 9;
+  const up = 4 + ((h >>> 3) % 240);
+  const down = (h >>> 5) % 9;
   return {
     id,
     url: `https://example.com/comments/${encodeURIComponent(id)}`,
