@@ -3,12 +3,12 @@ import { openBrowserAsync } from 'expo-web-browser';
 import { useImperativeHandle, useState, type Ref } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import { SourceTabs } from '@/components/catalog-search';
 import { CommentCard, type ThreadContext } from '@/components/comments/comment-card';
 import { CaretDownIcon, OpenExternalIcon } from '@/components/icons/ui-icons';
 import { OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { RetryBlock } from '@/components/retry-block';
+import { Segmented, SegmentLabel } from '@/components/segmented';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { formatCommentCount, mergeCommentPages, sortControlFor } from '@/data/comments';
@@ -102,12 +102,17 @@ export function CommentThread({
             </ThemedText>
           )}
           {control === 'segments' && (
-            <SourceTabs
-              sources={info.sorts!.map((s) => ({ id: s.id, name: s.label }))}
-              activeId={sort ?? ''}
-              onSelect={setSort}
-              testIDFor={(id) => testId('comments.sort', id)}
-            />
+            <View style={styles.segments}>
+              <Segmented
+                options={info.sorts!.map((s) => ({
+                  id: s.id,
+                  testID: testId('comments.sort', s.id),
+                  render: (active) => <SegmentLabel label={s.label} active={active} />,
+                }))}
+                active={sort ?? info.sorts![0]!.id}
+                onChange={setSort}
+              />
+            </View>
           )}
           {control === 'menu' && <SortMenuButton sorts={info.sorts!} sort={sort} onSort={setSort} />}
         </View>
@@ -227,6 +232,10 @@ const styles = StyleSheet.create({
   },
   head: {
     gap: Spacing.two,
+  },
+  // The strip is its options' width, not the column's.
+  segments: {
+    flexDirection: 'row',
   },
   list: {
     gap: Spacing.four,

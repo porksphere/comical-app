@@ -18,7 +18,6 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
-  LinearTransition,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -49,6 +48,7 @@ import {
 import { OVERFLOW_MENU, OverflowMenu } from '@/components/overflow-menu';
 import { SectionHeadContent, sectionHeadHeight } from '@/components/rail';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
+import { Segmented, SEGMENTED_HEIGHT, SegmentLabel } from '@/components/segmented';
 import { coverRingColor, coverStyles } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { HoldMenu, liftTarget } from '@/components/system-context-menu';
@@ -131,12 +131,8 @@ const RowHold = OVERFLOW_MENU ? NoHold : HoldMenu;
 // end, with an expand button between them for the hidden middle.
 const COLLAPSED_HEAD_COUNT = 5;
 const COLLAPSED_TAIL_COUNT = 5;
-// Track padding / gap between tab chips.
-const TAB_PAD = 3;
-const TAB_GAP = 4;
-// Shared with the sort button so the whole controls row (tab strip + sort
-// toggle) reads as one consistent height.
-const CONTROLS_HEIGHT = 32;
+// The sort button takes the tab strip's height, so the controls row reads as one.
+const CONTROLS_HEIGHT = SEGMENTED_HEIGHT;
 
 /** "Chapters" and "Pages", in the related rails' own heading type and line box, so every section
  *  heading on the series page is one family. */
@@ -212,125 +208,6 @@ function PageGridSkeleton() {
         ))}
       </View>
     </View>
-  );
-}
-
-/** A row of mutually-exclusive options with a sliding highlight pill behind
- *  the active one — the chapter tab strip (All/Read/Unread) and the
- *  sort direction toggle are both one of these. Each option is sized to its
- *  own content (not an equal slice of the strip), so the pill's geometry has
- *  to be measured per-option via `onLayout` rather than computed from a
- *  shared segment width.
- *
- *  The pill animates via Reanimated's `layout` prop (`LinearTransition`)
- *  instead of a hand-rolled `useSharedValue`/`withTiming` pair driven from a
- *  `useEffect` — that JS-side approach could visibly snap the pill to the
- *  strip's left edge for a frame before sliding to the new tab (a stale
- *  `activeBox` briefly reading as unmeasured on some renders). `layout`
- *  hands the interpolation to the UI thread instead: it only animates a
- *  transition between two committed layouts of an already-mounted view, so
- *  there's no intermediate JS-computed frame to glitch through. On first
- *  mount there's nothing to transition from, so it just appears in place —
- *  no unwanted slide-in. */
-function Segmented<T extends string>({
-  options,
-  active,
-  onChange,
-  itemStyle,
-  containerStyle,
-}: {
-  options: { id: T; render: (active: boolean) => ReactNode; accessibilityLabel?: string; testID: string }[];
-  active: T;
-  onChange: (id: T) => void;
-  itemStyle?: StyleProp<ViewStyle>;
-  /** Override the strip container — e.g. `flex: 1` so a narrow-screen tab strip fills the row
-   *  (and its items share the width equally) instead of overflowing past the content margin. */
-  containerStyle?: StyleProp<ViewStyle>;
-}) {
-  const theme = useTheme();
-  const [layouts, setLayouts] = useState<Partial<Record<T, { x: number; width: number }>>>({});
-  const onOptLayout = (id: T, x: number, width: number) => {
-    setLayouts((prev) => (prev[id]?.x === x && prev[id]?.width === width ? prev : { ...prev, [id]: { x, width } }));
-  };
-  const activeBox = layouts[active];
-  return (
-    <ThemedView type="backgroundElement" style={[styles.tabs, containerStyle]}>
-      {activeBox && (
-        <Animated.View
-          pointerEvents="none"
-          // A real spring (`.springify()`) only runs as physics on native — the
-          // web fallback for layout animations (react-native-web) is a CSS
-          // keyframe that ignores damping/stiffness/mass entirely and falls
-          // back to a linear curve, so the "spring" was invisible on web. An
-          // explicit overshoot bezier (the standard ease-out-back curve) gives
-          // the same bounce-then-settle feel on both, since it's just a plain
-          // easing curve rather than physics.
-          layout={LinearTransition.duration(260).easing(Easing.bezier(0.34, 1.2, 0.64, 1))}
-          style={[
-            styles.tabPill,
-            {
-              backgroundColor: theme.chipFill,
-              left: activeBox.x,
-              width: activeBox.width,
-            },
-          ]}
-        />
-      )}
-      {options.map((opt) => (
-        <SegmentButton
-          key={opt.id}
-          testID={opt.testID}
-          active={opt.id === active}
-          itemStyle={itemStyle}
-          accessibilityLabel={opt.accessibilityLabel}
-          onPress={() => onChange(opt.id)}
-          onLayout={(x, width) => onOptLayout(opt.id, x, width)}>
-          {opt.render(opt.id === active)}
-        </SegmentButton>
-      ))}
-    </ThemedView>
-  );
-}
-
-/** One `Segmented` option button. Its own component (rather than a raw
- *  `Pressable` inside `options.map`) so each option gets its own `useHovered`
- *  call — same reasoning as chip.tsx's `PressableChip`. */
-function SegmentButton({
-  active,
-  itemStyle,
-  accessibilityLabel,
-  testID,
-  onPress,
-  onLayout,
-  children,
-}: {
-  active: boolean;
-  itemStyle?: StyleProp<ViewStyle>;
-  accessibilityLabel?: string;
-  testID: string;
-  onPress: () => void;
-  onLayout: (x: number, width: number) => void;
-  children: ReactNode;
-}) {
-  const theme = useTheme();
-  const { hovered, onHoverIn, onHoverOut } = useHovered();
-  return (
-    <Pressable
-      testID={testID}
-      onPress={onPress}
-      onHoverIn={onHoverIn}
-      onHoverOut={onHoverOut}
-      onLayout={(e) => onLayout(e.nativeEvent.layout.x, e.nativeEvent.layout.width)}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      style={[
-        itemStyle ?? styles.tab,
-        // Brighten (not dim) on hover — never on the already-highlighted
-        // active option, which already reads as selected via the pill.
-        hovered && !active && { backgroundColor: theme.backgroundSelected },
-      ]}>
-      {children}
-    </Pressable>
   );
 }
 
@@ -775,21 +652,14 @@ export function ChapterScrollList({
             id: t.id,
             accessibilityLabel: t.label,
             testID: testId('series.chapters.tab', t.id),
-            render: (active) => (
-              <ThemedText
-                type="small"
-                numberOfLines={1}
-                style={[styles.tabLabel, active ? { color: theme.chipText, fontWeight: '600' } : { color: theme.textSecondary }]}>
-                {t.label}
-              </ThemedText>
-            ),
+            render: (active) => <SegmentLabel label={t.label} active={active} />,
           }))}
           active={tab}
           onChange={(id) => {
             setTab(id);
             setMiddleExpanded(false);
           }}
-          {...(fillTabs && { containerStyle: styles.tabsFill, itemStyle: styles.tabFill })}
+          fill={fillTabs}
         />
         <SortToggle asc={asc} onToggle={() => setAsc((v) => !v)} />
       </View>
@@ -2160,65 +2030,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-  },
-  tabs: {
-    // Content-sized (not `flex: 1` on each child, and not `flex: 1` on the
-    // strip itself) — a tab's width follows its own label, so "All" and
-    // "Unread" don't get forced to the same width, and the whole strip
-    // doesn't stretch to the row's full width leaving a big dead-space pill
-    // before the sort button. Fixed height (matching the sort button) rather
-    // than letting padding drive it, so the whole controls row reads as one
-    // consistent height.
-    height: CONTROLS_HEIGHT,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: CONTROLS_HEIGHT / 2,
-    padding: TAB_PAD,
-    gap: TAB_GAP,
-  },
-  // Narrow-screen override: the strip fills the row (up to the sort toggle) instead of being
-  // content-sized, so the three tabs + the sort button always sit within the content margin.
-  // `minWidth: 0` lets it shrink on react-native-web (default `min-width: auto` would overflow).
-  tabsFill: {
-    flex: 1,
-    minWidth: 0,
-  },
-  // A fill-strip tab: shares the strip width equally with its siblings (each 1/3) with tighter
-  // padding, so even the longest label fits its share without pushing the strip wider.
-  tabFill: {
-    flex: 1,
-    height: CONTROLS_HEIGHT - TAB_PAD * 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.one,
-    borderRadius: CONTROLS_HEIGHT / 2 - TAB_PAD,
-  },
-  // Sliding highlight behind the active option (see `Segmented`) — sized to
-  // exactly overlay the active option's own rect (same top/bottom inset from
-  // the strip's padding, same radius as `tab`), so the selected
-  // state reads as the same shape as the hover highlight, just filled with
-  // the accent color instead of `backgroundSelected`. x/width come from the
-  // active option's own measured layout, and transition via the `layout` prop
-  // when that changes.
-  tabPill: {
-    position: 'absolute',
-    top: TAB_PAD,
-    bottom: TAB_PAD,
-    left: 0,
-    borderRadius: CONTROLS_HEIGHT / 2 - TAB_PAD,
-  },
-  tab: {
-    height: CONTROLS_HEIGHT - TAB_PAD * 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.three,
-    borderRadius: CONTROLS_HEIGHT / 2 - TAB_PAD,
-  },
-  tabLabel: {
-    // Reference .ch-tab: 0.82rem (~13px). Every tab is sized to its own label
-    // now (not squeezed into an equal-width slice), so this can be full size.
-    fontSize: 13,
-    textAlign: 'center',
   },
   row: {
     flexDirection: 'row',
