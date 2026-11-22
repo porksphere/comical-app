@@ -8,7 +8,6 @@ import { StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'r
 
 import { CommentThread, type CommentThreadHandle } from '@/components/comments/comment-thread';
 import { ScreenScrollView } from '@/components/screen-scroll-marker';
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -23,14 +22,14 @@ export type SeriesCommentsParams = {
   /** The series id. */
   id?: string;
   chapterId?: string;
-  /** What the thread is about, shown over it: the series' title, or the chapter's name. */
-  name?: string;
+  /** The chapter's name, which is the bar's title for a chapter's thread. */
+  chapterName?: string;
   /** The count the series or chapter list came with, when it came with one. */
   count?: string;
 };
 
 export default function SeriesCommentsScreen() {
-  const { bridgeId, id, chapterId, name, count } = useLocalSearchParams<SeriesCommentsParams>();
+  const { bridgeId, id, chapterId, chapterName, count } = useLocalSearchParams<SeriesCommentsParams>();
   const padding = useSettingsScrollPadding(MaxContentWidth);
   const thread = useRef<CommentThreadHandle>(null);
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -41,13 +40,8 @@ export default function SeriesCommentsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar title="Comments" />
+      <TopBar title={chapterId && chapterName ? chapterName : 'Comments'} />
       <ScreenScrollView testID="comments.scroll" onScroll={onScroll} scrollEventThrottle={64} contentContainerStyle={[styles.content, padding]}>
-        {!!name && (
-          <ThemedText testID="comments.subject" type="smallBold" numberOfLines={2}>
-            {name}
-          </ThemedText>
-        )}
         {bridgeId && id ? (
           <CommentThread
             ref={thread}

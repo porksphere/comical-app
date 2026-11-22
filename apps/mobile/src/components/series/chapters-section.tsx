@@ -602,7 +602,7 @@ export function ChapterScrollList({
                 bridgeId,
                 id: seed,
                 chapterId: chapter.id,
-                name: `${title} · ${g.name}`,
+                chapterName: g.name,
                 ...(chapter.commentCount !== undefined && { count: String(chapter.commentCount) }),
               },
             }),

@@ -473,7 +473,6 @@ export function SeriesBody({
       params: {
         bridgeId,
         id: series.id,
-        name: series.title,
         ...(series.commentCount !== undefined && { count: String(series.commentCount) }),
       },
     });
