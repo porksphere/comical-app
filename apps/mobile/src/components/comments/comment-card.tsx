@@ -1,12 +1,11 @@
 import type { BridgeComments, Comment } from '@comical/contract';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
-import { openBrowserAsync } from 'expo-web-browser';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { CommentBody } from '@/components/comments/comment-body';
-import { LikeIcon, OpenExternalIcon, PinnedIcon, ReplyToIcon, VoteDownIcon, VoteUpIcon } from '@/components/icons/ui-icons';
+import { LikeIcon, PinnedIcon, ReplyToIcon, VoteDownIcon, VoteUpIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { showToast } from '@/components/toast';
 import { Spacing } from '@/constants/theme';
@@ -90,17 +89,6 @@ export function CommentCard({ comment, ctx, nested = false }: { comment: Comment
               </Text>
             )}
             {time === undefined && comment.edited && <Text style={[styles.time, { color: theme.textSecondary }]}>(edited)</Text>}
-            {comment.url && (
-              <Pressable
-                testID={testId('comments.open', id)}
-                onPress={() => void openBrowserAsync(comment.url!)}
-                hitSlop={10}
-                accessibilityRole="link"
-                accessibilityLabel="Open this comment on the site"
-                style={styles.open}>
-                <OpenExternalIcon color={theme.textSecondary} size={14} />
-              </Pressable>
-            )}
           </View>
 
           {(comment.pinned || chips.length > 0) && (
@@ -295,9 +283,6 @@ const styles = StyleSheet.create({
   time: {
     fontSize: 13,
     lineHeight: 20,
-  },
-  open: {
-    marginLeft: 'auto',
   },
   chips: {
     flexDirection: 'row',
