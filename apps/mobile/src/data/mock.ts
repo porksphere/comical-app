@@ -676,7 +676,7 @@ const delay = (ms: number): Promise<void> =>
 
 // Perf spike fixture: a synthetic bridge whose composed Home has a LOT of rails, so the
 // rail-virtualization work (ContentFeed) can be stress-profiled on demand — a real bridge home is only
-// ~3–5 rails, which may not lag at all. Reachable via the __DEV__ "Use mock data" toggle. See
+// ~3–5 rails, which may not lag at all. Reachable via the "Use mock data" toggle. See
 // `RAIL_STRESS_COUNT` / `mockGetHomeSections`.
 export const RAIL_STRESS_BRIDGE_ID = 'rail-stress';
 const RAIL_STRESS_COUNT = 18;

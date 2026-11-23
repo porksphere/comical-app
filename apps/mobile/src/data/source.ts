@@ -4,8 +4,9 @@
  * Screens call `useDataSource()` and never import `api.ts` or `mock.ts`
  * directly. Mock data is reachable in exactly two cases, both compiled out of
  * a real production build:
- *   - `__DEV__` + the "Use mock data" toggle in Settings (persisted locally,
- *     dev builds only).
+ *   - the "Use mock data" toggle in Settings → Developer (persisted locally), in a build with
+ *     `PROFILING_ENABLED`: a dev build, or the nightly and per-PR builds, which is how a PR is
+ *     tried on a phone against a bridge feature no real bridge has yet.
  *   - `EXPO_PUBLIC_COMICAL_DEMO_MODE=1`, set only by the GitHub Pages preview
  *     workflow (no backend to reach from static hosting) — see
  *     `components/demo-banner.tsx` for the accompanying "sample data" banner.
@@ -22,6 +23,7 @@ import { seriesListSchema } from '@comical/contract';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { persisted$ } from '@/lib/observable';
+import { PROFILING_ENABLED } from '@/lib/profiling';
 import * as api from './api';
 import { markProcessed } from './page-process';
 import { queryClient } from './query-client';
@@ -1223,15 +1225,15 @@ export const IS_CAPTURE_MODE =
   IS_DEMO_MODE && process.env.EXPO_PUBLIC_COMICAL_CAPTURE_MODE === '1';
 
 // Persisted dev-only toggle (Legend State; see `lib/observable.ts`). Holds the raw stored value; the
-// `__DEV__` mask is applied at read, so a non-dev build always reports false and never activates mock
-// via the toggle. The old store wrote '1'/'0', which parse back as truthy/falsy, so the key carries over.
+// `PROFILING_ENABLED` mask is applied at read, so a release build always reports false and never
+// activates mock via the toggle. The old store wrote '1'/'0', which parse back as truthy/falsy, so the key carries over.
 const mockToggle$ = persisted$<boolean>(MOCK_TOGGLE_KEY, false);
 
 /** The one source of truth for "is mock mode active", mirrored into the mock module so its simulated
  *  latency is a no-op in real mode no matter which screen calls it. Runs once at load (below) and on
  *  every toggle change, including the async hydrate. */
 function syncMockActive(): void {
-  mock.setMockActive(IS_DEMO_MODE || (__DEV__ && Boolean(mockToggle$.peek())));
+  mock.setMockActive(IS_DEMO_MODE || (PROFILING_ENABLED && Boolean(mockToggle$.peek())));
 }
 
 // Seed the mock module's flag at load (before the async toggle read resolves), so the demo build
@@ -1240,22 +1242,22 @@ function syncMockActive(): void {
 syncMockActive();
 mockToggle$.onChange(syncMockActive);
 
-/** Dev-only: flip the "Use mock data" toggle and persist it locally. No-op outside `__DEV__`. */
+/** Flip the "Use mock data" toggle and persist it locally. No-op without `PROFILING_ENABLED`. */
 export function setMockToggle(enabled: boolean): void {
-  if (!__DEV__) return;
+  if (!PROFILING_ENABLED) return;
   mockToggle$.set(enabled);
 }
 
-/** Dev-only hook: [enabled, setEnabled] for the Settings screen's mock-data toggle. */
+/** [enabled, setEnabled] for the Developer settings' mock-data toggle. */
 export function useMockDataToggle(): [boolean, (enabled: boolean) => void] {
-  // `use$` is called UNCONDITIONALLY and the `__DEV__` mask applied to its result. Inlining it as
-  // `__DEV__ && Boolean(use$(...))` puts a hook inside a `&&` short-circuit: legal-looking, but the
+  // `use$` is called UNCONDITIONALLY and the `PROFILING_ENABLED` mask applied to its result. Inlining it as
+  // `PROFILING_ENABLED && Boolean(use$(...))` puts a hook inside a `&&` short-circuit: legal-looking, but the
   // React Compiler can memoize that expression and skip re-evaluating it, which silently drops the
   // hook on some renders. That shifts every later hook in the calling component by three
   // (`use$` = useContext + useMemo + useSyncExternalStore) and crashes React's dispatcher with
   // "Cannot read properties of undefined (reading 'length')" out of `areHookInputsEqual`.
   const on = use$(mockToggle$);
-  return [__DEV__ && Boolean(on), setMockToggle];
+  return [PROFILING_ENABLED && Boolean(on), setMockToggle];
 }
 
 /** True whenever mock data should be used: the GH Pages demo build, or the dev toggle. */

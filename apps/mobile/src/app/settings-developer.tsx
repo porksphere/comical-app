@@ -15,7 +15,7 @@ import {
 } from '@/hooks/use-home-bookshelf';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 
-/** Dev-build-only: lets local development iterate against mock data without a running backend, and
+/** Dev and profiling builds only: lets development iterate against mock data without a running backend, and
  *  shows which server real requests target. The Settings screen only links here when
  *  `PROFILING_ENABLED`; the route itself stays registered unconditionally, since a route that exists
  *  but is unreachable costs nothing while a conditional <Stack.Screen> would just be noise. */

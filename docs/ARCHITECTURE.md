@@ -132,9 +132,9 @@ durable off/on plus a live, in-memory mode that carries the session-only `until-
 cache on a server switch stays with the caller (`settings.tsx`), keeping the local preference and the
 TanStack Query cache separated.
 
-The dev-only mock-data toggle (`source.ts`) is also a Legend State observable: it keeps its
-`'1'`/`'0'` key (those parse back as truthy/falsy), applies the `__DEV__` mask at read so a non-dev
-build always reports off, and drives the mock module's `syncMockActive()` side effect from a
+The mock-data toggle (`source.ts`) is also a Legend State observable: it keeps its
+`'1'`/`'0'` key (those parse back as truthy/falsy), applies the `PROFILING_ENABLED` mask at read so
+a release build always reports off, and drives the mock module's `syncMockActive()` side effect from a
 module-level `onChange` (plus one call at load, so a demo build is mock-active before hydration).
 
 Every preference/UI store is now on Legend State. The only module-level stores intentionally left

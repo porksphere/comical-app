@@ -388,7 +388,8 @@ mock is decided.
   phone on the same network. It only points elsewhere if you've set
   `EXPO_PUBLIC_COMICAL_SERVER` yourself, or overridden the server in Settings.
 - **Mock data is reachable in exactly two cases, both dev/preview only:** the
-  `__DEV__`-gated "Use mock data" toggle in Settings, and the GitHub Pages
+  "Use mock data" toggle in Settings → Developer, which works only with `PROFILING_ENABLED` (a dev
+  build, or the nightly and per-PR builds, so a PR can be tried on a phone), and the GitHub Pages
   static preview build (`EXPO_PUBLIC_COMICAL_DEMO_MODE=1`, set only in
   `deploy-web.yml`, since static hosting has no backend to reach — see
   `apps/mobile/src/components/demo-banner.tsx`). A real production build never falls back to
