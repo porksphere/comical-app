@@ -33,7 +33,7 @@ Read from the packages' source, not from memory.
 | Piece | On Android | Verdict |
 |---|---|---|
 | `@expo/ui/jetpack-compose` | Compose Material 3 1.5.0-beta01; every `Host` is wrapped in `MaterialExpressiveTheme` with wallpaper colours on Android 12+, or a `seedColor` / `colorOverrides`. Ships `NavigationBar`, `DropdownMenu`, `ModalBottomSheet`, `AlertDialog`, `Snackbar`, `FloatingActionButton` (four sizes), `HorizontalFloatingToolbar`, `ListItem`, `Switch`, segmented buttons, `ToggleButton`, chips, `SearchBar`, `LoadingIndicator`, `LazyColumn`, `RNHostView`. `getMaterialColors()` hands the palette to JS synchronously. | The route. It is to Android what SwiftUI and UIKit were to iOS. |
-| `@expo/ui` gaps | `TopAppBar` is the small bar only, with no scroll behaviour. No navigation rail, no short navigation bar, no reorderable list, no swipe-to-dismiss row. | Each is either drawn by the app to Material's spec or a local Expo module. |
+| `@expo/ui` gaps | Its `NavigationBar` is Compose's original 80dp bar, not Expressive's `ShortNavigationBar`, and there is no navigation rail. `TopAppBar` is the small bar only, with no scroll behaviour. No reorderable list, no swipe-to-dismiss row. | Each is either drawn by the app to Material's spec or a local Expo module. expo-modules-core's Compose views (`ExpoComposeView`), which `@expo/ui` is itself built on, are open to a local module. |
 | expo-router `NativeTabs` | Material Components' `BottomNavigationView` (a View, not Compose), dynamic colours, badges. Never a rail. Its `testID` is a view tag Maestro cannot read. | Not taken: see Navigation. |
 | Stack header (the legacy stack expo-router renders) | An AppCompat `Toolbar` with scroll flags of 0. Large titles, hide on scroll and native bar menus are all no-ops on Android. | Not taken. |
 | react-native-screens "Stack v5" | `MaterialToolbar` in a `CollapsingToolbarLayout`, scroll flags, native toolbar menus, predictive back. Marked experimental, and expo-router 58 does not render it. | Watch. It is the native top bar, once expo-router adopts it. |
@@ -64,27 +64,31 @@ Read from the packages' source, not from memory.
    (`series.chapter-menu.*` already works this way). 30 of the 31 mobile flows tap `tab.<name>`.
 7. **Web does not move.** No base file changes its look for web in this work.
 
-## Decisions to make first
+## Decisions
 
-Each has a recommendation; the phases below assume it.
+Settled:
 
-1. **Colour.** Recommended: wallpaper colour (Material You) on by default on Android 12+, with
-   Settings → General gaining "Use wallpaper colours" and "Pure black dark theme"; when off, a
-   palette seeded from the app's blue. Material's dark surface is a tinted near-black, not #000,
-   which is why pure black is its own switch (`colorOverrides` on the surface roles). The
-   alternative is to keep the app's own palette on every device and only express it as roles.
-   The reader's chrome stays dark over the page under either.
-2. **Bottom navigation.** Recommended: Compose's `NavigationBar` drawn inside the existing shell,
-   with labels and Material Symbols, in place of the icon-only bar. `NativeTabs` was the iOS
-   answer because UIKit moves the bar to the side by itself; on Android it never becomes a rail,
-   Maestro cannot reach its items, it cannot slide away with the scroll, and it would replace the
-   tab routing the series zoom and its backdrop are built on.
-3. **A long press on a series card.** Recommended for now: keep it a menu, as Material's (the cover
-   lifting, a `DropdownMenu` beside it, no blur). The Android convention is that a long press in a
-   list selects, which chapter rows already follow; doing that for cards needs a card select mode
-   that does not exist yet, so it is listed as a follow-up, not part of this.
+1. **Colour.** Wallpaper colour (Material You) on by default on Android 12+, with Settings →
+   General gaining "Use wallpaper colours" and "Pure black dark theme"; when off, a palette seeded
+   from the app's blue. Material's dark surface is a tinted near-black, not #000, which is why
+   pure black is its own switch (`colorOverrides` on the surface roles). The reader's chrome stays
+   dark over the page under either.
+2. **Bottom navigation.** A Compose navigation bar drawn inside the existing shell, with labels and
+   Material Symbols, in place of the icon-only bar — and it is Expressive's bar,
+   `ShortNavigationBar`, which `@expo/ui` does not ship, so it comes from a local module (phase 2).
+   `NativeTabs` was the iOS answer because UIKit moves the bar to the side by itself; on Android
+   it never becomes a rail, Maestro cannot reach its items, it cannot slide away with the scroll,
+   and it would replace the tab routing the series zoom and its backdrop are built on.
+3. **A long press on a series card** stays a menu, as Material's (the cover lifting, a
+   `DropdownMenu` beside it, no blur). The Android convention is that a long press in a list
+   selects, which chapter rows already follow; doing that for cards needs a card select mode that
+   does not exist yet, so it is a follow-up, not part of this.
+
+Open:
+
 4. **Predictive back** is switched off in `app.json` (`predictiveBackGestureEnabled: false`) and
-   neither the docs nor the reachable history say why. If the reason is known, it decides phase 5.
+   neither the docs nor the reachable history say why. Phase 5 turns it on unless a reason turns
+   up.
 
 ## Phases
 
@@ -140,12 +144,15 @@ Lowest layout risk, largest change in feel; everything here mounts on demand.
 
 ### 2. The shell
 
-- **Navigation bar.** The visible bar in `app-tabs.tsx` is already not the `TabList`; on Android
-  it becomes a hosted `NavigationBar`, switched through `useTabTrigger`, keeping the slide on
-  scroll, the reselect scroll-to-top, the badges and the `tab.<name>` ids. `BottomTabInset`
-  follows its height.
-- **Rail.** `@expo/ui` has none. First cut: the existing rail drawn from Material tokens. If that
-  reads as an imitation next to the bar, a local module hosts Compose's rail.
+- **Navigation bar and rail.** A local module, `modules/material-navigation`, hosts Expressive's
+  two navigation components: `ShortNavigationBar` on a compact window and `WideNavigationRail` on
+  a wider one, where the app draws its own icon rail today. One module, one set of items (icon,
+  selected icon, label, badge, test tag), themed from the same palette as every `MaterialHost`.
+  The visible bar in `app-tabs.tsx` is already not the `TabList`, so on Android it becomes that
+  view, switched through `useTabTrigger`, keeping the slide on scroll, the reselect
+  scroll-to-top, the badges and the `tab.<name>` ids. `BottomTabInset` follows its height.
+  The module repeats `@expo/ui`'s Compose and Material 3 versions, checked in CI the way
+  `check:android-host-deps` checks the runtime's.
 - **Top bars stay React Native, drawn to Material's spec.** No native bar open to expo-router
   collapses or scrolls (see the table), and the custom bars already behave as Material's
   enter-always bar does (`use-sliding-bar`). What changes: the role colours, the bar taking
@@ -188,8 +195,12 @@ React Native views throughout; this is tokens, shape and motion.
 
 ### 5. The system
 
-- Predictive back, per decision 4: the Compose surfaces follow it by themselves; the series
-  layers' `BackHandler` stack is what has to be checked against it.
+- Predictive back turned on (decision 4). What it buys here: the home screen showing behind the
+  app as a swipe back is about to leave it, and Compose's sheets, menus and dialogs following the
+  finger. It does not preview one screen behind another: the stack expo-router renders has no
+  support for that (Stack v5 does). What has to be checked: the opt-in changes how back reaches
+  the app, and the popups, the series layers, the reader and the search layer each handle back
+  themselves through `BackHandler`, in a set order.
 - The Glance widgets: the hard-coded colours (`#1A1A1A`, `#2563EB`) become theme roles, in
   `docs/WIDGETS.md` first.
 - Splash background by theme.
