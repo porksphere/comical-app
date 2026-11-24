@@ -297,15 +297,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/screens"
           hinge open
           xcrun simctl launch "$UDID" com.porksphere.comical
-          # A first launch on a CI simulator, the catalog's covers, and the bookshelf's renderer.
-          # DIAGNOSTIC, to be cut down to one sleep: how long the renderer takes to draw.
-          sleep 45
-          hinge screenshot "$RUNNER_TEMP/screens/00-duo-wait-045.png"
-          sleep 60
-          hinge screenshot "$RUNNER_TEMP/screens/00-duo-wait-105.png"
-          sleep 75
-          hinge screenshot "$RUNNER_TEMP/screens/00-duo-wait-180.png"
-          sleep 60
+          # A first launch on a CI simulator and the catalog's covers, and then the bookshelf going:
+          # its renderer is lost on a simulator about a minute in (see e2e/demo/screens.yaml), and
+          # until the app has taken the shelf away its stage stands empty.
+          sleep 120
           hinge posture --json || true
           hinge screenshot "$RUNNER_TEMP/screens/06-duo-open.png"
 

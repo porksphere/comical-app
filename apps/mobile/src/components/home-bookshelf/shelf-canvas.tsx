@@ -35,6 +35,14 @@ export function ShelfCanvas({ style, driver, onUnavailable }: ShelfCanvasProps) 
       });
       await Promise.all([renderer.init(), prepare()]);
       if (gone) return;
+      // A device can be lost after it has started, and a lost one draws nothing more: the shelf
+      // would stand as an empty stage for good. The iOS Simulator loses it on the first frame,
+      // where Dawn's Metal backend has no comparison samplers for the shadow's pass to use.
+      const lost = renderer.onDeviceLost;
+      renderer.onDeviceLost = (info) => {
+        lost.call(renderer, info);
+        if (!gone) onUnavailable();
+      };
       scene = new ShelfScene(renderer, drawSpine, () => context.present());
       driver.attach(scene);
     })().catch(() => {

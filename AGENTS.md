@@ -1303,7 +1303,11 @@ cloth is the colour of its cover beside the binding (`boardColour`). A cover tha
 leaves the book in plain cloth.
 
 **A renderer that cannot start takes the shelf away, not the screen** (`markHomeBookshelfUnavailable`):
-the rails begin the page as they did, until the app is next opened.
+the rails begin the page as they did, until the app is next opened. So does one that starts and
+then loses its device (`renderer.onDeviceLost`), which draws nothing more and left the stage empty
+for good. That is every iOS Simulator: Dawn's Metal backend has no comparison samplers there, the
+shadow's pass asks for one, and the device is lost on the first frame, so a simulator's Home has
+no shelf and the capture workflow's iPhone shots are of the rails.
 
 # Testing: new screens need a flow
 

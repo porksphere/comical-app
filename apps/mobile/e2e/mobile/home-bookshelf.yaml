@@ -8,6 +8,8 @@ appId: com.porksphere.comical
 # The shelf is drawn on WebGPU. An emulator without a hardware adapter may not start it, in which
 # case the app shows the rails alone and this flow fails at the first assertion: that is the
 # renderer missing on that machine, not a broken shelf. Run it on a device or a GPU-backed emulator.
+# An iOS Simulator starts it and loses it on the first frame (no comparison samplers for the
+# shadow's pass), so there the shelf is up for the first minute and then taken away.
 #
 # Kept in sync BY HAND with ../web/home-bookshelf.yaml (same journey).
 

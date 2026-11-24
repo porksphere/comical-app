@@ -28,35 +28,44 @@ appId: com.porksphere.comical
     visible:
       id: "home-bookshelf"
     timeout: 60000
-# DIAGNOSTIC, to be cut down to one pause: how long the shelf's renderer takes to draw its books on
-# a CI simulator. On the first run of this flow it had only begun compiling its pipelines a minute
-# after launch.
+    optional: true
+# And then for it to GO, on a simulator. The shelf's shadows need comparison samplers, which the
+# iOS Simulator's Metal doesn't give Dawn, so its renderer is lost on the first frame, about a
+# minute after launch on a runner, and the app takes the shelf away: Home is then its rails, as
+# with the bookshelf switched off. Optional, for the day a simulator can draw it.
+- extendedWaitUntil:
+    notVisible:
+      id: "home-bookshelf"
+    timeout: 150000
+    optional: true
+# Settle before the shutter: mock covers resolve asynchronously, and a screenshot taken a beat too
+# early catches half a grid of placeholders.
+- waitForAnimationToEnd:
+    timeout: 8000
 - runFlow:
     file: pause.yaml
     env:
-      MS: '30000'
-- takeScreenshot: 00-wait-030
-- runFlow:
-    file: pause.yaml
-    env:
-      MS: '45000'
-- takeScreenshot: 00-wait-075
-- runFlow:
-    file: pause.yaml
-    env:
-      MS: '60000'
-- takeScreenshot: 00-wait-135
-- runFlow:
-    file: pause.yaml
-    env:
-      MS: '60000'
+      MS: '5000'
 - takeScreenshot: 01-browse
 
 # By position, for the reason above: the first card of the first Featured shelf, which is
-# Pepper&Carrot (`FEATURED_LEADS` in data/mock.ts), above the floating tab bar that covers the
-# card's foot. The iPhone is the one the workflow picks, so the shelf stands where it stood.
-- tapOn:
-    point: "18%,85%"
+# Pepper&Carrot (`FEATURED_LEADS` in data/mock.ts). Where that is depends on whether the bookshelf
+# stands above it. The iPhone is the one the workflow picks, so the card is where it was.
+- runFlow:
+    when:
+      notVisible:
+        id: "home-bookshelf"
+    commands:
+      - tapOn:
+          point: "18%,30%"
+- runFlow:
+    when:
+      visible:
+        id: "home-bookshelf"
+    commands:
+      # Above the floating tab bar, which covers the card's foot.
+      - tapOn:
+          point: "18%,85%"
 - extendedWaitUntil:
     visible:
       id: "series.action.read"

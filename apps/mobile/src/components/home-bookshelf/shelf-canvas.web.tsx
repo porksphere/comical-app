@@ -22,6 +22,12 @@ export function ShelfCanvas({ style, driver, onUnavailable }: ShelfCanvasProps) 
       renderer = new THREE.WebGPURenderer({ antialias: true, canvas: canvas.current });
       await Promise.all([renderer.init(), prepare()]);
       if (gone) return;
+      // As on a device: a renderer that is lost after it has started leaves an empty stage.
+      const lost = renderer.onDeviceLost;
+      renderer.onDeviceLost = (info) => {
+        lost.call(renderer, info);
+        if (!gone) onUnavailable();
+      };
       scene = new ShelfScene(renderer, drawSpine);
       driver.attach(scene);
     })().catch(() => {
