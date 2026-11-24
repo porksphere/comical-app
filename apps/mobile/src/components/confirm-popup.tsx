@@ -26,12 +26,12 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
-  ANDROID_BLUR,
   BACKDROP_BLUR,
   BACKDROP_TINT,
   BACKDROP_TINT_OPACITY,
   MENU_BLUR,
   MENU_FILL,
+  surfaceFill,
 } from '@/components/context-menu-material';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -177,7 +177,6 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
       <AnimatedBlurView
         tint={scheme}
         animatedProps={backdropBlurProps}
-        experimentalBlurMethod={ANDROID_BLUR}
         style={StyleSheet.absoluteFill}>
         <Animated.View
           pointerEvents="none"
@@ -189,8 +188,8 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
       {/* The floating card, lower third of the screen. */}
       <View pointerEvents="box-none" style={[styles.cardHost, { paddingBottom: insets.bottom + Spacing.six * 2 }]}>
         <Animated.View style={[styles.cardShadow, cardStyle]}>
-          <BlurView tint={scheme} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={styles.card}>
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[scheme] }]} />
+          <BlurView tint={scheme} intensity={MENU_BLUR} style={styles.card}>
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: surfaceFill(theme, MENU_FILL[scheme]) }]} />
             {/* Text block: its own tighter gap, so title/message/detail read as one passage while
                 the card's larger gap separates the passage from the verb. */}
             <View style={styles.body}>

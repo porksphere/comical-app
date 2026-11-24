@@ -20,7 +20,7 @@ import Animated, {
 import type { MenuSymbol } from '@/components/icons/material-symbols';
 import { CheckIcon, ChevronRightIcon, type IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Spacing, type Palette } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
@@ -41,6 +41,12 @@ export const MENU_PAD_V = BUBBLE_INSET_H - BUBBLE_INSET_V;
 export const MENU_TITLE_HEIGHT = 32;
 export const EDGE_PAD = 12;
 /**
+ * Whether a floating surface is frosted: a blur of what is behind it under a faint tint. Not on
+ * Android, where a surface is Material's, an opaque tone over a scrim; expo-blur draws no blur
+ * there anyway without a blur target, which left these tints see-through over the page.
+ */
+export const FROSTED = Platform.OS !== 'android';
+/**
  * Backdrop blur strengths (0–100) — a clear TWO-MODE configuration, keyed by whether the menu
  * lifts a content preview:
  *  - `preview` — the series-card popup: the heavy frost separates the lifted card from the page.
@@ -52,13 +58,15 @@ export type BackdropBlurMode = keyof typeof BACKDROP_BLUR;
 export const MENU_BLUR = 55;
 // The scrim follows the theme: light washes the page out pale (what iOS does) so the light menu has
 // something light to blur; dark dims to black.
-export const BACKDROP_TINT = { light: '#ffffff', dark: '#000000' } as const;
-export const BACKDROP_TINT_OPACITY = { light: 0.45, dark: 0.15 } as const;
+// Android's is Material's scrim instead, black at 32% on either theme: nothing is blurred there.
+export const BACKDROP_TINT = FROSTED ? ({ light: '#ffffff', dark: '#000000' } as const) : ({ light: '#000000', dark: '#000000' } as const);
+export const BACKDROP_TINT_OPACITY = FROSTED ? ({ light: 0.45, dark: 0.15 } as const) : ({ light: 0.32, dark: 0.32 } as const);
 // Both stay properly translucent. Light is the heavier of the two only because it also has to hold
 // its own against an opaque panel beside it.
 export const MENU_FILL = { light: 'rgba(255,255,255,0.55)', dark: 'rgba(23,24,27,0.62)' } as const;
-// Android's blur is the experimental Dimezis path; a no-op elsewhere.
-export const ANDROID_BLUR = Platform.OS === 'android' ? ('dimezisBlurView' as const) : undefined;
+/** A floating surface's fill: `frost`, the faint tint its blur shows through, or on Android the
+ *  opaque raised tone. */
+export const surfaceFill = (theme: Palette, frost: string): string => (FROSTED ? frost : theme.overlaySurface);
 // The selection highlight — deliberately faint (it sits on a blurred panel; full-strength
 // `backgroundSelected` read as a solid slab). It only has to say WHICH row.
 export const HIGHLIGHT_OPACITY = 0.5;
@@ -233,8 +241,8 @@ export function SubmenuSurface({
     <View style={[menuStyles.menu, { borderColor: theme.backgroundSelected }]}>
       {/* The frosted background — fades in with the reveal (see contentStyle). Blur + surface tint. */}
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, contentStyle]}>
-        <BlurView tint={tint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[tint] }]} />
+        <BlurView tint={tint} intensity={MENU_BLUR} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: surfaceFill(theme, MENU_FILL[tint]) }]} />
       </Animated.View>
       {/* Header = the parent row restated. Its LABEL + CHEVRON are NOT faded — they render crisp from
           the first frame while the base row's copy is hidden (suppressLabel), so the label reads as ONE
@@ -382,13 +390,13 @@ export function MenuSurface({
   surfaceStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
 }) {
   const theme = useTheme();
-  const blur = { tint, intensity: MENU_BLUR, experimentalBlurMethod: ANDROID_BLUR } as const;
+  const blur = { tint, intensity: MENU_BLUR } as const;
   const panel = [menuStyles.menu, { borderColor: theme.backgroundSelected }];
   const contents = (
     <>
       {/* The surface tint — its own layer INSIDE the blur, not a backgroundColor on the BlurView
           (expo-blur's web build applies its own tint background last and silently drops yours). */}
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[tint] }]} />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: surfaceFill(theme, MENU_FILL[tint]) }]} />
       {/* The travelling selection bubble, under the rows so their labels stay on top of it. */}
       <Animated.View
         pointerEvents="none"

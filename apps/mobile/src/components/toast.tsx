@@ -20,7 +20,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { ANDROID_BLUR } from '@/components/context-menu-material';
+import { surfaceFill } from '@/components/context-menu-material';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -137,11 +137,10 @@ function HostToast({ req }: { req: ToastRequest }) {
         <BlurView
           tint={scheme}
           intensity={TOAST_BLUR}
-          experimentalBlurMethod={ANDROID_BLUR}
           style={[styles.pill, { borderColor: error ? theme.danger : theme.backgroundSelected }]}>
           <View
             pointerEvents="none"
-            style={[StyleSheet.absoluteFill, { backgroundColor: error ? `${theme.danger}${ERROR_FILL_ALPHA}` : TOAST_FILL[scheme] }]}
+            style={[StyleSheet.absoluteFill, { backgroundColor: error ? `${theme.danger}${ERROR_FILL_ALPHA}` : surfaceFill(theme, TOAST_FILL[scheme]) }]}
           />
           <Pressable
             testID={error ? 'toast.error' : 'toast.dismiss'}
@@ -149,7 +148,7 @@ function HostToast({ req }: { req: ToastRequest }) {
             style={styles.pillPress}
             accessibilityRole="alert"
             accessibilityLabel={req.message}>
-            <ThemedText type="small" style={[styles.message, error && styles.errorMessage]}>
+            <ThemedText type="small" style={[styles.message, error && styles.errorMessage, error && { color: theme.dangerOn }]}>
               {req.message}
             </ThemedText>
           </Pressable>
@@ -194,7 +193,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   errorMessage: {
-    color: '#FFFFFF',
     fontWeight: '600',
   },
 });

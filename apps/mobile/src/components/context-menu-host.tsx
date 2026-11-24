@@ -47,7 +47,6 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
-  ANDROID_BLUR,
   BACKDROP_BLUR,
   BACKDROP_TINT,
   BACKDROP_TINT_OPACITY,
@@ -463,7 +462,6 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
             <>
               <AnimatedBlurView
                 tint={tint}
-                experimentalBlurMethod={ANDROID_BLUR}
                 animatedProps={backdropBlurProps}
                 style={StyleSheet.absoluteFill}
               />

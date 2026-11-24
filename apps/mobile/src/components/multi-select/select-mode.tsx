@@ -23,7 +23,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming, type Sh
 import { useEffect, useRef, useState } from 'react';
 
 import { openContextMenu } from '@/components/context-menu-host';
-import { ANDROID_BLUR, type MenuRowSpec } from '@/components/context-menu-material';
+import { surfaceFill, type MenuRowSpec } from '@/components/context-menu-material';
 import type { MenuSymbol } from '@/components/icons/material-symbols';
 import type { IconProps } from '@/components/icons/ui-icons';
 import { SelectModeIcon, SelectOptionsIcon } from '@/components/icons/ui-icons';
@@ -87,9 +87,8 @@ function SelectOptionsButton({ rows, testID }: { rows: MenuRowSpec[]; testID: st
       <BlurView
         tint={scheme}
         intensity={PILL_BLUR}
-        experimentalBlurMethod={ANDROID_BLUR}
         style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
-        <View pointerEvents="none" style={[styles.pillFill, { backgroundColor: PILL_FILL[scheme] }]} />
+        <View pointerEvents="none" style={[styles.pillFill, { backgroundColor: surfaceFill(theme, PILL_FILL[scheme]) }]} />
         <Pressable
           testID={testID}
           onPress={() =>
@@ -471,13 +470,12 @@ export function SelectPillBar({ verbs, options, optionsTestID = 'select.options'
           <BlurView
             tint={scheme}
             intensity={PILL_BLUR}
-            experimentalBlurMethod={ANDROID_BLUR}
             style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
             <View
               pointerEvents="none"
               style={[
                 styles.pillFill,
-                { backgroundColor: soloColored ? `${soloColored}${PILL_ACCENT_ALPHA}` : PILL_FILL[scheme] },
+                { backgroundColor: soloColored ? `${soloColored}${PILL_ACCENT_ALPHA}` : surfaceFill(theme, PILL_FILL[scheme]) },
               ]}
             />
             {verbs.map((v) => (

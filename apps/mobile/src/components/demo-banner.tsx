@@ -24,7 +24,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ANDROID_BLUR } from '@/components/context-menu-material';
+import { surfaceFill } from '@/components/context-menu-material';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { IS_CAPTURE_MODE, IS_DEMO_MODE } from '@/data/source';
@@ -85,9 +85,8 @@ function Pill() {
         <BlurView
           tint={scheme}
           intensity={BLUR}
-          experimentalBlurMethod={ANDROID_BLUR}
           style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
-          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: FILL[scheme] }]} />
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: surfaceFill(theme, FILL[scheme]) }]} />
           <Pressable
             testID="demo.banner"
             onPress={dismiss}

@@ -25,12 +25,12 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
-  ANDROID_BLUR,
   BACKDROP_BLUR,
   BACKDROP_TINT,
   BACKDROP_TINT_OPACITY,
   MENU_BLUR,
   MENU_FILL,
+  surfaceFill,
 } from '@/components/context-menu-material';
 import { CheckIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { NO_OUTLINE, rowInput } from '@/components/input-style';
@@ -196,7 +196,6 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
       <AnimatedBlurView
         tint={scheme}
         animatedProps={backdropBlurProps}
-        experimentalBlurMethod={ANDROID_BLUR}
         style={StyleSheet.absoluteFill}>
         <Animated.View
           pointerEvents="none"
@@ -212,8 +211,8 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
 
       <View pointerEvents="box-none" style={[styles.cardHost, { paddingBottom: insets.bottom + Spacing.six }]}>
         <Animated.View style={[styles.cardShadow, cardStyle]}>
-          <BlurView tint={scheme} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={styles.card}>
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[scheme] }]} />
+          <BlurView tint={scheme} intensity={MENU_BLUR} style={styles.card}>
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: surfaceFill(theme, MENU_FILL[scheme]) }]} />
 
             <View style={styles.header}>
               <ThemedText type="smallBold">Add to collection</ThemedText>

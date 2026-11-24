@@ -25,7 +25,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 
 import {
-  ANDROID_BLUR,
   BACKDROP_BLUR,
   BACKDROP_TINT,
   BACKDROP_TINT_OPACITY,
@@ -1410,7 +1409,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         {/* Blurred, tap-to-dismiss backdrop. */}
         <GestureDetector gesture={tapDismiss}>
           <View style={StyleSheet.absoluteFill}>
-            <AnimatedBlurView tint={menuTint} experimentalBlurMethod={ANDROID_BLUR} animatedProps={backdropBlurProps} style={StyleSheet.absoluteFill} />
+            <AnimatedBlurView tint={menuTint} animatedProps={backdropBlurProps} style={StyleSheet.absoluteFill} />
             <Animated.View
               style={[StyleSheet.absoluteFill, { backgroundColor: BACKDROP_TINT[menuTint] }, backdropTintStyle]}
             />
