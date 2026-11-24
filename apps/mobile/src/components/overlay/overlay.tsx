@@ -1089,7 +1089,7 @@ function OverlaySheet({
 /**
  * An overlay item's content inside a sheet the system draws: UIKit's on iOS (app/overlay-sheet),
  * Material's on Android (material-overlay-sheet.android), whose handle has room of its own above
- * the content (`top`). The system draws the sheet, the grabber and the swipe away; this is the body `OverlaySheet` draws inside its own, with
+ * the content (`top`, `above`). The system draws the sheet, the grabber and the swipe away; this is the body `OverlaySheet` draws inside its own, with
  * the contexts the content reads, so a menu or a form lays out the same in either.
  *
  * Unlike that body it scrolls: the reader's settings run past a short window, a Duo's landscape
@@ -1097,10 +1097,19 @@ function OverlaySheet({
  * (`fitToContents`), so the scroller's cap is also the sheet's: the tallest a sheet can be,
  * which leaves the top safe area and a margin above it and stands on the bottom inset.
  */
-export function NativeSheetBody({ children, top = NATIVE_SHEET_TOP }: { children: ReactNode; top?: number }) {
+export function NativeSheetBody({
+  children,
+  top = NATIVE_SHEET_TOP,
+  above = 0,
+}: {
+  children: ReactNode;
+  top?: number;
+  /** What the sheet draws above this body, which the tallest body has to leave room for. */
+  above?: number;
+}) {
   const { height } = useWindowSize();
   const insets = useSafeAreaInsets();
-  const maxHeight = height - insets.top - insets.bottom - Spacing.four;
+  const maxHeight = height - insets.top - insets.bottom - Spacing.four - above;
   const [headerHeight, setHeaderHeight] = useState(0);
   const budget = useMemo<SheetBudget>(
     () => ({ budget: maxHeight - NATIVE_SHEET_TOP, headerHeight, setHeaderHeight }),

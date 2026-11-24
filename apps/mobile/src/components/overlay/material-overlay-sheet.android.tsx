@@ -10,6 +10,9 @@ import { useWindowSize } from '@/hooks/use-window-size';
 
 export const MATERIAL_SHEETS = true;
 
+// Material's drag handle: 4dp, with 22dp above and below it.
+const HANDLE = 48;
+
 /**
  * An overlay item as Material's modal bottom sheet, on Android: Compose draws the sheet, its
  * handle, its scrim and the swipe and back that take it away, and the item's own React Native
@@ -39,7 +42,9 @@ export function MaterialOverlaySheet({ id, onClosed, register, children }: Mater
         <RNHostView matchContents>
           <View style={{ width }}>
             <GestureHandlerRootView>
-              <NativeSheetBody top={0}>{children}</NativeSheetBody>
+              <NativeSheetBody top={0} above={HANDLE}>
+                {children}
+              </NativeSheetBody>
             </GestureHandlerRootView>
           </View>
         </RNHostView>
