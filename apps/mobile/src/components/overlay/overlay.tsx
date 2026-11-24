@@ -27,6 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { MATERIAL_SHEETS, MaterialOverlaySheet } from '@/components/overlay/material-overlay-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
@@ -604,7 +605,10 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
 
   // What this provider draws: everything but the system sheets, which on iOS is nothing at all.
   const drawn = NATIVE_OVERLAY_SHEETS ? NO_ITEMS : items;
-  const depth = drawn.length;
+  // Android's sheets are Material's, each with a scrim of its own, so the page's backdrop and its
+  // pushback count only what is drawn in the page.
+  const inPage = MATERIAL_SHEETS ? drawn.filter((it) => presentationFor(it) !== 'sheet') : drawn;
+  const depth = inPage.length;
   const topIsWebPopover = topUsesWebOutsideClick(drawn, isLargeScreen, Platform.OS === 'web');
 
   useEffect(() => {
@@ -621,7 +625,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     document.addEventListener('mousedown', handler, true);
     return () => document.removeEventListener('mousedown', handler, true);
   }, [topIsWebPopover, closeTop]);
-  const sheetDepth = drawn.filter((it) => presentationFor(it) === 'sheet').length;
+  const sheetDepth = inPage.filter((it) => presentationFor(it) === 'sheet').length;
   const dialogDepth = drawn.filter((it) => presentationFor(it) === 'dialog').length;
 
   const appProgress = useSharedValue(0);
@@ -733,6 +737,10 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
               register={register}>
               {it.node}
             </OverlayDialog>
+          ) : MATERIAL_SHEETS ? (
+            <MaterialOverlaySheet key={it.id} id={it.id} onClosed={() => remove(it.id)} register={register}>
+              {it.node}
+            </MaterialOverlaySheet>
           ) : (
             <OverlaySheet
               key={it.id}
@@ -1079,8 +1087,9 @@ function OverlaySheet({
 }
 
 /**
- * An overlay item's content inside its system sheet (app/overlay-sheet), on iOS. UIKit draws the
- * sheet, the grabber and the swipe away; this is the body `OverlaySheet` draws inside its own, with
+ * An overlay item's content inside a sheet the system draws: UIKit's on iOS (app/overlay-sheet),
+ * Material's on Android (material-overlay-sheet.android), whose handle has room of its own above
+ * the content (`top`). The system draws the sheet, the grabber and the swipe away; this is the body `OverlaySheet` draws inside its own, with
  * the contexts the content reads, so a menu or a form lays out the same in either.
  *
  * Unlike that body it scrolls: the reader's settings run past a short window, a Duo's landscape
@@ -1088,7 +1097,7 @@ function OverlaySheet({
  * (`fitToContents`), so the scroller's cap is also the sheet's: the tallest a sheet can be,
  * which leaves the top safe area and a margin above it and stands on the bottom inset.
  */
-export function NativeSheetBody({ children }: { children: ReactNode }) {
+export function NativeSheetBody({ children, top = NATIVE_SHEET_TOP }: { children: ReactNode; top?: number }) {
   const { height } = useWindowSize();
   const insets = useSafeAreaInsets();
   const maxHeight = height - insets.top - insets.bottom - Spacing.four;
@@ -1102,7 +1111,7 @@ export function NativeSheetBody({ children }: { children: ReactNode }) {
       <SheetBudgetContext.Provider value={budget}>
         <GHScrollView
           style={{ maxHeight }}
-          contentContainerStyle={styles.nativeSheetBody}
+          contentContainerStyle={[styles.nativeSheetBody, { paddingTop: top }]}
           alwaysBounceVertical={false}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
@@ -1476,7 +1485,6 @@ const styles = StyleSheet.create({
   nativeSheetBody: {
     gap: Spacing.two,
     paddingHorizontal: Spacing.four,
-    paddingTop: NATIVE_SHEET_TOP,
     paddingBottom: Spacing.two,
   },
   dim: {

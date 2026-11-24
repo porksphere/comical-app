@@ -1,28 +1,20 @@
-import { DropdownMenu, DropdownMenuItem, Icon, Text } from '@expo/ui/jetpack-compose';
-import { fillMaxSize, testID as testTag } from '@expo/ui/jetpack-compose/modifiers';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { MenuRowSpec } from '@/components/context-menu-material';
-import { materialSymbol } from '@/components/icons/material-symbols';
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
-import { MaterialHost } from '@/components/material-host';
+import { MaterialMenu, MENU_EXIT_MS } from '@/components/material-menu';
 import type { OverflowMenuProps } from '@/components/overflow-menu';
 import { Spacing } from '@/constants/theme';
 import { useRipple } from '@/hooks/use-ripple';
 import { useTheme } from '@/hooks/use-theme';
 
-// How long Material's menu takes to fade out; the host it hangs from stays until then.
-const EXIT_MS = 150;
-
 // Long press in an Android list selects; an item's actions sit behind its ⋮.
 export const OVERFLOW_MENU = true;
 
 /**
- * Android: a ⋮ button whose Material menu, hosted from Jetpack Compose, hangs from it. The rows are
- * built and the Compose host mounted only when the button is pressed, so a scrolling list carries
- * nothing but the button. Each row draws the Material Symbol paired with its SF Symbol
- * (icons/material-symbols.ts).
+ * Android: a ⋮ button whose Material menu hangs from it. The rows are built and the Compose host
+ * mounted only when the button is pressed, so a scrolling list carries nothing but the button.
  */
 export function OverflowMenu({ rows, testID, label, disabled }: OverflowMenuProps) {
   const theme = useTheme();
@@ -30,6 +22,7 @@ export function OverflowMenu({ rows, testID, label, disabled }: OverflowMenuProp
   const [open, setOpen] = useState<MenuRowSpec[] | null>(null);
   const [expanded, setExpanded] = useState(false);
   const exit = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (exit.current && clearTimeout(exit.current)), []);
 
   const show = () => {
     if (exit.current) clearTimeout(exit.current);
@@ -38,7 +31,7 @@ export function OverflowMenu({ rows, testID, label, disabled }: OverflowMenuProp
   };
   const close = () => {
     setExpanded(false);
-    exit.current = setTimeout(() => setOpen(null), EXIT_MS);
+    exit.current = setTimeout(() => setOpen(null), MENU_EXIT_MS);
   };
 
   return (
@@ -56,41 +49,6 @@ export function OverflowMenu({ rows, testID, label, disabled }: OverflowMenuProp
       </Pressable>
       {open && <MaterialMenu rows={open} expanded={expanded} onClose={close} />}
     </View>
-  );
-}
-
-function MaterialMenu({ rows, expanded, onClose }: { rows: MenuRowSpec[]; expanded: boolean; onClose: () => void }) {
-  const error = useTheme().danger;
-  return (
-    <MaterialHost style={StyleSheet.absoluteFill}>
-      <DropdownMenu expanded={expanded} onDismissRequest={onClose} modifiers={[fillMaxSize()]}>
-        <DropdownMenu.Items>
-          {rows.map((row) => {
-            const icon = materialSymbol(row.symbol);
-            return (
-              <DropdownMenuItem
-                key={row.testID}
-                enabled={!row.disabled && !row.loading}
-                elementColors={row.destructive ? { textColor: error, leadingIconColor: error } : undefined}
-                modifiers={[testTag(row.testID)]}
-                onClick={() => {
-                  onClose();
-                  row.onPress();
-                }}>
-                {icon && (
-                  <DropdownMenuItem.LeadingIcon>
-                    <Icon source={icon} size={24} />
-                  </DropdownMenuItem.LeadingIcon>
-                )}
-                <DropdownMenuItem.Text>
-                  <Text>{row.label}</Text>
-                </DropdownMenuItem.Text>
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenu.Items>
-      </DropdownMenu>
-    </MaterialHost>
   );
 }
 

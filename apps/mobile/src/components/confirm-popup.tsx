@@ -13,7 +13,7 @@
  */
 import { BlurView } from 'expo-blur';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   interpolate,
   runOnJS,
@@ -37,6 +37,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { useDismissKey } from '@/lib/dismiss-key';
+import { MaterialConfirm } from '@/components/material-confirm';
 import { hapticImpactLight } from '@/lib/haptics';
 import { friendlyError } from '@/lib/friendly-error';
 import { windowModalLayer } from '@/lib/window-controls';
@@ -98,32 +99,23 @@ function useConfirm(): ConfirmRequest | null {
 export function ConfirmPopupHost() {
   const req = useConfirm();
   if (!req) return null;
-  return <HostPopup req={req} />;
+  return Platform.OS === 'android' ? <MaterialConfirm req={req} /> : <HostPopup req={req} />;
 }
 
-function HostPopup({ req }: { req: ConfirmRequest }) {
-  const theme = useTheme();
-  const scheme = useActiveColorScheme();
-  const insets = useSafeAreaInsets();
-  const progress = useSharedValue(0);
-  // Async-confirm state: the verb goes inert with `pendingLabel` while `onConfirm` runs; a
-  // rejection lands here and keeps the popup open (retry or cancel).
+/** Give the slot up, if `req` still owns it: with async confirms a late dismiss (the settle after a
+ *  cancel) must not clobber a NEWER request that opened meanwhile. */
+export function closeConfirm(req: ConfirmRequest): void {
+  if (current === req) setConfirm(null);
+}
+
+/**
+ * Running a request's verb, for whichever surface draws it. The verb goes inert with
+ * `pendingLabel` while an async `onConfirm` runs; a rejection lands in `error` and leaves the
+ * surface open (retry or cancel); `dismiss` is how that surface goes away.
+ */
+export function useConfirmRun(req: ConfirmRequest, dismiss: () => void) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const dismiss = () => {
-    progress.set(
-      withTiming(0, { duration: 120 }, (finished) => {
-        if (finished) runOnJS(close)();
-      }),
-    );
-  };
-  // Only clear the slot if this request still owns it — with async confirms, a late dismiss (e.g.
-  // the settle after a backdrop cancel) must not clobber a NEWER popup that opened meanwhile.
-  const close = () => {
-    if (current === req) setConfirm(null);
-  };
-
   const confirm = async () => {
     if (pending) return;
     setError(null);
@@ -149,6 +141,24 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
       setPending(false);
     }
   };
+  return { pending, error, confirm };
+}
+
+function HostPopup({ req }: { req: ConfirmRequest }) {
+  const theme = useTheme();
+  const scheme = useActiveColorScheme();
+  const insets = useSafeAreaInsets();
+  const progress = useSharedValue(0);
+
+  const close = () => closeConfirm(req);
+  const dismiss = () => {
+    progress.set(
+      withTiming(0, { duration: 120 }, (finished) => {
+        if (finished) runOnJS(close)();
+      }),
+    );
+  };
+  const { pending, error, confirm } = useConfirmRun(req, dismiss);
 
   useEffect(() => {
     hapticImpactLight();

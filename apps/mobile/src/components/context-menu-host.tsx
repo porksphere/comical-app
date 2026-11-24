@@ -64,6 +64,7 @@ import {
   type MenuRowSpec,
 } from '@/components/context-menu-material';
 import { useWindowSize } from '@/hooks/use-window-size';
+import { MaterialContextMenu } from '@/components/material-context-menu';
 import { useDismissKey } from '@/lib/dismiss-key';
 import { hapticImpactLight, hapticImpactMedium, hapticSelection } from '@/lib/haptics';
 import { isTypingTarget } from '@/lib/key-hold';
@@ -302,8 +303,9 @@ export function ContextMenuHold({
 export function ContextMenuHost() {
   const req = useContextMenu();
   if (!req) return null;
-  if (typeof req.rows === 'function') return req.rows((rows) => <HostMenu req={req} rows={rows} />);
-  return <HostMenu req={req} rows={req.rows} />;
+  const Menu = Platform.OS === 'android' ? MaterialContextMenu : HostMenu;
+  if (typeof req.rows === 'function') return req.rows((rows) => <Menu req={req} rows={rows} />);
+  return <Menu req={req} rows={req.rows} />;
 }
 
 function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRowSpec[] }) {

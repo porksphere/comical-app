@@ -10,7 +10,7 @@
  */
 import { BlurView } from 'expo-blur';
 import { useEffect, useSyncExternalStore } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   interpolate,
   runOnJS,
@@ -21,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { surfaceFill } from '@/components/context-menu-material';
+import { MaterialToast } from '@/components/material-toast';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -35,7 +36,7 @@ const PILL_MAX_WIDTH = 360;
 const TOAST_BLUR = 70;
 const TOAST_FILL = { light: 'rgba(255,255,255,0.18)', dark: 'rgba(28,30,34,0.22)' } as const;
 
-type ToastRequest = {
+export type ToastRequest = {
   /** Monotonic key: a new toast REPLACES the current pill (remount via `key`), restarting the
    *  enter animation and the auto-dismiss timer instead of silently swapping the text mid-fade. */
   id: number;
@@ -89,9 +90,15 @@ function useToast(): ToastRequest | null {
 export function ToastHost() {
   const req = useToast();
   if (!req) return null;
+  if (Platform.OS === 'android') return <MaterialToast key={req.id} req={req} />;
   // Keyed by id so a replacing toast remounts the pill: fresh enter animation, fresh timer. A slot
   // keeps the pill mounted across its own updates (the timer still restarts, on `req.id`).
   return <HostToast key={req.slot ?? req.id} req={req} />;
+}
+
+/** Take the toast down, if `req` is still the one showing: a replacement already owns the slot. */
+export function closeToast(req: ToastRequest): void {
+  if (current?.id === req.id) setToast(null);
 }
 
 function HostToast({ req }: { req: ToastRequest }) {
@@ -101,10 +108,7 @@ function HostToast({ req }: { req: ToastRequest }) {
   const progress = useSharedValue(0);
   const error = req.tone === 'error';
 
-  const close = () => {
-    // Only clear if this pill is still the current one — a replacement already owns the slot.
-    if (current?.id === req.id) setToast(null);
-  };
+  const close = () => closeToast(req);
   const dismiss = () => {
     progress.set(
       withTiming(0, { duration: DISMISS_MS }, (finished) => {

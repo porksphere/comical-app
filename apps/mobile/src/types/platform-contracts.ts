@@ -6,6 +6,14 @@ import type * as AppTabs from '@/components/app-tabs';
 import type * as AppTabsIos from '@/components/app-tabs.ios';
 import type * as FloatOver from '@/components/float-over';
 import type * as FloatOverWeb from '@/components/float-over.web';
+import type * as MaterialConfirm from '@/components/material-confirm';
+import type * as MaterialConfirmAndroid from '@/components/material-confirm.android';
+import type * as MaterialContextMenu from '@/components/material-context-menu';
+import type * as MaterialOverlaySheet from '@/components/overlay/material-overlay-sheet';
+import type * as MaterialOverlaySheetAndroid from '@/components/overlay/material-overlay-sheet.android';
+import type * as MaterialToast from '@/components/material-toast';
+import type * as MaterialToastAndroid from '@/components/material-toast.android';
+import type * as MaterialContextMenuAndroid from '@/components/material-context-menu.android';
 import type * as OverflowMenu from '@/components/overflow-menu';
 import type * as OverflowMenuAndroid from '@/components/overflow-menu.android';
 import type * as SelectPillBar from '@/components/multi-select/select-pill-bar';
@@ -129,6 +137,10 @@ export type PlatformContracts = [
   Conforms<Drift<typeof SelectPillBar, typeof SelectPillBarIos>>,
   Conforms<Drift<typeof FloatOver, typeof FloatOverWeb>>,
   Conforms<Drift<typeof OverflowMenu, typeof OverflowMenuAndroid>>,
+  Conforms<Drift<typeof MaterialContextMenu, typeof MaterialContextMenuAndroid>>,
+  Conforms<Drift<typeof MaterialConfirm, typeof MaterialConfirmAndroid>>,
+  Conforms<Drift<typeof MaterialToast, typeof MaterialToastAndroid>>,
+  Conforms<Drift<typeof MaterialOverlaySheet, typeof MaterialOverlaySheetAndroid>>,
   Conforms<Drift<typeof ImageProgress, typeof ImageProgressWeb>>,
   Conforms<Drift<typeof DrawLayout, typeof DrawLayoutWeb>>,
   Conforms<Drift<typeof IntStepper, typeof IntStepperAndroid>>,
