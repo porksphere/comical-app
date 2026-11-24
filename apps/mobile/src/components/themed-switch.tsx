@@ -27,7 +27,8 @@ export function ThemedSwitch({ onValueChange, style, ...props }: SwitchProps) {
     // eslint-disable-next-line comical/require-test-id -- transparent forwarder: testID flows through {...props}; callers (e.g. SettingsToggleRow) pass it.
     <Switch
       trackColor={{ false: theme.backgroundSelected, true: theme.accent }}
-      thumbColor={theme.accentOn}
+      // Material's dark `accentOn` is dark: right on a lit track, lost on an unlit one.
+      thumbColor={Platform.OS === 'android' && !props.value ? theme.textSecondary : theme.accentOn}
       ios_backgroundColor={theme.backgroundSelected}
       // RN's iOS Switch hard-codes `alignSelf: 'flex-start'` into its own style, which in a row
       // means TOP and silently beats the row's `alignItems: 'center'` — so on iOS (only) every
