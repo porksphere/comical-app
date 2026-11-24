@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { useMemo } from 'react';
 
 import { FilterIcon } from '@/components/icons/ui-icons';
+import { MaterialOptionMenu, type MaterialMenuState, type MaterialOptionSection } from '@/components/overlay/material-option-menu';
 import { OptionMenu, OptionMenuButton, OptionRow, OptionSectionLabel } from '@/components/overlay/option-menu';
 import { OptionList } from '@/components/overlay/overlay';
 import type { ReadState } from '@/data/types';
@@ -55,8 +56,49 @@ export function LibraryFilterButton({ withShow, present }: { withShow?: boolean;
       accessibilityLabel={withShow ? 'Filter by reading state or source' : 'Filter by source'}
       icon={<FilterIcon color={theme.text} size={22} filled={narrowing} />}
       render={() => <LibraryFilterMenu withShow={withShow} present={present} />}
+      material={(menu) => <LibraryFilterDropdown {...menu} withShow={withShow} present={present} />}
     />
   );
+}
+
+/** The filter as Android's dropdown: the same rows, read live, since a pick leaves the menu up. */
+function LibraryFilterDropdown({ withShow, present, ...menu }: MaterialMenuState & { withShow?: boolean; present: Present }) {
+  const { show, bridges, removedOnly, sources, nameOf } = useLibraryFilterState(present);
+  const sections: MaterialOptionSection[] = [];
+  if (withShow) {
+    sections.push({
+      label: 'Show',
+      rows: [
+        { testID: 'library.show.all', label: 'Everything', selected: show.length === 0, onPress: clearLibraryShow },
+        ...READ_STATES.map((state) => ({
+          testID: `library.show.${state}`,
+          label: SHOW_LABELS[state],
+          selected: show.includes(state),
+          onPress: () => toggleLibraryShow(state),
+        })),
+      ],
+    });
+    sections.push({
+      label: 'Availability',
+      rows: [
+        { testID: 'library.removed.any', label: 'Any', selected: !removedOnly, onPress: () => setLibraryRemovedOnly(false) },
+        { testID: 'library.removed.only', label: 'Removed from source', selected: removedOnly, onPress: () => setLibraryRemovedOnly(true) },
+      ],
+    });
+  }
+  sections.push({
+    label: 'Source',
+    rows: [
+      { testID: 'library.bridge.all', label: 'All sources', selected: bridges.length === 0, onPress: clearLibraryBridges },
+      ...sources.map((id) => ({
+        testID: `library.bridge.${id}`,
+        label: nameOf(id),
+        selected: bridges.includes(id),
+        onPress: () => toggleLibraryBridge(id),
+      })),
+    ],
+  });
+  return <MaterialOptionMenu {...menu} staysOpen sections={sections} />;
 }
 
 /**

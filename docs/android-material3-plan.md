@@ -6,7 +6,7 @@ React Native components, many of them drawn to look like iOS (frosted menus, the
 the app back, the spoked refresh spinner, Apple's system tints). This plan does for Android what
 that did for iOS, toward **Material 3 Expressive**, the current revision of Material 3 (Android 16).
 
-Phase 0 is built (see its section for what moved to later phases); the rest is not. Versions checked against the pins in `apps/mobile/package.json`:
+Phases 0 to 2 are built (each section says what moved to a later one); the rest is not. Versions checked against the pins in `apps/mobile/package.json`:
 `@expo/ui` 58.0.23, `expo-router` 58.0.26, `react-native-screens` 5.0.0-beta.1.
 
 ## Where Android stands
@@ -163,9 +163,8 @@ software emulation and still has to be timed on a phone.
 
 Moved out of this phase:
 
-- The Browse and Library title selectors and the sort and filter menus (to phase 2): they are
-  option lists with thumbnails and sections, not `MenuRowSpec` rows, and hang from the bars that
-  phase redraws. On a phone they are still the app's own popover, or a Material sheet when long.
+- The Browse and Library title selectors and the sort and filter menus (to phase 2, where they
+  are built): option lists with sections, hung from the bars that phase redraws.
 - The collection picker: a floating card of its own, not an overlay item. It is opaque now and
   otherwise unchanged.
 
@@ -173,31 +172,42 @@ Not checked: the mobile Maestro flows against these surfaces (each control keeps
 Compose test tag, and `confirm.cancel` is now the Cancel button, not the backdrop), and whether a
 drag down from the top of a sheet's list takes the sheet with it.
 
-### 2. The shell
+### 2. The shell (built)
 
 - **Navigation bar and rail.** A local module, `modules/material-navigation`, hosts Expressive's
-  two navigation components: `ShortNavigationBar` on a compact window and `WideNavigationRail` on
-  a wider one, where the app draws its own icon rail today. One module, one set of items (icon,
-  selected icon, label, badge, test tag), themed from the same palette as every `MaterialHost`.
-  The visible bar in `app-tabs.tsx` is already not the `TabList`, so on Android it becomes that
-  view, switched through `useTabTrigger`, keeping the slide on scroll, the reselect
-  scroll-to-top, the badges and the `tab.<name>` ids. `BottomTabInset` follows its height.
-  The module repeats `@expo/ui`'s Compose and Material 3 versions, checked in CI the way
-  `check:android-host-deps` checks the runtime's.
+  two navigation components: `ShortNavigationBar` on a compact window and `WideNavigationRail`
+  (collapsed) on a wider one, in place of the app's own icon rail. One module, one set of items
+  (icon, selected icon, label, badge, test tag), composed inside a `MaterialHost` so it takes the
+  palette every other island has. `material-nav.android.tsx` is the view the shell puts where its
+  own bar and rail were; it switches tabs through `useTabTrigger`, and the slide on scroll, the
+  reselect scroll-to-top, the badges and the `tab.<name>` ids are the shell's as before.
+  `BottomTabInset` is the bar's 64dp. The icons are Material Symbols as path data
+  (`icons/material-nav-icons.ts`), outlined and filled, since the module draws vectors and not
+  the app's drawables. The module repeats `@expo/ui`'s Compose and Material 3 versions;
+  `check:android-compose-deps` holds them equal in CI.
 - **Top bars stay React Native, drawn to Material's spec.** No native bar open to expo-router
   collapses or scrolls (see the table), and the custom bars already behave as Material's
-  enter-always bar does (`use-sliding-bar`). What changes: the role colours, the bar taking
-  surfaceContainer once content is under it in place of the hairline (`bar-scrolled` gets a
-  React Native source), 48dp targets, ripples, Material's type for a pushed page's title. The
-  tabs' titles keep the title typeface.
-- **Search.** `search-field` drawn as Material's search bar; the field stays a React Native
-  `TextInput`.
+  enter-always bar does (`use-sliding-bar`). `BarSurface` on Android has no rule under it and
+  takes the container tone once content is under it: `content-scroll-view` has an Android half,
+  a view around the screen's list (`ScreenScrollMarker`) that reports the list's crossings as its
+  iOS half does, and each tab keeps its own `bar-scrolled` state. A heading pinned under a bar
+  takes the same tone. A pushed page's bar is Material's small top app bar: an arrow, the title
+  at the start in title-large, 48dp buttons with ripples. The tabs' titles keep the title
+  typeface. The bars keep their heights (60dp on a phone, where Material's is 64).
+- **Search.** `search-field` on Android is Material's search bar in shape and tone (a step above
+  the bar, no focus outline); the field stays a React Native `TextInput`.
+- **Bar menus.** The sort and filter buttons and the Browse and Library title selectors hang
+  Material's dropdown (`overlay/material-option-menu.android.tsx`, over `MaterialMenu`) when the
+  list is short; a long one is still the Material sheet from phase 1. The dropdown's rows are
+  text and a check: a bridge's thumbnail is in the sheet's rows, not the dropdown's. The filter
+  menu stays up between picks.
 - **FAB.** `add-fab.android.tsx`: Compose's floating action button.
-- **Select mode.** `select-pill-bar.android.tsx`: `HorizontalFloatingToolbar`, which is what the
-  component is for, the single-verb case in its FAB slot.
-- **Pull to refresh.** The gesture stays (`use-touch-pull-to-refresh`); the spoked spinner is
-  replaced on Android by Material's `LoadingIndicator`, driven by the same progress. This reverses
-  the note in `use-pull-to-refresh.ts` that one overlay everywhere beats Material's on Android.
+- **Select mode.** `select-pill-bar.android.tsx`: `HorizontalFloatingToolbar`, a single verb in
+  its FAB slot; a lone verb with no staging menu is a FAB alone.
+- **Pull to refresh.** The gesture stays (`use-touch-pull-to-refresh`); the spinner on Android is
+  Material's contained `LoadingIndicator` (`pull-spinner.android.tsx`), its progress written on
+  the UI thread through `@expo/ui`'s observable state while the list is pulled and running free
+  during the refresh. Its host is mounted only for a pull or a refresh.
 
 ### 3. Settings screens
 

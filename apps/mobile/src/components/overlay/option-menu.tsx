@@ -31,9 +31,11 @@ import {
   useAnchoredOverlay,
   useOverlayPresentation,
 } from '@/components/overlay/overlay';
+import { MATERIAL_OPTION_MENUS, type MaterialMenuState } from '@/components/overlay/material-option-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, RowHeight, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
+import { useMenuMount } from '@/hooks/use-menu-mount';
 import { usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { useTitleFontFor } from '@/lib/title-font';
@@ -106,6 +108,7 @@ export function OptionMenuButton({
   icon,
   badge,
   render,
+  material,
 }: {
   testID: string;
   accessibilityLabel: string;
@@ -113,10 +116,15 @@ export function OptionMenuButton({
   /** A dot on the icon — the menu holds a non-default choice that narrows what's shown. */
   badge?: boolean;
   render: () => ReactNode;
+  /** The same menu as Material's dropdown (a `MaterialOptionMenu`), which Android hangs from the
+   *  button in place of the overlay's. */
+  material?: (menu: MaterialMenuState) => ReactNode;
 }) {
   const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
+  const menu = useMenuMount();
+  const dropdown = MATERIAL_OPTION_MENUS ? material : undefined;
   return (
     <Pressable
       testID={testID}
@@ -126,9 +134,10 @@ export function OptionMenuButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       style={[styles.menuButton, hovered && { backgroundColor: theme.backgroundSelected }]}
-      onPress={() => openAt(render, { popover: true })}>
+      onPress={() => (dropdown ? menu.show() : openAt(render, { popover: true }))}>
       {icon}
       {badge && <View style={[styles.menuBadge, { backgroundColor: theme.accent, borderColor: theme.background }]} />}
+      {dropdown && menu.mounted && dropdown({ expanded: menu.expanded, onClose: menu.close })}
     </Pressable>
   );
 }

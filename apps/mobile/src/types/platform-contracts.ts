@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import type * as AddFab from '@/components/add-fab';
+import type * as AddFabAndroid from '@/components/add-fab.android';
 import type * as AddFabIos from '@/components/add-fab.ios';
 import type * as AppTabs from '@/components/app-tabs';
 import type * as AppTabsIos from '@/components/app-tabs.ios';
@@ -11,12 +12,19 @@ import type * as MaterialConfirmAndroid from '@/components/material-confirm.andr
 import type * as MaterialContextMenu from '@/components/material-context-menu';
 import type * as MaterialOverlaySheet from '@/components/overlay/material-overlay-sheet';
 import type * as MaterialOverlaySheetAndroid from '@/components/overlay/material-overlay-sheet.android';
+import type * as MaterialNav from '@/components/material-nav';
+import type * as MaterialNavAndroid from '@/components/material-nav.android';
 import type * as MaterialToast from '@/components/material-toast';
 import type * as MaterialToastAndroid from '@/components/material-toast.android';
 import type * as MaterialContextMenuAndroid from '@/components/material-context-menu.android';
 import type * as OverflowMenu from '@/components/overflow-menu';
 import type * as OverflowMenuAndroid from '@/components/overflow-menu.android';
+import type * as MaterialOptionMenu from '@/components/overlay/material-option-menu';
+import type * as MaterialOptionMenuAndroid from '@/components/overlay/material-option-menu.android';
+import type * as PullSpinner from '@/components/pull-spinner';
+import type * as PullSpinnerAndroid from '@/components/pull-spinner.android';
 import type * as SelectPillBar from '@/components/multi-select/select-pill-bar';
+import type * as SelectPillBarAndroid from '@/components/multi-select/select-pill-bar.android';
 import type * as SelectPillBarIos from '@/components/multi-select/select-pill-bar.ios';
 import type * as ImageProgress from '@/components/reader/image-progress';
 import type * as ImageProgressWeb from '@/components/reader/image-progress.web';
@@ -135,13 +143,18 @@ export type PlatformContracts = [
   Conforms<Drift<typeof ShelfCanvas, typeof ShelfCanvasWeb>>,
   Conforms<Drift<typeof ShelfPictures, typeof ShelfPicturesWeb>>,
   Conforms<Drift<typeof AddFab, typeof AddFabIos>>,
+  Conforms<Drift<typeof AddFab, typeof AddFabAndroid>>,
   Conforms<Drift<typeof AppTabs, typeof AppTabsIos>>,
   Conforms<Drift<typeof SelectPillBar, typeof SelectPillBarIos>>,
+  Conforms<Drift<typeof SelectPillBar, typeof SelectPillBarAndroid>>,
   Conforms<Drift<typeof FloatOver, typeof FloatOverWeb>>,
   Conforms<Drift<typeof OverflowMenu, typeof OverflowMenuAndroid>>,
   Conforms<Drift<typeof MaterialContextMenu, typeof MaterialContextMenuAndroid>>,
   Conforms<Drift<typeof MaterialConfirm, typeof MaterialConfirmAndroid>>,
   Conforms<Drift<typeof MaterialToast, typeof MaterialToastAndroid>>,
+  Conforms<Drift<typeof MaterialOptionMenu, typeof MaterialOptionMenuAndroid>>,
+  Conforms<Drift<typeof PullSpinner, typeof PullSpinnerAndroid>>,
+  Conforms<Drift<typeof MaterialNav, typeof MaterialNavAndroid>>,
   Conforms<Drift<typeof MaterialOverlaySheet, typeof MaterialOverlaySheetAndroid>>,
   Conforms<Drift<typeof ImageProgress, typeof ImageProgressWeb>>,
   Conforms<Drift<typeof DrawLayout, typeof DrawLayoutWeb>>,

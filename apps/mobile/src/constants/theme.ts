@@ -227,7 +227,8 @@ export const Spacing = {
 // (app-tabs.ios.tsx): each tab's safe area already includes it — and is zero where UIKit has moved
 // the bar to the side — so a screen inside a tab reserves nothing beyond its insets. A ROOT
 // overlay's insets know nothing of the iOS bar: it reads `useTabBarClearance` instead.
-export const BottomTabInset = Platform.OS === 'ios' ? 0 : 48;
+// Android's is Material's navigation bar (`MATERIAL_BAR_HEIGHT` in components/material-nav).
+export const BottomTabInset = Platform.select({ ios: 0, android: 64, default: 48 });
 /**
  * Breathing room between a top bar and the first content beneath it — added ON TOP of the bar's own
  * height (which only gets content *clear* of the bar, flush against it).

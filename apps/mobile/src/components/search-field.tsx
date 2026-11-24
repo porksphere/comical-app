@@ -2,6 +2,7 @@ import { useNavigation } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, type TextInputInstance } from 'react-native';
 
+import { MATERIAL_BARS } from '@/components/bar-surface';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { NO_OUTLINE, rowInput } from '@/components/input-style';
 import { ThemedView } from '@/components/themed-view';
@@ -134,8 +135,14 @@ export function SearchField({
   return (
     <ThemedView
       type="backgroundElement"
-      style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
-      <SearchIcon color={theme.textSecondary} size={16} />
+      style={[
+        styles.search,
+        { borderColor: focused && !MATERIAL_BARS ? theme.accent : 'transparent' },
+        // Material's search bar: a step above the bar it stands on, which takes this field's own
+        // tone once content is under it, and no outline for focus.
+        MATERIAL_BARS && { backgroundColor: theme.overlaySurface },
+      ]}>
+      <SearchIcon color={MATERIAL_BARS ? theme.text : theme.textSecondary} size={MATERIAL_BARS ? 20 : 16} />
       <TextInput
         testID={`${testID}.input`}
         ref={inputRef}
@@ -160,7 +167,7 @@ export function SearchField({
           }}
           hitSlop={8}
           accessibilityLabel="Clear search">
-          <ClearIcon color={theme.textSecondary} size={14} />
+          <ClearIcon color={theme.textSecondary} size={MATERIAL_BARS ? 20 : 14} />
         </Pressable>
       )}
     </ThemedView>

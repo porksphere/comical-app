@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
-import { MaterialMenu, MENU_EXIT_MS } from '@/components/material-menu';
+import { MaterialMenu } from '@/components/material-menu';
 import type { OverflowMenuProps } from '@/components/overflow-menu';
 import { Spacing } from '@/constants/theme';
+import { useMenuMount } from '@/hooks/use-menu-mount';
 import { useRipple } from '@/hooks/use-ripple';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -19,19 +20,11 @@ export const OVERFLOW_MENU = true;
 export function OverflowMenu({ rows, testID, label, disabled }: OverflowMenuProps) {
   const theme = useTheme();
   const ripple = useRipple({ borderless: true, radius: 18 });
-  const [open, setOpen] = useState<MenuRowSpec[] | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const exit = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => void (exit.current && clearTimeout(exit.current)), []);
-
+  const menu = useMenuMount();
+  const [open, setOpen] = useState<MenuRowSpec[]>([]);
   const show = () => {
-    if (exit.current) clearTimeout(exit.current);
     setOpen(rows());
-    setExpanded(true);
-  };
-  const close = () => {
-    setExpanded(false);
-    exit.current = setTimeout(() => setOpen(null), MENU_EXIT_MS);
+    menu.show();
   };
 
   return (
@@ -47,7 +40,7 @@ export function OverflowMenu({ rows, testID, label, disabled }: OverflowMenuProp
         style={styles.button}>
         <MoreVerticalIcon color={theme.textSecondary} size={18} />
       </Pressable>
-      {open && <MaterialMenu rows={open} expanded={expanded} onClose={close} />}
+      {menu.mounted && <MaterialMenu rows={open} expanded={menu.expanded} onClose={menu.close} />}
     </View>
   );
 }

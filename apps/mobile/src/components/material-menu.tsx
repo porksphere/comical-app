@@ -8,19 +8,24 @@ import { materialSymbol } from '@/components/icons/material-symbols';
 import { MaterialHost } from '@/components/material-host';
 import { useTheme } from '@/hooks/use-theme';
 
-/** How long Material's menu takes to fade out: what hosts it stays mounted until then. */
-export const MENU_EXIT_MS = 150;
+export { MENU_EXIT_MS } from '@/hooks/use-menu-mount';
 
 const CHECK = require('@/assets/material-symbols/check.xml');
 
 /** A leading `primary` row, then the rest, then the trailing `destructive` rows: the sections the
  *  iOS system menu makes of the same rows (system-context-menu.tsx), divided here. */
-function sections(rows: MenuRowSpec[]): MenuRowSpec[][] {
+function sectionsOf(rows: MenuRowSpec[]): MaterialMenuSection[] {
   const lead = rows[0]?.primary ? 1 : 0;
   let tail = rows.length;
   while (tail > lead && rows[tail - 1]?.destructive) tail--;
-  return [rows.slice(0, lead), rows.slice(lead, tail), rows.slice(tail)].filter((s) => s.length > 0);
+  return [rows.slice(0, lead), rows.slice(lead, tail), rows.slice(tail)].filter((s) => s.length > 0).map((s) => ({ rows: s }));
 }
+
+/** What the menu draws of a row: a `MenuRowSpec` is one. */
+export type MaterialMenuRow = Pick<MenuRowSpec, 'testID' | 'label' | 'onPress'> &
+  Partial<Pick<MenuRowSpec, 'symbol' | 'active' | 'destructive' | 'disabled' | 'loading'>>;
+
+export type MaterialMenuSection = { label?: string; rows: MaterialMenuRow[] };
 
 /**
  * Material's dropdown menu of `MenuRowSpec` rows, hosted from Jetpack Compose. It hangs from the
@@ -31,24 +36,31 @@ function sections(rows: MenuRowSpec[]): MenuRowSpec[][] {
  */
 export function MaterialMenu({
   rows,
+  sections,
   title,
   expanded,
   onClose,
+  staysOpen,
 }: {
-  rows: MenuRowSpec[];
+  rows?: MenuRowSpec[];
+  /** The rows already in sections, each under its label, in place of `rows`. */
+  sections?: MaterialMenuSection[];
   /** What the menu is of, above its rows. */
   title?: string;
   expanded: boolean;
   onClose: () => void;
+  /** A row's press leaves the menu up. */
+  staysOpen?: boolean;
 }) {
   const theme = useTheme();
+  const heading = { disabledTextColor: theme.textSecondary };
   return (
     <MaterialHost style={StyleSheet.absoluteFill}>
       <DropdownMenu expanded={expanded} onDismissRequest={onClose} modifiers={[fillMaxSize()]}>
         <DropdownMenu.Items>
           {title !== undefined && (
             <>
-              <DropdownMenuItem enabled={false} elementColors={{ disabledTextColor: theme.textSecondary }}>
+              <DropdownMenuItem enabled={false} elementColors={heading}>
                 <DropdownMenuItem.Text>
                   <Text>{title}</Text>
                 </DropdownMenuItem.Text>
@@ -56,10 +68,17 @@ export function MaterialMenu({
               <HorizontalDivider />
             </>
           )}
-          {sections(rows).map((section, s) => (
-            <Fragment key={section[0]!.testID}>
+          {(sections ?? sectionsOf(rows ?? [])).map((section, s) => (
+            <Fragment key={section.rows[0]?.testID ?? s}>
               {s > 0 && <HorizontalDivider />}
-              {section.map((row) => {
+              {section.label !== undefined && (
+                <DropdownMenuItem enabled={false} elementColors={heading}>
+                  <DropdownMenuItem.Text>
+                    <Text>{section.label}</Text>
+                  </DropdownMenuItem.Text>
+                </DropdownMenuItem>
+              )}
+              {section.rows.map((row) => {
                 const icon = materialSymbol(row.symbol);
                 return (
                   <DropdownMenuItem
@@ -70,7 +89,7 @@ export function MaterialMenu({
                     }
                     modifiers={[testTag(row.testID)]}
                     onClick={() => {
-                      onClose();
+                      if (!staysOpen) onClose();
                       row.onPress();
                     }}>
                     {icon && (

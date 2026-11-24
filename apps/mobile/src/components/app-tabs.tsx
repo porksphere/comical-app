@@ -14,6 +14,7 @@ import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppSidebar, SidebarGroup, SidebarItem } from '@/components/app-sidebar';
+import { MATERIAL_BAR_HEIGHT, MATERIAL_NAV, MATERIAL_RAIL_WIDTH, MaterialNav } from '@/components/material-nav';
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
 import { SettingsModal } from '@/components/settings/settings-modal';
@@ -363,7 +364,9 @@ export default function AppTabs() {
   const collapsed = navMode === 'rail' || userCollapsed;
   // Collapsed is a STATE, not a width: the dragged width is remembered underneath it, so expanding
   // comes back to what you set rather than to whatever the collapsed rail happened to be.
-  const railWidth = collapsed ? SidebarCollapsedWidth : draggedWidth;
+  // Android's rail at these widths is Material's (see `MaterialNav`), which is its own width.
+  const materialRail = MATERIAL_NAV && navMode === 'rail';
+  const railWidth = materialRail ? MATERIAL_RAIL_WIDTH : collapsed ? SidebarCollapsedWidth : draggedWidth;
   // ONE number for the space the rail takes: it pads the slot AND it is what the content width has
   // subtracted, so the two cannot disagree about how much room the rail took. Recomputing the
   // provider's value from `navInsetFor(width)` instead would drift for exactly one render —
@@ -404,6 +407,11 @@ export default function AppTabs() {
   // off the shared value on the UI thread — no store subscription, no state, and so no render on the
   // frames the bar moves. `tabBarProgress` stays 0 on web, where the opacity fade above hides it
   // instead, and while a desktop viewport shows the top nav there is no bar mounted to move.
+  const pressMaterialTab = useCallback(
+    (name: string, focused: boolean) =>
+      pressTab(name, focused, sidebar, TABS.find((tab) => tab.name === name)?.selectDefault),
+    [sidebar],
+  );
   const slideStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: tabBarProgress.value * tabBarHideOffset.value }],
   }));
@@ -539,6 +547,11 @@ export default function AppTabs() {
           {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
           {sidebar && (
             <Animated.View style={[styles.sidebarWrap, railStyle]}>
+              {materialRail ? (
+                <View style={[styles.materialRail, { marginTop: insets.top }]}>
+                  <MaterialNav rail tabs={TABS} onPress={pressMaterialTab} />
+                </View>
+              ) : (
               <AppSidebar
                 top={insets.top}
                 collapsed={collapsed}
@@ -556,6 +569,7 @@ export default function AppTabs() {
                 }>
                 {sidebarChildren}
               </AppSidebar>
+              )}
               {/* Nothing to drag on an icon rail — its width is the state, not a preference. */}
               {collapsed ? null : <SidebarResizer width={railWidth} viewport={width} />}
             </Animated.View>
@@ -575,6 +589,14 @@ export default function AppTabs() {
                   backgroundColor: theme.background,
                   borderTopColor: theme.barHairline,
                   paddingBottom: Math.max(insets.bottom, Spacing.two),
+                  // Material's bar is a tonal surface with no line over it, and it carries its own
+                  // padding; the surface runs on under the system's navigation bar.
+                  ...(MATERIAL_NAV && {
+                    backgroundColor: theme.backgroundElement,
+                    borderTopWidth: 0,
+                    paddingTop: 0,
+                    paddingBottom: insets.bottom,
+                  }),
                   // Web: fade to a faint ghost (still touchable, so tapping where it sits brings it
                   // back) while scrolling down. Native: slide the whole bar down out of view instead
                   // (`slideStyle`), continuously tracking scroll position X/Twitter-style. Either way
@@ -590,7 +612,13 @@ export default function AppTabs() {
                 // (see onBarLayout) so it stops right at the edge.
                 slideStyle,
               ]}>
-              {triggers}
+              {MATERIAL_NAV ? (
+                <View style={styles.materialBar}>
+                  <MaterialNav tabs={TABS} onPress={pressMaterialTab} />
+                </View>
+              ) : (
+                triggers
+              )}
             </Animated.View>
           )}
 
@@ -773,6 +801,21 @@ function TabPanes({
   );
 }
 
+/** What a press on a tab does before the navigator hears of it, whichever control took it. */
+function pressTab(routeName: string, isFocused: boolean, sidebar: boolean, selectDefault?: () => void) {
+  // Already on this tab: navigation is a no-op, so re-tapping it scrolls its
+  // screen back to the top instead (there's no OS tab bar to give us this for
+  // free anymore - see useScrollToTopOnReselect).
+  if (isFocused) scrollToTopFor(routeName);
+  // Each tab keeps its own panes (lib/pane-tab), so pressing ANOTHER tab comes back to whatever it
+  // had open, scope and all, and leaves the one you were on waiting. Pressing the tab you are on
+  // is going to its front door: its panes close.
+  const returning = !isFocused && hasContentPanes(paneKeyOf(routeName));
+  // Only where the rail is showing the scope this resets — see `selectDefault` on the tab table.
+  if (sidebar && !returning) selectDefault?.();
+  if (isFocused) closeContentPanes();
+}
+
 function TabButton({
   children,
   isFocused,
@@ -808,18 +851,8 @@ function TabButton({
     if (isFocused) setBackdropRecede(!noRecede);
   }, [isFocused, noRecede]);
 
-  // Already on this tab: navigation is a no-op, so re-tapping it scrolls its
-  // screen back to the top instead (there's no OS tab bar to give us this for
-  // free anymore - see useScrollToTopOnReselect).
   const handlePress = (e: GestureResponderEvent) => {
-    if (isFocused) scrollToTopFor(routeName);
-    // Each tab keeps its own panes (lib/pane-tab), so pressing ANOTHER tab comes back to whatever it
-    // had open, scope and all, and leaves the one you were on waiting. Pressing the tab you are on
-    // is going to its front door: its panes close.
-    const returning = !isFocused && hasContentPanes(paneKeyOf(routeName));
-    // Only where the rail is showing the scope this resets — see `selectDefault` on the tab table.
-    if (sidebar && !returning) selectDefault?.();
-    if (isFocused) closeContentPanes();
+    pressTab(routeName, !!isFocused, !!sidebar, selectDefault);
     onPress?.(e);
   };
 
@@ -936,6 +969,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: Spacing.two,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  materialBar: {
+    flex: 1,
+    height: MATERIAL_BAR_HEIGHT,
+  },
+  materialRail: {
+    flex: 1,
   },
   bottomButton: {
     flex: 1,

@@ -1344,6 +1344,20 @@ already in force.
 - **React Native content inside a Compose sheet is in another window.** It needs a
   `GestureHandlerRootView` of its own, and it is sized by `RNHostView matchContents` around a
   view given the window's width.
+- **The tab bar and rail are Compose's** (`modules/material-navigation`, `material-nav.android.tsx`):
+  Expressive's short navigation bar and wide rail, which `@expo/ui` does not ship. The shell still
+  owns the routes, the slide and the reselect. A Compose view of the app's own is measured at
+  exactly its host's size, and a Material container hands that minimum on to its children: wrap
+  the content in a `Box` or every item is as wide as the screen. A local module with a Compose
+  view applies `expo-module-gradle-plugin`, and repeats `@expo/ui`'s Compose versions
+  (`check:android-compose-deps`).
+- **A top bar is Material's, drawn in React Native** (`BarSurface`, `MATERIAL_BARS`): no rule, the
+  page's surface over the top of the page and the container tone once content is under it. That
+  comes from the list, through `ScreenScrollMarker` (the `content-scroll-view` module's Android
+  half), so a new screen's list goes through it on Android as it does on iOS.
+- **A bar control's short menu is Material's dropdown.** Give `OptionMenuButton` a `material`
+  renderer, or hang a `MaterialOptionMenu` under `useMenuMount` (`selector.tsx`), beside the
+  overlay menu web draws.
 - **Web does not move.** A base file keeps web's look; Android's goes in a `.android.tsx` sibling
   or behind the palette.
 

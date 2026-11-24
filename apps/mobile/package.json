@@ -90,6 +90,7 @@
     "check:flow-coverage": "node scripts/check-flow-coverage.mjs",
     "check:route-headers": "node scripts/check-route-headers.mjs",
     "check:android-host-deps": "node scripts/check-android-host-deps.mjs",
+    "check:android-compose-deps": "node scripts/check-android-compose-deps.mjs",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

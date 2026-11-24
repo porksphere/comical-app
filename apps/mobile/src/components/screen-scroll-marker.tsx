@@ -43,7 +43,9 @@ export const ScreenScrollActiveContext = createContext(true);
  * (`automatic`, soft under a bar with a custom title), and the last one set on the scroll view wins,
  * so every tab root sets it hidden there: its bar's material is the backing.
  *
- * On Android and web it renders the child alone.
+ * On Android it is the anchor for one thing: the list's crossings, for the Material bar over it
+ * (`BarSurface`), which takes its container colour once content is under it. On web it renders the
+ * child alone.
  */
 export function ScreenScrollMarker({
   markerKey,
@@ -56,6 +58,19 @@ export function ScreenScrollMarker({
   const active = use(ScreenScrollActiveContext);
   const report = useReportBarScrolled();
   const managed = useBarManaged();
+  if (Platform.OS === 'android') {
+    if (!ContentScrollAnchor) return children;
+    const listens = report && managed === 'list' && active;
+    return (
+      <ContentScrollAnchor
+        key={markerKey}
+        style={styles.fill}
+        scrolledPast={listens ? BAR_SCROLLED_AT : undefined}
+        onScrolledPast={listens ? (e) => report(e.nativeEvent.past) : undefined}>
+        {children}
+      </ContentScrollAnchor>
+    );
+  }
   if (Platform.OS !== 'ios') return children;
   // A tab root's edge is off: its bar's material is the backing, switched by UIKit on the large
   // title's scroll edge, and the system's soft edge fading in under it would half-back the bar.

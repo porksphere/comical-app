@@ -131,6 +131,11 @@ jobs:
         working-directory: apps/mobile
         run: bun run check:android-host-deps
 
+      # The navigation module is composed inside @expo/ui's Host: one Compose, one Material library.
+      - name: Check the navigation module's Compose deps match @expo/ui
+        working-directory: apps/mobile
+        run: bun run check:android-compose-deps
+
       - name: Typecheck
         working-directory: apps/mobile
         run: bun run typecheck

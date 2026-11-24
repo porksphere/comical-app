@@ -2,6 +2,7 @@ import { Pressable, StyleSheet } from 'react-native';
 
 import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
+import { MATERIAL_OPTION_MENUS, MaterialOptionMenu } from '@/components/overlay/material-option-menu';
 import { OptionActionRow, OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { Selector, SelectorCaret, useOptionThumbBox, useSubtitleSelectorStyle } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
@@ -16,6 +17,7 @@ import {
 } from '@/data/selected-collection';
 import type { Collection } from '@/data/types';
 import { useHover } from '@/hooks/use-hover';
+import { useMenuMount } from '@/hooks/use-menu-mount';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 
@@ -40,7 +42,11 @@ export function LibraryCollectionSelector({
   const currentLabel = (value && collections.find((c) => c.id === value)?.name) || ALL_VIEW_NAME;
   const type = useSubtitleSelectorStyle(currentLabel);
   // Rows, not collections: every view plus "Manage collections…".
-  const rowCount = libraryViews(collections).length + 1;
+  const views = libraryViews(collections);
+  const rowCount = views.length + 1;
+  const short = rowCount <= MENU_MAX_ROWS;
+  const menu = useMenuMount();
+  const router = useRouter();
 
   return (
     <Pressable
@@ -49,15 +55,39 @@ export function LibraryCollectionSelector({
       {...handlers}
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
-        openAt(
-          () => <CollectionMenu value={value} collections={collections} onChange={onChange} />,
-          { popover: rowCount <= MENU_MAX_ROWS },
-        )
+        MATERIAL_OPTION_MENUS && short
+          ? menu.show()
+          : openAt(() => <CollectionMenu value={value} collections={collections} onChange={onChange} />, { popover: short })
       }>
       <ThemedText numberOfLines={1} style={[styles.triggerLabel, type.label]}>
         {currentLabel}
       </ThemedText>
       <SelectorCaret size="subtitle" font={type.font} />
+      {menu.mounted && (
+        <MaterialOptionMenu
+          expanded={menu.expanded}
+          onClose={menu.close}
+          sections={[
+            {
+              rows: views.map((v) => ({
+                testID: `library.collection.${v.testKey}`,
+                label: v.name,
+                selected: value === v.id,
+                onPress: () => onChange(v.id),
+              })),
+            },
+            {
+              rows: [
+                {
+                  testID: 'library.collection.manage',
+                  label: 'Manage collections…',
+                  onPress: () => router.push('/manage-collections'),
+                },
+              ],
+            },
+          ]}
+        />
+      )}
     </Pressable>
   );
 }

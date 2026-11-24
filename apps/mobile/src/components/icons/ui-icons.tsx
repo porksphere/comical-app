@@ -1,5 +1,6 @@
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowRight,
   ArrowUp,
   ArrowUpDown,
@@ -117,6 +118,7 @@ export const ChevronUpIcon = ({ color, size = 16 }: IconProps) => <ChevronUp col
 export const ChevronsUpDownIcon = ({ color, size = 16 }: IconProps) => <ChevronsUpDown color={color} size={size} />;
 export const ArrowUpIcon = ({ color, size = 16 }: IconProps) => <ArrowUp color={color} size={size} />;
 export const ArrowDownIcon = ({ color, size = 16 }: IconProps) => <ArrowDown color={color} size={size} />;
+export const ArrowLeftIcon = ({ color, size = 16 }: IconProps) => <ArrowLeft color={color} size={size} />;
 export const ArrowRightIcon = ({ color, size = 16 }: IconProps) => <ArrowRight color={color} size={size} />;
 // Sort affordance — the Library top bar's sort menu trigger.
 export const SortIcon = ({ color, size = 16 }: IconProps) => <ArrowUpDown color={color} size={size} />;

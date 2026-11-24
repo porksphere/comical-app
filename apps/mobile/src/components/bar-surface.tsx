@@ -1,11 +1,23 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, type ViewProps } from 'react-native';
-import Animated, { type AnimatedProps } from 'react-native-reanimated';
+import { Platform, StyleSheet, type ViewProps } from 'react-native';
+import Animated, { interpolateColor, useAnimatedStyle, useDerivedValue, withTiming, type AnimatedProps } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useBarScrolled, useManagesBar } from '@/components/bar-scrolled';
 import { useTheme } from '@/hooks/use-theme';
 import { focusMarks } from '@/lib/focus-nav';
 import { windowDragRegion } from '@/lib/window-controls';
+
+/**
+ * Android's bars are Material's top app bar: no rule under them, the page's surface over the top
+ * of the page and the container tone once content is under them (`bar-scrolled`).
+ */
+export const MATERIAL_BARS = Platform.OS === 'android';
+
+/** The fill of a Material bar with content under it, and of a heading pinned beneath one. */
+export function useRaisedBarFill(): string {
+  return useTheme().backgroundElement;
+}
 
 /**
  * The shell every top bar in the app is built on: the safe-area top padding, the hairline bottom
@@ -43,6 +55,15 @@ export function BarSurface({
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const raisedFill = useRaisedBarFill();
+  const scrolled = useBarScrolled();
+  // A bar stacked under another follows the one above; only that one asks the list to report.
+  useManagesBar(MATERIAL_BARS && safeAreaTop);
+  const raise = useDerivedValue(() => withTiming(scrolled ? 1 : 0, { duration: BAR_FILL_MS }), [scrolled]);
+  const materialFill = useAnimatedStyle(
+    () => ({ backgroundColor: interpolateColor(raise.value, [0, 1], [theme.background, raisedFill]) }),
+    [theme.background, raisedFill],
+  );
   return (
     <Animated.View
       {...chromeMark}
@@ -68,6 +89,8 @@ export function BarSurface({
           borderBottomColor: theme.barHairline,
         },
         style,
+        MATERIAL_BARS && materialFill,
+        MATERIAL_BARS && styles.unruled,
       ]}>
       {children}
     </Animated.View>
@@ -76,8 +99,13 @@ export function BarSurface({
 
 const chromeMark = focusMarks('chrome');
 
+const BAR_FILL_MS = 200;
+
 const styles = StyleSheet.create({
   bar: {
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  unruled: {
+    borderBottomWidth: 0,
   },
 });

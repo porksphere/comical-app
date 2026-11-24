@@ -10,7 +10,10 @@
  * scroll edge effect (iOS 26) where the list is found: for a list react-native-screens can't reach
  * with the screen's own option, a SwiftUI one deep in its host.
  *
- * Null where the module isn't linked (Android, web, a build from before it existed).
+ * On Android it is the `scrolledPast` report alone, for the Material bars' container colour; the
+ * rest is UIKit's and does nothing there.
+ *
+ * Null where the module isn't linked (web, a build from before it existed).
  */
 import { requireNativeView, requireOptionalNativeModule } from 'expo';
 import type { ComponentType, Ref } from 'react';

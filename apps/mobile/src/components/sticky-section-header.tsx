@@ -8,6 +8,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { MATERIAL_BARS, useRaisedBarFill } from '@/components/bar-surface';
 import { useSideInsets } from '@/hooks/use-content-width';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
@@ -296,6 +297,7 @@ export function StickySectionHeader<S extends StickySection>({
   renderHeader: (section: S) => ReactElement;
 }) {
   const theme = useTheme();
+  const raisedFill = useRaisedBarFill();
   // The band runs the list's full width; its heading sits where the list's content does.
   const insets = useSideInsets();
   const bandHeight = contentHeight + bandPadding * 2;
@@ -502,7 +504,7 @@ export function StickySectionHeader<S extends StickySection>({
               // for the frame or two before `shown` re-bases; its taps aren't worth the ambiguity
               // of two live copies of the same heading.
               pointerEvents={i === 1 ? 'box-none' : 'none'}
-              style={[styles.slot, { height: bandHeight, backgroundColor: theme.background }]}>
+              style={[styles.slot, { height: bandHeight, backgroundColor: MATERIAL_BARS ? raisedFill : theme.background }]}>
               {slot ? (
                 <View
                   pointerEvents="box-none"
@@ -521,14 +523,14 @@ export function StickySectionHeader<S extends StickySection>({
         {/* Drawn after the stack, so it is never painted under a band's opaque fill. */}
         <Animated.View
           pointerEvents="none"
-          style={[styles.rule, { backgroundColor: theme.barHairline }, ruleStyle]}
+          style={[styles.rule, { backgroundColor: MATERIAL_BARS ? 'transparent' : theme.barHairline }, ruleStyle]}
         />
       </Animated.View>
       {/* The superseding heading's rule — outside the clip, because the heading it belongs to is
           the list's own row, below the clip and rising. See `nextRuleStyle`. */}
       <Animated.View
         pointerEvents="none"
-        style={[styles.nextRule, { top: stickyTop, backgroundColor: theme.barHairline }, nextRuleStyle]}
+        style={[styles.nextRule, { top: stickyTop, backgroundColor: MATERIAL_BARS ? 'transparent' : theme.barHairline }, nextRuleStyle]}
       />
     </>
   );

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { MaterialOptionMenu } from '@/components/overlay/material-option-menu';
 import { OptionList, useOverlay } from '@/components/overlay/overlay';
 import {
   OptionMenu,
@@ -72,6 +73,20 @@ export function ChoiceMenuButton({
       icon={icon}
       badge={badge}
       render={() => <ChoiceMenu title={title} sections={sections} />}
+      material={(menu) => (
+        <MaterialOptionMenu
+          {...menu}
+          sections={sections.map((section) => ({
+            label: section.label,
+            rows: section.options.map((option) => ({
+              testID: `${section.testID}.${option.value}`,
+              label: option.label,
+              selected: option.value === section.value,
+              onPress: () => section.onChange(option.value),
+            })),
+          }))}
+        />
+      )}
     />
   );
 }

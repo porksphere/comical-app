@@ -21,9 +21,9 @@ import { useTouchPullToRefresh } from '@/hooks/use-touch-pull-to-refresh';
  *    behind the top bar here, and `progressViewOffset` can't fix it — read that hook before
  *    reaching for the native control again.
  *
- * Both are inert off their platforms, so both are called unconditionally. We deliberately use no
- * native `RefreshControl` anywhere: one custom overlay beats the Material control looking different
- * on Android alone.
+ * Both are inert off their platforms, so both are called unconditionally. No native
+ * `RefreshControl` anywhere: the gesture and the overlay are the app's on every platform, and on
+ * Android what the overlay holds is Material's loading indicator (`pull-spinner.android`).
  *
  * `refresh` may close over query objects that change identity every render — it's held in a ref, so
  * the returned `onRefresh` stays stable and the gesture hooks don't resubscribe on every render.

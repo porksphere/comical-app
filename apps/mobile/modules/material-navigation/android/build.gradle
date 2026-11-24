@@ -1,0 +1,38 @@
+buildscript {
+  repositories {
+    mavenCentral()
+  }
+  dependencies {
+    classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${kotlinVersion}")
+  }
+}
+
+apply plugin: 'com.android.library'
+// Not the ExpoModulesCorePlugin.gradle the other local modules apply: a Compose view's definition
+// is built from inline functions that only this plugin's compiler plugin fills in, and without it
+// the module throws as the app starts ("can only be inlined at compilation time").
+apply plugin: 'expo-module-gradle-plugin'
+apply plugin: 'org.jetbrains.kotlin.plugin.compose'
+
+group = 'expo.modules.materialnavigation'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.materialnavigation"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  buildFeatures {
+    compose true
+  }
+}
+
+// The versions @expo/ui builds against: this view is composed inside its Host, so the two are one
+// Compose runtime and one Material library (`check:android-compose-deps` holds them equal).
+dependencies {
+  implementation 'androidx.compose.foundation:foundation-android:1.12.1'
+  implementation 'androidx.compose.ui:ui-android:1.12.1'
+  implementation 'androidx.compose.material3:material3:1.5.0-beta01'
+  implementation 'androidx.compose.material3:material3-android:1.5.0-beta01'
+}

@@ -3,9 +3,10 @@ import type { ComponentProps, ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BarSurface } from '@/components/bar-surface';
+import { BarSurface, MATERIAL_BARS } from '@/components/bar-surface';
 import { useBarScrolled, useManagesBar } from '@/components/bar-scrolled';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
+import { ArrowLeftIcon } from '@/components/icons/ui-icons';
 import { barTitleStyle } from '@/components/native-tab-header';
 import { PaneActions } from '@/components/settings/pane-actions';
 import { ThemedText } from '@/components/themed-text';
@@ -68,7 +69,7 @@ export function TopBar({
   actions?: TopBarAction[];
 }) {
   const theme = useTheme();
-  const ripple = useRipple({ borderless: true });
+  const ripple = useRipple({ borderless: true, radius: 20 });
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const barHeight = useTopBarHeight();
@@ -124,6 +125,33 @@ export function TopBar({
       </>
     );
   }
+  if (MATERIAL_BARS) {
+    // Material's small top app bar: the title at the start, beside the arrow.
+    return (
+      <BarSurface style={[styles.topBar, styles.materialBar, { height: insets.top + barHeight }]}>
+        {left ? (
+          <View style={styles.materialLeft}>{left}</View>
+        ) : (
+          <Pressable
+            testID="top-bar.back"
+            onPress={() => {
+              hapticImpactLight();
+              (onBack ?? (() => router.back()))();
+            }}
+            android_ripple={ripple}
+            style={styles.materialButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go back">
+            <ArrowLeftIcon color={theme.text} size={24} />
+          </Pressable>
+        )}
+        <ThemedText numberOfLines={1} style={styles.materialTitle}>
+          {title}
+        </ThemedText>
+        {trailing}
+      </BarSurface>
+    );
+  }
   return (
     <BarSurface style={[styles.topBar, { height: insets.top + barHeight }]}>
       {left ? (
@@ -167,7 +195,7 @@ export function TopBarButton({
   /** Automation selector — required so every top-bar action is reachable (see src/lib/test-id.ts). */
   testID: string;
 }) {
-  const ripple = useRipple({ borderless: true });
+  const ripple = useRipple({ borderless: true, radius: 20 });
   return (
     <Pressable
       testID={testID}
@@ -175,9 +203,9 @@ export function TopBarButton({
         hapticImpactLight();
         onPress();
       }}
-      hitSlop={12}
+      hitSlop={MATERIAL_BARS ? undefined : 12}
       android_ripple={ripple}
-      style={styles.barButton}
+      style={MATERIAL_BARS ? styles.materialButton : styles.barButton}
       accessibilityRole="button"
       accessibilityLabel={label}>
       {icon}
@@ -248,5 +276,29 @@ const styles = StyleSheet.create({
   },
   title: {
     maxWidth: '70%',
+  },
+  materialBar: {
+    justifyContent: 'flex-start',
+    paddingHorizontal: Spacing.one,
+  },
+  materialLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    paddingLeft: Spacing.three,
+  },
+  materialButton: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Material's title-large.
+  materialTitle: {
+    flex: 1,
+    marginHorizontal: Spacing.two,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '400',
   },
 });

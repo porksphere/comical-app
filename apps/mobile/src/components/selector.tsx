@@ -3,10 +3,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { CaretDownIcon } from '@/components/icons/ui-icons';
 import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { MATERIAL_OPTION_MENUS, MaterialOptionMenu } from '@/components/overlay/material-option-menu';
 import { OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
+import { useMenuMount } from '@/hooks/use-menu-mount';
 import { useCompactType, usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
@@ -84,6 +86,8 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
   const shown = labels?.[value] ?? value;
   const subtitle = useSubtitleSelectorStyle(shown);
   const font = size === 'subtitle' ? subtitle.font : undefined;
+  const menu = useMenuMount();
+  const short = options.length <= MENU_MAX_ROWS;
   return (
     <Pressable
       testID={testID}
@@ -91,6 +95,7 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
       {...handlers}
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
+        MATERIAL_OPTION_MENUS && short ? menu.show() :
         openAt(
           () => (
             <SelectMenu
@@ -108,7 +113,7 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
           // the platform reaches for when a bar control changes what it is set to. A long one
           // (plenty of installed bridges) stays a sheet, because a menu that scrolls is a list
           // wearing a menu's chrome.
-          { popover: options.length <= MENU_MAX_ROWS },
+          { popover: short },
         )
       }>
       <ThemedText
@@ -118,6 +123,22 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
         {shown}
       </ThemedText>
       <SelectorCaret size={size} font={font} />
+      {menu.mounted && (
+        <MaterialOptionMenu
+          expanded={menu.expanded}
+          onClose={menu.close}
+          sections={[
+            {
+              rows: options.map((opt) => ({
+                testID: testId(testID, 'option', opt),
+                label: labels?.[opt] ?? opt,
+                selected: opt === value,
+                onPress: () => onChange(opt),
+              })),
+            },
+          ]}
+        />
+      )}
     </Pressable>
   );
 }
