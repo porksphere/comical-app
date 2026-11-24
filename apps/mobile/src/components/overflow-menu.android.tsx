@@ -9,6 +9,7 @@ import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { MaterialHost } from '@/components/material-host';
 import type { OverflowMenuProps } from '@/components/overflow-menu';
 import { Spacing } from '@/constants/theme';
+import { useRipple } from '@/hooks/use-ripple';
 import { useTheme } from '@/hooks/use-theme';
 
 // How long Material's menu takes to fade out; the host it hangs from stays until then.
@@ -25,6 +26,7 @@ export const OVERFLOW_MENU = true;
  */
 export function OverflowMenu({ rows, testID, label, disabled }: OverflowMenuProps) {
   const theme = useTheme();
+  const ripple = useRipple({ borderless: true, radius: 18 });
   const [open, setOpen] = useState<MenuRowSpec[] | null>(null);
   const [expanded, setExpanded] = useState(false);
   const exit = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,7 +50,7 @@ export function OverflowMenu({ rows, testID, label, disabled }: OverflowMenuProp
         disabled={disabled}
         hitSlop={8}
         onPress={show}
-        android_ripple={{ color: theme.backgroundSelected, borderless: true, radius: 18 }}
+        android_ripple={ripple}
         style={styles.button}>
         <MoreVerticalIcon color={theme.textSecondary} size={18} />
       </Pressable>

@@ -7,7 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
-import { useTheme } from '@/hooks/use-theme';
+import { useRipple } from '@/hooks/use-ripple';
 import { hapticSelection } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
@@ -50,7 +50,7 @@ export function useBrowseRegistry(): (() => void) | null {
 function RegistryPicker() {
   const ds = useDataSource();
   const router = useRouter();
-  const theme = useTheme();
+  const ripple = useRipple({ foreground: true });
   const { closeTop } = useOverlay();
   // Already cached by useBrowseRegistry above — this just reads the same key.
   const { data: registries } = useQuery({
@@ -71,7 +71,7 @@ function RegistryPicker() {
               closeTop();
               router.push({ pathname: '/registry-browse', params: { url: r.url } });
             }}
-            android_ripple={{ color: theme.backgroundSelected }}
+            android_ripple={ripple}
             style={styles.pressableCursor}>
             <ThemedView type="backgroundElement" style={styles.pickerRow}>
               <View style={styles.rowText}>

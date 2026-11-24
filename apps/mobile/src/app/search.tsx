@@ -47,6 +47,7 @@ import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
+import { useRipple } from '@/hooks/use-ripple';
 import { useTheme } from '@/hooks/use-theme';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { hapticImpactLight } from '@/lib/haptics';
@@ -109,6 +110,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
+  const backRipple = useRipple({ borderless: true });
   const router = useRouter();
   const openLink = useOpenLink();
   const insets = useSafeAreaInsets();
@@ -740,7 +742,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
             testID="search.back"
             onPress={goBack}
             hitSlop={12}
-            android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+            android_ripple={backRipple}
             accessibilityRole="button"
             accessibilityLabel="Go back"
             style={[styles.edgeBack, { height: barHeight }]}>

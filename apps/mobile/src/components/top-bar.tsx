@@ -13,6 +13,7 @@ import { Spacing } from '@/constants/theme';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useInSettingsPane } from '@/lib/settings-pane';
+import { useRipple } from '@/hooks/use-ripple';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
@@ -67,6 +68,7 @@ export function TopBar({
   actions?: TopBarAction[];
 }) {
   const theme = useTheme();
+  const ripple = useRipple({ borderless: true });
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const barHeight = useTopBarHeight();
@@ -134,7 +136,7 @@ export function TopBar({
             (onBack ?? (() => router.back()))();
           }}
           hitSlop={12}
-          android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+          android_ripple={ripple}
           style={[styles.backButton, { height: barHeight }]}
           accessibilityRole="button"
           accessibilityLabel="Go back">
@@ -165,7 +167,7 @@ export function TopBarButton({
   /** Automation selector — required so every top-bar action is reachable (see src/lib/test-id.ts). */
   testID: string;
 }) {
-  const theme = useTheme();
+  const ripple = useRipple({ borderless: true });
   return (
     <Pressable
       testID={testID}
@@ -174,7 +176,7 @@ export function TopBarButton({
         onPress();
       }}
       hitSlop={12}
-      android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+      android_ripple={ripple}
       style={styles.barButton}
       accessibilityRole="button"
       accessibilityLabel={label}>

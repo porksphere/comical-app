@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
+import { useRipple } from '@/hooks/use-ripple';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
@@ -26,6 +27,7 @@ export type MultiSelectProps = {
  *  is the overlay's on every platform: a system menu can't hold several checks. */
 export function MultiSelectRow({ label, description, value, options, onChange, testID }: MultiSelectProps) {
   const theme = useTheme();
+  const ripple = useRipple();
   const { ref, openAt } = useAnchoredOverlay();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
@@ -38,7 +40,7 @@ export function MultiSelectRow({ label, description, value, options, onChange, t
       }}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
-      android_ripple={{ color: theme.backgroundSelected }}
+      android_ripple={ripple}
       style={styles.pressableCursor}>
       <View style={[settingsRowFrame.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
         <View style={settingsRowFrame.text}>
@@ -107,6 +109,7 @@ export function MultiSelectPicker({ label, value, options, onChange, testID }: O
 
 function Option({ label, on, onPress, testID }: { label: string; on: boolean; onPress: () => void; testID: string }) {
   const theme = useTheme();
+  const ripple = useRipple({ foreground: true });
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <Pressable
@@ -117,7 +120,7 @@ function Option({ label, on, onPress, testID }: { label: string; on: boolean; on
       }}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
-      android_ripple={{ color: theme.backgroundSelected }}
+      android_ripple={ripple}
       style={styles.pressableCursor}>
       <ThemedView type={hovered ? 'backgroundSelected' : 'backgroundElement'} style={styles.row}>
         <ThemedText>{label}</ThemedText>

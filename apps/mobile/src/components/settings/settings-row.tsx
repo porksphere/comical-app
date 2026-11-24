@@ -6,6 +6,7 @@ import { HOVER_RAIL_FADE, HoverRailContext } from '@/components/settings/hover-r
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, SettingsCardInset, SettingsCardRadius, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
+import { useRipple } from '@/hooks/use-ripple';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
@@ -184,6 +185,7 @@ export function SettingsRow({
   disabled?: boolean;
 }) {
   const theme = useTheme();
+  const ripple = useRipple();
   const { hovered, onHoverIn: markHovered, onHoverOut: markUnhovered } = useHovered();
   // Web, inside a hover rail: the row stays lit while the pointer is on the rail's buttons (siblings,
   // so its own hover has ended), and its trailing slot fades out under them as they fade in.
@@ -252,7 +254,7 @@ export function SettingsRow({
         markUnhovered();
         onHoverOut?.();
       }}
-      android_ripple={{ color: theme.backgroundSelected }}
+      android_ripple={ripple}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!disabled }}>

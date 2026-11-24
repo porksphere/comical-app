@@ -22,6 +22,7 @@ import { CheckIcon } from '@/components/icons/ui-icons';
 import { settingsRowFrame } from '@/components/settings/settings-row';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useRipple } from '@/hooks/use-ripple';
 import { useTheme } from '@/hooks/use-theme';
 
 /** The fill/ring snap — near-instant, the direct response to the tap. */
@@ -104,6 +105,7 @@ export function SelectableRow({
   testID?: string;
 }) {
   const theme = useTheme();
+  const ripple = useRipple();
   const inner = (
     <>
       <SelectCircle selected={selected} done={done} />
@@ -119,7 +121,7 @@ export function SelectableRow({
           onPress={done ? undefined : onToggle}
           onLongPress={onLongPress}
           disabled={done}
-          android_ripple={variant === 'list' ? { color: theme.backgroundSelected } : undefined}
+          android_ripple={variant === 'list' ? ripple : undefined}
           style={done && styles.done}>
           {({ pressed }) =>
             variant === 'list' ? (

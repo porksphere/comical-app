@@ -5,6 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
+import { RIPPLES, useRipple } from '@/hooks/use-ripple';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { tagPaletteFor, type TagColor } from '@/lib/tag-colors';
 import { testId } from '@/lib/test-id';
@@ -99,6 +100,7 @@ export function PressableChip({
   testID: string;
 }) {
   const { hovered, onHoverIn, onHoverOut } = useHovered();
+  const ripple = useRipple({ foreground: true });
   return (
     <Pressable
       testID={testID}
@@ -108,7 +110,8 @@ export function PressableChip({
       hitSlop={hitSlop}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      style={({ pressed }) => pressed && styles.chipPressed}>
+      android_ripple={ripple}
+      style={({ pressed }) => [styles.chipPress, pressed && !RIPPLES && styles.chipPressed]}>
       <Chip label={label} accent={accent} color={color} highlighted={hovered} />
     </Pressable>
   );
@@ -303,6 +306,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
+  },
+  // The capsule again, on the pressable: what clips Android's ripple to the chip.
+  chipPress: {
+    borderRadius: 999,
+    overflow: 'hidden',
   },
   chipHighlighted: {
     opacity: 0.8,

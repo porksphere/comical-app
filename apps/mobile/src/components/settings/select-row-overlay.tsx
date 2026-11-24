@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useIsCompact } from '@/hooks/use-responsive';
+import { useRipple } from '@/hooks/use-ripple';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
@@ -55,6 +56,7 @@ export function SettingsSelectRow<T extends string>({
   testID,
 }: SettingsSelectRowProps<T>) {
   const theme = useTheme();
+  const ripple = useRipple();
   const { ref, openAt } = useAnchoredOverlay();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const current = options.find((o) => o.value === value);
@@ -73,7 +75,7 @@ export function SettingsSelectRow<T extends string>({
       }}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
-      android_ripple={{ color: theme.backgroundSelected }}
+      android_ripple={ripple}
       style={styles.pressableCursor}>
       <View style={[settingsRowFrame.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
         <View style={settingsRowFrame.text}>
@@ -122,6 +124,7 @@ function SelectPicker<T extends string>({
 }) {
   const { closeTop } = useOverlay();
   const theme = useTheme();
+  const ripple = useRipple({ foreground: true });
   return (
     <View style={styles.pickerBody}>
       <MeasuredHeading>{heading}</MeasuredHeading>
@@ -135,7 +138,7 @@ function SelectPicker<T extends string>({
               onChange(opt.value);
               closeTop();
             }}
-            android_ripple={{ color: theme.backgroundSelected }}
+            android_ripple={ripple}
             style={styles.pressableCursor}>
             <ThemedView type="backgroundElement" style={styles.pickerRow}>
               {opt.thumbnail !== undefined && (
