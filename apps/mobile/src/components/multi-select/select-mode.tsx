@@ -24,10 +24,11 @@ import { useEffect, useRef, useState } from 'react';
 
 import { openContextMenu } from '@/components/context-menu-host';
 import { ANDROID_BLUR, type MenuRowSpec } from '@/components/context-menu-material';
+import type { MenuSymbol } from '@/components/icons/material-symbols';
 import type { IconProps } from '@/components/icons/ui-icons';
 import { SelectModeIcon, SelectOptionsIcon } from '@/components/icons/ui-icons';
 import { SelectCircle } from '@/components/multi-select/selectable-row';
-import type { BarSymbol, TopBarAction } from '@/components/top-bar';
+import type { TopBarAction } from '@/components/top-bar';
 import { Spacing } from '@/constants/theme';
 import { useWindowSize } from '@/hooks/use-window-size';
 import { hapticSelection } from '@/lib/haptics';
@@ -428,7 +429,7 @@ export interface SelectVerb {
   Icon: (props: IconProps) => ReactElement;
   /** The SF Symbol the iOS toolbar draws for `Icon` (`select-pill-bar.ios.tsx`); the label
    *  stands in without one. */
-  symbol?: BarSymbol;
+  symbol?: MenuSymbol;
   /** The verb's accent — see the interface doc. Omit for the default icon colour. */
   color?: string;
   onPress: () => void;

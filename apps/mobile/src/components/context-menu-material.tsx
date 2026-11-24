@@ -17,6 +17,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import type { MenuSymbol } from '@/components/icons/material-symbols';
 import { CheckIcon, ChevronRightIcon, type IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -80,7 +81,7 @@ export type MenuRowSpec = {
   /** Fill the glyph rather than tint it — how an "on" toggle reads (see above). */
   iconFilled?: boolean;
   /** The SF Symbol the iOS system menu draws for `Icon` (components/system-context-menu.tsx). */
-  symbol?: string;
+  symbol?: MenuSymbol;
   loading: boolean;
   /** Unavailable (e.g. favorites need a login that isn't set) — greyed + inert, like loading but final. */
   disabled?: boolean;

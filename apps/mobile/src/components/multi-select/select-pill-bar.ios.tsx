@@ -1,7 +1,6 @@
 import { Stack } from 'expo-router';
 
 import type { SelectPillBarProps } from '@/components/multi-select/select-mode';
-import type { BarSymbol } from '@/components/top-bar';
 import { useHidesNativeTabBar } from '@/lib/native-tab-bar';
 
 /**
@@ -27,7 +26,7 @@ export function SelectPillBar({ verbs, options }: SelectPillBarProps) {
           {rows.map((row) => (
             <Stack.Toolbar.MenuAction
               key={row.testID}
-              icon={row.symbol as BarSymbol | undefined}
+              icon={row.symbol}
               disabled={row.disabled || row.loading}
               isOn={row.active}
               destructive={row.destructive}
