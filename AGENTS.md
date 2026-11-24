@@ -1331,6 +1331,19 @@ already in force.
   a menu row or select verb names with a drawable, and types those fields by its keys: a new
   symbol needs its drawable (Google's Rounded, weight 400, 24dp, the `tint` attribute taken off)
   or the typecheck fails.
+- **What pops up is Compose's.** A menu of `MenuRowSpec` rows is `MaterialMenu`; an
+  `openContextMenu` request, an `openConfirm`, a `showToast` and an overlay sheet each have an
+  `.android.tsx` renderer beside a base stub (`material-context-menu`, `material-confirm`,
+  `material-toast`, `overlay/material-overlay-sheet`), picked by their host. A new surface of
+  these kinds goes through the same call, never a view of its own. The host of a dialog, a sheet
+  or a menu at a point is a 1pt view in the page: the surface is a window of its own.
+- **A Compose view takes a call only once it has composed.** A function on a ref
+  (`showSnackbar`, `hide`) asked for in the mount effect is refused with a cast error: the
+  handler is registered during composition, a frame or more later. Ask again
+  (`material-toast.android.tsx`), or ask only from something that happens later.
+- **React Native content inside a Compose sheet is in another window.** It needs a
+  `GestureHandlerRootView` of its own, and it is sized by `RNHostView matchContents` around a
+  view given the window's width.
 - **Web does not move.** A base file keeps web's look; Android's goes in a `.android.tsx` sibling
   or behind the palette.
 

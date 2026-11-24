@@ -132,26 +132,46 @@ Moved out of this phase, because each needs a device to judge:
 - The navigation bar's contrast on gesture and three-button devices: to be looked at on the first
   dev-client build.
 
-### 1. What pops up
+### 1. What pops up (built)
 
-Lowest layout risk, largest change in feel; everything here mounts on demand.
+Lowest layout risk, largest change in feel; everything here mounts on demand. Each surface is a
+platform pair: a base stub and an `.android.tsx` the host picks on Android.
 
-- **Menus.** `overflow-menu.android.tsx`'s menu becomes a root `MaterialMenuHost` that draws any
-  `MenuRowSpec[]` at an anchor: hold menus, the select mode's staging menu, the Browse and Library
-  title selectors, sort and filter, and the settings select row (replacing the anchored overlay
-  picker on Android). Submenus nest. A `primary` row and trailing `destructive` rows are sectioned
-  with dividers.
-- **Sheets.** The overlay's phone sheet becomes Compose's `ModalBottomSheet` holding the same
-  content through `RNHostView`; `useOverlay`'s API does not change. The pushback (the app scaling
-  to 0.93 behind a sheet) goes on Android. The sheet has two resting heights, not arbitrary
-  detents. The filter editors and the collection picker come with it.
-- **Dialogs.** `confirm-popup` is an `AlertDialog` on Android.
-- **Snackbar.** `toast` is a `Snackbar` on Android, which also gives a toast an action.
-- **Reader settings.** `settings-panel.android.tsx`: `reader-settings-form.ts` drawn as one
-  Compose column in that sheet — a choice as a segmented button row, a toggle as a switch, a
-  stepper as the slider it already is. This is the first whole form in Compose and the
-  **spike** for phase 3: its mount time and scrolling on a mid-range phone decide how far the
-  settings screens go.
+- **Menus.** `MaterialMenu` (`components/material-menu.tsx`) draws any `MenuRowSpec[]` as
+  Material's dropdown, hung from the view it is laid over; a `primary` row and trailing
+  `destructive` rows are divided off, and an `active` row is checked. The chapter row's ⋮ and
+  every `openContextMenu` request (`material-context-menu.android.tsx`: hold menus, the select
+  mode's staging menu) use it. Nothing is peeked under a held finger on Android: the menu opens
+  and a row is tapped.
+- **Sheets.** An overlay item that is a sheet is Compose's `ModalBottomSheet` holding the same
+  React Native content through `RNHostView` (`overlay/material-overlay-sheet.android.tsx`);
+  `useOverlay`'s API does not change. The page neither dims nor scales back under one. The
+  settings select row, the filter editors and the reader's settings all arrive this way.
+- **Dialogs.** `confirm-popup` is an `AlertDialog` (`material-confirm.android.tsx`), the verb and
+  Cancel its two text buttons; `useConfirmRun` is the async and error handling both renderers
+  share.
+- **Snackbar.** `toast` is a `Snackbar` (`material-toast.android.tsx`), with Material's two
+  lengths in place of the request's own.
+- **Reader settings.** `reader-settings-fields.android.tsx`: `reader-settings-form.ts` drawn as
+  one Compose column inside the sheet — a choice as segmented buttons, a toggle as Material's
+  switch, a stepper as the slider.
+
+What the reader settings showed for phase 3 (the **spike**): a Compose column sized to its content
+(`matchContents`) inside a React Native scroller works. It lays out, its controls take taps, and
+the scroller scrolls with a finger on it. How long it takes to mount could not be judged on
+software emulation and still has to be timed on a phone.
+
+Moved out of this phase:
+
+- The Browse and Library title selectors and the sort and filter menus (to phase 2): they are
+  option lists with thumbnails and sections, not `MenuRowSpec` rows, and hang from the bars that
+  phase redraws. On a phone they are still the app's own popover, or a Material sheet when long.
+- The collection picker: a floating card of its own, not an overlay item. It is opaque now and
+  otherwise unchanged.
+
+Not checked: the mobile Maestro flows against these surfaces (each control keeps its id as a
+Compose test tag, and `confirm.cancel` is now the Cancel button, not the backdrop), and whether a
+drag down from the top of a sheet's list takes the sheet with it.
 
 ### 2. The shell
 
@@ -257,6 +277,13 @@ is obvious:
   thread segfaulted on Browse and the series page. `-feature -Vulkan` as well: the home
   bookshelf's WebGPU device took the emulator down, and without Vulkan the app shows the rails in
   its place.
+- **Memory:** an incremental rebuild fits beside the running emulator; a typecheck or lint
+  beside a build does not. One heavy thing at a time.
+- **Taps are slow to land.** `adb shell input` takes seconds to start, so a chain of taps fired
+  blind lands on whatever the screen has become. Capture after each step and aim the next from
+  the capture; a toast has to be caught with a burst of captures started with the tap.
+- **Logs:** `console.warn` in a release build reaches `adb logcat` under `ReactNativeJS`, which is
+  the quickest way to see why something native-facing did nothing.
 - **Quiet:** `settings put global hide_error_dialogs 1` (the system raises "isn't responding"
   dialogs at this speed), animations scaled to 0, and `pm disable com.android.bluetooth`, which
   otherwise restarts in a loop.
