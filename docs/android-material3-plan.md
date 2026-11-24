@@ -236,6 +236,35 @@ React Native views throughout; this is tokens, shape and motion.
 - **Nothing here can be checked without a device.** The emulator in CI is software-rendered and
   slow; the dev-client workflow in phase 0 exists for that.
 
+## Looking at it without a device
+
+Each phase is screenshotted on a local emulator, including on a machine with no hardware
+virtualization (a cloud container), where it is slow but works. What that takes, since none of it
+is obvious:
+
+- **The build:** `expo prebuild --platform android`, then
+  `./gradlew assembleRelease -PreactNativeArchitectures=x86_64` with
+  `EXPO_PUBLIC_COMICAL_DEMO_MODE=1` (mock data, no server) and `SENTRY_DISABLE_AUTO_UPLOAD=true`.
+  One ABI is about a third of the native compile: 27 minutes cold on four cores, three for a
+  JS-only change. Don't run the emulator beside a cold build; together they ran out of memory.
+- **The image:** `system-images;android-34;aosp_atd;x86_64`. It boots in under five minutes on
+  software CPU emulation, which the emulator only does with `ANDROID_I_WANT_MY_TCG=yes` and
+  `-accel off`.
+- **It draws nothing until told to:** the ATD images ship with
+  `debug.hwui.drawing_enabled` off, so every capture is black until
+  `adb shell setprop debug.hwui.drawing_enabled 1` (before the app starts; it resets each boot).
+- **The renderer:** `-gpu swangle_indirect`. On `swiftshader_indirect` the emulator's own render
+  thread segfaulted on Browse and the series page. `-feature -Vulkan` as well: the home
+  bookshelf's WebGPU device took the emulator down, and without Vulkan the app shows the rails in
+  its place.
+- **Quiet:** `settings put global hide_error_dialogs 1` (the system raises "isn't responding"
+  dialogs at this speed), animations scaled to 0, and `pm disable com.android.bluetooth`, which
+  otherwise restarts in a loop.
+- **Covers** need the machine's outbound proxy CA trusted by the emulator, where there is one:
+  as root, the certificate at `/data/misc/user/0/cacerts-added/<subject_hash_old>.0`. The app
+  trusts user CAs (`with-user-server-network`).
+- Expect a tap to take half a minute to land, and the app two to three minutes to start.
+
 ## Not in this plan
 
 - A native top app bar. It waits on expo-router rendering react-native-screens' Stack v5.
