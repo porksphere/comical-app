@@ -548,30 +548,33 @@ export default function AppTabs() {
           {sidebar && (
             <Animated.View style={[styles.sidebarWrap, railStyle]}>
               {materialRail ? (
-                <View style={[styles.materialRail, { marginTop: insets.top }]}>
-                  <MaterialNav rail tabs={TABS} onPress={pressMaterialTab} />
+                // The rail's own surface carried up under the status bar, which the rail stands below.
+                <View style={[styles.materialRail, { paddingTop: insets.top, backgroundColor: theme.background }]}>
+                  <View style={styles.materialRail}>
+                    <MaterialNav rail tabs={TABS} onPress={pressMaterialTab} />
+                  </View>
                 </View>
               ) : (
-              <AppSidebar
-                top={insets.top}
-                collapsed={collapsed}
-                collapsible={navMode === 'sidebar'}
-                settingsButton={
-                  SETTINGS_AS_MODAL
-                    ? {
-                        testID: 'sidebar.settings',
-                        label: 'Settings',
-                        onPress: openSettingsModal,
-                        icon: <Settings size={20} color={theme.textSecondary} />,
-                        badge: <SettingsTabBadge />,
-                      }
-                    : undefined
-                }>
-                {sidebarChildren}
-              </AppSidebar>
+                <AppSidebar
+                  top={insets.top}
+                  collapsed={collapsed}
+                  collapsible={navMode === 'sidebar'}
+                  settingsButton={
+                    SETTINGS_AS_MODAL
+                      ? {
+                          testID: 'sidebar.settings',
+                          label: 'Settings',
+                          onPress: openSettingsModal,
+                          icon: <Settings size={20} color={theme.textSecondary} />,
+                          badge: <SettingsTabBadge />,
+                        }
+                      : undefined
+                  }>
+                  {sidebarChildren}
+                </AppSidebar>
               )}
               {/* Nothing to drag on an icon rail — its width is the state, not a preference. */}
-              {collapsed ? null : <SidebarResizer width={railWidth} viewport={width} />}
+              {collapsed || materialRail ? null : <SidebarResizer width={railWidth} viewport={width} />}
             </Animated.View>
           )}
 
