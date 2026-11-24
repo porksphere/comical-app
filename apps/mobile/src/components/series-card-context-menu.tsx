@@ -1,7 +1,6 @@
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { usePathname } from 'expo-router';
-import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { Platform, StyleSheet, View } from 'react-native';
@@ -60,6 +59,7 @@ import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme } from '@/hooks/use-theme';
 import { useWindowSize } from '@/hooks/use-window-size';
 import { useDismissKey } from '@/lib/dismiss-key';
+import { hapticImpactMedium, hapticSelection } from '@/lib/haptics';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { largeCoverRadius } from '@/lib/book-cover';
 import { useRouter } from '@/lib/nav';
@@ -94,7 +94,7 @@ const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
  * ticks are punctuation, not the sentence.
  */
 function selectionTick(): void {
-  void Haptics.selectionAsync();
+  hapticSelection();
 }
 // Every motion in this popup is a spring, and they're all tuned around the same two numbers, because
 // those are the two things you actually feel:
@@ -323,7 +323,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const resolvedCover = useResolvedAsset(entry.cover);
 
   useEffect(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); // fire immediately — the press must feel instant
+    hapticImpactMedium(); // fire immediately — the press must feel instant
     // Nothing to wait for without a cover; otherwise the cover's onLoad drives the open, with this as a
     // fallback so a missing/failed decode still opens the menu.
     if (!entry.cover) {

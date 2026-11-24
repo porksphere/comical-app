@@ -21,7 +21,6 @@
  * one menu on every platform.
  */
 import { observable, ObservableHint, type OpaqueObject } from '@legendapp/state';
-import * as Haptics from 'expo-haptics';
 import {
   useCallback,
   useEffect,
@@ -67,6 +66,7 @@ import {
 } from '@/components/context-menu-material';
 import { useWindowSize } from '@/hooks/use-window-size';
 import { useDismissKey } from '@/lib/dismiss-key';
+import { hapticImpactLight, hapticImpactMedium, hapticSelection } from '@/lib/haptics';
 import { isTypingTarget } from '@/lib/key-hold';
 import { moveDirectionOf, readerScopeActive } from '@/lib/keybindings';
 import { HOLD_ARM_DISTANCE } from '@/lib/series-card-menu';
@@ -192,7 +192,7 @@ export function installMenuKeys(): void {
 }
 
 function selectionTick(): void {
-  void Haptics.selectionAsync();
+  hapticSelection();
 }
 
 /**
@@ -345,7 +345,7 @@ function HostMenu({ req, rows: specs }: { req: ContextMenuRequest; rows: MenuRow
 
   useEffect(() => {
     // The hold pays off with the card popup's medium thump; a plain button tap gets a light tick.
-    void Haptics.impactAsync(fixed ? Haptics.ImpactFeedbackStyle.Light : Haptics.ImpactFeedbackStyle.Medium);
+    (fixed ? hapticImpactLight : hapticImpactMedium)();
     progress.set(withSpring(1, OPEN_SPRING));
   }, [progress, fixed]);
   useDismissKey(dismiss);

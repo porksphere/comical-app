@@ -7,15 +7,26 @@ function webVibrate(ms: number) {
   if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(ms);
 }
 
+// On Android the app asks for the system's own feedback effects, which follow the user's touch
+// feedback setting and each device's tuning; expo-haptics' selection and impact calls there are raw
+// vibrator waveforms that do neither. These four are on every Android version, lightest to heaviest:
+// a texture tick, a tick, a click and a heavy click.
+const ANDROID = Platform.OS === 'android';
+function androidHaptic(type: Haptics.AndroidHaptics) {
+  void Haptics.performAndroidHapticsAsync(type);
+}
+
 /** Light tick for discrete selections — picking an option, flipping a switch. */
 export function hapticSelection() {
   if (Platform.OS === 'web') return webVibrate(5);
+  if (ANDROID) return androidHaptic(Haptics.AndroidHaptics.Clock_Tick);
   void Haptics.selectionAsync();
 }
 
 /** Soft impact — the faintest single beat, for the bottom of a ramp. */
 export function hapticImpactSoft() {
   if (Platform.OS === 'web') return webVibrate(4);
+  if (ANDROID) return androidHaptic(Haptics.AndroidHaptics.Clock_Tick);
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
 }
 
@@ -23,6 +34,7 @@ export function hapticImpactSoft() {
  *  threshold. */
 export function hapticImpactLight() {
   if (Platform.OS === 'web') return webVibrate(8);
+  if (ANDROID) return androidHaptic(Haptics.AndroidHaptics.Context_Click);
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 }
 
@@ -30,6 +42,7 @@ export function hapticImpactLight() {
  *  card menu's open thump, so every hold in the app answers with the same weight). */
 export function hapticImpactMedium() {
   if (Platform.OS === 'web') return webVibrate(12);
+  if (ANDROID) return androidHaptic(Haptics.AndroidHaptics.Virtual_Key);
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 }
 
@@ -62,5 +75,6 @@ export function createTickHaptic(tick: () => void = hapticImpactLight, minMs: nu
  *  read as a weird double-buzz at the top of the ramp. */
 export function hapticImpactHeavy() {
   if (Platform.OS === 'web') return webVibrate(20);
+  if (ANDROID) return androidHaptic(Haptics.AndroidHaptics.Long_Press);
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 }

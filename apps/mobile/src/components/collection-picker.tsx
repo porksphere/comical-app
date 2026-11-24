@@ -11,7 +11,6 @@
  * files the item into it. Tapping the backdrop or Done dismisses back to whatever is underneath.
  */
 import { BlurView } from 'expo-blur';
-import * as Haptics from 'expo-haptics';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 import Animated, {
@@ -129,7 +128,7 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
   };
 
   useEffect(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpactLight();
     progress.set(withSpring(1, OPEN_SPRING));
   }, [progress]);
   // Backs out one step: the name being typed, else the picker.

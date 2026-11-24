@@ -12,7 +12,6 @@
  * `friendlyError` + `errorFallback`) so the user can retry or cancel.
  */
 import { BlurView } from 'expo-blur';
-import * as Haptics from 'expo-haptics';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -38,6 +37,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { useDismissKey } from '@/lib/dismiss-key';
+import { hapticImpactLight } from '@/lib/haptics';
 import { friendlyError } from '@/lib/friendly-error';
 import { windowModalLayer } from '@/lib/window-controls';
 
@@ -151,7 +151,7 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
   };
 
   useEffect(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpactLight();
     progress.set(withSpring(1, OPEN_SPRING));
   }, [progress]);
   useDismissKey(dismiss);
