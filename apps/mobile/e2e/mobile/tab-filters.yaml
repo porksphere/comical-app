@@ -6,8 +6,8 @@
 #   - <tab>.search.input     the field (SearchField puts `${testID}.input` on the TextInput)
 #   - <tab>.search-close     the back chevron that closes it
 #
-# Mock data (data/mock.ts): "The Silent Sea" leads History and "Crimson Harbor" leads Activity
-# (see history-activity.yaml). "zzqx" matches nothing in either, so "No matches" is
+# Mock data (data/mock.ts): "The Wish" leads History and "Give My Regards to Black Jack" leads
+# Activity (see history-activity.yaml). "zzqx" matches nothing in either, so "No matches" is
 # deterministic.
 appId: com.porksphere.comical
 ---
@@ -22,16 +22,16 @@ appId: com.porksphere.comical
     visible:
       id: "history.search.input"
     timeout: 10000
-- inputText: "silent"
+- inputText: "wish"
 - assertVisible:
-    id: "history-row.the-silent-sea"
+    id: "history-row.the-wish"
 - inputText: "zzqx"
 - assertVisible:
     text: "No matches"
 - tapOn:
     id: "history.search-close"
 - assertVisible:
-    id: "history-row.the-silent-sea"
+    id: "history-row.the-wish"
 
 # ── Activity ─────────────────────────────────────────────────────────────────
 - tapOn:
@@ -42,13 +42,13 @@ appId: com.porksphere.comical
     visible:
       id: "activity.search.input"
     timeout: 10000
-- inputText: "crimson"
+- inputText: "black"
 - assertVisible:
-    id: "history-row.crimson-harbor"
+    id: "history-row.give-my-regards-to-black-jack"
 - inputText: "zzqx"
 - assertVisible:
     text: "No matches"
 - tapOn:
     id: "activity.search-close"
 - assertVisible:
-    id: "history-row.crimson-harbor"
+    id: "history-row.give-my-regards-to-black-jack"

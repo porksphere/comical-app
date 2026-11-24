@@ -33,11 +33,12 @@
 #
 # Mock data (data/mock.ts, confirmed):
 #   - History's newest/first row (sorted by lastReadAt desc) is seed index 0 -> title
-#     "The Silent Sea" -> slug "the-silent-sea". Its SwipeableRow has exactly one action
+#     "The Wish" -> slug "the-wish". Its SwipeableRow has exactly one action
 #     ("Remove"), so FULL_SWIPE_COMMIT (0.6, swipeable-row.tsx) auto-commits it on a wide swipe
 #     with no button tap needed.
 #   - Activity's newest/first row (sorted by detectedAt desc) is seed index 1 -> title
-#     "Crimson Harbor" -> slug "crimson-harbor", seeded with a single new chapter and
+#     "Give My Regards to Black Jack" -> slug "give-my-regards-to-black-jack", seeded with a
+#     single new chapter and
 #     hasUnread: true, so it starts with TWO actions (Clear + Mark read) — a wide swipe only
 #     reveals both buttons (2-action rows don't auto-commit regardless of swipe distance), so
 #     "Mark read" is tapped by id rather than relying on swipe distance/position. After that
@@ -45,8 +46,8 @@
 #     single-action and full-swipe-committable like History's row.
 #   - Initial Activity unread count across all 4 seeded series-groups is 6
 #     (mockGetActivityCount sums unread chapter entries, not series count); marking
-#     "Crimson Harbor" (1 chapter) read drops it to 5; clearing that same now-read row doesn't
-#     change the count again (still 5).
+#     "Give My Regards to Black Jack" (1 chapter) read drops it to 5; clearing that same now-read
+#     row doesn't change the count again (still 5).
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -57,11 +58,11 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "screen-title.history"
 - assertVisible:
-    id: "history-row.the-silent-sea"
+    id: "history-row.the-wish"
 
 # Tap the row: resumes straight into the reader.
 - tapOn:
-    id: "history-row.the-silent-sea"
+    id: "history-row.the-wish"
 - assertVisible:
     id: "reader.toolbar.back"
 - tapOn:
@@ -75,7 +76,7 @@ appId: com.porksphere.comical
     end: "5%, 20%"
     duration: 300
 - assertNotVisible:
-    id: "history-row.the-silent-sea"
+    id: "history-row.the-wish"
 
 # ── Activity ─────────────────────────────────────────────────────────────────
 - tapOn:
@@ -85,7 +86,7 @@ appId: com.porksphere.comical
 - assertVisible:
     text: "^6$"
 - assertVisible:
-    id: "history-row.crimson-harbor"
+    id: "history-row.give-my-regards-to-black-jack"
 
 # Swipe wide enough to reveal both actions (2-action rows don't auto-commit), then tap Mark read
 # by id rather than guessing its on-screen position.
@@ -94,7 +95,7 @@ appId: com.porksphere.comical
     end: "10%, 20%"
     duration: 300
 - tapOn:
-    id: "swipe-action.crimson-harbor.mark-read"
+    id: "swipe-action.give-my-regards-to-black-jack.mark-read"
 - assertVisible:
     text: "^5$"
 
@@ -104,6 +105,6 @@ appId: com.porksphere.comical
     end: "5%, 20%"
     duration: 300
 - assertNotVisible:
-    id: "history-row.crimson-harbor"
+    id: "history-row.give-my-regards-to-black-jack"
 - assertVisible:
     text: "^5$"

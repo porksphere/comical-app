@@ -52,7 +52,19 @@ import type {
   AvailableTracker,
   SettingValue,
 } from './api';
-import { MOCK_COVERS, MOCK_COVERS_VARIED, MOCK_PAGES, MOCK_THUMBS } from './mock-assets';
+import { MOCK_FIXTURE_COVER, MOCK_FIXTURE_PAGES, MOCK_THUMBS } from './mock-assets';
+import {
+  EPISODE_WORKS,
+  NAMED_WORKS,
+  VARIED_WORKS,
+  WORKS,
+  chapterPages,
+  markedId,
+  markedWork,
+  work,
+  workTitled,
+  type Work,
+} from './mock-works';
 
 export type {
   BadgePosition,
@@ -76,18 +88,14 @@ export type {
  * full-title peek (the title truncates with "…" and reveals on hover/hold).
  * Length is in the spirit of real bridge titles (e.g. light-novel adaptations).
  */
-/** Deliberately absurd length, to exercise truncation and wrapping. Invented, like everything else
- *  here — see the note on META below. */
+/** Deliberately absurd length, to exercise truncation and wrapping. Invented: it is the fixture
+ *  series' title (see `fixtureCard`), the one series in the catalog that isn't a real work. */
 export const LONG_TITLE =
   'I Was Reincarnated as the Villain\'s Cartographer and Now Everyone Wants My Maps: A Chronicle of the Seventh Continent';
 
-export const TITLES = [
-  'The Silent Sea', 'Crimson Harbor', 'Paper Moons', 'A Study in Ash',
-  'Northern Lights', 'The Glass Garden', 'Echoes of Tomorrow', 'Saltwater Hymns',
-  'The Last Cartographer', 'Velvet Machine', 'Whisper of Pines', 'Iron & Ink',
-  'The Coast Road', 'Ashen Crown', 'Moonlit Vagrant', 'The Ninth Tower',
-  LONG_TITLE,
-];
+/** Every title in the catalog: the works' (`mock-works.ts`) and the fixture's. A tracker's search
+ *  and its import list draw from these, as a real tracker lists the series the sources carry. */
+export const TITLES = [...WORKS.map((w) => w.title), LONG_TITLE];
 
 const AGES = [
   '2h ago', '5h ago', '9h ago', '14h ago', '1d ago', '2d ago',
@@ -98,48 +106,56 @@ const AGES = [
  *  latest-chapter line, and a catalog where every card carries one never exercises the card
  *  without it — nor shows what a mixed shelf looks like, which is what a real multi-source browse
  *  actually is. See `SUBTITLE_BRIDGE`. */
-function subFor(seed: string): string {
+function subFor(seed: string, w?: Work): string {
   const h = hash(seed);
-  // Spread over a wide range rather than cycling a fixed list: a shelf where every third card
-  // repeats "Ch. 176 · 2h ago" reads as one series duplicated, not as a library. The age reads a
-  // different slice of the word so the two don't correlate.
-  return `Ch. ${3 + (h % 320)} · ${AGES[(h >>> 7) % AGES.length]}`;
+  // A work's latest chapter is its own; the fixture's is spread over a wide range. The age reads a
+  // different slice of the word so the two don't correlate, and a shelf's cards differ.
+  const latest = w ? w.chapters[w.chapters.length - 1]!.number : 3 + (h % 320);
+  return `Ch. ${latest} · ${AGES[(h >>> 7) % AGES.length]}`;
 }
 
 /** Matches `slugify('Panelfox')` in `MOCK_BRIDGE_NAMES`. */
 const SUBTITLE_BRIDGE = 'panelfox';
 
-export const cover = (seed: string | number) => MOCK_COVERS[hash(String(seed)) % MOCK_COVERS.length]!;
-
 /** Slug of the one mock bridge whose covers AREN'T a uniform 2:3, so ONE mock bridge stands in for
  *  a real one whose thumbnails aren't all cropped to the same shape. That exercises
  *  `SeriesCard`/`PageThumb`'s aspect-ratio-lands shrink animation, which a uniform catalog never
- *  triggers. The shapes themselves now live in `scripts/generate-mock-covers.py`, which draws
- *  `assets/mock/covers-varied/` at those sizes. Matches `slugify('Nightshelf')` in
+ *  triggers. Its shelf is every episode, a third of them the ones cut to other shapes
+ *  (`VARIED_WORKS`; `scripts/build-mock-art.py` cuts them). Matches `slugify('Nightshelf')` in
  *  `MOCK_BRIDGE_NAMES`. */
 const VARIED_ASPECT_BRIDGE = 'nightshelf';
 /** Matches `slugify('Coldspine')`: the direct bridge, a gallery whose CG sets are marked per series. */
 const GALLERY_BRIDGE = 'coldspine';
 
-function coverForBridge(seed: string, bridgeId?: string): string {
-  if (bridgeId !== VARIED_ASPECT_BRIDGE) return cover(seed);
-  return MOCK_COVERS_VARIED[hash(seed) % MOCK_COVERS_VARIED.length]!;
-}
+/** How many palette families `scripts/build-mock-art.py` orders the episode covers into. It
+ *  assigns them by POSITION, so episode `k` of `EPISODE_WORKS` is of family `k % COVER_FAMILIES`
+ *  and this side can tell what a cover looks like from its index alone. */
+const COVER_FAMILIES = 6;
 
-/** How many motifs `scripts/generate-mock-covers.py` draws. It assigns them by POSITION, so cover
- *  `k` draws motif `k % COVER_MOTIFS` and this side can tell what a cover looks like from its index
- *  alone, with no lookup table to keep in step. */
-const COVER_MOTIFS = 6;
+const dealInto = (works: Work[], n: number): Work[][] => {
+  const groups: Work[][] = [];
+  works.forEach((w, k) => (groups[k % n] ??= []).push(w));
+  return groups;
+};
 
-/** Covers walked motif-first: one from each motif in turn. `walk` below gives distinct INDICES,
- *  which turns out not to be the same thing as distinct DRAWINGS -- three of the first four cards on
- *  Browse came back as the same circle in the same greys, all different covers. Cycling the motifs
- *  makes neighbours differ by construction. Both the motif order and each motif's own covers are
- *  shuffled per rail, so two shelves starting on the same motif still diverge. */
-function walkCovers(set: string[], salt: string, i: number): string {
-  const motifs: number[][] = [];
-  for (let k = 0; k < set.length; k++) (motifs[k % COVER_MOTIFS] ??= []).push(k);
-  const groups = motifs.filter((g) => g.length > 0);
+const EPISODE_FAMILIES = dealInto(EPISODE_WORKS, COVER_FAMILIES);
+/** What a source carries, in the groups a shelf is dealt across (`walkShelf`): the episodes by
+ *  palette, and the named works as a group of their own, so a shelf has one in every seven. */
+const SHELF: Work[][] = [...EPISODE_FAMILIES, NAMED_WORKS];
+const SHELVES: Record<string, Work[][]> = {
+  [VARIED_ASPECT_BRIDGE]: [...EPISODE_FAMILIES, ...dealInto(VARIED_WORKS, 3)],
+  // A series there is a run of pages, not chapters, which an episode is and the named works aren't.
+  [GALLERY_BRIDGE]: EPISODE_FAMILIES,
+};
+const shelfOf = (bridgeId?: string): Work[][] => (bridgeId !== undefined && SHELVES[bridgeId]) || SHELF;
+
+/** A shelf walked group-first: one work from each group in turn. Drawing distinct works turned out
+ *  not to be the same thing as drawing distinct PICTURES -- three of the first four cards on Browse
+ *  once came back in the same colours. Cycling the groups makes neighbours differ by construction,
+ *  and no work repeats until its group is through. Both the group order and each group's own works
+ *  are shuffled per rail, so two shelves starting on the same group still diverge. */
+function walkShelf(shelf: Work[][], salt: string, i: number): Work {
+  const groups = shelf.map((g) => [...g]);
   let h = hash(salt);
   const next = () => (h = (Math.imul(h, 1664525) + 1013904223) >>> 0);
   const shuffle = <T,>(a: T[]): T[] => {
@@ -152,24 +168,7 @@ function walkCovers(set: string[], salt: string, i: number): string {
   shuffle(groups);
   for (const g of groups) shuffle(g);
   const group = groups[i % groups.length]!;
-  return set[group[Math.floor(i / groups.length) % group.length]!]!;
-}
-
-/** Walk a fixture set in a per-rail shuffled order: card `i` takes the i-th entry of a permutation
- *  seeded by the rail. Two properties matter, and stepping the set by an offset and a stride only
- *  got the first. No shelf repeats an entry (that reads as one series listed twice rather than as a
- *  catalog); and no two shelves draw the same run — offset x stride was 120 combinations, which
- *  over a browse screen's 30 rails collided six times, including on the two featured shelves
- *  sitting one above the other. Permutations are too numerous to collide by accident. */
-function walk<T>(set: T[], salt: string, i: number): T {
-  const perm = [...set];
-  let h = hash(salt);
-  for (let k = perm.length - 1; k > 0; k--) {
-    h = (Math.imul(h, 1664525) + 1013904223) >>> 0; // LCG step, so each swap reads a fresh word
-    const j = h % (k + 1);
-    [perm[k], perm[j]] = [perm[j]!, perm[k]!];
-  }
-  return perm[i % perm.length]!;
+  return group[Math.floor(i / groups.length) % group.length]!;
 }
 
 /** Deterministic pseudo-random so a given id always yields the same entry. */
@@ -230,8 +229,8 @@ export function coverDelayMs(id: string): number {
   return 0;
 }
 
-/** Reader-resolution page image (taller than the 300×450 cover thumb). */
-export const readerPage = (seed: string | number) => MOCK_PAGES[hash(String(seed)) % MOCK_PAGES.length]!;
+/** A page of the fixture series, which has no real comic's to read. */
+export const readerPage = (seed: string | number) => MOCK_FIXTURE_PAGES[hash(String(seed)) % MOCK_FIXTURE_PAGES.length]!;
 
 /**
  * Flat page list for a DIRECT series. Uses the same `${seed}-p${i}` seeds as
@@ -273,63 +272,83 @@ export const TRACKER_SERVICES: TrackerService[] = [
   { id: 'kitsu', name: 'Kitsu' },
 ];
 
-function entry(
-  seed: string,
-  i: number,
-  opts: { badges?: boolean; unread?: boolean; sub?: boolean; bridgeId?: string } = {},
-): SeriesEntry {
-  const h = hash(seed);
-  const e: SeriesEntry = {
-    id: seed,
-    title: TITLES[(h + i) % TITLES.length],
-    cover: coverForBridge(seed, opts.bridgeId),
-  };
+type CardOpts = { badges?: boolean; unread?: boolean; sub?: boolean; bridgeId?: string };
+
+/** The library's series (`seedLibrary`), which History and Activity are built from: fixed, so the
+ *  shelf Home opens on and the rows the flows look for are the same books every run. */
+const LIBRARY_WORKS: Record<string, string> = {
+  'lib-0': 'pepper-and-carrot-7',
+  'lib-1': 'black-jack',
+  'lib-2': 'pepper-and-carrot',
+  'lib-3': 'pepper-and-carrot-34',
+  'lib-4': 'pepper-and-carrot-11',
+  'lib-5': 'pepper-and-carrot-6',
+  'lib-6': 'pepper-and-carrot-37',
+  'lib-7': 'pepper-and-carrot-24',
+};
+/** A series held under a second id on another bridge: the cross-bridge duplicate (`seedLibrary`). */
+const SAME_SERIES: Record<string, string> = { 'ns-771': 'fav-2' };
+
+/** Seeds that ask for the fixture series instead of a work: `long` its title and its many tags,
+ *  `bare` a bridge that sends nothing optional, `direct` a series of pages with no chapters. */
+const FIXTURE_SEED = /long|bare|direct/;
+
+const UNMARKED: Work[] = [...EPISODE_WORKS, ...NAMED_WORKS];
+
+/** The work a series is, from its id alone, since the id is all the detail, the chapter list and
+ *  the pages are asked by. A shelf's card says which (`markedId`); the library's are fixed; any
+ *  other id is dealt one by its hash, so it is the same work every time it is asked. `undefined`
+ *  is the fixture series. */
+function workOf(seriesId: string): Work | undefined {
+  const marked = markedWork(seriesId);
+  if (marked) return marked;
+  if (FIXTURE_SEED.test(seriesId)) return undefined;
+  const same = SAME_SERIES[seriesId];
+  if (same !== undefined) return workOf(same);
+  const fixed = LIBRARY_WORKS[seriesId];
+  return fixed !== undefined ? work(fixed) : UNMARKED[hash(seriesId) % UNMARKED.length];
+}
+
+const coverOf = (seriesId: string): string => workOf(seriesId)?.cover ?? MOCK_FIXTURE_COVER;
+/** A cover for a title alone, as a tracker's own listing has one. */
+const titleCover = (title: string): string => workTitled(title)?.cover ?? MOCK_FIXTURE_COVER;
+
+function card(w: Work | undefined, id: string, i: number, opts: CardOpts = {}): SeriesEntry {
+  const h = hash(id);
+  const e: SeriesEntry = { id, title: w?.title ?? LONG_TITLE, cover: w?.cover ?? MOCK_FIXTURE_COVER };
+  if (w?.coverForm) e.coverForm = w.coverForm;
+  if (w?.readingDirection) e.readingDirection = w.readingDirection;
   // No bridge means a single-source context (the plain home page), where the caption is all there
   // is to distinguish cards; with a bridge, only the designated one captions.
   if (opts.sub && (opts.bridgeId === undefined || opts.bridgeId === SUBTITLE_BRIDGE)) {
-    e.sub = subFor(seed);
+    e.sub = subFor(id, w);
   }
   if (opts.badges && i % 3 === 0)
     e.badges = [{ text: 'NEW', position: 'top-left', tone: 'info' }];
   if (opts.badges && i % 4 === 1)
     e.badges = [{ text: 'HOT', position: 'top-left', tone: 'warn' }];
-  if (opts.unread && i % 3 === 1) e.unread = 1 + (h % 9);
-  if (opts.bridgeId === GALLERY_BRIDGE && i % 3 === 0) e.coverForm = 'sheets';
+  if (opts.unread && i % 3 === 1) e.unread = Math.min(1 + (h % 9), w?.chapters.length ?? 9);
+  if (opts.bridgeId === GALLERY_BRIDGE && i % 3 === 0 && !e.coverForm) e.coverForm = 'sheets';
   return e;
 }
 
-function items(
-  prefix: string,
-  n: number,
-  opts?: { badges?: boolean; unread?: boolean; sub?: boolean; bridgeId?: string },
-): SeriesEntry[] {
-  // Titles rotate through the list from a per-rail offset instead of being drawn per card. Drawn
-  // independently, a 16-title pool repeats within a 14-card rail often enough to be on screen most
-  // of the time, and two cards sharing a title reads as the same series listed twice rather than as
-  // a catalog. A rotation makes every card on a shelf distinct while different rails still start
-  // in different places.
-  const covers = opts?.bridgeId === VARIED_ASPECT_BRIDGE ? MOCK_COVERS_VARIED : MOCK_COVERS;
-  return Array.from({ length: n }, (_, i) => ({
-    ...entry(`${prefix}-${i}`, i, opts),
-    title: walk(TITLES, prefix, i),
-    // Salted separately from the title so a given title isn't always paired with the same drawing.
-    cover: walkCovers(covers, `${prefix}:cover`, i),
-  }));
+/** The card of a series known only by its id (a favorite, an import). */
+const entry = (seed: string, i: number, opts: CardOpts = {}): SeriesEntry => card(workOf(seed), seed, i, opts);
+
+function items(prefix: string, n: number, opts?: CardOpts): SeriesEntry[] {
+  const shelf = shelfOf(opts?.bridgeId);
+  return Array.from({ length: n }, (_, i) => {
+    const w = walkShelf(shelf, prefix, i);
+    return card(w, markedId(`${prefix}-${i}`, w), i, opts);
+  });
 }
 
-/** The cover `items` gave the card whose id this is (`${prefix}-${i}`), so a demo series opens onto
- *  the picture its card showed, at the card's shape. */
-function cardCover(seed: string, bridgeId: string): string {
-  const card = /^(.*)-(\d+)$/.exec(seed);
-  if (!card) return coverForBridge(seed, bridgeId);
-  return walkCovers(bridgeId === VARIED_ASPECT_BRIDGE ? MOCK_COVERS_VARIED : MOCK_COVERS, `${card[1]}:cover`, Number(card[2]));
-}
 
 /**
  * A page's stack of rails (hero / ranked / regular). Every top-level page
  * (home, popular, favorites, …) is its own full page, so the seed is salted
  * with the page name to give each one distinct cards while sharing the layout.
- * `bridgeId` is only meaningful for `VARIED_ASPECT_BRIDGE` (see `coverForBridge`).
+ * `bridgeId` picks the shelf the cards are dealt from (see `shelfOf`).
  */
 export function mockHomeSections(page = 'home', bridgeId?: string): RailSection[] {
   // Salted with the bridge as well as the page. Without it every bridge generated the identical
@@ -341,7 +360,7 @@ export function mockHomeSections(page = 'home', bridgeId?: string): RailSection[
   // stable id whose detail page also gets the "ton of tags" treatment) so the
   // clamp/peek and tag-wrapping can be checked from a known card.
   if (page === 'home') {
-    featured[0] = { ...featured[0], id: 'featured-long', title: LONG_TITLE };
+    featured[0] = card(undefined, 'featured-long', 0, { sub: true, bridgeId });
   }
   return [
     { id: `${p}featured`, title: 'Featured', kind: 'hero', items: featured },
@@ -359,13 +378,23 @@ export function mockGrid(prefix = 'grid', n = 30, bridgeId?: string): SeriesEntr
   // `featured-p1` — the cross-bridge Home stacked several bridges' shelves and every one of them
   // listed the same series in the same order. `mockHomeSections` salts its own prefix before
   // calling `items` directly, so it doesn't come through here and isn't double-salted.
-  return items(`${bridgeId ? `${bridgeId}-` : ''}${prefix}`, n, {
-    badges: true,
-    unread: true,
-    sub: true,
-    bridgeId,
-  });
+  const salted = `${bridgeId ? `${bridgeId}-` : ''}${prefix}`;
+  const opts: CardOpts = { badges: true, unread: true, sub: true, bridgeId };
+  const cards = items(salted, n, opts);
+  const lead = prefix === 'featured-p1' && bridgeId !== undefined ? FEATURED_LEADS[bridgeId] : undefined;
+  if (lead !== undefined) {
+    const w = work(lead);
+    const at = cards.findIndex((c) => markedWork(c.id) === w);
+    if (at >= 0) [cards[0], cards[at]] = [cards[at]!, cards[0]!];
+    else cards[0] = card(w, markedId(`${salted}-0`, w), 0, opts);
+  }
+  return cards;
 }
+
+/** The series a source's Featured shelf opens with: its longest-running. The first Featured shelf
+ *  is the first thing on Home, and its first card is the series every flow opens, which has to
+ *  have chapters enough to sort, filter and collapse. */
+const FEATURED_LEADS: Record<string, string> = { panelfox: 'pepper-and-carrot', inkwell: 'black-jack' };
 
 const GENRES = ['Fantasy', 'Action', 'Adventure', 'Drama'];
 const TAG_GROUPS: TagGroup[] = [
@@ -381,9 +410,10 @@ const MANY_TAGS = [
   'Reincarnation', 'Time Travel', 'Game', 'Virtual Reality', 'Survival',
   'Revenge', 'Anti-Hero', 'Cultivation', 'Demon Lord', 'Dungeon', 'Monsters',
 ];
-// Invented, and it needs to stay invented. This is the metadata a screenshot of the app shows, and
-// an earlier version carried the real credits and synopsis of a published series, which is someone
-// else's work being used to advertise this one. The SHAPES are what the layout is testing — two
+// The FIXTURE series' credits, and they need to stay invented: an earlier version carried the real
+// credits and synopsis of a published series it had no licence to show, which is someone else's
+// work being used to advertise this one. The real works carry their own (`mock-works.ts`), under
+// licences that allow it and ask to be named. The SHAPES are what the layout is testing — two
 // comma-separated authors so the cell wraps, a single artist so it doesn't — so keep those and
 // change the words if this ever needs to look different.
 const META: MetaCell[] = [
@@ -481,7 +511,7 @@ function mockTrackerLinks(seed: string, chapterCount: number): TrackerLink[] {
   return TRACKER_SERVICES.slice(0, count).map((s, i) => ({
     trackerId: s.id,
     externalId: String(10000 + ((h + i * 97) % 90000)),
-    externalTitle: TITLES[(h + i) % TITLES.length],
+    externalTitle: workOf(seed)?.title ?? LONG_TITLE,
     chaptersRead: chapterCount > 0 ? (h + i * 13) % chapterCount : 0,
     lastSyncAt: Date.now() - ((h + i * 53) % 14) * DAY,
   }));
@@ -496,7 +526,7 @@ export function mockTrackerSearch(trackerId: string, query: string): TrackerSear
     .slice(0, 6)
     .map((title) => {
       const h = hash(`${trackerId}:${title}`);
-      return { externalId: String(10000 + (h % 90000)), title, thumbnailUrl: cover(`tracker-${h}`) };
+      return { externalId: String(10000 + (h % 90000)), title, thumbnailUrl: titleCover(title) };
     });
 }
 
@@ -568,7 +598,8 @@ function mockPageThumbs(seed: string, count: number): PageThumbSource[] {
       const t = varTiles[vi];
       return { kind: 'sprite', sheetUrl: varSheet, x: t.x, y: 0, w: t.w, h: t.h, sheetWidth: varX, sheetHeight: SPRITE_VAR_SHEET_H };
     }
-    return { kind: 'image', url: cover(`${seed}-p${i}`) };
+    const art = workOf(seed)?.art ?? MOCK_FIXTURE_PAGES;
+    return { kind: 'image', url: art[i % art.length]! };
   });
 }
 
@@ -588,20 +619,24 @@ export function mockSeries(
   const seed = id || title || 'series';
   // Direct series carry page thumbnails and no chapter list. Driven by the
   // bridge (opts.direct, from its capabilities) or a "direct" seed for testing.
-  const direct = opts.direct || seed.includes('direct');
-  const bare = seed.includes('bare');
+  const w = workOf(seed);
+  const direct = opts.direct || (!w && seed.includes('direct'));
+  const bare = !w && seed.includes('bare');
   const h = hash(seed);
 
   const base: SeriesDetail = {
     id: seed,
-    title: title || TITLES[h % TITLES.length],
-    cover: cardCover(seed, slugify(bridge)),
+    title: w?.title ?? (title || LONG_TITLE),
+    cover: w?.cover ?? MOCK_FIXTURE_COVER,
     bridge,
-    description: DESCRIPTION,
-    meta: META,
-    altTitles: ALT_TITLES,
+    description: w?.description ?? DESCRIPTION,
+    meta: w?.meta ?? META,
+    ...(w ? w.altTitles && { altTitles: w.altTitles } : { altTitles: ALT_TITLES }),
+    ...(w?.coverForm && { coverForm: w.coverForm }),
+    ...(w?.readingDirection && { readingDirection: w.readingDirection }),
     rating: RATING,
-    infoCells: INFO_CELLS,
+    // The fixture's cells; a work has none the fixtures can vouch for.
+    ...(!w && { infoCells: INFO_CELLS }),
     // Mirror real bridges (source.ts `getSeriesDetail`): the detail is the fast info
     // payload; the chapter list / page-thumbnail grid — the slow part — streams in via
     // `getSeriesList` (see `mockGetSeriesList`), so both data sources share one shape.
@@ -612,20 +647,23 @@ export function mockSeries(
     // Static/known-from-info parts render right away; the grid streams in later
     // (matches real, which sets these inline for a direct series and defers pageThumbs).
     base.readLabel = 'Read';
-    base.chapterCount = MOCK_DIRECT_PAGE_COUNT;
+    base.chapterCount = w ? w.chapters[0]!.pages : MOCK_DIRECT_PAGE_COUNT;
   }
   // Chaptered: readLabel/chapterCount aren't known until the list loads — getSeriesList fills them.
 
   if (!bare) {
     // Genres are the leading `kind: "genre"` group; `tagIds` mirror the mock genre filter's option
     // values (the genre names) so a tapped genre chip drives that filter — see mockGetFilters.
-    const genreGroup: TagGroup = { kind: 'genre', label: 'Genres', tags: GENRES, tagIds: GENRES };
+    const genres = w?.genres ?? GENRES;
+    const genreGroup: TagGroup = { kind: 'genre', label: 'Genres', tags: genres, tagIds: genres };
     // The long-title series doubles as the "ton of tags" case.
-    base.tagGroups = seed.includes('long')
-      ? [genreGroup, ...TAG_GROUPS, { label: 'Tags', tags: MANY_TAGS }]
-      : [genreGroup, ...TAG_GROUPS];
+    base.tagGroups = w
+      ? [genreGroup, ...(w.tagGroups ?? [])]
+      : seed.includes('long')
+        ? [genreGroup, ...TAG_GROUPS, { label: 'Tags', tags: MANY_TAGS }]
+        : [genreGroup, ...TAG_GROUPS];
     base.hasSources = h % 2 === 0;
-    base.newCount = h % 5 === 0 ? 3 : undefined;
+    base.newCount = h % 5 === 0 ? Math.min(3, w?.chapters.length ?? 3) : undefined;
     // Two groups, so multi-group related rendering is exercisable in mock mode too.
     base.relatedGroups = [
       { label: 'Related', items: items(`${seed}-rel`, 12, { sub: true }) },
@@ -816,15 +854,12 @@ export async function mockGetSeriesList(
 ): Promise<SeriesListResult> {
   await delay(SERIES_LIST_DELAY_MS);
   const seed = seriesId || 'series';
-  if (direct || seed.includes('direct')) {
-    return {
-      pageThumbs: mockPageThumbs(seed, MOCK_DIRECT_PAGE_COUNT),
-      chapterCount: MOCK_DIRECT_PAGE_COUNT,
-      readLabel: 'Read',
-    };
+  const w = workOf(seed);
+  if (direct || (!w && seed.includes('direct'))) {
+    const pages = w ? w.chapters[0]!.pages : MOCK_DIRECT_PAGE_COUNT;
+    return { pageThumbs: mockPageThumbs(seed, pages), chapterCount: pages, readLabel: 'Read' };
   }
-  const chapterCount = 40 + (hash(seed) % 160);
-  const chapters = mockChapters(seed, chapterCount);
+  const chapters = w ? workChapters(seed, w) : mockChapters(seed, 40 + (hash(seed) % 160));
   const first = firstChapterInReadingOrder(chapters);
   return {
     chapters,
@@ -833,12 +868,36 @@ export async function mockGetSeriesList(
   };
 }
 
-export async function mockGetChapterPages(_bridgeId: string, _seriesId: string, chapterId: string): Promise<string[]> {
-  return readerPagesForChapter(chapterId);
+const chapterId = (seriesId: string, number: number): string => `${seriesId}-ch-${number}`;
+
+/** A work's own chapters, newest first as a bridge lists them. Which are read is the reader's
+ *  doing, not the work's: the newest two fifths are unread, as in the fixture's list. */
+function workChapters(seriesId: string, w: Work): Chapter[] {
+  const now = Date.now();
+  const spacing = DAY * (1 + (hash(seriesId) % 3));
+  const unread = Math.max(1, Math.floor(w.chapters.length * 0.4));
+  return [...w.chapters].reverse().map((c, i) => ({
+    id: chapterId(seriesId, c.number),
+    name: c.name,
+    number: c.number,
+    languageCode: 'en',
+    date: now - i * spacing,
+    pageCount: c.pages,
+    read: i >= unread,
+  }));
+}
+
+export async function mockGetChapterPages(_bridgeId: string, seriesId: string, chapter: string): Promise<string[]> {
+  const w = workOf(seriesId);
+  if (!w) return readerPagesForChapter(chapter);
+  // A chapter's id is the series' and its number (`chapterId`), with whatever a feed added after.
+  const number = Number(/^-ch-(\d+)/.exec(chapter.slice(seriesId.length))?.[1]);
+  return chapterPages(w, w.chapters.find((c) => c.number === number) ?? w.chapters[0]!);
 }
 
 export async function mockGetDirectPages(_bridgeId: string, seriesId: string): Promise<string[]> {
-  return readerPagesForDirect(seriesId);
+  const w = workOf(seriesId);
+  return w ? chapterPages(w, w.chapters[0]!) : readerPagesForDirect(seriesId);
 }
 
 // ─── Filters, sort, tags, favorites ──────────────────────────────────────────
@@ -929,7 +988,6 @@ function seedLibrary(): Map<string, MockLibEntry> {
   for (let i = 0; i < 8; i++) {
     const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
     const seriesId = `lib-${i}`;
-    const h = hash(seriesId);
     // Spread a few series across the seeded collections (some in both, some in neither →
     // "Uncollected").
     const collectionIds: string[] = [];
@@ -938,14 +996,20 @@ function seedLibrary(): Map<string, MockLibEntry> {
     if (collectionIds.length > 0) mockSeriesCollections.set(libKey(bridgeId, seriesId), collectionIds);
     // lib-0/3/5 lead the mock History (below), so they must count as started here too.
     const started = i !== 2 && i !== 6;
-    const known = 12 + (h % 40);
-    // Never started = every known chapter unread, as the real derivation would count it.
-    const unread = !started ? known : h % 3 === 0 ? 1 + (h % 12) : 0;
+    const w = work(LIBRARY_WORKS[seriesId]!);
+    const known = w.chapters.length;
+    // Never started = every known chapter unread, as the real derivation would count it. Started,
+    // the reader is behind by the newest two fifths of a series that runs to more than a chapter.
+    const unread = !started ? known : known > 1 ? Math.floor(known * 0.4) : 0;
+    const author = w.meta.find((cell) => cell.label === 'AUTHOR')?.value;
     m.set(libKey(bridgeId, seriesId), {
       bridgeId,
       seriesId,
-      title: TITLES[i % TITLES.length]!,
-      thumbnailUrl: cover(seriesId),
+      title: w.title,
+      thumbnailUrl: w.cover,
+      ...(w.coverForm && { coverForm: w.coverForm }),
+      ...(w.readingDirection && { readingDirection: w.readingDirection }),
+      ...(author !== undefined && { author }),
       unread,
       known,
       readState: !started ? 'unstarted' : unread > 0 ? 'behind' : i === 7 ? 'finished' : 'caught-up',
@@ -976,7 +1040,7 @@ function seedLibrary(): Map<string, MockLibEntry> {
     bridgeId: 'nightshelf',
     seriesId: 'ns-771',
     title: otherSource.title,
-    thumbnailUrl: cover('ns-771'),
+    thumbnailUrl: otherSource.cover,
     unread: 0,
     known: 0,
     readState: 'unstarted',
@@ -991,18 +1055,23 @@ const mockHistory = new Map<string, MockHist>(
   [0, 3, 5].map((i) => {
     const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
     const seriesId = `lib-${i}`;
-    const pageCount = 18 + (hash(seriesId) % 20);
+    const w = work(LIBRARY_WORKS[seriesId]!);
+    // The first chapter: of a series of one, the only one, and of the manga the one the fixtures
+    // hold the pages of.
+    const chapter = w.chapters[0]!;
     return [
       libKey(bridgeId, seriesId),
       {
         bridgeId,
         seriesId,
-        title: TITLES[i % TITLES.length]!,
-        thumbnailUrl: cover(seriesId),
-        chapterId: `${seriesId}-ch-3`,
-        chapterName: `Chapter ${3 + (i % 5)}`,
-        lastPage: 4 + (i % 6),
-        pageCount,
+        title: w.title,
+        thumbnailUrl: w.cover,
+        ...(w.coverForm && { coverForm: w.coverForm }),
+        ...(w.readingDirection && { readingDirection: w.readingDirection }),
+        chapterId: chapterId(seriesId, chapter.number),
+        chapterName: chapter.name,
+        lastPage: Math.min(4 + (i % 6), chapter.pages - 2),
+        pageCount: chapter.pages,
         lastReadAt: Date.now() - (i + 1) * 3600_000,
       },
     ] as const;
@@ -1012,21 +1081,22 @@ const mockHistory = new Map<string, MockHist>(
 let mockActivity: MockActivity[] = [1, 2, 4, 6].flatMap((i) => {
   const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
   const seriesId = `lib-${i}`;
+  const w = work(LIBRARY_WORKS[seriesId]!);
   const base = {
     bridgeId,
     seriesId,
-    title: TITLES[i % TITLES.length]!,
-    thumbnailUrl: cover(seriesId),
+    title: w.title,
+    thumbnailUrl: w.cover,
     read: false,
   };
   // lib-2 drops three chapters at once, so the feed can demonstrate coalescing (one row, "3 new
-  // chapters"); the others get a single new chapter each.
+  // chapters"); the others get a single new chapter each. A work's newest are what is new of it.
   const count = i === 2 ? 3 : 1;
-  return Array.from({ length: count }, (_, k) => ({
+  return w.chapters.slice(-count).reverse().map((chapter, k) => ({
     ...base,
-    chapterId: `${seriesId}-ch-new-${i}-${k}`,
-    chapterName: `Chapter ${20 + i + k}`,
-    number: 20 + i + k,
+    chapterId: chapterId(seriesId, chapter.number),
+    chapterName: chapter.name,
+    number: chapter.number,
     detectedAt: Date.now() - i * 5400_000 - k * 600_000,
   }));
 });
@@ -1077,7 +1147,7 @@ export async function mockAddToLibrary(
     bridgeId,
     seriesId,
     title: snap.seriesTitle ?? mockSeries(seriesId).title,
-    thumbnailUrl: snap.thumbnailUrl ?? cover(seriesId),
+    thumbnailUrl: snap.thumbnailUrl ?? coverOf(seriesId),
     ...(snap.thumbnailUrl !== undefined && snap.thumbnailAspect !== undefined && { thumbnailAspect: snap.thumbnailAspect }),
     ...(snap.coverForm !== undefined && { coverForm: snap.coverForm }),
     ...(snap.readingDirection !== undefined && { readingDirection: snap.readingDirection }),
@@ -1234,11 +1304,10 @@ export async function mockGetTrackerImportPreview(trackerId: string): Promise<Tr
     if (taken.has(k)) continue;
     taken.add(k);
     const held = byTitle.get(k) ?? [];
-    const h = hash(`${trackerId}:${title}`);
     items.push({
       externalId: trackerExternalId(trackerId, title),
       title,
-      thumbnailUrl: cover(`tracker-${h}`),
+      thumbnailUrl: titleCover(title),
       ...trackerImportState(trackerId, title),
       ...(held.length > 0
         ? {
@@ -1269,8 +1338,9 @@ export async function mockResolveTrackerImport(
     const hit = TITLES.find((t) => names.includes(foldTitle(t)));
     if (!hit) return { externalId: entry.externalId, candidates: [] };
     const h = hash(`${bridgeId}:${hit}`);
-    const id = `${slugify(hit)}-${h % 1000}`;
-    const found = { id, title: hit, thumbnailUrl: cover(id) };
+    const w = workTitled(hit);
+    const id = w ? markedId(`import-${h % 1000}`, w) : 'featured-long';
+    const found = { id, title: hit, thumbnailUrl: titleCover(hit) };
     if (h % 3 !== 0) return { externalId: entry.externalId, exact: found, candidates: [] };
     const others = items(`${bridgeId}-${hit}-alt`, 2, { bridgeId }).map((e) => ({ id: e.id, title: e.title, thumbnailUrl: e.cover }));
     return { externalId: entry.externalId, candidates: [found, ...others] };
@@ -1730,7 +1800,7 @@ export async function mockRecordChapterProgress(
     bridgeId,
     seriesId,
     title: lib?.title ?? mockSeries(seriesId).title,
-    thumbnailUrl: lib?.thumbnailUrl ?? cover(seriesId),
+    thumbnailUrl: lib?.thumbnailUrl ?? coverOf(seriesId),
     chapterId,
     ...(update.chapterName !== undefined && { chapterName: update.chapterName }),
     ...(update.lastPage !== undefined && { lastPage: update.lastPage }),
@@ -1755,7 +1825,7 @@ export async function mockRecordReadingHistory(entry: {
     bridgeId: entry.bridgeId,
     seriesId: entry.seriesId,
     title: entry.title,
-    thumbnailUrl: entry.thumbnailUrl ?? cover(entry.seriesId),
+    thumbnailUrl: entry.thumbnailUrl ?? coverOf(entry.seriesId),
     ...(entry.coverForm !== undefined && { coverForm: entry.coverForm }),
     ...(entry.readingDirection !== undefined && { readingDirection: entry.readingDirection }),
     ...(entry.chapterId !== undefined && { chapterId: entry.chapterId }),
@@ -1805,15 +1875,17 @@ export async function mockCheckForUpdates(): Promise<{ newChapters: number; part
   const i = mockActivity.length;
   const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
   const seriesId = `lib-${i % 8}`;
+  const w = work(LIBRARY_WORKS[seriesId]!);
+  const chapter = w.chapters[w.chapters.length - 1]!;
   mockActivity = [
     {
       bridgeId,
       seriesId,
-      chapterId: `${seriesId}-ch-fresh-${i}`,
-      title: TITLES[i % TITLES.length]!,
-      thumbnailUrl: cover(seriesId),
-      chapterName: `Chapter ${30 + i}`,
-      number: 30 + i,
+      chapterId: `${chapterId(seriesId, chapter.number)}-fresh-${i}`,
+      title: w.title,
+      thumbnailUrl: w.cover,
+      chapterName: chapter.name,
+      number: chapter.number,
       detectedAt: Date.now(),
       read: false,
     },

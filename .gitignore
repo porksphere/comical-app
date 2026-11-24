@@ -89,3 +89,6 @@ npm-debug.*
 # Python bytecode (scripts/ has a few utility scripts)
 __pycache__/
 *.pyc
+
+# scripts/build-mock-art.py keeps its downloaded sources here
+.cache/

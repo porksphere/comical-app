@@ -18,16 +18,16 @@ url: http://localhost:4000/comical-app
     timeout: 10000
 - tapOn:
     id: "history.search.input"
-- inputText: "silent"
+- inputText: "wish"
 - assertVisible:
-    id: "history-row.the-silent-sea"
+    id: "history-row.the-wish"
 - inputText: "zzqx"
 - assertVisible:
     text: "No matches"
 - tapOn:
     id: "Clear search"
 - assertVisible:
-    id: "history-row.the-silent-sea"
+    id: "history-row.the-wish"
 
 # ── Activity ─────────────────────────────────────────────────────────────────
 - tapOn:
@@ -38,13 +38,13 @@ url: http://localhost:4000/comical-app
     timeout: 10000
 - tapOn:
     id: "activity.search.input"
-- inputText: "crimson"
+- inputText: "black"
 - assertVisible:
-    id: "history-row.crimson-harbor"
+    id: "history-row.give-my-regards-to-black-jack"
 - inputText: "zzqx"
 - assertVisible:
     text: "No matches"
 - tapOn:
     id: "Clear search"
 - assertVisible:
-    id: "history-row.crimson-harbor"
+    id: "history-row.give-my-regards-to-black-jack"

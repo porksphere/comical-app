@@ -19,8 +19,8 @@
 #   - series.tracker.result.<externalId>   Matched broadly by regex (like series.chapter.* in
 #     browse-to-reader.yaml) since externalId is a hash, not a value worth reproducing here.
 #
-# Query "Silent" is a deliberately unique substring: of the whole TITLES pool (data/mock.ts) only
-# "The Silent Sea" contains it (checked against every title, including the long-title fixture), so
+# Query "Rainbow" is a deliberately unique substring: of the whole TITLES pool (data/mock.ts) only
+# "Rainbow Potions" contains it (checked against every title, including the long-title fixture), so
 # the result list is always exactly one row — no dependency on which series/tracker-tab is active.
 # The prefilled search's row count isn't asserted: the opened series' title is in that same pool,
 # so it always finds at least itself, which is all the auto-search promises.
@@ -79,7 +79,7 @@ appId: com.porksphere.comical
     id: "series.tracker.search-clear"
 - tapOn:
     id: "series.tracker.search"
-- inputText: "Silent"
+- inputText: "Rainbow"
 - pressKey: Enter
 
 - assertVisible:
