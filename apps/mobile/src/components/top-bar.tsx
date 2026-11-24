@@ -281,11 +281,13 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingHorizontal: Spacing.one,
   },
+  // As wide as the arrow it replaces at least: an empty slot (the series page's, whose chevron
+  // is drawn over the bar) still keeps the title clear of it.
   materialLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    paddingLeft: Spacing.three,
+    minWidth: 48,
   },
   materialButton: {
     width: 48,
