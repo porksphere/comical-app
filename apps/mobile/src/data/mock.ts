@@ -52,7 +52,7 @@ import type {
   AvailableTracker,
   SettingValue,
 } from './api';
-import { MOCK_FIXTURE_COVER, MOCK_FIXTURE_PAGES, MOCK_THUMBS } from './mock-assets';
+import { MOCK_FIXTURE_COVER, MOCK_FIXTURE_PAGES, MOCK_THUMBS, mockBridgeIcon } from './mock-assets';
 import {
   EPISODE_WORKS,
   NAMED_WORKS,
@@ -699,8 +699,9 @@ export function relativeTime(ts: number): string {
 // `source.ts`.
 
 // Named for the official registry's server bridges (comical-opds-bridges), the sources a
-// screenshot can name: each is somebody's own server. The names are all they share with those
-// bridges; what each one serves here, and how, is this module's.
+// screenshot can name: each is somebody's own server, and wears that server's logo. The name and
+// the logo are all they share with those bridges; what each one serves here, and how, is this
+// module's.
 const MOCK_BRIDGE_NAMES = ['Komga', 'Suwayomi', 'Kavita', 'OPDS', 'LANraragi'];
 const MOCK_DIRECT_BRIDGES = new Set(['LANraragi']);
 // Bridges whose backend supports account "favorites" (the capability real bridges advertise). A subset,
@@ -750,7 +751,7 @@ export async function mockGetBridges(): Promise<Bridge[]> {
     // declare the flag — the grids reserve the sub line for them, exactly like a real sub-ful bridge.
     cardSubtitles: true,
     ratings: true,
-    thumbnail: MOCK_THUMBS[hash(slugify(name)) % MOCK_THUMBS.length]!,
+    thumbnail: mockBridgeIcon(slugify(name)),
   }));
   // A profiling fixture, and so not a source for the README's screenshots to list.
   if (IS_CAPTURE) return bridges;

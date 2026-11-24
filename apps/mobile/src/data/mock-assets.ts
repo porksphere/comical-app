@@ -41,7 +41,11 @@ export const MOCK_FIXTURE_COVER = `${ASSETS}/fixture/00.png`;
 /** The fixture series' pages, drawn likewise. */
 export const MOCK_FIXTURE_PAGES: string[] = set('fixture-pages', 4, 'png');
 
-/** Bridge list icons, drawn by `scripts/generate-mock-shapes.py`. */
+/** A mock bridge's icon: the logo of the server it is named for (`assets/mock/README.md`). */
+export const mockBridgeIcon = (id: string): string => `${ASSETS}/bridges/${id}.png`;
+
+/** Drawn icons (`scripts/generate-mock-shapes.py`), for what is named after nothing with a logo
+ *  here: the trackers, and the rail-stress fixture. */
 export const MOCK_THUMBS: string[] = set('thumbs', 6, 'png');
 
 /** Pepper&Carrot by David Revoy, CC BY 4.0. The licence requires attribution — it is carried in

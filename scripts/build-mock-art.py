@@ -3,7 +3,7 @@
 
     python3 scripts/build-mock-art.py [--cache DIR]
 
-Writes apps/mobile/assets/mock/{covers,covers-varied,works,pages,pages-manga}/. The output is committed;
+Writes apps/mobile/assets/mock/{covers,covers-varied,works,pages,pages-manga,bridges}/. The output is committed;
 rerun only to change the selection or the crops. `apps/mobile/assets/mock/README.md` carries each
 work's licence and credit, and has to be kept in step with the tables below.
 
@@ -79,6 +79,17 @@ COMMONS = {
 # without its fifth page (a bath scene, fine in context and an odd thing to lead a README with)
 # or its closing page, which is the patron credits rather than comic art.
 PAGES = [(2, 1), (2, 2), (2, 3), (2, 4), (1, 3), (1, 1), (1, 2)]
+
+# The mock bridges are named for the official registry's server bridges, and each wears the logo
+# of the server it is named for, from that project's own repository or site.
+BRIDGE_ICONS = {
+    'komga': 'https://raw.githubusercontent.com/gotson/komga/master/komga-webui/public/android-chrome-192x192.png',
+    'kavita': 'https://raw.githubusercontent.com/Kareadita/Kavita/develop/UI/Web/src/assets/icons/android-chrome-192x192.png',
+    'suwayomi': 'https://raw.githubusercontent.com/Suwayomi/Suwayomi-Server/master/server/src/main/resources/icon/faviconlogo.png',
+    'lanraragi': 'https://raw.githubusercontent.com/Difegue/LANraragi/dev/public/img/logo.png',
+    'opds': 'https://opds.io/apple-touch-icon.png',
+}
+ICON = 128
 
 BLACK_JACK_ZIP = 'https://densho810.com/free/dl/enbj001.zip'
 BLACK_JACK_COVER_PAGE = 1
@@ -175,6 +186,18 @@ def commons(cache):
     print(f'  works/: {len(COMMONS)} files from Wikimedia Commons, {total // 1024} KB')
 
 
+def bridge_icons(cache):
+    out = os.path.join(OUT, 'bridges')
+    os.makedirs(out, exist_ok=True)
+    total = 0
+    for name, url in BRIDGE_ICONS.items():
+        im = Image.open(fetch(url, os.path.join(cache, 'bridges', name + '.png'))).convert('RGBA')
+        dst = os.path.join(out, name + '.png')
+        im.resize((ICON, ICON), Image.LANCZOS).save(dst, 'PNG', optimize=True)
+        total += os.path.getsize(dst)
+    print(f'  bridges/: {len(BRIDGE_ICONS)} files, {total // 1024} KB')
+
+
 def black_jack(cache):
     pdf = os.path.join(cache, 'bj', 'enbj001.pdf')
     if not os.path.exists(pdf):
@@ -209,6 +232,7 @@ def main():
     cache = os.path.abspath(parser.parse_args().cache)
     pepper_carrot(cache)
     commons(cache)
+    bridge_icons(cache)
     black_jack(cache)
 
 

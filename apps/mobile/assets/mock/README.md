@@ -99,10 +99,25 @@ Each is a series of one issue, and its cover is the one page of it held. Covers 
 need looking at one by one before another is added: the same shelves hold wartime caricature and
 jungle titles, and some of the heroes' names are trademarks still in use.
 
+## Server logos — `bridges/`
+
+The mock bridges are named for the official registry's server bridges, and each wears the logo of
+the server it is named for, at 128px. A logo is here to say which server a source is, which is the
+one thing these are used for; the licence beside each is its repository's, and none of them says
+anything about the mark itself.
+
+| file | logo of | source | repository licence |
+|------|---------|--------|--------------------|
+| `komga.png` | [Komga](https://komga.org) | `gotson/komga`, `komga-webui/public/android-chrome-192x192.png` | MIT |
+| `kavita.png` | [Kavita](https://www.kavitareader.com) | `Kareadita/Kavita`, `UI/Web/src/assets/icons/android-chrome-192x192.png` | GPL-3.0 |
+| `suwayomi.png` | [Suwayomi](https://github.com/Suwayomi/Suwayomi-Server) | `Suwayomi/Suwayomi-Server`, `server/src/main/resources/icon/faviconlogo.png` | MPL-2.0 |
+| `lanraragi.png` | [LANraragi](https://github.com/Difegue/LANraragi) | `Difegue/LANraragi`, `public/img/logo.png` | MIT |
+| `opds.png` | [OPDS](https://opds.io) | `opds.io/apple-touch-icon.png` | none stated |
+
 ## `thumbs/`, `fixture/`, `fixture-pages/` — drawn
 
-Bridge icons, and the long-title fixture's cover and pages. Flat fields with one rounded motif,
-everything derived from a seed, by `scripts/generate-mock-shapes.py`.
+Tracker and fixture icons, and the long-title fixture's cover and pages. Flat fields with one
+rounded motif, everything derived from a seed, by `scripts/generate-mock-shapes.py`.
 
 ## Why not Little Nemo
 

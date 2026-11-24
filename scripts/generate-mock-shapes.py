@@ -1,8 +1,8 @@
-"""Draw the mock catalog's bridge icons and its fixture series' cover.
+"""Draw the mock catalog's tracker icons and its fixture series' cover and pages.
 
 Flat two- or three-tone fields with one rounded motif, everything derived from a seed. Every cover
 was drawn this way until `scripts/build-mock-art.py` took them over with real comics art. What is
-left is what belongs to nothing real: a bridge's icon, and the cover and pages of the one invented
+left is what belongs to nothing real: an icon for a tracker or a fixture, and the cover and pages of the one invented
 series (the long-title fixture in `mock.ts`), which a real comic's art would mislabel.
 
 Run:  python3 scripts/generate-mock-shapes.py
@@ -124,7 +124,7 @@ def emit(subdir, specs):
     print(f'  {subdir}/: {len(specs)} files, {total // 1024} KB')
     return total
 
-# Bridge list icons, square and small. Seeded by index, not by bridge: the app indexes into this
+# Icons, square and small. Seeded by index, not by what wears one: the app indexes into this
 # fixed set.
 t = emit('thumbs', [(f'thumb-{i}', 100, 100) for i in range(6)])
 
