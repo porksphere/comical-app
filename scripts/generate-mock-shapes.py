@@ -2,8 +2,9 @@
 
 Flat two- or three-tone fields with one rounded motif, everything derived from a seed. Every cover
 was drawn this way until `scripts/build-mock-art.py` took them over with real comics art. What is
-left is what belongs to nothing real: an icon for a tracker or a fixture, and the cover and pages of the one invented
-series (the long-title fixture in `mock.ts`), which a real comic's art would mislabel.
+left is what belongs to nothing real: an icon for a tracker or a fixture, and the cover and pages
+of the one invented series (the long-title fixture in `mock.ts`), which a real comic's art would
+mislabel.
 
 Run:  python3 scripts/generate-mock-shapes.py
 Writes apps/mobile/assets/mock/{thumbs,fixture,fixture-pages}/NN.png. Committed output; rerun only to change the
