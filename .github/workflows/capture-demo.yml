@@ -194,6 +194,14 @@ jobs:
           python3 scripts/shape-screenshots.py "${{ inputs.width || '440' }}" "$RUNNER_TEMP/screens"/*.png
           du -h "$RUNNER_TEMP/screens"/*.png
 
+      # What the app said about its renderer, for a shot whose shelf stands empty.
+      - name: App log (bookshelf renderer)
+        if: always()
+        run: |
+          xcrun simctl spawn "$UDID" log show --last 12m --style compact \
+            --predicate 'process == "Comical" AND (eventMessage CONTAINS[c] "webgpu" OR eventMessage CONTAINS[c] "THREE." OR eventMessage CONTAINS[c] "bookshelf" OR eventMessage CONTAINS[c] "dawn")' \
+            | tail -80 || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: demo-screens
@@ -290,6 +298,13 @@ jobs:
           hinge open
           xcrun simctl launch "$UDID" com.porksphere.comical
           # A first launch on a CI simulator, the catalog's covers, and the bookshelf's renderer.
+          # DIAGNOSTIC, to be cut down to one sleep: how long the renderer takes to draw.
+          sleep 45
+          hinge screenshot "$RUNNER_TEMP/screens/00-duo-wait-045.png"
+          sleep 60
+          hinge screenshot "$RUNNER_TEMP/screens/00-duo-wait-105.png"
+          sleep 75
+          hinge screenshot "$RUNNER_TEMP/screens/00-duo-wait-180.png"
           sleep 60
           hinge posture --json || true
           hinge screenshot "$RUNNER_TEMP/screens/06-duo-open.png"
@@ -304,6 +319,14 @@ jobs:
           # The radii are by eye: neither panel's is published the way an iPhone's is.
           python3 scripts/shape-screenshots.py --radius 0.09 440 "$RUNNER_TEMP/screens/05-duo-folded.png"
           python3 scripts/shape-screenshots.py --radius 0.045 880 "$RUNNER_TEMP/screens/06-duo-open.png"
+
+      # What the app said about its renderer, for a shot whose shelf stands empty.
+      - name: App log (bookshelf renderer)
+        if: always()
+        run: |
+          xcrun simctl spawn "$UDID" log show --last 12m --style compact \
+            --predicate 'process == "Comical" AND (eventMessage CONTAINS[c] "webgpu" OR eventMessage CONTAINS[c] "THREE." OR eventMessage CONTAINS[c] "bookshelf" OR eventMessage CONTAINS[c] "dawn")' \
+            | tail -80 || true
 
       - uses: actions/upload-artifact@v4
         with:

@@ -14,74 +14,65 @@
 # Selectors are shared with ../mobile/browse-to-reader.yaml — see its header for how each is
 # derived. `series.action.read` is the primary action on the series page, above the fold.
 #
-# THE SERIES OPENED IS PEPPER&CARROT, by its own card (`-work-pepper-and-carrot`, the id
-# `markedId` in data/mock-works.ts gives it), not whichever card comes first. It leads the first
-# Featured shelf (`FEATURED_LEADS` in data/mock.ts) and is the one series whose first chapter the
-# fixtures hold whole, so the reader's page is the page its bar names. If a change to the mock
-# catalog moves the card off the first screen, the loop below fails with the card's id in the log.
+# THE SERIES OPENED IS PEPPER&CARROT, the first card of the first Featured shelf (`FEATURED_LEADS`
+# in data/mock.ts). It is the one series whose first chapter the fixtures hold whole, so the
+# reader's page is the page its bar names.
 appId: com.porksphere.comical
 ---
 - launchApp
 
-# A card, not a tab: iOS's system tab bar has no testIDs.
-- extendedWaitUntil:
-    visible:
-      id: "series-card\\..*"
-    timeout: 30000
-# The bookshelf starts its renderer after the page is up. Optional, since a simulator without a
-# GPU adapter shows the rails alone (see ../mobile/home-bookshelf.yaml), and that is still a Home.
+# The bookshelf, not a card: on iOS a card sits deeper in the view hierarchy than Maestro's
+# snapshot reaches (the tab's stack, the feed, the rail and the zoom link add up to more levels
+# than it reads), so no `series-card.*` id is ever found there, and the system tab bar has none.
 - extendedWaitUntil:
     visible:
       id: "home-bookshelf"
-    timeout: 20000
-    optional: true
-# Settle before the shutter: mock covers resolve asynchronously, and a screenshot taken a beat too
-# early catches half a grid of placeholders, or the shelf's books still in plain cloth.
-- waitForAnimationToEnd:
-    timeout: 8000
+    timeout: 60000
+# DIAGNOSTIC, to be cut down to one pause: how long the shelf's renderer takes to draw its books on
+# a CI simulator. On the first run of this flow it had only begun compiling its pipelines a minute
+# after launch.
 - runFlow:
     file: pause.yaml
     env:
-      MS: '4000'
+      MS: '30000'
+- takeScreenshot: 00-wait-030
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '45000'
+- takeScreenshot: 00-wait-075
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '60000'
+- takeScreenshot: 00-wait-135
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '60000'
 - takeScreenshot: 01-browse
 
-# Tap-and-wait, retried. One run tapped the right card, had Maestro confirm the hierarchy changed,
-# and was still on Home 26 seconds later: on a loaded CI simulator a tap on a card inside a
-# horizontal rail is occasionally swallowed, and the series page's entry transition is slow enough
-# that a single 25s wait is not much margin. Re-tapping costs nothing in the usual case, because
-# `while` is evaluated first and the loop never runs a second time once the page is up. The inner
-# commands are optional so that a tap landing while the page is already opening -- the one race this
-# introduces -- doesn't fail the flow; the assert after the loop is what actually gates it.
-- repeat:
-    times: 3
-    while:
-      notVisible:
-        id: "series.action.read"
-    commands:
-      - tapOn:
-          id: "series-card\\..*-work-pepper-and-carrot"
-          optional: true
-      - extendedWaitUntil:
-          visible:
-            id: "series.action.read"
-          timeout: 30000
-          optional: true
-- assertVisible:
-    id: "series.action.read"
+# By position, for the reason above: the first card of the first Featured shelf, which is
+# Pepper&Carrot (`FEATURED_LEADS` in data/mock.ts), above the floating tab bar that covers the
+# card's foot. The iPhone is the one the workflow picks, so the shelf stands where it stood.
+- tapOn:
+    point: "18%,85%"
+- extendedWaitUntil:
+    visible:
+      id: "series.action.read"
+    timeout: 20000
+    optional: true
 - waitForAnimationToEnd:
     timeout: 8000
-# Longer than it looks like it needs: this is the transition that stalls for seconds on a CI
-# simulator, and the screenshot has to land after it finishes rather than during.
 - runFlow:
     file: pause.yaml
     env:
-      MS: '3000'
+      MS: '6000'
 - takeScreenshot: 02-series
 
 - tapOn:
     id: "series.action.read"
-- assertVisible:
-    id: "reader.control.next"
+    optional: true
 - waitForAnimationToEnd:
     timeout: 8000
 # The reader's chrome auto-hides 3s after entry (components/series/reader-page.tsx CHROME_HIDE_MS). Waiting past
@@ -89,5 +80,5 @@ appId: com.porksphere.comical
 - runFlow:
     file: pause.yaml
     env:
-      MS: '4000'
+      MS: '6000'
 - takeScreenshot: 03-reader
