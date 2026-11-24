@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { GestureResponderEvent } from 'react-native';
 import { useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
 import { hapticImpactLight } from '@/lib/haptics';
@@ -53,20 +53,20 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
     }
   }, [refreshing, pullY]);
 
-  const onTouchStart = useCallback(
-    (e: GestureResponderEvent) => {
+  const start = useCallback(
+    (y: number) => {
       // Never while a refresh holds the gap open. The gap IS `pullY`, so a second gesture writing it
       // closes the gap under a spinner that stays up until the request lands — which left the
       // spinner sitting on the first row.
       pulling.current = !holding.current && scrollY.value <= 0;
       armed.current = false;
-      startY.current = e.nativeEvent.pageY;
+      startY.current = y;
     },
     [scrollY],
   );
 
-  const onTouchMove = useCallback(
-    (e: GestureResponderEvent) => {
+  const move = useCallback(
+    (y: number) => {
       if (!pulling.current) return;
       if (scrollY.value > 0) {
         // The list itself started scrolling mid-gesture — hand off to it entirely.
@@ -74,7 +74,7 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
         pullY.set(withTiming(0, { duration: 150 }));
         return;
       }
-      const dy = e.nativeEvent.pageY - startY.current - PULL_START_SLOP;
+      const dy = y - startY.current - PULL_START_SLOP;
       const next = dy > 0 ? Math.min(PULL_MAX, dy * PULL_RESISTANCE) : 0;
       // Tap the moment the pull first crosses the trigger line — the "you've pulled far enough"
       // feedback; reset on the way back so a re-cross re-fires. (No-op on iOS Safari/desktop.)
@@ -86,7 +86,7 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
     [pullY, scrollY],
   );
 
-  const onTouchEnd = useCallback(() => {
+  const end = useCallback(() => {
     // A touch that wasn't a pull never moved `pullY`, and has no business settling it.
     if (!pulling.current) return;
     pulling.current = false;
@@ -101,7 +101,12 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
     }
   }, [pullY, onRefresh]);
 
+  const onTouchStart = useCallback((e: GestureResponderEvent) => start(e.nativeEvent.pageY), [start]);
+  const onTouchMove = useCallback((e: GestureResponderEvent) => move(e.nativeEvent.pageY), [move]);
+  // The pull as its three moments, for a source that is not a touch event (Android's list anchor).
+  const touch = useMemo(() => ({ start, move, end }), [start, move, end]);
+
   // Here the list translates by the pull itself, so the wrapper offset *is* `pullY` — exposed under
   // the same name the native hook uses (where the two differ) so the caller can treat them alike.
-  return { pullY, listTranslateY: pullY, pullThreshold: PULL_THRESHOLD, onTouchStart, onTouchMove, onTouchEnd };
+  return { pullY, listTranslateY: pullY, pullThreshold: PULL_THRESHOLD, onTouchStart, onTouchMove, onTouchEnd: end, touch };
 }

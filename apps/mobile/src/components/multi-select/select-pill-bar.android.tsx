@@ -57,9 +57,13 @@ export function SelectPillBar({ verbs, options, optionsTestID = 'select.options'
     );
   }
 
+  // The menu hangs from the toolbar's leading end, where its ⋮ is. Compose lays the toolbar out,
+  // so its width here is Material's metrics: 48dp a button and its padding, or the ⋮ alone
+  // beside the 56dp action button.
+  const toolbarWidth = solo ? 64 + Spacing.two + 56 : Spacing.three + 48 * (verbs.length + 1);
   const openOptions = () =>
-    anchor.current?.measureInWindow((x, y) =>
-      openContextMenu({ x: x + Spacing.three, y, anchor: 'fixed', rows: options! }),
+    anchor.current?.measureInWindow((x, y, width) =>
+      openContextMenu({ x: x + (width - toolbarWidth) / 2, y, anchor: 'fixed', rows: options! }),
     );
   return (
     <View ref={anchor} collapsable={false} pointerEvents="box-none" style={[styles.place, { bottom }]}>

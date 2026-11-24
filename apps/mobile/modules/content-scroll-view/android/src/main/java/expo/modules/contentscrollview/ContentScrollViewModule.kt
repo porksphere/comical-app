@@ -1,6 +1,7 @@
 package expo.modules.contentscrollview
 
 import android.content.Context
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -17,9 +18,12 @@ class ContentScrollViewModule : Module() {
     Name("ContentScrollView")
 
     View(ContentScrollAnchorView::class) {
-      Events("onScrolledPast")
+      Events("onScrolledPast", "onPullTouch")
       Prop("scrolledPast") { view, threshold: Double? ->
         view.threshold = threshold
+      }
+      Prop("tracksPull") { view, tracks: Boolean? ->
+        view.tracksPull = tracks ?: false
       }
     }
   }
@@ -28,6 +32,11 @@ class ContentScrollViewModule : Module() {
 /**
  * Reports when the list under it crosses `scrolledPast` dp from its top, for a bar that takes its
  * container colour once content is under it. Only the crossings are sent.
+ *
+ * With `tracksPull` it also reports a finger dragging down on a list at its top, for pull to
+ * refresh. React Native cancels a touch for JavaScript the moment a native scroll view takes the
+ * drag, so the pull can't be read there: every touch passes through here on its way to the list,
+ * whoever ends up handling it.
  */
 class ContentScrollAnchorView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
   val onScrolledPast by EventDispatcher()
@@ -39,8 +48,34 @@ class ContentScrollAnchorView(context: Context, appContext: AppContext) : ExpoVi
       check()
     }
 
+  val onPullTouch by EventDispatcher()
+  var tracksPull = false
+
   private var past: Boolean? = null
   private var list = WeakReference<ScrollView>(null)
+  private var touching = false
+
+  override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+    if (tracksPull) {
+      when (ev.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          touching = true
+          pull("start", ev)
+        }
+        // Only a drag that could be a pull: a scroll's moves would be an event a frame for nothing.
+        MotionEvent.ACTION_MOVE -> if (touching && (scroller()?.scrollY ?: 0) <= 0) pull("move", ev)
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (touching) {
+          touching = false
+          pull("end", ev)
+        }
+      }
+    }
+    return super.dispatchTouchEvent(ev)
+  }
+
+  private fun pull(phase: String, ev: MotionEvent) {
+    onPullTouch(mapOf("phase" to phase, "y" to ev.rawY / resources.displayMetrics.density.toDouble()))
+  }
 
   // The observer hears every scroll in the window, this list's or not.
   private val scrolled = ViewTreeObserver.OnScrollChangedListener { check() }

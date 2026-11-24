@@ -1,5 +1,7 @@
 import { createContext, use, useEffect, useMemo, useState, type ReactNode } from 'react';
 
+import { ScreenPullProvider } from '@/components/screen-pull';
+
 /**
  * Whether a screen's list has scrolled past the top, for the bar over it (iOS): bare over the top
  * of the page, the frosted material once content is a few points under it, the series page's
@@ -39,7 +41,11 @@ export function BarScrolledProvider({ children }: { children: ReactNode }) {
   const [scrolled, report] = useState(false);
   const [managed, manage] = useState<BarManager>(null);
   const value = useMemo(() => ({ scrolled, report, managed, manage }), [scrolled, managed]);
-  return <BarScrolledContext.Provider value={value}>{children}</BarScrolledContext.Provider>;
+  return (
+    <BarScrolledContext.Provider value={value}>
+      <ScreenPullProvider>{children}</ScreenPullProvider>
+    </BarScrolledContext.Provider>
+  );
 }
 
 /**

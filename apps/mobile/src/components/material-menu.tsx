@@ -11,6 +11,7 @@ import { useTheme } from '@/hooks/use-theme';
 export { MENU_EXIT_MS } from '@/hooks/use-menu-mount';
 
 const CHECK = require('@/assets/material-symbols/check.xml');
+const UNCHECKED = '#00000000';
 
 /** A leading `primary` row, then the rest, then the trailing `destructive` rows: the sections the
  *  iOS system menu makes of the same rows (system-context-menu.tsx), divided here. */
@@ -100,9 +101,12 @@ export function MaterialMenu({
                     <DropdownMenuItem.Text>
                       <Text>{row.label}</Text>
                     </DropdownMenuItem.Text>
-                    {row.active && (
+                    {/* Mounted for every row that can be checked, and tinted away when it is
+                        not: a slot added to an item already composed is never drawn, so a check
+                        that came and went in a menu left up never came back. */}
+                    {row.active !== undefined && (
                       <DropdownMenuItem.TrailingIcon>
-                        <Icon source={CHECK} size={24} />
+                        <Icon source={CHECK} size={24} tint={row.active ? theme.text : UNCHECKED} />
                       </DropdownMenuItem.TrailingIcon>
                     )}
                   </DropdownMenuItem>

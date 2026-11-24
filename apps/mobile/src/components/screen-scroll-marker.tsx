@@ -3,6 +3,7 @@ import { Platform, ScrollView, StyleSheet } from 'react-native';
 import { ScrollViewMarker } from 'react-native-screens';
 
 import { BAR_SCROLLED_AT, useBarManaged, useReportBarScrolled } from '@/components/bar-scrolled';
+import { useScreenPullTouch } from '@/components/screen-pull';
 import { HIDDEN_TOP_EDGE } from '@/lib/native-bar';
 
 import { ContentScrollAnchor } from '../../modules/content-scroll-view';
@@ -43,9 +44,9 @@ export const ScreenScrollActiveContext = createContext(true);
  * (`automatic`, soft under a bar with a custom title), and the last one set on the scroll view wins,
  * so every tab root sets it hidden there: its bar's material is the backing.
  *
- * On Android it is the anchor for one thing: the list's crossings, for the Material bar over it
- * (`BarSurface`), which takes its container colour once content is under it. On web it renders the
- * child alone.
+ * On Android it is the anchor for two things: the list's crossings, for the Material bar over it
+ * (`BarSurface`), which takes its container colour once content is under it, and the finger's
+ * travel for pull to refresh (`screen-pull`). On web it renders the child alone.
  */
 export function ScreenScrollMarker({
   markerKey,
@@ -58,6 +59,7 @@ export function ScreenScrollMarker({
   const active = use(ScreenScrollActiveContext);
   const report = useReportBarScrolled();
   const managed = useBarManaged();
+  const pullTouch = useScreenPullTouch();
   if (Platform.OS === 'android') {
     if (!ContentScrollAnchor) return children;
     const listens = report && managed === 'list' && active;
@@ -66,7 +68,9 @@ export function ScreenScrollMarker({
         key={markerKey}
         style={styles.fill}
         scrolledPast={listens ? BAR_SCROLLED_AT : undefined}
-        onScrolledPast={listens ? (e) => report(e.nativeEvent.past) : undefined}>
+        onScrolledPast={listens ? (e) => report(e.nativeEvent.past) : undefined}
+        tracksPull={!!pullTouch && active}
+        onPullTouch={pullTouch ? (e) => pullTouch(e.nativeEvent.phase, e.nativeEvent.y) : undefined}>
         {children}
       </ContentScrollAnchor>
     );

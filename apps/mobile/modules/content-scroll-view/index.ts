@@ -10,7 +10,9 @@
  * scroll edge effect (iOS 26) where the list is found: for a list react-native-screens can't reach
  * with the screen's own option, a SwiftUI one deep in its host.
  *
- * On Android it is the `scrolledPast` report alone, for the Material bars' container colour; the
+ * On Android it is the `scrolledPast` report, for the Material bars' container colour, and
+ * `tracksPull`: a finger's travel over a list at its top, through `onPullTouch` (`y` in points), for
+ * pull to refresh, which JavaScript's own touch events can't follow once the list has the drag. The
  * rest is UIKit's and does nothing there.
  *
  * Null where the module isn't linked (web, a build from before it existed).
@@ -27,6 +29,8 @@ export type ContentScrollAnchorProps = ViewProps & {
   scrolledPast?: number;
   onScrolledPast?: (event: { nativeEvent: { past: boolean; offset: number } }) => void;
   topEdge?: 'hidden' | 'soft' | 'hard' | 'automatic';
+  tracksPull?: boolean;
+  onPullTouch?: (event: { nativeEvent: { phase: 'start' | 'move' | 'end'; y: number } }) => void;
   ref?: Ref<ContentScrollAnchorRef>;
 };
 

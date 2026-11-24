@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { REFRESH_MIN_VISIBLE_MS } from '@/components/pull-indicator';
+import { useScreenPullSource } from '@/components/screen-pull';
 import { useNativePullToRefresh } from '@/hooks/use-native-pull-to-refresh';
 import { useTouchPullToRefresh } from '@/hooks/use-touch-pull-to-refresh';
 
@@ -15,8 +16,10 @@ import { useTouchPullToRefresh } from '@/hooks/use-touch-pull-to-refresh';
  * platform pick, the content shift), so Browse and Search share one implementation instead of two
  * drifting ones:
  *
- *  - Web + Android (`useTouchPullToRefresh`): touch-driven — neither has usable elastic overscroll
- *    (web's RefreshControl is inert; Android clamps to a glow).
+ *  - Web + Android (`useTouchPullToRefresh`): finger-driven — neither has usable elastic overscroll
+ *    (web's RefreshControl is inert; Android clamps to a glow). Web reads touch events on the
+ *    screen's outer view; Android's list anchor reads the finger natively, since React Native
+ *    cancels a touch for JavaScript once the native list has the drag.
  *  - iOS (`useNativePullToRefresh`): reads the native bounce directly. RN's RefreshControl draws
  *    behind the top bar here, and `progressViewOffset` can't fix it — read that hook before
  *    reaching for the native control again.
@@ -66,6 +69,9 @@ export function usePullToRefresh(scrollY: SharedValue<number>, refresh: () => Pr
   const touchPull = useTouchPullToRefresh(scrollY, onRefresh, refreshing);
   const nativePull = useNativePullToRefresh(scrollY, onRefresh, refreshing);
   const pull = Platform.OS === 'ios' ? nativePull : touchPull;
+  // Android reads the finger at the list (see `ScreenPullProvider`): its touch events stop at
+  // the first points of a drag, and left wired they held the pull open a sliver.
+  useScreenPullSource(Platform.OS === 'android' ? touchPull.touch : null);
 
   // Shifts the list down so the gap the spinner sits in opens up. On web + Android this tracks the
   // pull the whole way; on iOS it stays 0 during the pull (the native bounce already moves the
@@ -77,9 +83,10 @@ export function usePullToRefresh(scrollY: SharedValue<number>, refresh: () => Pr
   return {
     refreshing,
     listStyle,
-    /** Spread onto the screen's outer view. Empty on iOS, which sources its pull from the bounce. */
+    /** Spread onto the screen's outer view. Empty on iOS, which sources its pull from the bounce,
+     *  and on Android, where the list's anchor does. */
     touchHandlers:
-      Platform.OS === 'ios'
+      Platform.OS !== 'web'
         ? null
         : { onTouchStart: touchPull.onTouchStart, onTouchMove: touchPull.onTouchMove, onTouchEnd: touchPull.onTouchEnd },
     /** Pass to the list. iOS-only: a release past the threshold triggers the refresh. */
