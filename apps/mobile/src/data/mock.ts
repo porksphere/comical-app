@@ -202,6 +202,10 @@ let mockActive = false;
 // since local dev demo mode should keep its realistic feel — only e2e.yml sets this.
 const IS_DEMO_FAST = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST === '1';
 
+// The capture workflow's flag (`IS_CAPTURE_MODE` in `data/source`, which imports this module, so it
+// is read from the environment here too).
+const IS_CAPTURE = process.env.EXPO_PUBLIC_COMICAL_CAPTURE_MODE === '1';
+
 /** Set by `data/source` whenever the mock toggle / demo flag changes. */
 export function setMockActive(active: boolean): void {
   mockActive = active;
@@ -748,6 +752,8 @@ export async function mockGetBridges(): Promise<Bridge[]> {
     ratings: true,
     thumbnail: MOCK_THUMBS[hash(slugify(name)) % MOCK_THUMBS.length]!,
   }));
+  // A profiling fixture, and so not a source for the README's screenshots to list.
+  if (IS_CAPTURE) return bridges;
   bridges.push({
     id: RAIL_STRESS_BRIDGE_ID,
     name: 'Rail Stress (Demo)',
