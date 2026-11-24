@@ -179,8 +179,8 @@ bash e2e/scripts/run-device.sh android smoke.yaml     # one flow
 bash e2e/scripts/run-device.sh android                # every flow, in order
 bash e2e/scripts/run-device.sh ios smoke.yaml
 ```
-Requires the dev-client build already installed (`expo run:android` / the `ios-devclient`
-SideStore channel — see repo root docs) and Maestro installed (below). Works against an
+Requires the dev-client build already installed (`expo run:android` or the `android-devclient`
+Release's APK / the `ios-devclient` SideStore channel — see repo root docs) and Maestro installed (below). Works against an
 already-running dev server too — no need to start a second one if `bun run dev` is already up.
 
 **Web** (a static `expo export`, not the live Metro dev server — see "Web: static export" below):

@@ -4,7 +4,8 @@ name: ↳ Build Android APK (called by build-android.yml, release.yml)
 
 # Reusable: builds an installable release APK and uploads it as a run artifact
 # (renamed to comical-android.apk). Called by both build-android.yml (nightly
-# main + PRs) and release.yml (versioned, on a v* tag). The Expo Android
+# main + PRs) and release.yml (versioned, on a v* tag), and by
+# build-android-devclient.yml for the Debug development-client shell. The Expo Android
 # template signs the release build with the auto-generated debug keystore, so it
 # installs directly on any device. Swap in a real upload key before Play Store.
 
@@ -45,6 +46,15 @@ on:
         description: Value baked into EXPO_PUBLIC_COMICAL_BUILD_CHANNEL (Sentry's buildChannel tag).
         type: string
         required: true
+      dev_client:
+        # The development-client shell: a Debug build (`assembleDebug`), which is the variant
+        # expo-dev-client's launcher is compiled into and which embeds no JS, with
+        # COMICAL_DEVCLIENT=1 so with-devclient-variant names the app " (dev)". Only
+        # build-android-devclient.yml passes this.
+        description: Build the Debug development-client shell instead of the release APK.
+        type: boolean
+        default: false
+        required: false
       version:
         # Mirrors build-ios-reusable.yml's input of the same name. Optional explicit version
         # string; when empty (nightly and PR builds) the version is computed as
@@ -82,6 +92,9 @@ jobs:
     # wrapper-script patch needed here (unlike iOS/Xcode 26), see android-ccache-init.gradle.
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      # Job-wide so both `expo prebuild` (the app's name) and Gradle's autolinking
+      # (react-native.config.js) see it.
+      COMICAL_DEVCLIENT: ${{ inputs.dev_client && '1' || '' }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 5G
     steps:
@@ -242,7 +255,7 @@ jobs:
           sed -i -E "s/versionName \"[^\"]*\"/versionName \"${FULL}\"/" app/build.gradle
           grep -n 'versionName\|versionCode' app/build.gradle
 
-      - name: Build release APK
+      - name: Build APK
         env:
           # A transient Sentry outage during the release JS-bundle's source-map upload (sentry.gradle
           # shells out to sentry-cli) must not fail the app build — the APK is what ships; the upload
@@ -261,7 +274,7 @@ jobs:
           # ($GITHUB_ENV), which subsequent steps inherit.
         # Two Gradle workers: each native (CMake) task already compiles on every core, and four of
         # them at once (one per module and ABI) stacked their memory peaks past the runner's.
-        run: ./gradlew assembleRelease --no-daemon --build-cache --max-workers=2
+        run: ./gradlew ${{ inputs.dev_client && 'assembleDebug' || 'assembleRelease' }} --no-daemon --build-cache --max-workers=2
         working-directory: apps/mobile/android
 
       # Hits climb once main has saved a warm cache; a cold run (e.g. bun.lock just changed)
@@ -286,7 +299,7 @@ jobs:
       - name: Collect APK under a stable name
         run: |
           set -euo pipefail
-          APK=$(ls apps/mobile/android/app/build/outputs/apk/release/*.apk | head -1)
+          APK=$(ls apps/mobile/android/app/build/outputs/apk/${{ inputs.dev_client && 'debug' || 'release' }}/*.apk | head -1)
           cp "$APK" "$RUNNER_TEMP/comical-android.apk"
 
       - name: Upload APK artifact
@@ -299,9 +312,11 @@ jobs:
       # --- Cache SAVE (main only) ------------------------------------------
       # Only the default branch persists caches, so the shared 10 GB budget
       # holds one authoritative warm cache instead of a per-branch pile that
-      # evicts it. Feature branches restore these read-only.
+      # evicts it. Feature branches restore these read-only. So does the dev-client
+      # shell: a Debug compile shares little with Release, and saved under these keys
+      # it would stand in for the cache the release lanes are warmed by.
       - name: Save Gradle
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && !inputs.dev_client
         uses: actions/cache/save@v4
         with:
           path: |
@@ -310,14 +325,14 @@ jobs:
           key: gradle-android-${{ hashFiles('bun.lock') }}-${{ github.sha }}
 
       - name: Save Bun modules
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && !inputs.dev_client
         uses: actions/cache/save@v4
         with:
           path: ~/.bun/install/cache
           key: bun-android-${{ hashFiles('bun.lock') }}
 
       - name: Save ccache
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && !inputs.dev_client
         uses: actions/cache/save@v4
         with:
           path: ${{ github.workspace }}/.ccache

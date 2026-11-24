@@ -1,0 +1,74 @@
+name: Build Android dev-client (iterative dev)
+
+# Builds the Android **development-client** shell — a Debug build with expo-dev-client, carrying
+# the SAME `com.porksphere.comical` applicationId and debug-keystore signature as every other
+# build, so it installs over them and shares their data — and publishes it to its own rolling
+# `android-devclient` Release.
+#
+# Install it once; from then on run `bun run dev:device` (Metro over your LAN) and connect the
+# installed shell to it from the phone. JS/TS edits hot-reload on device; only NATIVE changes (a
+# native module, a config plugin, an SDK bump) need a fresh run of this workflow. It is how a
+# change to the Android UI is looked at on a device: the emulator CI runs is software-rendered.
+#
+# MANUAL ONLY, for the reasons build-ios-devclient.yml gives: the shell embeds no JS, so almost no
+# change is visible to it. It reads main's warm caches and saves none (see the reusable
+# workflow), so a run compiles what a Debug build does not share with Release from cold.
+
+on:
+  # Pick the branch to build from in the "Run workflow" dialog (or
+  # `gh workflow run build-android-devclient.yml --ref <branch>`).
+  workflow_dispatch: {}
+
+concurrency:
+  group: android-devclient-${{ github.ref }}
+  cancel-in-progress: true
+
+# Publish the APK to a GitHub Release (a public direct-download URL).
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-android-reusable.yml
+    with:
+      dev_client: true
+      channel: android-devclient
+    secrets: inherit
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download dev-client APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/apk
+
+      - name: Publish APK to the android-devclient Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The reusable build always names the artifact comical-android.apk; rename so the
+          # dev-client's URL is unambiguous beside the other APKs.
+          mv "$RUNNER_TEMP/apk/comical-android.apk" "$RUNNER_TEMP/apk/comical-devclient.apk"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/android-devclient"
+
+          # Recreate the rolling tag/release so the URL stays stable.
+          gh release delete android-devclient --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create android-devclient \
+            "$RUNNER_TEMP/apk/comical-devclient.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Comical Android dev-client (iterative dev)" \
+            --notes "Development-client shell ${VERSION} (Debug + expo-dev-client, debug-keystore signed). Same applicationId as the release and PR builds, so it shares their data and REPLACES whatever Comical is installed.
+
+          **Install directly:**
+          \`${BASE}/comical-devclient.apk\`
+
+          Then run \`bun run dev:device\` on your PC and connect from the app's launcher.
+          Rebuild (re-run this workflow) only when native code changes — a native module, a config
+          plugin, an SDK bump. Pure JS/TS iterates over Metro with no rebuild at all."

@@ -343,6 +343,12 @@ a native change (a native module, a config plugin, an SDK bump, a `bun.lock` or 
 not otherwise. Dispatch from `main` where you can: the cache save steps are gated on the default
 branch, so a run from a feature branch reads the cache but leaves nothing behind.
 
+Android has the same shell: **`Build Android dev-client`** (`build-android-devclient.yml`) runs
+the reusable Android build with `dev_client: true` (`assembleDebug`, the variant the dev launcher
+is compiled into) and publishes `comical-devclient.apk` to the rolling **`android-devclient`**
+Release, also on a manual dispatch only. It has the release APK's applicationId and debug-keystore
+signature, so it installs over it and keeps its data. It reads main's caches and saves none.
+
 It's the sanctioned Expo development-build flow — the JS loads from Metro (online), which is why it
 works where an offline debug build can't. Full walkthrough: [PROFILING.md](PROFILING.md) →
 "Iterative dev & profiling from Windows".
