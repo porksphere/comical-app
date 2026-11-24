@@ -23,6 +23,7 @@ import { seriesListSchema } from '@comical/contract';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { persisted$ } from '@/lib/observable';
+import { tracePageList } from '@/lib/page-order-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import * as api from './api';
 import { markProcessed } from './page-process';
@@ -937,11 +938,23 @@ const realDataSource: DataSource = {
     // works with the network off, and each URI (absolute) passes straight through `resolveAssetSource`
     // untouched. On a bridge/network error, fall back to the downloaded copy if we have one.
     // Between the two: the computer this phone syncs with, when it holds the chapter and answers.
-    const local = localChapterPages(bridgeId, seriesId, chapterId) ?? (await hubChapterPages(bridgeId, seriesId, chapterId));
-    if (local) return local;
+    const ids = { bridgeId, seriesId, chapterId };
+    const onDevice = localChapterPages(bridgeId, seriesId, chapterId);
+    const local = onDevice ?? (await hubChapterPages(bridgeId, seriesId, chapterId));
+    if (local) {
+      tracePageList(onDevice ? 'device download' : 'paired computer', ids, local);
+      return local;
+    }
     try {
       const pages = await api.getChapterPages(bridgeId, seriesId, chapterId, signal);
-      return [...pages].sort((a, b) => a.index - b.index).map((p) => (p.process ? markProcessed(p.imageUrl) : p.imageUrl));
+      const urls = [...pages].sort((a, b) => a.index - b.index).map((p) => (p.process ? markProcessed(p.imageUrl) : p.imageUrl));
+      tracePageList(
+        'bridge',
+        ids,
+        urls,
+        pages.map((p) => p.index),
+      );
+      return urls;
     } catch (e) {
       const fallback = localChapterPages(bridgeId, seriesId, chapterId);
       if (fallback) return fallback;
@@ -951,9 +964,13 @@ const realDataSource: DataSource = {
 
   async getDirectPages(bridgeId, seriesId, signal) {
     // Offline serving for a direct (chapterless) series — filed under the reserved direct chapter id.
-    const local =
-      localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID) ?? (await hubChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID));
-    if (local) return local;
+    const ids = { bridgeId, seriesId, chapterId: DIRECT_DOWNLOAD_CHAPTER_ID };
+    const onDevice = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
+    const local = onDevice ?? (await hubChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID));
+    if (local) {
+      tracePageList(onDevice ? 'device download' : 'paired computer', ids, local);
+      return local;
+    }
     try {
       const pages = await fetchSeriesPages(bridgeId, seriesId);
       // Return the raw (possibly server-relative) page paths WITHOUT resolving them here. Some bridges
@@ -963,7 +980,14 @@ const realDataSource: DataSource = {
       // resolves each lazily via resolveAssetSourceCached as it scrolls into the render window, so only
       // visible pages pay that cost. Absolute URLs pass straight through, so bridges that already return
       // direct CDN URLs behave exactly as before.
-      return [...pages].sort((a, b) => a.index - b.index).map((p) => (p.process ? markProcessed(p.imageUrl) : p.imageUrl));
+      const urls = [...pages].sort((a, b) => a.index - b.index).map((p) => (p.process ? markProcessed(p.imageUrl) : p.imageUrl));
+      tracePageList(
+        'bridge',
+        ids,
+        urls,
+        pages.map((p) => p.index),
+      );
+      return urls;
     } catch (e) {
       const fallback = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
       if (fallback) return fallback;

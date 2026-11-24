@@ -14,6 +14,7 @@ import {
   useSeriesStickerRead,
 } from '@/hooks/use-home-bookshelf';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
+import { setPageOrderTrace, usePageOrderTrace } from '@/lib/page-order-trace';
 
 /** Dev and profiling builds only: lets development iterate against mock data without a running backend, and
  *  shows which server real requests target. The Settings screen only links here when
@@ -26,6 +27,7 @@ export default function DeveloperSettingsScreen() {
   const shuffleCovers = useBookCoverShuffle();
   const shelfStats = useHomeBookshelfStats();
   const stickerRead = useSeriesStickerRead();
+  const pageTrace = usePageOrderTrace();
 
   const sections: SettingsFormSection[] = [
     {
@@ -68,6 +70,14 @@ export default function DeveloperSettingsScreen() {
             'A trial. On a phone, the series page reads from the home bookshelf’s sticker, hung on the cover’s corner with the new-chapter burst on the other, in place of the Read capsule.',
           value: stickerRead,
           onChange: setSeriesStickerRead,
+        },
+        {
+          kind: 'toggle',
+          label: 'Trace page order',
+          description:
+            'Logs to Diagnostics the page list each chapter comes with, what the reader puts in each slot, what each picture resolves to and which page is on screen. For a chapter whose pages read out of order.',
+          value: pageTrace,
+          onChange: setPageOrderTrace,
         },
         { kind: 'value', label: 'Server', description: apiBase, selectable: true },
       ],
