@@ -388,7 +388,8 @@ mock is decided.
   phone on the same network. It only points elsewhere if you've set
   `EXPO_PUBLIC_COMICAL_SERVER` yourself, or overridden the server in Settings.
 - **Mock data is reachable in exactly two cases, both dev/preview only:** the
-  `__DEV__`-gated "Use mock data" toggle in Settings, and the GitHub Pages
+  "Use mock data" toggle in Settings → Developer, which works only with `PROFILING_ENABLED` (a dev
+  build, or the nightly and per-PR builds, so a PR can be tried on a phone), and the GitHub Pages
   static preview build (`EXPO_PUBLIC_COMICAL_DEMO_MODE=1`, set only in
   `deploy-web.yml`, since static hosting has no backend to reach — see
   `apps/mobile/src/components/demo-banner.tsx`). A real production build never falls back to
@@ -1304,6 +1305,33 @@ leaves the book in plain cloth.
 
 **A renderer that cannot start takes the shelf away, not the screen** (`markHomeBookshelfUnavailable`):
 the rails begin the page as they did, until the app is next opened.
+
+# Source comments: read only, and asked for only when opened
+
+A bridge with capability `"comments"` says where its source keeps threads (`info.comments.scopes`:
+the series, each chapter, or both), and the app offers exactly those: the series page's Comments
+row, a chapter row's menu, and the reader's toolbar button. `components/comments/` is the one
+thread UI behind all three; `data/comments.ts` holds its rules (pure, tested), and
+`data/comments-prefs.ts` the two switches (Settings → General for everything, a bridge's settings
+for that bridge) plus the sort remembered per bridge for the session.
+
+- **Nothing asks the source for a thread until someone opens it.** The series page shows a row,
+  never a preview: a count on it is one the bridge sent with the details (`commentCount`) or it is
+  not shown. A bridge's request slots are few and the chapter list wants them first. If a thread is
+  ever drawn inline, it goes behind the details and the chapter list the way `seriesListQuery` goes
+  behind `detailStarted`.
+- **A page from the series, a sheet over the reader.** `/series-comments` (with its twin under
+  `app/series/`, see `useSeriesSubPath`) is a pushed page. The reader opens `CommentsSheet` through
+  the overlay instead, so the reader under it never unmounts and the place in the chapter is kept.
+- **One level of replies.** A reply's own replies come up beside it with the line they answer
+  (`flattenReplies`, `replyTo`) rather than indenting again.
+- **Paged by the bridge's cursor**, a page at a time as the scroller nears its end
+  (`CommentThread`'s `loadMore`), with a button at the foot that does the same; a comment's replies
+  page separately, by `parentId`. The list is a plain ScrollView that reveals `REVEAL_STEP` cards
+  at a time, for the sources that hand over a whole thread in one answer.
+- **A body is nodes, never markup** (`CommentBody`): text runs, links, mentions, images, quotes,
+  spoilers. There is no HTML to render and no WebView.
+- **Read only.** No composer, no voting; the foot of a thread opens it on the source's site.
 
 # Testing: new screens need a flow
 

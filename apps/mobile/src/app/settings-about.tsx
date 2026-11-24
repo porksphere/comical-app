@@ -98,7 +98,7 @@ export default function AboutScreen() {
     // Only meaningful in remote mode; embedded resolves every request in-process.
     ['Server', embedded ? '' : apiBase],
     ['Bridge contract', CONTRACT_VERSION],
-    // A demo/preview bundle serves mock data with no backend at all; the __DEV__ toggle does the
+    // A demo/preview bundle serves mock data with no backend at all; the Developer toggle does the
     // same on demand. Either one makes every other data row a fiction, so say so.
     ['Data', mockActive ? (IS_DEMO_MODE ? 'Mock (demo build)' : 'Mock (dev toggle)') : ''],
   ];

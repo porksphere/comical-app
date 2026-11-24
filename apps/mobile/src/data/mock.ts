@@ -28,11 +28,13 @@ import type {
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import type {
   ApiBridgeInfo,
+  ApiCommentPage,
   ApiFilter,
   ApiSortOption,
   BridgePrefs,
   BridgeSummary,
   BridgeSettingsInfo,
+  CommentsQuery,
   ContentRating,
   FavoritesImportItem,
   FavoritesImportPreview,
@@ -53,6 +55,7 @@ import type {
   SettingValue,
 } from './api';
 import { MOCK_COVERS, MOCK_COVERS_VARIED, MOCK_PAGES, MOCK_THUMBS } from './mock-assets';
+import { MOCK_BRIDGE_COMMENTS, mockCommentCount, mockCommentPage } from './mock-comments';
 
 export type {
   BadgePosition,
@@ -673,7 +676,7 @@ const delay = (ms: number): Promise<void> =>
 
 // Perf spike fixture: a synthetic bridge whose composed Home has a LOT of rails, so the
 // rail-virtualization work (ContentFeed) can be stress-profiled on demand — a real bridge home is only
-// ~3–5 rails, which may not lag at all. Reachable via the __DEV__ "Use mock data" toggle. See
+// ~3–5 rails, which may not lag at all. Reachable via the "Use mock data" toggle. See
 // `RAIL_STRESS_COUNT` / `mockGetHomeSections`.
 export const RAIL_STRESS_BRIDGE_ID = 'rail-stress';
 const RAIL_STRESS_COUNT = 18;
@@ -700,11 +703,13 @@ export async function mockGetBridges(): Promise<Bridge[]> {
       'sort',
       ...(MOCK_DIRECT_BRIDGES.has(name) ? ['direct'] : []),
       ...(MOCK_FAVORITES_BRIDGES.has(name) ? ['favorites'] : []),
+      ...(MOCK_BRIDGE_COMMENTS[slugify(name)] ? ['comments'] : []),
     ],
     // Mock entries carry "Ch. 176 · 2h ago" subs (see `entry`'s `sub` option), so the mock bridges
     // declare the flag — the grids reserve the sub line for them, exactly like a real sub-ful bridge.
     cardSubtitles: true,
     ratings: true,
+    ...(MOCK_BRIDGE_COMMENTS[slugify(name)] && { comments: MOCK_BRIDGE_COMMENTS[slugify(name)] }),
     thumbnail: MOCK_THUMBS[hash(slugify(name)) % MOCK_THUMBS.length]!,
   }));
   bridges.push({
@@ -797,12 +802,27 @@ export async function mockSearch(bridgeId: string, query: string, cursor?: strin
 }
 
 export async function mockGetSeriesDetail(
-  _bridgeId: string,
+  bridgeId: string,
   seriesId: string,
   opts: { direct?: boolean; bridgeName?: string; title?: string } = {},
 ): Promise<SeriesDetail> {
   await delay(SERIES_OPEN_DELAY_MS);
-  return mockSeries(seriesId, opts.title, opts.bridgeName ?? 'Library', { direct: opts.direct });
+  const series = mockSeries(seriesId, opts.title, opts.bridgeName ?? 'Library', { direct: opts.direct });
+  // Only one bridge sends the count with the details, so the row is drawn both with and without it.
+  if (bridgeId === 'panelfox') series.commentCount = mockCommentCount(series.id);
+  return series;
+}
+
+const COMMENTS_DELAY_MS = 350;
+
+export async function mockGetComments(
+  bridgeId: string,
+  seriesId: string,
+  query: CommentsQuery,
+  cursor?: string,
+): Promise<ApiCommentPage> {
+  await delay(COMMENTS_DELAY_MS);
+  return mockCommentPage(bridgeId, seriesId, query, cursor);
 }
 
 /** The deferred list part of a series (mirrors real `getSeriesList`): chapters +
@@ -810,7 +830,7 @@ export async function mockGetSeriesDetail(
  *  `mockGetSeriesDetail` flags `listDeferred`, so the series screen fetches this
  *  separately — same single code path as real bridges. */
 export async function mockGetSeriesList(
-  _bridgeId: string,
+  bridgeId: string,
   seriesId: string,
   direct: boolean,
 ): Promise<SeriesListResult> {
@@ -825,6 +845,7 @@ export async function mockGetSeriesList(
   }
   const chapterCount = 40 + (hash(seed) % 160);
   const chapters = mockChapters(seed, chapterCount);
+  if (bridgeId === 'panelfox') for (const c of chapters) c.commentCount = mockCommentCount(seed, c.id);
   const first = firstChapterInReadingOrder(chapters);
   return {
     chapters,

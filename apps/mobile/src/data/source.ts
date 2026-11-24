@@ -4,8 +4,9 @@
  * Screens call `useDataSource()` and never import `api.ts` or `mock.ts`
  * directly. Mock data is reachable in exactly two cases, both compiled out of
  * a real production build:
- *   - `__DEV__` + the "Use mock data" toggle in Settings (persisted locally,
- *     dev builds only).
+ *   - the "Use mock data" toggle in Settings → Developer (persisted locally), in a build with
+ *     `PROFILING_ENABLED`: a dev build, or the nightly and per-PR builds, which is how a PR is
+ *     tried on a phone against a bridge feature no real bridge has yet.
  *   - `EXPO_PUBLIC_COMICAL_DEMO_MODE=1`, set only by the GitHub Pages preview
  *     workflow (no backend to reach from static hosting) — see
  *     `components/demo-banner.tsx` for the accompanying "sample data" banner.
@@ -22,6 +23,8 @@ import { seriesListSchema } from '@comical/contract';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { persisted$ } from '@/lib/observable';
+import { tracePageList } from '@/lib/page-order-trace';
+import { PROFILING_ENABLED } from '@/lib/profiling';
 import * as api from './api';
 import { markProcessed } from './page-process';
 import { queryClient } from './query-client';
@@ -91,6 +94,15 @@ export interface DataSource {
   isFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean>;
   addFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   removeFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
+  /** One page of a comment thread (the chapter's with `query.chapterId`, the series' without), or
+   *  of one comment's replies with `query.parentId`. Read-only: nothing here posts or votes. */
+  getComments(
+    bridgeId: string,
+    seriesId: string,
+    query: api.CommentsQuery,
+    cursor?: api.Cursor,
+    signal?: AbortSignal,
+  ): Promise<api.ApiCommentPage>;
 
   // ─── Local library / history / activity ─────────────────────────────────────
   // The host's own cross-bridge collection (distinct from a bridge's `favorites`). `getLibrary`
@@ -478,6 +490,7 @@ function toChapterList(list: api.ApiChapter[]): SeriesListResult {
     ...(c.group !== undefined && { group: c.group }),
     ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
     ...(c.pageCount !== undefined && { pageCount: c.pageCount }),
+    ...(c.commentCount !== undefined && { commentCount: c.commentCount }),
   }));
   // The Read label mirrors the Read button's target: the first chapter in reading
   // order (by number), not the raw array's first element (a newest-first layout the
@@ -669,6 +682,7 @@ const realDataSource: DataSource = {
   isFavorite: (bridgeId, seriesId, signal) => api.isFavorite(bridgeId, seriesId, signal),
   addFavorite: (bridgeId, seriesId, signal) => api.addFavorite(bridgeId, seriesId, signal),
   removeFavorite: (bridgeId, seriesId, signal) => api.removeFavorite(bridgeId, seriesId, signal),
+  getComments: (bridgeId, seriesId, query, cursor, signal) => api.getComments(bridgeId, seriesId, query, cursor, signal),
 
   async getLibrary(opts, signal) {
     const entries = await api.getLibrary(opts, signal);
@@ -815,6 +829,7 @@ const realDataSource: DataSource = {
       ...(info.coverForm !== undefined && { coverForm: info.coverForm }),
       ...(info.readingDirection !== undefined && { readingDirection: info.readingDirection }),
       bridge: opts.bridgeName ?? '',
+      ...(info.commentCount !== undefined && { commentCount: info.commentCount }),
       description: info.description,
       // Carry `kind` (so the genre group is identifiable — genres are just a `kind: "genre"` group)
       // plus the per-tag `tagIds`/`tagQueries` (index-parallel to `tags`) so a tapped chip can drive a
@@ -923,11 +938,23 @@ const realDataSource: DataSource = {
     // works with the network off, and each URI (absolute) passes straight through `resolveAssetSource`
     // untouched. On a bridge/network error, fall back to the downloaded copy if we have one.
     // Between the two: the computer this phone syncs with, when it holds the chapter and answers.
-    const local = localChapterPages(bridgeId, seriesId, chapterId) ?? (await hubChapterPages(bridgeId, seriesId, chapterId));
-    if (local) return local;
+    const ids = { bridgeId, seriesId, chapterId };
+    const onDevice = localChapterPages(bridgeId, seriesId, chapterId);
+    const local = onDevice ?? (await hubChapterPages(bridgeId, seriesId, chapterId));
+    if (local) {
+      tracePageList(onDevice ? 'device download' : 'paired computer', ids, local);
+      return local;
+    }
     try {
       const pages = await api.getChapterPages(bridgeId, seriesId, chapterId, signal);
-      return [...pages].sort((a, b) => a.index - b.index).map((p) => (p.process ? markProcessed(p.imageUrl) : p.imageUrl));
+      const urls = [...pages].sort((a, b) => a.index - b.index).map((p) => (p.process ? markProcessed(p.imageUrl) : p.imageUrl));
+      tracePageList(
+        'bridge',
+        ids,
+        urls,
+        pages.map((p) => p.index),
+      );
+      return urls;
     } catch (e) {
       const fallback = localChapterPages(bridgeId, seriesId, chapterId);
       if (fallback) return fallback;
@@ -937,9 +964,13 @@ const realDataSource: DataSource = {
 
   async getDirectPages(bridgeId, seriesId, signal) {
     // Offline serving for a direct (chapterless) series — filed under the reserved direct chapter id.
-    const local =
-      localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID) ?? (await hubChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID));
-    if (local) return local;
+    const ids = { bridgeId, seriesId, chapterId: DIRECT_DOWNLOAD_CHAPTER_ID };
+    const onDevice = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
+    const local = onDevice ?? (await hubChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID));
+    if (local) {
+      tracePageList(onDevice ? 'device download' : 'paired computer', ids, local);
+      return local;
+    }
     try {
       const pages = await fetchSeriesPages(bridgeId, seriesId);
       // Return the raw (possibly server-relative) page paths WITHOUT resolving them here. Some bridges
@@ -949,7 +980,14 @@ const realDataSource: DataSource = {
       // resolves each lazily via resolveAssetSourceCached as it scrolls into the render window, so only
       // visible pages pay that cost. Absolute URLs pass straight through, so bridges that already return
       // direct CDN URLs behave exactly as before.
-      return [...pages].sort((a, b) => a.index - b.index).map((p) => (p.process ? markProcessed(p.imageUrl) : p.imageUrl));
+      const urls = [...pages].sort((a, b) => a.index - b.index).map((p) => (p.process ? markProcessed(p.imageUrl) : p.imageUrl));
+      tracePageList(
+        'bridge',
+        ids,
+        urls,
+        pages.map((p) => p.index),
+      );
+      return urls;
     } catch (e) {
       const fallback = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
       if (fallback) return fallback;
@@ -1081,6 +1119,7 @@ const mockDataSource: DataSource = {
   isFavorite: (bridgeId, seriesId) => mock.mockIsFavorite(seriesId),
   addFavorite: (bridgeId, seriesId) => mock.mockAddFavorite(seriesId),
   removeFavorite: (bridgeId, seriesId) => mock.mockRemoveFavorite(seriesId),
+  getComments: (bridgeId, seriesId, query, cursor) => mock.mockGetComments(bridgeId, seriesId, query, cursor),
 
   getLibrary: (opts) => mock.mockGetLibrary(opts),
   getCollections: () => mock.mockGetCollections(),
@@ -1210,15 +1249,15 @@ export const IS_CAPTURE_MODE =
   IS_DEMO_MODE && process.env.EXPO_PUBLIC_COMICAL_CAPTURE_MODE === '1';
 
 // Persisted dev-only toggle (Legend State; see `lib/observable.ts`). Holds the raw stored value; the
-// `__DEV__` mask is applied at read, so a non-dev build always reports false and never activates mock
-// via the toggle. The old store wrote '1'/'0', which parse back as truthy/falsy, so the key carries over.
+// `PROFILING_ENABLED` mask is applied at read, so a release build always reports false and never
+// activates mock via the toggle. The old store wrote '1'/'0', which parse back as truthy/falsy, so the key carries over.
 const mockToggle$ = persisted$<boolean>(MOCK_TOGGLE_KEY, false);
 
 /** The one source of truth for "is mock mode active", mirrored into the mock module so its simulated
  *  latency is a no-op in real mode no matter which screen calls it. Runs once at load (below) and on
  *  every toggle change, including the async hydrate. */
 function syncMockActive(): void {
-  mock.setMockActive(IS_DEMO_MODE || (__DEV__ && Boolean(mockToggle$.peek())));
+  mock.setMockActive(IS_DEMO_MODE || (PROFILING_ENABLED && Boolean(mockToggle$.peek())));
 }
 
 // Seed the mock module's flag at load (before the async toggle read resolves), so the demo build
@@ -1227,22 +1266,22 @@ function syncMockActive(): void {
 syncMockActive();
 mockToggle$.onChange(syncMockActive);
 
-/** Dev-only: flip the "Use mock data" toggle and persist it locally. No-op outside `__DEV__`. */
+/** Flip the "Use mock data" toggle and persist it locally. No-op without `PROFILING_ENABLED`. */
 export function setMockToggle(enabled: boolean): void {
-  if (!__DEV__) return;
+  if (!PROFILING_ENABLED) return;
   mockToggle$.set(enabled);
 }
 
-/** Dev-only hook: [enabled, setEnabled] for the Settings screen's mock-data toggle. */
+/** [enabled, setEnabled] for the Developer settings' mock-data toggle. */
 export function useMockDataToggle(): [boolean, (enabled: boolean) => void] {
-  // `use$` is called UNCONDITIONALLY and the `__DEV__` mask applied to its result. Inlining it as
-  // `__DEV__ && Boolean(use$(...))` puts a hook inside a `&&` short-circuit: legal-looking, but the
+  // `use$` is called UNCONDITIONALLY and the `PROFILING_ENABLED` mask applied to its result. Inlining it as
+  // `PROFILING_ENABLED && Boolean(use$(...))` puts a hook inside a `&&` short-circuit: legal-looking, but the
   // React Compiler can memoize that expression and skip re-evaluating it, which silently drops the
   // hook on some renders. That shifts every later hook in the calling component by three
   // (`use$` = useContext + useMemo + useSyncExternalStore) and crashes React's dispatcher with
   // "Cannot read properties of undefined (reading 'length')" out of `areHookInputsEqual`.
   const on = use$(mockToggle$);
-  return [__DEV__ && Boolean(on), setMockToggle];
+  return [PROFILING_ENABLED && Boolean(on), setMockToggle];
 }
 
 /** True whenever mock data should be used: the GH Pages demo build, or the dev toggle. */

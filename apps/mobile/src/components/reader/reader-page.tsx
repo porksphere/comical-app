@@ -23,6 +23,7 @@ import { coverDelayMs } from '@/data/mock';
 import { useDownsampleImages } from '@/hooks/use-reader-settings';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { traceJS } from '@/lib/gesture-trace';
+import { tracePageResolved } from '@/lib/page-order-trace';
 import { testId } from '@/lib/test-id';
 
 // One page image. Reuses the cover/thumbnail loading treatment: hold the image
@@ -350,6 +351,7 @@ export function ReaderPage({
       // changed one still has to say so (a no-op set when it agrees, which is the common case).
       const known = peekResolvedAssetSource(uri);
       if (known) {
+        tracePageResolved(page, uri, known);
         setResolvedUri(known);
         return;
       }
@@ -365,6 +367,7 @@ export function ReaderPage({
     resolveAssetSourceCached(uri)
       .then((u) => {
         traceJS('page', 'resolved', { p: page, ms: Date.now() - askedAt });
+        tracePageResolved(page, uri, u);
         if (!cancelled) setResolvedUri(u);
       })
       .catch((err: unknown) => {

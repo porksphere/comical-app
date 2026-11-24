@@ -37,6 +37,7 @@ import {
 } from '@/hooks/use-reader-settings';
 import { useWebtoonDetection } from '@/components/reader/use-webtoon-detection';
 import { traceJS } from '@/lib/gesture-trace';
+import { tracePageShown, traceReaderList } from '@/lib/page-order-trace';
 import { type Segment } from '@/components/series/reader-types';
 
 const IS_WEB = Platform.OS === 'web';
@@ -746,6 +747,14 @@ export const ReaderPane = forwardRef<
     // active re-runs this and warms the neighbourhood.
     if (!standby && pages.length) warmSoon(currentPage);
   }, [standby, pages, currentPage, warmSoon]);
+
+  const readerSummary = `${settings.mode} ${settings.direction}, turn ${settings.pageTurn}, layout ${settings.pageLayout}${double ? ', two pages' : ''}`;
+  useEffect(() => {
+    if (!standby) traceReaderList(pages, readerSummary);
+  }, [standby, pages, readerSummary]);
+  useEffect(() => {
+    if (!standby) tracePageShown(currentPage, pages.length, pages[currentPage]);
+  }, [standby, pages, currentPage]);
 
   // ── Progress recording: every chaptered read records chapter progress. Outside the library the
   // reading log is written FIRST: its row is the series' history entry and resume point, and only

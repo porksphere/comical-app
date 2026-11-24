@@ -24,7 +24,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValu
 import { BookCoverArt, type CoverArtFrame } from '@/components/book-chrome';
 import { BridgeMissingNotice } from '@/components/bridge-missing';
 import { TagGroupRow } from '@/components/chip';
-import { CheckIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, ChevronRightIcon, CommentsIcon, LogInIcon, PlayIcon, PlusIcon, SourcesIcon, StarIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton } from '@/components/rail';
 import { ACTION_ICON_SIZE, ActionButton, ActionShapeContext, NewBadge, ROUND_SIDE_SPACE } from '@/components/series/action-button';
 import { ChapterScrollList, Disclosure, PageThumbList, TurningChevron } from '@/components/series/chapters-section';
@@ -38,6 +38,8 @@ import { ThemedText } from '@/components/themed-text';
 import { showToast } from '@/components/toast';
 import { useTopBarInset } from '@/components/top-bar';
 import { ContinuousCorner, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { formatCommentCount } from '@/data/comments';
+import { useCommentScopes } from '@/data/comments-prefs';
 import { librarySeriesQuery, queryKeys, relatedGroupsQuery, savedSeriesListQuery, seriesListQuery } from '@/data/queries';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -59,7 +61,7 @@ import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
 import { focusMarks, focusSkip } from '@/lib/focus-nav';
 import { isTypingTarget } from '@/lib/key-hold';
 import { isKey } from '@/lib/keybindings';
-import { useOpenSeriesSearch } from '@/lib/series-nav';
+import { useOpenSeriesSearch, useSeriesSubPath } from '@/lib/series-nav';
 import { measureZoomRect } from '@/lib/series-zoom';
 import { LinkAppleZoomTarget, useRouter } from '@/lib/nav';
 import { formatScore, formatVotes } from '@/lib/rating';
@@ -306,6 +308,40 @@ function AltTitles({ titles }: { titles: string[] }) {
   );
 }
 
+/**
+ * The way into the series' own comment thread: a plain row, with the count when the source sent
+ * one with the details. The thread itself is not asked for until the row is tapped.
+ */
+function CommentsRow({ count, onPress }: { count?: number; onPress: () => void }) {
+  const theme = useTheme();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <Pressable
+      testID="series.comments"
+      onPress={onPress}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      accessibilityRole="button"
+      style={({ pressed }) => [
+        styles.commentsRow,
+        { borderColor: theme.hairline },
+        hovered && { backgroundColor: theme.backgroundElement },
+        pressed && styles.metaCellPressed,
+      ]}>
+      <CommentsIcon color={theme.text} size={18} />
+      <ThemedText type="smallBold" style={styles.commentsLabel}>
+        Comments
+      </ThemedText>
+      {count !== undefined && (
+        <ThemedText testID="series.comments.count" type="small" themeColor="textSecondary">
+          {formatCommentCount(count)}
+        </ThemedText>
+      )}
+      <ChevronRightIcon color={theme.textSecondary} size={16} />
+    </Pressable>
+  );
+}
+
 /** Two-column (large) / stacked (small) series detail — only rendered once the real (or mock)
  *  fetch has resolved, so it never has to handle a null series.
  *
@@ -428,6 +464,19 @@ export function SeriesBody({
   const relatedCapable = bridgeId
     ? (bridgeById.get(bridgeId)?.capabilities.includes('related-series') ?? false)
     : false;
+  const commentScopes = useCommentScopes(bridgeId ? bridgeById.get(bridgeId) : undefined);
+  const toSubPath = useSeriesSubPath();
+  const openComments = () => {
+    if (!bridgeId) return;
+    router.push({
+      pathname: toSubPath('/series-comments'),
+      params: {
+        bridgeId,
+        id: series.id,
+        ...(series.commentCount !== undefined && { count: String(series.commentCount) }),
+      },
+    });
+  };
   const needsRelatedFetch = relatedCapable && !!series.relatedGroupsDeferred && !series.relatedGroups;
   const { data: fetchedRelated, isLoading: relatedLoading } = useQuery(
     relatedGroupsQuery(ds, mock, bridgeId ?? '', series.id, needsRelatedFetch),
@@ -971,6 +1020,10 @@ export function SeriesBody({
       ) : null}
 
       {series.altTitles?.length ? <AltTitles key={series.id} titles={series.altTitles} /> : null}
+
+      {commentScopes.series && !missingBridge && !series.removal && (
+        <CommentsRow {...(series.commentCount !== undefined && { count: series.commentCount })} onPress={openComments} />
+      )}
     </>
   );
   // `contentEl` above is now just tags + meta + description (no chapters). For chaptered series the
@@ -1310,6 +1363,17 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     columnGap: Spacing.one
+  },
+  commentsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    minHeight: 48,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth
+  },
+  commentsLabel: {
+    flex: 1
   },
   altTitlesToggle: {
     flexDirection: 'row',

@@ -1,0 +1,69 @@
+# COMMENTS (app/series-comments.tsx, components/comments/) — a source's own comment threads, read
+# only. The series page's Comments row opens the series' thread as a page; a chapter row's menu
+# opens that chapter's; the reader's toolbar shows the current chapter's in a sheet.
+#
+# Journey: Browse -> tap a card (the first mock bridge has both a series thread and chapter
+# threads, three sorts, and sends its counts) -> the Comments row under the description -> the
+# thread comes up with its count and comments -> switch the order to Newest -> open a comment's
+# replies -> back to the series -> a chapter row's menu offers that chapter's Comments.
+# (The tab and the bar's back button are selected by their labels here, as every web copy does:
+# see the README on aria-label and data-testid.)
+#
+# Selectors (confirmed against source):
+#   - Comments row:    series.comments                (components/series/series-body.tsx)
+#   - thread count:    comments.count                 (components/comments/comment-thread.tsx)
+#   - a comment:       comments.comment.<id>          (components/comments/comment-card.tsx)
+#   - sort segment:    comments.sort.<sortId>         (the bridge's own sort ids: best/new/old)
+#   - replies toggle:  comments.replies.<commentId>   ("View N replies" / "Show N more replies")
+#   - foot link:       comments.open-site             (not tapped: it leaves for the in-app browser)
+#   - menu row:        series.chapter-menu.comments   (components/series/chapters-section.tsx)
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.action.read"
+
+# The row sits under the description, on screen without scrolling at the desktop width this runs
+# at. Nothing has been asked of the source for it yet: the count on it came with the series' details.
+- tapOn:
+    id: "series.comments"
+
+- extendedWaitUntil:
+    visible:
+      id: "comments.count"
+    timeout: 15000
+- assertVisible:
+    id: "comments\\.comment\\..*"
+
+# Another order is another request, and the thread fills again.
+- tapOn:
+    id: "comments.sort.new"
+- extendedWaitUntil:
+    visible:
+      id: "comments\\.comment\\..*"
+    timeout: 15000
+
+# A comment's replies load under it when asked for.
+- scrollUntilVisible:
+    element:
+      id: "comments\\.replies\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "comments\\.replies\\..*"
+    index: 0
+
+# Back on the series (the bar's back button: `back` is a device key, and the web has none), a
+# chapter's menu has its own thread.
+- tapOn:
+    id: "Go back"
+- longPressOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+- assertVisible:
+    id: "series.chapter-menu.comments"
