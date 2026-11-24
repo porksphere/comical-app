@@ -6,7 +6,7 @@ React Native components, many of them drawn to look like iOS (frosted menus, the
 the app back, the spoked refresh spinner, Apple's system tints). This plan does for Android what
 that did for iOS, toward **Material 3 Expressive**, the current revision of Material 3 (Android 16).
 
-Nothing here is built yet. Versions checked against the pins in `apps/mobile/package.json`:
+Phase 0 is built (see its section for what moved to later phases); the rest is not. Versions checked against the pins in `apps/mobile/package.json`:
 `@expo/ui` 58.0.23, `expo-router` 58.0.26, `react-native-screens` 5.0.0-beta.1.
 
 ## Where Android stands
@@ -84,42 +84,53 @@ Settled:
    selects, which chapter rows already follow; doing that for cards needs a card select mode that
    does not exist yet, so it is a follow-up, not part of this.
 
-Open:
-
-4. **Predictive back** is switched off in `app.json` (`predictiveBackGestureEnabled: false`) and
-   neither the docs nor the reachable history say why. Phase 5 turns it on unless a reason turns
-   up.
+4. **Predictive back** goes on. It is switched off in `app.json`
+   (`predictiveBackGestureEnabled: false`) for no reason the docs or the reachable history give.
+   The flag flips in phase 5, with the back handlers checked on a device, not before.
 
 ## Phases
 
 Each phase ships by itself and leaves the app whole. The order follows the iOS overhaul's where it
 can: transient surfaces and the reader's settings first, bars and the settings screens after.
 
-### 0. Foundations
+### 0. Foundations (built)
 
 No screen is redesigned here; colours and feedback change everywhere at once.
 
 - `constants/material.ts`: the colour roles mapped onto the existing token names
   (`background` → surface, `backgroundElement` → surfaceContainer, `backgroundSelected` →
-  surfaceContainerHigh, `overlaySurface` → surfaceContainerHigh, `accent` → primary, `accentOn` →
-  onPrimary, `danger` → error, `textSecondary` → onSurfaceVariant, `hairline` → outlineVariant,
-  the chip tokens → secondaryContainer), so call sites do not change. Plus the scales the theme
-  lacks: shape (4, 8, 12, 16, 20, 28, full), elevation, the type scale behind `ThemedText`'s
-  variants on Android, and Material's spring motion tokens for Reanimated.
-- `useTheme()` on Android reads that mapping; the two preferences from decision 1 are persisted
-  stores (`persisted$`) and Settings rows.
-- `MaterialHost`, and the three existing Compose files moved onto it.
-- `ThemeSchemeProvider` sets the window's scheme on Android too; the navigation bar's contrast
-  under edge-to-edge is checked on gesture and three-button devices.
-- Press feedback: one helper that gives a `Pressable` a ripple in the right role on Android, and
-  the cards, chips and series buttons that only dim today take it.
-- `lib/haptics.ts` maps to the platform's haptic constants on Android
-  (`performAndroidHapticsAsync`) where one fits.
-- The experimental Dimezis blur comes off Android (`ANDROID_BLUR`, 20 sites): Material surfaces
-  are tonal, not frosted.
-- The typed Material Symbols map (principle 4).
-- An Android dev-client workflow beside the iOS one, since every later phase is checked on a
-  device.
+  surfaceContainerHighest, `overlaySurface` → surfaceContainerHigh, `accent` → primary,
+  `accentOn` → onPrimary, `danger` → error with a new `dangerOn`, `textSecondary` →
+  onSurfaceVariant, the hairlines → outlineVariant, the chip tokens → secondaryContainer), so
+  call sites do not change. The status colours and the prints' paper keep the app's own. Plus the
+  scales the theme lacked: shape, elevation, state layers, and Expressive's spring motion scheme
+  for Reanimated.
+- `useTheme()` on Android reads that mapping (`lib/material-colors.android.ts` reads the palette,
+  again each time the app comes back, since the wallpaper can change meanwhile). The two
+  preferences from decision 1 are one persisted store and two rows in Settings → General.
+- `MaterialHost`, and the three existing Compose files moved onto it. The sliders take Material's
+  own colours now.
+- `ThemeSchemeProvider` sets the window's scheme and background on Android too.
+- `useRipple`: Material's pressed state layer for a `Pressable`. Every existing ripple and the
+  chips take it.
+- `lib/haptics.ts` asks for the system's feedback effects on Android (`performAndroidHapticsAsync`,
+  the four constants every Android version has), where expo-haptics' own calls are raw vibrator
+  waveforms that ignore the user's touch-feedback setting.
+- Floating surfaces are opaque on Android (`FROSTED` in `context-menu-material.tsx`). expo-blur
+  draws no blur there without a blur target, which none of these named, so the "frosted" menus,
+  toast and pills were see-through tints over the page.
+- `material-symbols.ts` is typed: `MenuRowSpec.symbol` and `SelectVerb.symbol` take only names
+  with a drawable.
+- `build-android-devclient.yml`, beside the iOS one. Not run yet: a manual workflow can only be
+  dispatched once its file is on the default branch.
+
+Moved out of this phase, because each needs a device to judge:
+
+- The type scale behind `ThemedText` (phase 4): line heights feed layout constants throughout.
+- Ripples on series cards and the series page's buttons (phase 4): a cover is a book's shape and
+  a round button's pressable includes its label.
+- The navigation bar's contrast on gesture and three-button devices: to be looked at on the first
+  dev-client build.
 
 ### 1. What pops up
 

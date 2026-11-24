@@ -1305,6 +1305,35 @@ leaves the book in plain cloth.
 **A renderer that cannot start takes the shelf away, not the screen** (`markHomeBookshelfUnavailable`):
 the rails begin the page as they did, until the app is next opened.
 
+# Android is Material 3 Expressive
+
+Android is moving off the custom chrome it shares with web and onto Material's, as iOS moved onto
+the system's. `docs/android-material3-plan.md` is the plan, phase by phase; these are the rules
+already in force.
+
+- **The colours are a Material palette.** On Android `useTheme()` hands out the same tokens drawn
+  from Material's roles (`paletteFromMaterial` in `constants/material.ts`): the wallpaper's on
+  Android 12 and later, else one seeded from the app's blue, with the dark page on black when the
+  reader asks (Settings → General). Never read `Colors` directly, and never set fixed white or
+  black on `accent` or `danger`: Material's dark primary and error are light, and what goes on
+  them is `accentOn` and `dangerOn`. Every value is `#RRGGBB`, so an alpha can be appended.
+- **A Compose island is hosted by `MaterialHost`** (`components/material-host.tsx`), never
+  `@expo/ui`'s `Host` directly: it is what gives the island the palette the views around it have.
+  A host is costly to mount, so few and large, mounted on demand, never one per row of a list.
+- **A press ripples** (`useRipple`): Material's state layer. A pressable whose child paints its
+  own background asks for it in the `foreground`, and one that ripples need not also dim
+  (`RIPPLES`).
+- **Nothing is frosted** (`FROSTED` in `context-menu-material.tsx`): a floating surface is an
+  opaque tone (`surfaceFill`) over a scrim.
+- **Haptics are the system's effects** (`lib/haptics.ts`), which follow the user's touch-feedback
+  setting. Call the helpers there, never expo-haptics directly.
+- **A Compose component draws Material Symbols.** `icons/material-symbols.ts` pairs each SF Symbol
+  a menu row or select verb names with a drawable, and types those fields by its keys: a new
+  symbol needs its drawable (Google's Rounded, weight 400, 24dp, the `tint` attribute taken off)
+  or the typecheck fails.
+- **Web does not move.** A base file keeps web's look; Android's goes in a `.android.tsx` sibling
+  or behind the palette.
+
 # Testing: new screens need a flow
 
 A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.
