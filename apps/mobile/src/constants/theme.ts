@@ -80,6 +80,7 @@ export const Colors = {
     // was hardcoded per-callsite as '#E5484D'; centralized here so it reads from
     // the theme like every other color and stays in sync across screens.
     danger: '#E5484D',
+    dangerOn: '#ffffff',
   },
   dark: {
     text: '#ffffff',
@@ -141,10 +142,15 @@ export const Colors = {
     coverPaper: '#F2F0EC',
     coverPaperEdge: 'rgba(0,0,0,0)',
     danger: '#E5484D',
+    dangerOn: '#ffffff',
   },
 } as const;
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+
+/** What `useTheme` hands out: `Colors` for the scheme, or on Android the same tokens drawn from the
+ *  Material palette (constants/material). */
+export type Palette = { readonly [K in ThemeColor]: string };
 
 export const Fonts = Platform.select({
   ios: {

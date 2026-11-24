@@ -1,4 +1,4 @@
-import { DropdownMenu, DropdownMenuItem, Host, Icon, Text, useMaterialColors } from '@expo/ui/jetpack-compose';
+import { DropdownMenu, DropdownMenuItem, Icon, Text } from '@expo/ui/jetpack-compose';
 import { fillMaxSize, testID as testTag } from '@expo/ui/jetpack-compose/modifiers';
 import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -6,9 +6,10 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { materialSymbol } from '@/components/icons/material-symbols';
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
+import { MaterialHost } from '@/components/material-host';
 import type { OverflowMenuProps } from '@/components/overflow-menu';
 import { Spacing } from '@/constants/theme';
-import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useTheme } from '@/hooks/use-theme';
 
 // How long Material's menu takes to fade out; the host it hangs from stays until then.
 const EXIT_MS = 150;
@@ -57,10 +58,9 @@ export function OverflowMenu({ rows, testID, label, disabled }: OverflowMenuProp
 }
 
 function MaterialMenu({ rows, expanded, onClose }: { rows: MenuRowSpec[]; expanded: boolean; onClose: () => void }) {
-  const scheme = useActiveColorScheme();
-  const { error } = useMaterialColors({ colorScheme: scheme });
+  const error = useTheme().danger;
   return (
-    <Host colorScheme={scheme} style={StyleSheet.absoluteFill}>
+    <MaterialHost style={StyleSheet.absoluteFill}>
       <DropdownMenu expanded={expanded} onDismissRequest={onClose} modifiers={[fillMaxSize()]}>
         <DropdownMenu.Items>
           {rows.map((row) => {
@@ -88,7 +88,7 @@ function MaterialMenu({ rows, expanded, onClose }: { rows: MenuRowSpec[]; expand
           })}
         </DropdownMenu.Items>
       </DropdownMenu>
-    </Host>
+    </MaterialHost>
   );
 }
 

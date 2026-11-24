@@ -39,7 +39,15 @@ import { setFeedTint, useFeedTint } from '@/hooks/use-feed-tint';
 import { setLibraryMarker, useLibraryMarker } from '@/hooks/use-library-marker';
 import { setKeepTabPanes, useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
 import { useHydrated } from '@/hooks/use-responsive';
-import { useThemePreference, type ThemePreference } from '@/hooks/use-theme';
+import {
+  setPureBlack,
+  setWallpaperColors,
+  usePureBlack,
+  useThemePreference,
+  useWallpaperColors,
+  WALLPAPER_COLORS,
+  type ThemePreference,
+} from '@/hooks/use-theme';
 import { desktopDataDir, desktopShell, trayName, useOpenAtLogin, useRunInTray } from '@/lib/desktop-shell';
 import { friendlyError } from '@/lib/friendly-error';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
@@ -82,6 +90,11 @@ const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
   { value: 'dark', label: 'Dark', description: 'Always use the dark theme.' },
 ];
 
+const DISPLAY_FOOTER_ANDROID =
+  Platform.OS === 'android'
+    ? ` ${WALLPAPER_COLORS ? 'Wallpaper colours draws the app’s palette from your wallpaper, and from Comical’s blue when off. ' : ''}Pure black puts the dark theme’s page on black.`
+    : '';
+
 // On iOS every tab's title is the target; elsewhere Browse's and Library's titles open menus, so
 // there it is their icon (see TabTitleBar's holdTestID).
 const HOLD_TARGETS =
@@ -94,6 +107,8 @@ export default function GeneralSettingsScreen() {
   const [holdAction, setHoldAction] = useBrowseHoldAction();
   const [holdSound, setHoldSound] = useBrowseHoldSound();
   const [themePref, setThemePref] = useThemePreference();
+  const wallpaperColors = useWallpaperColors();
+  const pureBlack = usePureBlack();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase] = useApiBase();
   const bookCovers = useBookCoversEnabled();
@@ -158,16 +173,28 @@ export default function GeneralSettingsScreen() {
     {
       title: 'Display',
       footer:
-        'Book covers draws each series as the thing it is: a bound volume (spine on the right when you read right to left), a stapled issue, a set of loose sheets, or an unbound webtoon. Shelf alignment stands the covers in a row on one line, so covers of different shapes sit like books on a shelf, with their titles in line beneath them. Home bookshelf opens the Comical home on what you are reading, as books on a shelf. Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.',
-      fields: [
+        'Book covers draws each series as the thing it is: a bound volume (spine on the right when you read right to left), a stapled issue, a set of loose sheets, or an unbound webtoon. Shelf alignment stands the covers in a row on one line, so covers of different shapes sit like books on a shelf, with their titles in line beneath them. Home bookshelf opens the Comical home on what you are reading, as books on a shelf. Lightweight cards drop cover animations for smoother scrolling. Tinted backgrounds colour the page behind each section on Browse. Mark saved series puts a bookmark on the cover of any series already in your library.' + DISPLAY_FOOTER_ANDROID,
+      fields: fields(
         select({ label: 'Appearance', value: themePref, options: THEME_OPTIONS, onChange: setThemePref }),
+        WALLPAPER_COLORS && {
+          kind: 'toggle',
+          label: 'Use wallpaper colours',
+          value: wallpaperColors,
+          onChange: setWallpaperColors,
+        },
+        Platform.OS === 'android' && {
+          kind: 'toggle',
+          label: 'Pure black dark theme',
+          value: pureBlack,
+          onChange: setPureBlack,
+        },
         { kind: 'toggle', label: 'Book covers', value: bookCovers, onChange: setBookCovers },
         { kind: 'toggle', label: 'Shelf alignment', value: coverShelf, onChange: setCoverShelf },
         { kind: 'toggle', label: 'Home bookshelf', value: homeBookshelf, onChange: setHomeBookshelf },
         { kind: 'toggle', label: 'Lightweight cards', value: lightCards, onChange: (v) => lightCards$.light.set(v) },
         { kind: 'toggle', label: 'Tinted backgrounds', value: feedTint, onChange: setFeedTint },
         { kind: 'toggle', label: 'Mark saved series', value: libraryMarker, onChange: setLibraryMarker },
-      ],
+      ),
     },
     // The hold row sits with NSFW because that is what it acts on, and its footer is the gesture's
     // only documentation — nothing on screen says a title or an icon is holdable.

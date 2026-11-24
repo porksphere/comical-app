@@ -66,8 +66,7 @@ import { PROFILING_ENABLED } from '@/lib/profiling';
 import { useWindowThemeColor } from '@/lib/window-controls';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
 import { BookCoverSourceProvider } from '@/hooks/use-book-covers';
-import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
-import { Colors } from '@/constants/theme';
+import { ThemeSchemeProvider, useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 /* eslint-enable import/first */
 
 // Install the on-device transport per the persisted preference before any screen queries fire
@@ -144,16 +143,17 @@ function RootNavigation() {
   // navigation theme + status bar match the app content and re-theme live when the
   // preference changes.
   const scheme = useActiveColorScheme();
+  const theme = useTheme();
   const statusBar = useRootStatusBarOptions(scheme);
   const barMaterial = useBarMaterial();
   const settingsScreen = useSettingsScreen();
-  useWindowThemeColor(Colors[scheme].background);
+  useWindowThemeColor(theme.background);
   const filterSheet: ComponentProps<typeof Stack.Screen>['options'] = {
     headerShown: false,
     presentation: 'formSheet',
     sheetAllowedDetents: [0.6, 1],
     sheetGrabberVisible: true,
-    contentStyle: { backgroundColor: Colors[scheme].backgroundPanel },
+    contentStyle: { backgroundColor: theme.backgroundPanel },
   };
   const overlaySheet: ComponentProps<typeof Stack.Screen>['options'] = {
     headerShown: false,
@@ -161,7 +161,7 @@ function RootNavigation() {
     sheetAllowedDetents: 'fitToContents',
     sheetGrabberVisible: true,
     // Clear where the system draws a sheet's glass (iOS 26), so it shows; opaque where it doesn't.
-    contentStyle: { backgroundColor: SYSTEM_SHEET_GLASS ? 'transparent' : Colors[scheme].overlaySurface },
+    contentStyle: { backgroundColor: SYSTEM_SHEET_GLASS ? 'transparent' : theme.overlaySurface },
   };
   // The reader's settings as a system form sheet (iOS): a SwiftUI form that scrolls inside the
   // sheet's detent, titled by the bar. Its content is cleared where the system draws the sheet's
@@ -172,7 +172,7 @@ function RootNavigation() {
     sheetAllowedDetents: [0.6, 1],
     sheetGrabberVisible: true,
     headerShadowVisible: false,
-    contentStyle: { backgroundColor: SYSTEM_SHEET_GLASS ? 'transparent' : Colors[scheme].backgroundPanel },
+    contentStyle: { backgroundColor: SYSTEM_SHEET_GLASS ? 'transparent' : theme.backgroundPanel },
   };
   useDesktopShellCommands();
   useNavigationKeys();

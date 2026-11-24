@@ -247,7 +247,7 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
                           { borderColor: on ? theme.accent : theme.hairline },
                           on && { backgroundColor: theme.accent },
                         ]}>
-                        {on && <CheckIcon color="#fff" size={14} />}
+                        {on && <CheckIcon color={theme.accentOn} size={14} />}
                       </View>
                       <ThemedText style={styles.rowLabel} numberOfLines={1}>
                         {c.name}

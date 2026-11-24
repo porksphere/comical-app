@@ -1,11 +1,12 @@
-import { Host, Slider } from '@expo/ui/jetpack-compose';
+import { Slider } from '@expo/ui/jetpack-compose';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { MaterialHost } from '@/components/material-host';
 import type { IntStepperProps } from '@/components/reader/int-stepper';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
 // Android: a discrete Material slider, hosted from Jetpack Compose — Material has no stepper, and
@@ -17,7 +18,6 @@ const TRACK_HEIGHT = 44;
 
 export function IntStepper({ value, min, max, onChange, testIdPrefix, deferMountMs = 0 }: IntStepperProps) {
   const theme = useTheme();
-  const scheme = useActiveColorScheme();
   const mounted = useDeferredMount(deferMountMs);
   return (
     <View style={styles.row}>
@@ -26,21 +26,16 @@ export function IntStepper({ value, min, max, onChange, testIdPrefix, deferMount
       </ThemedText>
       {!mounted && <View style={styles.host} />}
       {mounted && (
-      <Host colorScheme={scheme} style={styles.host}>
+      <MaterialHost style={styles.host}>
         <Slider
           value={value}
           min={min}
           max={max}
           // Material counts the stops BETWEEN the ends.
           steps={Math.max(0, max - min - 1)}
-          colors={{
-            thumbColor: theme.accent,
-            activeTrackColor: theme.accent,
-            inactiveTrackColor: theme.backgroundSelected,
-          }}
           onValueChange={(v) => onChange(Math.round(v))}
         />
-      </Host>
+      </MaterialHost>
       )}
     </View>
   );

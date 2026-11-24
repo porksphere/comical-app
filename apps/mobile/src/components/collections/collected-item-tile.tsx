@@ -163,7 +163,7 @@ export function CollectedItemTile({
 
         {item.stale && (
           <View style={[styles.staleBar, { backgroundColor: theme.danger }]}>
-            <ThemedText type="small" numberOfLines={1} style={styles.staleText}>
+            <ThemedText type="small" numberOfLines={1} style={[styles.staleText, { color: theme.dangerOn }]}>
               May no longer be available
             </ThemedText>
           </View>
@@ -216,7 +216,6 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   staleText: {
-    color: '#fff',
     fontSize: 10,
     textAlign: 'center',
   },
