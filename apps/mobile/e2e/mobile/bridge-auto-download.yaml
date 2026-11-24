@@ -1,5 +1,5 @@
 # A bridge opting out of one kind of auto-download: Settings -> General turns "Saved chapters" on,
-# which is what makes Panelfox's settings grow its own Auto-download section (a kind that's off
+# which is what makes Komga's settings grow its own Auto-download section (a kind that's off
 # globally has nothing for a bridge to opt out of, so its row isn't drawn). The bridge's toggle is
 # flipped off and back on, then the global one is turned off again so later flows start clean.
 appId: com.porksphere.comical
@@ -22,7 +22,7 @@ appId: com.porksphere.comical
 - tapOn:
     id: "settings.category.bridges"
 - tapOn:
-    id: "settings.row.panelfox"
+    id: "settings.row.komga"
 - scrollUntilVisible:
     element:
       id: "settings.toggle.saved-chapters"

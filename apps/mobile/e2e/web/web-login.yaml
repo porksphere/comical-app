@@ -3,7 +3,7 @@
 # secret Cookies field to paste into — this flow checks that fallback instead of the sheet.
 #
 # Selectors hitting the web-only aria-label quirk (see ../README.md):
-#   - tab bar: "Settings"; settings.category.bridges: "Bridges"; the bridge row: "Panelfox".
+#   - tab bar: "Settings"; settings.category.bridges: "Bridges"; the bridge row: "Komga".
 #   - the Open row is a SettingsRow, so it is matched by its label, "Account".
 #   - the paste field's hint is plain Text; matched by `text:`.
 url: http://localhost:4000/comical-app
@@ -15,7 +15,7 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "Bridges"
 - tapOn:
-    id: "Panelfox"
+    id: "Komga"
 
 - scrollUntilVisible:
     element:

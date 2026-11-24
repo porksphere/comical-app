@@ -12,7 +12,7 @@
 # they're selected by label ("Browse", "Library"), as series-page.yaml does. series.pane and the
 # rail's bridge rows (`sidebar.bridge.<id>`) have no competing accessibilityLabel — selected by
 # testID. The ids are demo mode's mock bridges: `comical` (the aggregate, Browse's default) and
-# `panelfox`.
+# `komga`.
 url: http://localhost:4000/comical-app
 ---
 - launchApp
@@ -54,7 +54,7 @@ url: http://localhost:4000/comical-app
 
 # ...pick another bridge: Browse's content changes, the aggregate's series is kept out of sight.
 - tapOn:
-    id: "sidebar.bridge.panelfox"
+    id: "sidebar.bridge.komga"
 - assertNotVisible:
     id: "series.pane"
 

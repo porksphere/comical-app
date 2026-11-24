@@ -3,8 +3,9 @@ name: Capture demo screenshots
 # Photographs the app for the README and uploads the screenshots as an artifact — Actions →
 # Capture demo screenshots → Run workflow, or `gh workflow run capture-demo.yml --ref <branch>`.
 # Download the artifacts (`demo-screens` from the iOS lane, `demo-screens-desktop` from the desktop
-# one), drop the PNGs in docs/media/, commit. Deliberately not committed by the workflow itself: a
-# promo image is a thing you look at before you ship it.
+# one, `demo-screens-duo` from the foldable one when it works), drop the PNGs in docs/media/,
+# commit. Deliberately not committed by the workflow itself: a promo image is a thing you look at
+# before you ship it.
 #
 # THIS USED TO RECORD A GIF, and the reason it doesn't is worth keeping. The series page's entry
 # transition does not render cleanly on a CI simulator: the recorder caught it partway through,
@@ -207,6 +208,108 @@ jobs:
           name: maestro-debug
           path: ${{ runner.temp }}/maestro-debug
           retention-days: 7
+
+  # The iPhone Duo, folded and open: Home on the cover screen and on the inner one. BEST EFFORT, and
+  # allowed to fail without failing the run, because nothing Apple ships can fold the simulator:
+  # `simctl` and XCTest have no hinge. `hinge` (artemnovichkov/hinge) sends the simulator the same
+  # HID event Device Hub's slider does, from a helper it starts with `simctl spawn`, so it needs no
+  # window. It is a private interface and has been verified by its author on Xcode 27.1 and 27.2
+  # only; an Xcode update is the likely reason this job goes red.
+  #
+  # No Maestro here. Its screenshot is of one display, and on a folded Duo the default one is the
+  # inner panel, which is off: a solid black PNG. `hinge screenshot` takes whichever panel holds
+  # the UI. So the app is launched and given time rather than driven, and the shots are of Home.
+  duo:
+    needs: [resolve, build]
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    continue-on-error: true
+    # The image the app is built on: it is the one with Xcode 27.1 and so the Duo's runtime.
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: comical-ios-simulator-app
+          path: ${{ runner.temp }}/app
+          run-id: ${{ needs.resolve.outputs.from_run || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pillow
+
+      - name: Boot an iPhone Duo and install the app
+        run: |
+          set -euo pipefail
+          ditto -x -k "$RUNNER_TEMP/app/comical-simulator.zip" "$RUNNER_TEMP/app"
+          APP=$(find "$RUNNER_TEMP/app" -maxdepth 1 -name "*.app" | head -1)
+
+          # The newest runtime that lists a Duo among its own device types, as the phone lane picks
+          # its iPhone: a device type chosen apart from its runtime can fail `simctl create`.
+          PICK=$(xcrun simctl list runtimes -j | jq -c '
+            [.runtimes[] | select(.name | test("iOS")) | select(.isAvailable)
+              | {runtime: .identifier, version: .version,
+                 device: ([.supportedDeviceTypes[] | select(.name | test("Duo"))] | last | .identifier)}
+              | select(.device != null)] | sort_by(.version) | last // empty')
+          if [ -z "$PICK" ]; then
+            echo "!! no installed iOS runtime has an iPhone Duo" >&2
+            xcrun simctl list runtimes
+            exit 1
+          fi
+          RUNTIME=$(echo "$PICK" | jq -r .runtime)
+          DEVICE_TYPE=$(echo "$PICK" | jq -r .device)
+          echo "Using runtime=$RUNTIME device_type=$DEVICE_TYPE"
+          UDID=$(xcrun simctl create comical-duo "$DEVICE_TYPE" "$RUNTIME")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Install hinge
+        # Unpinned, unlike Maestro above: the tap carries only its newest. The version it resolved
+        # to is printed, to be pinned from once a run has shown it working.
+        run: |
+          brew install artemnovichkov/tap/hinge
+          brew list --versions hinge
+
+      - name: Screenshot folded and open
+        env:
+          HINGE_DEVICE: ${{ env.UDID }}
+        run: |
+          set -euo pipefail
+          xcrun simctl ui "$UDID" appearance dark
+          xcrun simctl status_bar "$UDID" override \
+            --time "9:41" --batteryState charged --batteryLevel 100 \
+            --cellularBars 4 --wifiBars 3 --dataNetwork wifi
+          # Which panel is which is in the log for whoever reads a wrong shot.
+          xcrun simctl io "$UDID" enumerate || true
+
+          mkdir -p "$RUNNER_TEMP/screens"
+          hinge open
+          xcrun simctl launch "$UDID" com.porksphere.comical
+          # A first launch on a CI simulator, the catalog's covers, and the bookshelf's renderer.
+          sleep 60
+          hinge posture --json || true
+          hinge screenshot "$RUNNER_TEMP/screens/06-duo-open.png"
+
+          # A fold lands seconds after the command returns, and the app lays out again after that.
+          hinge close
+          sleep 15
+          hinge posture --json || true
+          hinge screenshot "$RUNNER_TEMP/screens/05-duo-folded.png"
+
+          ls -la "$RUNNER_TEMP/screens"
+          # The radii are by eye: neither panel's is published the way an iPhone's is.
+          python3 scripts/shape-screenshots.py --radius 0.09 440 "$RUNNER_TEMP/screens/05-duo-folded.png"
+          python3 scripts/shape-screenshots.py --radius 0.045 880 "$RUNNER_TEMP/screens/06-duo-open.png"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-screens-duo
+          path: ${{ runner.temp }}/screens/*.png
+          retention-days: 14
 
   # The desktop shot. The desktop app is an Electron shell over the web build, so this photographs
   # the web build in a browser at the shell's default window size (scripts/capture-desktop.mjs has

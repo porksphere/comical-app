@@ -29,14 +29,14 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "series-card\\..*"
 
-# Group by source: the grid gains section headers (client-side, over the chosen sort). "Panelfox"
+# Group by source: the grid gains section headers (client-side, over the chosen sort). "Komga"
 # is a seeded mock bridge, so its header is deterministically present. Back to ungrouped after.
 - tapOn:
     id: "library.sort"
 - tapOn:
     id: "library.group.bridge"
 - assertVisible:
-    text: "Panelfox"
+    text: "Komga"
 - tapOn:
     id: "library.sort"
 - tapOn:
@@ -70,9 +70,9 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "series-card\\..*"
 
-# Narrow to one source ("panelfox" is a seeded mock bridge), then back.
+# Narrow to one source ("komga" is a seeded mock bridge), then back.
 - tapOn:
-    id: "library.bridge.panelfox"
+    id: "library.bridge.komga"
 - assertVisible:
     id: "series-card\\..*"
 - tapOn:

@@ -1,5 +1,5 @@
 # Web copy of ../mobile/favorites-import.yaml, kept in sync by hand. Same journey and the same
-# reasoning for every step — see that file's header for why Panelfox, why select-all instead of a
+# reasoning for every step — see that file's header for why Komga, why select-all instead of a
 # hardcoded default count, what the three row kinds are, and why the inert rows sort last.
 #
 # It's a plain pushed screen (app/favorites-import.tsx), not an overlay, so the sheet-gesture caveat
@@ -10,7 +10,7 @@
 #   - tab bar: "Settings", not tab.settings (same as smoke.yaml / settings-walkthrough.yaml).
 #   - settings.category.bridges sets accessibilityLabel={title} — select by "Bridges".
 #   - the bridge row and the import row are both SettingsRows, which set accessibilityLabel={label}
-#     — select by "Panelfox" and "Import favorites into library" instead of their testIDs.
+#     — select by "Komga" and "Import favorites into library" instead of their testIDs.
 #   - favorites-import.row.<id> is ALSO a SettingsRow, so a SELECTABLE candidate row's id is shadowed
 #     by its own series title (mock titles come from a hashed pool — not a fixed string this flow
 #     could match). The `in-library` rows are the exception (no onPress, so SettingsRow renders the
@@ -37,7 +37,7 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "Bridges"
 - tapOn:
-    id: "Panelfox"
+    id: "Komga"
 
 - scrollUntilVisible:
     element:
@@ -50,7 +50,7 @@ url: http://localhost:4000/comical-app
 # The mock preview resolves after a deliberate 400ms delay (mock.ts), so wait rather than assert.
 - extendedWaitUntil:
     visible:
-      text: "Favorites on Panelfox.*"
+      text: "Favorites on Komga.*"
     timeout: 10000
 - assertVisible:
     id: "Selection options"

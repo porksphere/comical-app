@@ -23,7 +23,7 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "Bridges"
 - tapOn:
-    id: "Panelfox"
+    id: "Komga"
 - scrollUntilVisible:
     element:
       id: "settings.toggle.saved-chapters"

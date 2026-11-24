@@ -22,7 +22,7 @@
 # LOCAL-ONLY artifact: repeated manual test runs against this same demo series, on a workspace that
 # happens to have a real host-server running on :3100 for normal dev use, had actually written 40
 # real "failed" chapter entries into that server's persisted downloads manifest — confirmed directly
-# via `curl http://localhost:3100/downloads/entries/panelfox/featured-p1-0` returning real manifest
+# via `curl http://localhost:3100/downloads/entries/komga/featured-p1-0` returning real manifest
 # rows, reproducing identically across brand-new frontend origins/ports because the frontend port was
 # never the source of truth. With that manifest non-empty, `SeriesDownloadButton`'s `inProgress` check
 # (download-button.tsx) was true on load, so the button correctly routed to `openDownloads` — plain

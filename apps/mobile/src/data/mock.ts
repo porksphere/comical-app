@@ -114,18 +114,18 @@ function subFor(seed: string, w?: Work): string {
   return `Ch. ${latest} · ${AGES[(h >>> 7) % AGES.length]}`;
 }
 
-/** Matches `slugify('Panelfox')` in `MOCK_BRIDGE_NAMES`. */
-const SUBTITLE_BRIDGE = 'panelfox';
+/** Matches `slugify('Komga')` in `MOCK_BRIDGE_NAMES`. */
+const SUBTITLE_BRIDGE = 'komga';
 
 /** Slug of the one mock bridge whose covers AREN'T a uniform 2:3, so ONE mock bridge stands in for
  *  a real one whose thumbnails aren't all cropped to the same shape. That exercises
  *  `SeriesCard`/`PageThumb`'s aspect-ratio-lands shrink animation, which a uniform catalog never
  *  triggers. Its shelf is every episode, a third of them the ones cut to other shapes
- *  (`VARIED_WORKS`; `scripts/build-mock-art.py` cuts them). Matches `slugify('Nightshelf')` in
+ *  (`VARIED_WORKS`; `scripts/build-mock-art.py` cuts them). Matches `slugify('OPDS')` in
  *  `MOCK_BRIDGE_NAMES`. */
-const VARIED_ASPECT_BRIDGE = 'nightshelf';
-/** Matches `slugify('Coldspine')`: the direct bridge, a gallery whose CG sets are marked per series. */
-const GALLERY_BRIDGE = 'coldspine';
+const VARIED_ASPECT_BRIDGE = 'opds';
+/** Matches `slugify('LANraragi')`: the direct bridge, a gallery whose CG sets are marked per series. */
+const GALLERY_BRIDGE = 'lanraragi';
 
 /** How many palette families `scripts/build-mock-art.py` orders the episode covers into. It
  *  assigns them by POSITION, so episode `k` of `EPISODE_WORKS` is of family `k % COVER_FAMILIES`
@@ -394,7 +394,7 @@ export function mockGrid(prefix = 'grid', n = 30, bridgeId?: string): SeriesEntr
 /** The series a source's Featured shelf opens with: its longest-running. The first Featured shelf
  *  is the first thing on Home, and its first card is the series every flow opens, which has to
  *  have chapters enough to sort, filter and collapse. */
-const FEATURED_LEADS: Record<string, string> = { panelfox: 'pepper-and-carrot', inkwell: 'black-jack' };
+const FEATURED_LEADS: Record<string, string> = { komga: 'pepper-and-carrot', suwayomi: 'black-jack' };
 
 const GENRES = ['Fantasy', 'Action', 'Adventure', 'Drama'];
 const TAG_GROUPS: TagGroup[] = [
@@ -694,14 +694,17 @@ export function relativeTime(ts: number): string {
 // Only reachable via the dev-only mock toggle or the GH Pages demo build — see
 // `source.ts`.
 
-const MOCK_BRIDGE_NAMES = ['Panelfox', 'Inkwell', 'Driftpage', 'Nightshelf', 'Coldspine'];
-const MOCK_DIRECT_BRIDGES = new Set(['Coldspine']);
+// Named for the official registry's server bridges (comical-opds-bridges), the sources a
+// screenshot can name: each is somebody's own server. The names are all they share with those
+// bridges; what each one serves here, and how, is this module's.
+const MOCK_BRIDGE_NAMES = ['Komga', 'Suwayomi', 'Kavita', 'OPDS', 'LANraragi'];
+const MOCK_DIRECT_BRIDGES = new Set(['LANraragi']);
 // Bridges whose backend supports account "favorites" (the capability real bridges advertise). A subset,
 // so the app exercises both favorites-capable and non-capable bridges.
-const MOCK_FAVORITES_BRIDGES = new Set(['Panelfox', 'Inkwell', 'Coldspine']);
+const MOCK_FAVORITES_BRIDGES = new Set(['Komga', 'Suwayomi', 'LANraragi']);
 // Favorites-capable bridges the user hasn't logged into (a required secret still missing) — their star
 // greys out and they drop from the consolidated Favorites page, demonstrating the credential gate.
-const MOCK_LOGGED_OUT_BRIDGES = new Set(['Inkwell']);
+const MOCK_LOGGED_OUT_BRIDGES = new Set(['Suwayomi']);
 const slugify = (name: string) => name.toLowerCase();
 // Mock-mode only, like coverDelayMs: resolve immediately in real mode so even a stray call to a mock
 // data function outside mock mode can't add fake latency to a real page load (infinite scroll, series
@@ -718,11 +721,11 @@ const RAIL_STRESS_COUNT = 18;
 
 // What each demo bridge declares about its series (the contract's cover hints), so the demo has one
 // source of each kind: right-to-left manga, a webtoon platform, and a gallery of right-to-left
-// doujinshi whose CG sets say so per series (see `entry`).
+// doujinshi whose CG sets say so per series (see `card`).
 const MOCK_COVER_HINTS: Record<string, Pick<Bridge, 'coverForm' | 'readingDirection'>> = {
-  Inkwell: { readingDirection: 'rtl' },
-  Driftpage: { coverForm: 'scroll', readingDirection: 'vertical' },
-  Coldspine: { coverForm: 'issue', readingDirection: 'rtl' },
+  Suwayomi: { readingDirection: 'rtl' },
+  Kavita: { coverForm: 'scroll', readingDirection: 'vertical' },
+  LANraragi: { coverForm: 'issue', readingDirection: 'rtl' },
 };
 
 export async function mockGetBridges(): Promise<Bridge[]> {
@@ -1021,12 +1024,12 @@ function seedLibrary(): Map<string, MockLibEntry> {
     });
   }
   // Two extra entries that overlap the favorites set (`mockFavorites` above), so the favorites-import
-  // dialog has something to classify as other than "new": `fav-1` is already here from panelfox
+  // dialog has something to classify as other than "new": `fav-1` is already here from komga
   // itself, and `fav-2`'s title is already here under a DIFFERENT id on another bridge — the
   // cross-bridge duplicate case. Without these the mock preview would be an undifferentiated list.
   const alreadyHere = entry('fav-1', hash('fav-1'));
-  m.set(libKey('panelfox', 'fav-1'), {
-    bridgeId: 'panelfox',
+  m.set(libKey('komga', 'fav-1'), {
+    bridgeId: 'komga',
     seriesId: 'fav-1',
     title: alreadyHere.title,
     thumbnailUrl: alreadyHere.cover,
@@ -1036,8 +1039,8 @@ function seedLibrary(): Map<string, MockLibEntry> {
     collectedAt: 1_759_000_000_000,
   });
   const otherSource = entry('fav-2', hash('fav-2'));
-  m.set(libKey('nightshelf', 'ns-771'), {
-    bridgeId: 'nightshelf',
+  m.set(libKey('opds', 'ns-771'), {
+    bridgeId: 'opds',
     seriesId: 'ns-771',
     title: otherSource.title,
     thumbnailUrl: otherSource.cover,

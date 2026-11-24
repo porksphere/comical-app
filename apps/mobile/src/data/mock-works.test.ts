@@ -13,7 +13,7 @@ import {
 } from './mock';
 import { NAMED_WORKS, WORKS } from './mock-works';
 
-const BRIDGES = ['panelfox', 'inkwell', 'driftpage', 'nightshelf'];
+const BRIDGES = ['komga', 'suwayomi', 'kavita', 'opds'];
 
 describe('the mock catalog is real works', () => {
   test('each work is one series: its id and its title are its own', () => {
@@ -44,16 +44,16 @@ describe('the mock catalog is real works', () => {
   });
 
   test('a shelf lists no series twice', () => {
-    for (const bridge of [...BRIDGES, 'coldspine']) {
+    for (const bridge of [...BRIDGES, 'lanraragi']) {
       const titles = mockGrid('featured-p1', 24, bridge).map((c) => c.title);
       expect(new Set(titles).size).toBe(titles.length);
     }
   });
 
   test('the first Featured shelf leads with a series long enough to collapse', async () => {
-    const lead = mockGrid('featured-p1', 24, 'panelfox')[0]!;
+    const lead = mockGrid('featured-p1', 24, 'komga')[0]!;
     expect(lead.title).toBe('Pepper&Carrot');
-    expect((await mockGetSeriesList('panelfox', lead.id, false)).chapterCount).toBe(39);
+    expect((await mockGetSeriesList('komga', lead.id, false)).chapterCount).toBe(39);
   });
 
   test('History and Activity name chapters their series has', async () => {
@@ -73,9 +73,9 @@ describe('the mock catalog is real works', () => {
   });
 
   test('the fixture series is the one that is not a work', async () => {
-    const fixture = mockSeries('featured-long', undefined, 'Panelfox');
+    const fixture = mockSeries('featured-long', undefined, 'Komga');
     expect(fixture.title).toBe(LONG_TITLE);
     expect(fixture.cover).toBe(MOCK_FIXTURE_COVER);
-    expect((await mockGetSeriesList('panelfox', 'featured-long', false)).chapterCount).toBeGreaterThan(40);
+    expect((await mockGetSeriesList('komga', 'featured-long', false)).chapterCount).toBeGreaterThan(40);
   });
 });

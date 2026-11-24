@@ -10,7 +10,8 @@ root of the repo's GitHub Pages, with the app's demo export beside it under `dem
   typecheck and are gitignored. Edit the source files, not these.
 - Screenshots come from `docs/media/` (captured by `capture-demo.yml`); copy new ones into
   `src/assets/screens/` and show them through `DeviceFrame` so they get a bezel and responsive
-  sizes. They picture sample data only — name the sample sources, never a real one.
+  sizes. They picture sample data only. The sources in them carry the official server bridges'
+  names (Komga, Kavita, …), which are the only real sources to name.
 - Links to other doc pages are relative (`../guides/reader/`), never absolute, so they survive
   the Pages subpath. `href()` in `src/lib/links.ts` prefixes the configured base for links written
   in components.

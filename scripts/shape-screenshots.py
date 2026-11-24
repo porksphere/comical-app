@@ -56,8 +56,12 @@ def main() -> None:
     if args[:1] == ["--window"]:
         radius = WINDOW_RADIUS
         args = args[1:]
+    elif args[:1] == ["--radius"] and len(args) > 1:
+        # A screen that is neither: the workflow's foldable lane gives each panel its own.
+        radius = float(args[1])
+        args = args[2:]
     if len(args) < 2:
-        sys.exit("usage: shape-screenshots.py [--window] <width> <png>...")
+        sys.exit("usage: shape-screenshots.py [--window | --radius <fraction of width>] <width> <png>...")
     width = int(args[0])
     for path in args[1:]:
         shape(path, width, radius)

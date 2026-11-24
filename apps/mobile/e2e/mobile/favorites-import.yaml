@@ -1,15 +1,15 @@
-# Import a bridge's account favorites into the library: Settings -> Bridges -> Panelfox ->
+# Import a bridge's account favorites into the library: Settings -> Bridges -> Komga ->
 # "Import favorites into library" -> the pushed multi-select screen (app/favorites-import.tsx) ->
 # "Select all" from the staging menu -> the Import verb pill -> the result toast.
 #
-# Why Panelfox specifically: it's in mock.ts's MOCK_FAVORITES_BRIDGES (so its settings screen renders
+# Why Komga specifically: it's in mock.ts's MOCK_FAVORITES_BRIDGES (so its settings screen renders
 # the Favorites section at all — the row is gated on the `favorites` capability) AND it's the bridge
 # the two deliberately-overlapping seeded library entries point at, so the screen shows all three row
 # kinds rather than an undifferentiated list of "new":
-#   - fav-1 -> `in-library` (mock library already holds panelfox:fav-1), inert and unchecked.
-#   - fav-2 -> `duplicate`  (the same title is in the library from Nightshelf), unchecked by default.
+#   - fav-1 -> `in-library` (mock library already holds komga:fav-1), inert and unchecked.
+#   - fav-2 -> `duplicate`  (the same title is in the library from OPDS), unchecked by default.
 #   - fav-3..fav-6 -> `new`, checked by default.
-# Inkwell would NOT work here: MOCK_LOGGED_OUT_BRIDGES marks it as missing a required credential.
+# Suwayomi would NOT work here: MOCK_LOGGED_OUT_BRIDGES marks it as missing a required credential.
 #
 # The screen sorts the ACTIONABLE rows first and sinks the inert `in-library` ones to the bottom (see
 # the screen's docstring — it's what makes the drag-select index math valid on a partly-selectable
@@ -24,7 +24,7 @@
 # toast.
 #
 # Selectors (confirmed against source):
-#   - settings.row.panelfox — bridges.tsx renders mock bridges (source: 'local', not 'registry') as a
+#   - settings.row.komga — bridges.tsx renders mock bridges (source: 'local', not 'registry') as a
 #     plain SettingsRow, which defaults its testID to testId('settings.row', label).
 #   - favorites-import.row.<id> — the candidate rows (SettingsRow, explicit testID).
 #   - favorites-import.select-options / .menu.all — SelectPillBar's bottom-left "…" staging trigger
@@ -44,7 +44,7 @@ appId: com.porksphere.comical
 - tapOn:
     id: "settings.category.bridges"
 - tapOn:
-    id: "settings.row.panelfox"
+    id: "settings.row.komga"
 
 - scrollUntilVisible:
     element:

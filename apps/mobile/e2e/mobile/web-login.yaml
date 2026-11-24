@@ -1,7 +1,7 @@
-# A bridge setting that signs in on the site itself (`web-login`): Settings -> Bridges -> Panelfox
+# A bridge setting that signs in on the site itself (`web-login`): Settings -> Bridges -> Komga
 # -> the Account row -> the in-app sign-in sheet -> Cancel.
 #
-# Panelfox's mock settings (mock.ts, mockGetBridgeSettings) declare a web-login field, so this needs
+# Komga's mock settings (mock.ts, mockGetBridgeSettings) declare a web-login field, so this needs
 # no real site or account. The sheet loads the descriptor's URL in a WebView; the flow only checks
 # that it opens and that Cancel returns to the row without storing anything — a real sign-in can't be
 # scripted against a mock bridge.
@@ -11,7 +11,7 @@
 # ../web/web-login.yaml covers.
 #
 # Selectors:
-#   - settings.row.panelfox — see favorites-import.yaml.
+#   - settings.row.komga — see favorites-import.yaml.
 #   - settings.web-login.account — the row's testID is testId('settings.web-login', label).
 #   - settings.web-login.cancel — the sheet header's Cancel.
 #   - settings.web-login.sign-out.account — greyed out while nothing is stored (never hidden).
@@ -24,7 +24,7 @@ appId: com.porksphere.comical
 - tapOn:
     id: "settings.category.bridges"
 - tapOn:
-    id: "settings.row.panelfox"
+    id: "settings.row.komga"
 
 - scrollUntilVisible:
     element:
