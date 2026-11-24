@@ -235,6 +235,8 @@ jobs:
           EXPO_PUBLIC_COMICAL_DEMO_MODE: '1'
           EXPO_PUBLIC_COMICAL_DEMO_FAST: '1'
           EXPO_PUBLIC_COMICAL_CAPTURE_MODE: '1'
+          # As the iOS lane's `mock_ref`: without it this shot shows `main`'s art on a branch.
+          EXPO_PUBLIC_COMICAL_MOCK_REF: ${{ github.sha }}
         run: |
           set -euo pipefail
           bunx expo export --platform web

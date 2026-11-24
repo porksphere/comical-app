@@ -1,4 +1,4 @@
-# The README's screenshots: Browse, a series page, the reader.
+# The README's screenshots: Home, a series page, the reader.
 #
 # WHY STILLS RATHER THAN A RECORDING. A video of this journey was tried first and abandoned, for a
 # reason worth recording so it isn't retried blind: the series page's entry transition does not
@@ -13,20 +13,36 @@
 #
 # Selectors are shared with ../mobile/browse-to-reader.yaml — see its header for how each is
 # derived. `series.action.read` is the primary action on the series page, above the fold.
+#
+# THE SERIES OPENED IS PEPPER&CARROT, by its own card (`-work-pepper-and-carrot`, the id
+# `markedId` in data/mock-works.ts gives it), not whichever card comes first. It leads the first
+# Featured shelf (`FEATURED_LEADS` in data/mock.ts) and is the one series whose first chapter the
+# fixtures hold whole, so the reader's page is the page its bar names. If a change to the mock
+# catalog moves the card off the first screen, the loop below fails with the card's id in the log.
 appId: com.porksphere.comical
 ---
 - launchApp
 
-- assertVisible:
-    id: "tab.browse"
+# A card, not a tab: iOS's system tab bar has no testIDs.
+- extendedWaitUntil:
+    visible:
+      id: "series-card\\..*"
+    timeout: 30000
+# The bookshelf starts its renderer after the page is up. Optional, since a simulator without a
+# GPU adapter shows the rails alone (see ../mobile/home-bookshelf.yaml), and that is still a Home.
+- extendedWaitUntil:
+    visible:
+      id: "home-bookshelf"
+    timeout: 20000
+    optional: true
 # Settle before the shutter: mock covers resolve asynchronously, and a screenshot taken a beat too
-# early catches half a grid of placeholders.
+# early catches half a grid of placeholders, or the shelf's books still in plain cloth.
 - waitForAnimationToEnd:
     timeout: 8000
 - runFlow:
     file: pause.yaml
     env:
-      MS: '1200'
+      MS: '4000'
 - takeScreenshot: 01-browse
 
 # Tap-and-wait, retried. One run tapped the right card, had Maestro confirm the hierarchy changed,
@@ -43,7 +59,7 @@ appId: com.porksphere.comical
         id: "series.action.read"
     commands:
       - tapOn:
-          id: "series-card\\..*"
+          id: "series-card\\..*-work-pepper-and-carrot"
           optional: true
       - extendedWaitUntil:
           visible:

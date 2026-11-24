@@ -24,6 +24,10 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 860 }, dev
 page.on('pageerror', (e) => console.error('page error:', e.message));
 
 await page.goto(base);
+// The sidebar, not just a card. The exported page is prerendered in the PHONE layout and takes the
+// wide one only once it has hydrated, which under a runner's software GL is seconds after the
+// first cards are up: a shot gated on the cards alone caught the bottom tab bar at 1280 wide.
+await page.getByTestId('sidebar.group.browse').waitFor({ timeout: 60000 });
 await page.getByTestId(/^series-card\./).first().waitFor({ timeout: 30000 });
 // Not 'networkidle' (the app polls, so the network is never idle), and not "every <img> complete"
 // on its own: a cover's <img> isn't created until its URL resolves, so a grid can pass that check
@@ -35,6 +39,9 @@ for (let i = 0; i < 20; i++) {
   if (now === loaded) break;
   loaded = now;
 }
+// The bookshelf is a canvas, so none of the above sees it: its covers are decoded a few at a time
+// after the page's own, and a book stands in plain cloth until its cover is in.
+if (await page.getByTestId('home-bookshelf').count()) await page.waitForTimeout(4000);
 await page.screenshot({ path: `${out}/04-desktop.png` });
 
 await browser.close();
