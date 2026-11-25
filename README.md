@@ -27,6 +27,11 @@
   <img src="docs/media/04-desktop.png" alt="Browsing on the desktop app" width="744" />
 </p>
 
+<p align="center">
+  <img src="docs/media/05-duo-folded.png" alt="Home on a folded iPhone Duo" width="240" />
+  <img src="docs/media/06-duo-open.png" alt="Home on an open iPhone Duo" width="480" />
+</p>
+
 ## Features
 
 - **Paged and long-strip** readers

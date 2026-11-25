@@ -84,8 +84,9 @@ appId: com.porksphere.comical
     optional: true
 - waitForAnimationToEnd:
     timeout: 8000
-# The reader's chrome auto-hides 3s after entry (components/series/reader-page.tsx CHROME_HIDE_MS). Waiting past
-# that photographs the page full-bleed, which is what the reader actually looks like in use.
+# The reader with its bar and scrubber up. `CHROME_HIDE_MS` (components/series/reader-page.tsx)
+# has them go after 3s, and this used to wait past that for the page full-bleed; on the simulator
+# they are still up well after it, so that is what the shot shows.
 - runFlow:
     file: pause.yaml
     env:
