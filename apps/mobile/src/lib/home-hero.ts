@@ -74,21 +74,35 @@ function along(x: number, xs: readonly number[], ys: readonly number[]): number 
 /** How small a book of the poster's row is drawn when it is not the one in front. */
 export const POSTER_SIDE_SCALE = 0.8;
 
+/** The clear space between the front book and the one beside it, in points. A share of the book's
+ *  width was less than nothing on a phone: the side books stood a little way in behind the front
+ *  one, and on a narrow screen the row read as covers lying over each other. */
+const POSTER_GAP = 15;
+
+/**
+ * How far the book beside the front one stands from it, middle to middle, in book widths: half the
+ * front book, half a side one, and the gap between them. It is also a finger's travel for one book.
+ */
+export function posterStep(bookWidth: number): number {
+  return (1 + POSTER_SIDE_SCALE) / 2 + POSTER_GAP / bookWidth;
+}
+
 /**
  * Where a book of the poster's row sits, `away` places from the one in front (negative before
- * it): `x` in book widths from the front book's place, its scale and its opacity. On a phone the
- * row runs both ways from the middle of the stage. In a wide hero the front book stands beside the
- * words, so the row runs on to the right of it only, and a book that has been passed is gone by
- * the time it would reach them.
+ * it): `x` in book widths from the front book's place, its scale and its opacity. `step` is
+ * `posterStep`, which the first book either side stands at; those past it are between two small
+ * books and stand closer, a third of the gap apart. On a phone the row runs both ways from the
+ * middle of the stage. In a wide hero the front book stands beside the words, so the row runs on to
+ * the right of it only, and a book that has been passed is gone by the time it would reach them.
  */
-export function posterPlace(away: number, wide: boolean): { x: number; scale: number; opacity: number } {
+export function posterPlace(away: number, wide: boolean, step: number): { x: number; scale: number; opacity: number } {
   'worklet';
   const far = Math.abs(away);
   const scale = 1 - (1 - POSTER_SIDE_SCALE) * Math.min(1, far);
-  if (!wide) return { x: away * 0.86, scale, opacity: along(far, [0, 1, 2, 3], [1, 0.55, 0.28, 0]) };
-  // The first step clears the front book at its full size; the rest are between two small ones.
-  const x = far <= 1 ? away * 0.96 : Math.sign(away) * (0.96 + (far - 1) * 0.82);
-  return { x, scale, opacity: along(away, [-1, 0, 1, 2, 3, 4], [0, 1, 0.62, 0.36, 0.18, 0]) };
+  const gap = step - (1 + POSTER_SIDE_SCALE) / 2;
+  const x = far <= 1 ? away * step : Math.sign(away) * (step + (far - 1) * (POSTER_SIDE_SCALE + gap / 3));
+  const opacity = wide ? along(away, [-1, 0, 1, 2, 3, 4], [0, 1, 0.62, 0.36, 0.18, 0]) : along(far, [0, 1, 2, 3], [1, 0.55, 0.28, 0]);
+  return { x, scale, opacity };
 }
 
 /** Where a wide hero's one book sits, with no row beside it: each gives way to the next as it comes,

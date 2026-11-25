@@ -24,6 +24,7 @@ import {
   posterBookBox,
   posterPlace,
   posterReach,
+  posterStep,
   splashLayerOpacity,
   wideHeroHeight,
 } from '@/lib/home-hero';
@@ -116,9 +117,10 @@ function PosterBook({
     readingDirection: entry.readingDirection,
   });
   const { width, height } = box;
+  const step = posterStep(width);
   const style = useAnimatedStyle(() => {
     const away = index - position.get();
-    const place = row ? posterPlace(away, wide) : lonePlace(away);
+    const place = row ? posterPlace(away, wide, step) : lonePlace(away);
     return {
       opacity: place.opacity,
       // Scaled about its foot, so the row stands on one line.
@@ -210,7 +212,7 @@ export function PosterStage({
       ? inset.left + captionWidth + Spacing.five + box.width / 2
       : stage.width - inset.right - Spacing.six - box.width / 2;
   const keys = useMemo(() => entries.map((entry) => entry.key), [entries]);
-  const pager = useHeroPager({ keys, opens, pitch: box.width * (wide ? 0.96 : 0.86), reach: row ? 3 : 1 });
+  const pager = useHeroPager({ keys, opens, pitch: box.width * posterStep(box.width), reach: row ? 3 : 1 });
   const shown = entries[pager.index];
   if (!shown) return null;
 

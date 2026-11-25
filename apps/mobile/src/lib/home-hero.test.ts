@@ -9,6 +9,7 @@ import {
   lonePlace,
   posterBookBox,
   posterPlace,
+  posterStep,
   posterReach,
   restingPosition,
   splashArtHeight,
@@ -78,32 +79,55 @@ describe('fitCover', () => {
   });
 });
 
+describe('posterStep', () => {
+  test('half the front book, half a side one, and the gap in points', () => {
+    expect(posterStep(150)).toBeCloseTo(1);
+    expect(posterStep(250)).toBeCloseTo(0.96);
+  });
+
+  test('the side book stands clear of the front one at every width', () => {
+    for (const bookWidth of [150, 176, 215, 240, 253]) {
+      const { x, scale } = posterPlace(1, false, posterStep(bookWidth));
+      // The side book's near edge, less the front book's far one, in points.
+      expect((x - scale / 2 - 0.5) * bookWidth).toBeCloseTo(15);
+    }
+  });
+});
+
 describe('posterPlace', () => {
+  const step = posterStep(250);
+
   test('the front book is whole and where it stands', () => {
-    for (const wide of [false, true]) expect(posterPlace(0, wide)).toEqual({ x: 0, scale: 1, opacity: 1 });
+    for (const wide of [false, true]) expect(posterPlace(0, wide, step)).toEqual({ x: 0, scale: 1, opacity: 1 });
   });
 
   test('on a phone the row is the same either way', () => {
-    const before = posterPlace(-1, false);
-    const after = posterPlace(1, false);
+    const before = posterPlace(-1, false, step);
+    const after = posterPlace(1, false, step);
     expect(before.x).toBe(-after.x);
     expect(before.opacity).toBe(after.opacity);
+    expect(after.x).toBeCloseTo(0.96);
     expect(after.scale).toBeCloseTo(0.8);
     expect(after.opacity).toBeCloseTo(0.55);
   });
 
+  test('the books past the first stand closer, between two small ones', () => {
+    expect(posterPlace(2, false, step).x).toBeCloseTo(1.78);
+    expect(posterPlace(-2, false, step).x).toBeCloseTo(-1.78);
+  });
+
   test('a wide hero’s row runs on to the right and a passed book is gone', () => {
-    expect(posterPlace(-1, true).opacity).toBe(0);
-    expect(posterPlace(-0.5, true).opacity).toBeCloseTo(0.5);
-    expect(posterPlace(1, true).x).toBeCloseTo(0.96);
-    expect(posterPlace(2, true).x).toBeCloseTo(1.78);
-    expect(posterPlace(2, true).opacity).toBeCloseTo(0.36);
+    expect(posterPlace(-1, true, step).opacity).toBe(0);
+    expect(posterPlace(-0.5, true, step).opacity).toBeCloseTo(0.5);
+    expect(posterPlace(1, true, step).x).toBeCloseTo(0.96);
+    expect(posterPlace(2, true, step).x).toBeCloseTo(1.78);
+    expect(posterPlace(2, true, step).opacity).toBeCloseTo(0.36);
   });
 
   test('nothing past its reach is drawn', () => {
     for (const wide of [false, true]) {
-      expect(posterPlace(posterReach(wide), wide).opacity).toBe(0);
-      expect(posterPlace(posterReach(wide) + 2, wide).opacity).toBe(0);
+      expect(posterPlace(posterReach(wide), wide, step).opacity).toBe(0);
+      expect(posterPlace(posterReach(wide) + 2, wide, step).opacity).toBe(0);
     }
   });
 });
