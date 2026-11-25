@@ -8,6 +8,8 @@ import browse from '../assets/screens/01-browse.png';
 import series from '../assets/screens/02-series.png';
 import reader from '../assets/screens/03-reader.png';
 import desktop from '../assets/screens/04-desktop.png';
+import duoFolded from '../assets/screens/05-duo-folded.png';
+import duoOpen from '../assets/screens/06-duo-open.png';
 
 // Starlight's hero takes its image as raw HTML, so the phone there is the DeviceFrame markup by
 // hand, over the same optimised asset and the same global .device styles.
@@ -82,6 +84,18 @@ const heroHtml = `<figure class="device not-content device-phone"><img src="${he
     </p>
   </section>
 
+  <section class="fold">
+    <h2>Folded or open</h2>
+    <p>
+      On an iPhone Duo, Comical lays itself out for the cover screen and for the inner one, and
+      follows the fold from one to the other.
+    </p>
+    <div class="pair">
+      <DeviceFrame src={duoFolded} alt="Home on a folded iPhone Duo" kind="tablet" sizes="(max-width: 52rem) 31vw, 17rem" />
+      <DeviceFrame src={duoOpen} alt="Home on an open iPhone Duo" kind="tablet" sizes="(max-width: 52rem) 64vw, 35rem" />
+    </div>
+  </section>
+
   <section class="try">
     <h2>See it before you install it</h2>
     <p>
@@ -117,9 +131,11 @@ const heroHtml = `<figure class="device not-content device-phone"><img src="${he
 
   <footer class="fine">
     <p>
-      Screenshots show sample data. The comic pages pictured are from
-      <a href="https://www.peppercarrot.com"><em>Pepper&amp;Carrot</em></a> by David Revoy,
-      <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
+      Screenshots show sample data. The covers and pages pictured are from{' '}
+      <a href="https://www.peppercarrot.com"><em>Pepper&amp;Carrot</em></a> by David Revoy,{' '}
+      <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>;{' '}
+      <a href="https://densho810.com/free/"><em>Give My Regards to Black Jack</em></a> by SHUHO SATO;
+      and comic books in the United States public domain.
     </p>
   </footer>
 </StarlightPage>
@@ -173,11 +189,13 @@ const heroHtml = `<figure class="device not-content device-phone"><img src="${he
   }
 
   .desktop,
+  .fold,
   .try,
   .how {
     text-align: center;
   }
   .desktop p,
+  .fold p,
   .try p,
   .how > p {
     max-width: 60ch;
@@ -205,6 +223,20 @@ const heroHtml = `<figure class="device not-content device-phone"><img src="${he
   .desktop :global(.wide) {
     margin: 2rem auto;
     max-width: 60rem;
+  }
+  /* Each grows by its own shape (width over height), so the two stand at one height. */
+  .fold .pair {
+    display: flex;
+    align-items: center;
+    gap: clamp(0.75rem, 3vw, 2rem);
+    max-width: 52rem;
+    margin: 2rem auto 0;
+  }
+  .fold .pair :global(.device:first-child) {
+    flex: 0.6875 1 0;
+  }
+  .fold .pair :global(.device:last-child) {
+    flex: 1.4216 1 0;
   }
   .links {
     font-size: var(--sl-text-base);

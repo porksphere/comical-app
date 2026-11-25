@@ -32,6 +32,15 @@
   <img src="docs/media/06-duo-open.png" alt="Home on an open iPhone Duo" width="480" />
 </p>
 
+<p align="center">
+  <sub>
+    Screenshots show sample data: <a href="https://www.peppercarrot.com"><em>Pepper&amp;Carrot</em></a> by David Revoy
+    (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>),
+    <a href="https://densho810.com/free/"><em>Give My Regards to Black Jack</em></a> by SHUHO SATO,
+    and comic books in the United States public domain.
+  </sub>
+</p>
+
 ## Features
 
 - **Paged and long-strip** readers

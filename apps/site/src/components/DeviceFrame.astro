@@ -20,12 +20,14 @@ interface Props {
   chrome?: 'windows' | 'mac';
   /** CSS width of the whole device, any unit. */
   width?: string;
+  /** The image's `sizes`, where the page lays the device out at a width its kind doesn't imply. */
+  sizes?: string;
   class?: string;
   loading?: 'eager' | 'lazy';
 }
 
-const { src, alt, kind = 'phone', chrome = 'windows', width, class: className, loading = 'lazy' } = Astro.props;
-const sizes = kind === 'window' ? '(max-width: 60rem) 92vw, 60rem' : '(max-width: 40rem) 70vw, 22rem';
+const { src, alt, kind = 'phone', chrome = 'windows', width, sizes: given, class: className, loading = 'lazy' } = Astro.props;
+const sizes = given ?? (kind === 'window' ? '(max-width: 60rem) 92vw, 60rem' : '(max-width: 40rem) 70vw, 22rem');
 ---
 
 <figure
