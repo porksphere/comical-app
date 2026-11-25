@@ -1309,6 +1309,22 @@ for good. That is every iOS Simulator: Dawn's Metal backend has no comparison sa
 shadow's pass asks for one, and the device is lost on the first frame, so a simulator's Home has
 no shelf and the capture workflow's iPhone shots are of the rails.
 
+**Two flat heroes are on trial beside the shelf** (Settings → Developer → Home opens on;
+`useHomeHeroStyle`, kept with the shelf's own switch and read as the shelf in a build without that
+screen). Both show the shelf's own series (`useBookshelfEntries`) and say and open what the shelf
+does, through the one `useShelfOpening` the shelf also reads, so the three cannot disagree with
+each other or with the History and Activity tabs. The splash (`components/home-hero/home-splash.tsx`)
+is the series read last as its cover across the top of the page, running up under the bar on iOS,
+where the bar is bare over the page, and to the bar's edge elsewhere; it takes the series in order
+of how much each matters (`ranked`), since it opens on its first. The poster (`home-poster.tsx`) is
+the cover whole, as the book its card draws, over that cover out of focus, the others standing
+smaller to either side as the shelf stands them. A feed too wide for a cover to cross
+(`HERO_WIDE_FROM`) lays either out with its words beside the book. Their layout is `lib/home-hero`,
+pure and tested; `useHeroPager` is the sideways drag both share, its position a shared value the
+pictures follow on the UI thread. Neither needs the shelf's renderer, so one that failed to start
+takes only the shelf away. A press that lands as a drag ends is not a tap (`tapped`): a browser
+sends the click a mouse drag ends in to whatever is under the pointer.
+
 # Testing: new screens need a flow
 
 A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.

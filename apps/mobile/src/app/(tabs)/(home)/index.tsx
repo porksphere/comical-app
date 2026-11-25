@@ -14,6 +14,8 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HomeBookshelf, homeBookshelfHeight } from '@/components/home-bookshelf/home-bookshelf';
+import { HomePoster, homePosterHeight } from '@/components/home-hero/home-poster';
+import { HomeSplash, homeSplashHeight } from '@/components/home-hero/home-splash';
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { GridSkeleton } from '@/components/grid-skeleton';
@@ -65,9 +67,10 @@ import { waitingChecks$ } from '@/data/web-check';
 import { friendlyError } from '@/lib/friendly-error';
 import { useHasSidebar } from '@/hooks/use-content-width';
 import { useGridLayout } from '@/hooks/use-grid-layout';
-import { useBookshelfEntries, useHomeBookshelf, useHomeBookshelfAvailable } from '@/hooks/use-home-bookshelf';
+import { useBookshelfEntries, useHomeBookshelf, useHomeBookshelfAvailable, useHomeHeroStyle } from '@/hooks/use-home-bookshelf';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -793,17 +796,35 @@ export default function BrowseScreen() {
   // Comical Home opens on the bookshelf: what the reader is in the middle of, ahead of the rails. Not
   // on Favorites or a custom page, which are the reader's own arrangements, and not once its
   // renderer has failed to start, when the rails simply begin the page as before.
+  //
+  // On trial beside it (Settings → Developer) are two flat heroes of the same series: the splash,
+  // which opens on the one read last and so takes them in order of how much each matters, and the
+  // poster, which stands them as the shelf does. Neither needs the shelf's renderer.
+  const heroStyle = useHomeHeroStyle();
   const bookshelfOn = useHomeBookshelf();
   const bookshelfAvailable = useHomeBookshelfAvailable();
-  const bookshelfShown = bookshelfOn && bookshelfAvailable && isComical && !activeFavoritesPage && !activeCustomPage;
-  const bookshelf = useBookshelfEntries(bookshelfShown);
-  const bookshelfHero = useMemo(
-    () =>
-      bookshelfShown && bookshelf.length
-        ? { element: <HomeBookshelf entries={bookshelf} width={railViewport} />, height: homeBookshelfHeight(railViewport) }
-        : null,
-    [bookshelfShown, bookshelf, railViewport],
-  );
+  const bookshelfShown =
+    bookshelfOn && (heroStyle !== 'shelf' || bookshelfAvailable) && isComical && !activeFavoritesPage && !activeCustomPage;
+  const bookshelf = useBookshelfEntries(bookshelfShown, heroStyle === 'splash');
+  const { height: windowHeight } = useWindowSize();
+  // A flat hero's picture runs up under the bar where the bar is bare over the top of the page,
+  // which is the system's, and up to the bar's edge where the bar is the app's own.
+  const heroTop = headerHeight + BarContentGap;
+  const heroBleed = NATIVE_HEADER ? heroTop : BarContentGap;
+  const bookshelfHero = useMemo(() => {
+    if (!bookshelfShown || !bookshelf.length) return null;
+    if (heroStyle === 'splash') {
+      const splash = { width: railViewport, top: heroTop, bleed: heroBleed };
+      return { element: <HomeSplash entries={bookshelf} bare={NATIVE_HEADER} {...splash} />, height: homeSplashHeight({ ...splash, windowHeight }) };
+    }
+    if (heroStyle === 'poster') {
+      return {
+        element: <HomePoster entries={bookshelf} width={railViewport} bleed={heroBleed} bare={NATIVE_HEADER} />,
+        height: homePosterHeight(railViewport, windowHeight),
+      };
+    }
+    return { element: <HomeBookshelf entries={bookshelf} width={railViewport} />, height: homeBookshelfHeight(railViewport) };
+  }, [bookshelfShown, bookshelf, railViewport, heroStyle, heroTop, heroBleed, windowHeight]);
 
   // The composed Home flattened into a typed row list for ContentFeed's virtualization. Same rail/grid
   // partition (and loading-skeleton shape) the old listHeader rendered inline, just as data. Only built

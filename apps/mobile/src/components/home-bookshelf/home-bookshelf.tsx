@@ -21,9 +21,7 @@ import { Skeleton } from '@/components/skeleton';
 import { BURST_SIZE, BURST_TURN, BurstStar, STICKER, StickerBox, stickerTone, ToneShadow } from '@/components/sticker';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
-import { activityLabel } from '@/data/activity/feed-rows';
 import { resolveAssetSourceCached } from '@/data/api';
-import { useWarmChapterPages } from '@/data/prefetch';
 import { DIRECT_CHAPTER_ID } from '@/data/types';
 import { useBookCoverResolver } from '@/hooks/use-book-covers';
 import { useBridgeMap } from '@/hooks/use-bridges';
@@ -49,13 +47,12 @@ import {
 import { logDiagnostic } from '@/lib/diagnostics';
 import { desktopShell } from '@/lib/desktop-shell';
 import { createTickHaptic, hapticSelection } from '@/lib/haptics';
-import { historySub } from '@/lib/history-sub';
 import { useRouter } from '@/lib/nav';
-import { activityReadParams, historyResumeParams, seriesDetailParams } from '@/lib/series-links';
 import { useTitleFontFor } from '@/lib/title-font';
 
 import { ShelfDriver } from './driver';
 import { FrameStats, describeFrames } from './frame-stats';
+import { useShelfOpening } from './opening';
 import { PAGE_DOTS_HEIGHT, PageDots } from './page-dots';
 import type { ShelfBookSpec } from './scene';
 
@@ -271,9 +268,9 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   const dark = useActiveColorScheme() === 'dark';
   const reduceMotion = useReducedMotion();
   const router = useRouter();
-  const { nameOf, directOf } = useBridgeMap();
+  const { directOf } = useBridgeMap();
+  const openingOf = useShelfOpening();
   const coverOf = useBookCoverResolver();
-  const warmPages = useWarmChapterPages();
   // The shelf runs under the safe area's sides — the bar the wide iPhones stand beside the content —
   // while the book in front stands in the middle of what is left, where the rest of the page is.
   // On the web that page is a column centred in its pane, and this row stands in the column: the
@@ -483,22 +480,10 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   const captionSize = useSharedValue({ width: 0, height: 0 });
   if (!shown) return null;
 
-  const bridgeName = nameOf(shown.bridgeId);
-  // What the front book opens, worked out once for the press that warms it and the tap that pushes
-  // it: what the History tab's row opens for a series that has been read, and the Activity tab's
-  // for one that has only its new chapters.
-  const opening = () => {
-    const { history: h, news: g, bridgeId, seriesId } = shown;
-    if (h) {
-      const direct = h.chapterId === DIRECT_CHAPTER_ID || !h.chapterId;
-      return { warm: () => warmPages(bridgeId, seriesId, direct ? undefined : h.chapterId, h.lastPage ?? 0), params: historyResumeParams(h, bridgeName) };
-    }
-    if (!g) return null;
-    return {
-      warm: () => (g.chapterId === undefined ? undefined : warmPages(bridgeId, seriesId, g.chapterId, 0)),
-      params: activityReadParams(g, { name: bridgeName, direct: directOf(bridgeId) }),
-    };
-  };
+  // What the front book opens and says, worked out once for the press that warms it and the tap
+  // that pushes it.
+  const opening = openingOf(shown);
+  const { bridgeName, where, detail } = opening;
   /** Whether a point of the stage is on the front book's caption, which is drawn over the stage and
    *  not in it, so a touch on it is told by where it hangs. */
   const onCaption = (x: number, y: number) => {
@@ -516,20 +501,19 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   // has: the fetch, begun as the finger came down on the caption, has that long a start.
   const pressIn = (x: number, y: number) => {
     if (!onFront(x, y)) return;
-    if (onCaption(x, y)) opening()?.warm();
+    if (onCaption(x, y)) opening.read?.warm();
     driver.pressIn();
   };
   /** The caption: back into the reader where the series was left, or onto its new chapter. */
   const resume = () => {
-    const opens = opening();
-    if (!opens) return;
-    opens.warm();
-    driver.pressOut(() => router.push({ pathname: '/series', params: opens.params }));
+    const { read } = opening;
+    if (!read) return;
+    read.warm();
+    driver.pressOut(() => router.push({ pathname: '/series', params: read.params }));
   };
   /** The cover: the series' details page, as the History tab's cover opens it. */
   const details = () => {
-    const params = seriesDetailParams(shown, { name: bridgeName, direct: directOf(shown.bridgeId) });
-    driver.pressOut(() => router.push({ pathname: '/series', params }));
+    driver.pressOut(() => router.push({ pathname: '/series', params: opening.details.params }));
   };
   const tap = (x: number, y: number) => {
     if (onCaption(x, y)) return resume();
@@ -571,9 +555,6 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
   };
   const hover = Gesture.Hover().runOnJS(true).onBegin(point).onUpdate(point).onFinalize(unpoint);
   const tone = stickerTone(dark);
-  const { history, news } = shown;
-  const where = history ? historySub(history, { withTime: false, long: false }) : news ? activityLabel(news, bridgeName) : '';
-  const detail = history ? historySub(history, { withTime: true, long: true }) : where;
 
   return (
     <View style={{ height: homeBookshelfHeight(width) }} testID="home-bookshelf">
@@ -609,7 +590,7 @@ export function HomeBookshelf({ entries, width }: { entries: readonly BookshelfE
             <Caption
               fx={fx}
               tilt={tilt}
-              label={history ? 'RESUME' : 'READ'}
+              label={opening.resumes ? 'RESUME' : 'READ'}
               where={where}
               lean={stuck.lean}
               tone={tone}
