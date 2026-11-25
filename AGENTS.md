@@ -1322,7 +1322,12 @@ smaller to either side as the shelf stands them. A feed too wide for a cover to 
 pure and tested; `useHeroPager` is the sideways drag both share, its position a shared value the
 pictures follow on the UI thread. Neither needs the shelf's renderer, so one that failed to start
 takes only the shelf away. A press that lands as a drag ends is not a tap (`tapped`): a browser
-sends the click a mouse drag ends in to whatever is under the pointer.
+sends the click a mouse drag ends in to whatever is under the pointer. The series page opens out of
+the hero's picture of the front series and goes back into it, read or details alike
+(`useHeroOpen`): the app's zoom off the picture's rect on Android, the system's out of a
+`ZoomSource` over it on iOS, as a History row's thumbnail does both. The hero is a zoom surface of
+its own by name (`home-hero`): under the feed's it would be asked for by the feed's rows, which
+don't hold it, and the page would be told its source had gone.
 
 **The bar is bare over a flat hero at the top of the page, on every platform.** The hero's picture
 runs up under it. A cover out of focus, the poster's and a wide splash's, is left as it is, even

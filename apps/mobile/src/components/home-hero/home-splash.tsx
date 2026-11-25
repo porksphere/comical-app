@@ -1,21 +1,21 @@
 import { Image } from 'expo-image';
-import { useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useMemo, useRef } from 'react';
+import { Pressable, StyleSheet, View, type ViewInstance } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { PAGE_DOTS_HEIGHT, PageDots } from '@/components/home-bookshelf/page-dots';
-import { useShelfOpening } from '@/components/home-bookshelf/opening';
+import { ZoomSource } from '@/components/zoom-source';
 import { Spacing } from '@/constants/theme';
 import type { BookshelfEntry } from '@/hooks/use-home-bookshelf';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { useWindowSize } from '@/hooks/use-window-size';
 import { heroIsWide, splashArtHeight, splashLayerOpacity } from '@/lib/home-hero';
-import { useRouter } from '@/lib/nav';
 
 import { HeroArrows, HeroCaption, HeroFades, heroInset, useHeroStage } from './hero-parts';
 import { PosterStage, wideHomeHeroHeight } from './home-poster';
+import { useHeroOpen } from './use-hero-open';
 import { useHeroPager } from './use-hero-pager';
 
 const UNDER_DOTS = Spacing.two;
@@ -53,26 +53,31 @@ function SplashCover({ entry, index, position }: { entry: BookshelfEntry; index:
 }
 
 function PhoneSplash({ entries, width, top, bleed }: SplashProps) {
-  const router = useRouter();
-  const openingOf = useShelfOpening();
   const stage = useHeroStage(width);
   const { height: windowHeight } = useWindowSize();
   const art = splashArtHeight({ width, windowHeight, top, bleed });
   const keys = useMemo(() => entries.map((entry) => entry.key), [entries]);
   const pager = useHeroPager({ keys, opens: 0, pitch: stage.width * 0.8, reach: 1 });
   const shown = entries[pager.index];
-  if (!shown) return null;
+  const artRef = useRef<ViewInstance>(null);
+  const open = useHeroOpen(shown, artRef, 0);
+  if (!shown || !open) return null;
 
-  const opening = openingOf(shown);
-  const push = (params: Record<string, string>) => router.push({ pathname: '/series', params });
-  const details = () => push(opening.details.params);
+  const { opening, details } = open;
   const inset = heroInset(stage);
 
   return (
     <View style={{ height: art + PAGE_DOTS_HEIGHT + UNDER_DOTS }} testID="home-splash">
       <GestureDetector gesture={pager.pan}>
         <View style={{ width: stage.width, height: art, marginLeft: -stage.lead }}>
-          <View pointerEvents="none" style={[styles.art, { top: -bleed }]}>
+          {open.zoomHref && (
+            <View pointerEvents="none" style={[styles.zoomAt, { top: -bleed }]}>
+              <ZoomSource href={open.zoomHref} onId={open.onZoomId} style={{ width: stage.width, height: art + bleed }} />
+            </View>
+          )}
+          {/* All of it goes while the page's copy of the cover is in the air: under the front cover
+              lies the one before it, whole. */}
+          <View ref={artRef} collapsable={false} pointerEvents="none" style={[styles.art, { top: -bleed }, open.flying && styles.unseen]}>
             {entries.map((entry, index) =>
               Math.abs(index - pager.index) <= 1 ? <SplashCover key={entry.key} entry={entry} index={index} position={pager.position} /> : null,
             )}
@@ -81,7 +86,7 @@ function PhoneSplash({ entries, width, top, bleed }: SplashProps) {
           <Pressable
             testID="home-splash.cover"
             style={StyleSheet.absoluteFill}
-            onPressIn={opening.details.warm}
+            onPressIn={() => open.pressIn('details')}
             onPress={() => pager.tapped() && details()}
             accessibilityRole="adjustable"
             accessibilityLabel={`${shown.title}, details`}
@@ -97,7 +102,8 @@ function PhoneSplash({ entries, width, top, bleed }: SplashProps) {
             entry={shown}
             opening={opening}
             size="splash"
-            onRead={() => push((opening.read ?? opening.details).params)}
+            onPressIn={open.pressIn}
+            onRead={open.read}
             onDetails={details}
             testID="home-splash"
             style={[styles.caption, { left: inset.left, right: inset.right }]}
@@ -125,5 +131,7 @@ export function HomeSplash(props: SplashProps) {
 
 const styles = StyleSheet.create({
   art: { position: 'absolute', left: 0, right: 0, bottom: 0, overflow: 'hidden' },
+  zoomAt: { position: 'absolute', left: 0 },
+  unseen: { opacity: 0 },
   caption: { position: 'absolute', bottom: Spacing.three },
 });

@@ -45,6 +45,7 @@ export function HeroCaption({
   entry,
   opening,
   size,
+  onPressIn,
   onRead,
   onDetails,
   testID,
@@ -53,6 +54,8 @@ export function HeroCaption({
   entry: BookshelfEntry;
   opening: ShelfOpening;
   size: CaptionSize;
+  /** As the finger comes down on either button: what warms its fetch and measures its zoom. */
+  onPressIn: (what: 'read' | 'details') => void;
   onRead: () => void;
   onDetails: () => void;
   /** The hero's own id: its buttons are `<testID>.resume` and `<testID>.details`. */
@@ -92,7 +95,7 @@ export function HeroCaption({
           testID={`${testID}.resume`}
           accessibilityRole="button"
           accessibilityLabel={`${verb} ${entry.title}`}
-          onPressIn={() => (opening.read ?? opening.details).warm()}
+          onPressIn={() => onPressIn('read')}
           onPress={onRead}
           style={({ pressed }) => [styles.read, size === 'splash' && styles.grow, { backgroundColor: theme.text }, pressed && styles.pressed]}>
           <ReadingIcon color={theme.background} size={19} />
@@ -102,7 +105,7 @@ export function HeroCaption({
           testID={`${testID}.details`}
           accessibilityRole="button"
           accessibilityLabel={`${entry.title}, details`}
-          onPressIn={opening.details.warm}
+          onPressIn={() => onPressIn('details')}
           onPress={onDetails}
           style={({ pressed }) => [styles.details, { backgroundColor: theme.backgroundSelected }, pressed && styles.pressed]}>
           <AboutIcon color={theme.text} size={21} />

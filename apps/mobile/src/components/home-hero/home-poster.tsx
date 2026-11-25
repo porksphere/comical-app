@@ -1,12 +1,12 @@
 import { Image } from 'expo-image';
-import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useMemo, useRef, useState, type RefObject } from 'react';
+import { Pressable, StyleSheet, View, type ViewInstance } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { BookCoverArt } from '@/components/book-chrome';
 import { PAGE_DOTS_HEIGHT, PageDots } from '@/components/home-bookshelf/page-dots';
-import { useShelfOpening } from '@/components/home-bookshelf/opening';
+import { ZoomSource, type useZoomHref } from '@/components/zoom-source';
 import { Spacing } from '@/constants/theme';
 import { useBookCover } from '@/hooks/use-book-covers';
 import { useBridgeMap } from '@/hooks/use-bridges';
@@ -14,6 +14,7 @@ import type { BookshelfEntry } from '@/hooks/use-home-bookshelf';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { useWindowSize } from '@/hooks/use-window-size';
+import { largeCoverRadius } from '@/lib/book-cover';
 import { shelfMiddle } from '@/lib/bookshelf';
 import {
   HERO_COVER_ASPECT,
@@ -28,10 +29,10 @@ import {
   splashLayerOpacity,
   wideHeroHeight,
 } from '@/lib/home-hero';
-import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
 import { HeroArrows, HeroCaption, HeroFades, POSTER_CAPTION_HEIGHT, heroInset, useHeroStage } from './hero-parts';
+import { useHeroOpen } from './use-hero-open';
 import { useHeroPager } from './use-hero-pager';
 
 /** Room over a phone's book, and between it and its words. */
@@ -56,6 +57,8 @@ const GLOW_SPILL = 60;
 const GLOW_BLUR = 44;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+type ZoomHref = ReturnType<typeof useZoomHref>;
 
 /** The front series' cover out of focus, as the stage's colour. */
 function PosterGlow({ entry, index, position }: { entry: BookshelfEntry; index: number; position: SharedValue<number> }) {
@@ -83,6 +86,7 @@ function PosterBook({
   passed,
   count,
   testID,
+  zoom,
   onPressIn,
   onPress,
   onStep,
@@ -102,6 +106,9 @@ function PosterBook({
   passed: boolean;
   count: number;
   testID: string;
+  /** The front book's part in the zoom the series page opens with: the view its rect is read off,
+   *  whether its copy is in the air, and on iOS the system zoom's source over it. */
+  zoom?: { sourceRef: RefObject<ViewInstance | null>; flying: boolean; href: ZoomHref; onId: (id: string | null) => void };
   onPressIn: () => void;
   onPress: () => void;
   onStep: (by: number) => void;
@@ -145,10 +152,12 @@ function PosterBook({
       pointerEvents={passed ? 'none' : 'box-none'}
       style={[styles.book, { left, top, width, height, zIndex: front ? 1 : 0 }, style]}>
       <Pressable
+        ref={zoom?.sourceRef}
+        collapsable={false}
         testID={testID}
         onPressIn={onPressIn}
         onPress={onPress}
-        style={fitted}
+        style={[fitted, zoom?.flying && styles.unseen]}
         {...(front
           ? {
               accessibilityRole: 'adjustable' as const,
@@ -162,6 +171,11 @@ function PosterBook({
               },
             }
           : { accessibilityRole: 'button' as const, accessibilityLabel: entry.title })}>
+        {zoom?.href && (
+          <View pointerEvents="none" style={styles.zoomAt}>
+            <ZoomSource href={zoom.href} onId={zoom.onId} style={{ ...fitted, borderRadius: largeCoverRadius(book) }} />
+          </View>
+        )}
         <BookCoverArt book={book} aspect={aspect} cover={uri} recyclingKey={entry.key} picture={picture} />
       </Pressable>
     </Animated.View>
@@ -193,9 +207,7 @@ export function PosterStage({
 }) {
   const theme = useTheme();
   const dark = useActiveColorScheme() === 'dark';
-  const router = useRouter();
   const { directOf } = useBridgeMap();
-  const openingOf = useShelfOpening();
   const stage = useHeroStage(width);
   const { height: windowHeight } = useWindowSize();
   const wide = heroIsWide(width);
@@ -214,12 +226,21 @@ export function PosterStage({
   const keys = useMemo(() => entries.map((entry) => entry.key), [entries]);
   const pager = useHeroPager({ keys, opens, pitch: box.width * posterStep(box.width), reach: row ? 3 : 1 });
   const shown = entries[pager.index];
-  if (!shown) return null;
+  // The front book's corner, for the zoom's copy of it: the book its card draws, at a volume's shape
+  // until its picture says otherwise.
+  const frontBook = useBookCover({
+    bridgeId: shown?.bridgeId,
+    seriesId: shown?.seriesId ?? '',
+    direct: shown ? directOf(shown.bridgeId) : false,
+    aspect: HERO_COVER_ASPECT,
+    coverForm: shown?.coverForm,
+    readingDirection: shown?.readingDirection,
+  });
+  const frontRef = useRef<ViewInstance>(null);
+  const open = useHeroOpen(shown, frontRef, largeCoverRadius(frontBook));
+  if (!shown || !open) return null;
 
-  const opening = openingOf(shown);
-  const push = (params: Record<string, string>) => router.push({ pathname: '/series', params });
-  const read = () => push((opening.read ?? opening.details).params);
-  const details = () => push(opening.details.params);
+  const { opening, read, details } = open;
   const reach = row ? posterReach(wide) : 1;
   const press = (index: number) => {
     if (!pager.tapped()) return;
@@ -255,7 +276,8 @@ export function PosterStage({
                 passed={index !== pager.index && (!row || (wide && index < pager.index))}
                 count={entries.length}
                 testID={testId(`${testID}.book`, entry.key)}
-                onPressIn={index === pager.index ? opening.details.warm : noop}
+                zoom={index === pager.index ? { sourceRef: frontRef, flying: open.flying, href: open.zoomHref, onId: open.onZoomId } : undefined}
+                onPressIn={index === pager.index ? () => open.pressIn('details') : noop}
                 onPress={() => press(index)}
                 onStep={(by) => pager.goTo(pager.index + by)}
               />
@@ -265,6 +287,7 @@ export function PosterStage({
             entry={shown}
             opening={opening}
             size={wide ? 'wide' : 'poster'}
+            onPressIn={open.pressIn}
             onRead={read}
             onDetails={details}
             testID={testID}
@@ -297,5 +320,7 @@ const styles = StyleSheet.create({
   backdrop: { position: 'absolute', left: 0, right: 0, bottom: 0, overflow: 'hidden' },
   glow: { position: 'absolute', left: -GLOW_SPILL, right: -GLOW_SPILL, top: -GLOW_SPILL, bottom: -GLOW_SPILL },
   book: { position: 'absolute', alignItems: 'center', justifyContent: 'flex-end' },
+  zoomAt: { position: 'absolute', left: 0, top: 0 },
+  unseen: { opacity: 0 },
   caption: { position: 'absolute' },
 });
