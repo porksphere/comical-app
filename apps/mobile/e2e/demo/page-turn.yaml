@@ -1,0 +1,53 @@
+# The page turn, for the camera: three swipes across a reader that is already open.
+#
+# `.github/workflows/capture-page-turn.yml` opens the reader (a deep link, so nothing has to be
+# found and tapped: on iOS a card sits deeper in the hierarchy than Maestro reads, see
+# screens.yaml), starts recording, and only then runs this. So there is no `launchApp` here: it
+# would put the app back on Home, under a recording that is already running.
+#
+# The turn is the reader's default, the page curling over (`pageTurn: 'curl'`), and a swipe is the
+# curl's own drag, so the page follows the finger rather than playing a set animation.
+#
+# THE PAUSES ARE THE EDIT. `scripts/trim-to-motion.py` keeps the recording's busiest stretch of
+# movement, a stretch ending wherever the screen then holds still for four seconds. The stillness
+# ahead of the first swipe is what parts the turns from whatever moved while Maestro's driver came
+# up, and the gaps between the swipes are short enough to keep the three in one stretch.
+appId: com.porksphere.comical
+---
+# Fails here, by name, if the link did not open the reader: every swipe below would otherwise
+# land on Home and the trim would cut out a clip of that.
+- extendedWaitUntil:
+    visible:
+      id: "reader.control.next"
+    timeout: 30000
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '5000'
+
+# Forward twice, then back once. The chapter has three pages, read left to right. Mid-height and
+# well in from the sides: the screen's edge is the system's swipe back.
+- swipe:
+    start: 85%, 55%
+    end: 15%, 55%
+    duration: 900
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '1400'
+- swipe:
+    start: 85%, 55%
+    end: 15%, 55%
+    duration: 900
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '1400'
+- swipe:
+    start: 15%, 55%
+    end: 85%, 55%
+    duration: 900
+- runFlow:
+    file: pause.yaml
+    env:
+      MS: '3000'

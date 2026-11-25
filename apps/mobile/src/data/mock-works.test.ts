@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { MOCK_FIXTURE_COVER } from './mock-assets';
 import {
@@ -12,6 +14,7 @@ import {
   mockSeries,
 } from './mock';
 import { NAMED_WORKS, WORKS } from './mock-works';
+import { historyResumeParams, seriesLink } from '@/lib/series-links';
 
 const BRIDGES = ['komga', 'suwayomi', 'kavita', 'opds'];
 
@@ -77,5 +80,34 @@ describe('the mock catalog is real works', () => {
     expect(fixture.title).toBe(LONG_TITLE);
     expect(fixture.cover).toBe(MOCK_FIXTURE_COVER);
     expect((await mockGetSeriesList('komga', 'featured-long', false)).chapterCount).toBeGreaterThan(40);
+  });
+});
+
+describe('the page-turn capture', () => {
+  // `.github/workflows/capture-page-turn.yml` opens the reader by a link written out in its env.
+  const workflow = readFileSync(join(import.meta.dir, '../../../../.github/workflows/capture-page-turn.yml'), 'utf8');
+  const link = /^\s*LINK: '([^']+)'$/m.exec(workflow)![1]!;
+  const params = Object.fromEntries(new URL(link).searchParams);
+
+  test('its link is the one a History row for that chapter would open', async () => {
+    const work = NAMED_WORKS.find((w) => w.id === 'pepper-and-carrot')!;
+    const { chapters } = await mockGetSeriesList(params.bridgeId!, params.id!, false);
+    const first = chapters!.find((c) => c.number === 1)!;
+    const row = {
+      bridgeId: params.bridgeId!,
+      seriesId: params.id!,
+      title: work.title,
+      chapterId: first.id,
+      chapterName: first.name,
+      lastPage: 0,
+      lastReadAt: 0,
+    };
+    expect(link).toBe(seriesLink(historyResumeParams(row, 'Komga')));
+  });
+
+  test('it opens on a chapter whose pages are its own, all three', async () => {
+    expect(mockSeries(params.id!, undefined, 'Komga').title).toBe('Pepper&Carrot');
+    const pages = await mockGetChapterPages(params.bridgeId!, params.id!, params.chapterId!);
+    expect(pages.map((p) => p.split('/pages/')[1])).toEqual(['05.jpg', '06.jpg', '04.jpg']);
   });
 });

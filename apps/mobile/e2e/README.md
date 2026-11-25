@@ -284,3 +284,23 @@ recorder; the transition renders properly there.
 The Android emulator on a GitHub runner renders through SwiftShader — software GL, because ubuntu
 runners have KVM but no GPU — which is slow enough to affect even settling a screen before a
 screenshot. macOS runners are Apple Silicon with a real GPU and a Metal-backed simulator.
+
+### The page turn, filmed
+
+`demo/page-turn.yaml` is three swipes across a reader that is already open, for
+`capture-page-turn.yml` to film: an iPhone turning one page at a time, and an iPhone Duo open,
+turning a spread. The workflow opens the reader by a link (`seriesLink`, the one a widget's row
+opens it by), starts recording, and then runs the flow, so the flow has no `launchApp`. On the Duo
+there is no flow at all: Maestro's touches land on the cover screen of an unfolded Duo, so `duoctl`
+sends the swipes.
+
+```bash
+gh workflow run capture-page-turn.yml --ref <branch> -f from_run=<run id>
+```
+
+`from_run` takes a run of this workflow or of `capture-demo.yml`: they build the same app. Each
+device comes back as an MP4 and a GIF (`page-turn-iphone`, `page-turn-duo`), cut down to the turns
+by `scripts/trim-to-motion.py`, with the whole take beside them for a few days
+(`page-turn-*-raw`) in case the cut is of the wrong part. The flow's pauses are what that script
+cuts by, so change them with it in mind.
+

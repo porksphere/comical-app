@@ -1,0 +1,295 @@
+name: Capture page turn
+
+# Films the reader turning pages, on an iPhone (one page at a time) and on an iPhone Duo open (two
+# pages, a spread), and uploads each as an MP4 and a GIF. Actions → Capture page turn → Run
+# workflow, or `gh workflow run capture-page-turn.yml --ref <branch>`. Like the stills
+# (capture-demo.yml), nothing here commits what it shoots: a clip is looked at before it is used.
+#
+# NOTHING IS SET UP IN THE APP, because what is filmed is what it does unasked. The page curling
+# over is the reader's default turn. Two pages share the screen whenever the reading frame is
+# landscape (`pageLayout: 'auto'`), which the Duo's inner screen is. And the chapter read is
+# opened by the link a home-screen widget's row opens it by (`seriesLink` in lib/series-links.ts),
+# so nothing has to be found and tapped on the way in.
+#
+# WHAT IS READ is the first episode of Pepper&Carrot, the one chapter the fixtures hold every page
+# of (assets/mock/README.md), so the pages turned are that chapter's own, in order. It has three:
+# on the iPhone that is two turns forward and one back. On the Duo the first page stands alone,
+# as a cover does, beside an empty half, and the other two are the spread: so the Duo opens on
+# the spread, turns back to the cover and forward again, and its clip begins and ends on a full
+# screen. The manga would fill more spreads, but it reads right to left and the reader's
+# direction is a setting, which on the Duo there is no way to reach: see the Duo's job.
+#
+# capture-demo.yml gave up on video, and says why: the series page's entry transition stalled for
+# seconds on a runner's simulator. A page turn is a different animal (Skia drawing over a list
+# that stands still, no navigation), which is a reason to try it and not a promise. Look at the
+# clip before trusting it, and film on a device if a runner can't keep up.
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_run:
+        description: >-
+          Reuse the Simulator .app built by an earlier run of this workflow or of "Capture demo
+          screenshots" instead of building one (about 40 minutes). Leave empty to build fresh.
+        type: string
+        default: ''
+
+# Reading another run's artifacts needs this; the default token is otherwise write-only to its own.
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: capture-page-turn-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The reader, on the chapter's first page. The series id needs only to end in the work's mark
+  # (`markedId` in data/mock-works.ts); a chapter's id is the series' and its number. Each value is
+  # escaped as `seriesLink` escapes it.
+  LINK: 'comical://series?id=capture-work-pepper-and-carrot&title=Pepper%26Carrot&bridge=Komga&bridgeId=komga&reader=1&start=0&chapterId=capture-work-pepper-and-carrot-ch-1&chapterName=Episode%201%3A%20The%20Potion%20of%20Flight'
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      from_run: ${{ steps.pick.outputs.from_run }}
+    steps:
+      - id: pick
+        run: echo "from_run=${{ inputs.from_run }}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.from_run == ''
+    uses: ./.github/workflows/build-ios-reusable.yml
+    with:
+      # As capture-demo.yml builds it, and for its reasons: sample data, none of the latency the
+      # sample data invents, and none of the chrome that caveats a demo build.
+      simulator: true
+      demo_mode: true
+      demo_fast: true
+      capture_mode: true
+      channel: ios-capture
+      mock_ref: ${{ github.sha }}
+    secrets: inherit
+
+  iphone:
+    needs: [resolve, build]
+    # A skipped build is an app reused; a failed one must not fall through to filming a stale app.
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: comical-ios-simulator-app
+          path: ${{ runner.temp }}/app
+          run-id: ${{ needs.resolve.outputs.from_run || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pillow
+      - run: command -v ffmpeg >/dev/null || brew install ffmpeg
+
+      - name: Install Maestro
+        # Pinned, as in capture-demo.yml.
+        env:
+          MAESTRO_VERSION: '2.8.0'
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Boot an iPhone and install the app
+        run: |
+          set -euo pipefail
+          ditto -x -k "$RUNNER_TEMP/app/comical-simulator.zip" "$RUNNER_TEMP/app"
+          APP=$(find "$RUNNER_TEMP/app" -maxdepth 1 -name "*.app" | head -1)
+          echo "UDID=$(scripts/capture-simulator.sh iphone "$APP")" >> "$GITHUB_ENV"
+
+      - name: Open the reader
+        run: |
+          set -euo pipefail
+          xcrun simctl launch "$UDID" com.porksphere.comical
+          # Past the first launch, and past the bookshelf: its renderer starts about a minute in on
+          # a runner, is lost on a simulator, and takes the JS thread with it while it goes (see
+          # e2e/demo/screens.yaml). The turns are filmed after that, not across it.
+          sleep 100
+          xcrun simctl openurl "$UDID" "$LINK"
+          sleep 20
+
+      - name: Film the turns
+        env:
+          # A never-booted simulator takes about two minutes to build and install Maestro's XCTest
+          # runner, over its 120s default.
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
+          MAESTRO_CLI_NO_ANALYTICS: '1'
+        run: |
+          set -euo pipefail
+          # Job control, so the recorder below is not started with SIGINT ignored, as a shell
+          # without it starts every background command: SIGINT is how a recording is ended, and
+          # one killed any other way has no index and does not play.
+          set -m
+          mkdir -p "$RUNNER_TEMP/raw" "$RUNNER_TEMP/clips"
+          xcrun simctl io "$UDID" recordVideo --codec=h264 --force "$RUNNER_TEMP/raw/iphone.mov" &
+          RECORDER=$!
+          sleep 3
+
+          FLOW=0
+          maestro --device "$UDID" test \
+            --debug-output "$RUNNER_TEMP/maestro-debug" --flatten-debug-output \
+            apps/mobile/e2e/demo/page-turn.yaml || FLOW=$?
+
+          kill -INT "$RECORDER"
+          wait "$RECORDER" || true
+          [ "$FLOW" -eq 0 ] || exit "$FLOW"
+
+          python3 scripts/trim-to-motion.py "$RUNNER_TEMP/raw/iphone.mov" \
+            "$RUNNER_TEMP/clips/page-turn-iphone.mp4" --gif "$RUNNER_TEMP/clips/page-turn-iphone.gif" \
+            --width 600 --gif-width 360
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: page-turn-iphone
+          path: ${{ runner.temp }}/clips/*
+          retention-days: 14
+
+      # The whole take, for when the cut is of the wrong part of it, and Maestro's view of the
+      # screen for when the reader never came up.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: page-turn-iphone-raw
+          path: |
+            ${{ runner.temp }}/raw
+            ${{ runner.temp }}/maestro-debug
+          retention-days: 3
+
+  # The Duo, open. Maestro is no use here: tools that drive a simulator through XCTest deliver
+  # their touches to the COVER screen of an unfolded Duo and report success. `duoctl`
+  # (skarol/duoctl) folds it and touches whichever screen is showing, by sending the simulator the
+  # HID events Device Hub would, from a helper it starts with `simctl spawn`. That is a private
+  # interface, verified by its author on Xcode 27.1 and 27.2: an Xcode update is the likely reason
+  # this job goes red. It takes points and nothing else, which is why the reader's direction, a
+  # row in a settings sheet, is out of its reach, and with it the manga.
+  duo:
+    needs: [resolve, build]
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    # The image the app is built on: the one with Xcode 27.1, and so the Duo's runtime.
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: comical-ios-simulator-app
+          path: ${{ runner.temp }}/app
+          run-id: ${{ needs.resolve.outputs.from_run || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pillow
+      - run: command -v ffmpeg >/dev/null || brew install ffmpeg
+
+      - name: Install duoctl
+        # Unpinned: its tap carries only its newest. The version it resolved to is printed.
+        run: |
+          brew install skarol/tap/duoctl
+          brew list --versions duoctl
+
+      - name: Boot an iPhone Duo and install the app
+        run: |
+          set -euo pipefail
+          ditto -x -k "$RUNNER_TEMP/app/comical-simulator.zip" "$RUNNER_TEMP/app"
+          APP=$(find "$RUNNER_TEMP/app" -maxdepth 1 -name "*.app" | head -1)
+          UDID=$(scripts/capture-simulator.sh duo "$APP")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          echo "DUOCTL_UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Open the Duo, then the reader
+        run: |
+          set -euo pipefail
+          # Animated: on iOS 27.1 a hinge that jumps from shut to flat can leave the simulator
+          # unable to change screens.
+          duoctl open --duration 1.5
+          xcrun simctl launch "$UDID" com.porksphere.comical
+          # As on the iPhone: past the launch and past the bookshelf's renderer.
+          sleep 100
+          # On the second page, which is the spread: the first stands alone.
+          xcrun simctl openurl "$UDID" "${LINK/start=0/start=1}"
+          sleep 20
+          duoctl state
+
+      - name: Film the turns
+        run: |
+          set -euo pipefail
+          # See the iPhone's job: without job control the recorder would ignore the SIGINT that
+          # ends its recording.
+          set -m
+          mkdir -p "$RUNNER_TEMP/raw" "$RUNNER_TEMP/clips"
+
+          # duoctl takes the showing screen's interface points. The screenshot is that screen in
+          # pixels, three to a point on either panel.
+          duoctl screenshot "$RUNNER_TEMP/raw/duo-before.png"
+          W=$(( $(sips -g pixelWidth "$RUNNER_TEMP/raw/duo-before.png" | awk '/pixelWidth/ { print $2 }') / 3 ))
+          H=$(( $(sips -g pixelHeight "$RUNNER_TEMP/raw/duo-before.png" | awk '/pixelHeight/ { print $2 }') / 3 ))
+          echo "inner screen: ${W}x${H} points"
+          if [ "$W" -le "$H" ]; then
+            echo "!! the screen showing is upright, so the reader is on one page: this is not the open Duo" >&2
+            exit 1
+          fi
+
+          # Which display is which is in the log for whoever gets a black clip: a recording of the
+          # cover panel of an open Duo is one. `LCD-1` is the inner panel's name where this was
+          # written and `3` its number; either may move with an Xcode.
+          xcrun simctl io "$UDID" enumerate || true
+          RECORDER=
+          for DISPLAY_ID in LCD-1 3; do
+            xcrun simctl io "$UDID" recordVideo --codec=h264 --display="$DISPLAY_ID" --force "$RUNNER_TEMP/raw/duo.mov" &
+            RECORDER=$!
+            sleep 3
+            # A display it doesn't know ends the recorder at once.
+            if kill -0 "$RECORDER" 2>/dev/null; then
+              echo "recording display $DISPLAY_ID"
+              break
+            fi
+            RECORDER=
+          done
+          [ -n "$RECORDER" ] || { echo "!! no display of the Duo could be recorded" >&2; exit 1; }
+
+          # Stillness ahead of the first turn, then back to the cover and forward to the spread
+          # again, with the gap that scripts/trim-to-motion.py reads as one stretch (see
+          # e2e/demo/page-turn.yaml). Mid-height and well in from the sides, where the system's
+          # swipe back begins.
+          Y=$(( H * 55 / 100 ))
+          NEAR=$(( W * 85 / 100 ))
+          FAR=$(( W * 15 / 100 ))
+          sleep 5
+          duoctl swipe "$FAR" "$Y" "$NEAR" "$Y" --duration 0.9
+          sleep 1.4
+          duoctl swipe "$NEAR" "$Y" "$FAR" "$Y" --duration 0.9
+          sleep 3
+
+          kill -INT "$RECORDER"
+          wait "$RECORDER" || true
+
+          python3 scripts/trim-to-motion.py "$RUNNER_TEMP/raw/duo.mov" \
+            "$RUNNER_TEMP/clips/page-turn-duo.mp4" --gif "$RUNNER_TEMP/clips/page-turn-duo.gif" \
+            --width 1200 --gif-width 640
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: page-turn-duo
+          path: ${{ runner.temp }}/clips/*
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: page-turn-duo-raw
+          path: ${{ runner.temp }}/raw
+          retention-days: 3
