@@ -1,6 +1,6 @@
 import { useNavigation } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput, type TextInputInstance } from 'react-native';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { NO_OUTLINE, rowInput } from '@/components/input-style';
@@ -25,7 +25,6 @@ export function SearchField({
   immediateFocus = false,
   focusRequest = 0,
   onChangeText,
-  bare = false,
   testID,
 }: {
   value: string;
@@ -44,8 +43,6 @@ export function SearchField({
    * the transition-aware defer below would otherwise fall through to its slow 800ms fallback timer.
    */
   immediateFocus?: boolean;
-  /** No surface of its own: the field sits in one already (a bar's glass capsule). */
-  bare?: boolean;
   /** Automation selector for the input; the clear button derives `${testID}.clear` (see src/lib/test-id.ts). */
   testID: string;
 }) {
@@ -134,9 +131,11 @@ export function SearchField({
     return () => vv.removeEventListener('resize', onResize);
   }, [focused]);
 
-  const content = (
-    <>
-      <SearchIcon color={theme.textSecondary} size={bare ? 15 : 16} />
+  return (
+    <ThemedView
+      type="backgroundElement"
+      style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
+      <SearchIcon color={theme.textSecondary} size={16} />
       <TextInput
         testID={`${testID}.input`}
         ref={inputRef}
@@ -150,7 +149,7 @@ export function SearchField({
         returnKeyType="search"
         autoCapitalize="none"
         autoCorrect={false}
-        style={[styles.searchInput, bare && styles.bareInput, NO_OUTLINE, { color: theme.text }]}
+        style={[styles.searchInput, NO_OUTLINE, { color: theme.text }]}
       />
       {text.length > 0 && (
         <Pressable
@@ -164,14 +163,6 @@ export function SearchField({
           <ClearIcon color={theme.textSecondary} size={14} />
         </Pressable>
       )}
-    </>
-  );
-  if (bare) return <View style={styles.bare}>{content}</View>;
-  return (
-    <ThemedView
-      type="backgroundElement"
-      style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
-      {content}
     </ThemedView>
   );
 }
@@ -197,14 +188,5 @@ const styles = StyleSheet.create({
     // Without it the web's input keeps its intrinsic width and squeezes the icon beside it to nothing.
     minWidth: 0,
     padding: 0,
-  },
-  bare: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    gap: Spacing.two,
-  },
-  bareInput: {
-    fontSize: 13,
   },
 });

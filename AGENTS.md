@@ -367,10 +367,13 @@ it (`StickySectionHeader` draws nothing, as under the iOS bar). The desktop has 
 at the end of that bar on every tab: the shell's (`ShellSearchField` in `sidebar-search.tsx`, drawn
 by `app-tabs` over the content region, the bars keeping `SHELL_SEARCH_RESERVE` clear for it), so it
 is the same field, text and focus kept, over the results pane it opens. It searches every bridge.
-What else a bar searched moves beside it rather than being a second field: a tab's in-place filter
-opens from an icon into the title's capsule, as on a phone (`tab-filter.tsx`), and a bridge's own
-Search, with its filters, from a filter button on Browse while a bridge other than Comical is
-picked. The field stands down while a series, a "See all" or that bridge search is open over the
+What else a bar searched is folded into it rather than being a second field. A tab's in-place
+filter has no field there: on Library, History and Activity what is typed into the shell's field
+narrows that tab as it is typed (`useTabFilter` reads it for the tab's own pane key), and the
+results pane waits for Enter, where on Browse it opens with the first letter. An icon that opened
+the filter in the title's capsule was built first and was two search bars on screen again. A
+bridge's own Search, with its filters, opens from a filter button on Browse while a bridge other
+than Comical is picked. The field stands down while a series, a "See all" or that bridge search is open over the
 content region with a bar of its own, and comes back while it is being typed into. Web only, since the glass is a backdrop blur, and only on a tab's own screen
 (`ContentWidthProvider`'s `tabRoot`): a pane over the content region keeps its opaque bar. On
 Android the sidebar's panel is the opaque panel colour and the bars are unchanged. The content

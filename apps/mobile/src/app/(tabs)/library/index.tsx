@@ -64,7 +64,7 @@ export default function LibraryScreen() {
   const railNav = useHasSidebar();
 
   // What's typed folds straight into the view's query, debounced since each term is a fetch.
-  const filter = useTabFilter();
+  const filter = useTabFilter('library');
   const term = useDebouncedValue(filter.query.trim(), 200);
 
   const { collections } = useCollections();

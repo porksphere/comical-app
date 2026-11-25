@@ -46,7 +46,6 @@ import {
   Play,
   Plus,
   Search,
-  TextSearch,
   ShieldCheck,
   SlidersHorizontal,
   Star,
@@ -70,8 +69,6 @@ export type IconProps = {
 };
 
 export const SearchIcon = ({ color, size = 16 }: IconProps) => <Search color={color} size={size} />;
-/** Narrowing what a screen already shows by text, where `SearchIcon` is looking for something new. */
-export const TextSearchIcon = ({ color, size = 16 }: IconProps) => <TextSearch color={color} size={size} />;
 export const AsteriskIcon = ({ color, size = 16, strokeWidth }: IconProps) => (
   <Asterisk color={color} size={size} strokeWidth={strokeWidth} />
 );

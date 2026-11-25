@@ -9,11 +9,16 @@
  * `typed` is the field as it stands, `query` what was last submitted: the library answers from the
  * first as you type, every bridge from the second on Enter (see app/search). The pane is open while
  * either holds something, so emptying the field is how it closes.
+ *
+ * On Library, History and Activity what is typed NARROWS THE TAB IN PLACE instead (`useTabFilter`
+ * reads it as the tab's filter), since the rows that answer it are already on screen, and the pane
+ * waits for Enter. It is one field doing both: a filter field of the tab's own beside this one was
+ * two search bars on one screen.
  */
 import { observable } from '@legendapp/state';
-import { use$ } from '@legendapp/state/react';
+import { use$, useSelector } from '@legendapp/state/react';
 
-import { activePaneTab, usePaneTab } from '@/lib/pane-tab';
+import { activePaneTab, paneKeyTab, usePaneTab } from '@/lib/pane-tab';
 
 type Search = { typed: string; query: string };
 
@@ -44,7 +49,12 @@ function useTabSearch(tab: string): Search {
 }
 
 function useTabSearchOpen(tab: string): boolean {
-  return use$(() => isOpen(sidebarSearch$.searches[tab].get()));
+  return use$(() => isOpen(sidebarSearch$.searches[tab].get(), tab));
+}
+
+/** What is typed for `key`, read by a tab that narrows itself by it. */
+export function useSidebarSearchTyped(key: string): string {
+  return useSelector(() => sidebarSearch$.searches[key].get()?.typed ?? '');
 }
 
 function useFocusPending(): boolean {
@@ -52,11 +62,14 @@ function useFocusPending(): boolean {
 }
 
 export function isSidebarSearchOpen(tab = activePaneTab()): boolean {
-  return isOpen(sidebarSearch$.searches[tab].peek());
+  return isOpen(sidebarSearch$.searches[tab].peek(), tab);
 }
 
-function isOpen(search: Search | undefined): boolean {
-  return !!search && (!!search.typed.trim() || !!search.query);
+const NARROWED_IN_PLACE = new Set(['library', 'history', 'activity']);
+
+function isOpen(search: Search | undefined, key: string): boolean {
+  if (!search) return false;
+  return !!search.query || (!NARROWED_IN_PLACE.has(paneKeyTab(key)) && !!search.typed.trim());
 }
 
 export function setSidebarSearchTyped(typed: string): void {
@@ -96,5 +109,5 @@ export function useSidebarSearchKeys(): string[] {
 }
 
 function openKeys(searches: Record<string, Search>): string[] {
-  return Object.keys(searches).filter((key) => isOpen(searches[key]));
+  return Object.keys(searches).filter((key) => isOpen(searches[key], key));
 }

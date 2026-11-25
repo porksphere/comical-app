@@ -20,7 +20,7 @@
  * Native never sees any of this: there are no panes there, and a pushed page covers the bar.
  */
 import { observable } from '@legendapp/state';
-import { use$ } from '@legendapp/state/react';
+import { use$, useSelector } from '@legendapp/state/react';
 import { createContext, useContext } from 'react';
 
 const PANE_KEY_SEPARATOR = '/';
@@ -67,6 +67,11 @@ export function setTabPaneKeys(keys: Record<string, string>): void {
 /** The key a tab's destination row leads to right now — the tab name itself until published. */
 export function paneKeyOf(tab: string): string {
   return tabKeys$[tab].peek() ?? tab;
+}
+
+/** `paneKeyOf`, followed: for a tab's own screen, which is mounted while another tab is in front. */
+export function usePaneKeyOf(tab: string): string {
+  return useSelector(() => tabKeys$[tab].get() ?? tab);
 }
 
 /** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */

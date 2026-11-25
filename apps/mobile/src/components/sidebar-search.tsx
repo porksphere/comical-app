@@ -28,6 +28,10 @@ import { windowControlsLayer } from '@/lib/window-controls';
  * than each bar drawing its own, so it is the same field under the results it opens, focus and
  * text kept, where a field inside a bar would be covered by its own results pane.
  *
+ * On Library, History and Activity what is typed narrows that tab in place, and Enter is what
+ * searches the bridges (lib/sidebar-search): a filter field of the tab's own beside this one was
+ * the two search bars over again.
+ *
  * A series, a "See all" or a bridge's own search open over the content region with a bar of their
  * own, so the field stands down while one is up, and comes back for as long as it is being typed
  * into: the shortcut reaches it from anywhere, and its first letter closes what was over it.
