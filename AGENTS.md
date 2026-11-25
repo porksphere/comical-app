@@ -351,8 +351,8 @@ The side navigation has two forms (`components/app-sidebar.tsx`, chosen by `navM
 SIDEBAR, from `SidebarBreakpoint`, is a panel floating in from the window's edges the way a desktop
 sidebar is drawn: a top row holding the window's own traffic lights in the Mac shell (the shell's
 `trafficLightPosition` in `apps/desktop/src/main.ts` and the row's metrics are one pair of numbers,
-change them together) or the app's mark elsewhere, with Settings as a button at its end; the search
-field pinned under it; then groups of rows under small headings. A heading's LABEL is its tab
+change them together) or the app's mark elsewhere, with Settings as a button at its end; then
+groups of rows under small headings. It holds no search field. A heading's LABEL is its tab
 (Browse, Library: the same `TabTrigger` the bottom bar's button is, so `tab.<name>` and its label
 still reach it) and the caret beside it opens and closes the group; History and Activity have no
 scope of their own and share a Reading group. A group longer than `SIDEBAR_FOLD_AT` rows folds the
@@ -361,9 +361,17 @@ and NOT collapsible: the collapse toggle and its stored preference were taken ou
 first pass. The RAIL is the icon column a regular width short of the breakpoint gets on a device.
 
 Beside that sidebar a tab's own top bar is bare (`useGlassChrome`, `BarSurface`'s `bare`): no fill
-and no rule, its title and its trailing field in glass capsules (`components/glass-surface.tsx`)
-over a soft fade of the page, and nothing pins under it (`StickySectionHeader` draws nothing, as
-under the iOS bar). Web only, since the glass is a backdrop blur, and only on a tab's own screen
+and no rule, its title and its controls in glass capsules (`components/glass-surface.tsx`) over a
+soft fade of the page, standing still (Browse's does not slide away there), and nothing pins under
+it (`StickySectionHeader` draws nothing, as under the iOS bar). The desktop has ONE search field,
+at the end of that bar on every tab: the shell's (`ShellSearchField` in `sidebar-search.tsx`, drawn
+by `app-tabs` over the content region, the bars keeping `SHELL_SEARCH_RESERVE` clear for it), so it
+is the same field, text and focus kept, over the results pane it opens. It searches every bridge.
+What else a bar searched moves beside it rather than being a second field: a tab's in-place filter
+opens from an icon into the title's capsule, as on a phone (`tab-filter.tsx`), and a bridge's own
+Search, with its filters, from a filter button on Browse while a bridge other than Comical is
+picked. The field stands down while a series, a "See all" or that bridge search is open over the
+content region with a bar of its own, and comes back while it is being typed into. Web only, since the glass is a backdrop blur, and only on a tab's own screen
 (`ContentWidthProvider`'s `tabRoot`): a pane over the content region keeps its opaque bar. On
 Android the sidebar's panel is the opaque panel colour and the bars are unchanged. The content
 region still starts beside the sidebar, not under it, so the panel's glass has only the page's

@@ -16,10 +16,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HomeBookshelf, homeBookshelfHeight } from '@/components/home-bookshelf/home-bookshelf';
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
-import { GlassCapsule } from '@/components/glass-surface';
+import { GlassCapsule, SHELL_SEARCH_RESERVE } from '@/components/glass-surface';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ContentFeed } from '@/components/content-feed';
-import { SearchIcon } from '@/components/icons/ui-icons';
+import { FilterIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { SearchPill } from '@/components/search-pill';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
@@ -639,6 +639,8 @@ export default function BrowseScreen() {
   // `sharedValues` + the plain `onListScroll` (both wired on the list below); a `gridScope` change
   // snaps the bar back to visible and scrolls the list to the top. The system bar on iOS does not
   // slide (a distance of 0 pins it), so there the hook only keeps the list's scroll bookkeeping.
+  // Nor does the desktop's bare bar: the shell's search field stands at its end and stays put, and
+  // a window's toolbar does not come and go with the scroll.
   const {
     scrollY,
     maxScrollY,
@@ -647,7 +649,7 @@ export default function BrowseScreen() {
     contentStyle: headerContentStyle,
     sharedValues,
     onScroll: onListScroll,
-  } = useSlidingBar(NATIVE_HEADER ? 0 : barHeight, { resetKey: gridScope, listRef });
+  } = useSlidingBar(NATIVE_HEADER || glass ? 0 : barHeight, { resetKey: gridScope, listRef });
   // The tab bar slides off the SAME shared values the top bar does — one offset, one content-end
   // measurement, both read on the UI thread, so the two bars can't disagree about a gesture or about
   // where the elastic bottom bounce starts. This used to be a `runOnJS(reportOffset)` per frame: a
@@ -725,15 +727,33 @@ export default function BrowseScreen() {
         style={[
           styles.selectorRow,
           { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined },
-          clearance > 0 && { paddingRight: TopLevelGutter + clearance },
+          (clearance > 0 || glass) && {
+            paddingRight: TopLevelGutter + clearance + (glass ? SHELL_SEARCH_RESERVE : 0),
+          },
           headerContentStyle,
         ]}>
         {glass ? <GlassCapsule art={!!currentBridge}>{selectors}</GlassCapsule> : selectors}
-        {isLargeScreen && railNav ? (
+        {glass ? (
+          // The search field at this bar's end is the shell's, and looks across every bridge. What
+          // is left for the bar is the one thing that field doesn't do: a bridge's own search, with
+          // its filters and sorts. Comical has none of its own.
+          isComical || !currentBridge ? null : (
+            <Pressable
+              testID="browse.bridge-search"
+              onPress={openSearch}
+              accessibilityRole="button"
+              accessibilityLabel={`Search ${currentBridge.name} with filters`}
+              style={styles.searchPillTrailing}>
+              <GlassCapsule round>
+                <FilterIcon color={theme.text} size={17} />
+              </GlassCapsule>
+            </Pressable>
+          )
+        ) : isLargeScreen && railNav ? (
           // Wide: the shared trailing control every content tab uses (see `search-pill`). No right
           // margin — the icon nav the centred version reserved room for doesn't exist at this width.
           <View style={styles.searchPillTrailing}>
-            <SearchPill testID="browse.search-pill" onPress={openSearch} glass={glass} />
+            <SearchPill testID="browse.search-pill" onPress={openSearch} />
           </View>
         ) : isLargeScreen ? (
           // Desktop below the rail breakpoint: unchanged — a centred pill, with the right margin

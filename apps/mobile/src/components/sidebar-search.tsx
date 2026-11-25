@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View, type TextInputInstance } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View, type TextInputInstance, type ViewStyle } from 'react-native';
 
+import { GlassCapsule, SHELL_SEARCH_WIDTH } from '@/components/glass-surface';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { NO_OUTLINE, rowInput } from '@/components/input-style';
 import { Fonts, Spacing } from '@/constants/theme';
@@ -8,10 +9,10 @@ import SearchScreen from '@/app/search';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { useOpenLink } from '@/hooks/use-open-link';
 import { useTheme } from '@/hooks/use-theme';
-import { closeBridgeSearchPane } from '@/lib/bridge-search-pane';
-import { closeResultsPane } from '@/lib/results-pane';
+import { closeBridgeSearchPane, useBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
+import { closeResultsPane, useResultsPaneOpen } from '@/lib/results-pane';
 import { usePaneTab } from '@/lib/pane-tab';
-import { closeSeriesPane } from '@/lib/series-pane';
+import { closeSeriesPane, useSeriesPaneParams } from '@/lib/series-pane';
 import {
   closeSidebarSearch,
   setSidebarSearchTyped,
@@ -19,17 +20,29 @@ import {
   submitSidebarSearch,
   useSidebarSearch,
 } from '@/lib/sidebar-search';
+import { windowControlsLayer } from '@/lib/window-controls';
 
-/** A sidebar row's height: the field is the first of them. */
-const FIELD_HEIGHT = 30;
-
-/** The sidebar's search field, pinned over its groups. */
-export function SidebarSearchField({ hint }: { hint: string }) {
+/**
+ * The search field of the desktop layout: one, at the trailing end of every tab's bar, in place of
+ * a field in the sidebar and another in the bar. The shell draws it over the content region rather
+ * than each bar drawing its own, so it is the same field under the results it opens, focus and
+ * text kept, where a field inside a bar would be covered by its own results pane.
+ *
+ * A series, a "See all" or a bridge's own search open over the content region with a bar of their
+ * own, so the field stands down while one is up, and comes back for as long as it is being typed
+ * into: the shortcut reaches it from anywhere, and its first letter closes what was over it.
+ */
+export function ShellSearchField({ hint, shown, style }: { hint: string; shown: boolean; style: ViewStyle }) {
   const theme = useTheme();
   const { typed, focusPending } = useSidebarSearch();
   const inputRef = useRef<TextInputInstance>(null);
   const [focused, setFocused] = useState(false);
   const openLink = useOpenLink();
+  const seriesOpen = useSeriesPaneParams() !== null;
+  const resultsOpen = useResultsPaneOpen();
+  const bridgeSearchOpen = useBridgeSearchPaneOpen();
+  const covered = seriesOpen || resultsOpen || bridgeSearchOpen;
+  const visible = shown && (!covered || focused || focusPending);
 
   useEffect(() => {
     if (!focusPending) return;
@@ -56,12 +69,10 @@ export function SidebarSearchField({ hint }: { hint: string }) {
   };
 
   return (
-    <View
-      style={[
-        styles.field,
-        { backgroundColor: theme.glassHover, borderColor: focused ? theme.accent : 'transparent' },
-      ]}>
-      <SearchIcon color={theme.textSecondary} size={14} />
+    <GlassCapsule
+      {...windowControlsLayer}
+      style={[styles.field, style, focused && { borderColor: theme.accent }, !visible && styles.hidden]}>
+      <SearchIcon color={theme.textSecondary} size={15} />
       <TextInput
         testID="sidebar.search.input"
         ref={inputRef}
@@ -90,17 +101,17 @@ export function SidebarSearchField({ hint }: { hint: string }) {
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Clear search">
-          <ClearIcon color={theme.textSecondary} size={12} />
+          <ClearIcon color={theme.textSecondary} size={13} />
         </Pressable>
       ) : focused ? null : (
         <Text style={[styles.hint, { color: theme.textSecondary }]}>{hint}</Text>
       )}
-    </View>
+    </GlassCapsule>
   );
 }
 
 /**
- * The rail field's results, over the content region exactly where a series pane goes — and beneath
+ * The field's results, over the content region exactly where a series pane goes — and beneath
  * one, so a series opened from these results covers them and its back returns to them.
  */
 export function SearchPane({ left, width, top }: { left: number; width: number; top: number }) {
@@ -121,15 +132,14 @@ export function SearchPane({ left, width, top }: { left: number; width: number; 
 
 const styles = StyleSheet.create({
   field: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    position: 'absolute',
+    width: SHELL_SEARCH_WIDTH,
     gap: Spacing.two,
-    height: FIELD_HEIGHT,
-    marginHorizontal: 10,
-    marginBottom: Spacing.one,
-    paddingHorizontal: 9,
-    borderRadius: 8,
-    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  // Mounted while out of sight, so the shortcut has an input to focus.
+  hidden: {
+    display: 'none',
   },
   input: {
     ...rowInput(13),
@@ -140,8 +150,7 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontFamily: Fonts.sans,
-    fontSize: 11,
-    opacity: 0.7,
+    fontSize: 12,
   },
   // See SeriesPane: absolute and opaque over the slot, so closing it puts the grid back untouched.
   pane: { position: 'absolute', top: 0, bottom: 0 },

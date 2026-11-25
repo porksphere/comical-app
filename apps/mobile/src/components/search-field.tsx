@@ -1,8 +1,7 @@
 import { useNavigation } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, type TextInputInstance } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 
-import { GLASS_CONTROL_HEIGHT, GlassSurface } from '@/components/glass-surface';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { NO_OUTLINE, rowInput } from '@/components/input-style';
 import { ThemedView } from '@/components/themed-view';
@@ -26,7 +25,7 @@ export function SearchField({
   immediateFocus = false,
   focusRequest = 0,
   onChangeText,
-  glass = false,
+  bare = false,
   testID,
 }: {
   value: string;
@@ -45,8 +44,8 @@ export function SearchField({
    * the transition-aware defer below would otherwise fall through to its slow 800ms fallback timer.
    */
   immediateFocus?: boolean;
-  /** In a bare bar (`useGlassChrome`), where the field is one of its capsules. */
-  glass?: boolean;
+  /** No surface of its own: the field sits in one already (a bar's glass capsule). */
+  bare?: boolean;
   /** Automation selector for the input; the clear button derives `${testID}.clear` (see src/lib/test-id.ts). */
   testID: string;
 }) {
@@ -137,7 +136,7 @@ export function SearchField({
 
   const content = (
     <>
-      <SearchIcon color={theme.textSecondary} size={glass ? 15 : 16} />
+      <SearchIcon color={theme.textSecondary} size={bare ? 15 : 16} />
       <TextInput
         testID={`${testID}.input`}
         ref={inputRef}
@@ -151,7 +150,7 @@ export function SearchField({
         returnKeyType="search"
         autoCapitalize="none"
         autoCorrect={false}
-        style={[styles.searchInput, glass && styles.glassInput, NO_OUTLINE, { color: theme.text }]}
+        style={[styles.searchInput, bare && styles.bareInput, NO_OUTLINE, { color: theme.text }]}
       />
       {text.length > 0 && (
         <Pressable
@@ -167,12 +166,7 @@ export function SearchField({
       )}
     </>
   );
-  // The glass keeps its own edge at rest, where the opaque field's border is only its focus ring.
-  if (glass) {
-    return (
-      <GlassSurface style={[styles.search, styles.glass, focused && { borderColor: theme.accent }]}>{content}</GlassSurface>
-    );
-  }
+  if (bare) return <View style={styles.bare}>{content}</View>;
   return (
     <ThemedView
       type="backgroundElement"
@@ -204,11 +198,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
     padding: 0,
   },
-  glass: {
-    height: GLASS_CONTROL_HEIGHT,
-    borderRadius: GLASS_CONTROL_HEIGHT / 2,
+  bare: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    gap: Spacing.two,
   },
-  glassInput: {
+  bareInput: {
     fontSize: 13,
   },
 });

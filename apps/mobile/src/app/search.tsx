@@ -11,6 +11,7 @@ import type { SearchBarCommands } from 'react-native-screens';
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
 import { resolveMetaIntent, resolveTagIntent, type MetaIntent, type TagIntent } from '@/components/filters/filter-intents';
 import { filterValueToApi } from '@/components/filters/filter-types';
+import { SHELL_SEARCH_RESERVE } from '@/components/glass-surface';
 import { ContentFeed } from '@/components/content-feed';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
@@ -101,7 +102,7 @@ export type SearchEmbedded = {
   scrollEnabled?: boolean;
 };
 
-/** The rail's search on desktop (see lib/sidebar-search). The field is in the rail, so this shows only
+/** The shell's search on desktop (see lib/sidebar-search). The field is the shell's, so this shows only
  *  the results: always across every bridge, and deaf to search intents, which belong to the screen. */
 export type SearchDocked = { query: string; typed: string; onClose: () => void };
 
@@ -694,7 +695,14 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
           Opaque, like every other bar (BarSurface): the results scroll behind it. */}
       {!nativeBar && (
       <BarSurface style={[styles.topBar, topBarRuleStyle]}>
-        <View style={[styles.topBarRow, { height: barHeight }, clearance > 0 && { paddingRight: Spacing.three + clearance }]}>
+        <View
+          style={[
+            styles.topBarRow,
+            { height: barHeight },
+            clearance > 0 && { paddingRight: Spacing.three + clearance },
+            // The field these results answer stands over this row's end (`ShellSearchField`).
+            docked && { paddingRight: Spacing.three + clearance + SHELL_SEARCH_RESERVE },
+          ]}>
           {docked ? (
             <>
               <ThemedText testID="search.pane-title" numberOfLines={1} style={styles.paneTitle}>

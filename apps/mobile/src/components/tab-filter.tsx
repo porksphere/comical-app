@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
-import { SearchIcon } from '@/components/icons/ui-icons';
+import { GlassCapsule } from '@/components/glass-surface';
+import { SearchIcon, TextSearchIcon } from '@/components/icons/ui-icons';
 import { SearchField } from '@/components/search-field';
-import { GLASS_FIELD_WIDTH } from '@/components/search-pill';
 import { Spacing } from '@/constants/theme';
 import { useHasSidebar } from '@/hooks/use-content-width';
 import { useGlassChrome } from '@/hooks/use-glass-chrome';
@@ -19,12 +19,16 @@ export type TabFilter = ReturnType<typeof useTabFilter>;
  *
  * Beside the rail it is a field that is always in the bar's trailing slot, emptied rather than
  * closed. Below the rail there is no room for one next to the title, so an icon opens it in the
- * title's place, with a back chevron that closes it.
+ * title's place, with a back chevron that closes it. The desktop's bare bar (`useGlassChrome`)
+ * works that way too: its trailing end is the shell's one search field, and a second field
+ * beside that one read as the same thing twice.
  *
  * Not the Search screen's job: that one finds series you DON'T have, across bridges, on submit.
  */
 export function useTabFilter() {
-  const docked = useHasSidebar();
+  const sidebar = useHasSidebar();
+  const glass = useGlassChrome();
+  const docked = sidebar && !glass;
   const [opened, setOpened] = useState(false);
   const [query, setQuery] = useState('');
   const [focusRequest, setFocusRequest] = useState(0);
@@ -44,14 +48,14 @@ export function useTabFilter() {
   // A query typed beside the rail outlives a resize below it, where it keeps the field open rather
   // than filtering the screen out of sight.
   const open = !docked && (opened || !!query);
-  return { docked, open, query, setQuery, focusRequest, show, close };
+  return { docked, glass, open, query, setQuery, focusRequest, show, close };
 }
 
 /** The bar's leading content while the filter is open: a back chevron that closes it, and the field. */
 export function TabFilterField({ filter, testID, placeholder }: { filter: TabFilter; testID: string; placeholder: string }) {
   const theme = useTheme();
   return (
-    <View style={styles.row}>
+    <View style={filter.glass ? styles.glassRow : styles.row}>
       <Pressable
         testID={`${testID}-close`}
         onPress={filter.close}
@@ -72,6 +76,7 @@ export function TabFilterField({ filter, testID, placeholder }: { filter: TabFil
           focusRequest={filter.focusRequest}
           autoFocus
           immediateFocus
+          bare={filter.glass}
         />
       </View>
     </View>
@@ -81,12 +86,10 @@ export function TabFilterField({ filter, testID, placeholder }: { filter: TabFil
 /** The bar's trailing filter control: the field itself beside the rail, an icon that opens it below. */
 export function TabFilterTrigger({ filter, testID, placeholder }: { filter: TabFilter; testID: string; placeholder: string }) {
   const theme = useTheme();
-  const glass = useGlassChrome();
   if (filter.open) return null;
   return filter.docked ? (
-    <View style={glass ? styles.dockedGlass : styles.docked}>
+    <View style={styles.docked}>
       <SearchField
-        glass={glass}
         testID={testID}
         value={filter.query}
         onChangeText={filter.setQuery}
@@ -103,8 +106,15 @@ export function TabFilterTrigger({ filter, testID, placeholder }: { filter: TabF
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={placeholder.replace('…', '')}
-      style={styles.icon}>
-      <SearchIcon color={theme.text} size={22} />
+      style={filter.glass ? undefined : styles.icon}>
+      {filter.glass ? (
+        // Not the magnifier: that is the search field's, which stands beside this.
+        <GlassCapsule round>
+          <TextSearchIcon color={theme.text} size={17} />
+        </GlassCapsule>
+      ) : (
+        <SearchIcon color={theme.text} size={22} />
+      )}
     </Pressable>
   );
 }
@@ -115,6 +125,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
+  },
+  // In the title's capsule, which is only as wide as what it holds.
+  glassRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    width: 260,
   },
   close: {
     justifyContent: 'center',
@@ -129,8 +146,5 @@ const styles = StyleSheet.create({
   // The width of Browse's search pill, which sits in the same slot.
   docked: {
     width: 260,
-  },
-  dockedGlass: {
-    width: GLASS_FIELD_WIDTH,
   },
 });

@@ -3,7 +3,7 @@ import { Platform, StyleSheet, View, type ViewProps } from 'react-native';
 import type { AnimatedProps } from 'react-native-reanimated';
 
 import { BarSurface } from '@/components/bar-surface';
-import { GlassCapsule } from '@/components/glass-surface';
+import { GlassCapsule, SHELL_SEARCH_RESERVE } from '@/components/glass-surface';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
@@ -27,7 +27,8 @@ import { useWindowControlsClearance } from '@/lib/window-controls';
  * title is on iOS; Browse and Library hold their icon instead, their titles opening menus.
  *
  * Beside the desktop's sidebar the bar is bare and its title a glass capsule (`useGlassChrome`),
- * whose edge stands on the grid's own gutter.
+ * whose edge stands on the grid's own gutter. The row keeps its end clear for the shell's search
+ * field, which is drawn over it.
  */
 export function TabTitleBar({
   title,
@@ -82,7 +83,9 @@ export function TabTitleBar({
           styles.titleRow,
           { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined },
           glass && styles.glassRow,
-          clearance > 0 && { paddingRight: (glass ? TopLevelGutter : Spacing.four) + clearance },
+          clearance > 0 && { paddingRight: Spacing.four + clearance },
+          // The shell's search field stands at the row's end (`ShellSearchField`).
+          glass && { paddingRight: TopLevelGutter + clearance + SHELL_SEARCH_RESERVE },
           leading != null && { paddingLeft: TopLevelGutter },
         ]}>
         {glass ? (

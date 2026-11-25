@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   AppSidebar,
+  type SidebarAction,
   SidebarCount,
   SidebarGroup,
   SidebarHeading,
@@ -27,7 +28,7 @@ import { SettingsModal } from '@/components/settings/settings-modal';
 import { BridgeSearchPane } from '@/components/bridge-search-pane';
 import { ResultsPane } from '@/components/results-pane';
 import { SeriesPane } from '@/components/series-pane';
-import { SearchPane, SidebarSearchField } from '@/components/sidebar-search';
+import { SearchPane, ShellSearchField } from '@/components/sidebar-search';
 import { SidebarResizer } from '@/components/sidebar-resizer';
 import { useActivityBadgeCount } from '@/data/activity/use-activity-badge';
 import { COMICAL_BRIDGE_ID, setSelectedBridge, useSelectedBridge } from '@/data/selected-bridge';
@@ -35,12 +36,14 @@ import { libraryViews, setSelectedCollection, useSelectedCollectionId } from '@/
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { navModeFor } from '@/constants/size-class';
-import { navInsetFor, Spacing } from '@/constants/theme';
+import { GLASS_CONTROL_HEIGHT } from '@/components/glass-surface';
+import { navInsetFor, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
 import { SidebarRailWidth, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useCollections } from '@/hooks/use-collections';
 import { useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
+import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { useWindowSize } from '@/hooks/use-window-size';
 import { setBridgeSearchPaneAvailable, useBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
@@ -76,6 +79,7 @@ import {
   tabBarProgress,
 } from '@/lib/tab-bar-slide';
 import { ROOT_TAB_PATHS } from '@/lib/root-tabs';
+import { useWindowControlsInset } from '@/lib/window-controls';
 import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility';
 
 // Android and web: a custom-rendered nav (iOS has the system one — see app-tabs.ios.tsx, which
@@ -143,7 +147,7 @@ const SETTINGS_AS_MODAL = Platform.OS === 'web';
 /** Same gate as the settings modal, and for the same reason: the pane is a web layout, not a wide
  *  one. A landscape iPad shows the rail and still opens a series full-screen — see lib/series-pane. */
 const SERIES_AS_PANE = Platform.OS === 'web';
-/** And search's field moves into the rail, with its results in a pane of their own. */
+/** And search is a field the shell keeps in the bar, with its results in a pane of their own. */
 const SEARCH_IN_RAIL = Platform.OS === 'web';
 
 /** The sidebar's Reading group: the destinations with no scope of their own. */
@@ -445,9 +449,18 @@ export default function AppTabs() {
   // on a pushed screen over the tabs nothing in the nav is current.
   const activeTab = TABS.find((t) => t.href === pathname)?.name;
   const openSearch = useOpenComicalSearch();
-  // The sidebar's field only where it is drawn: over a pushed screen (a reader, Settings on native)
-  // the sidebar is covered, so the shortcut opens the screen.
+  // The shell's field only where it is drawn: over a pushed screen (a reader, Settings on native)
+  // the tabs are covered, so the shortcut opens the screen.
   const railSearch = SEARCH_IN_RAIL && sidebar;
+  // Where a tab's own bar ends its row (`TabTitleBar`): capped to the content column and clear of
+  // the window's caption buttons. The field stands there, on the bar's centre line.
+  const barHeight = useTopBarHeight();
+  const captionInset = useWindowControlsInset();
+  const centreInset = topLevelCenterInset(width - contentInset);
+  const searchFieldStyle = {
+    top: insets.top + (barHeight - GLASS_CONTROL_HEIGHT) / 2,
+    right: Math.max(centreInset, captionInset) + TopLevelGutter,
+  };
   useEffect(() => {
     if (!railSearch) clearSidebarSearches();
   }, [railSearch]);
@@ -495,6 +508,28 @@ export default function AppTabs() {
     ];
   }, [triggers, activeTab, rail, openSearch]);
 
+  const sidebarActions: SidebarAction[] = [
+    // The web's search is the shell's field in the bar; a device opens the Search screen from here.
+    ...(SEARCH_IN_RAIL
+      ? []
+      : [
+          {
+            testID: 'sidebar.search',
+            label: 'Search',
+            onPress: openSearch,
+            icon: <Search size={16} color={theme.textSecondary} />,
+          },
+        ]),
+    {
+      testID: SETTINGS_AS_MODAL ? 'sidebar.settings' : 'tab.settings',
+      label: 'Settings',
+      active: activeTab === 'settings',
+      onPress: SETTINGS_AS_MODAL ? openSettingsModal : () => router.navigate(ROOT_TAB_PATHS.settings as never),
+      icon: <Settings size={16} color={theme.textSecondary} />,
+      badge: <SettingsTabBadge />,
+    },
+  ];
+
   // The rail's own width, read straight off the shared value so a drag moves it without a render.
   const railStyle = useAnimatedStyle(() => ({ width: sidebarDragWidth.value }));
 
@@ -529,24 +564,7 @@ export default function AppTabs() {
 
           {sidebar && (
             <Animated.View style={[styles.sidebarWrap, railStyle]}>
-              <AppSidebar
-                top={insets.top}
-                rail={rail}
-                search={railSearch ? <SidebarSearchField hint={SEARCH_HINT} /> : undefined}
-                settings={
-                  rail
-                    ? undefined
-                    : {
-                        testID: SETTINGS_AS_MODAL ? 'sidebar.settings' : 'tab.settings',
-                        label: 'Settings',
-                        active: activeTab === 'settings',
-                        onPress: SETTINGS_AS_MODAL
-                          ? openSettingsModal
-                          : () => router.navigate(ROOT_TAB_PATHS.settings as never),
-                        icon: <Settings size={16} color={theme.textSecondary} />,
-                        badge: <SettingsTabBadge />,
-                      }
-                }>
+              <AppSidebar top={insets.top} rail={rail} actions={rail ? undefined : sidebarActions}>
                 {sidebarChildren}
               </AppSidebar>
               {/* Nothing to drag on an icon rail: its width is the layout's. */}
@@ -609,6 +627,7 @@ export default function AppTabs() {
       {paneAvailable ? (
         <AllTabPanes railSearch={railSearch} left={contentInset} width={width - contentInset} top={insets.top} />
       ) : null}
+      {railSearch ? <ShellSearchField hint={SEARCH_HINT} shown={!!activeTab} style={searchFieldStyle} /> : null}
       <PaneKeySync activeTab={activeTab} />
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
       <TabKeys activeTab={activeTab} />

@@ -7,7 +7,7 @@
  *
  * Two forms. The SIDEBAR is a floating panel inset from the window's edges, the way a desktop
  * sidebar is drawn: the window's own controls in its top row on a Mac, groups of rows under small
- * headings. The RAIL is the icon column a regular width too narrow for that gets (`navModeFor`).
+ * headings. It holds no search field: the desktop's is the shell's, in the bar (`ShellSearchField`). The RAIL is the icon column a regular width too narrow for that gets (`navModeFor`).
  *
  * Layout is a sibling of `TabSlot`, not an overlay over it. An overlay would sit on top of content
  * that had already centred itself against the full window; taking real space means the page centres
@@ -58,7 +58,7 @@ const MAC_SHELL = desktopShell()?.platform === 'darwin';
 export const SidebarThumbSize = 16;
 export const SidebarThumbRadius = Math.round(SidebarThumbSize * (BridgeThumbRadius / BridgeThumbSize));
 
-type SidebarAction = {
+export type SidebarAction = {
   icon: React.ReactNode;
   badge?: React.ReactNode;
   label: string;
@@ -70,17 +70,14 @@ type SidebarAction = {
 export function AppSidebar({
   top,
   rail,
-  search,
-  settings,
+  actions,
   children,
 }: {
   top: number;
   rail: boolean;
-  /** Pinned above the groups, so a long group never scrolls the field away from its results. */
-  search?: React.ReactNode;
-  /** Settings is a button in the panel's top row: it opens something, and is not a place among the
-   *  groups below. */
-  settings?: SidebarAction;
+  /** The buttons at the end of the panel's top row: what opens something (Settings, a search
+   *  screen) rather than being a place among the groups below. */
+  actions?: SidebarAction[];
   children: React.ReactNode;
 }) {
   const theme = useTheme();
@@ -117,10 +114,9 @@ export function AppSidebar({
           )}
           <View style={styles.topRowActions}>
             <SidebarUpdate />
-            {settings ? <TopRowButton {...settings} /> : null}
+            {actions?.map((action) => <TopRowButton key={action.testID} {...action} />)}
           </View>
         </View>
-        {search}
         <ScrollView
           style={styles.scroller}
           contentContainerStyle={styles.panelContent}

@@ -37,7 +37,7 @@ export const sizeClassFor = (width: number): SizeClass => (width >= RegularWidth
  * `web` is a parameter rather than a `Platform` read so this stays pure. Web keeps the bottom bar
  * between 768 and `SidebarBreakpoint` for now: a browser window that narrow is a resized desktop
  * window, not a device, and the web-only layouts that ride on the sidebar (series as a pane, settings
- * as a modal, search in the rail) were designed for the labelled rail's width. Lift that gate here
+ * as a modal, the shell's search field) were designed for the labelled sidebar's width. Lift that gate here
  * when they are ready for it, nowhere else.
  */
 export type NavMode = 'bar' | 'rail' | 'sidebar';

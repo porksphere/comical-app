@@ -1,10 +1,10 @@
 /**
- * The rail's search field and the results pane it opens over the content region.
+ * The desktop's search field and the results pane it opens over the content region.
  *
  * WEB ONLY, at the widths that show the sidebar. Search there is a field you stay beside rather
- * than a screen you go to: the results cover the grid the way an open series does, and the sidebar —
- * the field included — stays lit beside them, so refining a search never means finding your way back
- * to it.
+ * than a screen you go to: it stands at the end of every tab's bar (`ShellSearchField`), the results
+ * cover the grid the way an open series does, and the field stays over them, so refining a search
+ * never means finding your way back to it.
  *
  * `typed` is the field as it stands, `query` what was last submitted: the library answers from the
  * first as you type, every bridge from the second on Enter (see app/search). The pane is open while

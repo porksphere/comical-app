@@ -1,7 +1,8 @@
 # Same journey as ../mobile/tab-filters.yaml, kept in sync by hand. Web renders the wide layout,
-# where the filter is a field always in the bar (tab-filter.tsx): there is no icon to open it and
-# no chevron to close it, so the flow types straight into the field and empties it with its ✕.
+# where the bar's field is the shell's search, so the filter opens from its icon in the title's
+# place (tab-filter.tsx) and the flow empties it with its ✕.
 # Selectors that hit the web-only aria-label quirk (see ../README.md):
+#   - <tab>.search-icon sets accessibilityLabel="Filter history"/"Filter activity".
 #   - tab bar: "History"/"Activity", not tab.history/tab.activity (same as smoke.yaml).
 #   - <tab>.search.clear sets accessibilityLabel="Clear search" (search-field.tsx).
 # <tab>.search.input and history-row.* have no competing accessibilityLabel — same as mobile.
@@ -12,6 +13,8 @@ url: http://localhost:4000/comical-app
 # ── History ──────────────────────────────────────────────────────────────────
 - tapOn:
     id: "History"
+- tapOn:
+    id: "Filter history"
 - extendedWaitUntil:
     visible:
       id: "history.search.input"
@@ -32,6 +35,8 @@ url: http://localhost:4000/comical-app
 # ── Activity ─────────────────────────────────────────────────────────────────
 - tapOn:
     id: "Activity"
+- tapOn:
+    id: "Filter activity"
 - extendedWaitUntil:
     visible:
       id: "activity.search.input"
