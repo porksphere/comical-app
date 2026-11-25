@@ -42,8 +42,6 @@ import {
   Minus,
   MonitorSmartphone,
   MoreVertical,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pencil,
   Play,
   Plus,
@@ -70,8 +68,6 @@ export type IconProps = {
   strokeWidth?: number;
 };
 
-export const PanelCollapseIcon = ({ color, size = 16 }: IconProps) => <PanelLeftClose color={color} size={size} />;
-export const PanelExpandIcon = ({ color, size = 16 }: IconProps) => <PanelLeftOpen color={color} size={size} />;
 export const SearchIcon = ({ color, size = 16 }: IconProps) => <Search color={color} size={size} />;
 export const AsteriskIcon = ({ color, size = 16, strokeWidth }: IconProps) => (
   <Asterisk color={color} size={size} strokeWidth={strokeWidth} />

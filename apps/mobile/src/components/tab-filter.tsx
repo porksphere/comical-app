@@ -4,8 +4,10 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { SearchIcon } from '@/components/icons/ui-icons';
 import { SearchField } from '@/components/search-field';
+import { GLASS_FIELD_WIDTH } from '@/components/search-pill';
 import { Spacing } from '@/constants/theme';
 import { useHasSidebar } from '@/hooks/use-content-width';
+import { useGlassChrome } from '@/hooks/use-glass-chrome';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -79,10 +81,12 @@ export function TabFilterField({ filter, testID, placeholder }: { filter: TabFil
 /** The bar's trailing filter control: the field itself beside the rail, an icon that opens it below. */
 export function TabFilterTrigger({ filter, testID, placeholder }: { filter: TabFilter; testID: string; placeholder: string }) {
   const theme = useTheme();
+  const glass = useGlassChrome();
   if (filter.open) return null;
   return filter.docked ? (
-    <View style={styles.docked}>
+    <View style={glass ? styles.dockedGlass : styles.docked}>
       <SearchField
+        glass={glass}
         testID={testID}
         value={filter.query}
         onChangeText={filter.setQuery}
@@ -125,5 +129,8 @@ const styles = StyleSheet.create({
   // The width of Browse's search pill, which sits in the same slot.
   docked: {
     width: 260,
+  },
+  dockedGlass: {
+    width: GLASS_FIELD_WIDTH,
   },
 });

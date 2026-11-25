@@ -1,10 +1,10 @@
 /**
  * The rail's search field and the results pane it opens over the content region.
  *
- * WEB ONLY, at the widths that show an expanded rail. Search there is a field you stay beside rather
- * than a screen you go to: the results cover the grid the way an open series does, and the rail —
+ * WEB ONLY, at the widths that show the sidebar. Search there is a field you stay beside rather
+ * than a screen you go to: the results cover the grid the way an open series does, and the sidebar —
  * the field included — stays lit beside them, so refining a search never means finding your way back
- * to it. Collapsed, there is no room for a field, so the rail's icon expands the rail to reach it.
+ * to it.
  *
  * `typed` is the field as it stands, `query` what was last submitted: the library answers from the
  * first as you type, every bridge from the second on Enter (see app/search). The pane is open while
@@ -19,8 +19,7 @@ type Search = { typed: string; query: string };
 
 const NO_SEARCH: Search = { typed: '', query: '' };
 
-// A pending flag rather than a counter: the field may not exist when focus is asked for (the rail is
-// collapsed, and expands to answer), and a counter would refocus it on every later remount too.
+// A pending flag rather than a counter: a counter would refocus the field on every later remount too.
 // `searches` has one entry per tab (see `lib/pane-tab`), so the field shows the search of the tab
 // you are on, and each tab's results pane lists its own.
 type SidebarSearchState = { searches: Record<string, Search>; focusPending: boolean };
@@ -73,7 +72,7 @@ export function closeSidebarSearch(tab = activePaneTab()): void {
   sidebarSearch$.searches[tab].set({ typed: '', query: '' });
 }
 
-/** Every tab's — for when the field itself goes away (a collapsed rail has none). */
+/** Every tab's — for when the field itself goes away (a window too narrow for the sidebar). */
 export function clearSidebarSearches(): void {
   sidebarSearch$.searches.set({});
 }

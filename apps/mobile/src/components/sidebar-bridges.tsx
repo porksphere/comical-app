@@ -21,31 +21,39 @@
 import { Image } from 'expo-image';
 import { StyleSheet } from 'react-native';
 
-import { SidebarSubItem, SidebarThumbRadius, SidebarThumbSize } from '@/components/app-sidebar';
+import { SidebarMoreRow, SidebarRow, SidebarThumbRadius, SidebarThumbSize } from '@/components/app-sidebar';
 import { COMICAL_ICON, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
+import { useSectionOpen } from '@/hooks/use-sidebar-sections';
 import { router } from '@/lib/nav';
+import { foldSidebarRows } from '@/lib/sidebar-fold';
 
-/** Device-local, and persisted: a group collapsed to keep the five destinations above the fold must
- *  stay collapsed across launches, or it re-expands and buries them again. */
 export function SidebarBridges({ active, onReselect }: { active?: boolean; onReselect?: () => void }) {
   // `bridgeId`, not `bridge`: the raw id is null until the user has picked one, while Browse is
   // already showing the aggregate it resolves to. Highlighting the raw id leaves a fresh install
   // with a rail where nothing is current and the page plainly is.
   const { visibleBridges, bridgeId, setBridge } = useSelectedBridge();
 
+  const more = useSectionOpen(MORE, false);
+
   // `visibleBridges` always carries the aggregate, so it is never empty — but a heading over an
   // empty list is worse than no heading, and this keeps that true if that ever changes.
   if (visibleBridges.length === 0) return null;
 
+  const fold = foldSidebarRows(
+    visibleBridges,
+    visibleBridges.findIndex((b) => b.id === bridgeId),
+    more,
+  );
+
   return (
     <>
-      {visibleBridges.map((b) => (
-        <SidebarSubItem
+      {fold.rows.map((b) => (
+        <SidebarRow
           key={b.id}
           testID={`sidebar.bridge.${b.id}`}
           label={b.name}
           active={active === true && b.id === bridgeId}
-          thumbnail={
+          leading={
             isComicalBridge(b.id) ? (
               <Image source={COMICAL_ICON} style={styles.thumb} contentFit="cover" />
             ) : b.thumbnail ? (
@@ -59,9 +67,14 @@ export function SidebarBridges({ active, onReselect }: { active?: boolean; onRes
           }}
         />
       ))}
+      {fold.hidden > 0 ? (
+        <SidebarMoreRow section={MORE} open={more} hidden={fold.hidden} testID="sidebar.bridges.more" />
+      ) : null}
     </>
   );
 }
+
+const MORE = 'browse-more';
 
 const styles = StyleSheet.create({
   thumb: { width: SidebarThumbSize, height: SidebarThumbSize, borderRadius: SidebarThumbRadius },

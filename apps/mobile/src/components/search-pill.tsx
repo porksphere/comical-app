@@ -12,41 +12,63 @@
  */
 import { Pressable, StyleSheet } from 'react-native';
 
+import { GLASS_CONTROL_HEIGHT, GlassSurface } from '@/components/glass-surface';
 import { SearchIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
+/** A bare bar's trailing field: this pill, or a tab's filter in the same place. */
+export const GLASS_FIELD_WIDTH = 240;
+
 export function SearchPill({
   onPress,
   testID,
   placeholder = 'Search…',
+  glass = false,
 }: {
   onPress: () => void;
   testID: string;
   placeholder?: string;
+  /** In a bare bar (`useGlassChrome`), where the pill is one of its capsules. */
+  glass?: boolean;
 }) {
   const theme = useTheme();
+  const content = (
+    <>
+      <SearchIcon color={theme.textSecondary} size={glass ? 15 : 16} />
+      <ThemedText type="small" themeColor="textSecondary" style={glass && styles.glassLabel}>
+        {placeholder}
+      </ThemedText>
+    </>
+  );
   return (
     <Pressable
       testID={testID}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={placeholder}
-      style={styles.pill}>
-      <ThemedView type="backgroundElement" style={styles.inner}>
-        <SearchIcon color={theme.textSecondary} size={16} />
-        <ThemedText type="small" themeColor="textSecondary">
-          {placeholder}
-        </ThemedText>
-      </ThemedView>
+      style={glass ? styles.glassPill : styles.pill}>
+      {glass ? (
+        <GlassSurface style={[styles.inner, styles.glassInner]}>{content}</GlassSurface>
+      ) : (
+        <ThemedView type="backgroundElement" style={styles.inner}>
+          {content}
+        </ThemedView>
+      )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   pill: { width: 260 },
+  glassPill: { width: GLASS_FIELD_WIDTH },
+  glassInner: {
+    height: GLASS_CONTROL_HEIGHT,
+    borderRadius: GLASS_CONTROL_HEIGHT / 2,
+  },
+  glassLabel: { fontSize: 13 },
   inner: {
     flexDirection: 'row',
     alignItems: 'center',

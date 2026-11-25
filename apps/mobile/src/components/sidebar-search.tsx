@@ -20,10 +20,10 @@ import {
   useSidebarSearch,
 } from '@/lib/sidebar-search';
 
-/** With its margin, a destination row's height — the rail's rhythm rather than the bars'. */
-const FIELD_HEIGHT = 40;
+/** A sidebar row's height: the field is the first of them. */
+const FIELD_HEIGHT = 30;
 
-/** The rail's search field, in place of its Search row while the rail is expanded. */
+/** The sidebar's search field, pinned over its groups. */
 export function SidebarSearchField({ hint }: { hint: string }) {
   const theme = useTheme();
   const { typed, focusPending } = useSidebarSearch();
@@ -59,9 +59,9 @@ export function SidebarSearchField({ hint }: { hint: string }) {
     <View
       style={[
         styles.field,
-        { backgroundColor: theme.backgroundElement, borderColor: focused ? theme.accent : 'transparent' },
+        { backgroundColor: theme.glassHover, borderColor: focused ? theme.accent : 'transparent' },
       ]}>
-      <SearchIcon color={theme.textSecondary} size={18} />
+      <SearchIcon color={theme.textSecondary} size={14} />
       <TextInput
         testID="sidebar.search.input"
         ref={inputRef}
@@ -90,7 +90,7 @@ export function SidebarSearchField({ hint }: { hint: string }) {
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Clear search">
-          <ClearIcon color={theme.textSecondary} size={14} />
+          <ClearIcon color={theme.textSecondary} size={12} />
         </Pressable>
       ) : focused ? null : (
         <Text style={[styles.hint, { color: theme.textSecondary }]}>{hint}</Text>
@@ -125,13 +125,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.two,
     height: FIELD_HEIGHT,
-    marginVertical: 2,
-    paddingHorizontal: Spacing.three,
-    borderRadius: FIELD_HEIGHT / 2,
+    marginHorizontal: 10,
+    marginBottom: Spacing.one,
+    paddingHorizontal: 9,
+    borderRadius: 8,
     borderWidth: 1,
   },
   input: {
-    ...rowInput(15),
+    ...rowInput(13),
     flex: 1,
     minWidth: 0,
     fontFamily: Fonts.sans,
@@ -139,7 +140,7 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontFamily: Fonts.sans,
-    fontSize: 12,
+    fontSize: 11,
     opacity: 0.7,
   },
   // See SeriesPane: absolute and opaque over the slot, so closing it puts the grid back untouched.

@@ -6,6 +6,7 @@ import { MENU_MAX_ROWS, OptionList, useAnchoredOverlay, useOverlay } from '@/com
 import { OptionMenu, OptionRow } from '@/components/overlay/option-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ContinuousCorner, Spacing } from '@/constants/theme';
+import { useGlassChrome } from '@/hooks/use-glass-chrome';
 import { useHover } from '@/hooks/use-hover';
 import { useCompactType, usePointerFine } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -49,12 +50,15 @@ type SelectorProps = {
 };
 
 /** The `subtitle` trigger's type for `text`: a bar's title, which these selectors are off iOS, so
- *  it is set in the title typeface where that can set it whole. `font` goes to `SelectorCaret`. */
+ *  it is set in the title typeface where that can set it whole. `font` goes to `SelectorCaret`.
+ *  In the desktop's glass capsule (`useGlassChrome`) it is a toolbar's title, not a page's. */
 export function useSubtitleSelectorStyle(text: string) {
   const compact = useCompactType();
+  const glass = useGlassChrome();
   const font = useTitleFontFor(text);
+  const size = glass ? styles.subtitleGlass : compact ? styles.subtitleCompact : styles.subtitleWide;
   return {
-    label: [compact ? styles.subtitleCompact : styles.subtitleWide, font && { fontFamily: font, fontWeight: 'normal' as const }],
+    label: [size, font && { fontFamily: font, fontWeight: 'normal' as const }],
     font,
   };
 }
@@ -65,8 +69,9 @@ export function useSubtitleSelectorStyle(text: string) {
 export function SelectorCaret({ size = 'subtitle', font }: { size?: SelectorProps['size']; font?: string }) {
   const theme = useTheme();
   const compact = useCompactType();
-  const px = size === 'title' ? 11 : size === 'subtitle' ? (compact ? 9 : 10) : 8;
-  const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (compact ? 22.4 : 28) : 14;
+  const glass = useGlassChrome();
+  const px = size === 'title' ? 11 : size === 'subtitle' ? (compact || glass ? 9 : 10) : 8;
+  const fontSize = size === 'title' ? 48 : size === 'subtitle' ? (glass ? 17 : compact ? 22.4 : 28) : 14;
   const { ascender, descender, xHeight } = fontMetrics(font);
   const drop = ((ascender - descender - xHeight) / 2) * fontSize;
   return (
@@ -81,6 +86,7 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
   const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
+  const glass = useGlassChrome();
   const shown = labels?.[value] ?? value;
   const subtitle = useSubtitleSelectorStyle(shown);
   const font = size === 'subtitle' ? subtitle.font : undefined;
@@ -89,7 +95,7 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
       testID={testID}
       ref={ref}
       {...handlers}
-      style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
+      style={[styles.trigger, hovered && { backgroundColor: glass ? theme.glassHover : theme.backgroundSelected }]}
       onPress={() =>
         openAt(
           () => (
@@ -239,6 +245,11 @@ const styles = StyleSheet.create({
   subtitleWide: {
     fontSize: 28,
     lineHeight: 34,
+    fontWeight: '700',
+  },
+  subtitleGlass: {
+    fontSize: 17,
+    lineHeight: 22,
     fontWeight: '700',
   },
   caret: {

@@ -2,6 +2,7 @@ import { useNavigation } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, type TextInputInstance } from 'react-native';
 
+import { GLASS_CONTROL_HEIGHT, GlassSurface } from '@/components/glass-surface';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { NO_OUTLINE, rowInput } from '@/components/input-style';
 import { ThemedView } from '@/components/themed-view';
@@ -25,6 +26,7 @@ export function SearchField({
   immediateFocus = false,
   focusRequest = 0,
   onChangeText,
+  glass = false,
   testID,
 }: {
   value: string;
@@ -43,6 +45,8 @@ export function SearchField({
    * the transition-aware defer below would otherwise fall through to its slow 800ms fallback timer.
    */
   immediateFocus?: boolean;
+  /** In a bare bar (`useGlassChrome`), where the field is one of its capsules. */
+  glass?: boolean;
   /** Automation selector for the input; the clear button derives `${testID}.clear` (see src/lib/test-id.ts). */
   testID: string;
 }) {
@@ -131,11 +135,9 @@ export function SearchField({
     return () => vv.removeEventListener('resize', onResize);
   }, [focused]);
 
-  return (
-    <ThemedView
-      type="backgroundElement"
-      style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
-      <SearchIcon color={theme.textSecondary} size={16} />
+  const content = (
+    <>
+      <SearchIcon color={theme.textSecondary} size={glass ? 15 : 16} />
       <TextInput
         testID={`${testID}.input`}
         ref={inputRef}
@@ -149,7 +151,7 @@ export function SearchField({
         returnKeyType="search"
         autoCapitalize="none"
         autoCorrect={false}
-        style={[styles.searchInput, NO_OUTLINE, { color: theme.text }]}
+        style={[styles.searchInput, glass && styles.glassInput, NO_OUTLINE, { color: theme.text }]}
       />
       {text.length > 0 && (
         <Pressable
@@ -163,6 +165,19 @@ export function SearchField({
           <ClearIcon color={theme.textSecondary} size={14} />
         </Pressable>
       )}
+    </>
+  );
+  // The glass keeps its own edge at rest, where the opaque field's border is only its focus ring.
+  if (glass) {
+    return (
+      <GlassSurface style={[styles.search, styles.glass, focused && { borderColor: theme.accent }]}>{content}</GlassSurface>
+    );
+  }
+  return (
+    <ThemedView
+      type="backgroundElement"
+      style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
+      {content}
     </ThemedView>
   );
 }
@@ -185,6 +200,15 @@ const styles = StyleSheet.create({
   searchInput: {
     ...rowInput(16),
     flex: 1,
+    // Without it the web's input keeps its intrinsic width and squeezes the icon beside it to nothing.
+    minWidth: 0,
     padding: 0,
+  },
+  glass: {
+    height: GLASS_CONTROL_HEIGHT,
+    borderRadius: GLASS_CONTROL_HEIGHT / 2,
+  },
+  glassInput: {
+    fontSize: 13,
   },
 });

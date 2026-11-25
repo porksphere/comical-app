@@ -344,8 +344,30 @@ series page flips it twice per visit (details ⇄ reader, the search layer), and
 the modal itself the search layer vanished on open and every open mounted the page twice.
 
 `apps/mobile/src/components/app-tabs.tsx` is the Android + web shell (`expo-router/ui`'s headless
-`Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the icon rail at the regular size class, the
-sliding bottom bar on phones, and the web-only panes.
+`Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the sliding bottom bar on phones, the side
+navigation on wider windows, and the web-only panes.
+
+The side navigation has two forms (`components/app-sidebar.tsx`, chosen by `navModeFor`). The
+SIDEBAR, from `SidebarBreakpoint`, is a panel floating in from the window's edges the way a desktop
+sidebar is drawn: a top row holding the window's own traffic lights in the Mac shell (the shell's
+`trafficLightPosition` in `apps/desktop/src/main.ts` and the row's metrics are one pair of numbers,
+change them together) or the app's mark elsewhere, with Settings as a button at its end; the search
+field pinned under it; then groups of rows under small headings. A heading's LABEL is its tab
+(Browse, Library: the same `TabTrigger` the bottom bar's button is, so `tab.<name>` and its label
+still reach it) and the caret beside it opens and closes the group; History and Activity have no
+scope of their own and share a Reading group. A group longer than `SIDEBAR_FOLD_AT` rows folds the
+rest behind a More row (`lib/sidebar-fold.ts`), keeping the selected row in view. It is resizable
+and NOT collapsible: the collapse toggle and its stored preference were taken out for this layout's
+first pass. The RAIL is the icon column a regular width short of the breakpoint gets on a device.
+
+Beside that sidebar a tab's own top bar is bare (`useGlassChrome`, `BarSurface`'s `bare`): no fill
+and no rule, its title and its trailing field in glass capsules (`components/glass-surface.tsx`)
+over a soft fade of the page, and nothing pins under it (`StickySectionHeader` draws nothing, as
+under the iOS bar). Web only, since the glass is a backdrop blur, and only on a tab's own screen
+(`ContentWidthProvider`'s `tabRoot`): a pane over the content region keeps its opaque bar. On
+Android the sidebar's panel is the opaque panel colour and the bars are unchanged. The content
+region still starts beside the sidebar, not under it, so the panel's glass has only the page's
+colour behind it for now.
 
 The visible bar there is NOT the `TabList`. Its slide is a Reanimated animated style, which a
 `TabList` can't carry (it renders a plain `View`, and `asChild` routes through a Slot that

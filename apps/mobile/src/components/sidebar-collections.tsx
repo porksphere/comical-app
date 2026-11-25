@@ -13,25 +13,35 @@
 
 import { StyleSheet } from 'react-native';
 
-import { SidebarSubItem, SidebarThumbRadius, SidebarThumbSize } from '@/components/app-sidebar';
+import { SidebarMoreRow, SidebarRow, SidebarThumbRadius, SidebarThumbSize } from '@/components/app-sidebar';
 import { CollectionThumb } from '@/components/collections/collection-thumb';
 import { libraryViews, setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
 import { useCollections } from '@/hooks/use-collections';
+import { useSectionOpen } from '@/hooks/use-sidebar-sections';
 import { router } from '@/lib/nav';
+import { foldSidebarRows } from '@/lib/sidebar-fold';
 
 export function SidebarCollections({ active, onReselect }: { active?: boolean; onReselect?: () => void }) {
   const selected = useSelectedCollectionId();
   const { collections } = useCollections();
 
+  const more = useSectionOpen(MORE, false);
+  const views = libraryViews(collections);
+  const fold = foldSidebarRows(
+    views,
+    views.findIndex((v) => v.id === selected),
+    more,
+  );
+
   return (
     <>
-      {libraryViews(collections).map((row) => (
-        <SidebarSubItem
+      {fold.rows.map((row) => (
+        <SidebarRow
           key={row.id ?? 'all'}
           testID={`sidebar.collection.${row.testKey}`}
           label={row.name}
           active={active === true && row.id === selected}
-          thumbnail={<CollectionThumb view={row.id} name={row.name} size={SidebarThumbSize} style={styles.thumb} />}
+          leading={<CollectionThumb view={row.id} name={row.name} size={SidebarThumbSize} style={styles.thumb} />}
           onPress={() => {
             if (active && row.id === selected) onReselect?.();
             setSelectedCollection(row.id);
@@ -39,9 +49,14 @@ export function SidebarCollections({ active, onReselect }: { active?: boolean; o
           }}
         />
       ))}
+      {fold.hidden > 0 ? (
+        <SidebarMoreRow section={MORE} open={more} hidden={fold.hidden} testID="sidebar.collections.more" />
+      ) : null}
     </>
   );
 }
+
+const MORE = 'library-more';
 
 const styles = StyleSheet.create({
   thumb: { borderRadius: SidebarThumbRadius },

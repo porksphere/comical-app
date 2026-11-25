@@ -31,6 +31,7 @@ import {
   useSelectedItemKind,
 } from '@/data/selected-collection';
 import type { Collection } from '@/data/types';
+import { useGlassChrome } from '@/hooks/use-glass-chrome';
 import { useHasSidebar } from '@/hooks/use-content-width';
 import { useSavedItemKinds } from '@/hooks/use-saved-item-kinds';
 import { useCollections } from '@/hooks/use-collections';
@@ -69,6 +70,7 @@ export default function LibraryScreen() {
   const { collections } = useCollections();
   const viewName = collections.find((c) => c.id === collection)?.name ?? ALL_VIEW_NAME;
   const titleType = useSubtitleSelectorStyle(viewName);
+  const glass = useGlassChrome();
 
   const headerHeight = useTopChromeHeight();
 
@@ -125,7 +127,7 @@ export default function LibraryScreen() {
                   view={collection}
                   name={viewName}
                   size={BridgeThumbSize}
-                  style={styles.barThumb}
+                  style={glass ? styles.capsuleThumb : styles.barThumb}
                 />
               </HoldActionTarget>
             )
@@ -224,6 +226,10 @@ const styles = StyleSheet.create({
   },
   barThumb: {
     borderRadius: BridgeThumbRadius,
+  },
+  // Round in the glass capsule's round end.
+  capsuleThumb: {
+    borderRadius: BridgeThumbSize / 2,
   },
   container: {
     flex: 1,

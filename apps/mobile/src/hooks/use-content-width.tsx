@@ -33,6 +33,8 @@ type NavLayout = {
    *  re-derived from width downstream (see `navInsetFor`). A screen asks this to decide whether a
    *  control of its own is now a duplicate of one the rail is already showing. */
   sidebar: boolean;
+  /** A tab's own screen, as opposed to a pane laid over the content region beside the sidebar. */
+  tabRoot: boolean;
 };
 
 const NavLayoutContext = createContext<NavLayout | null>(null);
@@ -40,13 +42,15 @@ const NavLayoutContext = createContext<NavLayout | null>(null);
 export function ContentWidthProvider({
   width,
   sidebar,
+  tabRoot = false,
   children,
 }: {
   width: number;
   sidebar: boolean;
+  tabRoot?: boolean;
   children: React.ReactNode;
 }) {
-  const value = useMemo(() => ({ contentWidth: width, sidebar }), [width, sidebar]);
+  const value = useMemo(() => ({ contentWidth: width, sidebar, tabRoot }), [width, sidebar, tabRoot]);
   return <NavLayoutContext.Provider value={value}>{children}</NavLayoutContext.Provider>;
 }
 
@@ -59,6 +63,13 @@ export function useContentWidth(): number {
 /** True only where the rail is actually rendered — false on every screen that covers it. */
 export function useHasSidebar(): boolean {
   return useContext(NavLayoutContext)?.sidebar ?? false;
+}
+
+/** True on a tab's own screen while the sidebar is the nav: where the desktop's bars are drawn
+ *  (`useGlassChrome`). A pane over the content region keeps its own opaque bar. */
+export function useIsSidebarTabRoot(): boolean {
+  const layout = useContext(NavLayoutContext);
+  return !!layout?.sidebar && layout.tabRoot;
 }
 
 export type SideInsets = { left: number; right: number };

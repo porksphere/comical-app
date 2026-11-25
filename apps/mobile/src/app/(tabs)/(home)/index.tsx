@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HomeBookshelf, homeBookshelfHeight } from '@/components/home-bookshelf/home-bookshelf';
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
+import { GlassCapsule } from '@/components/glass-surface';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ContentFeed } from '@/components/content-feed';
 import { SearchIcon } from '@/components/icons/ui-icons';
@@ -64,6 +65,7 @@ import type { Bridge, BridgeList } from '@/data/types';
 import { waitingChecks$ } from '@/data/web-check';
 import { friendlyError } from '@/lib/friendly-error';
 import { useHasSidebar } from '@/hooks/use-content-width';
+import { useGlassChrome } from '@/hooks/use-glass-chrome';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useBookshelfEntries, useHomeBookshelf, useHomeBookshelfAvailable } from '@/hooks/use-home-bookshelf';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -596,6 +598,8 @@ export default function BrowseScreen() {
   // Shared with the series-detail bar so both stay the same height.
   const barHeight = useTopBarHeight();
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
+  // Beside the desktop's sidebar the bar is bare and its controls are glass capsules.
+  const glass = useGlassChrome();
   // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
   const thumbSize = BridgeThumbSize;
   // Desktop shows an always-visible search pill in the top bar; mobile shows just a search icon.
@@ -664,13 +668,54 @@ export default function BrowseScreen() {
     [theme.barHairline],
   );
 
+  const selectors = (
+    <>
+      {currentBridge ? (
+        <HoldActionTarget testID="browse.nsfw-hold" size={thumbSize}>
+          <BridgeThumb
+            uri={currentBridge.thumbnail}
+            source={isComical ? COMICAL_ICON : undefined}
+            label={currentBridge.name}
+            size={thumbSize}
+            fill
+            style={glass && styles.capsuleThumb}
+          />
+        </HoldActionTarget>
+      ) : null}
+      {/* The sidebar lists the bridges when it's showing, so this would be a second control for one
+          selection sitting a few pixels from the first. The THUMBNAIL above stays either way —
+          it's the NSFW press-and-hold target, not decoration, and that has nowhere else to go. */}
+      {!railNav && (
+        <Selector
+          testID="browse.bridge-selector"
+          title="Bridge"
+          value={currentBridge?.id ?? ''}
+          options={visibleBridges.map((b) => b.id)}
+          onChange={selectBridge}
+          size="subtitle"
+          thumbnails={bridgeThumbnails}
+          sources={COMICAL_SOURCES}
+          labels={bridgeLabels}
+        />
+      )}
+      <Selector
+        testID="browse.page-selector"
+        title="Page"
+        value={pageKey(page)}
+        options={pageKeys}
+        onChange={selectPage}
+        size="subtitle"
+        labels={pageLabels}
+      />
+    </>
+  );
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
     // (see bar-surface.tsx); the grid scrolls behind it. The hairline is always on EXCEPT while a
     // section heading is pinned beneath it (barRuleStyle above) — it used to fade in over the first
     // 8px of scroll so the bar read as part of the page while at rest, which made this the one bar
     // in the app whose divider came and went with nothing else to explain it.
-    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle, barRuleStyle]}>
+    <BarSurface bare={glass} style={[styles.topBar, { height: headerHeight }, headerStyle, glass ? null : barRuleStyle]}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
       {/* Cap+centre only on web; native fills the width so the bar aligns with the full-width grid. */}
@@ -683,47 +728,12 @@ export default function BrowseScreen() {
           clearance > 0 && { paddingRight: TopLevelGutter + clearance },
           headerContentStyle,
         ]}>
-        {currentBridge ? (
-          <HoldActionTarget testID="browse.nsfw-hold" size={thumbSize}>
-            <BridgeThumb
-              uri={currentBridge.thumbnail}
-              source={isComical ? COMICAL_ICON : undefined}
-              label={currentBridge.name}
-              size={thumbSize}
-              fill
-            />
-          </HoldActionTarget>
-        ) : null}
-        {/* The rail lists the bridges when it's showing, so this would be a second control for one
-            selection sitting a few pixels from the first. The THUMBNAIL above stays either way —
-            it's the NSFW press-and-hold target, not decoration, and that has nowhere else to go. */}
-        {!railNav && (
-          <Selector
-            testID="browse.bridge-selector"
-            title="Bridge"
-            value={currentBridge?.id ?? ''}
-            options={visibleBridges.map((b) => b.id)}
-            onChange={selectBridge}
-            size="subtitle"
-            thumbnails={bridgeThumbnails}
-            sources={COMICAL_SOURCES}
-            labels={bridgeLabels}
-          />
-        )}
-        <Selector
-          testID="browse.page-selector"
-          title="Page"
-          value={pageKey(page)}
-          options={pageKeys}
-          onChange={selectPage}
-          size="subtitle"
-          labels={pageLabels}
-        />
+        {glass ? <GlassCapsule art={!!currentBridge}>{selectors}</GlassCapsule> : selectors}
         {isLargeScreen && railNav ? (
           // Wide: the shared trailing control every content tab uses (see `search-pill`). No right
           // margin — the icon nav the centred version reserved room for doesn't exist at this width.
           <View style={styles.searchPillTrailing}>
-            <SearchPill testID="browse.search-pill" onPress={openSearch} />
+            <SearchPill testID="browse.search-pill" onPress={openSearch} glass={glass} />
           </View>
         ) : isLargeScreen ? (
           // Desktop below the rail breakpoint: unchanged — a centred pill, with the right margin
@@ -1010,6 +1020,10 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 10,
     justifyContent: 'flex-end',
+  },
+  // Round in the capsule's round end, where the opaque bar's tile keeps its own corner.
+  capsuleThumb: {
+    borderRadius: BridgeThumbSize / 2,
   },
   selectorRow: {
     flexDirection: 'row',
