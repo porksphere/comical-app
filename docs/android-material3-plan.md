@@ -204,10 +204,28 @@ drag down from the top of a sheet's list takes the sheet with it.
 - **FAB.** `add-fab.android.tsx`: Compose's floating action button.
 - **Select mode.** `select-pill-bar.android.tsx`: `HorizontalFloatingToolbar`, a single verb in
   its FAB slot; a lone verb with no staging menu is a FAB alone.
-- **Pull to refresh.** The gesture stays (`use-touch-pull-to-refresh`); the spinner on Android is
-  Material's contained `LoadingIndicator` (`pull-spinner.android.tsx`), its progress written on
-  the UI thread through `@expo/ui`'s observable state while the list is pulled and running free
-  during the refresh. Its host is mounted only for a pull or a refresh.
+- **Pull to refresh.** The spinner on Android is Material's contained `LoadingIndicator`
+  (`pull-spinner.android.tsx`), its progress written on the UI thread through `@expo/ui`'s
+  observable state while the list is pulled and running free during the refresh; its host is
+  mounted only for a pull or a refresh. The gesture had to move with it. It was read from touch
+  events on the screen's outer view, and React Native cancels a touch for JavaScript the moment a
+  native scroll view takes the drag, so on Android a pull never got past its first points. The
+  list's anchor (`content-scroll-view`) now reports the finger itself, and the screen's
+  `usePullToRefresh` takes it through `screen-pull`; the pull's arithmetic is unchanged
+  (`use-touch-pull-to-refresh`).
+- **Back is an arrow.** `ChevronLeftIcon`, the back glyph of every bar the app draws, is
+  Material's arrow on Android.
+
+Found on the emulator and fixed here: a Compose view measured at its host's exact size hands
+that size to its children as a minimum, which made every navigation item a screen wide (a `Box`
+around the bar loosens it); a slot added to a menu item after it has composed is never drawn, so
+a check that can come and go is always mounted and tinted away; the selection menu hangs from its
+button, whose place is worked out from Material's metrics since Compose lays the toolbar out.
+
+Not checked: the mobile Maestro flows against these surfaces; how the navigation bar and the
+menus feel at a phone's frame rate (the emulator draws a frame every few seconds); the rail on a
+real tablet or foldable. A tall dropdown (the Library's filter) is placed by Compose over its own
+button when the window has no room below it, as Material's menu does.
 
 ### 3. Settings screens
 

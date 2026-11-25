@@ -1357,7 +1357,12 @@ already in force.
   half), so a new screen's list goes through it on Android as it does on iOS.
 - **A bar control's short menu is Material's dropdown.** Give `OptionMenuButton` a `material`
   renderer, or hang a `MaterialOptionMenu` under `useMenuMount` (`selector.tsx`), beside the
-  overlay menu web draws.
+  overlay menu web draws. A slot added to a Compose item after it has composed is never drawn:
+  anything that can come and go while a menu is up (a check) stays mounted and is tinted away.
+- **Pull to refresh is read at the list** (`content-scroll-view`'s `tracksPull`, `screen-pull`).
+  React Native cancels a touch for JavaScript once a native scroll view has the drag, so a
+  gesture that has to follow a finger over a scrolling list on Android cannot be built on touch
+  events; the anchor every list already has reports it.
 - **Web does not move.** A base file keeps web's look; Android's goes in a `.android.tsx` sibling
   or behind the palette.
 
