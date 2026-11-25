@@ -112,14 +112,21 @@ export function HeroCaption({
   );
 }
 
-/** A hero's picture going into the page under it, and coming out from under the bar where the bar
- *  is bare over it (`under`, the bar's reach): the page's own colour either way, which is what
- *  the bar's title is set to be read on. */
+/** A hero's picture going into the page under it, and coming out from under the bar, which is bare
+ *  over it (`under`, the bar's reach): the page's own colour either way, which is what the bar's
+ *  title and selectors are set to be read on. */
 export function HeroFades({ under, foot }: { under: number; foot: number }) {
   const { background } = useTheme();
   return (
     <>
-      {under > 0 && <LinearGradient pointerEvents="none" style={[styles.fadeTop, { height: under + Spacing.five }]} colors={[`${background}B3`, `${background}00`]} />}
+      {under > 0 && (
+        <LinearGradient
+          pointerEvents="none"
+          style={[styles.fadeTop, { height: under + Spacing.five }]}
+          colors={[`${background}D9`, `${background}80`, `${background}00`]}
+          locations={[0, 0.55, 1]}
+        />
+      )}
       <LinearGradient
         pointerEvents="none"
         style={[styles.fadeFoot, { height: foot }]}

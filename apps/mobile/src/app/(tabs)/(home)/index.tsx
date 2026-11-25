@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
+  interpolateColor,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -92,6 +93,9 @@ const NO_BRIDGES: Bridge[] = [];
 // The Comical bridge's icon is a bundled asset (not a remote URL), so the Bridge selector gets it as a
 // local `source` rather than through the URL-keyed `thumbnails` map (which only holds real bridges).
 const COMICAL_SOURCES: Record<string, number> = { [COMICAL_BRIDGE_ID]: COMICAL_ICON };
+
+/** How far the page scrolls before a bar that was bare over a hero has its surface back. */
+const BARE_BAR_SCROLL = 48;
 
 export default function BrowseScreen() {
   const ds = useDataSource();
@@ -627,6 +631,39 @@ export default function BrowseScreen() {
   // expand-at-top/collapse-on-scroll animation, the bar itself never changes size —
   // instead it slides as a whole (see `headerStyle` below), X/Twitter-style.
   const headerHeight = useTopChromeHeight();
+  // Comical Home opens on the bookshelf: what the reader is in the middle of, ahead of the rails. Not
+  // on Favorites or a custom page, which are the reader's own arrangements, and not once its
+  // renderer has failed to start, when the rails simply begin the page as before.
+  //
+  // On trial beside it (Settings → Developer) are two flat heroes of the same series: the splash,
+  // which opens on the one read last and so takes them in order of how much each matters, and the
+  // poster, which stands them as the shelf does. Neither needs the shelf's renderer.
+  const heroStyle = useHomeHeroStyle();
+  const bookshelfOn = useHomeBookshelf();
+  const bookshelfAvailable = useHomeBookshelfAvailable();
+  const bookshelfShown =
+    bookshelfOn && (heroStyle !== 'shelf' || bookshelfAvailable) && isComical && !activeFavoritesPage && !activeCustomPage;
+  const bookshelf = useBookshelfEntries(bookshelfShown, heroStyle === 'splash');
+  const { height: windowHeight } = useWindowSize();
+  // A flat hero's picture runs up under the bar, which is bare over it at the top of the page: the
+  // system's bar on iOS, and the app's own elsewhere (`heroUnderBar` below).
+  const heroTop = headerHeight + BarContentGap;
+  const bookshelfHero = useMemo(() => {
+    if (!bookshelfShown || !bookshelf.length) return null;
+    if (heroStyle === 'splash') {
+      const splash = { width: railViewport, top: heroTop, bleed: heroTop };
+      return { element: <HomeSplash entries={bookshelf} {...splash} />, height: homeSplashHeight({ ...splash, windowHeight }) };
+    }
+    if (heroStyle === 'poster') {
+      return {
+        element: <HomePoster entries={bookshelf} width={railViewport} bleed={heroTop} />,
+        height: homePosterHeight(railViewport, windowHeight),
+      };
+    }
+    return { element: <HomeBookshelf entries={bookshelf} width={railViewport} />, height: homeBookshelfHeight(railViewport) };
+  }, [bookshelfShown, bookshelf, railViewport, heroStyle, heroTop, windowHeight]);
+  const heroUnderBar = !NATIVE_HEADER && heroStyle !== 'shelf' && !!bookshelfHero;
+
   // The bridge/page bar slides up 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
   // helper — the same one the Search filter bar uses, so their motion can't drift. The slide
   // distance is `barHeight`, NOT `headerHeight`: the bar stops once its content band is gone,
@@ -662,18 +699,26 @@ export default function BrowseScreen() {
   // style, so the two rules trade on the SAME frame; routed through React state the bar's left a
   // frame or two after the heading's arrived, which is two rules for two frames, every time.
   const stickyPinned = useSharedValue(0);
-  const barRuleStyle = useAnimatedStyle(
-    () => ({ borderBottomColor: stickyPinned.value ? 'transparent' : theme.barHairline }),
-    [theme.barHairline],
-  );
+  // Over a flat hero the bar is bare at the top of the page, as the system's is on iOS: the hero's
+  // picture runs up under it and fades out behind the selectors. The bar takes its surface and its
+  // rule back over the first of the scroll, as the picture leaves from under it, so nothing that
+  // follows the picture is read through a bar.
+  const barSurfaceStyle = useAnimatedStyle(() => {
+    const solid = heroUnderBar ? Math.min(1, Math.max(0, scrollY.value / BARE_BAR_SCROLL)) : 1;
+    return {
+      backgroundColor: interpolateColor(solid, [0, 1], [`${theme.background}00`, theme.background]),
+      borderBottomColor: stickyPinned.value ? 'transparent' : interpolateColor(solid, [0, 1], [`${theme.barHairline}00`, theme.barHairline]),
+    };
+  }, [heroUnderBar, theme.background, theme.barHairline]);
 
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
     // (see bar-surface.tsx); the grid scrolls behind it. The hairline is always on EXCEPT while a
-    // section heading is pinned beneath it (barRuleStyle above) — it used to fade in over the first
-    // 8px of scroll so the bar read as part of the page while at rest, which made this the one bar
-    // in the app whose divider came and went with nothing else to explain it.
-    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle, barRuleStyle]}>
+    // section heading is pinned beneath it, and over a flat hero at the top of the page, where the
+    // surface is off with it (barSurfaceStyle above) — it used to fade in over the first 8px of
+    // scroll on every page so the bar read as part of the page while at rest, which made this the
+    // one bar in the app whose divider came and went with nothing else to explain it.
+    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle, barSurfaceStyle]}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
       {/* Cap+centre only on web; native fills the width so the bar aligns with the full-width grid. */}
@@ -792,39 +837,6 @@ export default function BrowseScreen() {
       <RetryBlock message={gridError} error={resultsQuery.error} onRetry={() => resultsQuery.refetch()} />
     </View>
   ) : null;
-
-  // Comical Home opens on the bookshelf: what the reader is in the middle of, ahead of the rails. Not
-  // on Favorites or a custom page, which are the reader's own arrangements, and not once its
-  // renderer has failed to start, when the rails simply begin the page as before.
-  //
-  // On trial beside it (Settings → Developer) are two flat heroes of the same series: the splash,
-  // which opens on the one read last and so takes them in order of how much each matters, and the
-  // poster, which stands them as the shelf does. Neither needs the shelf's renderer.
-  const heroStyle = useHomeHeroStyle();
-  const bookshelfOn = useHomeBookshelf();
-  const bookshelfAvailable = useHomeBookshelfAvailable();
-  const bookshelfShown =
-    bookshelfOn && (heroStyle !== 'shelf' || bookshelfAvailable) && isComical && !activeFavoritesPage && !activeCustomPage;
-  const bookshelf = useBookshelfEntries(bookshelfShown, heroStyle === 'splash');
-  const { height: windowHeight } = useWindowSize();
-  // A flat hero's picture runs up under the bar where the bar is bare over the top of the page,
-  // which is the system's, and up to the bar's edge where the bar is the app's own.
-  const heroTop = headerHeight + BarContentGap;
-  const heroBleed = NATIVE_HEADER ? heroTop : BarContentGap;
-  const bookshelfHero = useMemo(() => {
-    if (!bookshelfShown || !bookshelf.length) return null;
-    if (heroStyle === 'splash') {
-      const splash = { width: railViewport, top: heroTop, bleed: heroBleed };
-      return { element: <HomeSplash entries={bookshelf} bare={NATIVE_HEADER} {...splash} />, height: homeSplashHeight({ ...splash, windowHeight }) };
-    }
-    if (heroStyle === 'poster') {
-      return {
-        element: <HomePoster entries={bookshelf} width={railViewport} bleed={heroBleed} bare={NATIVE_HEADER} />,
-        height: homePosterHeight(railViewport, windowHeight),
-      };
-    }
-    return { element: <HomeBookshelf entries={bookshelf} width={railViewport} />, height: homeBookshelfHeight(railViewport) };
-  }, [bookshelfShown, bookshelf, railViewport, heroStyle, heroTop, heroBleed, windowHeight]);
 
   // The composed Home flattened into a typed row list for ContentFeed's virtualization. Same rail/grid
   // partition (and loading-skeleton shape) the old listHeader rendered inline, just as data. Only built

@@ -34,10 +34,8 @@ type SplashProps = {
   width: number;
   /** Where the feed's content starts, down the window. */
   top: number;
-  /** How far above that the cover begins, and whether that is under a bar with nothing of its own
-   *  behind it. */
+  /** How far above that the cover begins, under the bar. */
   bleed: number;
-  bare: boolean;
 };
 
 function SplashCover({ entry, index, position }: { entry: BookshelfEntry; index: number; position: SharedValue<number> }) {
@@ -54,7 +52,7 @@ function SplashCover({ entry, index, position }: { entry: BookshelfEntry; index:
   );
 }
 
-function PhoneSplash({ entries, width, top, bleed, bare }: SplashProps) {
+function PhoneSplash({ entries, width, top, bleed }: SplashProps) {
   const router = useRouter();
   const openingOf = useShelfOpening();
   const stage = useHeroStage(width);
@@ -78,7 +76,7 @@ function PhoneSplash({ entries, width, top, bleed, bare }: SplashProps) {
             {entries.map((entry, index) =>
               Math.abs(index - pager.index) <= 1 ? <SplashCover key={entry.key} entry={entry} index={index} position={pager.position} /> : null,
             )}
-            <HeroFades under={bare ? bleed : 0} foot={Math.min(art + bleed, 360)} />
+            <HeroFades under={bleed} foot={Math.min(art + bleed, 360)} />
           </View>
           <Pressable
             testID="home-splash.cover"
@@ -114,14 +112,14 @@ function PhoneSplash({ entries, width, top, bleed, bare }: SplashProps) {
 
 /**
  * Comical Home's splash: the series read last as its cover across the top of the page, running up
- * under the bar where the bar is bare and fading into the page, with where it was left and Resume
+ * under the bar, which is bare over it, and fading into the page, with where it was left and Resume
  * over its foot. A drag goes to the next series, in order of how much each matters. A trial beside
  * the shelf (Settings → Developer). A window too wide for a cover to cross takes the cover as a
  * book beside the words instead, over its own colours.
  */
 export function HomeSplash(props: SplashProps) {
-  const { entries, width, bleed, bare } = props;
-  if (heroIsWide(width)) return <PosterStage entries={entries} width={width} bleed={bleed} bare={bare} row={false} opens={0} testID="home-splash" />;
+  const { entries, width, bleed } = props;
+  if (heroIsWide(width)) return <PosterStage entries={entries} width={width} bleed={bleed} row={false} opens={0} testID="home-splash" />;
   return <PhoneSplash {...props} />;
 }
 

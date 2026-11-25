@@ -171,14 +171,12 @@ function PosterBook({
  * own colours out of focus. On a phone the book stands in the middle with its words under it. In a
  * wide window the words stand beside it. With a `row` the others stand to either side, smaller
  * and fainter, and a drag runs along them; without one the book stands alone and each gives way to
- * the next. `bleed` is how far the colours run up past the feed's content, and `bare` whether that
- * is under a bar with nothing of its own behind it.
+ * the next. `bleed` is how far the colours run up past the feed's content, under the bar.
  */
 export function PosterStage({
   entries,
   width,
   bleed,
-  bare,
   row,
   opens,
   testID,
@@ -186,7 +184,6 @@ export function PosterStage({
   entries: readonly BookshelfEntry[];
   width: number;
   bleed: number;
-  bare: boolean;
   row: boolean;
   /** Where the hero opens among `entries`. */
   opens: number;
@@ -237,7 +234,7 @@ export function PosterStage({
               Math.abs(index - pager.index) <= 1 ? <PosterGlow key={entry.key} entry={entry} index={index} position={pager.position} /> : null,
             )}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.background, opacity: dark ? 0.35 : 0.5 }]} />
-            <HeroFades under={bare ? bleed : 0} foot={Math.round(stageHeight * 0.55)} />
+            <HeroFades under={bleed} foot={Math.round(stageHeight * 0.55)} />
           </View>
           {entries.map((entry, index) =>
             Math.abs(index - pager.index) <= reach ? (
@@ -290,8 +287,8 @@ const noop = () => {};
  * the others smaller to either side, over the front one's own colours. A trial beside the shelf
  * (Settings → Developer), of the shelf's own books stood as the shelf stands them.
  */
-export function HomePoster({ entries, width, bleed, bare }: { entries: readonly BookshelfEntry[]; width: number; bleed: number; bare: boolean }) {
-  return <PosterStage entries={entries} width={width} bleed={bleed} bare={bare} row opens={shelfMiddle(entries.length)} testID="home-poster" />;
+export function HomePoster({ entries, width, bleed }: { entries: readonly BookshelfEntry[]; width: number; bleed: number }) {
+  return <PosterStage entries={entries} width={width} bleed={bleed} row opens={shelfMiddle(entries.length)} testID="home-poster" />;
 }
 
 const styles = StyleSheet.create({

@@ -29,8 +29,7 @@ const SPLASH_MIN = 300;
  * How much of the splash's cover stands in the feed's flow: the cover whole at the stage's width
  * where the window is tall enough for it, and no further down the window than
  * `SPLASH_WINDOW_SHARE`. `top` is where the feed's content starts, and `bleed` how far above that
- * the cover begins: all of it under a bar that is bare over the page, and the gap under one that
- * is not.
+ * the cover begins: all of it, under a bar that is bare over the page.
  */
 export function splashArtHeight({ width, windowHeight, top, bleed }: { width: number; windowHeight: number; top: number; bleed: number }): number {
   const foot = Math.min(top - bleed + width / HERO_COVER_ASPECT, windowHeight * SPLASH_WINDOW_SHARE);
