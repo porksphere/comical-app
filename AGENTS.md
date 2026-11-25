@@ -1309,6 +1309,35 @@ for good. That is every iOS Simulator: Dawn's Metal backend has no comparison sa
 shadow's pass asks for one, and the device is lost on the first frame, so a simulator's Home has
 no shelf and the capture workflow's iPhone shots are of the rails.
 
+**Two flat heroes are on trial beside the shelf** (Settings → Developer → Home opens on;
+`useHomeHeroStyle`, kept with the shelf's own switch and read as the shelf in a build without that
+screen). Both show the shelf's own series (`useBookshelfEntries`) and say and open what the shelf
+does, through the one `useShelfOpening` the shelf also reads, so the three cannot disagree with
+each other or with the History and Activity tabs. The splash (`components/home-hero/home-splash.tsx`)
+is the series read last as its cover across the top of the page, running up under the bar; it takes
+the series in order of how much each matters (`ranked`), since it opens on its first. The poster (`home-poster.tsx`) is
+the cover whole, as the book its card draws, over that cover out of focus, the others standing
+smaller to either side as the shelf stands them. A feed too wide for a cover to cross
+(`HERO_WIDE_FROM`) lays either out with its words beside the book. Their layout is `lib/home-hero`,
+pure and tested; `useHeroPager` is the sideways drag both share, its position a shared value the
+pictures follow on the UI thread. Neither needs the shelf's renderer, so one that failed to start
+takes only the shelf away. A press that lands as a drag ends is not a tap (`tapped`): a browser
+sends the click a mouse drag ends in to whatever is under the pointer. The series page opens out of
+the hero's picture of the front series and goes back into it, read or details alike
+(`useHeroOpen`): the app's zoom off the picture's rect on Android, the system's out of a
+`ZoomSource` over it on iOS, as a History row's thumbnail does both. The hero is a zoom surface of
+its own by name (`home-hero`): under the feed's it would be asked for by the feed's rows, which
+don't hold it, and the page would be told its source had gone.
+
+**The bar is bare over a flat hero at the top of the page, on every platform.** The hero's picture
+runs up under it. A cover out of focus, the poster's and a wide splash's, is left as it is, even
+enough to read the bar's title on; the splash's sharp cover fades out behind the title in the
+page's own colour (`HeroFades`' `under`). On iOS that
+is the system bar's own scroll-edge appearance. On Android and the web it is the one time a
+`BarSurface` gives up its surface: Browse's takes its fill and its rule back over the first of the
+scroll (`heroUnderBar`, `barSurfaceStyle`, `BARE_BAR_SCROLL` in the Home screen), so nothing that
+follows the picture is read through a bar, and it is the plain bar again on every other page.
+
 # Testing: new screens need a flow
 
 A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.

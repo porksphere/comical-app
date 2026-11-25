@@ -13,9 +13,15 @@ import { arrangeShelf, pickShelf } from '@/lib/bookshelf';
 import { persisted$ } from '@/lib/observable';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 
+/** What Comical Home opens on: the shelf, or one of the two flat heroes on trial beside it — the
+ *  front series' cover across the top of the page, or its cover whole over its own colours. */
+export type HomeHeroStyle = 'shelf' | 'splash' | 'poster';
+
 /** Persisted as an OBJECT, not a bare boolean — see lib/dev-profiler-flag for why a bare `false`
  *  breaks Legend State's persistence. */
-const bookshelf$ = persisted$<{ on: boolean; stats?: boolean; seriesSticker?: boolean }>('comical:homeBookshelf', { on: true });
+const bookshelf$ = persisted$<{ on: boolean; stats?: boolean; seriesSticker?: boolean; hero?: HomeHeroStyle }>('comical:homeBookshelf', {
+  on: true,
+});
 
 /** Whether Comical Home opens on the bookshelf (Settings → General; on unless turned off). A
  *  `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
@@ -53,6 +59,16 @@ export function useSeriesStickerRead(): boolean {
 
 export function setSeriesStickerRead(on: boolean): void {
   bookshelf$.seriesSticker.set(on);
+}
+
+/** A trial (Settings → Developer): what Comical Home opens on in place of the shelf. Only in a
+ *  build that has that screen, as the stats are. */
+export function useHomeHeroStyle(): HomeHeroStyle {
+  return useSelector(() => (PROFILING_ENABLED ? (bookshelf$.hero.get() ?? 'shelf') : 'shelf'));
+}
+
+export function setHomeHeroStyle(style: HomeHeroStyle): void {
+  bookshelf$.hero.set(style);
 }
 
 /** False once the shelf's renderer has failed to start on this device. */
@@ -98,8 +114,11 @@ export type BookshelfEntry = {
  * made it. Without that a CG set from a bridge of doujinshi stood on the shelf as a doujinshi: the
  * details that knew are not kept past the session. A row older than the hints, and an Activity
  * row, are asked of the library, then of the details where they have been read.
+ *
+ * `ranked` leaves them in order of how much each matters, the one read last first, for a hero that
+ * opens on its first series and not on its middle one.
  */
-export function useBookshelfEntries(enabled: boolean): BookshelfEntry[] {
+export function useBookshelfEntries(enabled: boolean, ranked = false): BookshelfEntry[] {
   const ds = useDataSource();
   const mock = useMockActive();
   const { data: history } = useQuery({ ...historyQuery(ds, mock), enabled });
@@ -118,7 +137,8 @@ export function useBookshelfEntries(enabled: boolean): BookshelfEntry[] {
     );
     const kept = new Map((collected ?? []).map((e) => [keyOf(e), e]));
     const shown = read.filter((h) => !h.hidden).map(keyOf);
-    return arrangeShelf(pickShelf(shown, [...waiting.keys()], SHELF_BOOKS)).map((key) => {
+    const picked = pickShelf(shown, [...waiting.keys()], SHELF_BOOKS);
+    return (ranked ? picked : arrangeShelf(picked)).map((key) => {
       const h = left.get(key);
       const g = waiting.get(key);
       const { bridgeId, seriesId, title, thumbnailUrl } = (h ?? g)!;
@@ -142,5 +162,5 @@ export function useBookshelfEntries(enabled: boolean): BookshelfEntry[] {
         readingDirection: says?.readingDirection,
       };
     });
-  }, [read, news, collected, cache, mock]);
+  }, [read, news, collected, cache, mock, ranked]);
 }

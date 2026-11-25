@@ -14,6 +14,7 @@ import {
   CircleArrowDown,
   CircleCheck,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   ChevronsUpDown,
@@ -104,6 +105,9 @@ export const MoreVerticalIcon = ({ color, size = 16 }: IconProps) => <MoreVertic
 export const ChevronDownIcon = ({ color, size = 16 }: IconProps) => <ChevronDown color={color} size={size} />;
 /** A site's anti-bot check — the verification prompt. */
 export const ShieldCheckIcon = ({ color, size = 16 }: IconProps) => <ShieldCheck color={color} size={size} />;
+export const ChevronLeftIcon = ({ color, size = 16, strokeWidth }: IconProps) => (
+  <ChevronLeft color={color} size={size} strokeWidth={strokeWidth} />
+);
 export const ChevronRightIcon = ({ color, size = 16, strokeWidth }: IconProps) => (
   <ChevronRight color={color} size={size} strokeWidth={strokeWidth} />
 );
