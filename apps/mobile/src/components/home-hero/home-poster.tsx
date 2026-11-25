@@ -234,7 +234,7 @@ export function PosterStage({
               Math.abs(index - pager.index) <= 1 ? <PosterGlow key={entry.key} entry={entry} index={index} position={pager.position} /> : null,
             )}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.background, opacity: dark ? 0.35 : 0.5 }]} />
-            <HeroFades under={bleed} foot={Math.round(stageHeight * 0.55)} />
+            <HeroFades foot={Math.round(stageHeight * 0.55)} />
           </View>
           {entries.map((entry, index) =>
             Math.abs(index - pager.index) <= reach ? (

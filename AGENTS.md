@@ -1325,7 +1325,9 @@ takes only the shelf away. A press that lands as a drag ends is not a tap (`tapp
 sends the click a mouse drag ends in to whatever is under the pointer.
 
 **The bar is bare over a flat hero at the top of the page, on every platform.** The hero's picture
-runs up under it and fades out behind its title in the page's own colour (`HeroFades`). On iOS that
+runs up under it. A cover out of focus, the poster's and a wide splash's, is left as it is, even
+enough to read the bar's title on; the splash's sharp cover fades out behind the title in the
+page's own colour (`HeroFades`' `under`). On iOS that
 is the system bar's own scroll-edge appearance. On Android and the web it is the one time a
 `BarSurface` gives up its surface: Browse's takes its fill and its rule back over the first of the
 scroll (`heroUnderBar`, `barSurfaceStyle`, `BARE_BAR_SCROLL` in the Home screen), so nothing that

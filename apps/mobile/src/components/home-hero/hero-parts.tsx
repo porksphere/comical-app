@@ -112,10 +112,10 @@ export function HeroCaption({
   );
 }
 
-/** A hero's picture going into the page under it, and coming out from under the bar, which is bare
- *  over it (`under`, the bar's reach): the page's own colour either way, which is what the bar's
- *  title and selectors are set to be read on. */
-export function HeroFades({ under, foot }: { under: number; foot: number }) {
+/** A hero's picture going into the page under it, in the page's own colour. A cover drawn sharp
+ *  also comes out from under the bar that way (`under`, the bar's reach), for the bar's title and
+ *  selectors to be read on; one out of focus is already even enough to read them on as it is. */
+export function HeroFades({ under = 0, foot }: { under?: number; foot: number }) {
   const { background } = useTheme();
   return (
     <>
