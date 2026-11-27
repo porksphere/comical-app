@@ -100,7 +100,9 @@ Browse, Library, Recent and Settings, and the system's search tab (`role="search
 a tab directory named `search` would capture every push of the root `/search` from inside the
 tabs), which iOS 26 stands apart at the bar's end with its field in the bar. That tab is the
 Search screen's `tab` mode: it starts on every bridge, a menu in the bar picks one source (and its
-filters), and before anything is typed it lists the sources (`SearchSources`). Per-tab safe-area
+filters), and before anything is typed it lists the sources (`SearchSources`). Its bar is every
+tab's (`NativeTabHeader`), and its list's bottom inset follows the keyboard, which stays up under
+it (`keyboardInsets`). Per-tab safe-area
 insets already include the system bar, so `BottomTabInset` is 0 on iOS and `useHideTabBarOnScroll`
 leaves `tabBarProgress` at 0 there; a ROOT overlay (toast, request pill, card context menu) pads by
 `RootTabBarInset` instead, since the root provider's insets don't know about the bar. The bar has no

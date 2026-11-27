@@ -21,6 +21,7 @@ import { PullIndicator } from '@/components/pull-indicator';
 import { SeriesGrid } from '@/components/series-grid';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
+import { NativeTabHeader } from '@/components/native-tab-header';
 import { SearchSources } from '@/components/search-sources';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -584,7 +585,8 @@ export default function SearchScreen({
   // scroll, with the system's search dimming off, since the results under the field are the thing
   // being typed at. The route has no title: the field IS the bar's middle, on the chevron's row,
   // and a "Search" over it only said what the field already shows.
-  // The search tab adds the scope menu ahead of them, and its field is the tab bar's.
+  // The search tab's bar is every tab's (`NativeTabHeader`, the large title included), with the
+  // scope menu ahead of the items, and its field is the tab bar's.
   const sources = visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID);
   const clear = () => {
     setTyped('');
@@ -592,7 +594,7 @@ export default function SearchScreen({
   };
   const nativeItems = nativeBar ? (
     <>
-      <Stack.Screen options={{ title: tab ? 'Search' : '' }} />
+      {tab ? <NativeTabHeader title="Search" /> : <Stack.Screen options={{ title: '' }} />}
       <Stack.SearchBar
         ref={searchBarRef}
         placeholder={tab && !isComical && currentBridge ? `Search ${currentBridge.name}` : 'Search…'}
@@ -818,6 +820,7 @@ export default function SearchScreen({
                 wrapperStyle={pull.listStyle}
                 scrollGesture={embedded?.scrollGesture}
                 scrollEnabled={embedded?.scrollEnabled}
+                keyboardInsets
               />
             ) : (
               <SeriesGrid
@@ -841,6 +844,7 @@ export default function SearchScreen({
                 wrapperStyle={[pull.listStyle, listDimStyle]}
                 scrollGesture={embedded?.scrollGesture}
                 scrollEnabled={embedded?.scrollEnabled}
+                keyboardInsets
               />
             ))}
           {ready && filterBar}

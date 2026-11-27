@@ -71,6 +71,7 @@ export function SeriesGrid({
   wrapperStyle,
   scrollGesture,
   scrollEnabled,
+  keyboardInsets,
 }: {
   /** The series to show. Exactly what gets rendered — the grid adds nothing to it. */
   items: SeriesGridItem[];
@@ -129,6 +130,8 @@ export function SeriesGrid({
   scrollGesture?: ComposedGesture;
   /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
   scrollEnabled?: boolean;
+  /** Passed through to `RecyclerList` — the bottom inset follows the keyboard. */
+  keyboardInsets?: boolean;
 }) {
   const { numColumns, sidePad, cardWidth, cellWidth, columnGap, rowGap } = useGridLayout();
   // A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are
@@ -260,6 +263,7 @@ export function SeriesGrid({
       wrapperStyle={wrapperStyle}
       scrollGesture={scrollGesture}
       scrollEnabled={scrollEnabled}
+      keyboardInsets={keyboardInsets}
       renderItem={({ item, index }) => (
         // Both dimensions are FIXED — the row's height above, and cardWidth (from useGridLayout). The width is
         // what lets a short final row simply end instead of stretching its cards across the row.
