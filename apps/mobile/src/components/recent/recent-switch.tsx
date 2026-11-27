@@ -3,33 +3,33 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Fonts, Spacing } from '@/constants/theme';
 import { useActivityBadgeCount } from '@/data/activity/use-activity-badge';
 import { useSidebarListsScopes } from '@/hooks/use-content-width';
-import { READING_VIEWS, setReadingView, useReadingView } from '@/hooks/use-reading-view';
+import { RECENT_VIEWS, setRecentView, useRecentView } from '@/hooks/use-recent-view';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
- * The Reading tab's switch between its views, as the first row of the view's list (and above its
+ * The Recent tab's switch between its views, as the first row of the view's list (and above its
  * empty state). Android and web: tabs, the platform's control for views of one screen. iOS draws
- * the system's segmented control instead (`reading-switch.ios`).
+ * the system's segmented control instead (`recent-switch.ios`).
  *
  * In the list, not pinned under the bar: on iOS nothing may stand between the bar and the list it
  * follows (AGENTS.md → the TOP bar), and one placement for every platform keeps the views alike.
  * Nothing where the sidebar lists the views as rows of its own.
  */
-export function ReadingSwitch() {
+export function RecentSwitch() {
   const theme = useTheme();
   const listed = useSidebarListsScopes();
-  const view = useReadingView();
+  const view = useRecentView();
   const unread = useActivityBadgeCount();
   if (listed) return null;
   return (
     <View accessibilityRole="tablist" style={[styles.row, { borderBottomColor: theme.barHairline }]}>
-      {READING_VIEWS.map((option) => {
+      {RECENT_VIEWS.map((option) => {
         const selected = option.id === view;
         return (
           <Pressable
             key={option.id}
-            testID={`reading.switch.${option.id}`}
-            onPress={() => setReadingView(option.id)}
+            testID={`recent.switch.${option.id}`}
+            onPress={() => setRecentView(option.id)}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
             style={styles.tab}>

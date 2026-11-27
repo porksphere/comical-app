@@ -3,7 +3,7 @@
 export const ROOT_TAB_PATHS = {
   browse: '/',
   library: '/library',
-  reading: '/reading',
+  recent: '/recent',
   settings: '/settings',
 } as const;
 

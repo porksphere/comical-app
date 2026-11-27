@@ -38,19 +38,19 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "library\\..*" # library.sort / library.search-icon
 
-# Reading — one tab, History and New chapters switched by the row under its bar (reading-switch).
+# Recent — one tab, History and New chapters switched by the row under its bar (recent-switch).
 - tapOn:
-    id: "tab.reading"
+    id: "tab.recent"
 - assertVisible:
-    id: "screen-title.reading"
+    id: "screen-title.recent"
 - tapOn:
-    id: "reading.switch.history"
+    id: "recent.switch.history"
 - assertVisible:
-    id: "reading.switch.new"
+    id: "recent.switch.new"
 - tapOn:
-    id: "reading.switch.new"
+    id: "recent.switch.new"
 - assertVisible:
-    id: "screen-title.reading"
+    id: "screen-title.recent"
 
 # Settings
 - tapOn:

@@ -15,9 +15,9 @@ appId: com.porksphere.comical
 
 # ── History ──────────────────────────────────────────────────────────────────
 - tapOn:
-    id: "tab.reading"
+    id: "tab.recent"
 - tapOn:
-    id: "reading.switch.history"
+    id: "recent.switch.history"
 - tapOn:
     id: "history.search-icon"
 - extendedWaitUntil:
@@ -37,7 +37,7 @@ appId: com.porksphere.comical
 
 # ── New chapters ─────────────────────────────────────────────────────────────
 - tapOn:
-    id: "reading.switch.new"
+    id: "recent.switch.new"
 - tapOn:
     id: "activity.search-icon"
 - extendedWaitUntil:

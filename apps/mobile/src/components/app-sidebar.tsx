@@ -209,7 +209,7 @@ type HeadingProps = PressableProps & {
 /**
  * A group's heading. Its label is the group's destination where it has one — Browse, Library: a
  * press goes to that tab's front door — and the caret beside it opens and closes the group. A
- * heading that leads nowhere (Reading) is the caret's button whole.
+ * heading that leads nowhere (Recent) is the caret's button whole.
  *
  * The two are SIBLINGS, never nested: nested Pressables both fire on react-native-web, whose
  * responder ignores the inner one's `stopPropagation`, so a nested caret navigated on every toggle.

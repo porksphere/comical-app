@@ -8,8 +8,8 @@ import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
-import { ReadingBar } from '@/components/reading/reading-bar';
-import { ReadingSwitch } from '@/components/reading/reading-switch';
+import { RecentBar } from '@/components/recent/recent-bar';
+import { RecentSwitch } from '@/components/recent/recent-switch';
 import { useTabFilter } from '@/components/tab-filter';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { HistoryRow } from '@/components/history-row';
@@ -49,20 +49,20 @@ import { ROW_REORDER_TRANSITION, useRowTransition } from '@/lib/row-motion';
 import { scrollPhaseHandlers } from '@/lib/scroll-release';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 
-/** The Reading tab's History: what you have read, newest first, each row resuming where you stopped. */
+/** The Recent tab's History: what you have read, newest first, each row resuming where you stopped. */
 export function HistoryView({ ready }: { ready: boolean }) {
   const ds = useDataSource();
   const mock = useMockActive();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // The content column, not the window — the sidebar's inset is already out of it.
-  const filter = useTabFilter('reading');
+  const filter = useTabFilter('recent');
   const query = filter.query;
   const queryClient = useQueryClient();
   const { nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   const rowTransition = useRowTransition(ROW_REORDER_TRANSITION);
-  useScrollToTopOnReselect('reading', listRef);
+  useScrollToTopOnReselect('recent', listRef);
 
   // This list as a zoom surface — see AGENTS.md → Zoom transitions.
   const zoomSurface = useZoomSurfaceKey('history');
@@ -183,7 +183,7 @@ export function HistoryView({ ready }: { ready: boolean }) {
       <ThemedView style={styles.container}>
       {emptyBody ? (
         <View style={[styles.centeredColumn, { paddingTop: listPaddingTop(headerHeight) }]}>
-          <ReadingSwitch />
+          <RecentSwitch />
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
@@ -193,7 +193,7 @@ export function HistoryView({ ready }: { ready: boolean }) {
             // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
             style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
             data={visible}
-            ListHeaderComponent={<ReadingSwitch />}
+            ListHeaderComponent={<RecentSwitch />}
             keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
             recycleItems={false}
             itemLayoutAnimation={rowTransition}
@@ -234,7 +234,7 @@ export function HistoryView({ ready }: { ready: boolean }) {
         </ScreenScrollMarker>
       )}
 
-      <ReadingBar view="history" filter={filter} />
+      <RecentBar view="history" filter={filter} />
     </ThemedView>
     </ZoomSurfaceContext.Provider>
   );

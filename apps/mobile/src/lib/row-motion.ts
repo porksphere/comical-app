@@ -34,7 +34,7 @@ export const ROW_REORDER_TRANSITION = LinearTransition.springify()
  *
  * Nothing for the list's first frames either: its rows are placed from estimates and then
  * measured, and carried on the spring that read as every row sliding into place each time the
- * Reading tab switched views.
+ * Recent tab switched views.
  */
 export function useRowTransition<T>(transition: T): T | undefined {
   const insets = useSideInsets();

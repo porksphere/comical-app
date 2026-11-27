@@ -4,13 +4,13 @@ import { StyleSheet, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { useActivityBadgeCount } from '@/data/activity/use-activity-badge';
-import { READING_VIEWS, parseReadingView, setReadingView, useReadingView } from '@/hooks/use-reading-view';
+import { RECENT_VIEWS, parseRecentView, setRecentView, useRecentView } from '@/hooks/use-recent-view';
 import { useActiveColorScheme } from '@/hooks/use-theme';
 
-/** iOS: the system's segmented control, hosted from SwiftUI. See `reading-switch` for the rest. */
-export function ReadingSwitch() {
+/** iOS: the system's segmented control, hosted from SwiftUI. See `recent-switch` for the rest. */
+export function RecentSwitch() {
   const scheme = useActiveColorScheme();
-  const view = useReadingView();
+  const view = useRecentView();
   const unread = useActivityBadgeCount();
   return (
     <View style={styles.row}>
@@ -18,12 +18,12 @@ export function ReadingSwitch() {
         <Picker
           selection={view}
           onSelectionChange={(v) => {
-            const next = parseReadingView(v);
-            if (next) setReadingView(next);
+            const next = parseRecentView(v);
+            if (next) setRecentView(next);
           }}
-          modifiers={[pickerStyle('segmented'), accessibilityIdentifier('reading.switch')]}>
-          {READING_VIEWS.map((option) => (
-            <Text key={option.id} modifiers={[tag(option.id), accessibilityIdentifier(`reading.switch.${option.id}`)]}>
+          modifiers={[pickerStyle('segmented'), accessibilityIdentifier('recent.switch')]}>
+          {RECENT_VIEWS.map((option) => (
+            <Text key={option.id} modifiers={[tag(option.id), accessibilityIdentifier(`recent.switch.${option.id}`)]}>
               {option.id === 'new' && unread > 0 ? `${option.label} (${unread})` : option.label}
             </Text>
           ))}

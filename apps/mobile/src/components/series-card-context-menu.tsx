@@ -145,7 +145,7 @@ const CLIP_UNTIL = 0.25;
 
 // The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
 // decide whether the bottom of the screen is chrome the cover has to slide under.
-const TAB_ROUTES = new Set(['/', '/library', '/reading', '/settings']);
+const TAB_ROUTES = new Set(['/', '/library', '/recent', '/settings']);
 
 const EDGE_PAD = 12; // keep the whole thing off the screen edges (and off the bars — see chromeTop)
 const GAP = 12; // between the preview and the menu

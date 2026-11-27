@@ -35,7 +35,7 @@ type NavLayout = {
   sidebar: boolean;
   /** A tab's own screen, as opposed to a pane laid over the content region beside the sidebar. */
   tabRoot: boolean;
-  /** The nav lists each tab's scopes (Browse's bridges, Reading's views) as rows of their own: the
+  /** The nav lists each tab's scopes (Browse's bridges, Recent's views) as rows of their own: the
    *  labelled sidebar, not the icon rail, which shows the destinations alone. */
   listsScopes: boolean;
 };

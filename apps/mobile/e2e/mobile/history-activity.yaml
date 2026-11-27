@@ -1,4 +1,4 @@
-# The Reading tab's two views (reading-switch). History: tap a row (resumes into the reader), back
+# The Recent tab's two views (recent-switch). History: tap a row (resumes into the reader), back
 # out, then swipe-clear that row. New chapters: swipe to reveal actions, tap Mark read, then
 # swipe-clear the same (now single-action) row — asserting the tab badge count drops after Mark
 # read and holds steady after Clear (clearing an already-read row removes it from the feed but
@@ -10,7 +10,7 @@
 # NOT locally verifiable this session (no Android dev-client / no Mac for iOS — see e2e/README.md
 # and the plan's Ground rules) — the row Y-coordinates below are BEST-EFFORT ESTIMATES, not
 # confirmed against a live run. Both views' lists start "flush under the top bar" (see
-# history-view.tsx / activity-view.tsx's contentContainerStyle comments) with the Reading switch's
+# history-view.tsx / activity-view.tsx's contentContainerStyle comments) with the Recent switch's
 # row (48pt) as their first row, so row 0 is assumed to sit around 25-29% down the screen; treat the first CI run of this flow as its real
 # verification, per the plan's existing precedent for iOS-only-CI-verified flows, extended here to
 # the coordinate estimate itself since neither platform could be locally checked this session.
@@ -55,9 +55,9 @@ appId: com.porksphere.comical
 
 # ── History ──────────────────────────────────────────────────────────────────
 - tapOn:
-    id: "tab.reading"
+    id: "tab.recent"
 - tapOn:
-    id: "reading.switch.history"
+    id: "recent.switch.history"
 - assertVisible:
     id: "history-row.the-wish"
 
@@ -69,7 +69,7 @@ appId: com.porksphere.comical
 - tapOn:
     id: "reader.toolbar.back"
 - assertVisible:
-    id: "screen-title.reading"
+    id: "screen-title.recent"
 
 # Swipe-clear it: single action ("Remove") auto-commits past FULL_SWIPE_COMMIT, no button tap.
 - swipe:
@@ -81,9 +81,9 @@ appId: com.porksphere.comical
 
 # ── New chapters ─────────────────────────────────────────────────────────────
 - tapOn:
-    id: "reading.switch.new"
+    id: "recent.switch.new"
 - assertVisible:
-    id: "screen-title.reading"
+    id: "screen-title.recent"
 - assertVisible:
     text: "^6$"
 - assertVisible:

@@ -23,8 +23,8 @@ import { RetryBlock } from '@/components/retry-block';
 import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
-import { ReadingBar } from '@/components/reading/reading-bar';
-import { ReadingSwitch } from '@/components/reading/reading-switch';
+import { RecentBar } from '@/components/recent/recent-bar';
+import { RecentSwitch } from '@/components/recent/recent-switch';
 import { useTabFilter } from '@/components/tab-filter';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
 import { EmptyMessage } from '@/components/empty-message';
@@ -56,20 +56,20 @@ import { scrollbarInset } from '@/lib/scrollbar-inset';
 /** Stable, so the zoom surface registers once rather than every render — see useZoomSurfaceList. */
 const activitySeriesId = (item: SeriesActivity) => item.seriesId;
 
-/** The Reading tab's New chapters: the unread chapters of what you follow, a row a series. */
+/** The Recent tab's New chapters: the unread chapters of what you follow, a row a series. */
 export function ActivityView({ ready }: { ready: boolean }) {
   const ds = useDataSource();
   const mock = useMockActive();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // The content column, not the window — the sidebar's inset is already out of it.
-  const filter = useTabFilter('reading');
+  const filter = useTabFilter('recent');
   const query = filter.query;
   const queryClient = useQueryClient();
   const { nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   const rowTransition = useRowTransition(ROW_REORDER_TRANSITION);
-  useScrollToTopOnReselect('reading', listRef);
+  useScrollToTopOnReselect('recent', listRef);
 
   // This list as a zoom surface — see AGENTS.md → Zoom transitions.
   const zoomSurface = useZoomSurfaceKey('activity');
@@ -229,7 +229,7 @@ export function ActivityView({ ready }: { ready: boolean }) {
       <ThemedView style={styles.container} {...pull.touchHandlers}>
       {emptyBody ? (
         <View style={[styles.centeredColumn, { paddingTop: listPaddingTop(headerHeight) }]}>
-          <ReadingSwitch />
+          <RecentSwitch />
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
@@ -240,7 +240,7 @@ export function ActivityView({ ready }: { ready: boolean }) {
               // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
               style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
               data={rows}
-              ListHeaderComponent={<ReadingSwitch />}
+              ListHeaderComponent={<RecentSwitch />}
               keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
               recycleItems={false}
               itemLayoutAnimation={rowTransition}
@@ -293,7 +293,7 @@ export function ActivityView({ ready }: { ready: boolean }) {
       )}
 
       <PullIndicator {...pull.indicator} top={headerHeight} />
-      <ReadingBar view="new" filter={filter} />
+      <RecentBar view="new" filter={filter} />
     </ThemedView>
     </ZoomSurfaceContext.Provider>
   );

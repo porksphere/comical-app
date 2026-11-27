@@ -96,7 +96,7 @@ window and the bar glares white. It is
 the one place SF Symbols are used instead of lucide, because the system bar draws its own items. Its
 triggers are named by ROUTE (`(home)`, `library`, …); the custom shell's `TABS` table keys by tab name
 (`browse`, …), and `app-tabs.ios.tsx` maps between the two for scroll-to-top. There are four tabs,
-Browse, Library, Reading and Settings, and the system's search tab (`role="search"`, route `find`:
+Browse, Library, Recent and Settings, and the system's search tab (`role="search"`, route `find`:
 a tab directory named `search` would capture every push of the root `/search` from inside the
 tabs), which iOS 26 stands apart at the bar's end with its field in the bar. That tab is the
 Search screen's `tab` mode: it starts on every bridge, a menu in the bar picks one source (and its
@@ -355,16 +355,17 @@ the modal itself the search layer vanished on open and every open mounted the pa
 `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the sliding bottom bar on phones, the side
 navigation on wider windows, and the web-only panes.
 
-History and New chapters (the activity feed) share ONE tab, Reading (`app/(tabs)/reading`), so a
-phone's bar has room for Settings and, on iOS, the search tab. Which list it shows is a persisted
-scope of the tab (`hooks/use-reading-view.ts`), the way a bridge is Browse's: the views are
-`components/reading/history-view.tsx` and `activity-view.tsx`, and `ReadingSwitch` switches them
+History and New chapters (the activity feed) share ONE tab, Recent (`app/(tabs)/recent`), so a
+phone's bar has room for Settings and, on iOS, the search tab. Recent, not Reading: a Library
+collection called Reading is common, and the sidebar showed the two one above the other. Which
+list it shows is a persisted scope of the tab (`hooks/use-recent-view.ts`), the way a bridge is Browse's: the views are
+`components/recent/history-view.tsx` and `activity-view.tsx`, and `RecentSwitch` switches them
 as the list's first row (and above an empty state) — the system's segmented control on iOS
-(`reading-switch.ios.tsx`), tabs on Android and web. In the list rather than pinned under the bar,
+(`recent-switch.ios.tsx`), tabs on Android and web. In the list rather than pinned under the bar,
 because on iOS nothing may stand between the bar and its list. The labelled sidebar lists the views
-as rows of their own (`sidebar-reading.tsx`), so there the screen leaves the switch out and titles
-its bar with the view (`ReadingBar`, `useSidebarListsScopes`); everywhere else the bar says
-"Reading". `/reading?view=new` opens New chapters (the desktop's notification). The digit keys kept
+as rows of their own (`sidebar-recent.tsx`), so there the screen leaves the switch out and titles
+its bar with the view (`RecentBar`, `useSidebarListsScopes`); everywhere else the bar says
+"Recent". `/recent?view=new` opens New chapters (the desktop's notification). The digit keys kept
 their actions: 3 is History, 4 New chapters.
 
 The side navigation has two forms (`components/app-sidebar.tsx`, chosen by `navModeFor`). The
@@ -373,7 +374,7 @@ sidebar is drawn: a top row holding the window's own traffic lights in the Mac s
 `trafficLightPosition` in `apps/desktop/src/main.ts` and the row's metrics are one pair of numbers,
 change them together) or the app's mark elsewhere, with Settings as a button at its end; then
 groups of rows under small headings. It holds no search field. A heading's LABEL is its tab
-(Browse, Library, Reading: the same `TabTrigger` the bottom bar's button is, so `tab.<name>` and
+(Browse, Library, Recent: the same `TabTrigger` the bottom bar's button is, so `tab.<name>` and
 its label still reach it) and the caret beside it opens and closes the group, whose rows are the
 tab's scopes. A heading's press resets the scope to its first row only where the sidebar lists the
 scopes; on the icon rail it is just the tab. A group longer than `SIDEBAR_FOLD_AT` rows folds the
@@ -389,7 +390,7 @@ at the end of that bar on every tab: the shell's (`ShellSearchField` in `sidebar
 by `app-tabs` over the content region, the bars keeping `SHELL_SEARCH_RESERVE` clear for it), so it
 is the same field, text and focus kept, over the results pane it opens. It searches every bridge.
 What else a bar searched is folded into it rather than being a second field. A tab's in-place
-filter has no field there: on Library and Reading what is typed into the shell's field
+filter has no field there: on Library and Recent what is typed into the shell's field
 narrows that tab as it is typed (`useTabFilter` reads it for the tab's own pane key), and the
 results pane waits for Enter, where on Browse it opens with the first letter. An icon that opened
 the filter in the title's capsule was built first and was two search bars on screen again. A

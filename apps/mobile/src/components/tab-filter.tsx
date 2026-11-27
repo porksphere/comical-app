@@ -15,7 +15,7 @@ import { focusSidebarSearch, useSidebarSearchTyped } from '@/lib/sidebar-search'
 export type TabFilter = ReturnType<typeof useTabFilter>;
 
 /**
- * The in-place filter Library and Reading share: the screen narrows what it already shows
+ * The in-place filter Library and Recent share: the screen narrows what it already shows
  * as you type. Ctrl+F focuses it on whichever tab is in front.
  *
  * Beside the rail it is a field that is always in the bar's trailing slot, emptied rather than
@@ -30,7 +30,7 @@ export type TabFilter = ReturnType<typeof useTabFilter>;
  * (lib/sidebar-search). `tab` is the screen's own, since a tab's screen stays mounted behind the
  * one in front and must not narrow itself by what is typed there.
  */
-export function useTabFilter(tab: 'library' | 'reading') {
+export function useTabFilter(tab: 'library' | 'recent') {
   const sidebar = useHasSidebar();
   const shell = useGlassChrome();
   const shellTyped = useSidebarSearchTyped(usePaneKeyOf(tab));

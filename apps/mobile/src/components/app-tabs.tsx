@@ -1,6 +1,6 @@
 import { usePathname } from 'expo-router';
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
-import { BookOpen, Compass, Library, Search, Settings, type LucideIcon } from 'lucide-react-native';
+import { Clock, Compass, Library, Search, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
@@ -23,7 +23,7 @@ import {
 } from '@/components/app-sidebar';
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
-import { SidebarReading } from '@/components/sidebar-reading';
+import { SidebarRecent } from '@/components/sidebar-recent';
 import { SettingsModal } from '@/components/settings/settings-modal';
 import { BridgeSearchPane } from '@/components/bridge-search-pane';
 import { ResultsPane } from '@/components/results-pane';
@@ -38,7 +38,7 @@ import { navModeFor } from '@/constants/size-class';
 import { GLASS_CONTROL_HEIGHT } from '@/components/glass-surface';
 import { navInsetFor, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
-import { readingView, setReadingView, useReadingView, type ReadingView } from '@/hooks/use-reading-view';
+import { recentView, setRecentView, useRecentView, type RecentView } from '@/hooks/use-recent-view';
 import { SidebarRailWidth, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useCollections } from '@/hooks/use-collections';
 import { useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
@@ -87,7 +87,7 @@ import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility'
 /** `noRecede`: this tab's rows reorder as you read, and one that re-renders under the scaled
  *  backdrop measures short — see `setBackdropRecede`. */
 /** `Scope`: the group of things this destination can be narrowed to — bridges for Browse,
- *  collections for Library, its two views for Reading. Rendered in the SIDEBAR ONLY, as the rows
+ *  collections for Library, its two views for Recent. Rendered in the SIDEBAR ONLY, as the rows
  *  under the destination's own heading. */
 const TABS: {
   name: string;
@@ -126,13 +126,13 @@ const TABS: {
     selectDefault: () => setSelectedCollection(null),
   },
   {
-    name: 'reading',
-    href: ROOT_TAB_PATHS.reading,
-    label: 'Reading',
-    Icon: BookOpen,
+    name: 'recent',
+    href: ROOT_TAB_PATHS.recent,
+    label: 'Recent',
+    Icon: Clock,
     noRecede: true,
-    Scope: SidebarReading,
-    selectDefault: () => setReadingView('history'),
+    Scope: SidebarRecent,
+    selectDefault: () => setRecentView('history'),
   },
   { name: 'settings', href: ROOT_TAB_PATHS.settings, label: 'Settings', Icon: Settings },
 ];
@@ -635,20 +635,20 @@ export default function AppTabs() {
   );
 }
 
-/** What each digit key goes to: a tab, and for Reading, which of its views — the keys kept their
+/** What each digit key goes to: a tab, and for Recent, which of its views — the keys kept their
  *  names and bindings from when History and New chapters were tabs of their own. */
-const TAB_KEY_TARGETS: Record<TabKeyAction, { tab: string; view?: ReadingView }> = {
+const TAB_KEY_TARGETS: Record<TabKeyAction, { tab: string; view?: RecentView }> = {
   'tab-browse': { tab: 'browse' },
   'tab-library': { tab: 'library' },
-  'tab-history': { tab: 'reading', view: 'history' },
-  'tab-activity': { tab: 'reading', view: 'new' },
+  'tab-history': { tab: 'recent', view: 'history' },
+  'tab-activity': { tab: 'recent', view: 'new' },
   'tab-settings': { tab: 'settings' },
 };
 
 /** 1–5: the destinations in the rail's order. On the destination already showing, its key steps
  *  through its scope instead — Browse's bridges, Library's collections — so the digits reach every
  *  row the rail lists, which the arrows don't (lib/focus-nav skips the rail). Arriving from elsewhere
- *  lands on the scope's first row, the way a press of the rail's destination row does. Reading's
+ *  lands on the scope's first row, the way a press of the rail's destination row does. Recent's
  *  views have a key each, so those go straight to the view. */
 function TabKeys({ activeTab }: { activeTab: string | undefined }) {
   const { visibleBridges, bridgeId } = useSelectedBridge();
@@ -677,11 +677,11 @@ function TabKeys({ activeTab }: { activeTab: string | undefined }) {
       const step = activeTab === name && !view ? steps[name] : undefined;
       if (step) return step();
       closeSettingsModal();
-      if (activeTab === name && (!view || view === readingView())) {
+      if (activeTab === name && (!view || view === recentView())) {
         closeContentPanes();
         return scrollToTopFor(name);
       }
-      if (view) setReadingView(view);
+      if (view) setRecentView(view);
       // Arriving where you left something open is coming back to it, as the rail's press is.
       else if (!hasContentPanes(paneKeyOf(name))) tab.selectDefault?.();
       router.navigate(tab.href as never);
@@ -724,8 +724,8 @@ function PaneKeySync({ activeTab }: { activeTab: string | undefined }) {
   const { collections, isLoading: collectionsLoading } = useCollections();
   const collection = useSelectedCollectionId();
   const keepTabPanes = useKeepTabPanes();
-  const view = useReadingView();
-  const scopes: Record<string, string | undefined> = { browse: bridgeId, library: collection ?? 'all', reading: view };
+  const view = useRecentView();
+  const scopes: Record<string, string | undefined> = { browse: bridgeId, library: collection ?? 'all', recent: view };
   const activeKey = activeTab ? paneKey(activeTab, scopes[activeTab]) : undefined;
   useLayoutEffect(() => {
     setTabPaneKeys(Object.fromEntries(TABS.map((tab) => [tab.name, paneKey(tab.name, scopes[tab.name])])));
@@ -863,7 +863,7 @@ function TabButton({
         style={styles.bottomButton}>
         <View style={styles.iconWrap}>
           <Icon size={22} color={color} strokeWidth={2} />
-          {routeName === 'reading' && <ActivityTabBadge />}
+          {routeName === 'recent' && <ActivityTabBadge />}
           {routeName === 'settings' && <SettingsTabBadge />}
         </View>
       </Pressable>
@@ -880,7 +880,7 @@ function TabButton({
         label={label}
         active={isFocused}
         badge={
-          routeName === 'reading' ? <ActivityTabBadge /> : routeName === 'settings' ? <SettingsTabBadge /> : undefined
+          routeName === 'recent' ? <ActivityTabBadge /> : routeName === 'settings' ? <SettingsTabBadge /> : undefined
         }
         onPress={handlePress}
       />

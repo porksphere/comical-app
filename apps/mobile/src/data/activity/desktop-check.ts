@@ -33,7 +33,7 @@ async function run(): Promise<void> {
     // Someone looking at the app already has the New chapters badge in front of them.
     const { announced } = feedCounts(res, prefs.caughtUpOnly);
     if (announced > 0 && prefs.notifications && !document.hasFocus()) {
-      notifyDesktop(NEW_CHAPTERS_TITLE, await newChaptersBody(announced), '/reading?view=new');
+      notifyDesktop(NEW_CHAPTERS_TITLE, await newChaptersBody(announced), '/recent?view=new');
     }
   } catch {
     // Offline is an ordinary state; the next hour tries again.

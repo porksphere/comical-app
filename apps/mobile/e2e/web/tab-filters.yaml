@@ -3,7 +3,7 @@
 # narrows the tab in place (tab-filter.tsx, lib/sidebar-search), so the flow types into that field
 # and empties it with its ✕.
 # Selectors that hit the web-only aria-label quirk (see ../README.md):
-#   - the sidebar's Reading rows: "History"/"New chapters" (sidebar-reading.tsx, same as smoke.yaml).
+#   - the sidebar's Recent rows: "History"/"New chapters" (sidebar-recent.tsx, same as smoke.yaml).
 #   - the field sets accessibilityLabel="Search all bridges", its ✕ "Clear search" (sidebar-search.tsx).
 # history-row.* has no competing accessibilityLabel — same as mobile.
 url: http://localhost:4000/comical-app
