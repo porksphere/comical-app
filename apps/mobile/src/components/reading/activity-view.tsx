@@ -32,7 +32,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { useZoomId, withZoomSource } from '@/components/zoom-source';
-import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { autoDownloadNewChapters } from '@/data/downloads/auto';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -41,7 +41,6 @@ import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useCenterInset, useSideInsets } from '@/hooks/use-content-width';
-import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopChromeHeight } from '@/hooks/use-native-header';
@@ -58,7 +57,7 @@ import { scrollbarInset } from '@/lib/scrollbar-inset';
 const activitySeriesId = (item: SeriesActivity) => item.seriesId;
 
 /** The Reading tab's New chapters: the unread chapters of what you follow, a row a series. */
-export function ActivityView() {
+export function ActivityView({ ready }: { ready: boolean }) {
   const ds = useDataSource();
   const mock = useMockActive();
   const router = useRouter();
@@ -75,7 +74,6 @@ export function ActivityView() {
   // This list as a zoom surface — see AGENTS.md → Zoom transitions.
   const zoomSurface = useZoomSurfaceKey('activity');
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
-  const ready = useDeferredMount();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(activityQuery(ds, mock));
 
@@ -230,7 +228,7 @@ export function ActivityView() {
     <ZoomSurfaceContext.Provider value={zoomSurface}>
       <ThemedView style={styles.container} {...pull.touchHandlers}>
       {emptyBody ? (
-        <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
+        <View style={[styles.centeredColumn, { paddingTop: listPaddingTop(headerHeight) }]}>
           <ReadingSwitch />
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>

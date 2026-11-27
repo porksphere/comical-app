@@ -30,14 +30,13 @@ import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { EmptyMessage } from '@/components/empty-message';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { historyQuery, libraryQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useCenterInset, useSideInsets } from '@/hooks/use-content-width';
-import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopChromeHeight } from '@/hooks/use-native-header';
 import { useIsDesktop } from '@/hooks/use-responsive';
@@ -51,7 +50,7 @@ import { scrollPhaseHandlers } from '@/lib/scroll-release';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 
 /** The Reading tab's History: what you have read, newest first, each row resuming where you stopped. */
-export function HistoryView() {
+export function HistoryView({ ready }: { ready: boolean }) {
   const ds = useDataSource();
   const mock = useMockActive();
   const router = useRouter();
@@ -71,7 +70,6 @@ export function HistoryView() {
   // AnimatedLegendList below), `onScroll` only keeps the bottom-bounce measurement in sync.
   const { sharedValues, onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
-  const ready = useDeferredMount();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(historyQuery(ds, mock));
   // History rows for collected series say where the reader stands in the series (chapters read of
@@ -184,7 +182,7 @@ export function HistoryView() {
     <ZoomSurfaceContext.Provider value={zoomSurface}>
       <ThemedView style={styles.container}>
       {emptyBody ? (
-        <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
+        <View style={[styles.centeredColumn, { paddingTop: listPaddingTop(headerHeight) }]}>
           <ReadingSwitch />
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>

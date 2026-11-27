@@ -31,12 +31,16 @@ export const ROW_REORDER_TRANSITION = LinearTransition.springify()
  * to its new: nothing for that commit and the frames the list takes to reposition after it, as
  * LegendList itself gives a recycled container no transition. A tab folded while hidden showed
  * its grid laid out for the open display sliding left into the folded one when it was opened.
+ *
+ * Nothing for the list's first frames either: its rows are placed from estimates and then
+ * measured, and carried on the spring that read as every row sliding into place each time the
+ * Reading tab switched views.
  */
 export function useRowTransition<T>(transition: T): T | undefined {
   const insets = useSideInsets();
   const width = useContentWidth();
   const key = `${width}:${insets.left}:${insets.right}`;
-  const [settled, setSettled] = useState(key);
+  const [settled, setSettled] = useState<string | null>(null);
   useEffect(() => {
     if (settled === key) return;
     const timer = setTimeout(() => setSettled(key), RELAYOUT_HOLD_MS);
