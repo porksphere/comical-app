@@ -611,7 +611,10 @@ export default function SearchScreen({
       <Stack.SearchBar
         ref={searchBarRef}
         placeholder={tab && !isComical && currentBridge ? `Search ${currentBridge.name}` : 'Search…'}
-        placement={tab ? 'automatic' : 'integratedCentered'}
+        // The search tab's is `integrated`, which iPhone may move into the tab bar as `automatic`
+        // does: under `automatic` the tabs' inline large title collapsed into the bar's small
+        // centred one on scroll, as no other tab's does.
+        placement={tab ? 'integrated' : 'integratedCentered'}
         hideWhenScrolling={false}
         hideNavigationBar={false}
         obscureBackground={false}
