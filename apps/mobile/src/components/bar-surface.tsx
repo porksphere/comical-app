@@ -21,7 +21,8 @@ import { windowDragRegion } from '@/lib/window-controls';
  * These bars were frosted until recently: a real blur (iOS `UIVisualEffectView` / web
  * `backdrop-filter`) under a partial scrim of the bar's own colour, with a solid fallback on Android,
  * so content scrolled under them and showed through. That's gone, deliberately — the bars are now
- * plainly opaque, and content that passes behind one is simply hidden.
+ * plainly opaque, and content that passes behind one is simply hidden. (One bar gives its surface
+ * up for a while: Browse's, over a flat hero at the top of Comical Home, by a style of its own.)
  *
  * Deliberately NOT opinionated about layout: bars differ genuinely (an overlaid bar the content
  * scrolls under vs. an in-flow one; a title row vs. selectors vs. a search field), so positioning and

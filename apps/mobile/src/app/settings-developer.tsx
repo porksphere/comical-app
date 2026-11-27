@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import type { SettingsFormSection } from '@/components/settings/settings-form';
+import { select, type SettingsFormSection } from '@/components/settings/settings-form';
 import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
@@ -9,11 +9,20 @@ import { useMockDataToggle } from '@/data/source';
 import { setBookCoverShuffle, useBookCoverShuffle } from '@/hooks/use-book-covers';
 import {
   setHomeBookshelfStats,
+  setHomeHeroStyle,
   setSeriesStickerRead,
   useHomeBookshelfStats,
+  useHomeHeroStyle,
   useSeriesStickerRead,
+  type HomeHeroStyle,
 } from '@/hooks/use-home-bookshelf';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
+
+const HERO_STYLES = [
+  { value: 'shelf', label: '3D bookshelf' },
+  { value: 'splash', label: 'Cover splash' },
+  { value: 'poster', label: 'Poster' },
+] as const;
 
 /** Dev-build-only: lets local development iterate against mock data without a running backend, and
  *  shows which server real requests target. The Settings screen only links here when
@@ -26,6 +35,7 @@ export default function DeveloperSettingsScreen() {
   const shuffleCovers = useBookCoverShuffle();
   const shelfStats = useHomeBookshelfStats();
   const stickerRead = useSeriesStickerRead();
+  const heroStyle = useHomeHeroStyle();
 
   const sections: SettingsFormSection[] = [
     {
@@ -53,6 +63,15 @@ export default function DeveloperSettingsScreen() {
           value: shuffleCovers,
           onChange: setBookCoverShuffle,
         },
+        select<HomeHeroStyle>({
+          label: 'Home opens on',
+          description:
+            'A trial. What Comical Home shows of what you are reading, where Settings → General has the bookshelf on: the 3D shelf, the front series’ cover across the top of the page, or its cover whole over its own colours.',
+          value: heroStyle,
+          options: HERO_STYLES,
+          onChange: setHomeHeroStyle,
+          testID: 'settings.developer.home-hero',
+        }),
         {
           kind: 'toggle',
           label: 'Bookshelf frame stats',
