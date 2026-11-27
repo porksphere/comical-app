@@ -48,18 +48,17 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "library\\..*" # library.sort / library.search-icon
 
-# History — anchor on the shared TabTitleBar's testID (screen-title.<title>).
+# Reading — the sidebar lists its two views as rows (sidebar-reading.tsx), and the bar is titled
+# with the view's name there, so anchor on the shared TabTitleBar's testID (screen-title.<title>).
 - tapOn:
     id: "History"
 - assertVisible:
     id: "screen-title.history"
 
-# Activity — its action buttons (activity.check-updates/clear) render only when there are
-# updates, so anchor on the shared TabTitleBar's testID instead.
 - tapOn:
-    id: "Activity"
+    id: "New chapters"
 - assertVisible:
-    id: "screen-title.activity"
+    id: "screen-title.new-chapters"
 
 # Settings — category rows set accessibilityLabel (see the web-only quirk note above), so
 # select by the row's visible label text rather than its settings.category.* testID.

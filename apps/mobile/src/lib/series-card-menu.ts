@@ -1,6 +1,7 @@
 import { observable } from '@legendapp/state';
 import { useSyncExternalStore } from 'react';
 import { makeMutable } from 'react-native-reanimated';
+import type { MenuRowSpec } from '@/components/context-menu-material';
 
 import type { SeriesEntry } from '@/data/types';
 import type { ZoomSourceKey } from '@/lib/series-zoom';
@@ -25,6 +26,8 @@ export type SeriesCardMenuRequest = {
   /** The pressed card's own zoom-source key, so a navigating menu row can hand the series page a
    *  zoom that blanks THAT card and no other copy of the same series (see lib/series-zoom). */
   zoomSource?: ZoomSourceKey;
+  /** The held row's own actions — see `SeriesCardMenuProps.rowActions`. */
+  rowActions?: readonly MenuRowSpec[];
   rect: CardRect;
   /** Called when the menu finishes closing — the source card uses it to un-hide itself (it hides
    *  while the menu is open so it doesn't show behind the lifted preview). */

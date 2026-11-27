@@ -10,7 +10,7 @@
  * first as you type, every bridge from the second on Enter (see app/search). The pane is open while
  * either holds something, so emptying the field is how it closes.
  *
- * On Library, History and Activity what is typed NARROWS THE TAB IN PLACE instead (`useTabFilter`
+ * On Library and Reading what is typed NARROWS THE TAB IN PLACE instead (`useTabFilter`
  * reads it as the tab's filter), since the rows that answer it are already on screen, and the pane
  * waits for Enter. It is one field doing both: a filter field of the tab's own beside this one was
  * two search bars on one screen.
@@ -65,7 +65,7 @@ export function isSidebarSearchOpen(tab = activePaneTab()): boolean {
   return isOpen(sidebarSearch$.searches[tab].peek(), tab);
 }
 
-const NARROWED_IN_PLACE = new Set(['library', 'history', 'activity']);
+const NARROWED_IN_PLACE = new Set(['library', 'reading']);
 
 function isOpen(search: Search | undefined, key: string): boolean {
   if (!search) return false;

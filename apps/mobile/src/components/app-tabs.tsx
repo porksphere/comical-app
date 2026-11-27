@@ -1,6 +1,6 @@
 import { usePathname } from 'expo-router';
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
-import { Bell, Compass, History, Library, Search, Settings, type LucideIcon } from 'lucide-react-native';
+import { BookOpen, Compass, Library, Search, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
@@ -16,7 +16,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AppSidebar,
   type SidebarAction,
-  SidebarCount,
   SidebarGroup,
   SidebarHeading,
   SidebarRailItem,
@@ -24,13 +23,13 @@ import {
 } from '@/components/app-sidebar';
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
+import { SidebarReading } from '@/components/sidebar-reading';
 import { SettingsModal } from '@/components/settings/settings-modal';
 import { BridgeSearchPane } from '@/components/bridge-search-pane';
 import { ResultsPane } from '@/components/results-pane';
 import { SeriesPane } from '@/components/series-pane';
 import { SearchPane, ShellSearchField } from '@/components/sidebar-search';
 import { SidebarResizer } from '@/components/sidebar-resizer';
-import { useActivityBadgeCount } from '@/data/activity/use-activity-badge';
 import { COMICAL_BRIDGE_ID, setSelectedBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { libraryViews, setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
@@ -39,6 +38,7 @@ import { navModeFor } from '@/constants/size-class';
 import { GLASS_CONTROL_HEIGHT } from '@/components/glass-surface';
 import { navInsetFor, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
+import { readingView, setReadingView, useReadingView, type ReadingView } from '@/hooks/use-reading-view';
 import { SidebarRailWidth, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useCollections } from '@/hooks/use-collections';
 import { useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
@@ -50,7 +50,7 @@ import { setBridgeSearchPaneAvailable, useBridgeSearchPaneOpen } from '@/lib/bri
 import { closeContentPanes, hasContentPanes, openContentPaneKeys, useOpenContentPaneKeys } from '@/lib/content-panes';
 import { isTypingTarget } from '@/lib/key-hold';
 import { keyActionOf } from '@/lib/keybindings';
-import { TAB_KEY_ACTIONS } from '@/lib/keymap';
+import { TAB_KEY_ACTIONS, type TabKeyAction } from '@/lib/keymap';
 import { router } from '@/lib/nav';
 import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
@@ -87,8 +87,8 @@ import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility'
 /** `noRecede`: this tab's rows reorder as you read, and one that re-renders under the scaled
  *  backdrop measures short — see `setBackdropRecede`. */
 /** `Scope`: the group of things this destination can be narrowed to — bridges for Browse,
- *  collections for Library. Rendered in the SIDEBAR ONLY, as the rows under the destination's own
- *  heading. */
+ *  collections for Library, its two views for Reading. Rendered in the SIDEBAR ONLY, as the rows
+ *  under the destination's own heading. */
 const TABS: {
   name: string;
   href: string;
@@ -102,12 +102,9 @@ const TABS: {
    *  lead with. Without this the row navigated but left whichever bridge or collection you were last
    *  in selected, so the tab you asked for and the scope you got disagreed.
    *
-   *  Rail only: below the breakpoint the same press is a bottom-bar tab, where there is no visible
-   *  scope list and silently re-pointing Browse would be a change with nothing on screen to explain
-   *  it. */
+   *  Labelled sidebar only: anywhere else the same press is a tab with no visible scope list, and
+   *  silently re-pointing Browse would be a change with nothing on screen to explain it. */
   selectDefault?: () => void;
-  /** A destination with no scope of its own shares the sidebar's Reading group. */
-  reading?: boolean;
 }[] = [
   // A compass, not a grid: Browse is the discover surface, and `LayoutGrid` both named a layout
   // this tab doesn't always have (its home is rails) and was already Settings' Custom Pages mark.
@@ -128,8 +125,15 @@ const TABS: {
     Scope: SidebarCollections,
     selectDefault: () => setSelectedCollection(null),
   },
-  { name: 'history', href: ROOT_TAB_PATHS.history, label: 'History', Icon: History, noRecede: true, reading: true },
-  { name: 'activity', href: ROOT_TAB_PATHS.activity, label: 'Activity', Icon: Bell, noRecede: true, reading: true },
+  {
+    name: 'reading',
+    href: ROOT_TAB_PATHS.reading,
+    label: 'Reading',
+    Icon: BookOpen,
+    noRecede: true,
+    Scope: SidebarReading,
+    selectDefault: () => setReadingView('history'),
+  },
   { name: 'settings', href: ROOT_TAB_PATHS.settings, label: 'Settings', Icon: Settings },
 ];
 
@@ -149,9 +153,6 @@ const SETTINGS_AS_MODAL = Platform.OS === 'web';
 const SERIES_AS_PANE = Platform.OS === 'web';
 /** And search is a field the shell keeps in the bar, with its results in a pane of their own. */
 const SEARCH_IN_RAIL = Platform.OS === 'web';
-
-/** The sidebar's Reading group: the destinations with no scope of their own. */
-const READING = 'reading';
 
 const SEARCH_HINT =
   Platform.OS === 'web' && typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘K' : 'Ctrl K';
@@ -429,6 +430,7 @@ export default function AppTabs() {
             mobile={isMobile}
             sidebar={sidebar}
             scope={Boolean(tab.Scope)}
+            listsScopes={navMode === 'sidebar'}
             compact={rail}
             selectDefault={tab.selectDefault}
             Icon={tab.Icon}
@@ -439,7 +441,7 @@ export default function AppTabs() {
           </TabButton>
         </TabTrigger>
       )),
-    [isMobile, sidebar, reveal, rail],
+    [isMobile, sidebar, reveal, rail, navMode],
   );
 
   // Exactly ONE row in the nav is selected at a time, and it belongs to the tab you are on. A scope
@@ -501,10 +503,6 @@ export default function AppTabs() {
           </SidebarGroup>,
         ];
       }),
-      <SidebarHeading key="reading" label="Reading" section={READING} />,
-      <SidebarGroup key="reading-rows" name={READING} testID="sidebar.group.reading">
-        {TABS.filter((tab) => tab.reading).map((tab) => row(tab.name))}
-      </SidebarGroup>,
     ];
   }, [triggers, activeTab, rail, openSearch]);
 
@@ -548,7 +546,7 @@ export default function AppTabs() {
           putting it between `Tabs` and `TabSlot` would still break the child-type discovery the
           slot and the registration TabList both depend on. The stack screens that cover the rail
           (search, results, series, settings/*) are not in this subtree and keep the window. */}
-      <ContentWidthProvider width={width - contentInset} sidebar={sidebar} tabRoot>
+      <ContentWidthProvider width={width - contentInset} sidebar={sidebar} tabRoot listsScopes={navMode === 'sidebar'}>
         <Tabs style={styles.tabs}>
           {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
               appearing in one frame — see `tab-slot-fade`. */}
@@ -637,10 +635,21 @@ export default function AppTabs() {
   );
 }
 
+/** What each digit key goes to: a tab, and for Reading, which of its views — the keys kept their
+ *  names and bindings from when History and New chapters were tabs of their own. */
+const TAB_KEY_TARGETS: Record<TabKeyAction, { tab: string; view?: ReadingView }> = {
+  'tab-browse': { tab: 'browse' },
+  'tab-library': { tab: 'library' },
+  'tab-history': { tab: 'reading', view: 'history' },
+  'tab-activity': { tab: 'reading', view: 'new' },
+  'tab-settings': { tab: 'settings' },
+};
+
 /** 1–5: the destinations in the rail's order. On the destination already showing, its key steps
  *  through its scope instead — Browse's bridges, Library's collections — so the digits reach every
  *  row the rail lists, which the arrows don't (lib/focus-nav skips the rail). Arriving from elsewhere
- *  lands on the scope's first row, the way a press of the rail's destination row does. */
+ *  lands on the scope's first row, the way a press of the rail's destination row does. Reading's
+ *  views have a key each, so those go straight to the view. */
 function TabKeys({ activeTab }: { activeTab: string | undefined }) {
   const { visibleBridges, bridgeId } = useSelectedBridge();
   const { collections } = useCollections();
@@ -661,18 +670,20 @@ function TabKeys({ activeTab }: { activeTab: string | undefined }) {
       if (!action) return;
       e.preventDefault();
       if (e.repeat) return;
-      const tab = TABS[TAB_KEY_ACTIONS.indexOf(action)];
-      if (SETTINGS_AS_MODAL && tab.name === 'settings') return openSettingsModal();
+      const { tab: name, view } = TAB_KEY_TARGETS[action];
+      const tab = TABS.find((t) => t.name === name)!;
+      if (SETTINGS_AS_MODAL && name === 'settings') return openSettingsModal();
       const { activeTab, steps } = at.current;
-      const step = activeTab === tab.name ? steps[tab.name] : undefined;
+      const step = activeTab === name && !view ? steps[name] : undefined;
       if (step) return step();
       closeSettingsModal();
-      if (activeTab === tab.name) {
+      if (activeTab === name && (!view || view === readingView())) {
         closeContentPanes();
-        return scrollToTopFor(tab.name);
+        return scrollToTopFor(name);
       }
+      if (view) setReadingView(view);
       // Arriving where you left something open is coming back to it, as the rail's press is.
-      if (!hasContentPanes(paneKeyOf(tab.name))) tab.selectDefault?.();
+      else if (!hasContentPanes(paneKeyOf(name))) tab.selectDefault?.();
       router.navigate(tab.href as never);
     };
     document.addEventListener('keydown', onKey);
@@ -713,7 +724,8 @@ function PaneKeySync({ activeTab }: { activeTab: string | undefined }) {
   const { collections, isLoading: collectionsLoading } = useCollections();
   const collection = useSelectedCollectionId();
   const keepTabPanes = useKeepTabPanes();
-  const scopes: Record<string, string | undefined> = { browse: bridgeId, library: collection ?? 'all' };
+  const view = useReadingView();
+  const scopes: Record<string, string | undefined> = { browse: bridgeId, library: collection ?? 'all', reading: view };
   const activeKey = activeTab ? paneKey(activeTab, scopes[activeTab]) : undefined;
   useLayoutEffect(() => {
     setTabPaneKeys(Object.fromEntries(TABS.map((tab) => [tab.name, paneKey(tab.name, scopes[tab.name])])));
@@ -791,6 +803,7 @@ function TabButton({
   mobile,
   sidebar,
   scope,
+  listsScopes,
   compact,
   selectDefault,
   Icon,
@@ -803,6 +816,7 @@ function TabButton({
   mobile?: boolean;
   sidebar?: boolean;
   scope?: boolean;
+  listsScopes?: boolean;
   compact?: boolean;
   selectDefault?: () => void;
   Icon: LucideIcon;
@@ -828,8 +842,8 @@ function TabButton({
     // had open, scope and all, and leaves the one you were on waiting. Pressing the tab you are on
     // is going to its front door: its panes close.
     const returning = !isFocused && hasContentPanes(paneKeyOf(routeName));
-    // Only where the rail is showing the scope this resets — see `selectDefault` on the tab table.
-    if (sidebar && !returning) selectDefault?.();
+    // Only where the sidebar is showing the scope this resets — see `selectDefault` on the tab table.
+    if (listsScopes && !returning) selectDefault?.();
     if (isFocused) closeContentPanes();
     onPress?.(e);
   };
@@ -849,7 +863,7 @@ function TabButton({
         style={styles.bottomButton}>
         <View style={styles.iconWrap}>
           <Icon size={22} color={color} strokeWidth={2} />
-          {routeName === 'activity' && <ActivityTabBadge />}
+          {routeName === 'reading' && <ActivityTabBadge />}
           {routeName === 'settings' && <SettingsTabBadge />}
         </View>
       </Pressable>
@@ -866,7 +880,7 @@ function TabButton({
         label={label}
         active={isFocused}
         badge={
-          routeName === 'activity' ? <ActivityTabBadge /> : routeName === 'settings' ? <SettingsTabBadge /> : undefined
+          routeName === 'reading' ? <ActivityTabBadge /> : routeName === 'settings' ? <SettingsTabBadge /> : undefined
         }
         onPress={handlePress}
       />
@@ -886,18 +900,12 @@ function TabButton({
         label={label}
         active={isFocused}
         leading={<Icon size={16} color={theme.text} />}
-        trailing={routeName === 'activity' ? <ActivityCount /> : undefined}
         onPress={handlePress}
       />
     );
   }
 
   return null;
-}
-
-/** Subscribes for itself, as the tab bar's pip does: `app-tabs` memoizes its triggers. */
-function ActivityCount() {
-  return <SidebarCount count={useActivityBadgeCount()} />;
 }
 
 const styles = StyleSheet.create({

@@ -21,6 +21,7 @@ import { PullIndicator } from '@/components/pull-indicator';
 import { SeriesGrid } from '@/components/series-grid';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
+import { SearchSources } from '@/components/search-sources';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
@@ -106,7 +107,17 @@ export type SearchEmbedded = {
  *  the results: always across every bridge, and deaf to search intents, which belong to the screen. */
 export type SearchDocked = { query: string; typed: string; onClose: () => void };
 
-export default function SearchScreen({ embedded, docked }: { embedded?: SearchEmbedded; docked?: SearchDocked } = {}) {
+/**
+ * `tab`: iOS's search tab (`app-tabs.ios`), the screen as the root of a tab rather than a page
+ * pushed over one. It starts on every bridge and has nothing to go back to, so the system field
+ * sits in the tab bar and its cancel clears it, and a menu in the bar chooses what to search: every
+ * bridge, or one source with its filters.
+ */
+export default function SearchScreen({
+  embedded,
+  docked,
+  tab = false,
+}: { embedded?: SearchEmbedded; docked?: SearchDocked; tab?: boolean } = {}) {
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
@@ -129,7 +140,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // Take the one-shot Series→Search intent exactly once (lazy initializer), before the first render
   // reads it. `query` seeds directly from a `query` intent; `tag`/`meta` are stashed and applied
   // once this bridge's filter defs settle (below), mirroring the old Browse focus-effect flow.
-  const [initialIntent] = useState(() => (docked ? null : peekSearchIntent()));
+  const [initialIntent] = useState(() => (docked || tab ? null : peekSearchIntent()));
   // Consume it AFTER mount: a consuming read in the initializer loses the intent under
   // StrictMode's double invocation (see peekSearchIntent).
   useEffect(() => {
@@ -147,7 +158,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
     bridges,
     visibleBridges,
     refetchBridges,
-  } = useInheritedBridge(docked ? COMICAL_BRIDGE_ID : undefined);
+  } = useInheritedBridge(docked || tab ? COMICAL_BRIDGE_ID : undefined);
 
   // Cross-bridge mode: when the synthetic "Comical" bridge is selected, search fans out over every
   // real bridge and shows one rail of results per bridge (no filters/sort — Comical has no capabilities,
@@ -308,7 +319,8 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   useEffect(() => {
     if (nativeBar) searchBarRef.current?.setText(query);
   }, [nativeBar, query]);
-  const autoFocus = !initialIntent || initialIntent.kind === 'open';
+  // The search tab's field is activated by the system as the tab is chosen.
+  const autoFocus = !tab && (!initialIntent || initialIntent.kind === 'open');
   useEffect(() => {
     if (!nativeBar || !autoFocus) return;
     let done = false;
@@ -331,7 +343,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   useEffect(
     () =>
       subscribeSearchIntent(() => {
-        if (isDocked || !focusedRef.current || !topRef.current || !isPaneTabLive(paneTab)) return;
+        if (isDocked || tab || !focusedRef.current || !topRef.current || !isPaneTabLive(paneTab)) return;
         if (!isEmbedded && isSeriesPaneOpen(paneTab ?? undefined)) return;
         // The desktop's Search entry opens the app's Search screen. A layer in the series pane is
         // still mounted while the pane closes, and would otherwise take it from the screen it pushes.
@@ -352,7 +364,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
           intent.kind === 'meta' ? { bridgeId: intent.bridgeId, metaKey: intent.metaKey, value: intent.value } : null,
         );
       }),
-    [setBridge, setFilterValues, isEmbedded, isDocked, paneTab],
+    [setBridge, setFilterValues, isEmbedded, isDocked, tab, paneTab],
   );
 
   useEffect(() => {
@@ -572,23 +584,44 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // scroll, with the system's search dimming off, since the results under the field are the thing
   // being typed at. The route has no title: the field IS the bar's middle, on the chevron's row,
   // and a "Search" over it only said what the field already shows.
+  // The search tab adds the scope menu ahead of them, and its field is the tab bar's.
+  const sources = visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID);
+  const clear = () => {
+    setTyped('');
+    setQuery('');
+  };
   const nativeItems = nativeBar ? (
     <>
-      <Stack.Screen options={{ title: '' }} />
+      <Stack.Screen options={{ title: tab ? 'Search' : '' }} />
       <Stack.SearchBar
         ref={searchBarRef}
-        placeholder="Search…"
-        placement="integratedCentered"
+        placeholder={tab && !isComical && currentBridge ? `Search ${currentBridge.name}` : 'Search…'}
+        placement={tab ? 'automatic' : 'integratedCentered'}
         hideWhenScrolling={false}
         hideNavigationBar={false}
         obscureBackground={false}
         autoCapitalize="none"
         onChangeText={(e) => setTyped(e.nativeEvent.text)}
         onSearchButtonPress={(e) => submit(e.nativeEvent.text)}
-        onCancelButtonPress={goBack}
+        onCancelButtonPress={tab ? clear : goBack}
       />
-      {(hasFilters || sortOptions.length > 0) && (
+      {(tab || hasFilters || sortOptions.length > 0) && (
         <Stack.Toolbar placement="right">
+          {tab && (
+            <Stack.Toolbar.Menu icon="chevron.up.chevron.down" accessibilityLabel="What to search">
+              <Stack.Toolbar.Label>{isComical ? 'Everything' : (currentBridge?.name ?? 'Everything')}</Stack.Toolbar.Label>
+              <Stack.Toolbar.MenuAction isOn={isComical} onPress={() => setBridge(COMICAL_BRIDGE_ID)}>
+                Everything
+              </Stack.Toolbar.MenuAction>
+              <Stack.Toolbar.Menu inline title="Sources">
+                {sources.map((b) => (
+                  <Stack.Toolbar.MenuAction key={b.id} isOn={b.id === bridgeId} onPress={() => setBridge(b.id)}>
+                    {b.name}
+                  </Stack.Toolbar.MenuAction>
+                ))}
+              </Stack.Toolbar.Menu>
+            </Stack.Toolbar.Menu>
+          )}
           {hasFilters && (
             <Stack.Toolbar.Button
               icon={activeFilterCount > 0 ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle'}
@@ -672,7 +705,9 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   ) : null;
 
   const comicalHint =
-    typedTerm && typedTerm !== query ? (
+    tab && !typedTerm && !query.trim() ? (
+      <SearchSources bridges={sources} onSelect={setBridge} />
+    ) : typedTerm && typedTerm !== query ? (
       <View style={styles.submitHint}>
         <ThemedText type="small" themeColor="textSecondary" style={styles.hintText}>
           {SUBMIT_HINT}

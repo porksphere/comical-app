@@ -35,6 +35,9 @@ type NavLayout = {
   sidebar: boolean;
   /** A tab's own screen, as opposed to a pane laid over the content region beside the sidebar. */
   tabRoot: boolean;
+  /** The nav lists each tab's scopes (Browse's bridges, Reading's views) as rows of their own: the
+   *  labelled sidebar, not the icon rail, which shows the destinations alone. */
+  listsScopes: boolean;
 };
 
 const NavLayoutContext = createContext<NavLayout | null>(null);
@@ -43,14 +46,19 @@ export function ContentWidthProvider({
   width,
   sidebar,
   tabRoot = false,
+  listsScopes = false,
   children,
 }: {
   width: number;
   sidebar: boolean;
   tabRoot?: boolean;
+  listsScopes?: boolean;
   children: React.ReactNode;
 }) {
-  const value = useMemo(() => ({ contentWidth: width, sidebar, tabRoot }), [width, sidebar, tabRoot]);
+  const value = useMemo(
+    () => ({ contentWidth: width, sidebar, tabRoot, listsScopes }),
+    [width, sidebar, tabRoot, listsScopes],
+  );
   return <NavLayoutContext.Provider value={value}>{children}</NavLayoutContext.Provider>;
 }
 
@@ -70,6 +78,12 @@ export function useHasSidebar(): boolean {
 export function useIsSidebarTabRoot(): boolean {
   const layout = useContext(NavLayoutContext);
   return !!layout?.sidebar && layout.tabRoot;
+}
+
+/** Whether the nav beside this subtree lists the tabs' scopes, so a screen's own control for one
+ *  would be a second control for the same choice. */
+export function useSidebarListsScopes(): boolean {
+  return useContext(NavLayoutContext)?.listsScopes ?? false;
 }
 
 export type SideInsets = { left: number; right: number };

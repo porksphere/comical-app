@@ -44,6 +44,7 @@ import {
   type MenuRowSpec,
   type SubmenuSpec,
 } from '@/components/context-menu-material';
+import { withRowActions } from '@/components/series-card-actions-menu';
 import { CheckIcon, DownloadsIcon, LogInIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
 import { coverPreviewSize, useEntryBook } from '@/components/series-card-preview';
 import { BookCoverArt, type CoverArtFrame } from '@/components/book-chrome';
@@ -144,7 +145,7 @@ const CLIP_UNTIL = 0.25;
 
 // The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
 // decide whether the bottom of the screen is chrome the cover has to slide under.
-const TAB_ROUTES = new Set(['/', '/library', '/history', '/activity', '/settings']);
+const TAB_ROUTES = new Set(['/', '/library', '/reading', '/settings']);
 
 const EDGE_PAD = 12; // keep the whole thing off the screen edges (and off the bars — see chromeTop)
 const GAP = 12; // between the preview and the menu
@@ -1027,92 +1028,95 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // Was 2 while "Add to Library" sat above it; merging the two moved it up.
   const SAVE_ROW_INDEX = 1;
 
-  const rows: MenuRowSpec[] = [
-    {
-      label: reading.label,
-      Icon: PlayIcon,
-      primary: true,
-      loading: false,
-      testID: 'series.card-menu.read',
-      onPress: () => {
-        handOffZoom();
-        req.onClose?.(); // un-hide the card and drop the overlay — the series page is about to cover it
-        closeSeriesCardMenu();
-        reading.start();
+  const rows: MenuRowSpec[] = withRowActions(
+    [
+      {
+        label: reading.label,
+        Icon: PlayIcon,
+        primary: true,
+        loading: false,
+        testID: 'series.card-menu.read',
+        onPress: () => {
+          handOffZoom();
+          req.onClose?.(); // un-hide the card and drop the overlay — the series page is about to cover it
+          closeSeriesCardMenu();
+          reading.start();
+        },
       },
-    },
-    // Unsaved → ＋, and the tap saves it unfiled. Saved → ✓, and the tap expands the in-place
-    // submenu to file it or remove it (iOS Files' "Open With ›"). See useSeriesSave.
-    {
-      label: save.menuLabel,
-      Icon: save.saved ? CheckIcon : PlusIcon,
-      loading: save.saved === null,
-      active: !!save.saved,
-      testID: 'series.card-menu.save',
-      ...(save.saved && { submenu: collectionsSubmenu }),
-      onPress: save.saved
-        ? // Do NOT close the menu — the submenu expands over it while the rest pushes back.
-          () => openSubmenu(SAVE_ROW_INDEX, collectionsSubmenu())
-        : () => act(save.onPress),
-    },
-    // Same faces as the series page's star (see there): absent without the capability, a way into
-    // the bridge's settings when it needs a login, dimmed only while genuinely unknown.
-    ...(favoriteStatus === 'login' && loginSettings
-      ? [
-          {
-            label: 'Log in to favorite',
-            Icon: LogInIcon,
-            loading: false,
-            testID: 'series.card-menu.favorite',
-            onPress: () => {
-              dismiss();
-              router.push({ pathname: '/bridge-settings', params: loginSettings });
-            },
-          } satisfies MenuRowSpec,
-        ]
-      : favoriteStatus !== 'unsupported'
+      // Unsaved → ＋, and the tap saves it unfiled. Saved → ✓, and the tap expands the in-place
+      // submenu to file it or remove it (iOS Files' "Open With ›"). See useSeriesSave.
+      {
+        label: save.menuLabel,
+        Icon: save.saved ? CheckIcon : PlusIcon,
+        loading: save.saved === null,
+        active: !!save.saved,
+        testID: 'series.card-menu.save',
+        ...(save.saved && { submenu: collectionsSubmenu }),
+        onPress: save.saved
+          ? // Do NOT close the menu — the submenu expands over it while the rest pushes back.
+            () => openSubmenu(SAVE_ROW_INDEX, collectionsSubmenu())
+          : () => act(save.onPress),
+      },
+      // Same faces as the series page's star (see there): absent without the capability, a way into
+      // the bridge's settings when it needs a login, dimmed only while genuinely unknown.
+      ...(favoriteStatus === 'login' && loginSettings
         ? [
             {
-              label: favorited ? 'Unfavorite' : 'Favorite',
-              Icon: StarIcon,
-              iconFilled: !!favorited,
-              loading: favoriteStatus !== 'ready',
-              active: !!favorited,
+              label: 'Log in to favorite',
+              Icon: LogInIcon,
+              loading: false,
               testID: 'series.card-menu.favorite',
-              onPress: () => act(toggleFavorite),
+              onPress: () => {
+                dismiss();
+                router.push({ pathname: '/bridge-settings', params: loginSettings });
+              },
             } satisfies MenuRowSpec,
           ]
-        : []),
-    {
-      label: download.label,
-      Icon: DownloadsIcon,
-      loading: download.loading,
-      active: download.active,
-      disabled: download.disabled,
-      testID: 'series.card-menu.download',
-      onPress: () => act(download.onPress),
-    },
-    {
-      // The only action that destroys read state — nothing else does now, not even uncollecting
-      // (see useResetReadProgress). Deliberately here rather than on a library-only surface: it has
-      // to reach a series that ISN'T collected, which is how orphaned progress gets reclaimed.
-      label: 'Reset read progress',
-      Icon: RetryIcon,
-      loading: false,
-      destructive: true,
-      testID: 'series.card-menu.reset-progress',
-      onPress: () => act(resetProgress),
-    },
-    // DEV ONLY: dummy rows so the menu is long enough to overrun the screen, which is the only state
-    // the pan gesture exists for. See DEBUG_EXTRA_MENU_ROWS.
-    ...Array.from({ length: DEBUG_EXTRA_MENU_ROWS }, (_, i) => ({
-      label: `Placeholder action ${i + 1}`,
-      Icon: PlusIcon,
-      loading: false,
-      testID: testId('series.card-menu.placeholder', i + 1),
-      onPress: dismiss,
-    })),
-  ];
+        : favoriteStatus !== 'unsupported'
+          ? [
+              {
+                label: favorited ? 'Unfavorite' : 'Favorite',
+                Icon: StarIcon,
+                iconFilled: !!favorited,
+                loading: favoriteStatus !== 'ready',
+                active: !!favorited,
+                testID: 'series.card-menu.favorite',
+                onPress: () => act(toggleFavorite),
+              } satisfies MenuRowSpec,
+            ]
+          : []),
+      {
+        label: download.label,
+        Icon: DownloadsIcon,
+        loading: download.loading,
+        active: download.active,
+        disabled: download.disabled,
+        testID: 'series.card-menu.download',
+        onPress: () => act(download.onPress),
+      },
+      {
+        // The only action that destroys read state — nothing else does now, not even uncollecting
+        // (see useResetReadProgress). Deliberately here rather than on a library-only surface: it has
+        // to reach a series that ISN'T collected, which is how orphaned progress gets reclaimed.
+        label: 'Reset read progress',
+        Icon: RetryIcon,
+        loading: false,
+        destructive: true,
+        testID: 'series.card-menu.reset-progress',
+        onPress: () => act(resetProgress),
+      },
+      // DEV ONLY: dummy rows so the menu is long enough to overrun the screen, which is the only state
+      // the pan gesture exists for. See DEBUG_EXTRA_MENU_ROWS.
+      ...Array.from({ length: DEBUG_EXTRA_MENU_ROWS }, (_, i) => ({
+        label: `Placeholder action ${i + 1}`,
+        Icon: PlusIcon,
+        loading: false,
+        testID: testId('series.card-menu.placeholder', i + 1),
+        onPress: dismiss,
+      })),
+    ],
+    req.rowActions?.map((row) => ({ ...row, onPress: () => act(row.onPress) })),
+  );
 
   // The live spec for whichever row's submenu is expanded — re-built from the row's builder every
   // render, so its checkmarks track the optimistic membership toggles (see collectionsSubmenu).

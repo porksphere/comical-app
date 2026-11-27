@@ -21,7 +21,7 @@ describe('the search pane', () => {
     expect(isSidebarSearchOpen()).toBe(true);
   });
 
-  test.each(['history', 'activity', paneKey('library', 'all')])(
+  test.each([paneKey('reading', 'history'), paneKey('reading', 'new'), paneKey('library', 'all')])(
     'waits for a submit on %s, where typing narrows the tab in place',
     (key) => {
       setPaneTab(key);

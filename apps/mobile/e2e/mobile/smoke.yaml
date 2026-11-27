@@ -38,18 +38,19 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "library\\..*" # library.sort / library.search-icon
 
-# History — anchor on the shared TabTitleBar's testID (screen-title.<title>).
+# Reading — one tab, History and New chapters switched by the row under its bar (reading-switch).
 - tapOn:
-    id: "tab.history"
+    id: "tab.reading"
 - assertVisible:
-    id: "screen-title.history"
-
-# Activity — its action buttons (activity.check-updates/clear) render only when there are
-# updates, so anchor on the shared TabTitleBar's testID instead.
+    id: "screen-title.reading"
 - tapOn:
-    id: "tab.activity"
+    id: "reading.switch.history"
 - assertVisible:
-    id: "screen-title.activity"
+    id: "reading.switch.new"
+- tapOn:
+    id: "reading.switch.new"
+- assertVisible:
+    id: "screen-title.reading"
 
 # Settings
 - tapOn:

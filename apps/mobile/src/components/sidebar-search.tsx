@@ -28,7 +28,7 @@ import { windowControlsLayer } from '@/lib/window-controls';
  * than each bar drawing its own, so it is the same field under the results it opens, focus and
  * text kept, where a field inside a bar would be covered by its own results pane.
  *
- * On Library, History and Activity what is typed narrows that tab in place, and Enter is what
+ * On Library and Reading what is typed narrows that tab in place, and Enter is what
  * searches the bridges (lib/sidebar-search): a filter field of the tab's own beside this one was
  * the two search bars over again.
  *

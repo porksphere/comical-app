@@ -12,7 +12,7 @@ import type { SeriesCardMenuProps } from '@/components/series-card-menu';
  * `children` never gets a long-press handler or `hidden`: only `menuOpen`, while THIS card's menu
  * is open.
  */
-export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, children }: SeriesCardMenuProps) {
+export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, rowActions, children }: SeriesCardMenuProps) {
   if (!enabled || !bridgeId) return <>{children({ onLongPress: undefined, hidden: false, menuOpen: false })}</>;
 
   return (
@@ -24,7 +24,8 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, child
           bridgeId={bridgeId}
           entry={entry}
           {...(bridge !== undefined && { bridge })}
-          {...(direct !== undefined && { direct })}>
+          {...(direct !== undefined && { direct })}
+          {...(rowActions !== undefined && { rowActions })}>
           {render}
         </SeriesCardMenuRows>
       )}>

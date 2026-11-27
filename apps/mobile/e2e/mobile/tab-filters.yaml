@@ -15,7 +15,9 @@ appId: com.porksphere.comical
 
 # ── History ──────────────────────────────────────────────────────────────────
 - tapOn:
-    id: "tab.history"
+    id: "tab.reading"
+- tapOn:
+    id: "reading.switch.history"
 - tapOn:
     id: "history.search-icon"
 - extendedWaitUntil:
@@ -33,9 +35,9 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "history-row.the-wish"
 
-# ── Activity ─────────────────────────────────────────────────────────────────
+# ── New chapters ─────────────────────────────────────────────────────────────
 - tapOn:
-    id: "tab.activity"
+    id: "reading.switch.new"
 - tapOn:
     id: "activity.search-icon"
 - extendedWaitUntil:
