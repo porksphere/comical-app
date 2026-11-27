@@ -2,7 +2,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Stack, useFocusEffect, useNavigation } from 'expo-router';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -62,11 +62,20 @@ import { useWindowControlsClearance } from '@/lib/window-controls';
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;
 // Stable empty array so `useCrossBridgeRails` runs zero queries in single-bridge mode.
 const NO_BRIDGES: Bridge[] = [];
-const LIBRARY_ROWS = 2;
+/** Library rows above the sources: two on a wide screen, one on a phone, where two were the whole
+ *  first screen and a search of the sources opened on results you already had. */
+const libraryRows = (desktop: boolean) => (desktop ? 2 : 1);
+/** The library answers almost as you type: one local lookup. */
+const LIBRARY_DELAY_MS = 150;
+/** The sources wait for typing to pause, far longer than the library: each pause is a request to
+ *  every source you have. Submitting doesn't wait. */
+const SOURCES_DELAY_MS = 1000;
+/** Nor is one letter worth asking every source about until it's submitted. */
+const SOURCES_MIN_CHARS = 2;
 /** ChevronLeftIcon's width: what the field leaves clear for the edge chevron. */
 const BackSlotWidth = 26;
-const SUBMIT_HINT =
-  Platform.OS === 'web' ? 'Press Enter to search every bridge' : 'Tap search to look across every bridge';
+/** Beside the desktop's shell field, where the sources wait for Enter. */
+const SUBMIT_HINT = 'Press Enter to search every bridge';
 
 /**
  * The dedicated Search screen, pushed over the tabs. Its top bar holds the search
@@ -181,20 +190,11 @@ export default function SearchScreen({
   }, []);
 
   const [ownQuery, setQuery] = useState(initialIntent?.kind === 'query' ? initialIntent.query : '');
+  // What was submitted, or set under the field (an intent, the clear button): what the field is told.
   const query = docked ? docked.query : ownQuery;
 
-  // The cross-bridge search rows (one rail per bridge). Runs zero queries in single-bridge mode.
-  const comicalSearch = useCrossBridgeRails(isComical ? realBridges : NO_BRIDGES, { mode: 'search', query });
-
-  // What is in the field right now, ahead of `query`, which only moves on submit. The library answers
-  // from it as you type — it is one local lookup, where a bridge search is a request to every source
-  // you have, so those wait for Enter. Reset whenever the committed query moves on its own (an intent,
-  // the clear button), which the field itself does in the same render.
-  //
-  // DESKTOP ONLY. The composite result — your own shelf above every source's — earns its place on a
-  // wide screen, where two rows of library cards sit above the rails with room to spare. On a phone
-  // those two rows are the whole first screen, so a search of the sources opened on a result you
-  // already had, and the Library tab is one tap away with its own filter.
+  // What is in the field right now, ahead of `query`, which only moves on submit. Reset whenever the
+  // committed query moves on its own, which the field itself does in the same render.
   const [ownTyped, setTyped] = useState(query);
   const [prevQuery, setPrevQuery] = useState(query);
   if (prevQuery !== query) {
@@ -202,12 +202,26 @@ export default function SearchScreen({
     setTyped(query);
   }
   const typed = docked ? docked.typed : ownTyped;
+  // What the sources are asked: the field once typing pauses (`SOURCES_DELAY_MS`), or at once when it
+  // is submitted. Never written back into the field, which would eat a space typed mid-word. Beside
+  // the desktop's shell field the sources wait for Enter, since typing there narrows the tab under it.
+  const typedTerm = typed.trim();
+  const pausedTerm = useDebouncedValue(docked ? '' : typedTerm, SOURCES_DELAY_MS);
+  const searched =
+    docked || typedTerm === query.trim()
+      ? query
+      : typedTerm.length < SOURCES_MIN_CHARS || pausedTerm.length < SOURCES_MIN_CHARS
+        ? ''
+        : pausedTerm;
+
+  // The cross-bridge search rows (one rail per bridge). Runs zero queries in single-bridge mode.
+  const comicalSearch = useCrossBridgeRails(isComical ? realBridges : NO_BRIDGES, { mode: 'search', query: searched });
   const desktop = useIsDesktop();
   // Desktop: the field starts where the filters do once the capped row's gutter can hold the edge
   // chevron, and is pushed only as far as it can't.
   const contentWidth = useContentWidth();
   const fieldIndent = Math.max(0, BackSlotWidth + Spacing.two - topLevelCenterInset(contentWidth));
-  const libraryTerm = useDebouncedValue(desktop ? typed.trim() : '', 150);
+  const libraryTerm = useDebouncedValue(typedTerm, LIBRARY_DELAY_MS);
   const libraryMatches = useQuery({
     ...libraryQuery(ds, mock, libraryTerm, 'lastRead', null),
     enabled: isComical && !!libraryTerm,
@@ -451,10 +465,10 @@ export default function SearchScreen({
   const scope = useMemo<BrowseScope | null>(() => {
     if (!bridgeId) return null;
     // A RESTORED per-bridge sort orders a search but never starts one — see committedSortExplicit.
-    const active = !!query || (committedFilters?.length ?? 0) > 0 || committedSortExplicit;
+    const active = !!searched || (committedFilters?.length ?? 0) > 0 || committedSortExplicit;
     if (!active) return null;
-    return { kind: 'search', query, opts: { filters: committedFilters, sort: committedSort } };
-  }, [bridgeId, query, committedFilters, committedSort, committedSortExplicit]);
+    return { kind: 'search', query: searched, opts: { filters: committedFilters, sort: committedSort } };
+  }, [bridgeId, searched, committedFilters, committedSort, committedSortExplicit]);
 
   const resultsQuery = useInfiniteQuery({
     queryKey: scope ? queryKeys.browseGrid(mock, bridgeId ?? '', scope) : DISABLED_RESULTS_KEY,
@@ -489,19 +503,18 @@ export default function SearchScreen({
 
   // Grid rows rather than a rail: a rail belongs to one bridge, and a library spans all of them.
   const comicalRows = useMemo<ContentRow[]>(() => {
-    const cards = visibleLibrary.slice(0, numColumns * LIBRARY_ROWS).map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
+    const cards = visibleLibrary.slice(0, numColumns * libraryRows(desktop)).map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
     if (cards.length === 0) return comicalSearch.rows;
     const rows: ContentRow[] = [{ type: 'sectionHead', key: 'head:library', title: 'In your library' }];
     for (let i = 0; i < cards.length; i += numColumns) {
       rows.push({ type: 'gridRow', key: `library:${i}`, items: cards.slice(i, i + numColumns) });
     }
     return [...rows, ...comicalSearch.rows];
-  }, [visibleLibrary, numColumns, bridgeById, comicalSearch.rows]);
-  const typedTerm = typed.trim();
+  }, [visibleLibrary, numColumns, desktop, bridgeById, comicalSearch.rows]);
 
   // Identifies the current search. SeriesGrid folds it into the list key and the cards' recycle
   // cohort, so a new search resets recycled card state rather than flashing the previous result's cover.
-  const scopeKey = scope ? `${bridgeId}|${query}|${committedSort?.key ?? ''}|${JSON.stringify(committedFilters ?? {})}` : 'blank';
+  const scopeKey = scope ? `${bridgeId}|${searched}|${committedSort?.key ?? ''}|${JSON.stringify(committedFilters ?? {})}` : 'blank';
 
   // ── Sliding filter bar ─────────────────────────────────────────────────────
   // The filter bar sits just below the (fixed) search bar and closes as the results scroll down,
@@ -707,15 +720,15 @@ export default function SearchScreen({
   ) : null;
 
   const comicalHint =
-    tab && !typedTerm && !query.trim() ? (
+    tab && !typedTerm ? (
       <SearchSources bridges={sources} onSelect={setBridge} />
-    ) : typedTerm && typedTerm !== query ? (
+    ) : docked && typedTerm && typedTerm !== query ? (
       <View style={styles.submitHint}>
         <ThemedText type="small" themeColor="textSecondary" style={styles.hintText}>
           {SUBMIT_HINT}
         </ThemedText>
       </View>
-    ) : query.trim() && comicalRows.length === 0 && !comicalSearch.anyLoading ? (
+    ) : searched.trim() && comicalRows.length === 0 && !comicalSearch.anyLoading ? (
       <View style={styles.hint}>
         <ThemedText type="small" themeColor="textSecondary" style={styles.hintText}>
           No results
@@ -808,7 +821,7 @@ export default function SearchScreen({
               // a rail's "See all" (ContentFeed → /results) is where you infinite-scroll one bridge.
               <ContentFeed
                 rows={comicalRows}
-                scopeKey={query || 'blank'}
+                scopeKey={searched || 'blank'}
                 listRef={listRef}
                 header={comicalHint}
                 paddingTop={topBarTotal + filtersBarH + BarContentGap}

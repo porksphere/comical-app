@@ -839,7 +839,7 @@ export default function BrowseScreen() {
     </BarSurface>
   );
   // On iOS the bar holds only system items: the bridge's circle as the leading menu button
-  // (the bridges, then the pages), the search trailing. The inline title names the view,
+  // (the bridges, then the pages). Search is the system's search tab, not an item here. The inline title names the view,
   // "<bridge> <page>", as the custom bar's selectors do, and is the NSFW hold target: a bar
   // button's hold is its menu, so the gesture moves to the one thing in the bar that is ours.
   const nativeHeader = (
@@ -855,7 +855,6 @@ export default function BrowseScreen() {
         pages={pageOptions}
         page={pageKey(page)}
         onSelectPage={selectPage}
-        onSearch={openSearch}
       />
     </>
   );

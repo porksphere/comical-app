@@ -102,7 +102,13 @@ tabs), which iOS 26 stands apart at the bar's end with its field in the bar. Tha
 Search screen's `tab` mode: it starts on every bridge, a menu in the bar picks one source (and its
 filters), and before anything is typed it lists the sources (`SearchSources`). Its bar is every
 tab's (`NativeTabHeader`), and its list's bottom inset follows the keyboard, which stays up under
-it (`keyboardInsets`). Per-tab safe-area
+it (`keyboardInsets`). It is the only magnifier on iOS: Browse has no search button, and
+Library's and Recent's filters are fields under the title that a pull down brings out
+(`stacked`), as Music's and Books' libraries filter, so finding something new and narrowing what
+a tab shows don't look alike. The Search screen, every mode, matches your library almost as you
+type and asks the sources once typing pauses (`SOURCES_DELAY_MS`, two letters at least) or at
+once on submit; beside the desktop's shell field the sources wait for Enter, since typing there
+narrows the tab under it. Per-tab safe-area
 insets already include the system bar, so `BottomTabInset` is 0 on iOS and `useHideTabBarOnScroll`
 leaves `tabBarProgress` at 0 there; a ROOT overlay (toast, request pill, card context menu) pads by
 `RootTabBarInset` instead, since the root provider's insets don't know about the bar. The bar has no
@@ -133,7 +139,7 @@ the root stack and react-native-screens looks no further than the tab bar contro
 that is not full screen. Elsewhere it is expo-status-bar's.
 
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds the
-tab's large title, its menu and the search (`NativeTabHeader`, above). The BAR slides away
+tab's large title, its menu and its filter field (`NativeTabHeader`, above). The BAR slides away
 as the content scrolls down and back as it scrolls up: iOS 27's bar
 minimization, the way Settings' own pages behave, asked for on every tab and pushed bar
 `SLIDE_AWAY_BAR` in `lib/native-bar.ts`, react-native-screens' header config through
@@ -149,10 +155,8 @@ label and reports the press and its end to the same ramped hold (`useHoldAction`
 `Stack.Toolbar.Menu`, leading the title where the bar runs along the top, where Android's and web's
 selector sits (`useMenuLeads`: UIKit's `verticalBarEdge` through the local module
 `modules/vertical-bar-edge`, the window's shape before iOS 27.1), and elsewhere (a phone on its side, the Duo folded or open, all of
-which lay the bar out as a side column) among the trailing items: Browse's in a glass group of its own, a zero-width
-`Stack.Toolbar.Spacer` splitting it from the search (UIKit splits one placement's shared glass at
-a fixed space), the Library's in one group with the arranging `⋯` menu, what the tab shows and
-how it is arranged, with the system search item in its own group at the edge,
+which lay the bar out as a side column) among the trailing items: Browse's alone, the Library's
+in one group with the arranging `⋯` menu, what the tab shows and how it is arranged,
 flat — inline sections, never submenus, so every pick is open and tap — Browse the current
 bridge's thumbnail as a circle over the bridges and then the pages as checkmarked rows
 (`components/browse-native-toolbar.tsx`), Library the view's mark (the
