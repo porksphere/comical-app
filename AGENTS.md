@@ -102,10 +102,9 @@ tabs), which iOS 26 stands apart at the bar's end with its field in the bar. Tha
 Search screen's `tab` mode: it starts on every bridge, a menu in the bar picks one source (and its
 filters), and before anything is typed it lists the sources (`SearchSources`). Its bar is every
 tab's (`NativeTabHeader`), and its list's bottom inset follows the keyboard, which stays up under
-it (`keyboardInsets`). It is the only magnifier on iOS: Browse has no search button, and
-Library's and Recent's filters are fields under the title that a pull down brings out
-(`stacked`), as Music's and Books' libraries filter, so finding something new and narrowing what
-a tab shows don't look alike. The Search screen, every mode, matches your library almost as you
+it (`keyboardInsets`). It is where iOS finds things: Browse has no search button, and
+Library's and Recent's magnifiers only narrow what the tab shows (`NativeTabHeader`'s filter; a
+pull-down field under the title was tried and fought the `inline` title). The Search screen, every mode, matches your library almost as you
 type and asks the sources once typing pauses (`SOURCES_DELAY_MS`, two letters at least) or at
 once on submit; beside the desktop's shell field the sources wait for Enter, since typing there
 narrows the tab under it. Per-tab safe-area
@@ -139,7 +138,7 @@ the root stack and react-native-screens looks no further than the tab bar contro
 that is not full screen. Elsewhere it is expo-status-bar's.
 
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds the
-tab's large title, its menu and its filter field (`NativeTabHeader`, above). The BAR slides away
+tab's large title, its menu and its filter (`NativeTabHeader`, above). The BAR slides away
 as the content scrolls down and back as it scrolls up: iOS 27's bar
 minimization, the way Settings' own pages behave, asked for on every tab and pushed bar
 `SLIDE_AWAY_BAR` in `lib/native-bar.ts`, react-native-screens' header config through

@@ -30,11 +30,12 @@ import { NavBarLargeTitle } from '../../modules/nav-bar-large-title';
  * press and its end to the same ramped hold the custom bars' marks run, and swells the title's
  * label with each of the ramp's beats, as the marks' pulse does.
  *
- * A tab's filter is a field under the title row that hides as the list scrolls and comes back
- * with a pull down (`stacked`, as Music's and Books' libraries filter), not a magnifier among
- * the items: the magnifier is the search tab's, which finds new things, where this narrows what
- * the tab already shows. It leaves the list undimmed, since the list is what is being narrowed.
- * Cancel clears the query, which is what closing the custom field does too.
+ * A tab's filter is the integrated-button placement: a magnifier among the trailing items that
+ * expands into the field on tap (iOS 26; an inline field under the title before that). Cancel
+ * clears the query, which is what closing the custom field does too. The `stacked` field under
+ * the title, the pull-down filter, was tried and dropped: it hangs off the standard large title's
+ * own row, and under the `inline` title the bar lost its title and the list jumped as it came
+ * and went.
  */
 export function NativeTabHeader({ title, filter, placeholder }: { title: string; filter?: TabFilter; placeholder?: string }) {
   // The tab's name in the title typeface (lib/title-font), once it has loaded.
@@ -53,10 +54,7 @@ export function NativeTabHeader({ title, filter, placeholder }: { title: string;
       {filter ? (
         <Stack.SearchBar
           placeholder={placeholder}
-          placement="stacked"
-          hideWhenScrolling
-          obscureBackground={false}
-          hideNavigationBar={false}
+          placement="integratedButton"
           onChangeText={(e) => filter.setQuery(e.nativeEvent.text)}
           onCancelButtonPress={filter.close}
         />
